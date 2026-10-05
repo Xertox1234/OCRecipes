@@ -144,9 +144,17 @@ export const resendVerificationSchema = z.object({
 });
 
 // Account deletion validation schema
-export const deleteAccountSchema = z.object({
-  password: z.string().min(1, "Password is required"),
-});
+// Delete-account re-auth: the current password, OR a fresh Google/Apple
+// token for an identity linked to this account (social-only accounts have no
+// password).
+export const deleteAccountSchema = z.union([
+  z.object({ password: z.string().min(1, "Password is required") }),
+  z.object({
+    provider: z.enum(["google", "apple"]),
+    idToken: z.string().min(1).max(8192),
+    nonce: z.string().min(1).max(200),
+  }),
+]);
 
 // Email change: `newEmail` is normalized identically to registerSchema (the
 // storage layer + lower(email) unique index assume a trim+lowercase'd value);

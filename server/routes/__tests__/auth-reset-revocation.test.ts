@@ -19,6 +19,10 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     reservePasswordResetAttempt: vi.fn(),
     completePasswordReset: vi.fn(),
+    // /me also reports sign-in methods.
+    getSignInMethods: vi
+      .fn()
+      .mockResolvedValue({ password: true, google: null, apple: null }),
   },
 }));
 vi.mock("express-rate-limit");

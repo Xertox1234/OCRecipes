@@ -63,33 +63,10 @@ import {
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
-import type { MeasurementUnit } from "@shared/lib/units";
+import { serializeUser } from "./_serialize-user";
+import { verifyProviderToken, revokeAppleIdentities } from "./auth-social";
 
-export function serializeUser(user: {
-  id: string;
-  username: string;
-  email: string;
-  emailVerified: boolean;
-  displayName: string | null;
-  avatarUrl: string | null;
-  dailyCalorieGoal: number | null;
-  onboardingCompleted: boolean | null;
-  subscriptionTier: string | null;
-  measurementUnit: MeasurementUnit;
-}) {
-  return {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    emailVerified: user.emailVerified,
-    displayName: user.displayName,
-    avatarUrl: user.avatarUrl,
-    dailyCalorieGoal: user.dailyCalorieGoal,
-    onboardingCompleted: user.onboardingCompleted,
-    subscriptionTier: user.subscriptionTier || "free",
-    measurementUnit: user.measurementUnit,
-  };
-}
+export { serializeUser };
 
 function sendVerificationPending(res: Response): void {
   // Content-free neutral response — identical for new / existing-unverified /
@@ -759,7 +736,10 @@ export function register(app: Express): void {
           return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
         }
 
-        res.json(serializeUser(user));
+        res.json({
+          ...serializeUser(user),
+          signInMethods: await storage.getSignInMethods(user.id),
+        });
       } catch (error) {
         handleRouteError(res, error, "fetch current user");
       }
@@ -819,18 +799,53 @@ export function register(app: Express): void {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
-        const isValidPassword = await passwordMatches(
-          validated.password,
-          user.password,
-        );
-        if (!isValidPassword) {
-          return sendError(
-            res,
-            401,
-            "Invalid credentials",
-            ErrorCode.UNAUTHORIZED,
+        if ("password" in validated) {
+          if (!(await passwordMatches(validated.password, user.password))) {
+            return sendError(
+              res,
+              401,
+              "Invalid credentials",
+              ErrorCode.UNAUTHORIZED,
+            );
+          }
+        } else {
+          // Re-auth with a FRESH provider token: the nonce must be a reauth
+          // nonce bound to this user, and the identity must already be
+          // linked to this account. Every failure is the same 401.
+          let claims;
+          try {
+            claims = await verifyProviderToken(
+              validated.provider,
+              validated.idToken,
+              validated.nonce,
+            );
+          } catch {
+            return sendError(
+              res,
+              401,
+              "Invalid credentials",
+              ErrorCode.UNAUTHORIZED,
+            );
+          }
+          const nonceOk = await storage.consumeNonce(
+            validated.nonce,
+            "reauth",
+            req.userId,
           );
+          const owned = await storage.findIdentity(claims.provider, claims.sub);
+          if (!nonceOk || !owned || owned.userId !== req.userId) {
+            return sendError(
+              res,
+              401,
+              "Invalid credentials",
+              ErrorCode.UNAUTHORIZED,
+            );
+          }
         }
+
+        // Revoke Apple tokens BEFORE the delete cascades the identity rows
+        // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
+        await revokeAppleIdentities(await storage.listIdentities(req.userId));
 
         // Read the account's stored images while its rows still exist; the
         // delete below cascades them away.
