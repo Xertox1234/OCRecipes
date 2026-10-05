@@ -1,6 +1,6 @@
 ---
 title: "/todo's cleanup sweep deletes a running agent's worktree"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-04
 updated: 2026-10-04

@@ -9,11 +9,48 @@ You are running the todo orchestrator. This workflow cleans up prior runs, triag
 
 Before anything else, clear leftovers from previous `/todo` runs. This phase **always runs** and **never aborts** the workflow — if a step fails (e.g. `gh` is unauthenticated), report it and continue to Phase 1.
 
-1. **Force-remove leftover executor worktrees.** Executor worktrees are created _locked_, so `git worktree prune` alone silently skips them and they accumulate forever. Force-remove every one. Use the non-`--porcelain` form and expand a leading `~` manually — some environments proxy `git` (e.g. this project's `rtk` hook, see CLAUDE.md/RTK.md) and rewrite `--porcelain`'s output into a condensed, non-standard single-line format with `~`-shorthand paths, which breaks a `^worktree ` anchor silently (zero matches, no error) and which `read`-into-a-variable does not tilde-expand at use time:
+1. **Force-remove leftover executor worktrees.** Executor worktrees are created _locked_, so `git worktree prune` alone silently skips them and they accumulate forever. Force-remove every one **that is not in use**: another terminal's `/todo` executor or `/todo-fast` run may be working in one right now, and `--force` would delete its uncommitted work (near-miss 2026-09-16, PR #980). `wt_in_use` below skips a worktree when ANY signal fires — (1) another session's `/tmp/claude-worktree-contracts-*/` registry lists its path and its files changed in the last 120 min, (2) its newest non-`node_modules` file changed in the last 30 min, (3) a process has its cwd inside it. It is fail-safe: a check that errors counts as in use. Do not use the worktree's `.git` file mtime or the index mtime — the first is written once at creation and git rewrites the second only on `add`/`commit`/`status`, so an agent that is editing or running tests looks idle. The process signal is a backup only: a live `Agent(isolation: "worktree")` subagent has no process between its Bash calls (each call spawns a fresh shell that exits), so the file and registry signals do the real work. Use the non-`--porcelain` form and expand a leading `~` manually — some environments proxy `git` (e.g. this project's `rtk` hook, see CLAUDE.md/RTK.md) and rewrite `--porcelain`'s output into a condensed, non-standard single-line format with `~`-shorthand paths, which breaks a `^worktree ` anchor silently (zero matches, no error) and which `read`-into-a-variable does not tilde-expand at use time:
 
    ```bash
+   wt_in_use() {
+     # $1 = absolute worktree path. Returns 0 = in use OR unknown (skip it), 1 = safe to remove.
+     # Sets WT_REASON. Any error in a check counts as "in use" (fail-safe).
+     w="$1"
+     WT_REASON=""
+     [ -d "$w" ] || return 1
+     # Signal 1 — another session's contract registry lists it AND files changed in the last 120 min.
+     # A crashed executor leaves its entry behind, so the entry alone proves nothing.
+     # EXCLUDE_SESSION (Phase 5 only) = this session's id: its own executors have all returned.
+     own="/tmp/claude-worktree-contracts-${EXCLUDE_SESSION:-__none__}"
+     dirs=$(find -H /tmp -maxdepth 1 -type d -name 'claude-worktree-contracts-*' 2>/dev/null) \
+       || { WT_REASON="registry listing errored"; return 0; }
+     reg=""
+     while IFS= read -r d; do
+       [ -n "$d" ] && [ "$d" != "$own" ] || continue
+       grep -rlxF -- "$w" "$d" >/dev/null 2>&1; rc=$?   # 0 = listed, 1 = not listed, 2+ = error
+       [ "$rc" -ge 2 ] && { WT_REASON="registry check errored ($d)"; return 0; }
+       [ "$rc" -eq 0 ] && { reg="$d"; break; }
+     done <<< "$dirs"
+     if [ -n "$reg" ]; then
+       recent=$(find "$w" \( -name node_modules -o -name .git \) -prune -o -type f -mmin -120 -print -quit 2>/dev/null) \
+         || { WT_REASON="registry check errored"; return 0; }
+       [ -n "$recent" ] && { WT_REASON="listed in registry $reg and files changed <120 min ago"; return 0; }
+     fi
+     # Signal 2 — any file in the worktree (not node_modules/.git) modified in the last 30 min.
+     recent=$(find "$w" \( -name node_modules -o -name .git \) -prune -o -type f -mmin -30 -print -quit 2>/dev/null) \
+       || { WT_REASON="file-activity check errored"; return 0; }
+     [ -n "$recent" ] && { WT_REASON="file changed <30 min ago: $recent"; return 0; }
+     # Signal 3 — a running process has its cwd inside the worktree.
+     cwds=$(lsof -d cwd -Fn 2>/dev/null) || { WT_REASON="lsof errored"; return 0; }
+     [ -n "$cwds" ] || { WT_REASON="lsof returned nothing"; return 0; }
+     printf '%s\n' "$cwds" | awk -v w="$w" '/^n/ { n = substr($0, 2); if (n == w || index(n, w "/") == 1) f = 1 } END { exit !f }' \
+       && { WT_REASON="a process has its cwd inside it"; return 0; }
+     return 1
+   }
+
    git worktree list | awk '/\.claude\/worktrees\/agent-/ {sub(/ +[0-9a-f]{4,40} +\[[^]]*\].*$/, ""); print}' | while read -r wt; do
      wt="${wt/#\~/$HOME}"
+     if wt_in_use "$wt"; then echo "skipped worktree (in use): $wt — $WT_REASON"; continue; fi
      git worktree unlock "$wt" 2>/dev/null
      git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"
    done
@@ -111,7 +148,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
 
    If the `gh` call fails (unavailable, unauthenticated, network), the block above deletes the temp file and this step is **SKIPPED** — no stale `/tmp` lists survive for later phases to trust, no branch deletion happens, and Phase 2 fetches its own open-PR list (worktree cleanup in step 1 still ran). Continue.
 
-3. **Report** what was cleaned: count of worktrees removed, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `/tmp/todo-closed-unmerged-branches.txt`, `/tmp/todo-local-closed-unmerged-branches.txt`, `/tmp/todo-local-no-pr-branches.txt`, or `/tmp/todo-delete-skipped.txt` (branches whose FRESH merge-state check failed at delete time) is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
+3. **Report** what was cleaned: count of worktrees removed, any `skipped worktree (in use)` lines verbatim, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `/tmp/todo-closed-unmerged-branches.txt`, `/tmp/todo-local-closed-unmerged-branches.txt`, `/tmp/todo-local-no-pr-branches.txt`, or `/tmp/todo-delete-skipped.txt` (branches whose FRESH merge-state check failed at delete time) is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
 
 4. **Sync the local default branch (`main`).** PRs from prior runs land via auto-merge or the user's review (possibly from another session), so those todos may already be archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
 
@@ -431,11 +468,49 @@ After the queue is fully drained (or after early termination):
    Lint:  PASS | FAIL (N errors)
    ```
 
-6. **Sweep any executor worktrees still left over — crash backstop only.** Phase 4 already removes each todo's worktree immediately when that todo's executor reports (rolling dispatch), so this step should normally find nothing. It exists for the case where an executor crashed before reaching that cleanup, or the run itself was interrupted mid-batch. Force-remove them — a bare `git worktree prune` cannot, because they are created _locked_. Use the non-`--porcelain` form and expand a leading `~` manually (see the Phase 0 note on why: a `git` proxy in this environment can rewrite `--porcelain` output into a condensed, `~`-shorthand format that silently breaks a `^worktree ` anchor):
+6. **Sweep any executor worktrees still left over — crash backstop only.** Phase 4 already removes each todo's worktree immediately when that todo's executor reports (rolling dispatch), so this step should normally find nothing. It exists for the case where an executor crashed before reaching that cleanup, or the run itself was interrupted mid-batch. Force-remove them (unless in use) — a bare `git worktree prune` cannot, because they are created _locked_. Apply the same `wt_in_use` check as Phase 0 (copied below), with `EXCLUDE_SESSION` set to this session's id so this run's own registry entries are not mistaken for another session's. Report any `skipped worktree (in use)` line in the final summary. Use the non-`--porcelain` form and expand a leading `~` manually (see the Phase 0 note on why: a `git` proxy in this environment can rewrite `--porcelain` output into a condensed, `~`-shorthand format that silently breaks a `^worktree ` anchor):
 
    ```bash
+   EXCLUDE_SESSION="$CLAUDE_CODE_SESSION_ID"   # this session's own registry folder is excluded: all its executors have returned
+   wt_in_use() {
+     # $1 = absolute worktree path. Returns 0 = in use OR unknown (skip it), 1 = safe to remove.
+     # Sets WT_REASON. Any error in a check counts as "in use" (fail-safe).
+     w="$1"
+     WT_REASON=""
+     [ -d "$w" ] || return 1
+     # Signal 1 — another session's contract registry lists it AND files changed in the last 120 min.
+     # A crashed executor leaves its entry behind, so the entry alone proves nothing.
+     # EXCLUDE_SESSION (Phase 5 only) = this session's id: its own executors have all returned.
+     own="/tmp/claude-worktree-contracts-${EXCLUDE_SESSION:-__none__}"
+     dirs=$(find -H /tmp -maxdepth 1 -type d -name 'claude-worktree-contracts-*' 2>/dev/null) \
+       || { WT_REASON="registry listing errored"; return 0; }
+     reg=""
+     while IFS= read -r d; do
+       [ -n "$d" ] && [ "$d" != "$own" ] || continue
+       grep -rlxF -- "$w" "$d" >/dev/null 2>&1; rc=$?   # 0 = listed, 1 = not listed, 2+ = error
+       [ "$rc" -ge 2 ] && { WT_REASON="registry check errored ($d)"; return 0; }
+       [ "$rc" -eq 0 ] && { reg="$d"; break; }
+     done <<< "$dirs"
+     if [ -n "$reg" ]; then
+       recent=$(find "$w" \( -name node_modules -o -name .git \) -prune -o -type f -mmin -120 -print -quit 2>/dev/null) \
+         || { WT_REASON="registry check errored"; return 0; }
+       [ -n "$recent" ] && { WT_REASON="listed in registry $reg and files changed <120 min ago"; return 0; }
+     fi
+     # Signal 2 — any file in the worktree (not node_modules/.git) modified in the last 30 min.
+     recent=$(find "$w" \( -name node_modules -o -name .git \) -prune -o -type f -mmin -30 -print -quit 2>/dev/null) \
+       || { WT_REASON="file-activity check errored"; return 0; }
+     [ -n "$recent" ] && { WT_REASON="file changed <30 min ago: $recent"; return 0; }
+     # Signal 3 — a running process has its cwd inside the worktree.
+     cwds=$(lsof -d cwd -Fn 2>/dev/null) || { WT_REASON="lsof errored"; return 0; }
+     [ -n "$cwds" ] || { WT_REASON="lsof returned nothing"; return 0; }
+     printf '%s\n' "$cwds" | awk -v w="$w" '/^n/ { n = substr($0, 2); if (n == w || index(n, w "/") == 1) f = 1 } END { exit !f }' \
+       && { WT_REASON="a process has its cwd inside it"; return 0; }
+     return 1
+   }
+
    git worktree list | awk '/\.claude\/worktrees\/agent-/ {sub(/ +[0-9a-f]{4,40} +\[[^]]*\].*$/, ""); print}' | while read -r wt; do
      wt="${wt/#\~/$HOME}"
+     if wt_in_use "$wt"; then echo "skipped worktree (in use): $wt — $WT_REASON"; continue; fi
      git worktree unlock "$wt" 2>/dev/null
      git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"
    done
@@ -470,6 +545,6 @@ After the queue is fully drained (or after early termination):
 - **The executor agent does the work.** This orchestrator only triages, dispatches, and summarizes. Never implement todo changes directly.
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
-- **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes both remote AND local `todo/*` branches whose PRs are **all merged** (a branch whose PR was closed WITHOUT merging is a rejection signal — surfaced in Phase 5, never auto-swept, for both remote and local); Phase 4 removes each todo's worktree immediately on completion, and Phase 5 sweeps any stragglers as a crash backstop. The user must never have to clean up `todo/*` branches — local or remote — or `agent-*` worktrees by hand.
+- **Self-cleaning.** Phase 0 force-removes leftover worktrees that are not in use (a worktree another session is working in is skipped, not removed) and deletes both remote AND local `todo/*` branches whose PRs are **all merged** (a branch whose PR was closed WITHOUT merging is a rejection signal — surfaced in Phase 5, never auto-swept, for both remote and local); Phase 4 removes each todo's worktree immediately on completion, and Phase 5 sweeps any stragglers as a crash backstop. The user must never have to clean up `todo/*` branches — local or remote — or `agent-*` worktrees by hand.
 - **Auto-merge only through the guard.** Executors enable GitHub's native `gh pr merge --auto --squash --delete-branch` ONLY when `todo-automerge-guard.sh` returns exit 0 (low priority, non-`security`, safe-path-only) — it then merges itself once CI is green, no orchestrator or user step. Every other PR (`held`, `unknown`, `review-required`) stays open and is never auto-merged; the user reviews and merges those individually.
 - **Auto-sync local `main`.** Phase 0 fast-forwards local `main` at the start (catching merges from prior sessions, which also stops the backlog from re-picking an already-archived todo) and Phase 5 fast-forwards again at the end (catching this run's merges). Always **ff-only** so parallel work is never disturbed — the user must never have to `git pull` by hand to see a completed todo archived locally.
