@@ -33,3 +33,25 @@ export interface ApiError {
     | "NO_TOKEN"
     | "EMAIL_NOT_VERIFIED";
 }
+
+// ── Sign in with Google / Apple ─────────────────────────────────────────────
+export type SocialProvider = "google" | "apple";
+export type SignInMethod = "password" | SocialProvider;
+
+/** POST /api/auth/social (and the sign-up / link follow-ups). */
+export type SocialSignInResult =
+  | { status: "signed_in"; user: User; token: string }
+  | { status: "choose_username"; ticket: string; suggestedUsername: string }
+  | {
+      status: "link_required";
+      ticket: string;
+      methods: SignInMethod[];
+      email: string;
+    };
+
+/** /api/auth/me → signInMethods (mirrors server/storage/identities.ts). */
+export interface SignInMethods {
+  password: boolean;
+  google: { email: string | null } | null;
+  apple: { email: string | null; isPrivateRelay: boolean } | null;
+}
