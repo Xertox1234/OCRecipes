@@ -105,6 +105,29 @@ describe("SignInMethodsScreen", () => {
     expect(h.toastSuccess).toHaveBeenCalled();
   });
 
+  it("cancelling the Apple sheet keeps the password prompt open", async () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.connectProvider.mockResolvedValue(null);
+    renderComponent(<SignInMethodsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Connect Apple" }));
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(h.connectProvider).toHaveBeenCalled());
+    // Let the resolved null settle before checking the prompt survived it.
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "Continue" })
+          .hasAttribute("disabled"),
+      ).toBe(false),
+    );
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+    expect(h.setMethods).not.toHaveBeenCalled();
+    expect(h.toastSuccess).not.toHaveBeenCalled();
+  });
+
   it("a failed connect shows static copy in the prompt", async () => {
     h.methods = { password: true, google: null, apple: null };
     h.connectProvider.mockRejectedValue(
