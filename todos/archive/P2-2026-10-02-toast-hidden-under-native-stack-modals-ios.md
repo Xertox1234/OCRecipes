@@ -33,7 +33,7 @@ The app's one toast host renders as a sibling of the whole navigator (`client/co
   - Android (`RN.Platform.OS = "android"`, restored in `afterEach`): the toast renders and no `full-window-overlay` node exists;
   - no overlay node before the first toast or after `dismiss()`; replacing toast A with toast B (no dismiss between) yields a different overlay node (`not.toBe`), pinning the per-toast key.
 - [x] **Post-fix device check** — done 2026-10-04 (see Updates; pass-through proven on Home, as Scan's chips are inert on the simulator) (same session and dev-client build): with the branch's JS the pre-fix flow shows the toast ABOVE Scan; "Open" opens that conversation (the root `{ pop: true }` dismisses Scan, `MainTabNavigator.tsx:96-105`); in a second run a swipe up dismisses it; while a toast is up, a Scan control below the toast's strip still responds (the close button, `ScanScreen.tsx:815-827`, sits under the strip — not a pass-through probe); the Home-tab control behaves as before.
-- [ ] **Post-fix VoiceOver check** — NOT runnable on the simulator; moved to `todos/P2-2026-10-04-toast-overlay-voiceover-device-check.md` (same session): a toast raised over Scan is spoken and, while it is up, VoiceOver can still reach Scan's controls (the overlay is not accessibility-modal); record whether focus jumped to the toast (see Risks).
+- [x] **Post-fix VoiceOver check** (passed on the owner's iPhone, 2026-10-04) — NOT runnable on the simulator; moved to `todos/archive/P2-2026-10-04-toast-overlay-voiceover-device-check.md` (same session): a toast raised over Scan is spoken and, while it is up, VoiceOver can still reach Scan's controls (the overlay is not accessibility-modal); record whether focus jumped to the toast (see Risks).
 
 ## Implementation Notes
 
@@ -116,4 +116,4 @@ The app's one toast host renders as a sibling of the whole navigator (`client/co
 - Pre-fix (`main`): the toast shows on Home before and after; 16 frames over Scan (32 s, `simctl io` framebuffer) show none. Bug confirmed — the not-a-bug exit does not apply.
 - Post-fix (this branch): the toast shows above Scan; swipe-up dismisses it; with a toast up, a tap on a Home control below the strip lands (the section collapsed); the action button fires and a toast raised from it 300 ms later shows. Scan's close button sits under the strip while a toast is up, as predicted.
 - Tooling notes: Maestro's accessibility tree and its `takeScreenshot` can miss the overlay toast — judge visibility from `xcrun simctl io <UDID> screenshot`, and pass the UDID (two simulators were booted; `booted` picked the wrong one).
-- VoiceOver cannot run on the simulator — moved to `todos/P2-2026-10-04-toast-overlay-voiceover-device-check.md` (human-led).
+- VoiceOver cannot run on the simulator — moved to `todos/archive/P2-2026-10-04-toast-overlay-voiceover-device-check.md` (human-led).

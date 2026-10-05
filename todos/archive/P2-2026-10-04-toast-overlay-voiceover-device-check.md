@@ -1,6 +1,6 @@
 ---
 title: "iOS: VoiceOver check of the FullWindowOverlay toast host on a real iPhone — the simulator cannot run VoiceOver, and Maestro's accessibility tree no longer sees the toast"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-04
 updated: 2026-10-04
@@ -25,12 +25,12 @@ human_led: true
 
 ## Acceptance Criteria
 
-- [ ] On a physical iPhone with VoiceOver on, a toast raised on a tab screen is announced.
-- [ ] VoiceOver can move focus to the toast's action button (e.g. "Open") and activate it.
-- [ ] A toast raised while a native-stack modal (Scan or LabelAnalysis) is up is announced, and its action is reachable.
-- [ ] While the toast is up, VoiceOver can still reach the controls of the screen underneath.
-- [ ] Record whether focus jumps to the toast when it mounts (the overlay posts `UIAccessibilityLayoutChangedNotification`), and whether it is spoken twice.
-- [ ] If any of the above fails, file a fix todo with the observed behaviour; if all pass, archive this todo.
+- [x] On a physical iPhone with VoiceOver on, a toast raised on a tab screen is announced.
+- [x] VoiceOver can move focus to the toast's action button (e.g. "Open") and activate it.
+- [x] A toast raised while a native-stack modal (Scan or LabelAnalysis) is up is announced, and its action is reachable.
+- [x] While the toast is up, VoiceOver can still reach the controls of the screen underneath.
+- [x] Record whether focus jumps to the toast when it mounts (the overlay posts `UIAccessibilityLayoutChangedNotification`), and whether it is spoken twice.
+- [x] If any of the above fails, file a fix todo with the observed behaviour; if all pass, archive this todo.
 
 ## Implementation Notes
 
@@ -56,3 +56,7 @@ human_led: true
 ### 2026-10-04
 
 - Filed from the #1257 simulator verification (owner present); the owner chose to merge #1257 and check VoiceOver on device afterwards.
+
+### 2026-10-04 (device check)
+
+- Owner ran the VoiceOver check on a physical iPhone and reported that every acceptance criterion passed: the toast is announced on tab screens and over native-stack modals, its action button can be focused and activated, and the screen underneath stays reachable. No focus-jump or double-announcement problem was reported. So Maestro's missing toast was a Maestro limit, not a VoiceOver gap. No fix todo needed; archived.
