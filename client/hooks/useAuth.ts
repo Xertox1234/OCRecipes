@@ -108,11 +108,8 @@ async function clearDurableLocalState(): Promise<boolean> {
 }
 
 /**
- * Reconcile durable-store ownership for a user becoming active. Guards against a
- * malformed identity (missing id) writing an "undefined" owner — a no-op when the
- * id is absent. Stringifies the id so the marker compares cleanly whether the
- * server serializes it as a string or a number. `clearDurableLocalState` is the
- * confirmed-wipe the marker advance is gated on.
+ * apiRequest sends the stored bearer when there is one, so a signed-in caller
+ * gets a nonce bound to its account (the server rejects public nonces for it).
  */
 async function fetchNonce(
   purpose: "sign_in" | "link" | "reauth",
@@ -121,6 +118,13 @@ async function fetchNonce(
   return (await res.json()) as { nonce: string; nonceHash: string };
 }
 
+/**
+ * Reconcile durable-store ownership for a user becoming active. Guards against a
+ * malformed identity (missing id) writing an "undefined" owner — a no-op when the
+ * id is absent. Stringifies the id so the marker compares cleanly whether the
+ * server serializes it as a string or a number. `clearDurableLocalState` is the
+ * confirmed-wipe the marker advance is gated on.
+ */
 async function reconcileOwnerFor(id: unknown): Promise<void> {
   if (id == null) return;
   await reconcileDurableOwner(String(id), clearDurableLocalState);

@@ -68,12 +68,6 @@ export interface AuthFormInput {
 }
 
 /**
- * Returns a static, user-facing message for the FIRST failing rule, or null
- * when the input passes client-side checks. Login is intentionally lenient
- * (only "fields present") — the server is the authority and a generic failure
- * avoids a username-enumeration oracle.
- */
-/**
  * Username rule shared by password sign-up and the Google/Apple
  * ChooseUsername screen (mirrors registerSchema). Expects a trimmed value.
  */
@@ -88,6 +82,12 @@ export function validateUsername(username: string): string | null {
   return null;
 }
 
+/**
+ * Returns a static, user-facing message for the FIRST failing rule, or null
+ * when the input passes client-side checks. Login is intentionally lenient
+ * (only "fields present") — the server is the authority and a generic failure
+ * avoids a username-enumeration oracle.
+ */
 export function validateAuthForm(input: AuthFormInput): string | null {
   const username = input.username.trim();
 
