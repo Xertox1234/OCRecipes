@@ -9,34 +9,47 @@ import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { ConfirmOptions } from "@/components/ConfirmationModal";
 
-const { mockConfirm, mockLogout, mockDeleteAccount, deleteModal } = vi.hoisted(
-  () => ({
-    mockConfirm: vi.fn<(options: ConfirmOptions) => void>(),
-    mockLogout: vi.fn(),
-    mockDeleteAccount: vi.fn(),
-    deleteModal: {
-      props: null as null | {
-        visible: boolean;
-        signInMethods: unknown;
-        onConfirm: (proof: unknown) => Promise<boolean>;
-      },
+const {
+  mockConfirm,
+  mockLogout,
+  mockDeleteAccount,
+  mockNavigate,
+  mockRefetch,
+  me,
+  changeEmailModal,
+  deleteModal,
+} = vi.hoisted(() => ({
+  mockConfirm: vi.fn<(options: ConfirmOptions) => void>(),
+  mockLogout: vi.fn(),
+  mockDeleteAccount: vi.fn(),
+  mockNavigate: vi.fn(),
+  mockRefetch: vi.fn(),
+  me: {
+    methods: undefined as unknown,
+    isError: false,
+  },
+  changeEmailModal: { visible: false },
+  deleteModal: {
+    props: null as null | {
+      visible: boolean;
+      signInMethods: unknown;
+      loadError?: boolean;
+      onConfirm: (proof: unknown) => Promise<boolean>;
     },
-  }),
-);
+  },
+}));
 
 vi.mock("@/hooks/useSignInMethods", () => ({
   useSignInMethods: () => ({
-    methods: {
-      password: false,
-      google: null,
-      apple: { email: null, isPrivateRelay: true },
-    },
+    methods: me.methods,
+    isError: me.isError,
+    refetch: mockRefetch,
     setMethods: vi.fn(),
   }),
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn(), setOptions: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate, setOptions: vi.fn() }),
 }));
 
 vi.mock("@react-navigation/bottom-tabs", () => ({
@@ -111,7 +124,10 @@ vi.mock("@/components/DeleteAccountModal", () => ({
   },
 }));
 vi.mock("@/components/ChangeEmailModal", () => ({
-  ChangeEmailModal: () => null,
+  ChangeEmailModal: (props: { visible: boolean }) => {
+    changeEmailModal.visible = props.visible;
+    return null;
+  },
 }));
 
 vi.mock("@/components/ConfirmationModal", () => ({
@@ -127,6 +143,13 @@ vi.mock("@/components/ConfirmationModal", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  me.methods = {
+    password: false,
+    google: null,
+    apple: { email: null, isPrivateRelay: true },
+  };
+  me.isError = false;
+  changeEmailModal.visible = false;
 });
 
 describe("SettingsScreen sign-out confirmation", () => {
@@ -263,5 +286,37 @@ describe("SettingsScreen delete account", () => {
       await deleteModal.props?.onConfirm({ provider: "apple" });
     });
     expect(deleteModal.props?.visible).toBe(false);
+  });
+});
+
+describe("SettingsScreen change email without a password", () => {
+  it("points a password-less account to Sign-in methods instead of a password prompt", () => {
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Change Email" }));
+    expect(changeEmailModal.visible).toBe(false);
+    const opts = mockConfirm.mock.calls[0][0];
+    expect(opts.title).toMatch(/password first/i);
+    act(() => opts.onConfirm());
+    expect(mockNavigate).toHaveBeenCalledWith("SignInMethods");
+  });
+
+  it("a password account still gets the change-email modal", async () => {
+    me.methods = { password: true, google: null, apple: null };
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Change Email" }));
+    await waitFor(() => expect(changeEmailModal.visible).toBe(true));
+    expect(mockConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("SettingsScreen sign-in methods failed to load", () => {
+  it("retries the load when Delete Account opens, and tells the modal", async () => {
+    me.methods = undefined;
+    me.isError = true;
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete Account" }));
+    await waitFor(() => expect(deleteModal.props?.visible).toBe(true));
+    expect(mockRefetch).toHaveBeenCalled();
+    expect(deleteModal.props?.loadError).toBe(true);
   });
 });

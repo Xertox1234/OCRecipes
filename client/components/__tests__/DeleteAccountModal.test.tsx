@@ -10,13 +10,17 @@ import { DeleteAccountModal } from "../DeleteAccountModal";
 const relay = { email: null, isPrivateRelay: true };
 const onConfirm = vi.fn();
 
-function renderModal(signInMethods: SignInMethods | undefined) {
+function renderModal(
+  signInMethods: SignInMethods | undefined,
+  loadError = false,
+) {
   return renderComponent(
     <DeleteAccountModal
       visible
       onClose={vi.fn()}
       onConfirm={onConfirm}
       signInMethods={signInMethods}
+      loadError={loadError}
     />,
   );
 }
@@ -74,6 +78,14 @@ describe("DeleteAccountModal", () => {
   it("while the methods load, nothing can be confirmed", () => {
     renderModal(undefined);
     expect(screen.queryByLabelText("Password")).toBeNull();
+    const btn = screen.getByRole("button", { name: "Delete account" });
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("a failed load says so instead of loading forever", () => {
+    renderModal(undefined, true);
+    expect(screen.getByText(/couldn't load/i)).toBeTruthy();
+    expect(screen.queryByText("Loading…")).toBeNull();
     const btn = screen.getByRole("button", { name: "Delete account" });
     expect(btn.getAttribute("aria-disabled")).toBe("true");
   });

@@ -39,4 +39,17 @@ describe("useSignInMethods", () => {
     await waitFor(() => expect(result.current.methods).toEqual(next));
     expect(mockApiRequest).toHaveBeenCalledTimes(1);
   });
+
+  it("reports a failed load and can retry it", async () => {
+    mockApiRequest.mockRejectedValueOnce(new Error("offline"));
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSignInMethods(), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    mockApiRequest.mockResolvedValue({
+      json: () => Promise.resolve({ id: "u1", signInMethods: methods }),
+    });
+    act(() => result.current.refetch());
+    await waitFor(() => expect(result.current.methods).toEqual(methods));
+    expect(result.current.isError).toBe(false);
+  });
 });

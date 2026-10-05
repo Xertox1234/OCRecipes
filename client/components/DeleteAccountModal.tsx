@@ -38,6 +38,8 @@ interface DeleteAccountModalProps {
    * confirmed yet). Without a password it confirms with Apple instead.
    */
   signInMethods: SignInMethods | undefined;
+  /** Loading the sign-in methods failed; nothing can be confirmed. */
+  loadError?: boolean;
   /** True when the user has an active paid subscription (shows IAP warning). */
   showSubscriptionWarning?: boolean;
 }
@@ -55,6 +57,7 @@ export function DeleteAccountModal({
   onConfirm,
   showSubscriptionWarning = false,
   signInMethods,
+  loadError = false,
 }: DeleteAccountModalProps) {
   const { theme } = useTheme();
   const mode = deleteProofMode(
@@ -284,7 +287,9 @@ export function DeleteAccountModal({
                   {mode.kind === "provider"
                     ? `Continue with ${providerName} to confirm it's you.`
                     : mode.kind === "loading"
-                      ? "Loading…"
+                      ? loadError
+                        ? "Couldn't load your sign-in methods. Close this and try again."
+                        : "Loading…"
                       : "Set up a password in Settings → Sign-in methods first."}
                 </ThemedText>
               )}

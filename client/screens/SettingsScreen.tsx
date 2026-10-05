@@ -87,7 +87,11 @@ export default function SettingsScreen() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
-  const { methods: signInMethods } = useSignInMethods();
+  const {
+    methods: signInMethods,
+    isError: signInMethodsError,
+    refetch: refetchSignInMethods,
+  } = useSignInMethods();
   const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
@@ -220,6 +224,18 @@ export default function SettingsScreen() {
           navigation.navigate("SignInMethods");
           break;
         case "changeEmail":
+          // Changing the email re-auths with the password; an Apple-only
+          // account has none, so the modal could only ever fail.
+          if (signInMethods && !signInMethods.password) {
+            confirm({
+              title: "Set up a password first",
+              message:
+                "Changing your email needs your password. Set one up in Sign-in methods.",
+              confirmLabel: "Open Sign-in methods",
+              onConfirm: () => navigation.navigate("SignInMethods"),
+            });
+            break;
+          }
           setShowChangeEmailModal(true);
           break;
         case "exportData":
@@ -247,11 +263,22 @@ export default function SettingsScreen() {
           });
           break;
         case "deleteAccount":
+          if (signInMethodsError) refetchSignInMethods();
           setShowDeleteAccountModal(true);
           break;
       }
     },
-    [haptics, navigation, isPremium, logout, handleExportData, confirm],
+    [
+      haptics,
+      navigation,
+      isPremium,
+      logout,
+      handleExportData,
+      confirm,
+      signInMethods,
+      signInMethodsError,
+      refetchSignInMethods,
+    ],
   );
 
   const visibleItems = SETTINGS_ITEMS.filter(
@@ -532,6 +559,7 @@ export default function SettingsScreen() {
         onConfirm={handleDeleteAccount}
         showSubscriptionWarning={isPremium}
         signInMethods={signInMethods}
+        loadError={signInMethodsError}
       />
 
       <ChangeEmailModal

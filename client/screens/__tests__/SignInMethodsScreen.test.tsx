@@ -10,6 +10,8 @@ import SignInMethodsScreen from "../SignInMethodsScreen";
 
 const h = vi.hoisted(() => ({
   methods: undefined as SignInMethods | undefined,
+  isError: false,
+  refetch: vi.fn(),
   setMethods: vi.fn(),
   connectProvider: vi.fn(),
   disconnectProvider: vi.fn(),
@@ -25,7 +27,12 @@ vi.mock("@/hooks/useSocialConfig", () => ({
 }));
 
 vi.mock("@/hooks/useSignInMethods", () => ({
-  useSignInMethods: () => ({ methods: h.methods, setMethods: h.setMethods }),
+  useSignInMethods: () => ({
+    methods: h.methods,
+    isError: h.isError,
+    refetch: h.refetch,
+    setMethods: h.setMethods,
+  }),
 }));
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
@@ -55,6 +62,7 @@ const relay = { email: "x@privaterelay.appleid.com", isPrivateRelay: true };
 beforeEach(() => {
   vi.clearAllMocks();
   h.methods = undefined;
+  h.isError = false;
   h.config = { apple: true, google: false };
 });
 
@@ -62,6 +70,14 @@ describe("SignInMethodsScreen", () => {
   it("shows a loading state until the methods arrive", () => {
     renderComponent(<SignInMethodsScreen />);
     expect(screen.getByLabelText("Loading sign-in methods")).toBeTruthy();
+  });
+
+  it("a failed load offers a retry instead of spinning forever", () => {
+    h.isError = true;
+    renderComponent(<SignInMethodsScreen />);
+    expect(screen.getByText(/Couldn't load your sign-in methods/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(h.refetch).toHaveBeenCalled();
   });
 
   it("lists the password and Apple rows; Apple relay email is hidden", () => {

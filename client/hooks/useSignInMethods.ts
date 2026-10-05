@@ -17,10 +17,13 @@ interface MeResponse {
  */
 export function useSignInMethods(): {
   methods: SignInMethods | undefined;
+  /** The load failed (after retries); `methods` stays undefined. */
+  isError: boolean;
+  refetch: () => void;
   setMethods: (methods: SignInMethods) => void;
 } {
   const queryClient = useQueryClient();
-  const { data } = useQuery<MeResponse>({
+  const { data, isError, refetch } = useQuery<MeResponse>({
     queryKey: ME_KEY,
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/auth/me");
@@ -37,5 +40,12 @@ export function useSignInMethods(): {
     },
     [queryClient],
   );
-  return { methods: data?.signInMethods, setMethods };
+  return {
+    methods: data?.signInMethods,
+    isError,
+    refetch: () => {
+      void refetch();
+    },
+    setMethods,
+  };
 }

@@ -41,7 +41,7 @@ export default function SignInMethodsScreen() {
   const toast = useToast();
   const { user, connectProvider, disconnectProvider, logout } =
     useAuthContext();
-  const { methods, setMethods } = useSignInMethods();
+  const { methods, isError, refetch, setMethods } = useSignInMethods();
   const config = useSocialConfig();
   // Offer a connect only when this build can open the provider AND the
   // server can verify it (no Apple key on the server → no Apple connect).
@@ -61,6 +61,19 @@ export default function SignInMethodsScreen() {
   useEffect(() => {
     navigation.setOptions({ headerBackVisible: !isOpen });
   }, [isOpen, navigation]);
+
+  if (!methods && isError) {
+    return (
+      <View style={[styles.loading, { backgroundColor: theme.backgroundRoot }]}>
+        <ThemedText style={[styles.errorText, { color: theme.textSecondary }]}>
+          Couldn&apos;t load your sign-in methods.
+        </ThemedText>
+        <Button variant="outline" onPress={refetch}>
+          Try again
+        </Button>
+      </View>
+    );
+  }
 
   if (!methods) {
     return (
@@ -249,7 +262,14 @@ export default function SignInMethodsScreen() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
+  loading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.md,
+    padding: Spacing.lg,
+  },
+  errorText: { textAlign: "center" },
   content: { paddingBottom: Spacing.xl },
   card: { marginHorizontal: Spacing.lg, marginTop: Spacing.lg },
   row: {
