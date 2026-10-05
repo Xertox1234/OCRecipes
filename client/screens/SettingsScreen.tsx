@@ -29,6 +29,8 @@ import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useToast } from "@/context/ToastContext";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
+import { useSignInMethods } from "@/hooks/useSignInMethods";
+import type { DeleteAccountProof } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -85,6 +87,7 @@ export default function SettingsScreen() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const { methods: signInMethods } = useSignInMethods();
   const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
@@ -99,11 +102,13 @@ export default function SettingsScreen() {
   }, [isOpen, navigation]);
 
   const handleDeleteAccount = useCallback(
-    async (password: string) => {
+    async (proof: DeleteAccountProof) => {
       // deleteAccount throws on failure (e.g. wrong password). Let the modal
       // surface the error and keep itself open — only close on success.
-      await deleteAccount(password);
-      setShowDeleteAccountModal(false);
+      // false = the Apple sheet was cancelled: nothing deleted, stay open.
+      const deleted = await deleteAccount(proof);
+      if (deleted) setShowDeleteAccountModal(false);
+      return deleted;
       // No explicit navigation needed: the root navigator gate switches to
       // the auth stack when `isAuthenticated` flips to false.
     },
@@ -526,6 +531,7 @@ export default function SettingsScreen() {
         onClose={() => setShowDeleteAccountModal(false)}
         onConfirm={handleDeleteAccount}
         showSubscriptionWarning={isPremium}
+        signInMethods={signInMethods}
       />
 
       <ChangeEmailModal

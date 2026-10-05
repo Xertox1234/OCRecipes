@@ -96,7 +96,7 @@ describe("AuthContext", () => {
           status: "verification_pending",
         }),
         logout: async () => {},
-        deleteAccount: async (_p: string) => {},
+        deleteAccount: async (_proof: { password: string }) => true,
         updateUser: async (_updates: Record<string, unknown>) => undefined,
         changeEmail: async (_e: string, _p: string) => ({
           status: "verification_pending" as const,

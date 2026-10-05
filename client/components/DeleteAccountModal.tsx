@@ -16,6 +16,11 @@ import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
+import type { DeleteAccountProof } from "@/hooks/useAuth";
+import { ApiError } from "@/lib/api-error";
+import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
+import { deleteProofMode } from "@/screens/SignInMethodsScreen-utils";
+import type { SignInMethods } from "@shared/types/auth";
 import {
   Spacing,
   BorderRadius,
@@ -26,7 +31,13 @@ import {
 interface DeleteAccountModalProps {
   visible: boolean;
   onClose: () => void;
-  onConfirm: (password: string) => Promise<void>;
+  /** Resolves false when nothing was deleted (provider sheet cancelled). */
+  onConfirm: (proof: DeleteAccountProof) => Promise<boolean>;
+  /**
+   * How the account signs in; undefined while loading (nothing can be
+   * confirmed yet). Without a password it confirms with Apple instead.
+   */
+  signInMethods: SignInMethods | undefined;
   /** True when the user has an active paid subscription (shows IAP warning). */
   showSubscriptionWarning?: boolean;
 }
@@ -43,8 +54,20 @@ export function DeleteAccountModal({
   onClose,
   onConfirm,
   showSubscriptionWarning = false,
+  signInMethods,
 }: DeleteAccountModalProps) {
   const { theme } = useTheme();
+  const mode = deleteProofMode(
+    signInMethods,
+    Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "web",
+    NATIVE_PROVIDERS,
+  );
+  const providerName =
+    mode.kind === "provider"
+      ? mode.provider === "apple"
+        ? "Apple"
+        : "Google"
+      : null;
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +83,7 @@ export function DeleteAccountModal({
       setIsDeleting(false);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(
-          "Delete account confirmation. Enter your password to continue.",
+          "Delete account confirmation. Confirm it's you to continue.",
         );
       }
     }
@@ -70,6 +93,26 @@ export function DeleteAccountModal({
     // Concurrent-submission guard: state updates may lag behind rapid taps,
     // so don't rely on `disabled` alone — bail early if a request is in flight.
     if (isDeleting) return;
+    if (mode.kind === "provider") {
+      setError(null);
+      setIsDeleting(true);
+      try {
+        // false = the sheet was cancelled; nothing was deleted.
+        if (!(await onConfirm({ provider: mode.provider }))) {
+          setIsDeleting(false);
+        }
+      } catch (err) {
+        // Static copy only — never the server message.
+        setError(
+          err instanceof ApiError && err.status === 401
+            ? `${providerName} couldn't confirm it's you. Please try again.`
+            : "Failed to delete account. Please try again.",
+        );
+        setIsDeleting(false);
+      }
+      return;
+    }
+    if (mode.kind !== "password") return;
     if (!password) {
       setError("Password is required");
       return;
@@ -77,7 +120,7 @@ export function DeleteAccountModal({
     setError(null);
     setIsDeleting(true);
     try {
-      await onConfirm(password);
+      await onConfirm({ password });
       // onConfirm is responsible for any post-deletion navigation/state change.
     } catch (err) {
       const message =
@@ -91,7 +134,11 @@ export function DeleteAccountModal({
       setError(friendly);
       setIsDeleting(false);
     }
-  }, [password, onConfirm, isDeleting]);
+  }, [password, onConfirm, isDeleting, mode, providerName]);
+
+  // Nothing to confirm with while loading, or with no usable method.
+  const confirmDisabled =
+    isDeleting || mode.kind === "loading" || mode.kind === "reset_only";
 
   const handleCancel = useCallback(() => {
     if (isDeleting) return;
@@ -196,36 +243,51 @@ export function DeleteAccountModal({
                 </View>
               )}
 
-              <ThemedText
-                type="small"
-                style={[styles.label, { color: theme.textSecondary }]}
-              >
-                Enter your password to confirm
-              </ThemedText>
-              <TextInput
-                leftIcon="lock"
-                rightIcon={showPassword ? "eye-off" : "eye"}
-                rightIconAccessibilityLabel={
-                  showPassword ? "Hide password" : "Show password"
-                }
-                onRightIconPress={() => setShowPassword((s) => !s)}
-                placeholder="Password"
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  if (error) setError(null);
-                }}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoComplete="current-password"
-                textContentType="password"
-                editable={!isDeleting}
-                accessibilityLabel="Password"
-                accessibilityHint="Enter your current password to confirm account deletion"
-                error={!!error}
-                errorMessage={error ?? undefined}
-                testID="delete-account-password-input"
-              />
+              {mode.kind === "password" ? (
+                <>
+                  <ThemedText
+                    type="small"
+                    style={[styles.label, { color: theme.textSecondary }]}
+                  >
+                    Enter your password to confirm
+                  </ThemedText>
+                  <TextInput
+                    leftIcon="lock"
+                    rightIcon={showPassword ? "eye-off" : "eye"}
+                    rightIconAccessibilityLabel={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                    onRightIconPress={() => setShowPassword((s) => !s)}
+                    placeholder="Password"
+                    value={password}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      if (error) setError(null);
+                    }}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoComplete="current-password"
+                    textContentType="password"
+                    editable={!isDeleting}
+                    accessibilityLabel="Password"
+                    accessibilityHint="Enter your current password to confirm account deletion"
+                    error={!!error}
+                    errorMessage={error ?? undefined}
+                    testID="delete-account-password-input"
+                  />
+                </>
+              ) : (
+                <ThemedText
+                  type="small"
+                  style={[styles.label, { color: theme.textSecondary }]}
+                >
+                  {mode.kind === "provider"
+                    ? `Continue with ${providerName} to confirm it's you.`
+                    : mode.kind === "loading"
+                      ? "Loading…"
+                      : "Set up a password in Settings → Sign-in methods first."}
+                </ThemedText>
+              )}
 
               <InlineError message={error} />
 
@@ -241,13 +303,17 @@ export function DeleteAccountModal({
                 </Button>
                 <Pressable
                   onPress={handleConfirm}
-                  disabled={isDeleting}
+                  disabled={confirmDisabled}
                   accessibilityRole="button"
                   accessibilityLabel={
-                    isDeleting ? "Deleting account" : "Delete account"
+                    isDeleting
+                      ? "Deleting account"
+                      : providerName
+                        ? `Confirm with ${providerName}`
+                        : "Delete account"
                   }
                   accessibilityState={{
-                    disabled: isDeleting,
+                    disabled: confirmDisabled,
                     busy: isDeleting,
                   }}
                   style={[
@@ -255,7 +321,7 @@ export function DeleteAccountModal({
                     styles.destructiveButton,
                     {
                       backgroundColor: theme.error,
-                      opacity: isDeleting ? 0.6 : 1,
+                      opacity: confirmDisabled ? 0.6 : 1,
                     },
                   ]}
                   testID="delete-account-confirm-button"
@@ -267,7 +333,11 @@ export function DeleteAccountModal({
                       { color: theme.buttonText },
                     ]}
                   >
-                    {isDeleting ? "Deleting..." : "Delete"}
+                    {isDeleting
+                      ? "Deleting..."
+                      : providerName
+                        ? `Confirm with ${providerName}`
+                        : "Delete"}
                   </ThemedText>
                 </Pressable>
               </View>
