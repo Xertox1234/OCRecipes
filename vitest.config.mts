@@ -184,6 +184,12 @@ export default defineConfig({
         import.meta.dirname,
         "./test/mocks/expo-haptics.ts",
       ),
+      // Native module at import (throws under Node). Reached via
+      // @/lib/social-sign-in <- useAuth <- AuthContext.
+      "expo-apple-authentication": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/expo-apple-authentication.ts",
+      ),
       // Importing the real package loads expo's dev-only async-require setup,
       // whose native `require("./setupFastRefresh")` can't resolve a `.ts`
       // sibling (`Cannot find module './setupFastRefresh'`). Reached via

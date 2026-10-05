@@ -1,6 +1,10 @@
 import React, { createContext, useContext, ReactNode } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { User } from "@shared/types/auth";
+import type {
+  SocialProvider,
+  SocialSignInResult,
+  User,
+} from "@shared/types/auth";
 
 interface AuthContextType {
   user: User | null;
@@ -26,6 +30,16 @@ interface AuthContextType {
     { status: "updated"; user: User } | { status: "verification_pending" }
   >;
   checkAuth: () => Promise<void>;
+  signInWithProvider: (
+    provider: SocialProvider,
+  ) => Promise<SocialSignInResult | null>;
+  completeSocialSignUp: (
+    ticket: string,
+    username: string,
+    ageConfirmed: boolean,
+  ) => Promise<void>;
+  linkWithPassword: (ticket: string, password: string) => Promise<void>;
+  linkWithProvider: (ticket: string, provider: SocialProvider) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);

@@ -87,6 +87,13 @@ vi.mock("@/lib/home-actions-storage", () => ({
   clearHomeActionsState: () => mockClearHomeActionsState(),
 }));
 
+const { mockGetProviderToken } = vi.hoisted(() => ({
+  mockGetProviderToken: vi.fn(),
+}));
+vi.mock("@/lib/social-sign-in", () => ({
+  getProviderToken: (...args: unknown[]) => mockGetProviderToken(...args),
+}));
+
 const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch;
 
@@ -1138,6 +1145,151 @@ describe("useAuth", () => {
 
       expect(result.current.isAuthenticated).toBe(false);
       expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Sign in with Apple", () => {
+    function jsonOnce(body: unknown) {
+      mockApiRequest.mockResolvedValueOnce({
+        json: () => Promise.resolve(body),
+      });
+    }
+    async function ready() {
+      mockTokenStorage.get.mockResolvedValue(null);
+      const hook = renderHook(() => useAuth());
+      await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+      return hook;
+    }
+
+    it("signInWithProvider: fetches a sign_in nonce, hands Apple the HASH, posts the raw nonce, establishes the session", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-n", nonceHash: "hash-n" });
+      mockGetProviderToken.mockResolvedValue({
+        idToken: "id-tok",
+        authorizationCode: "code-1",
+      });
+      jsonOnce({ status: "signed_in", user: fakeUser, token: "sess-1" });
+
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.signInWithProvider("apple");
+      });
+
+      expect(mockApiRequest).toHaveBeenNthCalledWith(
+        1,
+        "POST",
+        "/api/auth/social/nonce",
+        { purpose: "sign_in" },
+      );
+      expect(mockGetProviderToken).toHaveBeenCalledWith("apple", "hash-n");
+      expect(mockApiRequest).toHaveBeenNthCalledWith(
+        2,
+        "POST",
+        "/api/auth/social",
+        {
+          provider: "apple",
+          nonce: "raw-n",
+          idToken: "id-tok",
+          authorizationCode: "code-1",
+        },
+      );
+      expect(out).toMatchObject({ status: "signed_in" });
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("sess-1");
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("signInWithProvider: a cancelled sheet returns null and posts nothing", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-n", nonceHash: "hash-n" });
+      mockGetProviderToken.mockResolvedValue(null);
+      let out: unknown = "unset";
+      await act(async () => {
+        out = await result.current.signInWithProvider("apple");
+      });
+      expect(out).toBeNull();
+      expect(mockApiRequest).toHaveBeenCalledTimes(1);
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("signInWithProvider: choose_username does NOT authenticate", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-n", nonceHash: "hash-n" });
+      mockGetProviderToken.mockResolvedValue({ idToken: "id-tok" });
+      jsonOnce({
+        status: "choose_username",
+        ticket: "t1",
+        suggestedUsername: "ann",
+      });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.signInWithProvider("apple");
+      });
+      expect(out).toEqual({
+        status: "choose_username",
+        ticket: "t1",
+        suggestedUsername: "ann",
+      });
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("completeSocialSignUp forwards the person's age attestation and signs in", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user: fakeUser, token: "sess-2" });
+      await act(async () => {
+        await result.current.completeSocialSignUp("t1", "ann", true);
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/social/complete-sign-up",
+        { ticket: "t1", username: "ann", ageConfirmed: true },
+      );
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("linkWithPassword posts the ticket and password and signs in", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user: fakeUser, token: "sess-3" });
+      await act(async () => {
+        await result.current.linkWithPassword("t2", "pw-123456");
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/social/link",
+        {
+          ticket: "t2",
+          password: "pw-123456",
+        },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("sess-3");
+    });
+
+    it("linkWithProvider uses a link nonce and posts provider proof", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-l", nonceHash: "hash-l" });
+      mockGetProviderToken.mockResolvedValue({ idToken: "id-2" });
+      jsonOnce({ status: "signed_in", user: fakeUser, token: "sess-4" });
+      await act(async () => {
+        await result.current.linkWithProvider("t3", "apple");
+      });
+      expect(mockApiRequest).toHaveBeenNthCalledWith(
+        1,
+        "POST",
+        "/api/auth/social/nonce",
+        { purpose: "link" },
+      );
+      expect(mockApiRequest).toHaveBeenNthCalledWith(
+        2,
+        "POST",
+        "/api/auth/social/link",
+        {
+          ticket: "t3",
+          provider: "apple",
+          nonce: "raw-l",
+          idToken: "id-2",
+        },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("sess-4");
     });
   });
 });

@@ -9,7 +9,12 @@ import {
   whenQueryCacheRestored,
 } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
-import { User } from "@shared/types/auth";
+import type {
+  SocialProvider,
+  SocialSignInResult,
+  User,
+} from "@shared/types/auth";
+import { getProviderToken } from "@/lib/social-sign-in";
 import { registerPushToken } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
@@ -109,6 +114,13 @@ async function clearDurableLocalState(): Promise<boolean> {
  * server serializes it as a string or a number. `clearDurableLocalState` is the
  * confirmed-wipe the marker advance is gated on.
  */
+async function fetchNonce(
+  purpose: "sign_in" | "link" | "reauth",
+): Promise<{ nonce: string; nonceHash: string }> {
+  const res = await apiRequest("POST", "/api/auth/social/nonce", { purpose });
+  return (await res.json()) as { nonce: string; nonceHash: string };
+}
+
 async function reconcileOwnerFor(id: unknown): Promise<void> {
   if (id == null) return;
   await reconcileDurableOwner(String(id), clearDurableLocalState);
@@ -259,12 +271,9 @@ export function useAuth() {
     return () => subscription.remove();
   }, [checkAuth]);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const response = await apiRequest("POST", "/api/auth/login", {
-      username,
-      password,
-    });
-    const { user, token } = await response.json();
+  // Shared by every path that ends with a session token (password login and
+  // each Google/Apple path).
+  const establishSession = useCallback(async (user: User, token: string) => {
     await tokenStorage.set(token);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     // The root-cause fix: login() historically cleared NO durable local state, so
@@ -273,10 +282,88 @@ export function useAuth() {
     // before the app renders authenticated surfaces.
     await reconcileOwnerFor(user.id);
     setState({ user, isLoading: false, isAuthenticated: true });
-    // Register push token after login (fire-and-forget, non-fatal)
+    // Register push token after sign-in (fire-and-forget, non-fatal)
     registerPushToken().catch(() => {});
-    return user;
   }, []);
+
+  const login = useCallback(
+    async (username: string, password: string) => {
+      const response = await apiRequest("POST", "/api/auth/login", {
+        username,
+        password,
+      });
+      const { user, token } = await response.json();
+      await establishSession(user, token);
+      return user;
+    },
+    [establishSession],
+  );
+
+  // ── Sign in with Apple (Google later) ──────────────────────────────────
+  // The provider sheet gets the nonce HASH; the server gets the raw nonce and
+  // checks the token's nonce claim against sha256(raw). Returns null when the
+  // person cancels the sheet.
+  const signInWithProvider = useCallback(
+    async (provider: SocialProvider): Promise<SocialSignInResult | null> => {
+      const { nonce, nonceHash } = await fetchNonce("sign_in");
+      const token = await getProviderToken(provider, nonceHash);
+      if (!token) return null;
+      const res = await apiRequest("POST", "/api/auth/social", {
+        provider,
+        nonce,
+        ...token,
+      });
+      const result = (await res.json()) as SocialSignInResult;
+      if (result.status === "signed_in") {
+        await establishSession(result.user, result.token);
+      }
+      return result;
+    },
+    [establishSession],
+  );
+
+  const completeSocialSignUp = useCallback(
+    async (ticket: string, username: string, ageConfirmed: boolean) => {
+      const res = await apiRequest(
+        "POST",
+        "/api/auth/social/complete-sign-up",
+        // COPPA 13+ attestation — the person's actual checkbox state.
+        { ticket, username, ageConfirmed },
+      );
+      const { user, token } = await res.json();
+      await establishSession(user, token);
+    },
+    [establishSession],
+  );
+
+  const linkWithPassword = useCallback(
+    async (ticket: string, password: string) => {
+      const res = await apiRequest("POST", "/api/auth/social/link", {
+        ticket,
+        password,
+      });
+      const { user, token } = await res.json();
+      await establishSession(user, token);
+    },
+    [establishSession],
+  );
+
+  const linkWithProvider = useCallback(
+    async (ticket: string, provider: SocialProvider) => {
+      const { nonce, nonceHash } = await fetchNonce("link");
+      const token = await getProviderToken(provider, nonceHash);
+      if (!token) return;
+      const res = await apiRequest("POST", "/api/auth/social/link", {
+        ticket,
+        provider,
+        nonce,
+        idToken: token.idToken,
+      });
+      const { user, token: session } = await res.json();
+      await establishSession(user, session);
+    },
+    [establishSession],
+  );
 
   const register = useCallback(
     async (
@@ -452,5 +539,9 @@ export function useAuth() {
     updateUser,
     changeEmail,
     checkAuth,
+    signInWithProvider,
+    completeSocialSignUp,
+    linkWithPassword,
+    linkWithProvider,
   };
 }

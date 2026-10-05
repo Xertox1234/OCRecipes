@@ -188,6 +188,16 @@ export const resendVerificationLimiter = createRateLimiter({
   keyByUser: false,
 });
 
+// Authenticated routes that check the account password or a provider re-auth
+// (connect a sign-in method). User-keyed (the default) and capped like the
+// other password-gated account routes, so a borrowed session cannot use them
+// as a fast password-guessing oracle.
+export const reauthLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: "Too many attempts, please try again later",
+});
+
 export const accountDeletionLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 5,

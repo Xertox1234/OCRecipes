@@ -11,6 +11,8 @@ import { safeGoBack } from "@/navigation/safeGoBack";
 import LoginScreen from "@/screens/LoginScreen";
 import VerifyEmailScreen from "@/screens/VerifyEmailScreen";
 import ForgotPasswordScreen from "@/screens/ForgotPasswordScreen";
+import ChooseUsernameScreen from "@/screens/ChooseUsernameScreen";
+import ConnectAccountScreen from "@/screens/ConnectAccountScreen";
 import ResetPasswordScreen from "@/screens/ResetPasswordScreen";
 import ScanScreen from "@/screens/ScanScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
@@ -36,6 +38,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Colors } from "@/constants/theme";
 import type { PhotoIntent } from "@shared/constants/preparation";
+import type { SignInMethod } from "@shared/types/auth";
 import type {
   CookingSessionIngredient,
   SubstitutionResult,
@@ -60,6 +63,14 @@ export type RootStackParamList = {
       }
     | undefined;
   ForgotPassword: { email?: string } | undefined;
+  /** First Google/Apple sign-in: pick a username (ticket from POST /api/auth/social). */
+  ChooseUsername: { ticket: string; suggestedUsername: string };
+  /** Google/Apple email matches an existing account: prove ownership to connect. */
+  ConnectAccount: {
+    ticket: string;
+    methods: SignInMethod[];
+    email: string;
+  };
   ResetPassword: { email: string };
   VerifyEmail:
     | {
@@ -255,6 +266,16 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="ForgotPassword"
             component={ForgotPasswordScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="ChooseUsername"
+            component={ChooseUsernameScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="ConnectAccount"
+            component={ConnectAccountScreen}
             options={{ headerShown: false }}
           />
           <Stack.Screen

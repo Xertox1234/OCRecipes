@@ -1,11 +1,26 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "@/lib/api-error";
 import {
+  validateUsername,
   validateAuthForm,
   validateAuthFormFields,
   getAuthErrorMessage,
   validateNewPassword,
 } from "../LoginScreen-utils";
+
+describe("validateUsername (mirrors registerSchema)", () => {
+  it.each([
+    ["ok_name", null],
+    ["ab", /between 3 and 30/],
+    ["a".repeat(31), /between 3 and 30/],
+    ["has space", /letters, numbers, and underscores/],
+    ["me@x.com", /letters, numbers, and underscores/],
+  ])("%s", (u, expected) => {
+    const out = validateUsername(u);
+    if (expected === null) expect(out).toBeNull();
+    else expect(out).toMatch(expected);
+  });
+});
 
 describe("validateAuthForm", () => {
   const validRegister = {
