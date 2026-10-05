@@ -279,10 +279,16 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
   {
     match: {
       kind: "config-file",
-      basenames: ["vitest.config", "eslint.config"],
+      basenames: [
+        "vitest.config",
+        "vitest.mutation.config",
+        "vitest.integration.config",
+        "eslint.config",
+      ],
     },
     domains: ["testing", "typescript"],
-    description: "`vitest.config.*`, `eslint.config.*`",
+    description:
+      "`vitest.config.*`, `vitest.mutation.config.*`, `vitest.integration.config.*`, `eslint.config.*`",
   },
   {
     // Package manifests (human decision — matches PR #801's existing "architecture for

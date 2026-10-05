@@ -161,6 +161,8 @@ describe("rulesDomainsForPath", () => {
     // config-file matcher's any-extension basename match still classifies it correctly.
     ["vitest.config.mts", ["testing", "typescript"]],
     ["eslint.config.js", ["testing", "typescript"]],
+    ["vitest.mutation.config.mts", ["testing", "typescript"]],
+    ["vitest.integration.config.mts", ["testing", "typescript"]],
     // --- package manifests (human decision) ---
     ["package.json", ["architecture"]],
     ["package-lock.json", ["architecture"]],
@@ -328,6 +330,8 @@ const PARITY_CORPUS = [
   ".github/workflows/ci.yml",
   "vitest.config.ts",
   "eslint.config.js",
+  "vitest.mutation.config.mts",
+  "vitest.integration.config.mts",
   "README.md",
   ".claude/hooks/inject-patterns.sh",
   ".claude/hooks/lib/domain-map.sh",

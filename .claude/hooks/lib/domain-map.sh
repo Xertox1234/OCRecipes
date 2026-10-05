@@ -50,7 +50,7 @@ apply_domain_map() {
   [[ "$f" == */e2e/* || "$f" == e2e/* ]] && { _add testing; }
   [[ "$f" == */__tests__/* || "$f" == __tests__/* || "$f" == *.test.ts || "$f" == *.test.tsx || "$f" == *.spec.ts || "$f" == *.spec.tsx ]] && { _add testing; }
   [[ "$f" == */.github/workflows/* || "$f" == .github/workflows/* ]] && { _add architecture; _add testing; }
-  [[ "$f" == */vitest.config.* || "$f" == vitest.config.* || "$f" == */eslint.config.* || "$f" == eslint.config.* ]] && { _add testing; _add typescript; }
+  [[ "$f" == */vitest.config.* || "$f" == vitest.config.* || "$f" == */vitest.mutation.config.* || "$f" == vitest.mutation.config.* || "$f" == */vitest.integration.config.* || "$f" == vitest.integration.config.* || "$f" == */eslint.config.* || "$f" == eslint.config.* ]] && { _add testing; _add typescript; }
   [[ "$f" == */package.* || "$f" == package.* || "$f" == */package-lock.* || "$f" == package-lock.* || "$f" == */app.* || "$f" == app.* ]] && { _add architecture; }
   [[ "$f" == */.claude/hooks/* || "$f" == .claude/hooks/* ]] && { _add harness; }
   [[ "$f" == */.claude/skills/* || "$f" == .claude/skills/* ]] && { _add harness; }

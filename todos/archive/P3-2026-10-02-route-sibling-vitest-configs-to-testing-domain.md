@@ -1,6 +1,6 @@
 ---
 title: "Route the two sibling vitest configs (vitest.mutation.config.mts, vitest.integration.config.mts) to testing + typescript: add their basenames to the config-file rule in scripts/lib/path-domains.ts and regenerate domain-map.sh + copilot-instructions.md by script"
-status: backlog
+status: done
 priority: low
 created: 2026-10-02
 updated: 2026-10-02
