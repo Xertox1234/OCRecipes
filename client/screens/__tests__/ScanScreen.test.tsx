@@ -8,7 +8,7 @@ import { renderComponent } from "../../../test/utils/render-component";
 import ScanScreen from "../ScanScreen";
 import { useBarcodeScannerOutput } from "react-native-vision-camera-barcode-scanner";
 import * as Haptics from "expo-haptics";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, Alert } from "react-native";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import { parseFrontLabelFromOCR } from "@/lib/front-label-ocr-parser";
 import { ApiError } from "@/lib/api-error";
@@ -1811,6 +1811,171 @@ describe("ScanScreen — touch targets meet the 44pt minimum (P2-2026-09-23, M13
 
       expect(dismissHeight).toBeGreaterThanOrEqual(44);
       expect(logHeight).toBeGreaterThanOrEqual(44);
+    });
+  });
+});
+
+describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Compiler hoist, characterization)", () => {
+  const BARCODE_FRAME = [
+    {
+      rawValue: "0778918011332",
+      format: "ean-13",
+      boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+    },
+  ];
+
+  it("(a) a double tap on the shutter captures once, and the shutter re-arms afterwards", async () => {
+    mockRouteParams.value = { mode: "label" };
+    let release!: (v: { filePath: string }) => void;
+    mockCapturePhotoToFile.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          release = r;
+        }),
+    );
+    renderComponent(<ScanScreen />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    expect(mockCapturePhotoToFile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release({ filePath: "/label.jpg" });
+    });
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "LabelAnalysis",
+        expect.anything(),
+      );
+    });
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    expect(mockCapturePhotoToFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("(b) a failed capture alerts and the shutter re-arms", async () => {
+    mockRouteParams.value = { mode: "label" };
+    mockCapturePhotoToFile.mockRejectedValueOnce(new Error("camera busy"));
+    renderComponent(<ScanScreen />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    await waitFor(() => {
+      expect(vi.mocked(Alert.alert)).toHaveBeenCalledWith(
+        "Capture failed",
+        "Please try again.",
+      );
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    expect(mockCapturePhotoToFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("(c) a double tap on smart confirm runs OCR once, shows busy, navigates once, and re-arms", async () => {
+    mockFeatures.value = { menuScanner: true };
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce({
+      sessionId: null,
+      intent: "auto",
+      foods: [],
+      overallConfidence: 0.9,
+      needsFollowUp: false,
+      followUpQuestions: [],
+      contentType: "restaurant_menu",
+    });
+    let release!: (v: { text: string; blocks: never[] }) => void;
+    mockRecognizeText.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          release = r;
+        }),
+    );
+
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+    const confirm = await screen.findByLabelText(
+      "Confirm smart photo analysis",
+    );
+    expect(confirm.getAttribute("aria-busy")).not.toBe("true");
+
+    const onPress = capturedPressProps["Confirm smart photo analysis"]
+      .onPress as () => void;
+    await act(async () => {
+      onPress();
+      onPress();
+    });
+    expect(mockRecognizeText).toHaveBeenCalledTimes(1);
+    expect(
+      screen
+        .getByLabelText("Confirm smart photo analysis")
+        .getAttribute("aria-busy"),
+    ).toBe("true");
+
+    await act(async () => {
+      release({ text: "Burger 12.00\nSalad 9.00", blocks: [] });
+    });
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "MenuScanResult",
+        expect.anything(),
+      );
+    });
+    expect(
+      mockNavigate.mock.calls.filter((c) => c[0] === "MenuScanResult"),
+    ).toHaveLength(1);
+    await waitFor(() => {
+      expect(
+        screen
+          .getByLabelText("Confirm smart photo analysis")
+          .getAttribute("aria-busy"),
+      ).toBe("false");
+    });
+
+    // Re-armed: the guard no longer blocks another confirm.
+    mockRecognizeText.mockResolvedValueOnce({
+      text: "Burger 12.00",
+      blocks: [],
+    });
+    await act(async () => {
+      (
+        capturedPressProps["Confirm smart photo analysis"].onPress as () => void
+      )();
+    });
+    await waitFor(() => {
+      expect(
+        mockNavigate.mock.calls.filter((c) => c[0] === "MenuScanResult"),
+      ).toHaveLength(2);
+    });
+  });
+
+  it("(d) seven barcode frames delivered in ONE synchronous act still lock the barcode", async () => {
+    // Without a synchronous ref update at dispatch time, every frame in the
+    // burst reads the stale HUNTING phase written at the last render and
+    // restarts tracking, so the lock never accumulates.
+    renderComponent(<ScanScreen />);
+    const handler = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0]
+      .onBarcodeScanned!;
+
+    await act(async () => {
+      for (let i = 0; i < 7; i++) {
+        handler(BARCODE_FRAME as Parameters<typeof handler>[0]);
+      }
+    });
+
+    await waitFor(() => {
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "GET",
+        "/api/nutrition/barcode/0778918011332",
+      );
     });
   });
 });
