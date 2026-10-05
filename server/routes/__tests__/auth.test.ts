@@ -1834,6 +1834,48 @@ describe("Auth Routes", () => {
       expect(mockDeleteImage).toHaveBeenCalledWith(null, "avatar");
     });
   });
+
+  describe("NULL password (social-only account)", () => {
+    it("login returns the ordinary 401", async () => {
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+        createMockUser({
+          username: "social",
+          password: null,
+          emailVerified: true,
+        }),
+      );
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: "social", password: "whatever1" });
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("Invalid credentials");
+    });
+
+    it("change-email returns 401, not 500", async () => {
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(
+        createMockUser({ id: "1", password: null }),
+      );
+      const res = await request(app)
+        .post("/api/auth/change-email")
+        .set("Authorization", "Bearer mock-token")
+        .send({ newEmail: "new@example.com", password: "whatever1" });
+      expect(res.status).toBe(401);
+      expect(storage.stagePendingEmail).not.toHaveBeenCalled();
+    });
+
+    it("delete-account with a password body returns 401, not 500", async () => {
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(
+        createMockUser({ id: "1", password: null }),
+      );
+      vi.mocked(storage.deleteUser).mockClear();
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "whatever1" });
+      expect(res.status).toBe(401);
+      expect(storage.deleteUser).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("_helpers utility functions", () => {

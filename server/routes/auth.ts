@@ -62,9 +62,10 @@ import {
 } from "./_schemas";
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
+import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
 import type { MeasurementUnit } from "@shared/lib/units";
 
-function serializeUser(user: {
+export function serializeUser(user: {
   id: string;
   username: string;
   email: string;
@@ -98,12 +99,6 @@ function sendVerificationPending(res: Response): void {
     message: "Check your inbox to verify your email.",
   });
 }
-
-// Fixed cost-12 bcrypt hash compared against on the missing-user login branch
-// so "no such user" costs the same ~250ms as "wrong password" (related gap 3).
-// The plaintext is irrelevant and matches nothing real.
-const DUMMY_PASSWORD_HASH =
-  "$2b$12$Dr3GzjhqTPluaG3QtTffX.SA5LiZi/05bbk8i97iK0z0QygBxFIgy";
 
 const RESET_CODE_SENT_MESSAGE =
   "If an account uses that email, we've sent a 6-digit code. It expires in 15 minutes.";
@@ -360,7 +355,7 @@ export function register(app: Express): void {
           );
         }
 
-        const isValidPassword = await bcrypt.compare(
+        const isValidPassword = await passwordMatches(
           validated.password,
           user.password,
         );
@@ -643,7 +638,7 @@ export function register(app: Express): void {
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
-        const isValidPassword = await bcrypt.compare(password, user.password);
+        const isValidPassword = await passwordMatches(password, user.password);
         if (!isValidPassword) {
           return sendError(
             res,
@@ -824,7 +819,7 @@ export function register(app: Express): void {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
-        const isValidPassword = await bcrypt.compare(
+        const isValidPassword = await passwordMatches(
           validated.password,
           user.password,
         );

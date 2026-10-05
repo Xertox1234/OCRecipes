@@ -280,6 +280,19 @@ describe("password reset storage", () => {
       expect((await row(testUser.id)).email).toBe(testUser.email);
     });
 
+    it("adds a password to a social-only account (NULL password)", async () => {
+      const social = await createTestUser(tx, { password: null });
+      const hash = hashResetCode(social.id, "123456");
+      await reset.issuePasswordResetCode(social.id, hash);
+      expect(
+        await reset.reservePasswordResetAttempt(social.email),
+      ).toBeDefined();
+      expect(
+        await reset.completePasswordReset(social.id, hash, "first-hash"),
+      ).toBe(true);
+      expect((await row(social.id)).password).toBe("first-hash");
+    });
+
     it("is single-use (second completion fails)", async () => {
       expect(
         await reset.completePasswordReset(testUser.id, matched(), "h1"),
