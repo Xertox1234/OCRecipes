@@ -1,9 +1,9 @@
 ---
 title: "Sign Out stops partway when removing the stored login blob fails — logout() leaves the previous user's cached data and signed-in screen in place while the token is already gone"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-10-04
 assignee:
 labels: [deferred, security, react-native]
 github_issue:
@@ -70,3 +70,7 @@ All auth work is parked for a human-led best-practices review (owner ruling 2026
 ### 2026-10-02
 
 - Filed from the 2026-10-02 deferred-warnings triage: first noticed by the verification run (workflow wf_7d969d8d-ce1), measured by the security reviewer of PR #1229, and verified by the orchestrator against `client/hooks/useAuth.ts` and `client/screens/SettingsScreen.tsx`. Auto-filed under the medium tier as `human_led` because all auth work is parked for a human-led review.
+
+### 2026-10-04
+
+- Implemented via `/todo-fast` with the human gate override given in session: `logout()` now guards `AsyncStorage.removeItem(AUTH_STORAGE_KEY)` with the same per-step `try {} catch {}` as `expireSession()`/`deleteAccount()`. The new test injects a rejection for the auth key only; it failed on the old code with the injected error and passes after the fix. Reviewed by `security-auditor` and `code-reviewer`: no findings.
