@@ -17,7 +17,11 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+  useNavigation,
+  useFocusEffect,
+  useIsFocused,
+} from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import Animated, {
   FadeInDown,
@@ -268,19 +272,29 @@ export default function HomeScreen() {
   // and the page snaps back in one frame. `shows` counts events instead of
   // comparing heights because a second show at the same height still needs its
   // own glide. iOS reports the show before the animation starts, so the lift
-  // runs alongside it; Android only has the did-event.
+  // runs alongside it; Android only has the did-event. Shows are ignored while
+  // Home is blurred: the focus-effect cleanup nulls the open drawer on blur, so
+  // a blurred show could only re-render this screen for nothing.
   const [keyboard, setKeyboard] = useState({ height: 0, shows: 0 });
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  // Ref mirror, read later by the native Keyboard callback (not during render).
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
   useEffect(() => {
     const subscription = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      (event) =>
+      (event) => {
+        if (!isFocusedRef.current) return;
         setKeyboard((prev) => ({
           height:
             event.endCoordinates.height > 0
               ? event.endCoordinates.height
               : prev.height,
           shows: prev.shows + 1,
-        })),
+        }));
+      },
     );
     return () => subscription.remove();
   }, []);

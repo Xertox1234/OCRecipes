@@ -45,8 +45,11 @@ const {
   scrollViewProps,
   collapsedBarProps,
   keyboardListeners,
+  focusHolder,
 } = vi.hoisted(() => ({
   isBarVisibleHolder: { value: false },
+  // What the navigation mock's useIsFocused reports: true = Home is the focused tab.
+  focusHolder: { value: true },
   // Quick Log lock cells: the raw tier (what HomeScreen used to compare) and
   // the server-resolved features (what the gate must read) vary separately.
   authHolder: { user: null as { subscriptionTier: string } | null },
@@ -140,7 +143,7 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
   useFocusEffect: () => {},
   // useSheetBackHandler (a real collaborator here) calls useIsFocused itself.
-  useIsFocused: () => true,
+  useIsFocused: () => focusHolder.value,
 }));
 
 vi.mock("@react-navigation/bottom-tabs", () => ({
@@ -497,6 +500,7 @@ describe("HomeScreen — keyboard inset for inline drawers", () => {
     // scrollTo implementation, and clear() would let it leak into the next test.
     vi.mocked(scrollTo).mockReset();
     measureHolder.value = null;
+    focusHolder.value = true;
     scrollViewProps.current = null;
     authHolder.user = { subscriptionTier: "premium" };
     premiumHolder.textFoodParsing = true;
@@ -560,6 +564,16 @@ describe("HomeScreen — keyboard inset for inline drawers", () => {
     openQuickLog();
 
     expect(paddingBottom()).toBe(KEYBOARD + Spacing.lg);
+  });
+
+  it("ignores a keyboard show while Home is blurred (another tab's keyboard must not drive Home's state)", () => {
+    focusHolder.value = false;
+    renderComponent(<HomeScreen />);
+    fireKeyboard("Show");
+    openQuickLog();
+    // The focused twin above pads to KEYBOARD + Spacing.lg here; a blurred
+    // show recorded no height, so the drawer opens at the base padding.
+    expect(paddingBottom()).toBe(BASE_PADDING);
   });
 
   it("re-runs the glide once the keyboard shows, now that the padding has made room", () => {

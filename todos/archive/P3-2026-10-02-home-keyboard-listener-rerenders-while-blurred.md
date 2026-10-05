@@ -1,6 +1,6 @@
 ---
 title: "HomeScreen's keyboard-show listener re-renders the blurred Home tab on every keyboard show app-wide — gate the setter on Home focus"
-status: backlog
+status: done
 priority: low
 created: 2026-10-02
 updated: 2026-10-02
@@ -105,3 +105,7 @@ TDD order: add the new case first and watch it fail (padding becomes `KEYBOARD +
 ### 2026-10-02
 
 - Filed from the 2026-10-02 deferred-warnings triage of the /todo sweep (#1213–#1226); claim verified against main ec26b972 by workflow wf_7d969d8d-ce1 and upheld by an adversarial re-check; filing approved by the owner 2026-10-02.
+
+### 2026-10-04
+
+- Implemented: Home keyboard-show listener gated on focus via useIsFocused ref mirror; new blurred test in HomeScreen.test.tsx. Optional device-profiler criterion not run.
