@@ -162,8 +162,6 @@ export const resendVerificationSchema = z.object({
     .max(254),
 });
 
-// Account deletion validation schema
-
 // Email change: `newEmail` is normalized identically to registerSchema (the
 // storage layer + lower(email) unique index assume a trim+lowercase'd value);
 // `password` re-authenticates the current account before the change is accepted.

@@ -13,6 +13,7 @@ import {
   socialAuthLimiter,
   createSocialLinkAccountLimiter,
   crudRateLimit,
+  reauthLimiter,
 } from "./_rate-limiters";
 import {
   socialNonceSchema,
@@ -604,7 +605,7 @@ export function register(app: Express): void {
   app.post(
     "/api/auth/identities",
     requireAuth,
-    crudRateLimit,
+    reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const parsed = connectIdentitySchema.safeParse(req.body);
