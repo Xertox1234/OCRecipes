@@ -21,14 +21,20 @@ describe("ResetPasswordScreen-utils", () => {
         password: "abcdefg1",
         confirmPassword: "abcdefg1",
       }),
-    ).toBe("Enter the 6-digit code from the email");
+    ).toEqual({
+      field: "code",
+      message: "Enter the 6-digit code from the email",
+    });
     expect(
       validateResetForm({
         code: "123456",
         password: "short1",
         confirmPassword: "short1",
       }),
-    ).toBe("Password must be at least 8 characters");
+    ).toEqual({
+      field: "password",
+      message: "Password must be at least 8 characters",
+    });
     expect(
       validateResetForm({
         code: "123456",
@@ -36,6 +42,22 @@ describe("ResetPasswordScreen-utils", () => {
         confirmPassword: "abcdefg1",
       }),
     ).toBeNull();
+  });
+  it("attributes a mismatch to the confirm field, but a weak password wins", () => {
+    expect(
+      validateResetForm({
+        code: "123456",
+        password: "abcdefg1",
+        confirmPassword: "abcdefg2",
+      }),
+    ).toEqual({ field: "confirm", message: "Passwords do not match" });
+    expect(
+      validateResetForm({
+        code: "123456",
+        password: "short1",
+        confirmPassword: "other",
+      })?.field,
+    ).toBe("password");
   });
   it("maps INVALID_RESET_CODE to the uniform message", () => {
     expect(

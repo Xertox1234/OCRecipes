@@ -99,6 +99,12 @@ describe("ResetPasswordScreen", () => {
     await screen.findByText(
       "That code is incorrect or expired. After 5 wrong tries, request a new code.",
     );
+    expect(
+      screen.getByLabelText("6-digit code").getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(
+      screen.getByLabelText("New password").getAttribute("aria-invalid"),
+    ).toBeNull();
   });
 
   it("blocks submit on mismatched passwords without calling the API", () => {
@@ -107,6 +113,24 @@ describe("ResetPasswordScreen", () => {
     fireEvent.click(screen.getByText("Reset password"));
     expect(mockReset).not.toHaveBeenCalled();
     expect(screen.getByText("Passwords do not match")).toBeTruthy();
+    expect(
+      screen
+        .getByLabelText("Confirm new password")
+        .getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(
+      screen.getByLabelText("6-digit code").getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
+  it("marks the code field when the code is too short", () => {
+    renderScreen();
+    fill("123");
+    fireEvent.click(screen.getByText("Reset password"));
+    expect(mockReset).not.toHaveBeenCalled();
+    expect(
+      screen.getByLabelText("6-digit code").getAttribute("aria-invalid"),
+    ).toBe("true");
   });
 
   it("resend is disabled for 60 s, counts down, then sends", async () => {

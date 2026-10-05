@@ -21,11 +21,15 @@ export async function requestResetCode(email: string): Promise<void> {
 /**
  * Static copy only (never error.message). A 429 comes from the per-email /
  * per-IP limiters, which run BEFORE the account lookup — so it is identical
- * for real and unknown addresses and safe to state plainly.
+ * for real and unknown addresses and safe to state plainly. The two limiters
+ * send the same body, so the copy names neither the reason nor the wait.
  */
 export function getResetRequestErrorMessage(err: unknown): string {
   if (err instanceof ApiError && err.status === 429) {
-    return "Too many code requests for this email. Try again in an hour.";
+    return "Too many code requests. Please wait a while and try again.";
+  }
+  if (err instanceof ApiError && err.code === "VALIDATION_ERROR") {
+    return "Please enter a valid email address.";
   }
   return "Couldn't send a code right now. Please try again shortly.";
 }

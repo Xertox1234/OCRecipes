@@ -13,9 +13,11 @@ import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing } from "@/constants/theme";
+import { ApiError } from "@/lib/api-error";
 import { RESET_CODE_LENGTH } from "@shared/constants/password-reset";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
+  type ResetFormField,
   normalizeResetCode,
   validateResetForm,
   getResetErrorMessage,
@@ -46,6 +48,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [errorField, setErrorField] = useState<ResetFormField | null>(null);
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   // The code was just sent by ForgotPassword, so the cooldown starts now.
@@ -62,9 +65,11 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
   const onSubmit = async () => {
     if (busy) return;
     setError("");
+    setErrorField(null);
     const invalid = validateResetForm({ code, password, confirmPassword });
     if (invalid) {
-      setError(invalid);
+      setError(invalid.message);
+      setErrorField(invalid.field);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -85,12 +90,16 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       // InlineError announces the message itself — no second announce here.
       setError(getResetErrorMessage(err));
+      if (err instanceof ApiError && err.code === "INVALID_RESET_CODE") {
+        setErrorField("code");
+      }
     }
   };
 
   const onResend = async () => {
     if (resending || secondsLeft > 0) return;
     setError("");
+    setErrorField(null);
     setResending(true);
     try {
       await requestResetCode(email);
@@ -99,7 +108,9 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
       setLastSentAt(sentAt);
       setNow(sentAt);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
-      AccessibilityInfo.announceForAccessibility("A new code has been sent.");
+      AccessibilityInfo.announceForAccessibility(
+        "If an account uses that email, we've sent a new code.",
+      );
     } catch (err) {
       setResending(false);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
@@ -141,6 +152,8 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             // normalizeResetCode strips the separator.
             maxLength={RESET_CODE_LENGTH + 2}
             editable={!busy}
+            error={errorField === "code"}
+            errorMessage={errorField === "code" ? error : undefined}
             testID="input-reset-code"
             accessibilityLabel="6-digit code"
             accessibilityHint="Enter the code from the email"
@@ -160,6 +173,8 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             textContentType="newPassword"
             autoComplete="new-password"
             editable={!busy}
+            error={errorField === "password"}
+            errorMessage={errorField === "password" ? error : undefined}
             testID="input-reset-password"
             accessibilityLabel="New password"
             accessibilityHint="At least 8 characters, with a letter and a number"
@@ -176,6 +191,8 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             returnKeyType="go"
             onSubmitEditing={onSubmit}
             editable={!busy}
+            error={errorField === "confirm"}
+            errorMessage={errorField === "confirm" ? error : undefined}
             testID="input-reset-confirm"
             accessibilityLabel="Confirm new password"
             accessibilityHint="Re-enter the new password"

@@ -89,7 +89,7 @@ describe("ForgotPasswordScreen", () => {
     await waitFor(() =>
       expect(
         screen.getAllByText(
-          "Too many code requests for this email. Try again in an hour.",
+          "Too many code requests. Please wait a while and try again.",
         ).length,
       ).toBeGreaterThan(0),
     );

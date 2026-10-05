@@ -84,10 +84,11 @@ Related gaps found at the same time:
 ### 2026-10-03
 
 - Resolved in a human-led session (brainstorm → spec → plan → inline execution; auth never delegated). Spec and plan are local-only: `docs/superpowers/specs/2026-10-03-password-reset-design.md`, `docs/superpowers/plans/2026-10-03-password-reset.md`.
-- **Credential:** a 6-digit emailed code typed into the app (no links, so no custom-scheme token and no AASA build). Stored as an HMAC keyed from `JWT_SECRET` on five `users` columns (migration 0015). 15-minute expiry, 5 guesses per code, 6 codes per account per rolling 24 h, all as atomic SQL predicates on the DB clock, so the caps survive deploys.
+- **Credential:** a 6-digit emailed code typed into the app (no links, so no custom-scheme token and no AASA build). Stored as an HMAC keyed from `JWT_SECRET` on five `users` columns (migration 0015). 15-minute expiry, 5 guesses per code, 6 codes per account per fixed 24 h window from the first code (up to 11 codes in a span that crosses the window boundary), all as atomic SQL predicates on the DB clock, so the caps survive deploys.
 - **Anti-enumeration:** identical responses and awaited work for real and unknown emails; email-keyed limiters run before the lookup; one uniform 400 for every bad code.
 - **On success:** password + `token_version + 1` + `email_verified = true` + `pending_email = NULL` (cancels a staged email change) + code cleared, in one UPDATE; then `invalidateTokenVersionCache`; "password changed" email with the username and support@ocrecipes.app; back to Login, no token issued. Both email-change commit points clear a live code.
 - **Username recovery:** login accepts username or email (verified column, case-insensitive); the missing-user branch pays a dummy cost-12 `bcrypt.compare` (gap 3 fixed). The signup-attempt notice names the username (gap 2 fixed).
 - **Web fallback:** none built (the code is typed into the app), so that criterion does not apply.
 - **Reset verifies the email:** yes (receiving the code proves inbox control).
 - Security-auditor review runs as this PR's review pass; never auto-merged.
+- **Deliberate deviations from the "Recovering the username" box:** `loginAccountLimiter` was NOT merged into one bucket per account. There are two buckets per account (one per identifier), so up to 20 failed tries per 15 min (spec section 4.3). Usernames are NOT lowercased: they still match exactly (case-sensitive). Only the email identifier is matched case-insensitively.

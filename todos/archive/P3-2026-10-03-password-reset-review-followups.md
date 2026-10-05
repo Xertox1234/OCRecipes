@@ -1,6 +1,6 @@
 ---
 title: "Password reset follow-ups from the PR #1233 review: fixed-window wording, client copy, and field-level errors"
-status: backlog
+status: done
 priority: low
 created: 2026-10-03
 updated: 2026-10-03
@@ -28,12 +28,12 @@ Every item below was checked against the tree at the reviewed head before it was
 
 ## Acceptance Criteria
 
-- [ ] Item 1 (**owner decided 2026-10-03: fix the wording, keep the fixed window**): change the "rolling 24 h" claims in `server/storage/password-reset.ts` and `shared/constants/password-reset.ts`, and the archived P1 todo's 2026-10-03 entry, to "a fixed 24 h window from the first code; up to 11 codes in a span that crosses the window boundary". No schema change. The spec is local-only and gets corrected by hand.
-- [ ] Item 2: the archived P1 todo's Updates entry records both deliberate deviations (two login buckets per account; usernames still case-sensitive).
-- [ ] Item 3: `getResetRequestErrorMessage` maps `VALIDATION_ERROR` to "Please enter a valid email address.", with a test.
-- [ ] Item 4 (**owner decided 2026-10-03: one neutral message**): `getResetRequestErrorMessage` maps every 429 to "Too many code requests. Please wait a while and try again." (no "this email", no "an hour"). Spec §2's copy follows. Tested. No server change.
-- [ ] Item 5: `validateResetForm` reports which field failed, and that input gets `error`/`errorMessage`. The code input is also marked on `INVALID_RESET_CODE`. Render test asserts it.
-- [ ] Item 6: the Resend announcement is hedged like the rest of the flow.
+- [x] Item 1 (**owner decided 2026-10-03: fix the wording, keep the fixed window**): change the "rolling 24 h" claims in `server/storage/password-reset.ts` and `shared/constants/password-reset.ts`, and the archived P1 todo's 2026-10-03 entry, to "a fixed 24 h window from the first code; up to 11 codes in a span that crosses the window boundary". No schema change. The spec is local-only and gets corrected by hand.
+- [x] Item 2: the archived P1 todo's Updates entry records both deliberate deviations (two login buckets per account; usernames still case-sensitive).
+- [x] Item 3: `getResetRequestErrorMessage` maps `VALIDATION_ERROR` to "Please enter a valid email address.", with a test.
+- [x] Item 4 (**owner decided 2026-10-03: one neutral message**): `getResetRequestErrorMessage` maps every 429 to "Too many code requests. Please wait a while and try again." (no "this email", no "an hour"). Spec §2's copy follows. Tested. No server change.
+- [x] Item 5: `validateResetForm` reports which field failed, and that input gets `error`/`errorMessage`. The code input is also marked on `INVALID_RESET_CODE`. Render test asserts it.
+- [x] Item 6: the Resend announcement is hedged like the rest of the flow.
 
 ## Implementation Notes
 
