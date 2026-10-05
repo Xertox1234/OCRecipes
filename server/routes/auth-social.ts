@@ -430,7 +430,6 @@ export function register(app: Express): void {
           return res.json(await issueSession(user.id));
         }
 
-        sweepAbandonedTickets();
         const ticket = await storage.createPendingSignIn({
           kind: decision.kind === "choose_username" ? "sign_up" : "link",
           provider: claims.provider,
@@ -444,6 +443,8 @@ export function register(app: Express): void {
           targetUserId:
             decision.kind === "link_required" ? decision.userId : null,
         });
+        // After the insert, so this sign-in's own Apple ID counts as live.
+        sweepAbandonedTickets();
 
         if (decision.kind === "choose_username") {
           const seed =

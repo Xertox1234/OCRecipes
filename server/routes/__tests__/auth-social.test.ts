@@ -450,6 +450,16 @@ describe("POST /api/auth/social", () => {
     );
   });
 
+  it("sweeps only after this request's ticket exists, so its Apple ID counts as live", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    await request(app()).post("/api/auth/social").send(body);
+    const created = vi.mocked(storage.createPendingSignIn).mock
+      .invocationCallOrder[0];
+    const swept = vi.mocked(storage.sweepExpiredPendingSignIns).mock
+      .invocationCallOrder[0];
+    expect(swept).toBeGreaterThan(created);
+  });
+
   it("a failing sweep never blocks the sign-in", async () => {
     vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
     vi.mocked(storage.sweepExpiredPendingSignIns).mockRejectedValue(
