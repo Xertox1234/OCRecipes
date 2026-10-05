@@ -26,7 +26,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -578,9 +578,20 @@ export function main(args: string[]): number {
 
 // Only run the CLI when invoked directly — importing this module (e.g. from
 // the test suite) must not read the real config or call process.exit.
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+// Realpath BOTH sides: the ESM loader realpaths the main module (import.meta.url)
+// but process.argv[1] keeps the path as given, so a launch through a symlink
+// (macOS /var -> /private/var) made the old href comparison false and the
+// script exited 0 having done nothing.
+const isMain = (() => {
+  try {
+    return (
+      fs.realpathSync(fileURLToPath(import.meta.url)) ===
+      fs.realpathSync(process.argv[1])
+    );
+  } catch {
+    return false;
+  }
+})();
+if (isMain) {
   process.exit(main(process.argv.slice(2)));
 }

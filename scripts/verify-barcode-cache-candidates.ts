@@ -26,7 +26,8 @@
 // candidate that no longer resolves in OFF is LEGITIMATE — its secondary
 // source was the correct answer (Kinder Bueno).
 
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   barcodeVariants,
@@ -363,10 +364,21 @@ async function main(argv: string[]): Promise<number> {
 
 // Only run the CLI when invoked directly — importing this module (e.g. from the
 // test suite) must not fire off network requests or call process.exit.
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+// Realpath BOTH sides: the ESM loader realpaths the main module (import.meta.url)
+// but process.argv[1] keeps the path as given, so a launch through a symlink
+// (macOS /var -> /private/var) made the old href comparison false and the
+// script exited 0 having done nothing.
+const isMain = (() => {
+  try {
+    return (
+      realpathSync(fileURLToPath(import.meta.url)) ===
+      realpathSync(process.argv[1])
+    );
+  } catch {
+    return false;
+  }
+})();
+if (isMain) {
   void (async () => {
     process.exit(await main(process.argv.slice(2)));
   })();

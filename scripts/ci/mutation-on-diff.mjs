@@ -28,10 +28,11 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   MUTATION_TARGETS,
   isApprovedExclusion,
@@ -453,9 +454,20 @@ function main() {
 }
 
 // Run only when executed directly, not when the unit tests import this file.
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+// Realpath BOTH sides: the ESM loader realpaths the main module (import.meta.url)
+// but process.argv[1] keeps the path as given, so a launch through a symlink
+// (macOS /var -> /private/var) made the old href comparison false and the
+// script exited 0 having done nothing.
+const isMain = (() => {
+  try {
+    return (
+      realpathSync(fileURLToPath(import.meta.url)) ===
+      realpathSync(process.argv[1])
+    );
+  } catch {
+    return false;
+  }
+})();
+if (isMain) {
   main();
 }

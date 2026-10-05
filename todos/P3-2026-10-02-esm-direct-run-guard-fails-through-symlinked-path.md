@@ -1,6 +1,6 @@
 ---
 title: "ESM direct-run guard no-ops through a symlinked path — compare realpaths on both sides in the six guarded scripts and add a symlink-launch test"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-02
 updated: 2026-10-02

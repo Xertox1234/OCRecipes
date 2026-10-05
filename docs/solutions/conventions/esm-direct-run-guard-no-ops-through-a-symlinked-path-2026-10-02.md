@@ -16,9 +16,11 @@ created: 2026-10-02
    `realpathSync` the temp directory before building any path from it.
 2. Assert positive output (a file the script wrote, a known stdout line),
    never only the exit code or silence, so a script that did not run fails the test.
-3. If a guard is ever changed, compare realpaths on both sides
-   (`realpathSync(process.argv[1])`) and add a test that launches the script
-   through a symlink.
+3. Direct-run guards compare realpaths on both sides
+   (`realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])`,
+   catch -> `false`), and a spawn test launches the script through an explicit
+   symlink, asserting `realpathSync(link) !== link` first so the test is not
+   vacuous on a Linux runner whose tmpdir has no symlink.
 
 ## Smell patterns
 
@@ -30,13 +32,15 @@ created: 2026-10-02
 ## Why
 
 Six repo scripts guard their `main()` with
-`if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) { main(); }`
-so the file can also be imported by unit tests without running:
+`const isMain = (() => { try { return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]); } catch { return false; } })(); if (isMain) { main(); }`
+so the file can also be imported by unit tests without running (the original
+shape, `process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href`,
+is the one that no-ops through a symlink, measured below):
 `scripts/ci/mutation-on-diff.mjs`, `scripts/mutation-explore.mjs`,
 `scripts/check-react-compiler-bailouts.js`, `scripts/coverage-ratchet.ts`,
 `scripts/todo-scheduler.ts` and `scripts/verify-barcode-cache-candidates.ts`
-(found by grep on 2026-10-02). The measurement below is on the `.mjs` script only;
-the `.ts` ones run under tsx and were not measured.
+(found by grep on 2026-10-02). The measurement below is on the `.mjs` script.
+Measured 2026-10-02 under tsx 4.22.3 as well: the same false/true split.
 
 Measured 2026-10-02 (Node v24.20.0, macOS): running
 `node <symlinked directory>/scripts/ci/mutation-on-diff.mjs <list file>`
