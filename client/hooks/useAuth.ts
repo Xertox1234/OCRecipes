@@ -326,7 +326,12 @@ export function useAuth() {
       await apiRequest("POST", "/api/auth/logout", {});
     } catch {}
     await tokenStorage.clear();
-    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    // Guarded like expireSession/deleteAccount: a storage rejection here must
+    // not skip the durable sweep or the sign-out setState. A blob left on disk
+    // is harmless — with no token, the next checkAuth signs out and sweeps.
+    try {
+      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch {}
     await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);

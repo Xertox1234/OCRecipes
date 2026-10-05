@@ -1,6 +1,6 @@
 ---
 title: "Sign Out stops partway when removing the stored login blob fails — logout() leaves the previous user's cached data and signed-in screen in place while the token is already gone"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-02
 updated: 2026-10-02
