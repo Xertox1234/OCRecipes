@@ -26,14 +26,21 @@ The sweep was written for a single session, where any `agent-*` worktree is a cr
 ## Acceptance Criteria
 
 - [ ] Phase 0 step 1 skips a worktree that is in use and reports it as skipped (not removed).
-- [ ] "In use" is measured, not assumed: at least the worktree's index mtime within a recent window, OR a running process whose cwd is inside the worktree.
+- [ ] "In use" is measured, not assumed. A worktree is skipped if ANY of these signals fires:
+  - another session's worktree-contract registry (`/tmp/claude-worktree-contracts-<other-session-id>/`) lists its path AND files in the worktree changed recently (a crashed executor leaves its registry entry behind, so the entry alone is not proof);
+  - the newest file mtime in the worktree (excluding `node_modules`) is within a recent window;
+  - a running process has its cwd inside the worktree.
+- [ ] Do NOT use the worktree's `.git` file mtime (written once at creation) or the index mtime alone (git rewrites it only on `add`/`commit`/`status`, so an editing or test-running agent looks idle).
+- [ ] Before relying on the process signal, check it against a live `Agent(isolation: "worktree")` subagent: does any process have its cwd inside the worktree between Bash commands? Record the result in the PR description. If it does not, keep the process signal only as a backup check for an agent that is mid-command.
 - [ ] A worktree that is neither recent nor in use is still removed, as today.
 - [ ] Phase 5 step 6's crash-backstop sweep applies the same check.
 
 ## Implementation Notes
 
 - Sweep loop: `.claude/skills/todo/SKILL.md` Phase 0 step 1 (around line 15), and Phase 5 step 6.
-- Process signal: `lsof -d cwd` or `ps` against the worktree path. Index signal: `stat -f %m <worktree-gitdir>/index`. A gitdir is `.git/worktrees/<name>/` in the common dir.
+- Registry signal: every executor runs `scripts/declare-worktree.sh` at Step 0, which writes the worktree's absolute path into a file under `/tmp/claude-worktree-contracts-$CLAUDE_CODE_SESSION_ID/`. Phase 0 runs before this run's executors exist, so any match in a registry folder is another session's. In Phase 5, exclude this session's own folder, since all of this run's executors have returned by then.
+- File-activity signal: newest mtime under the worktree, e.g. `find "$wt" -path '*/node_modules' -prune -o -type f -newermt "-<N> minutes" -print -quit`. Expect to tune that `find` for BSD/macOS.
+- Process signal: `lsof -d cwd` or `ps` against the worktree path.
 - Keep the sweep fail-safe: if the liveness check itself errors, skip the worktree rather than remove it.
 
 ## Scope Contract
@@ -55,3 +62,4 @@ The sweep was written for a single session, where any `agent-*` worktree is a cr
 ### 2026-10-04
 
 - Initial creation (deferred from the `/todo-fast` slim rebuild).
+- Re-spec before `/todo-fast`: index mtime replaced by the registry and newest-file-mtime signals. The process signal needs a live check, since in-process subagents may never hold a cwd inside their worktree.
