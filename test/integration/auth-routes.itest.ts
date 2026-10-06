@@ -92,6 +92,12 @@ vi.mock("express-rate-limit");
 // resolves against the mocks registered above, mirroring
 // server/storage/__tests__/users.test.ts's `await import(...)` pattern.
 const { register: registerAuth } = await import("../../server/routes/auth");
+const { register: registerAuthMfa } = await import(
+  "../../server/routes/auth-mfa"
+);
+const { base32Decode, hotp, timeStep } = await import(
+  "../../server/lib/mfa/totp"
+);
 const { generateToken } = await import("../../server/middleware/auth");
 const { storage } = await import("../../server/storage");
 
@@ -99,6 +105,7 @@ function buildApp(): Express {
   const app = express();
   app.use(express.json());
   registerAuth(app);
+  registerAuthMfa(app);
   return app;
 }
 
@@ -245,5 +252,149 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
       expect(res.status).toBe(401);
       expect(res.body.code).toBe("TOKEN_REVOKED");
     });
+  });
+});
+
+// Two-step verification end to end. Route tests mock both storage and
+// requireAuth, so ONLY this suite can catch a session minted without passing
+// the gate. The clock is pinned (Date only — Postgres now() is untouched) and
+// moved a full 30 s step between codes, because a code's step is single-use.
+describe("two-step verification — real requireAuth, real test DB", () => {
+  const T0 = Date.UTC(2026, 9, 5, 12, 0, 0);
+  const codeAt = (secret: string, ms: number) =>
+    hotp(base32Decode(secret), timeStep(ms));
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0);
+    vi.stubEnv("MFA_SECRET_ENC_KEY", Buffer.alloc(32, 7).toString("base64"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function enrolledAccount() {
+    const creds = uniqueCredentials();
+    const reg = await request(buildApp())
+      .post("/api/auth/register")
+      .send(creds);
+    expect(reg.status).toBe(201);
+    const before = reg.body.token as string;
+    const setup = await request(buildApp())
+      .post("/api/auth/mfa/totp/setup")
+      .set("Authorization", `Bearer ${before}`)
+      .send({ proof: { password: creds.password } });
+    expect(setup.status).toBe(200);
+    const secret = setup.body.secret as string;
+    const confirm = await request(buildApp())
+      .post("/api/auth/mfa/totp/confirm")
+      .set("Authorization", `Bearer ${before}`)
+      .send({ code: codeAt(secret, T0) });
+    expect(confirm.status).toBe(200);
+    expect(confirm.body.recoveryCodes).toHaveLength(10);
+    return {
+      creds,
+      secret,
+      tokenBeforeConfirm: before,
+      tokenFromConfirm: confirm.body.token as string,
+      recoveryCodes: confirm.body.recoveryCodes as string[],
+    };
+  }
+
+  const login = (username: string, password: string) =>
+    request(buildApp()).post("/api/auth/login").send({ username, password });
+  const verify = (body: object) =>
+    request(buildApp()).post("/api/auth/mfa/verify").send(body);
+  const me = (token: string) =>
+    request(buildApp())
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${token}`);
+
+  it("login answers 200 mfa_required with NO token for an enrolled account", async () => {
+    const a = await enrolledAccount();
+    const res = await login(a.creds.username, a.creds.password);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("mfa_required");
+    expect(typeof res.body.challenge).toBe("string");
+    expect(res.body).not.toHaveProperty("token");
+  });
+
+  it("the challenge is never accepted as a bearer token", async () => {
+    const a = await enrolledAccount();
+    const { challenge } = (await login(a.creds.username, a.creds.password))
+      .body;
+    // Without this, a bypassed gate (no challenge) would send "Bearer
+    // undefined" and pass vacuously.
+    expect(challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect((await me(challenge)).status).toBe(401);
+  });
+
+  it("a later step's code signs in; /me then reports 2FA on", async () => {
+    const a = await enrolledAccount();
+    const { challenge } = (await login(a.creds.username, a.creds.password))
+      .body;
+    vi.setSystemTime(T0 + 30_000);
+    const res = await verify({
+      challenge,
+      code: codeAt(a.secret, T0 + 30_000),
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("signed_in");
+    const profile = await me(res.body.token);
+    expect(profile.status).toBe(200);
+    expect(profile.body.twoFactor).toEqual({
+      enabled: true,
+      recoveryCodesRemaining: 10,
+    });
+  });
+
+  it("a code is single use: the same step is refused on a fresh challenge", async () => {
+    const a = await enrolledAccount();
+    const first = (await login(a.creds.username, a.creds.password)).body;
+    vi.setSystemTime(T0 + 30_000);
+    const code = codeAt(a.secret, T0 + 30_000);
+    expect((await verify({ challenge: first.challenge, code })).status).toBe(
+      200,
+    );
+    const second = (await login(a.creds.username, a.creds.password)).body;
+    const replay = await verify({ challenge: second.challenge, code });
+    expect(replay.status).toBe(401);
+    expect(replay.body.code).toBe("MFA_CODE_INVALID");
+  });
+
+  it("a recovery code works once and comes back with a replacement", async () => {
+    const a = await enrolledAccount();
+    const first = (await login(a.creds.username, a.creds.password)).body;
+    const ok = await verify({
+      challenge: first.challenge,
+      recoveryCode: a.recoveryCodes[0],
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.body.replacementRecoveryCode).toMatch(
+      /^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/,
+    );
+    const second = (await login(a.creds.username, a.creds.password)).body;
+    const again = await verify({
+      challenge: second.challenge,
+      recoveryCode: a.recoveryCodes[0],
+    });
+    expect(again.status).toBe(401);
+  });
+
+  it("turning 2FA on revokes older sessions but not the one confirm returned", async () => {
+    const a = await enrolledAccount();
+    expect((await me(a.tokenFromConfirm)).status).toBe(200);
+    const stale = await me(a.tokenBeforeConfirm);
+    expect(stale.status).toBe(401);
+    expect(stale.body.code).toBe("TOKEN_REVOKED");
+  });
+
+  it("control: an account WITHOUT 2FA still gets a token straight from login", async () => {
+    const creds = uniqueCredentials();
+    await request(buildApp()).post("/api/auth/register").send(creds);
+    const res = await login(creds.username, creds.password);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("signed_in");
+    expect(typeof res.body.token).toBe("string");
   });
 });
