@@ -75,6 +75,7 @@ vi.mock("../../storage", () => ({
     filterUnreferencedImageUrls: vi.fn().mockResolvedValue([]),
     applyEmailVerification: vi.fn(),
     getSignInMethods: vi.fn(),
+    countRecoveryCodes: vi.fn(),
     findIdentity: vi.fn(),
     listIdentities: vi.fn().mockResolvedValue([]),
     consumeNonce: vi.fn(),
@@ -1158,6 +1159,42 @@ describe("Auth Routes", () => {
       expect(res.body.id).toBe("1");
       expect(res.body).not.toHaveProperty("password");
       expect(res.body.subscriptionTier).toBe("free");
+    });
+
+    it("reports two-step status and never leaks MFA columns", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue({
+        ...mockUser,
+        mfaEnabledAt: new Date("2026-10-05T00:00:00Z"),
+      });
+      vi.mocked(storage.countRecoveryCodes).mockResolvedValue(7);
+      const res = await request(app)
+        .get("/api/auth/me")
+        .set("Authorization", "Bearer mock-token");
+      expect(res.status).toBe(200);
+      expect(res.body.twoFactor).toEqual({
+        enabled: true,
+        recoveryCodesRemaining: 7,
+      });
+      expect(res.body).not.toHaveProperty("mfaEnabledAt");
+      expect(JSON.stringify(res.body)).not.toMatch(
+        /totpSecret|pendingSecret|codeHash|tokenVersion/,
+      );
+    });
+
+    it("two-step off: no recovery-code count lookup", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue({
+        ...mockUser,
+        mfaEnabledAt: null,
+      });
+      vi.mocked(storage.countRecoveryCodes).mockClear();
+      const res = await request(app)
+        .get("/api/auth/me")
+        .set("Authorization", "Bearer mock-token");
+      expect(res.body.twoFactor).toEqual({
+        enabled: false,
+        recoveryCodesRemaining: 0,
+      });
+      expect(storage.countRecoveryCodes).not.toHaveBeenCalled();
     });
 
     it("includes the account's sign-in methods", async () => {

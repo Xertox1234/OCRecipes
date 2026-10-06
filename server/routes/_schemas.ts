@@ -85,6 +85,24 @@ const mfaChallengeToken = z.string().min(20).max(100);
 const totpCode = z.string().regex(/^\d{6}$/, "Enter the 6-digit code");
 const recoveryCodeInput = z.string().min(1).max(40);
 
+/** POST /api/auth/mfa/totp/setup — confirm it's you before a secret is shown. */
+export const mfaSetupSchema = z.object({ proof: reauthProofSchema });
+
+/** POST /api/auth/mfa/totp/confirm — the first code from the new authenticator. */
+export const mfaConfirmSchema = z.object({ code: totpCode });
+
+/** POST /api/auth/mfa/disable — re-auth AND a second factor (code or recovery code). */
+export const mfaDisableSchema = z.union([
+  z.object({ proof: reauthProofSchema, code: totpCode }),
+  z.object({ proof: reauthProofSchema, recoveryCode: recoveryCodeInput }),
+]);
+
+/** POST /api/auth/mfa/recovery-codes — re-auth AND an app code (not a recovery code). */
+export const mfaRecoveryCodesSchema = z.object({
+  proof: reauthProofSchema,
+  code: totpCode,
+});
+
 /** POST /api/auth/mfa/verify — an app code OR a recovery code. */
 export const mfaVerifySchema = z.union([
   z.object({ challenge: mfaChallengeToken, code: totpCode }),

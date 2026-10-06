@@ -734,9 +734,16 @@ export function register(app: Express): void {
           return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
         }
 
+        const twoFactorOn = user.mfaEnabledAt !== null;
         res.json({
           ...serializeUser(user),
           signInMethods: await storage.getSignInMethods(user.id),
+          twoFactor: {
+            enabled: twoFactorOn,
+            recoveryCodesRemaining: twoFactorOn
+              ? await storage.countRecoveryCodes(user.id)
+              : 0,
+          },
         });
       } catch (error) {
         handleRouteError(res, error, "fetch current user");
