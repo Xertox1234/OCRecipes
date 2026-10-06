@@ -22,6 +22,7 @@ import { CuratedBadge } from "@/components/CuratedBadge";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import {
   Spacing,
   BorderRadius,
@@ -61,6 +62,8 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const haptics = useHaptics();
+  const { trigger: triggerHeartPop, animatedStyle: heartPopStyle } =
+    useSuccessPop(1.4);
 
   const scale = useSharedValue(1);
 
@@ -85,9 +88,14 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
   }, [onDismiss, card, haptics]);
 
   const handleFavourite = useCallback(() => {
-    haptics.impact();
+    // The pop fires its own Success haptic — one buzz per favourite.
+    if (isFavourited) {
+      haptics.impact();
+    } else {
+      triggerHeartPop();
+    }
     onFavourite?.(card.id);
-  }, [haptics, onFavourite, card.id]);
+  }, [haptics, isFavourited, triggerHeartPop, onFavourite, card.id]);
 
   // The card AnimatedPressable is accessible by default, which collapses its
   // whole subtree into a single VoiceOver/TalkBack focus stop — the nested
@@ -285,12 +293,14 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
                   isFavourited ? "Remove from favourites" : "Add to favourites"
                 }
               >
-                <Ionicons
-                  name={isFavourited ? "heart" : "heart-outline"}
-                  size={18}
-                  color={isFavourited ? theme.error : theme.textSecondary}
-                  accessible={false}
-                />
+                <Animated.View style={heartPopStyle}>
+                  <Ionicons
+                    name={isFavourited ? "heart" : "heart-outline"}
+                    size={18}
+                    color={isFavourited ? theme.error : theme.textSecondary}
+                    accessible={false}
+                  />
+                </Animated.View>
               </Pressable>
               <Pressable
                 onPress={handleDismiss}

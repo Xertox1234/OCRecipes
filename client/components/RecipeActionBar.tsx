@@ -39,9 +39,11 @@ export const RecipeActionBar = React.memo(function RecipeActionBar({
     useSuccessPop(1.4);
 
   const handleFavourite = useCallback(() => {
-    haptics.impact();
     toggleFavourite({ recipeId, recipeType });
-    if (!isFavourited) {
+    // The pop fires its own Success haptic — one buzz per favourite.
+    if (isFavourited) {
+      haptics.impact();
+    } else {
       triggerHeartPop();
     }
   }, [
