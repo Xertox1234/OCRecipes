@@ -7,6 +7,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -56,7 +57,10 @@ export default function CookbookListScreen() {
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Create new cookbook"
-          style={{ marginRight: Spacing.md }}
+          style={({ pressed }) => [
+            { marginRight: Spacing.md },
+            pressed && { opacity: 0.7 },
+          ]}
         >
           <Feather name="plus" size={24} color={theme.link} />
         </Pressable>
@@ -102,9 +106,10 @@ export default function CookbookListScreen() {
             haptics.selection();
             navigation.navigate("CookbookDetail", { cookbookId: item.id });
           }}
-          style={[
+          style={({ pressed }) => [
             styles.listItem,
             { backgroundColor: withOpacity(theme.text, 0.04) },
+            pressed && { opacity: 0.7 },
           ]}
           accessibilityRole="button"
           accessibilityLabel={`${item.name}, ${item.recipeCount} recipes`}
@@ -152,6 +157,7 @@ export default function CookbookListScreen() {
           </View>
           <View style={styles.listItemActions}>
             <Pressable
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
               onPress={() => handleDelete(item.id, item.name)}
               hitSlop={8}
               accessibilityRole="button"
@@ -221,9 +227,10 @@ export default function CookbookListScreen() {
               haptics.selection();
               navigation.navigate("FavouriteRecipes");
             }}
-            style={[
+            style={({ pressed }) => [
               styles.listItem,
               { backgroundColor: withOpacity(theme.error, 0.06) },
+              pressed && { opacity: 0.7 },
             ]}
             accessibilityRole="button"
             accessibilityLabel={`Favourites, ${favouriteCount} recipes`}
@@ -270,7 +277,7 @@ export default function CookbookListScreen() {
               >
                 Something went wrong. Check your connection and try again.
               </ThemedText>
-              <Pressable
+              <PressableScale
                 onPress={() => {
                   haptics.impact();
                   void refetch();
@@ -286,7 +293,7 @@ export default function CookbookListScreen() {
                 <ThemedText style={styles.createButtonText}>
                   Try Again
                 </ThemedText>
-              </Pressable>
+              </PressableScale>
             </View>
           ) : (
             <View style={styles.emptyState}>
@@ -303,7 +310,7 @@ export default function CookbookListScreen() {
               >
                 Create a cookbook to organize your favorite recipes.
               </ThemedText>
-              <Pressable
+              <PressableScale
                 onPress={() => {
                   haptics.impact();
                   navigation.navigate("CookbookCreate");
@@ -319,7 +326,7 @@ export default function CookbookListScreen() {
                 <ThemedText style={styles.createButtonText}>
                   Create Cookbook
                 </ThemedText>
-              </Pressable>
+              </PressableScale>
             </View>
           )
         }

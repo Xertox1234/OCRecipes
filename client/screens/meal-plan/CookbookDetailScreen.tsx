@@ -8,6 +8,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
 import { SwipeableRow } from "@/components/SwipeableRow";
@@ -166,9 +167,10 @@ export default function CookbookDetailScreen() {
         >
           <Pressable
             onPress={() => handleRecipePress(item)}
-            style={[
+            style={({ pressed }) => [
               styles.recipeCard,
               { backgroundColor: withOpacity(theme.text, 0.04) },
+              pressed && { opacity: 0.7 },
             ]}
             accessibilityRole="button"
             accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}${allergenA11ySuffix}`}
@@ -232,6 +234,7 @@ export default function CookbookDetailScreen() {
               </View>
             </View>
             <Pressable
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
               onPress={() => handleConfirmRemove(item)}
               hitSlop={8}
               accessibilityRole="button"
@@ -296,7 +299,7 @@ export default function CookbookDetailScreen() {
               </ThemedText>
             ) : null}
             <View style={styles.headerActions}>
-              <Pressable
+              <PressableScale
                 onPress={handleAddRecipes}
                 style={[
                   styles.addRecipesButton,
@@ -311,13 +314,14 @@ export default function CookbookDetailScreen() {
                 >
                   Add Recipes
                 </ThemedText>
-              </Pressable>
+              </PressableScale>
               <Pressable
                 onPress={handleOverflowMenu}
                 hitSlop={8}
-                style={[
+                style={({ pressed }) => [
                   styles.overflowButton,
                   { backgroundColor: withOpacity(theme.text, 0.06) },
+                  pressed && { opacity: 0.7 },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel="Cookbook options"
