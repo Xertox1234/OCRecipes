@@ -55,7 +55,13 @@ Candidate factors, strongest and simplest first:
 
 ## Scope Contract
 
-- **Files in scope:** `server/routes/auth.ts`, `server/middleware/auth.ts` (MFA state only, with explicit security review), `server/storage/users.ts`, `shared/schema.ts` (MFA secret, recovery codes, enrollment state), `client/screens/LoginScreen.tsx`, a new MFA challenge screen and an enrollment screen, and tests.
+- **Files in scope** (widened 2026-10-05 for the TOTP plan; Sign in with Apple landed after this todo was filed, so its sign-in paths are in scope too):
+  - Server: `server/lib/mfa/totp.ts`, `server/lib/mfa/mfa-secrets.ts`, `server/lib/mfa/verify-second-factor.ts`, `server/lib/mfa/begin-session.ts` (all new), `server/lib/social-identity/sign-in-gates.ts`, `server/routes/auth.ts`, `server/routes/auth-social.ts`, `server/routes/auth-mfa.ts` (new) and the route registry that registers it, `server/routes/_schemas.ts`, `server/routes/_rate-limiters.ts`, `server/storage/mfa.ts` (new), `server/storage/index.ts`, `server/storage/identities.ts`, `server/services/email.ts`.
+  - Shared: `shared/schema.ts`, `shared/constants/mfa.ts` (new), `shared/constants/error-codes.ts`, `shared/types/auth.ts`.
+  - Database: `migrations/0018_mfa_totp.sql` (new).
+  - Client: `client/hooks/useAuth.ts`, `client/context/AuthContext.tsx`, `client/screens/LoginScreen.tsx`, `client/components/SocialSignInButtons.tsx`, `client/screens/ConnectAccountScreen.tsx`, `client/screens/SignInMethodsScreen.tsx`, `client/screens/MfaChallengeScreen.tsx` + `-utils.ts` (new), `client/screens/TwoFactorSetupScreen.tsx` + `-utils.ts` (new), `client/navigation/RootStackNavigator.tsx`, `client/navigation/ProfileStackNavigator.tsx`.
+  - Other: `.env.example`, `test/integration/auth-routes.itest.ts`, and the tests beside each file above.
+  - Not touched: `server/middleware/auth.ts` (the challenge is an opaque database token, so `requireAuth` needs no change).
 
 ## Risks
 
@@ -74,3 +80,8 @@ Candidate factors, strongest and simplest first:
 - Filed after the user chose "8 characters with a second or even third factor" over the 15-character password-only minimum. The NIST factor rules above were checked against the published SP 800-63B-4.
 - 2026-09-26: the user chose TOTP **and** passkeys as factors, and required the second factor after Google/Apple sign-in too. Whether MFA is mandatory for all accounts is still open.
 - 2026-09-26 (later): MFA is optional. The user chose "15 characters, or 8 with a second factor", so the mandatory-vs-opt-in question is settled.
+
+### 2026-10-05
+
+- Plan `docs/superpowers/plans/2026-10-05-totp-second-factor.md` (local) implements TOTP + recovery codes + the sign-in gate + Settings enroll/disable. The owner approved its decisions: no QR code (open-in-app link + copyable key), a separate `MFA_SECRET_ENC_KEY`, lockout at 5 per challenge / 15 min every 10 failures / recovery-code-only at 100, and turning 2FA on or off signs out other devices.
+- Still open after it ships: passkeys (build 7), signup enrollment on the 8-character path, and "turning 2FA off needs a 15+ character password" (both belong with `P2-2026-09-26-password-length-policy.md`). Keep this todo open.
