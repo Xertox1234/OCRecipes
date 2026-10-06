@@ -7,17 +7,12 @@ import {
   StyleProp,
   ActivityIndicator,
 } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
-import { useAccessibility } from "@/hooks/useAccessibility";
+import { usePressScale } from "@/hooks/usePressScale";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, Spacing, FontFamily } from "@/constants/theme";
-import { pressSpringConfig } from "@/constants/animations";
 
 type ButtonVariant = "primary" | "secondary" | "outline" | "ghost";
 
@@ -49,25 +44,12 @@ export function Button({
   accessibilityHint,
 }: ButtonProps) {
   const { theme } = useTheme();
-  const { reducedMotion } = useAccessibility();
-  const scale = useSharedValue(1);
   const isDisabled = disabled || loading;
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!reducedMotion && !isDisabled) {
-      scale.value = withSpring(0.98, pressSpringConfig);
-    }
-  };
-
-  const handlePressOut = () => {
-    if (!reducedMotion && !isDisabled) {
-      scale.value = withSpring(1, pressSpringConfig);
-    }
-  };
+  const {
+    animatedStyle,
+    onPressIn: handlePressIn,
+    onPressOut: handlePressOut,
+  } = usePressScale(0.98, { enabled: !isDisabled });
 
   // Get variant-specific styles
   const getVariantStyles = (): {

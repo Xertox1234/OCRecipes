@@ -7,12 +7,7 @@ import {
   Dimensions,
 } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  FadeOut,
-} from "react-native-reanimated";
+import Animated, { FadeOut } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
@@ -23,6 +18,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useSuccessPop } from "@/hooks/useSuccessAnimation";
+import { usePressScale } from "@/hooks/usePressScale";
 import {
   Spacing,
   BorderRadius,
@@ -30,7 +26,6 @@ import {
   withOpacity,
   MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
-import { pressSpringConfig } from "@/constants/animations";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { CarouselRecipeCard as CarouselCardType } from "@shared/types/carousel";
 
@@ -65,19 +60,11 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
   const { trigger: triggerHeartPop, animatedStyle: heartPopStyle } =
     useSuccessPop(1.4);
 
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = useCallback(() => {
-    scale.value = withSpring(0.97, pressSpringConfig);
-  }, [scale]);
-
-  const handlePressOut = useCallback(() => {
-    scale.value = withSpring(1, pressSpringConfig);
-  }, [scale]);
+  const {
+    animatedStyle,
+    onPressIn: handlePressIn,
+    onPressOut: handlePressOut,
+  } = usePressScale(0.97);
 
   const handlePress = useCallback(() => onPress(card), [onPress, card]);
 

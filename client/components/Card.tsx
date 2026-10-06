@@ -9,17 +9,12 @@ import {
   ImageSourcePropType,
   type ViewProps,
 } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { useAccessibility } from "@/hooks/useAccessibility";
+import { usePressScale } from "@/hooks/usePressScale";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
-import { pressSpringConfig } from "@/constants/animations";
 import { getBackgroundColorForElevation, getBadgeColors } from "./card-utils";
 
 type BadgeVariant = "default" | "success" | "warning" | "error" | "info";
@@ -87,26 +82,13 @@ export function Card({
   importantForAccessibility,
 }: CardProps) {
   const { theme, isDark } = useTheme();
-  const { reducedMotion } = useAccessibility();
-  const scale = useSharedValue(1);
+  const {
+    animatedStyle,
+    onPressIn: handlePressIn,
+    onPressOut: handlePressOut,
+  } = usePressScale(0.98);
 
   const cardBackgroundColor = getBackgroundColorForElevation(elevation, theme);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!reducedMotion) {
-      scale.value = withSpring(0.98, pressSpringConfig);
-    }
-  };
-
-  const handlePressOut = () => {
-    if (!reducedMotion) {
-      scale.value = withSpring(1, pressSpringConfig);
-    }
-  };
 
   const shadowStyle = isDark
     ? {}
