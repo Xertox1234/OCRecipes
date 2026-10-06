@@ -1,12 +1,6 @@
 // client/screens/onboarding/TastePicksScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
-import {
-  View,
-  StyleSheet,
-  Pressable,
-  Alert,
-  AccessibilityInfo,
-} from "react-native";
+import { View, StyleSheet, Pressable, AccessibilityInfo } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -15,6 +9,7 @@ import { TastePicksGrid } from "@/components/TastePicksGrid";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { useAuthContext } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
@@ -24,12 +19,17 @@ import { tastePickCandidatesResponseSchema } from "@shared/schemas/taste-picks";
 
 const MIN_PICKS = 5;
 const PAGE_LIMIT = 30;
+// Fired after updateUser resolves: that swaps the onboarding navigator for
+// the main app, and the root-mounted toast carries the moment across.
+const ONBOARDING_DONE_MESSAGE = "You're all set — let's get cooking!";
+const SUBMIT_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export default function TastePicksScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { data, prevStep } = useOnboarding();
   const { updateUser } = useAuthContext();
+  const toast = useToast();
 
   const [candidates, setCandidates] = useState<RecipeCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -114,26 +114,28 @@ export default function TastePicksScreen() {
       }
       // 3. Mark onboarding complete
       await updateUser({ onboardingCompleted: true });
+      toast.success(ONBOARDING_DONE_MESSAGE);
     } catch (err) {
       logger.error("handleContinue failed:", err);
-      Alert.alert("Something went wrong", "Please try again.");
+      toast.error(SUBMIT_ERROR_MESSAGE);
     } finally {
       setIsSubmitting(false);
     }
-  }, [data, selectedIds, updateUser]);
+  }, [data, selectedIds, updateUser, toast]);
 
   const handleSkip = useCallback(async () => {
     setIsSubmitting(true);
     try {
       await apiRequest("POST", "/api/user/dietary-profile", data);
       await updateUser({ onboardingCompleted: true });
+      toast.success(ONBOARDING_DONE_MESSAGE);
     } catch (err) {
       logger.error("handleSkip failed:", err);
-      Alert.alert("Something went wrong", "Please try again.");
+      toast.error(SUBMIT_ERROR_MESSAGE);
     } finally {
       setIsSubmitting(false);
     }
-  }, [data, updateUser]);
+  }, [data, updateUser, toast]);
 
   const isFirstRender = React.useRef(true);
   useEffect(() => {
