@@ -1,5 +1,6 @@
 import type { User } from "@shared/schema";
 import { storage } from "../../storage";
+import type { SafeUser } from "../../storage/users";
 import { generateToken } from "../../middleware/auth";
 import { serializeUser } from "../../routes/_serialize-user";
 import { secondFactor } from "../social-identity/sign-in-gates";
@@ -13,7 +14,8 @@ export type SignedIn = {
 };
 export type MfaRequired = { status: "mfa_required"; challenge: string };
 
-function mintSession(user: User): SignedIn {
+// SafeUser: minting needs no secret column, and storage.getUser returns this.
+function mintSession(user: SafeUser): SignedIn {
   return {
     status: "signed_in",
     user: serializeUser(user),
