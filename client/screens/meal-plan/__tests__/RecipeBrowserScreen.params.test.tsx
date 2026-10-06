@@ -177,8 +177,17 @@ vi.mock("@react-navigation/native", () => ({
   useRoute: () => ({ params: mockRouteParams.value }),
 }));
 
+const { mockToastSuccess, mockToastError } = vi.hoisted(() => ({
+  mockToastSuccess: vi.fn(),
+  mockToastError: vi.fn(),
+}));
+
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({
+    success: mockToastSuccess,
+    error: mockToastError,
+    info: vi.fn(),
+  }),
 }));
 
 vi.mock("@/context/PremiumContext", () => ({
@@ -285,6 +294,36 @@ describe("RecipeBrowserScreen param contract", () => {
       "FeaturedRecipeDetail",
       expect.anything(),
     );
+  });
+
+  // The screen closes on add, so the confirmation is a toast (it fires its own
+  // Success haptic). Before this, a personal-recipe add closed silently.
+  it("a successful add toasts the day and meal before closing", async () => {
+    mockRouteParams.value = { mealType: "dinner", plannedDate: "2026-09-02" };
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(await screen.findByText("Test Personal Recipe"));
+
+    await waitFor(() => {
+      expect(mockGoBack).toHaveBeenCalledOnce();
+    });
+    expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
+      "Added to Wednesday Dinner",
+    );
+  });
+
+  it("a failed add shows the error toast, no success toast, and stays open", async () => {
+    mockRouteParams.value = { mealType: "dinner", plannedDate: "2026-09-02" };
+    mockMutateAsync.mockRejectedValue(new Error("500"));
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(await screen.findByText("Test Personal Recipe"));
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledOnce();
+    });
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+    expect(mockGoBack).not.toHaveBeenCalled();
   });
 
   it("falls back to browse-only when no plannedDate is supplied", async () => {

@@ -21,6 +21,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
+import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   Spacing,
@@ -73,6 +75,7 @@ export default function WizardShell({
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const haptics = useHaptics();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   // Stable refs so useRecipeForm + handleSave always see the latest callbacks
   // without re-invoking their internal callbacks on every render.
@@ -226,7 +229,6 @@ export default function WizardShell({
     try {
       const payload = form.formToPayload();
       const created = await createMutation.mutateAsync(payload);
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
 
       if (returnToMealPlan) {
         await addItemMutation.mutateAsync({
@@ -234,6 +236,16 @@ export default function WizardShell({
           mealType: returnToMealPlan.mealType,
           plannedDate: returnToMealPlan.plannedDate,
         });
+        // From the plan the moment is the add, confirmed only once it lands.
+        // The toast fires its own Success haptic.
+        toast.success(
+          formatPlanAddSuccess(
+            returnToMealPlan.plannedDate,
+            returnToMealPlan.mealType,
+          ),
+        );
+      } else {
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
       }
 
       onSaveComplete();
@@ -249,6 +261,7 @@ export default function WizardShell({
     returnToMealPlan,
     onSaveComplete,
     haptics,
+    toast,
   ]);
 
   const isNutritionEmpty =

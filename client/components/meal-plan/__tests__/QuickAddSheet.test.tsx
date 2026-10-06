@@ -1,24 +1,47 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { QuickAddSheetContent } from "../QuickAddSheet";
 
+const {
+  mockImpact,
+  mockNotification,
+  mockToastSuccess,
+  mockToastError,
+  mockAddItem,
+} = vi.hoisted(() => ({
+  mockImpact: vi.fn(),
+  mockNotification: vi.fn(),
+  mockToastSuccess: vi.fn(),
+  mockToastError: vi.fn(),
+  mockAddItem: vi.fn(),
+}));
+
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
-    impact: vi.fn(),
+    impact: mockImpact,
     selection: vi.fn(),
-    notification: vi.fn(),
+    notification: mockNotification,
   }),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({
+    success: mockToastSuccess,
+    error: mockToastError,
+    info: vi.fn(),
+  }),
 }));
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({
   useUnifiedRecipes: () => ({
-    data: { personal: [], frequent: [], community: [] },
+    data: {
+      personal: [{ id: 5, title: "Oats", caloriesPerServing: null }],
+      frequent: [],
+      community: [],
+    },
     isLoading: false,
     isError: false,
   }),
@@ -26,7 +49,7 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
 
 vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({
-    mutateAsync: vi.fn(),
+    mutateAsync: mockAddItem,
   }),
 }));
 
@@ -60,5 +83,46 @@ describe("QuickAddSheet", () => {
     expect(footerModalAncestor).not.toBeNull();
     expect(searchModalAncestor).toBe(headerModalAncestor);
     expect(footerModalAncestor).toBe(headerModalAncestor);
+  });
+
+  // The sheet closes on add, so the confirmation is a toast (it fires its own
+  // Success haptic); the light tap at press stays as the acknowledgement.
+  describe("add feedback", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("a successful add toasts the day and meal, with no extra Success haptic", async () => {
+      mockAddItem.mockResolvedValue({ id: 1 });
+      renderComponent(
+        <QuickAddSheetContent {...defaultProps} plannedDate="2026-09-02" />,
+      );
+
+      fireEvent.click(screen.getByLabelText("Add Oats to breakfast"));
+
+      await waitFor(() => {
+        expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
+      });
+      expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
+        "Added to Wednesday Breakfast",
+      );
+      expect(mockNotification).not.toHaveBeenCalled();
+      expect(mockImpact).toHaveBeenCalledWith(
+        Haptics.ImpactFeedbackStyle.Light,
+      );
+    });
+
+    it("a failed add shows the error toast and no success toast", async () => {
+      mockAddItem.mockRejectedValue(new Error("500"));
+      renderComponent(<QuickAddSheetContent {...defaultProps} />);
+
+      fireEvent.click(screen.getByLabelText("Add Oats to breakfast"));
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledOnce();
+      });
+      expect(mockToastSuccess).not.toHaveBeenCalled();
+      expect(defaultProps.onDismiss).not.toHaveBeenCalled();
+    });
   });
 });

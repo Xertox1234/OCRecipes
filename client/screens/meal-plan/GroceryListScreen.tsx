@@ -57,10 +57,13 @@ function GroceryItemRow({
   item,
   listId,
   onChecked,
+  completesList = false,
 }: {
   item: GroceryListItem;
   listId: number;
   onChecked?: (item: GroceryListItem) => void;
+  /** True when this is the only unchecked item: checking it finishes the list. */
+  completesList?: boolean;
 }) {
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -71,8 +74,18 @@ function GroceryItemRow({
   const strikeProgress = useSharedValue(item.isChecked ? 1 : 0);
 
   const handleToggle = useCallback(() => {
-    haptics.selection();
     const willBeChecked = !item.isChecked;
+    // The toggle is optimistic, so the "All done!" footer appears at tap —
+    // finishing the list is a Success moment there, instead of the tick.
+    // EmptyState has no live region, so announce on both platforms.
+    if (willBeChecked && completesList) {
+      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility(
+        "All done! Everything on your list is checked off.",
+      );
+    } else {
+      haptics.selection();
+    }
     toggleMutation.mutate(
       {
         listId,
@@ -94,6 +107,7 @@ function GroceryItemRow({
     );
   }, [
     haptics,
+    completesList,
     toggleMutation,
     listId,
     item,
@@ -316,6 +330,7 @@ export default function GroceryListScreen() {
     list?.items != null &&
     list.items.length > 0 &&
     list.items.every((i) => i.isChecked);
+  const uncheckedCount = list?.items.filter((i) => !i.isChecked).length ?? 0;
 
   if (isLoading) {
     return (
@@ -416,6 +431,7 @@ export default function GroceryListScreen() {
               item={item}
               listId={listId}
               onChecked={handleItemChecked}
+              completesList={!item.isChecked && uncheckedCount === 1}
             />
           </SwipeableRow>
         )}

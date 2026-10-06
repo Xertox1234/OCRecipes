@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
+import { Alert } from "react-native";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
@@ -9,8 +10,17 @@ import { renderComponent } from "../../../../test/utils/render-component";
 import WizardShell from "../WizardShell";
 import { inferCuisine, inferDietTags } from "@/lib/recipe-tag-inference";
 
-const { mockNotification } = vi.hoisted(() => ({
+const { mockNotification, mockToastSuccess } = vi.hoisted(() => ({
   mockNotification: vi.fn(),
+  mockToastSuccess: vi.fn(),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: mockToastSuccess,
+    error: vi.fn(),
+    info: vi.fn(),
+  }),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -463,6 +473,66 @@ describe("WizardShell", () => {
       recipeId: 77,
       mealType: "dinner",
       plannedDate: "2026-01-01",
+    });
+  });
+
+  // From the meal plan, the moment is "added to the plan": a toast AFTER the
+  // add resolves (it fires its own Success haptic), never a buzz before it.
+  describe("save from the meal plan", () => {
+    function saveFromPlan(onSaveComplete = vi.fn()) {
+      renderComponent(
+        <WizardShell
+          onGoBack={vi.fn()}
+          onSaveComplete={onSaveComplete}
+          returnToMealPlan={{ mealType: "dinner", plannedDate: "2026-09-02" }}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("set-valid-title"));
+      clickNext();
+      fireEvent.click(screen.getByTestId("set-ingredient"));
+      clickNext();
+      fireEvent.click(screen.getByTestId("set-step"));
+      clickNext();
+      clickNext();
+      clickNext();
+      clickNext();
+      fireEvent.click(screen.getByRole("button", { name: "Save Recipe" }));
+    }
+
+    beforeEach(() => {
+      mockNotification.mockClear();
+      mockToastSuccess.mockClear();
+    });
+
+    it("toasts the day and meal once the add resolves, with no extra Success haptic", async () => {
+      mutateCreate.mockResolvedValue({ id: 77 });
+      mutateAddItem.mockResolvedValue({ id: 9 });
+      const onSaveComplete = vi.fn();
+
+      saveFromPlan(onSaveComplete);
+
+      await waitFor(() => expect(onSaveComplete).toHaveBeenCalled());
+      expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
+        "Added to Wednesday Dinner",
+      );
+      expect(mockNotification).not.toHaveBeenCalled();
+    });
+
+    it("a failed add gives neither the toast nor a Success haptic", async () => {
+      mutateCreate.mockResolvedValue({ id: 77 });
+      mutateAddItem.mockRejectedValue(new Error("500"));
+      const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const onSaveComplete = vi.fn();
+
+      saveFromPlan(onSaveComplete);
+
+      await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+      alertSpy.mockRestore();
+      expect(mockToastSuccess).not.toHaveBeenCalled();
+      expect(mockNotification).not.toHaveBeenCalledWith(
+        Haptics.NotificationFeedbackType.Success,
+      );
+      expect(onSaveComplete).not.toHaveBeenCalled();
     });
   });
 
