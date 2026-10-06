@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, FontFamily, withOpacity } from "@/constants/theme";
 import { resolveImageUrl } from "@/lib/query-client";
@@ -48,12 +49,13 @@ export const ProfileCard = React.memo(function ProfileCard({
         onPress={onGearPress}
         accessibilityLabel="Settings"
         accessibilityRole="button"
-        style={[
+        style={({ pressed }) => [
           styles.gearButton,
           {
             top: insets.top + Spacing.sm,
             backgroundColor: withOpacity(theme.textSecondary, 0.08),
           },
+          pressed && { opacity: 0.7 },
         ]}
         hitSlop={8}
       >
@@ -62,7 +64,8 @@ export const ProfileCard = React.memo(function ProfileCard({
 
       <View style={styles.row}>
         {/* Avatar */}
-        <Pressable
+        <PressableScale
+          scaleTo={0.95}
           onPress={onAvatarPress}
           accessibilityLabel="Profile photo. Tap to change"
           accessibilityRole="button"
@@ -87,7 +90,7 @@ export const ProfileCard = React.memo(function ProfileCard({
               <Feather name="loader" size={16} color={theme.buttonText} />
             </View>
           )}
-        </Pressable>
+        </PressableScale>
 
         {/* Name + badge */}
         <View style={styles.info}>

@@ -183,9 +183,10 @@ export default function ProfileScreen() {
             onPress={handleGearPress}
             accessibilityLabel="Settings"
             accessibilityRole="button"
-            style={[
+            style={({ pressed }) => [
               styles.collapsedGear,
               { backgroundColor: withOpacity(theme.textSecondary, 0.08) },
+              pressed && { opacity: 0.7 },
             ]}
             hitSlop={8}
           >
