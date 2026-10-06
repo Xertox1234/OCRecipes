@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  AccessibilityInfo,
 } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,6 +27,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import {
   useReceiptScan,
   useReceiptConfirm,
@@ -78,6 +80,8 @@ export default function ReceiptReviewScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { trigger: triggerCheckPop, animatedStyle: checkPopStyle } =
+    useSuccessPop(1.4);
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "ReceiptReview">>();
@@ -90,6 +94,20 @@ export default function ReceiptReviewScreen() {
   const [isPartial, setIsPartial] = useState(false);
   const [showMealPlanPrompt, setShowMealPlanPrompt] = useState(false);
   const [showUpdatedToast, setShowUpdatedToast] = useState(false);
+
+  // The success view mounts with this state, so the pop fires from an effect:
+  // a shared-value write before the Animated.View's first commit is lost
+  // (docs/solutions/logic-errors/reanimated-shared-value-write-before-first-
+  // commit-is-lost-2026-09-29.md). The pop carries the Success haptic, and
+  // the swapped-in view has no live region, so announce on both platforms.
+  // Once only: triggerCheckPop's identity changes if reduced motion flips.
+  const hasPoppedRef = useRef(false);
+  useEffect(() => {
+    if (!showMealPlanPrompt || hasPoppedRef.current) return;
+    hasPoppedRef.current = true;
+    triggerCheckPop();
+    AccessibilityInfo.announceForAccessibility("Items added to pantry");
+  }, [showMealPlanPrompt, triggerCheckPop]);
 
   const dataSourceRef = useRef<"local" | "ai" | null>(null);
   const localItemsRef = useRef<LocalReceiptItem[]>([]);
@@ -199,7 +217,6 @@ export default function ReceiptReviewScreen() {
 
     confirmMutation.mutate(confirmItems, {
       onSuccess: () => {
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
         setShowMealPlanPrompt(true);
       },
     });
@@ -369,7 +386,9 @@ export default function ReceiptReviewScreen() {
           { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
         ]}
       >
-        <Feather name="check-circle" size={48} color={theme.link} />
+        <Animated.View style={checkPopStyle}>
+          <Feather name="check-circle" size={48} color={theme.link} />
+        </Animated.View>
         <ThemedText style={[styles.errorText, { color: theme.text }]}>
           Items added to pantry!
         </ThemedText>
