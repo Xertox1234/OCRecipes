@@ -21,6 +21,7 @@ describe("classifyAiFailure", () => {
     [500, "transport"],
     [502, "transport"],
     [503, "transport"],
+    [408, "transport"],
     [429, "transport"],
     [402, "balance"],
     [400, "config"],
@@ -52,6 +53,21 @@ describe("classifyAiFailure", () => {
     ["blocked", "content_filter"],
   ])("request-content 4xx: %s → request", (message, code) => {
     expect(classifyAiFailure(apiError(400, message, code))).toBe("request");
+  });
+
+  it("OpenRouter moderation 403 is request (caused by this input)", () => {
+    expect(
+      classifyAiFailure(
+        apiError(
+          403,
+          'openai/gpt-4o-mini requires moderation on OpenRouter. Your input was flagged for "harassment".',
+        ),
+      ),
+    ).toBe("request");
+  });
+
+  it("a plain 403 without moderation text stays config", () => {
+    expect(classifyAiFailure(apiError(403, "Forbidden"))).toBe("config");
   });
 
   it("an unknown non-API error is transport", () => {
