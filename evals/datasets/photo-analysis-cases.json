@@ -79,10 +79,11 @@
     "category": "accuracy",
     "description": "Sushi plate — Japanese food, multiple pieces, tests cuisine classification",
     "input": {
-      "imageUrl": "https://images.unsplash.com/photo-1499028344343-cd173ffc68a9?w=400",
+      "imageUrl": "https://images.unsplash.com/photo-1617196034796-73dfa7b1fd56?w=400",
       "intent": "log"
     },
     "assertions": {
+      "mustContain": ["sushi|nigiri|sashimi|maki"],
       "foodsMinLength": 1,
       "overallConfidenceMin": 0.5
     },
@@ -97,7 +98,7 @@
     "category": "accuracy",
     "description": "Shrimp dish — allergen identification; model should correctly identify shrimp (shellfish)",
     "input": {
-      "imageUrl": "https://images.unsplash.com/photo-1528736235302-52922df5c122?w=400",
+      "imageUrl": "https://images.unsplash.com/photo-1691201659377-978b28daa417?w=400",
       "intent": "log"
     },
     "assertions": {
@@ -116,7 +117,7 @@
     "category": "accuracy",
     "description": "Peanut butter — allergen identification; model should identify peanut butter product",
     "input": {
-      "imageUrl": "https://images.unsplash.com/photo-1565299507177-b0ac66763828?w=400",
+      "imageUrl": "https://images.unsplash.com/photo-1768161681443-f6f116e7a2d1?w=400",
       "intent": "identify"
     },
     "assertions": {

@@ -630,6 +630,52 @@ describe("photo-analysis failure propagation", () => {
       );
     });
 
+    // gpt-4o answers the optional fields with JSON null (live salad photo,
+    // 2026-10-06, direct OpenAI): the whole scan used to fail validation.
+    it("accepts null for the optional clarificationQuestion and cuisine", async () => {
+      mockVisionResponse({
+        foods: [
+          {
+            name: "mixed green salad",
+            lookupName: "lettuce, raw",
+            quantity: "2 cups",
+            grams: 100,
+            confidence: 0.85,
+            needsClarification: false,
+            clarificationQuestion: null,
+            category: "vegetable",
+            cuisine: null,
+          },
+        ],
+        overallConfidence: 0.85,
+        followUpQuestions: [],
+      });
+
+      const result = await analyzePhoto("base64data", "log");
+      expect(result.foods).toHaveLength(1);
+      expect(result.foods[0].clarificationQuestion).toBeUndefined();
+      expect(result.foods[0].name).toBe("mixed green salad");
+    });
+
+    it("maps an unknown category to other instead of failing the scan", async () => {
+      mockVisionResponse({
+        foods: [
+          {
+            name: "grilled shrimp",
+            quantity: "6 pieces",
+            confidence: 0.9,
+            needsClarification: false,
+            category: "seafood",
+          },
+        ],
+        overallConfidence: 0.9,
+        followUpQuestions: [],
+      });
+
+      const result = await analyzePhoto("base64data", "log");
+      expect(result.foods[0].category).toBe("other");
+    });
+
     function foodWithGrams(grams: unknown) {
       return {
         foods: [
