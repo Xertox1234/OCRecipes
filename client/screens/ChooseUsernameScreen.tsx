@@ -61,7 +61,8 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       const outcome = chooseUsernameErrorOutcome(err);
       if (outcome.kind === "restart") {
-        toast.error(outcome.message);
+        // Error haptic already fired above for every branch.
+        toast.error(outcome.message, { haptic: false });
         navigation.navigate("Login");
         return;
       }

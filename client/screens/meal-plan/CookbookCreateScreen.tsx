@@ -248,7 +248,6 @@ export default function CookbookCreateScreen() {
         AccessibilityInfo.announceForAccessibility("Cover photo updated");
       } catch (err) {
         logger.error("Cookbook cover upload failed:", err);
-        haptics.notification(NotificationFeedbackType.Error);
         setPendingCoverUri(null);
         toast.error(describeCoverError(err, "upload"));
       } finally {
@@ -292,13 +291,13 @@ export default function CookbookCreateScreen() {
       AccessibilityInfo.announceForAccessibility("Cover generated");
     } catch (err) {
       logger.error("Cookbook cover generation failed:", err);
-      haptics.notification(NotificationFeedbackType.Error);
       // `canGenerateCover` above is a locally-cached entitlement flag. If it
       // has gone stale (a downgrade since the last fetch) the server is the
       // one that says no — surface the upgrade path the user can actually act
       // on rather than a generic "try again" for something that will never
       // succeed.
       if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
+        haptics.notification(NotificationFeedbackType.Error);
         setShowUpgradeModal(true);
       } else {
         toast.error(describeCoverError(err, "generate"));
@@ -413,8 +412,10 @@ export default function CookbookCreateScreen() {
     // failure branch Toast carries it; only the silent success path needs an
     // announce of its own, ungated because nothing else covers it.
     if (coverFailed) {
+      // The Warning haptic above already marks this partial success.
       toast.error(
         "Cookbook created, but the cover couldn't be added. You can add one by editing the cookbook.",
+        { haptic: false },
       );
     } else {
       AccessibilityInfo.announceForAccessibility("Cookbook created");

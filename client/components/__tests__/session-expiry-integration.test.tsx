@@ -109,7 +109,9 @@ describe("session-expiry integration (real useAuth + emitter + bridge)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("authed").textContent).toBe("false"),
     );
-    expect(mockToastError).toHaveBeenCalledWith(EXPIRED_MESSAGE);
+    expect(mockToastError).toHaveBeenCalledWith(EXPIRED_MESSAGE, {
+      haptic: false,
+    });
     expect(mockTokenStorage.clear).toHaveBeenCalled();
   });
 

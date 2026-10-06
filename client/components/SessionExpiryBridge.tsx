@@ -30,7 +30,9 @@ export function SessionExpiryBridge(): null {
     return subscribeToSessionExpiry(() => {
       if (!isAuthenticated) return;
       void expireSession();
-      toast.error("Your session has expired. Please sign in again.");
+      toast.error("Your session has expired. Please sign in again.", {
+        haptic: false,
+      });
     });
   }, [isAuthenticated, expireSession, toast]);
 

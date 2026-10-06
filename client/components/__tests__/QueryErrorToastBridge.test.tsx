@@ -51,6 +51,7 @@ describe("QueryErrorToastBridge", () => {
     expect(mockToastError).toHaveBeenCalledTimes(1);
     expect(mockToastError).toHaveBeenCalledWith(
       "Something went wrong loading your data. Please try again.",
+      { haptic: false },
     );
   });
 

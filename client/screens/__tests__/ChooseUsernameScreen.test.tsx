@@ -71,6 +71,7 @@ describe("ChooseUsernameScreen", () => {
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("Login"));
     expect(mockToastError).toHaveBeenCalledWith(
       expect.stringMatching(/already exists/),
+      { haptic: false },
     );
     expect(screen.queryByText(/username is taken/i)).toBeNull();
   });

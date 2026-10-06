@@ -10,7 +10,6 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -19,7 +18,6 @@ import { useBatchScan } from "@/context/BatchScanContext";
 import { useBatchConfirm } from "@/hooks/useBatchConfirm";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
@@ -69,7 +67,6 @@ export default function BatchSummaryScreen() {
   const navigation = useNavigation<BatchSummaryNavProp>();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const haptics = useHaptics();
   const toast = useToast();
   const {
     getItems,
@@ -183,7 +180,6 @@ export default function BatchSummaryScreen() {
       clearSession();
       navigation.popToTop();
     } catch {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error("Could not save items. Please try again.");
     } finally {
       setSaving(false);
@@ -196,7 +192,6 @@ export default function BatchSummaryScreen() {
     destination,
     clearSession,
     navigation,
-    haptics,
     toast,
   ]);
 

@@ -156,7 +156,6 @@ export default function CookSessionReviewScreen() {
       AccessibilityInfo.announceForAccessibility("Meal logged successfully");
       navigation.popTo("Main");
     } catch {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error("Failed to log meal. Please try again.");
     }
   }, [logSession, haptics, toast, navigation]);
@@ -166,10 +165,9 @@ export default function CookSessionReviewScreen() {
       const recipe = await recipeMutation.mutateAsync();
       Alert.alert(recipe.title, recipe.description);
     } catch {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error("Failed to generate recipe. Please try again.");
     }
-  }, [recipeMutation, haptics, toast]);
+  }, [recipeMutation, toast]);
 
   const handleSubstitutions = useCallback(async () => {
     try {
@@ -180,17 +178,9 @@ export default function CookSessionReviewScreen() {
         ingredients,
       });
     } catch {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error("Failed to get substitutions. Please try again.");
     }
-  }, [
-    substitutionsMutation,
-    haptics,
-    toast,
-    navigation,
-    sessionId,
-    ingredients,
-  ]);
+  }, [substitutionsMutation, toast, navigation, sessionId, ingredients]);
 
   const renderIngredient = ({ item }: { item: CookingSessionIngredient }) => {
     const prepOptions =

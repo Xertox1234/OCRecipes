@@ -15,7 +15,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
-import * as Haptics from "expo-haptics";
 import Animated from "react-native-reanimated";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
@@ -574,7 +573,6 @@ export default function RecipeBrowserScreen() {
         });
         navigation.goBack();
       } catch {
-        haptics.notification(Haptics.NotificationFeedbackType.Error);
         toast.error("Couldn't add the recipe to your plan. Please try again.");
       } finally {
         setAddingId(null);

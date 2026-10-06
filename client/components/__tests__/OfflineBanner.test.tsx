@@ -84,7 +84,9 @@ describe("OfflineBanner", () => {
     });
 
     renderComponent(<OfflineBanner />);
-    expect(mockToast.success).toHaveBeenCalledWith("Back online");
+    expect(mockToast.success).toHaveBeenCalledWith("Back online", {
+      haptic: false,
+    });
   });
 
   it("renders correctly with reducedMotion enabled", () => {
@@ -110,7 +112,9 @@ describe("OfflineBanner", () => {
     });
 
     renderComponent(<OfflineBanner />);
-    expect(mockToast.success).toHaveBeenCalledWith("Back online");
+    expect(mockToast.success).toHaveBeenCalledWith("Back online", {
+      haptic: false,
+    });
     expect(mockClearWasOffline).toHaveBeenCalled();
   });
 });

@@ -13,7 +13,6 @@ import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Application from "expo-application";
 import * as Clipboard from "expo-clipboard";
-import { ImpactFeedbackStyle } from "expo-haptics";
 import * as Updates from "expo-updates";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -337,13 +336,12 @@ export default function SettingsScreen() {
         toast.error("Couldn't copy build details");
         return;
       }
-      haptics.impact(ImpactFeedbackStyle.Light);
       toast.success("Build details copied");
     } catch (error) {
       logger.warn("Failed to copy build details", { error });
       toast.error("Couldn't copy build details");
     }
-  }, [buildInfo.clipboardText, haptics, toast]);
+  }, [buildInfo.clipboardText, toast]);
 
   return (
     <ScreenScrollView

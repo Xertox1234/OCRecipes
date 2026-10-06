@@ -223,7 +223,6 @@ export default function PantryScreen() {
       {
         onSuccess: () => setNewItemName(""),
         onError: () => {
-          haptics.notification(Haptics.NotificationFeedbackType.Error);
           toast.error("Couldn't add the item. Please try again.");
         },
       },
@@ -234,12 +233,11 @@ export default function PantryScreen() {
     (id: number) => {
       deleteMutation.mutate(id, {
         onError: () => {
-          haptics.notification(Haptics.NotificationFeedbackType.Error);
           toast.error("Couldn't remove the item. Please try again.");
         },
       });
     },
-    [haptics, toast, deleteMutation],
+    [toast, deleteMutation],
   );
 
   const handleDelete = useCallback(

@@ -31,7 +31,7 @@ export function OfflineBanner() {
   // Show "Back online" toast when connectivity returns
   useEffect(() => {
     if (wasOffline && !isOffline) {
-      toast.success(BACK_ONLINE_MESSAGE);
+      toast.success(BACK_ONLINE_MESSAGE, { haptic: false });
       clearWasOffline();
     }
   }, [wasOffline, isOffline, toast, clearWasOffline]);

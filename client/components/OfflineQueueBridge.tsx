@@ -7,7 +7,8 @@ export function OfflineQueueBridge(): null {
 
   useEffect(() => {
     return subscribeToQueueDrainErrors((message) => {
-      toast.error(message);
+      // Background replay failure, not a reply to a tap — no haptic.
+      toast.error(message, { haptic: false });
     });
   }, [toast]);
 

@@ -157,7 +157,6 @@ function QuickAddSheetContentInner(
         haptics.notification(NotificationFeedbackType.Success);
         onDismiss();
       } catch {
-        haptics.notification(NotificationFeedbackType.Error);
         toast.error("Couldn't add the recipe to your plan. Please try again.");
       } finally {
         isAdding.current = false;

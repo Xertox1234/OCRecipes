@@ -105,13 +105,15 @@ export default function QuickLogScreen() {
 
   React.useEffect(() => {
     if (session.speechError) {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error(session.speechError);
     }
-  }, [session.speechError, toast, haptics]);
+  }, [session.speechError, toast]);
 
+  // useQuickLogSession fires the Error haptic when it sets parseError /
+  // submitError (QuickLogDrawer shows them inline and relies on that), so
+  // these toasts stay silent.
   React.useEffect(() => {
-    if (session.parseError) toast.error(session.parseError);
+    if (session.parseError) toast.error(session.parseError, { haptic: false });
   }, [session.parseError, toast]);
 
   React.useEffect(() => {
@@ -119,7 +121,9 @@ export default function QuickLogScreen() {
   }, [session.parseEmpty, toast]);
 
   React.useEffect(() => {
-    if (session.submitError) toast.error(session.submitError);
+    if (session.submitError) {
+      toast.error(session.submitError, { haptic: false });
+    }
   }, [session.submitError, toast]);
 
   React.useEffect(() => {

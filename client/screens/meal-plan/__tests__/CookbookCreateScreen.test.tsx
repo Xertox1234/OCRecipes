@@ -346,6 +346,7 @@ describe("CookbookCreateScreen — create then attach", () => {
     await waitFor(() =>
       expect(mockToastError).toHaveBeenCalledWith(
         expect.stringContaining("Cookbook created, but the cover couldn't"),
+        { haptic: false },
       ),
     );
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());

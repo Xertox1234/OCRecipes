@@ -18,6 +18,7 @@ const {
   sessionHolder,
   mockGoBack,
   mockToastInfo,
+  mockToastError,
   mockAnnounce,
 } = vi.hoisted(() => ({
   premiumHolder: {
@@ -32,9 +33,12 @@ const {
     // initial value and keeps the generation-keyed announce effect silent
     // by default.
     parseGeneration: 0,
+    parseError: null as string | null,
+    submitError: null as string | null,
   },
   mockGoBack: vi.fn(),
   mockToastInfo: vi.fn(),
+  mockToastError: vi.fn(),
   mockAnnounce: vi.fn(),
 }));
 
@@ -70,9 +74,9 @@ vi.mock("@/hooks/useQuickLogSession", () => ({
     isParsing: false,
     parsedItems: sessionHolder.parsedItems,
     parseGeneration: sessionHolder.parseGeneration,
-    parseError: null,
+    parseError: sessionHolder.parseError,
     parseEmpty: sessionHolder.parseEmpty,
-    submitError: null,
+    submitError: sessionHolder.submitError,
     capWarning: null,
     isSubmitting: false,
     speechError: null,
@@ -91,7 +95,11 @@ vi.mock("@react-navigation/native", () => ({
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: mockToastInfo }),
+  useToast: () => ({
+    success: vi.fn(),
+    error: mockToastError,
+    info: mockToastInfo,
+  }),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -173,6 +181,8 @@ describe("QuickLogScreen — submit", () => {
     sessionHolder.parseEmpty = false;
     sessionHolder.parsedItems = [];
     sessionHolder.parseGeneration = 0;
+    sessionHolder.parseError = null;
+    sessionHolder.submitError = null;
   });
 
   // The input is multiline, and RN defaults a multiline input to
@@ -191,6 +201,23 @@ describe("QuickLogScreen — submit", () => {
     expect(mockToastInfo).toHaveBeenCalledWith(
       "Couldn't find any food in that.",
     );
+  });
+
+  // useQuickLogSession already fires the Error haptic when it sets these
+  // (QuickLogDrawer shows them inline and relies on it) — a buzzing toast
+  // on top would double-buzz.
+  it("toasts parse and submit errors without a second haptic", () => {
+    sessionHolder.parseError = "Couldn't understand that.";
+    sessionHolder.submitError = "Failed to log some items.";
+    renderComponent(<QuickLogScreen />);
+    expect(mockToastError).toHaveBeenCalledWith("Couldn't understand that.", {
+      haptic: false,
+    });
+    expect(mockToastError).toHaveBeenCalledWith("Failed to log some items.", {
+      haptic: false,
+    });
+    sessionHolder.parseError = null;
+    sessionHolder.submitError = null;
   });
 
   // A successful parse fired no announce at all before this — VoiceOver

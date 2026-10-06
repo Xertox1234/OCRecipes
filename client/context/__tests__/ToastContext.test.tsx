@@ -3,10 +3,21 @@ import React from "react";
 import { act, screen } from "@testing-library/react";
 import * as RN from "react-native";
 import { FullWindowOverlay } from "react-native-screens";
+import { NotificationFeedbackType } from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
 import { ToastProvider, useToast } from "../ToastContext";
 
 const ghRootProps = vi.hoisted(() => [] as Record<string, unknown>[]);
+const mockNotification = vi.hoisted(() => vi.fn());
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: vi.fn(),
+    notification: mockNotification,
+    selection: vi.fn(),
+    disabled: false,
+  }),
+}));
 
 vi.mock("react-native-gesture-handler", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -104,5 +115,52 @@ describe("ToastProvider host", () => {
       api.dismiss();
     });
     expect(screen.queryByTestId("full-window-overlay")).toBeNull();
+  });
+});
+
+describe("ToastProvider haptics", () => {
+  beforeEach(() => {
+    mockNotification.mockClear();
+  });
+
+  it("success fires a Success notification haptic", () => {
+    mount();
+    act(() => {
+      api.success("Saved");
+    });
+    expect(mockNotification).toHaveBeenCalledTimes(1);
+    expect(mockNotification).toHaveBeenCalledWith(
+      NotificationFeedbackType.Success,
+    );
+  });
+
+  it("error fires an Error notification haptic", () => {
+    mount();
+    act(() => {
+      api.error("Couldn't save");
+    });
+    expect(mockNotification).toHaveBeenCalledTimes(1);
+    expect(mockNotification).toHaveBeenCalledWith(
+      NotificationFeedbackType.Error,
+    );
+  });
+
+  it("info stays silent", () => {
+    mount();
+    act(() => {
+      api.info("Coach replied");
+    });
+    expect(screen.getByText("Coach replied")).toBeDefined();
+    expect(mockNotification).not.toHaveBeenCalled();
+  });
+
+  it("haptic: false shows the toast without a haptic", () => {
+    mount();
+    act(() => {
+      api.success("Back online", { haptic: false });
+      api.error("Session expired", { haptic: false });
+    });
+    expect(screen.getByText("Session expired")).toBeDefined();
+    expect(mockNotification).not.toHaveBeenCalled();
   });
 });

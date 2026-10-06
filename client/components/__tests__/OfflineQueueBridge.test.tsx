@@ -34,6 +34,7 @@ describe("OfflineQueueBridge", () => {
     capturedListener?.("A queued item couldn't be synced and was discarded.");
     expect(mockToastError).toHaveBeenCalledWith(
       "A queued item couldn't be synced and was discarded.",
+      { haptic: false },
     );
   });
 
