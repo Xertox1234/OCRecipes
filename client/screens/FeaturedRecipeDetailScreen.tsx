@@ -17,6 +17,8 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
+import Animated from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 
 import { EmptyState } from "@/components/EmptyState";
 import { RecipeDetailContent } from "@/components/RecipeDetailContent";
@@ -36,6 +38,8 @@ import {
 } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
+import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { useToast } from "@/context/ToastContext";
 import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
@@ -163,6 +167,9 @@ export default function FeaturedRecipeDetailScreen() {
   const isFavourited = useIsRecipeFavourited(savedRecipeId ?? 0, "mealPlan");
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
   const addFavourite = useAddFavouriteRecipe();
+  const haptics = useHaptics();
+  const { trigger: triggerHeartPop, animatedStyle: heartPopStyle } =
+    useSuccessPop(1.4);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
 
@@ -379,19 +386,38 @@ export default function FeaturedRecipeDetailScreen() {
   }, [saveCatalog]);
 
   const handleFavouriteCatalog = useCallback(async () => {
+    // The pop fires its own Success haptic — one buzz per favourite.
     if (savedRecipeId !== null) {
+      // The saved copy toggles optimistically, so the heart flips at tap.
+      if (isFavourited) {
+        haptics.impact();
+      } else {
+        triggerHeartPop();
+      }
       toggleFavourite({ recipeId: savedRecipeId, recipeType: "mealPlan" });
       return;
     }
+    // Unsaved: acknowledge the tap now, celebrate only once the favourite
+    // has landed — a failed save or favourite never pops.
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     const id = await saveCatalog();
     if (id === null) return;
     try {
       await addFavourite({ recipeId: id, recipeType: "mealPlan" });
+      if (isMountedRef.current) triggerHeartPop();
     } catch {
       // useToggleFavouriteRecipe surfaces its own failures (limit alert,
       // global net); the recipe itself is saved either way.
     }
-  }, [savedRecipeId, toggleFavourite, saveCatalog, addFavourite]);
+  }, [
+    savedRecipeId,
+    isFavourited,
+    haptics,
+    triggerHeartPop,
+    toggleFavourite,
+    saveCatalog,
+    addFavourite,
+  ]);
 
   // After a purchase from the Premium wall, the 403'd preview must refetch —
   // the subscription refresh does not touch this query, and 4xx never retries.
@@ -556,12 +582,14 @@ export default function FeaturedRecipeDetailScreen() {
                 { backgroundColor: withOpacity(theme.text, 0.06) },
               ]}
             >
-              <Ionicons
-                name={isFavourited ? "heart" : "heart-outline"}
-                size={22}
-                color={isFavourited ? theme.error : theme.text}
-                accessible={false}
-              />
+              <Animated.View style={heartPopStyle}>
+                <Ionicons
+                  name={isFavourited ? "heart" : "heart-outline"}
+                  size={22}
+                  color={isFavourited ? theme.error : theme.text}
+                  accessible={false}
+                />
+              </Animated.View>
             </Pressable>
             <Pressable
               onPress={

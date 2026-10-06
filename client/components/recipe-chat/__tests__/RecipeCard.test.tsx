@@ -9,10 +9,20 @@ import {
   selectionAsync as rawSelectionAsync,
 } from "expo-haptics";
 
-const { mockImpact, mockNotification, mockSelection } = vi.hoisted(() => ({
-  mockImpact: vi.fn(),
-  mockNotification: vi.fn(),
-  mockSelection: vi.fn(),
+const { mockImpact, mockNotification, mockSelection, mockTriggerPop } =
+  vi.hoisted(() => ({
+    mockImpact: vi.fn(),
+    mockNotification: vi.fn(),
+    mockSelection: vi.fn(),
+    mockTriggerPop: vi.fn(),
+  }));
+
+vi.mock("@/hooks/useSuccessAnimation", () => ({
+  useSuccessPop: () => ({
+    trigger: mockTriggerPop,
+    animatedStyle: {},
+    scale: { value: 1 },
+  }),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -194,5 +204,60 @@ describe("RecipeCard — accessibility tree", () => {
         name: "Recipe: Lemon Herb Chicken. Easy, 30 min, 4 servings",
       }),
     ).toBeDefined();
+  });
+});
+
+// The pop fires its own Success haptic, so it only runs where the heart flips
+// at tap time: an already-saved recipe. On an unsaved one the parent saves
+// first and that save is the Success moment, so the heart keeps its light tap.
+describe("RecipeCard — favourite heart pop", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("pops (one buzz) when favouriting a saved recipe", () => {
+    renderComponent(
+      <RecipeCard
+        recipe={recipe}
+        isSaved
+        onSave={vi.fn()}
+        onFavourite={vi.fn()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByLabelText("Add Lemon Herb Chicken to favourites"),
+    );
+    expect(mockTriggerPop).toHaveBeenCalledTimes(1);
+    expect(mockImpact).not.toHaveBeenCalled();
+  });
+
+  it("taps without a pop when unfavouriting", () => {
+    renderComponent(
+      <RecipeCard
+        recipe={recipe}
+        isSaved
+        isFavourited
+        onSave={vi.fn()}
+        onFavourite={vi.fn()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByLabelText("Remove Lemon Herb Chicken from favourites"),
+    );
+    expect(mockTriggerPop).not.toHaveBeenCalled();
+    expect(mockImpact).toHaveBeenCalledTimes(1);
+  });
+
+  it("taps without a pop on an unsaved recipe (the save is the moment)", () => {
+    const onFavourite = vi.fn();
+    renderComponent(
+      <RecipeCard recipe={recipe} onSave={vi.fn()} onFavourite={onFavourite} />,
+    );
+    fireEvent.click(
+      screen.getByLabelText("Add Lemon Herb Chicken to favourites"),
+    );
+    expect(onFavourite).toHaveBeenCalledTimes(1);
+    expect(mockTriggerPop).not.toHaveBeenCalled();
+    expect(mockImpact).toHaveBeenCalledTimes(1);
   });
 });
