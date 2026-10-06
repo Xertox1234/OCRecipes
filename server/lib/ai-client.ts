@@ -284,7 +284,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           fellBack: false,
           error: {
             kind,
-            moderated: isModerationBlock(err),
+            moderated: kind === "request" && isModerationBlock(err),
             message: message.slice(0, 300),
           },
         });
