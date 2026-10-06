@@ -1,6 +1,6 @@
 ---
 title: "Photo analysis failure shows raw error text and drops the daily-limit message"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-06
 updated: 2026-10-06
@@ -23,13 +23,13 @@ Spotted while fixing the sibling leak in `handleLogSelected` for interaction-fee
 
 ## Acceptance Criteria
 
-- [ ] The analyze `catch` maps the error to static copy instead of `err.message`, branching on `ApiError.code` for the codes `/api/photos/analyze` actually emits:
+- [x] The analyze `catch` maps the error to static copy instead of `err.message`, branching on `ApiError.code` for the codes `/api/photos/analyze` actually emits:
   - `LIMIT_REACHED`: daily scan limit copy. Check whether the app has an existing upgrade/limit message or paywall entry to reuse.
   - `RATE_LIMITED`: from `photoRateLimit`.
   - `IMAGE_TOO_LARGE`.
   - Everything else, including the network `TypeError`, the plain `Error("Not authenticated")` and "Invalid response from server": generic retry copy.
-- [ ] Error haptic, the abort/`isAbortError` early return and the existing retry flow are unchanged.
-- [ ] Tests:
+- [x] Error haptic, the abort/`isAbortError` early return and the existing retry flow are unchanged.
+- [x] Tests:
   - A thrown error with an internal message is not rendered.
   - `LIMIT_REACHED` shows the limit copy.
   - Positive control: the test fails against the current `err.message` code.
@@ -40,3 +40,12 @@ Spotted while fixing the sibling leak in `handleLogSelected` for interaction-fee
 - Re-read the route's codes before writing copy: `server/routes/photos.ts` `/api/photos/analyze` (~L164 onward, `sendError(...)` calls) and `checkAiConfigured`.
 - Reference mapping: `handleLogSelected`'s catch in the same file (after #1284 merges) and `LabelAnalysisScreen`'s `confirmLog.onError`.
 - Check other `uploadPhotoForAnalysis` / `uploadError` callers for the same `err.message` pattern before closing. Sweep by the symbol, not the wording.
+
+## Resolution (2026-10-06)
+
+- **Fix:** `analysisErrorMessage(err)` in `usePhotoAnalysis.ts` maps `LIMIT_REACHED`, `RATE_LIMITED`, `IMAGE_TOO_LARGE` and `SESSION_LIMIT_REACHED`/`USER_SESSION_LIMIT` to static copy. Everything else, including `AI_NOT_CONFIGURED` and `VALIDATION_ERROR`, falls through to the generic retry copy.
+- **Daily-limit copy:** it mentions upgrading but doesn't open the paywall. The scan flow already counts scans before upload, so this is a fallback.
+- **Sweep by symbol:** checked every caller of `uploadPhotoForAnalysis`, `uploadLabelForAnalysis` and `submitFollowUp`.
+  - `ScanScreen` passes `err.message` into `CLASSIFICATION_FAILED`, but the reducer and chip never render `phase.error`; the chip uses fixed `smart_error` copy. Not a leak.
+  - `LabelAnalysisScreen` already maps codes.
+  - The `submitFollowUp` catch shows nothing.
