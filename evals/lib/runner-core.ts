@@ -5,7 +5,18 @@ import pLimit from "p-limit";
 import { runAssertions, runStructuralAssertions } from "../assertions";
 import { bootstrapMeanCI, mulberry32 } from "./bootstrap";
 import { persistResults } from "./eval-results-store";
-import { judgeGeneric, DEFAULT_JUDGE_MODEL } from "./judge-generic";
+import {
+  judgeGeneric,
+  currentJudgeModel,
+  resolveJudgeBackend,
+} from "./judge-generic";
+import { withAiCallContext } from "../../server/lib/ai-call-context";
+import type {
+  AiCallContext,
+  AiModelOverride,
+} from "../../server/lib/ai-call-context";
+import type { AiFeature } from "../../server/lib/ai-models";
+import { checkCallRecords, parseCandidate } from "./candidate";
 import type {
   EvalTestCase,
   EvalCaseResult,
@@ -56,6 +67,7 @@ async function evaluateCase(
   sampleIndex: number = 0,
   samplesPerCase: number = 1,
   logBuffer: string[] | null = null,
+  overrides: Partial<Record<AiFeature, AiModelOverride>> = {},
 ): Promise<EvalCaseResult> {
   const log = (line: string) => {
     if (logBuffer) logBuffer.push(line);
@@ -68,8 +80,12 @@ async function evaluateCase(
 
   // 1. Generate response — pass the full testCase so each suite's callback
   //    can extract whichever fields it needs without assumptions here.
-  const { text, structuredData, latencyMs, wordCount } =
-    await config.generateResponse(testCase);
+  const aiCtx: AiCallContext = { overrides, fallback: "off", calls: [] };
+  const generated = await withAiCallContext(aiCtx, () =>
+    config.generateResponse(testCase),
+  );
+  const { text, structuredData, latencyMs, wordCount } = generated;
+  const aiCallViolations = checkCallRecords(aiCtx.calls, overrides);
 
   // 2. Hard assertions — text + structural
   const textResult = runAssertions(text, testCase.assertions);
@@ -142,6 +158,7 @@ async function evaluateCase(
     timestamp: new Date().toISOString(),
     latencyMs,
     wordCount,
+    aiCallViolations,
   };
 }
 
@@ -287,7 +304,7 @@ export function aggregateResults(
   return {
     runId,
     timestamp,
-    judgeModel: DEFAULT_JUDGE_MODEL,
+    judgeModel: currentJudgeModel(),
     totalCases: cases.length,
     samplesPerCase,
     assertionPassRate,
@@ -417,8 +434,33 @@ export async function runEvalSuite(
     process.exit(1);
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("Error: ANTHROPIC_API_KEY is required.");
+  const candidateArg = (() => {
+    const i = process.argv.indexOf("--candidate");
+    return i >= 0 ? process.argv[i + 1] : undefined;
+  })();
+  if (
+    process.argv.includes("--candidate") &&
+    (candidateArg === undefined || candidateArg.startsWith("--"))
+  ) {
+    console.error(
+      "Error: --candidate needs a value (feature=provider/model[,...])",
+    );
+    process.exit(1);
+  }
+  let overrides: Partial<Record<AiFeature, AiModelOverride>> = {};
+  if (candidateArg !== undefined) {
+    try {
+      overrides = parseCandidate(candidateArg);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  }
+
+  try {
+    resolveJudgeBackend();
+  } catch (err) {
+    console.error(`Error: ${(err as Error).message}`);
     process.exit(1);
   }
   if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
@@ -472,6 +514,7 @@ export async function runEvalSuite(
           task.sampleIndex,
           samplesPerCase,
           task.logBuffer,
+          overrides,
         ),
       ),
     ),
@@ -506,7 +549,7 @@ export async function runEvalSuite(
           failures: [`Case threw an exception: ${errorMsg}`],
         },
         rubricScores: [],
-        judgeModel: DEFAULT_JUDGE_MODEL,
+        judgeModel: currentJudgeModel(),
         timestamp: new Date().toISOString(),
         latencyMs: 0,
         wordCount: 0,
@@ -514,7 +557,21 @@ export async function runEvalSuite(
     }
   }
 
+  const violating = settled.filter(
+    (c) => c.aiCallViolations && c.aiCallViolations.length > 0,
+  );
+  if (violating.length > 0) {
+    for (const c of violating) {
+      console.error(`  ✗ ${c.testCaseId}: ${c.aiCallViolations!.join("; ")}`);
+    }
+    console.error(
+      `Error: ${violating.length} sample(s) were not answered by the requested model — refusing to write a report.`,
+    );
+    process.exit(1);
+  }
+
   const runResult = aggregateResults(settled, config, samplesPerCase);
+  runResult.candidate = candidateArg;
   printSummary(runResult, config);
 
   const resultsDir = path.join(__dirname, "..", "results");

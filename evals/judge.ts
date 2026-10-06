@@ -1,9 +1,9 @@
-import { DEFAULT_JUDGE_MODEL } from "./lib/judge-generic";
+import { currentJudgeModel } from "./lib/judge-generic";
 import { sanitizeUserInput } from "../server/lib/ai-safety";
 import { formatAboutUserLines } from "../server/services/nutrition-coach";
 import type { CoachContext } from "../server/services/nutrition-coach";
 
-export { DEFAULT_JUDGE_MODEL };
+export { currentJudgeModel };
 
 /**
  * Context summary shown to the LLM judge. Typed as the real CoachContext —

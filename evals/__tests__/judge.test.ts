@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { formatContextSummary } from "../judge";
+import { resolveJudgeBackend } from "../lib/judge-generic";
 import type { CoachContext } from "../../server/services/nutrition-coach";
 
 // ../judge value-imports formatAboutUserLines from nutrition-coach.ts, whose
@@ -58,5 +59,43 @@ describe("formatContextSummary", () => {
     });
 
     expect(out).toContain("Allergies: peanuts (severe), soy");
+  });
+});
+
+describe("resolveJudgeBackend", () => {
+  it("prefers OpenRouter with the OpenRouter-form default", () => {
+    expect(
+      resolveJudgeBackend({ OPENROUTER_API_KEY: "k", ANTHROPIC_API_KEY: "a" }),
+    ).toEqual({
+      kind: "openrouter",
+      model: "anthropic/claude-sonnet-4.6",
+    });
+  });
+  it("uses EVAL_JUDGE_MODEL as given on OpenRouter", () => {
+    expect(
+      resolveJudgeBackend({
+        OPENROUTER_API_KEY: "k",
+        EVAL_JUDGE_MODEL: "anthropic/claude-sonnet-5",
+      }),
+    ).toEqual({ kind: "openrouter", model: "anthropic/claude-sonnet-5" });
+  });
+  it("rejects an Anthropic-style name on the OpenRouter path", () => {
+    expect(() =>
+      resolveJudgeBackend({
+        OPENROUTER_API_KEY: "k",
+        EVAL_JUDGE_MODEL: "claude-sonnet-4-6",
+      }),
+    ).toThrow(/OpenRouter form, e.g. "anthropic\/claude-sonnet-4.6"/);
+  });
+  it("falls back to Anthropic direct with its default", () => {
+    expect(resolveJudgeBackend({ ANTHROPIC_API_KEY: "a" })).toEqual({
+      kind: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+  });
+  it("throws when neither key is set", () => {
+    expect(() => resolveJudgeBackend({})).toThrow(
+      /OPENROUTER_API_KEY or ANTHROPIC_API_KEY/,
+    );
   });
 });

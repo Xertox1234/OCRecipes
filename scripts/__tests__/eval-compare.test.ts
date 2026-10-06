@@ -6,6 +6,9 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  comparePaired,
+  renderPaired,
+  PAIRED_THRESHOLDS,
   compareSuite,
   perCaseMeans,
   toBaseline,
@@ -179,3 +182,145 @@ function pick(run: RunLike): { safety: number[]; accuracy: number[] } {
     accuracy: run.cases.map((c) => c.rubricScores[1].score),
   };
 }
+
+function run(
+  cases: [string, Record<string, number>, boolean][],
+  samplesPerCase = 1,
+): RunLike {
+  return {
+    runId: "r",
+    judgeModel: "j",
+    totalCases: cases.length,
+    samplesPerCase,
+    assertionPassRate: 1,
+    weightedOverall: 0,
+    dimensionConfidenceIntervals: {},
+    cases: cases.map(([id, scores, passed]) => ({
+      testCaseId: id,
+      rubricScores: Object.entries(scores).map(([dimension, score]) => ({
+        dimension,
+        score,
+      })),
+      assertions: { passed },
+    })),
+  };
+}
+
+describe("comparePaired", () => {
+  it("identical runs pass with zero differences", () => {
+    const r = run([
+      ["a", { accuracy: 7, safety: 9 }, true],
+      ["b", { accuracy: 6, safety: 8 }, true],
+    ]);
+    const res = comparePaired(r, r);
+    expect(res.passed).toBe(true);
+    for (const d of res.dimensions) expect(d.mean).toBe(0);
+  });
+
+  it("a uniform -1.0 drop fails every dimension", () => {
+    const base = run([
+      ["a", { accuracy: 7 }, true],
+      ["b", { accuracy: 6 }, true],
+    ]);
+    const cand = run([
+      ["a", { accuracy: 6 }, true],
+      ["b", { accuracy: 5 }, true],
+    ]);
+    const res = comparePaired(base, cand);
+    expect(res.dimensions[0]).toMatchObject({
+      dimension: "accuracy",
+      mean: -1,
+      lower: -1,
+      pass: false,
+    });
+    expect(res.passed).toBe(false);
+  });
+
+  it("safety uses the stricter -0.25 bar", () => {
+    const base = run([
+      ["a", { safety: 9 }, true],
+      ["b", { safety: 9 }, true],
+    ]);
+    const cand = run([
+      ["a", { safety: 8.6 }, true],
+      ["b", { safety: 8.6 }, true],
+    ]); // -0.4
+    const res = comparePaired(base, cand);
+    expect(res.dimensions[0].threshold).toBe(PAIRED_THRESHOLDS.safety);
+    expect(res.dimensions[0].pass).toBe(false);
+  });
+
+  it("pools samples per case before differencing (#n suffix)", () => {
+    const base = run(
+      [
+        ["a#1", { accuracy: 6 }, true],
+        ["a#2", { accuracy: 8 }, true],
+      ],
+      2,
+    ); // mean 7
+    const cand = run(
+      [
+        ["a#1", { accuracy: 7 }, true],
+        ["a#2", { accuracy: 7 }, true],
+      ],
+      2,
+    ); // mean 7
+    expect(comparePaired(base, cand).dimensions[0].mean).toBe(0);
+  });
+
+  it("a case passing on baseline but failing on candidate fails the run", () => {
+    const base = run([["a", { accuracy: 7 }, true]]);
+    const cand = run([["a", { accuracy: 7 }, false]]);
+    const res = comparePaired(base, cand);
+    expect(res.newAssertionFailures).toEqual(["a"]);
+    expect(res.passed).toBe(false);
+  });
+
+  it("cases missing from either run are reported and fail the run", () => {
+    const base = run([
+      ["a", { accuracy: 7 }, true],
+      ["b", { accuracy: 7 }, true],
+    ]);
+    const cand = run([["a", { accuracy: 7 }, true]]);
+    const res = comparePaired(base, cand);
+    expect(res.missingCases).toEqual(["b"]);
+    expect(res.passed).toBe(false);
+  });
+});
+
+describe("comparePaired never passes on no data", () => {
+  it("a baseline-only dimension fails that dimension and the run", () => {
+    const base = run([["a", { accuracy: 7, safety: 9 }, true]]);
+    const cand = run([["a", { accuracy: 7 }, true]]);
+    const res = comparePaired(base, cand);
+    const safety = res.dimensions.find((d) => d.dimension === "safety");
+    expect(safety).toMatchObject({ cases: 0, pass: false });
+    expect(res.passed).toBe(false);
+  });
+
+  it("a candidate-only dimension is reported and fails", () => {
+    const base = run([["a", { accuracy: 7 }, true]]);
+    const cand = run([["a", { accuracy: 7, safety: 9 }, true]]);
+    const res = comparePaired(base, cand);
+    const safety = res.dimensions.find((d) => d.dimension === "safety");
+    expect(safety).toMatchObject({ cases: 0, pass: false });
+    expect(res.passed).toBe(false);
+    expect(renderPaired(res)).toContain("| safety |");
+    expect(renderPaired(res)).toContain("FAIL");
+  });
+
+  it("two empty runs do not pass", () => {
+    expect(comparePaired(run([]), run([])).passed).toBe(false);
+  });
+
+  it("a case only in the candidate run is listed and fails the run", () => {
+    const base = run([["a", { accuracy: 7 }, true]]);
+    const cand = run([
+      ["a", { accuracy: 7 }, true],
+      ["c", { accuracy: 7 }, true],
+    ]);
+    const res = comparePaired(base, cand);
+    expect(res.missingCases).toEqual(["c"]);
+    expect(res.passed).toBe(false);
+  });
+});
