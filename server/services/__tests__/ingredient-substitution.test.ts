@@ -1,19 +1,11 @@
 import { getSubstitutions, _testInternals } from "../ingredient-substitution";
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import type { CookingSessionIngredient } from "@shared/types/cook-session";
 import type { UserProfile } from "@shared/schema";
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
-  MODEL_FAST: "gpt-4o-mini",
-  MODEL_HEAVY: "gpt-4o",
 }));
 
 vi.mock("../../lib/ai-safety", () => ({
@@ -25,7 +17,7 @@ vi.mock("../recipe-catalog", () => ({
   getSpoonacularSubstitutes: vi.fn().mockResolvedValue([]),
 }));
 
-const mockCreate = vi.mocked(openai.chat.completions.create);
+const mockCreate = vi.mocked(aiChat);
 
 const {
   findStaticSubstitutions,
@@ -229,6 +221,7 @@ describe("ingredient-substitution", () => {
       expect(result.suggestions).toHaveLength(1);
       expect(result.suggestions[0].substitute).toBe("turmeric");
       expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(mockCreate.mock.calls[0][0]).toBe("ingredient-substitution");
     });
 
     it("returns static results even if AI fails", async () => {

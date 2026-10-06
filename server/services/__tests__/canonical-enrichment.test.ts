@@ -36,21 +36,13 @@ vi.mock("../../lib/runware", () => ({
 // Hoist the mock fn so we can reference it in vi.mock factory and tests
 const mockCreate = vi.hoisted(() => vi.fn());
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: mockCreate }));
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: mockCreate,
-      },
-    },
-  },
   dalleClient: {
     images: {
       generate: runware.dalleGenerate,
     },
   },
-  MODEL_HEAVY: "gpt-4o",
-  MODEL_FAST: "gpt-4o-mini",
   OPENAI_TIMEOUT_IMAGE_MS: 120000,
   OPENAI_TIMEOUT_FAST_MS: 30000,
   // isAiConfigured: false keeps buildImagePrompt in deterministic mode
@@ -92,6 +84,7 @@ describe("generateEditorialContent", () => {
     expect(result.instructionDetails).toHaveLength(1);
     expect(result.toolsRequired[0].name).toBe("Skillet");
     expect(result.cuisineOrigin).toBe("Italian");
+    expect(mockCreate.mock.calls[0][0]).toBe("canonical-editorial");
   });
 
   it("returns fallback content if GPT-4o returns null content", async () => {

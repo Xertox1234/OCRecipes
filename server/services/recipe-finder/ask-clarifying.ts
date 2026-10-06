@@ -1,6 +1,7 @@
 // server/services/recipe-finder/ask-clarifying.ts
+import { aiChat } from "../../lib/ai-client";
 import { z } from "zod";
-import { openai, OPENAI_TIMEOUT_FAST_MS, MODEL_FAST } from "../../lib/openai";
+import { OPENAI_TIMEOUT_FAST_MS } from "../../lib/openai";
 import {
   sanitizeUserInput,
   sanitizeContextField,
@@ -55,9 +56,9 @@ export async function askClarifying(
     .join("\n");
   let content: string | null | undefined;
   try {
-    const response = await openai.chat.completions.create(
+    const response = await aiChat(
+      "finder-ask-clarifying",
       {
-        model: MODEL_FAST,
         temperature: 0.3,
         max_completion_tokens: 300,
         response_format: { type: "json_object" },

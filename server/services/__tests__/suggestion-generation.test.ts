@@ -8,22 +8,15 @@ import type {
   GenerateSuggestionsInput,
   GenerateInstructionsInput,
 } from "../suggestion-generation";
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import {
   createMockChatCompletion,
   createMockUserProfile,
 } from "../../__tests__/factories";
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   OPENAI_TIMEOUT_FAST_MS: 15_000,
-  MODEL_FAST: "gpt-4o-mini",
 }));
 
 vi.mock("../../lib/ai-safety", () => ({
@@ -76,7 +69,7 @@ describe("suggestion-generation", () => {
         },
       ];
 
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify({ suggestions })),
       );
 
@@ -93,7 +86,7 @@ describe("suggestion-generation", () => {
         allergies: [{ name: "peanuts", severity: "severe" as const }],
       });
 
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(
           JSON.stringify({
             suggestions: [
@@ -108,11 +101,12 @@ describe("suggestion-generation", () => {
         userProfile: profile,
       });
       expect(result).toHaveLength(1);
-      expect(openai.chat.completions.create).toHaveBeenCalledTimes(1);
+      expect(aiChat).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(aiChat).mock.calls[0][0]).toBe("suggestion-generate");
     });
 
     it("throws SuggestionParseError when AI returns invalid JSON", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion("not valid json {{{"),
       );
 
@@ -126,7 +120,7 @@ describe("suggestion-generation", () => {
 
     it("throws SuggestionParseError when AI returns unexpected format", async () => {
       // Valid JSON but doesn't match schema (empty suggestions array)
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify({ suggestions: [] })),
       );
 
@@ -139,7 +133,7 @@ describe("suggestion-generation", () => {
     });
 
     it("throws SuggestionParseError when response has wrong structure", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(
           JSON.stringify({ items: ["not suggestions"] }),
         ),
@@ -151,9 +145,7 @@ describe("suggestion-generation", () => {
     });
 
     it("handles empty content from AI gracefully", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion(""),
-      );
+      vi.mocked(aiChat).mockResolvedValue(createMockChatCompletion(""));
 
       // Empty string parses as {} which fails the schema
       await expect(generateSuggestions(baseInput)).rejects.toThrow(
@@ -162,7 +154,7 @@ describe("suggestion-generation", () => {
     });
 
     it("handles null brandName", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(
           JSON.stringify({
             suggestions: [
@@ -191,7 +183,7 @@ describe("suggestion-generation", () => {
     };
 
     it("returns instructions text for recipe type", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion("Step 1: Mix yogurt with honey..."),
       );
 
@@ -200,7 +192,7 @@ describe("suggestion-generation", () => {
     });
 
     it("returns instructions for craft type", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion("Materials: empty yogurt cup..."),
       );
 
@@ -210,10 +202,13 @@ describe("suggestion-generation", () => {
         suggestionTitle: "Yogurt Cup Craft",
       });
       expect(result).toContain("yogurt cup");
+      expect(vi.mocked(aiChat).mock.calls[0][0]).toBe(
+        "suggestion-instructions",
+      );
     });
 
     it("returns instructions for pairing type", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion("These pair well because of the contrast..."),
       );
 
@@ -226,18 +221,14 @@ describe("suggestion-generation", () => {
     });
 
     it("returns fallback text when AI returns empty content", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion(""),
-      );
+      vi.mocked(aiChat).mockResolvedValue(createMockChatCompletion(""));
 
       const result = await generateInstructions(baseInput);
       expect(result).toBe("Unable to generate instructions.");
     });
 
     it("propagates OpenAI API errors", async () => {
-      vi.mocked(openai.chat.completions.create).mockRejectedValue(
-        new Error("API rate limit exceeded"),
-      );
+      vi.mocked(aiChat).mockRejectedValue(new Error("API rate limit exceeded"));
 
       await expect(generateInstructions(baseInput)).rejects.toThrow(
         "API rate limit exceeded",

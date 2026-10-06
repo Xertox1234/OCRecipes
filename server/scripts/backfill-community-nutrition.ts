@@ -13,11 +13,11 @@
  *   npx tsx server/scripts/backfill-community-nutrition.ts
  *   DRY_RUN=1 npx tsx server/scripts/backfill-community-nutrition.ts
  */
+import { aiChat } from "../lib/ai-client";
 import "dotenv/config";
 import { db, pool } from "../db";
 import { communityRecipes } from "@shared/schema";
 import { isNull, eq } from "drizzle-orm";
-import { openai, MODEL_FAST } from "../lib/openai";
 
 const DRY_RUN = process.env.DRY_RUN === "1";
 
@@ -37,9 +37,9 @@ async function estimateMacros(
     .map((i) => `${i.quantity} ${i.unit} ${i.name}`.trim())
     .join(", ");
   try {
-    const response = await openai.chat.completions.create(
+    const response = await aiChat(
+      "script-backfill-macros",
       {
-        model: MODEL_FAST,
         temperature: 0,
         max_completion_tokens: 200,
         messages: [

@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { askClarifying, FALLBACK_QUESTIONS } from "../ask-clarifying";
-import { openai } from "../../../lib/openai";
+import { aiChat } from "../../../lib/ai-client";
 import { createMockChatCompletion } from "../../../__tests__/factories";
 
+vi.mock("../../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../../lib/openai", () => ({
-  openai: { chat: { completions: { create: vi.fn() } } },
   OPENAI_TIMEOUT_FAST_MS: 15_000,
-  MODEL_FAST: "gpt-4o-mini",
 }));
 vi.mock("../../../lib/ai-safety", () => ({
   sanitizeUserInput: vi.fn((t: string) => t),
@@ -25,7 +24,7 @@ vi.mock("../../../lib/ai-safety", () => ({
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
-const mockCreate = vi.mocked(openai.chat.completions.create);
+const mockCreate = vi.mocked(aiChat);
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -44,6 +43,7 @@ describe("askClarifying", () => {
     await expect(askClarifying("Mediterranean", [])).resolves.toEqual(
       questions,
     );
+    expect(mockCreate.mock.calls[0][0]).toBe("finder-ask-clarifying");
   });
 
   it("falls back to fixed time/cuisine/diet questions when the AI throws", async () => {

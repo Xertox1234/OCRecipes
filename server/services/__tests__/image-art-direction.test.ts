@@ -12,9 +12,8 @@ import {
 } from "../image-art-direction";
 
 const mockCreate = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/ai-client", () => ({ aiChat: mockCreate }));
 vi.mock("../../lib/openai", () => ({
-  openai: { chat: { completions: { create: mockCreate } } },
-  MODEL_FAST: "gpt-4o-mini",
   OPENAI_TIMEOUT_FAST_MS: 15000,
   isAiConfigured: true,
 }));
@@ -180,6 +179,7 @@ describe("resolveArtDirection — LLM enrich + fallback", () => {
     const art = await resolveArtDirection(ctx, "hero");
     expect(art.surface).toBe("a fresh banana leaf");
     expect(art.season).toBe("late summer");
+    expect(mockCreate.mock.calls[0][0]).toBe("image-art-direction");
   });
 
   it("falls back to deterministic on invalid JSON", async () => {

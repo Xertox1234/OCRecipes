@@ -1,9 +1,8 @@
+import { aiChat } from "../lib/ai-client";
 import { z } from "zod";
 
 import {
-  openai,
   dalleClient,
-  MODEL_FAST,
   OPENAI_TIMEOUT_FAST_MS,
   OPENAI_TIMEOUT_IMAGE_MS,
   isAiConfigured,
@@ -200,9 +199,9 @@ export async function deriveCoverSubject(
       `in this cookbook. Example: {"subject": "golden pastries, a berry tart, ` +
       `and bowls of flour and sugar"}.`;
 
-    const completion = await openai.chat.completions.create(
+    const completion = await aiChat(
+      "cookbook-cover-subject",
       {
-        model: MODEL_FAST,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

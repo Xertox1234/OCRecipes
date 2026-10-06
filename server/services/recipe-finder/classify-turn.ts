@@ -1,6 +1,6 @@
 // server/services/recipe-finder/classify-turn.ts
+import { aiChat } from "../../lib/ai-client";
 import { z } from "zod";
-import { openai, MODEL_FAST } from "../../lib/openai";
 import {
   sanitizeUserInput,
   sanitizeContextField,
@@ -31,9 +31,9 @@ export async function classifyTurn(
   currentRecipeTitle: string,
 ): Promise<TurnClass> {
   try {
-    const response = await openai.chat.completions.create(
+    const response = await aiChat(
+      "finder-classify-turn",
       {
-        model: MODEL_FAST,
         temperature: 0,
         max_completion_tokens: 20,
         response_format: { type: "json_object" },

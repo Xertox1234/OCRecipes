@@ -1,6 +1,7 @@
+import { aiChat } from "../lib/ai-client";
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
-import { openai, MODEL_FAST, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
+import { OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 
@@ -83,9 +84,9 @@ Generate exactly 4 suggestions in this JSON format:
 
 Keep descriptions concise. Make recipes practical and kid activities fun and safe. Return only valid JSON.`;
 
-  const completion = await openai.chat.completions.create(
+  const completion = await aiChat(
+    "suggestion-generate",
     {
-      model: MODEL_FAST,
       temperature: 0.7,
       messages: [
         {
@@ -176,9 +177,9 @@ Include:
 Format as plain text with clear sections.`;
   }
 
-  const completion = await openai.chat.completions.create(
+  const completion = await aiChat(
+    "suggestion-instructions",
     {
-      model: MODEL_FAST,
       temperature: 0.4,
       messages: [
         {

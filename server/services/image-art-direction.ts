@@ -1,13 +1,9 @@
 // server/services/image-art-direction.ts
+import { aiChat } from "../lib/ai-client";
 import crypto from "node:crypto";
 import { z } from "zod";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
-import {
-  openai,
-  MODEL_FAST,
-  isAiConfigured,
-  OPENAI_TIMEOUT_FAST_MS,
-} from "../lib/openai";
+import { isAiConfigured, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
 import { createServiceLogger, toError } from "../lib/logger";
 
 export type ImageVariant = "hero" | "plated" | "ingredients";
@@ -459,9 +455,9 @@ export async function resolveArtDirection(
       `Refine (do not ignore) this starting point: ${JSON.stringify(deterministic)}\n\n` +
       `Return a JSON object with short-phrase string fields: angle, surface, background, lighting, palette, props, mood, and optionally season. Describe only the scene. Do NOT mention text, captions, logos, or watermarks.`;
 
-    const completion = await openai.chat.completions.create(
+    const completion = await aiChat(
+      "image-art-direction",
       {
-        model: MODEL_FAST,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

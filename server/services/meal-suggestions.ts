@@ -1,8 +1,9 @@
+import { aiChat } from "../lib/ai-client";
 import crypto from "crypto";
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
-import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
+import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { buildDismissalContext } from "../lib/dismissal-context";
@@ -131,9 +132,9 @@ Respond with JSON: { "suggestions": [...] }`;
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "meal-suggestions",
       {
-        model: MODEL_HEAVY,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

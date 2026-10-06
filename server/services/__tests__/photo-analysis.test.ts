@@ -17,8 +17,6 @@ import { createMockChatCompletion } from "../../__tests__/factories";
 vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 
 vi.mock("../../lib/openai", () => ({
-  MODEL_HEAVY: "gpt-4o",
-  MODEL_FAST: "gpt-4o-mini",
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
   OPENAI_TIMEOUT_FAST_MS: 15_000,
 }));

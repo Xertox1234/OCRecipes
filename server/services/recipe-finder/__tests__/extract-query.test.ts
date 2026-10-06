@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { extractQuery, rawQuery } from "../extract-query";
-import { openai } from "../../../lib/openai";
+import { aiChat } from "../../../lib/ai-client";
 import { createMockChatCompletion } from "../../../__tests__/factories";
 
+vi.mock("../../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../../lib/openai", () => ({
-  openai: { chat: { completions: { create: vi.fn() } } },
   OPENAI_TIMEOUT_FAST_MS: 15_000,
-  MODEL_FAST: "gpt-4o-mini",
 }));
 
 vi.mock("../../../lib/ai-safety", () => ({
@@ -26,7 +25,7 @@ vi.mock("../../../lib/ai-safety", () => ({
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
-const mockCreate = vi.mocked(openai.chat.completions.create);
+const mockCreate = vi.mocked(aiChat);
 
 function aiReturns(json: unknown) {
   mockCreate.mockResolvedValue(createMockChatCompletion(JSON.stringify(json)));
@@ -53,12 +52,11 @@ describe("extractQuery", () => {
       maxPrepTime: 20,
       mealType: "lunch",
     });
-    const call = mockCreate.mock.calls[0][0] as {
+    expect(mockCreate.mock.calls[0][0]).toBe("finder-extract-query");
+    const call = mockCreate.mock.calls[0][1] as {
       response_format: unknown;
-      model: string;
     };
     expect(call.response_format).toEqual({ type: "json_object" });
-    expect(call.model).toBe("gpt-4o-mini");
   });
 
   it("drops an invalid optional field but keeps q", async () => {

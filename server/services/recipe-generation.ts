@@ -1,3 +1,4 @@
+import { aiChat } from "../lib/ai-client";
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
 import type {
@@ -5,11 +6,9 @@ import type {
   GeneratedIngredient,
 } from "@shared/types/cook-session";
 import {
-  openai,
   dalleClient,
   OPENAI_TIMEOUT_HEAVY_MS,
   OPENAI_TIMEOUT_IMAGE_MS,
-  MODEL_HEAVY,
 } from "../lib/openai";
 import {
   generateImage as runwareGenerateImage,
@@ -168,9 +167,9 @@ export async function generateRecipeContent(
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "recipe-generate",
       {
-        model: MODEL_HEAVY,
         temperature: 0.85,
         max_completion_tokens: 2000,
         messages: [
