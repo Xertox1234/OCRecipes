@@ -312,3 +312,229 @@ describe("aiChat inside a call context", () => {
     );
   });
 });
+
+const chunk = (
+  content: string | null,
+  extra: Record<string, unknown> = {},
+) => ({
+  id: "s1",
+  object: "chat.completion.chunk",
+  created: 0,
+  model: "openai/gpt-4o-mini",
+  provider: "Azure",
+  choices: [
+    {
+      index: 0,
+      delta: content === null ? { role: "assistant" } : { content },
+      finish_reason: null,
+    },
+  ],
+  ...extra,
+});
+
+function fakeStream(items: (object | Error)[]) {
+  const returned = { value: false };
+  const iterable = {
+    [Symbol.asyncIterator]() {
+      let i = 0;
+      return {
+        async next() {
+          if (i >= items.length) return { done: true, value: undefined };
+          const item = items[i++];
+          if (item instanceof Error) throw item;
+          return { done: false, value: item };
+        },
+        async return() {
+          returned.value = true;
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
+  return { iterable, returned };
+}
+
+async function collect(
+  stream: AsyncIterable<{ choices: { delta: { content?: string | null } }[] }>,
+) {
+  let text = "";
+  for await (const c of stream) text += c.choices[0]?.delta?.content ?? "";
+  return text;
+}
+
+describe("aiChat (streaming)", () => {
+  const sparams = { ...params, stream: true as const };
+
+  it("replays the peeked first chunk and passes the rest through", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream([chunk("Hel"), chunk("lo")]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    expect(await collect(await aiChat("coach-chat", sparams))).toBe("Hello");
+  });
+
+  it("a role-only first chunk counts as received", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream([
+      chunk(null),
+      chunk("x"),
+      new Error("mid-stream"),
+    ]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    const stream = await aiChat("coach-chat", sparams);
+    await expect(collect(stream)).rejects.toThrow("mid-stream");
+    expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+  });
+
+  it("an HTTP error before any chunk falls back", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    const { iterable } = fakeStream([chunk("fallback")]);
+    vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    expect(await collect(await aiChat("coach-chat", sparams))).toBe("fallback");
+  });
+
+  it("an in-stream error as the FIRST event falls back", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream([
+      {
+        ...chunk(""),
+        error: { code: "server_error" },
+        choices: [{ index: 0, delta: { content: "" }, finish_reason: "error" }],
+      },
+    ]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const fb = fakeStream([chunk("ok")]);
+    vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue(
+      fb.iterable,
+    );
+    const aiChat = createAiChat(deps);
+    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+  });
+
+  it("the first next() throwing (SDK-raised SSE error) falls back", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream([new Error("provider disconnected")]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const fb = fakeStream([chunk("ok")]);
+    vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue(
+      fb.iterable,
+    );
+    const aiChat = createAiChat(deps);
+    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+  });
+
+  it("an in-stream error AFTER the first chunk is thrown to the caller (no fallback)", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream([
+      chunk("a"),
+      {
+        ...chunk(""),
+        error: { code: "server_error" },
+        choices: [{ index: 0, delta: { content: "" }, finish_reason: "error" }],
+      },
+    ]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    await expect(collect(await aiChat("coach-chat", sparams))).rejects.toThrow(
+      /in-stream error/,
+    );
+    expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+  });
+
+  it("abort while peeking re-throws without fallback", async () => {
+    const deps = makeDeps();
+    const controller = new AbortController();
+    const { iterable } = fakeStream([new OpenAI.APIUserAbortError()]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockImplementation(
+      async () => {
+        controller.abort();
+        return iterable;
+      },
+    );
+    const aiChat = createAiChat(deps);
+    await expect(
+      aiChat("coach-chat", sparams, { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(OpenAI.APIUserAbortError);
+    expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+  });
+
+  it("early consumer exit closes the source stream and logs completed:false", async () => {
+    const deps = makeDeps();
+    const { iterable, returned } = fakeStream([
+      chunk("a"),
+      chunk("b"),
+      chunk("c"),
+    ]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    for await (const _c of await aiChat("coach-chat", sparams)) break;
+    expect(returned.value).toBe(true);
+    expect(deps.log.info).toHaveBeenCalledWith(
+      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.any(String),
+    );
+  });
+
+  it("logs usage cost from the last chunk and records the call at stream end", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream([
+      chunk("a"),
+      {
+        ...chunk(null),
+        choices: [],
+        usage: {
+          prompt_tokens: 1,
+          completion_tokens: 1,
+          total_tokens: 2,
+          cost: 0.002,
+        },
+      },
+    ]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    const c: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
+    await withAiCallContext(c, async () => {
+      const stream = await aiChat("coach-chat", sparams);
+      expect(c.calls).toHaveLength(0); // not yet — written at stream end
+      await collect(stream);
+    });
+    expect(c.calls).toEqual([
+      {
+        feature: "coach-chat",
+        requestedModel: "openai/gpt-4o-mini",
+        answeredModel: "openai/gpt-4o-mini",
+        answeredProvider: "Azure",
+        fellBack: false,
+      },
+    ]);
+    expect(deps.log.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feature: "coach-chat",
+        cost: 0.002,
+        completed: true,
+      }),
+      expect.any(String),
+    );
+  });
+});

@@ -19,6 +19,7 @@ import {
   CircuitBreaker,
   classifyAiFailure,
   countsTowardBreaker,
+  InStreamError,
 } from "./ai-failure";
 import type { AiFailureKind } from "./ai-failure";
 import { openai } from "./openai";
@@ -93,6 +94,56 @@ function isAbort(err: unknown, options?: AiChatOptions): boolean {
   return (
     options?.signal?.aborted === true || err instanceof OpenAI.APIUserAbortError
   );
+}
+
+function isErrorChunk(chunk: unknown): boolean {
+  const c = chunk as {
+    error?: unknown;
+    choices?: { finish_reason?: string | null }[];
+  };
+  return c.error !== undefined || c.choices?.[0]?.finish_reason === "error";
+}
+
+interface StreamSummary {
+  answeredModel: string | null;
+  answeredProvider: string | null;
+  cost: number | undefined;
+  completed: boolean;
+}
+
+async function* wrapStream(
+  iterator: AsyncIterator<ChatCompletionChunk>,
+  first: IteratorResult<ChatCompletionChunk>,
+  onEnd: (summary: StreamSummary) => void,
+): AsyncGenerator<ChatCompletionChunk> {
+  const summary: StreamSummary = {
+    answeredModel: null,
+    answeredProvider: null,
+    cost: undefined,
+    completed: false,
+  };
+  const note = (c: ChatCompletionChunk) => {
+    summary.answeredModel ??= c.model ?? null;
+    summary.answeredProvider ??= answeredProvider(c);
+    summary.cost = usageCost(c) ?? summary.cost;
+  };
+  try {
+    if (!first.done) {
+      note(first.value);
+      yield first.value;
+    }
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) break;
+      if (isErrorChunk(next.value)) throw new InStreamError(next.value);
+      note(next.value);
+      yield next.value;
+    }
+    summary.completed = true;
+  } finally {
+    if (!summary.completed) await iterator.return?.();
+    onEnd(summary);
+  }
 }
 
 export function createAiChat(deps: AiChatDeps): AiChat {
@@ -174,7 +225,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
 
     try {
       if (streaming) {
-        return await openStream(feature, requestedModel, body, options, record); // Task 5
+        return await openStream(feature, requestedModel, body, options, record);
       }
       const res = await deps.openrouter.chat.completions.create(body, options);
       deps.breaker.recordSuccess();
@@ -219,11 +270,37 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     }
   }
 
-  // Placeholder replaced in Task 5 — streaming is not routed yet.
   async function openStream(
-    ..._args: unknown[]
+    feature: AiFeature,
+    requestedModel: string,
+    body: Record<string, unknown>,
+    options: AiChatOptions | undefined,
+    record: (
+      answeredModel: string | null,
+      provider: string | null,
+      fellBack: boolean,
+    ) => void,
   ): Promise<AsyncIterable<ChatCompletionChunk>> {
-    throw new Error("aiChat streaming lands in Task 5");
+    const source = (await deps.openrouter!.chat.completions.create(
+      body,
+      options,
+    )) as AsyncIterable<ChatCompletionChunk>;
+    const iterator = source[Symbol.asyncIterator]();
+    // Peek: any SSE event — role-only or tool-call deltas included — counts as
+    // "the caller has received something" once we return (spec §3.5).
+    const first = await iterator.next();
+    if (!first.done && isErrorChunk(first.value)) {
+      await iterator.return?.();
+      throw new InStreamError(first.value);
+    }
+    deps.breaker.recordSuccess();
+    return wrapStream(iterator, first, (summary) => {
+      record(summary.answeredModel, summary.answeredProvider, false);
+      deps.log.info(
+        { feature, provider: "openrouter", requestedModel, ...summary },
+        "ai stream",
+      );
+    });
   }
 
   return run as AiChat;
