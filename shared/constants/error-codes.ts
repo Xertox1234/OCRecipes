@@ -54,6 +54,13 @@ export const ErrorCode = {
   PROVIDER_ALREADY_CONNECTED: "PROVIDER_ALREADY_CONNECTED",
   LAST_SIGN_IN_METHOD: "LAST_SIGN_IN_METHOD",
   SECOND_FACTOR_REQUIRED: "SECOND_FACTOR_REQUIRED",
+  // Two-step verification (authenticator app + recovery codes)
+  MFA_CHALLENGE_INVALID: "MFA_CHALLENGE_INVALID",
+  MFA_CODE_INVALID: "MFA_CODE_INVALID",
+  MFA_LOCKED: "MFA_LOCKED",
+  MFA_UNAVAILABLE: "MFA_UNAVAILABLE",
+  MFA_ALREADY_ENABLED: "MFA_ALREADY_ENABLED",
+  MFA_NOT_ENABLED: "MFA_NOT_ENABLED",
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- intentional: merging value + type

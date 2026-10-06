@@ -198,6 +198,16 @@ export const reauthLimiter = createRateLimiter({
   message: "Too many attempts, please try again later",
 });
 
+// Two-step verification. Per IP, on top of the durable per-challenge (5) and
+// per-account (lock every 10) caps in the database — those are the real
+// brute-force bound; this one only blunts a flood from one address.
+export const mfaVerifyLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: "Too many attempts, please try again later",
+  keyByUser: false,
+});
+
 export const accountDeletionLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 5,

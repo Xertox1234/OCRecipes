@@ -80,6 +80,17 @@ export type ReauthProof = z.infer<typeof reauthProofSchema>;
 
 export const deleteAccountSchema = reauthProofSchema;
 
+// ── Two-step verification ───────────────────────────────────────────────────
+const mfaChallengeToken = z.string().min(20).max(100);
+const totpCode = z.string().regex(/^\d{6}$/, "Enter the 6-digit code");
+const recoveryCodeInput = z.string().min(1).max(40);
+
+/** POST /api/auth/mfa/verify — an app code OR a recovery code. */
+export const mfaVerifySchema = z.union([
+  z.object({ challenge: mfaChallengeToken, code: totpCode }),
+  z.object({ challenge: mfaChallengeToken, recoveryCode: recoveryCodeInput }),
+]);
+
 // ── Sign in with Google / Apple ────────────────────────────────────────────
 const providerEnum = z.enum(["google", "apple"]);
 const tokenField = z.string().min(1).max(8192);

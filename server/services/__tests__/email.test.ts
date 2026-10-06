@@ -302,6 +302,46 @@ describe("email service", () => {
       expect(arg.html).not.toContain("ocrecipes.app");
     });
 
+    it.each([
+      ["enabled", "Two-step verification is on for your OCRecipes account"],
+      [
+        "disabled",
+        "Two-step verification was turned off on your OCRecipes account",
+      ],
+      [
+        "recovery_code_used",
+        "A recovery code was used to sign in to OCRecipes",
+      ],
+      [
+        "recovery_codes_replaced",
+        "Your OCRecipes recovery codes were replaced",
+      ],
+    ] as const)(
+      "two-step notice (%s) has its subject, the escaped username and support address",
+      async (kind, subject) => {
+        vi.stubEnv("RESEND_API_KEY", "re_test");
+        const { sendTwoFactorNotice } = await import("../email");
+        await sendTwoFactorNotice("r@x.com", "<b>alice</b>", kind);
+        const arg = mockSend.mock.calls[0][0];
+        expect(arg.to).toBe("r@x.com");
+        expect(arg.subject).toBe(subject);
+        expect(arg.html).toContain("&lt;b&gt;alice&lt;/b&gt;");
+        expect(arg.html).toContain("mailto:support@ocrecipes.com");
+      },
+    );
+
+    it("a two-step notice still sends after the general bucket is exhausted", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendSignupAttemptNotice, sendTwoFactorNotice } = await import(
+        "../email"
+      );
+      for (let i = 0; i < 7; i++)
+        await sendSignupAttemptNotice("w@x.com", "victim");
+      mockSend.mockClear();
+      await sendTwoFactorNotice("w@x.com", "victim", "disabled");
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
     it("still sends a reset code and a notice after the general bucket is exhausted", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const {

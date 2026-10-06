@@ -297,6 +297,10 @@ describe("every protected route is registered behind requireAuth (static guard)"
       "connect prompt — ticket plus password or provider proof",
     ],
     [
+      "POST /api/auth/mfa/verify",
+      "two-step sign-in — the caller has no session yet; the challenge token (5 tries, 5 min, single use) is the proof",
+    ],
+    [
       "POST /webhooks/apple/notifications",
       "Apple store webhook — JWS-verified",
     ],

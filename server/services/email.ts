@@ -269,6 +269,62 @@ export async function sendPasswordChangedNotice(
     logger.error({ resendError: error }, "password-changed notice failed");
 }
 
+export type TwoFactorNoticeKind =
+  | "enabled"
+  | "disabled"
+  | "recovery_code_used"
+  | "recovery_codes_replaced";
+
+const TWO_FACTOR_NOTICES: Record<
+  TwoFactorNoticeKind,
+  { subject: string; what: string }
+> = {
+  enabled: {
+    subject: "Two-step verification is on for your OCRecipes account",
+    what: "two-step verification was turned on, and every other device was signed out",
+  },
+  disabled: {
+    subject: "Two-step verification was turned off on your OCRecipes account",
+    what: "two-step verification was turned off, and every other device was signed out",
+  },
+  recovery_code_used: {
+    subject: "A recovery code was used to sign in to OCRecipes",
+    what: "a recovery code was just used to sign in",
+  },
+  recovery_codes_replaced: {
+    subject: "Your OCRecipes recovery codes were replaced",
+    what: "a new set of recovery codes was created; the old ones no longer work",
+  },
+};
+
+/** Security notice for a two-step verification change (account-security bucket). */
+export async function sendTwoFactorNotice(
+  to: string,
+  username: string,
+  kind: TwoFactorNoticeKind,
+): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "account-security")) {
+    logger.warn(
+      { to, kind },
+      "two-step notice throttled (account-security cap)",
+    );
+    return;
+  }
+  const { subject, what } = TWO_FACTOR_NOTICES[kind];
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject,
+    html: `<p>On your OCRecipes account <strong>${escapeHtml(username)}</strong>, ${what}.</p>
+<p>If this was you, there's nothing else to do.</p>
+<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
+  });
+  if (error)
+    logger.error({ resendError: error, kind }, "two-step notice failed");
+}
+
 /** Test-only internals — never import from production code. */
 export const _testInternals = {
   recipientSends,
