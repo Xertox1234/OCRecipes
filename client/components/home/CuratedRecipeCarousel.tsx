@@ -3,13 +3,13 @@ import {
   FlatList,
   StyleSheet,
   View,
-  Pressable,
   Dimensions,
   type ListRenderItemInfo,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { FallbackImage } from "@/components/FallbackImage";
 import { CuratedBadge } from "@/components/CuratedBadge";
 import { CarouselSkeleton } from "./CarouselSkeleton";
@@ -56,8 +56,9 @@ export const CuratedRecipeCarousel = React.memo(
         const imageUri = resolveImageUrl(rawImage);
 
         return (
-          <Pressable
+          <PressableScale
             onPress={() => handlePress(item)}
+            scaleTo={0.97}
             style={styles.cardWrapper}
             accessibilityRole="button"
             accessibilityLabel={`${item.title}. Curated recipe. Double tap to view.`}
@@ -101,7 +102,7 @@ export const CuratedRecipeCarousel = React.memo(
                 </ThemedText>
               </View>
             </View>
-          </Pressable>
+          </PressableScale>
         );
       },
       [handlePress, theme],

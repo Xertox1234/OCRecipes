@@ -83,7 +83,10 @@ export const DailySummaryHeader = React.memo(function DailySummaryHeader({
             onPress={onCalorieTap}
             accessibilityRole="button"
             accessibilityLabel={`${formatCalorieSummary(budget.foodCalories, budget.calorieGoal)}. Tap for details.`}
-            style={styles.calorieTap}
+            style={({ pressed }) => [
+              styles.calorieTap,
+              pressed && { opacity: 0.7 },
+            ]}
           >
             <ThemedText
               type="body"

@@ -75,7 +75,7 @@ export function HomeInlineDrawer({
     <Animated.View>
       <Pressable
         onPress={onToggle}
-        style={styles.header}
+        style={({ pressed }) => [styles.header, pressed && { opacity: 0.7 }]}
         accessibilityRole="button"
         // The lock icon is accessible={false}; say it in the label instead
         // (PhotoIntentScreen's locked-option wording). A locked row opens the
