@@ -1590,7 +1590,10 @@ describe("useAuth", () => {
     it("finishSignIn stores the session", async () => {
       const { result } = await ready();
       await act(async () => {
-        await result.current.finishSignIn(fakeUser, "t-3");
+        await result.current.finishSignIn(
+          { id: "u1", username: "chef" },
+          "t-3",
+        );
       });
       expect(mockTokenStorage.set).toHaveBeenCalledWith("t-3");
       expect(result.current.isAuthenticated).toBe(true);
