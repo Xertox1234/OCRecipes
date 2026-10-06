@@ -119,4 +119,10 @@ describe("runEvalSuite refusal gates", () => {
     expect(loggedErrors()).toMatch(/OPENROUTER_API_KEY or ANTHROPIC_API_KEY/);
     expect(loggedErrors()).not.toMatch(/--candidate/);
   });
+
+  it("REFUSES a --candidate flag with no value instead of running an unlabeled baseline", async () => {
+    process.argv.push("--candidate");
+    await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
+    expect(loggedErrors()).toMatch(/--candidate needs a value/);
+  });
 });

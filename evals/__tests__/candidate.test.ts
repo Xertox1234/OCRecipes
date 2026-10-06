@@ -42,6 +42,16 @@ describe("modelMatches", () => {
     ).toBe(true);
     expect(modelMatches("openai/gpt-4o-mini", "openai/gpt-4o-mini")).toBe(true);
   });
+  it("compact YYYYMMDD date suffix matches", () => {
+    expect(
+      modelMatches("openai/gpt-4o-mini", "openai/gpt-4o-mini-20240718"),
+    ).toBe(true);
+  });
+  it("a non-date suffix does not match", () => {
+    expect(
+      modelMatches("openai/gpt-4o-mini", "openai/gpt-4o-mini-preview"),
+    ).toBe(false);
+  });
   it("a different model does not match", () => {
     expect(modelMatches("openai/gpt-4o", "openai/gpt-4o-mini")).toBe(false);
     expect(modelMatches("openai/gpt-6-luna", null)).toBe(false);

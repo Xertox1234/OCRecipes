@@ -438,6 +438,15 @@ export async function runEvalSuite(
     const i = process.argv.indexOf("--candidate");
     return i >= 0 ? process.argv[i + 1] : undefined;
   })();
+  if (
+    process.argv.includes("--candidate") &&
+    (candidateArg === undefined || candidateArg.startsWith("--"))
+  ) {
+    console.error(
+      "Error: --candidate needs a value (feature=provider/model[,...])",
+    );
+    process.exit(1);
+  }
   let overrides: Partial<Record<AiFeature, AiModelOverride>> = {};
   if (candidateArg !== undefined) {
     try {
