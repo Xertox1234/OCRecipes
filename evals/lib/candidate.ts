@@ -142,7 +142,7 @@ export function isModerationOnlySample(
     const { failed, others } = recordViolations(c, overrides);
     if (others.length > 0) return false;
     if (failed) {
-      if (!c.error?.moderated) return false;
+      if (!c.error?.moderated || c.error.kind !== "request") return false;
       moderated++;
     }
   }

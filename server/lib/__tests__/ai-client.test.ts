@@ -323,6 +323,28 @@ describe("aiChat inside a call context", () => {
     expect(c.calls[0].error?.message.length).toBeLessThanOrEqual(300);
   });
 
+  it.each([
+    [503, "upstream says: input was flagged"],
+    [429, "requires moderation queue is full"],
+  ])(
+    "fallback off + %i mentioning moderation → transport, NOT moderated",
+    async (status, message) => {
+      const deps = makeDeps();
+      vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+        apiError(status, message),
+      );
+      const aiChat = createAiChat(deps);
+      const c = ctx();
+      await expect(
+        withAiCallContext(c, () => aiChat("coach-notebook-extract", params)),
+      ).rejects.toThrow();
+      expect(c.calls[0].error).toMatchObject({
+        kind: "transport",
+        moderated: false,
+      });
+    },
+  );
+
   it("fallback off + abort → no record", async () => {
     const deps = makeDeps();
     const ac = new AbortController();

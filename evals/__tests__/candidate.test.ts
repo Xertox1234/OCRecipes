@@ -202,6 +202,13 @@ describe("failed-call records", () => {
     expect(isModerationOnlySample([])).toBe(false);
     expect(isModerationOnlySample([clean])).toBe(false);
     expect(isModerationOnlySample([moderated, transport])).toBe(false);
+    // a non-request failure flagged moderated (e.g. a 5xx whose text mentions
+    // moderation) must never be bucketed
+    expect(
+      isModerationOnlySample([
+        { ...moderated, error: { ...moderated.error!, kind: "transport" } },
+      ]),
+    ).toBe(false);
     // another violation in the same sample: a fallback on a clean record
     expect(
       isModerationOnlySample([moderated, { ...clean, fellBack: true }]),
