@@ -65,6 +65,22 @@ interface AuthContextType {
     proof: MfaProof,
   ) => Promise<MfaVerifyResult>;
   finishSignIn: (user: User, token: string) => Promise<void>;
+  /** Null when the provider sheet was cancelled. */
+  startTwoFactorSetup: (
+    proof: DeleteAccountProof,
+  ) => Promise<{ secret: string; otpauthUrl: string } | null>;
+  /** Turns two-step on (fresh session stored); returns the recovery codes. */
+  confirmTwoFactor: (code: string) => Promise<string[]>;
+  /** False when the provider sheet was cancelled. */
+  disableTwoFactor: (
+    proof: DeleteAccountProof,
+    second: MfaProof,
+  ) => Promise<boolean>;
+  /** Null when the provider sheet was cancelled. */
+  replaceRecoveryCodes: (
+    proof: DeleteAccountProof,
+    code: string,
+  ) => Promise<string[] | null>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);

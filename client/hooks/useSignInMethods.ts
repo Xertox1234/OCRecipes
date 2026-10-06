@@ -1,12 +1,13 @@
 import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { SignInMethods } from "@shared/types/auth";
+import type { SignInMethods, TwoFactorStatus } from "@shared/types/auth";
 import { apiRequest } from "@/lib/query-client";
 
 const ME_KEY = ["/api/auth/me"] as const;
 
 interface MeResponse {
   signInMethods?: SignInMethods;
+  twoFactor?: TwoFactorStatus;
 }
 
 /**
@@ -17,6 +18,8 @@ interface MeResponse {
  */
 export function useSignInMethods(): {
   methods: SignInMethods | undefined;
+  /** Two-step verification status (undefined while loading). */
+  twoFactor: TwoFactorStatus | undefined;
   /** The load failed (after retries); `methods` stays undefined. */
   isError: boolean;
   refetch: () => void;
@@ -42,6 +45,7 @@ export function useSignInMethods(): {
   );
   return {
     methods: data?.signInMethods,
+    twoFactor: data?.twoFactor,
     isError,
     refetch: () => {
       void refetch();

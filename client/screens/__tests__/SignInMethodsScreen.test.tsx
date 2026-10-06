@@ -10,6 +10,10 @@ import SignInMethodsScreen from "../SignInMethodsScreen";
 
 const h = vi.hoisted(() => ({
   methods: undefined as SignInMethods | undefined,
+  twoFactor: undefined as
+    | { enabled: boolean; recoveryCodesRemaining: number }
+    | undefined,
+  navigate: vi.fn(),
   isError: false,
   refetch: vi.fn(),
   setMethods: vi.fn(),
@@ -29,6 +33,7 @@ vi.mock("@/hooks/useSocialConfig", () => ({
 vi.mock("@/hooks/useSignInMethods", () => ({
   useSignInMethods: () => ({
     methods: h.methods,
+    twoFactor: h.twoFactor,
     isError: h.isError,
     refetch: h.refetch,
     setMethods: h.setMethods,
@@ -46,7 +51,7 @@ vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: h.toastSuccess, error: h.toastError }),
 }));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({ setOptions: vi.fn(), navigate: h.navigate }),
 }));
 vi.mock("@/components/ConfirmationModal", () => ({
   useConfirmationModal: () => ({
@@ -62,11 +67,35 @@ const relay = { email: "x@privaterelay.appleid.com", isPrivateRelay: true };
 beforeEach(() => {
   vi.clearAllMocks();
   h.methods = undefined;
+  h.twoFactor = undefined;
   h.isError = false;
   h.config = { apple: true, google: false };
 });
 
 describe("SignInMethodsScreen", () => {
+  it("shows two-step verification as Off and opens its settings", () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.twoFactor = { enabled: false, recoveryCodesRemaining: 0 };
+    renderComponent(<SignInMethodsScreen />);
+    expect(screen.getByText("Two-step verification")).toBeTruthy();
+    expect(screen.getByText("Off")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Turn on two-step verification" }),
+    );
+    expect(h.navigate).toHaveBeenCalledWith("TwoFactorSetup");
+  });
+
+  it("shows two-step verification as On with a Manage button", () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.twoFactor = { enabled: true, recoveryCodesRemaining: 9 };
+    renderComponent(<SignInMethodsScreen />);
+    expect(screen.getByText("On")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Manage two-step verification" }),
+    );
+    expect(h.navigate).toHaveBeenCalledWith("TwoFactorSetup");
+  });
+
   it("shows a loading state until the methods arrive", () => {
     renderComponent(<SignInMethodsScreen />);
     expect(screen.getByLabelText("Loading sign-in methods")).toBeTruthy();

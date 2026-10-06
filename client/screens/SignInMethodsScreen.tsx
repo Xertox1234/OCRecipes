@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
@@ -41,7 +43,8 @@ export default function SignInMethodsScreen() {
   const toast = useToast();
   const { user, connectProvider, disconnectProvider, logout } =
     useAuthContext();
-  const { methods, isError, refetch, setMethods } = useSignInMethods();
+  const { methods, twoFactor, isError, refetch, setMethods } =
+    useSignInMethods();
   const config = useSocialConfig();
   // Offer a connect only when this build can open the provider AND the
   // server can verify it (no Apple key on the server → no Apple connect).
@@ -49,7 +52,10 @@ export default function SignInMethodsScreen() {
     apple: NATIVE_PROVIDERS.apple && config.apple,
     google: NATIVE_PROVIDERS.google && config.google,
   };
-  const navigation = useNavigation();
+  const navigation =
+    useNavigation<
+      NativeStackNavigationProp<ProfileStackParamList, "SignInMethods">
+    >();
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
   const [connecting, setConnecting] = useState<SocialProvider | null>(null);
@@ -245,6 +251,34 @@ export default function SignInMethodsScreen() {
               </View>
             );
           })}
+        </Card>
+
+        <Card elevation={1} style={styles.card} {...behindContentA11yProps}>
+          <View style={styles.row}>
+            <Feather
+              name="shield"
+              size={20}
+              color={theme.textSecondary}
+              accessible={false}
+            />
+            <View style={styles.rowText}>
+              <ThemedText>Two-step verification</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                {twoFactor?.enabled ? "On" : "Off"}
+              </ThemedText>
+            </View>
+            <Button
+              variant="outline"
+              onPress={() => navigation.navigate("TwoFactorSetup")}
+              accessibilityLabel={
+                twoFactor?.enabled
+                  ? "Manage two-step verification"
+                  : "Turn on two-step verification"
+              }
+            >
+              {twoFactor?.enabled ? "Manage" : "Turn on"}
+            </Button>
+          </View>
         </Card>
       </ScreenScrollView>
 

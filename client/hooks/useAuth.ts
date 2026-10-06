@@ -119,6 +119,26 @@ export type DeleteAccountProof =
  * apiRequest sends the stored bearer when there is one, so a signed-in caller
  * gets a nonce bound to its account (the server rejects public nonces for it).
  */
+/**
+ * The server's re-auth proof for a sensitive action (delete account, two-step
+ * changes): the password, or a fresh provider sign-in bound to a `reauth`
+ * nonce for an account without a password. Null = the provider sheet was
+ * cancelled (nothing was sent).
+ */
+async function reauthBody(
+  proof: DeleteAccountProof,
+): Promise<
+  | { password: string }
+  | { provider: SocialProvider; nonce: string; idToken: string }
+  | null
+> {
+  if ("password" in proof) return { password: proof.password };
+  const { nonce, nonceHash } = await fetchNonce("reauth");
+  const token = await getProviderToken(proof.provider, nonceHash);
+  if (!token) return null;
+  return { provider: proof.provider, nonce, idToken: token.idToken };
+}
+
 async function fetchNonce(
   purpose: "sign_in" | "link" | "reauth",
 ): Promise<{ nonce: string; nonceHash: string }> {
@@ -341,6 +361,75 @@ export function useAuth() {
     [],
   );
 
+  // ── Two-step verification settings ─────────────────────────────────────
+  // Turning it on or off signs out every other device; the server hands this
+  // device a fresh token, stored here so it stays signed in.
+
+  /** Null when the provider sheet was cancelled. */
+  const startTwoFactorSetup = useCallback(
+    async (
+      proof: DeleteAccountProof,
+    ): Promise<{ secret: string; otpauthUrl: string } | null> => {
+      const body = await reauthBody(proof);
+      if (!body) return null;
+      const res = await apiRequest("POST", "/api/auth/mfa/totp/setup", {
+        proof: body,
+      });
+      return (await res.json()) as { secret: string; otpauthUrl: string };
+    },
+    [],
+  );
+
+  /** Turns two-step on; returns the recovery codes (shown once). */
+  const confirmTwoFactor = useCallback(
+    async (code: string): Promise<string[]> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/totp/confirm", {
+        code,
+      });
+      const body = (await res.json()) as {
+        user: User;
+        token: string;
+        recoveryCodes: string[];
+      };
+      await establishSession(body.user, body.token);
+      return body.recoveryCodes;
+    },
+    [establishSession],
+  );
+
+  /** False when the provider sheet was cancelled (nothing changed). */
+  const disableTwoFactor = useCallback(
+    async (proof: DeleteAccountProof, second: MfaProof): Promise<boolean> => {
+      const body = await reauthBody(proof);
+      if (!body) return false;
+      const res = await apiRequest("POST", "/api/auth/mfa/disable", {
+        proof: body,
+        ...second,
+      });
+      const session = (await res.json()) as { user: User; token: string };
+      await establishSession(session.user, session.token);
+      return true;
+    },
+    [establishSession],
+  );
+
+  /** Null when the provider sheet was cancelled. */
+  const replaceRecoveryCodes = useCallback(
+    async (
+      proof: DeleteAccountProof,
+      code: string,
+    ): Promise<string[] | null> => {
+      const body = await reauthBody(proof);
+      if (!body) return null;
+      const res = await apiRequest("POST", "/api/auth/mfa/recovery-codes", {
+        proof: body,
+        code,
+      });
+      return ((await res.json()) as { recoveryCodes: string[] }).recoveryCodes;
+    },
+    [],
+  );
+
   // Kept separate from verifySecondFactor so the challenge screen can show a
   // replacement recovery code BEFORE the navigator swaps to the signed-in app.
   const finishSignIn = useCallback(
@@ -518,20 +607,9 @@ export function useAuth() {
   const deleteAccount = useCallback(async (proof: DeleteAccountProof) => {
     // Surface server-side errors (wrong password, network, etc.) to the caller
     // — the account is still intact and the user can retry.
-    if ("password" in proof) {
-      await apiRequest("DELETE", "/api/auth/account", {
-        password: proof.password,
-      });
-    } else {
-      const { nonce, nonceHash } = await fetchNonce("reauth");
-      const token = await getProviderToken(proof.provider, nonceHash);
-      if (!token) return false;
-      await apiRequest("DELETE", "/api/auth/account", {
-        provider: proof.provider,
-        nonce,
-        idToken: token.idToken,
-      });
-    }
+    const body = await reauthBody(proof);
+    if (!body) return false;
+    await apiRequest("DELETE", "/api/auth/account", body);
 
     // Server confirmed deletion. Any local-cleanup failures past this point
     // must NOT propagate — the account no longer exists, so retrying would
@@ -658,5 +736,9 @@ export function useAuth() {
     disconnectProvider,
     verifySecondFactor,
     finishSignIn,
+    startTwoFactorSetup,
+    confirmTwoFactor,
+    disableTwoFactor,
+    replaceRecoveryCodes,
   };
 }

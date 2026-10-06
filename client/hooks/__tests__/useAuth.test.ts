@@ -1485,6 +1485,108 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(false);
     });
 
+    it("startTwoFactorSetup sends the password proof nested and returns the key", async () => {
+      const { result } = await ready();
+      jsonOnce({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.startTwoFactorSetup({ password: "pw" });
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/setup",
+        { proof: { password: "pw" } },
+      );
+      expect(out).toEqual({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+    });
+
+    it("a password-less account proves itself with a reauth provider sign-in; a cancelled sheet sends nothing", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-r", nonceHash: "hash-r" });
+      mockGetProviderToken.mockResolvedValueOnce(null);
+      let out: unknown = "unset";
+      await act(async () => {
+        out = await result.current.startTwoFactorSetup({ provider: "apple" });
+      });
+      expect(out).toBeNull();
+      expect(mockApiRequest).toHaveBeenCalledTimes(1);
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/social/nonce",
+        { purpose: "reauth" },
+      );
+
+      jsonOnce({ nonce: "raw-r2", nonceHash: "hash-r2" });
+      mockGetProviderToken.mockResolvedValueOnce({ idToken: "id-r" });
+      jsonOnce({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+      await act(async () => {
+        await result.current.startTwoFactorSetup({ provider: "apple" });
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/setup",
+        { proof: { provider: "apple", nonce: "raw-r2", idToken: "id-r" } },
+      );
+    });
+
+    it("confirmTwoFactor stores the fresh session and returns the codes", async () => {
+      const { result } = await ready();
+      jsonOnce({
+        status: "signed_in",
+        user: fakeUser,
+        token: "after-enable",
+        recoveryCodes: ["AAAA-BBBB-CCCC-DDDD"],
+      });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.confirmTwoFactor("123456");
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/confirm",
+        { code: "123456" },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("after-enable");
+      expect(out).toEqual(["AAAA-BBBB-CCCC-DDDD"]);
+    });
+
+    it("disableTwoFactor sends proof + code and stores the fresh session", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user: fakeUser, token: "after-off" });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.disableTwoFactor(
+          { password: "pw" },
+          { code: "123456" },
+        );
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/disable",
+        { proof: { password: "pw" }, code: "123456" },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("after-off");
+      expect(out).toBe(true);
+    });
+
+    it("replaceRecoveryCodes sends proof + code and returns the new codes", async () => {
+      const { result } = await ready();
+      jsonOnce({ recoveryCodes: ["EEEE-FFFF-GGGG-HHHH"] });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.replaceRecoveryCodes(
+          { password: "pw" },
+          "123456",
+        );
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/recovery-codes",
+        { proof: { password: "pw" }, code: "123456" },
+      );
+      expect(out).toEqual(["EEEE-FFFF-GGGG-HHHH"]);
+    });
+
     it("finishSignIn stores the session", async () => {
       const { result } = await ready();
       await act(async () => {
