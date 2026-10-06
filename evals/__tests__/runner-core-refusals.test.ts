@@ -72,6 +72,15 @@ describe("runEvalSuite refusal gates", () => {
     expect(loggedErrors()).not.toContain("refusing to run evals");
   });
 
+  it("REFUSES an ANTHROPIC-only env up front: generation needs OPENROUTER_API_KEY (fallback is off)", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test");
+    vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "sk-test");
+    await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
+    expect(loggedErrors()).toContain(
+      "Error: OPENROUTER_API_KEY is required — eval generation runs through OpenRouter with the fallback off (spec §3.7).",
+    );
+  });
+
   it("REFUSES a run without ANTHROPIC_API_KEY (the judge cannot score)", async () => {
     await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
     expect(loggedErrors()).toContain("OPENROUTER_API_KEY or ANTHROPIC_API_KEY");
@@ -91,6 +100,7 @@ describe("runEvalSuite refusal gates", () => {
 
   it("REFUSES a run without AI_INTEGRATIONS_OPENAI_API_KEY (the service under eval cannot answer)", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test");
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-test");
     await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
     expect(loggedErrors()).toContain(
       "AI_INTEGRATIONS_OPENAI_API_KEY is required",
