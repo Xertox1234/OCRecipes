@@ -35,6 +35,7 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { useToast } from "@/context/ToastContext";
 import {
   Spacing,
@@ -123,13 +124,27 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
 }) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { trigger: triggerHeartPop, animatedStyle: heartPopStyle } =
+    useSuccessPop(1.4);
 
   const triggerFavourite = useCallback(() => {
-    haptics.impact();
+    // The pop fires its own Success haptic — one buzz per favourite.
+    if (isFavourited) {
+      haptics.impact();
+    } else {
+      triggerHeartPop();
+    }
     const numericId = parseInt(item.id.split(":")[1], 10);
     const recipeType = item.source === "community" ? "community" : "mealPlan";
     onFavourite(numericId, recipeType);
-  }, [haptics, onFavourite, item.id, item.source]);
+  }, [
+    haptics,
+    isFavourited,
+    triggerHeartPop,
+    onFavourite,
+    item.id,
+    item.source,
+  ]);
 
   const handleFavourite = useCallback(
     (e: GestureResponderEvent) => {
@@ -299,11 +314,13 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
             marginRight: Spacing.sm,
           }}
         >
-          <Ionicons
-            name={isFavourited ? "heart" : "heart-outline"}
-            size={20}
-            color={isFavourited ? theme.error : theme.textSecondary}
-          />
+          <Animated.View style={heartPopStyle}>
+            <Ionicons
+              name={isFavourited ? "heart" : "heart-outline"}
+              size={20}
+              color={isFavourited ? theme.error : theme.textSecondary}
+            />
+          </Animated.View>
         </Pressable>
       )}
       <View style={[styles.addButton, { backgroundColor: theme.accentSolid }]}>
