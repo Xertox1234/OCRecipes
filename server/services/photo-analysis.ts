@@ -42,9 +42,18 @@ const foodItemSchema = z.object({
     .catch(undefined),
   confidence: z.number().min(0).max(1),
   needsClarification: z.boolean(),
-  clarificationQuestion: z.string().optional(),
-  category: foodCategorySchema.optional().default("other"),
-  cuisine: z.string().optional(),
+  // gpt-4o answers these optional fields with JSON null (and the refine
+  // prompt's own example shows null); null means "not provided", never a
+  // reason to fail the whole scan.
+  clarificationQuestion: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? undefined),
+  category: foodCategorySchema.optional().default("other").catch("other"),
+  cuisine: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? undefined),
 });
 
 const analysisResultSchema = z.object({
