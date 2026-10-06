@@ -345,18 +345,16 @@ export default function ChatScreen() {
   useEffect(() => {
     if (streamError && !shownStreamErrorRef.current) {
       shownStreamErrorRef.current = true;
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error("Response interrupted. Try sending again.");
     }
     if (!streamError) {
       shownStreamErrorRef.current = false;
     }
-  }, [streamError, toast, haptics]);
+  }, [streamError, toast]);
 
   useEffect(() => {
     if (requestError && !shownRequestErrorRef.current) {
       shownRequestErrorRef.current = true;
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       // Daily-limit errors include an upgrade prompt; others show the server message directly
       if (requestError.toLowerCase().includes("limit")) {
         toast.error(`${requestError} Upgrade to Premium for more messages.`);
@@ -367,7 +365,7 @@ export default function ChatScreen() {
     if (!requestError) {
       shownRequestErrorRef.current = false;
     }
-  }, [requestError, toast, haptics]);
+  }, [requestError, toast]);
 
   useEffect(() => {
     if (!isStreaming) return;
@@ -437,7 +435,6 @@ export default function ChatScreen() {
           });
         }
       } catch (e) {
-        haptics.notification(Haptics.NotificationFeedbackType.Error);
         const message =
           e instanceof Error ? e.message : "Failed to send message";
         if (

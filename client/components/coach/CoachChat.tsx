@@ -713,7 +713,6 @@ export default function CoachChat({
           plannedDate,
           mealType,
         });
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
         toast.success(formatPlanSaveSuccess(dayLabel, mealType));
         // Only this flow's own completion may close the sheet — a flow
         // superseded by a later confirm (dismissed mid-save, then a
@@ -724,7 +723,6 @@ export default function CoachChat({
           setPlanTarget(null);
         }
       } catch (error) {
-        haptics.notification(Haptics.NotificationFeedbackType.Error);
         const failure = describePlanSaveFailure(error);
         toast.error(failure.message);
         // Terminal failures (402 quota, 422 unusable recipe, 404 catalog
@@ -746,7 +744,7 @@ export default function CoachChat({
         }
       }
     },
-    [planTarget, saveCatalogRecipe, addMealPlanItem, haptics, toast],
+    [planTarget, saveCatalogRecipe, addMealPlanItem, toast],
   );
 
   const handleCommitmentAccept = useCallback(
@@ -828,8 +826,9 @@ export default function CoachChat({
           ...savedRecipeIdsRef.current,
           [messageId, saved.id],
         ]);
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
         if (saved.savedItemStatus === "limit_reached") {
+          // info toasts are silent — the save still succeeded.
+          haptics.notification(Haptics.NotificationFeedbackType.Success);
           toast.info(SAVED_ITEMS_FULL_MESSAGE);
         } else {
           toast.success("Recipe saved");

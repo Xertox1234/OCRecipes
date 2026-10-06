@@ -10,13 +10,19 @@ import React, {
 import { Platform } from "react-native";
 import { FullWindowOverlay } from "react-native-screens";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { NotificationFeedbackType } from "expo-haptics";
 
 import { Toast } from "@/components/Toast";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import type { ToastVariant, ToastAction } from "@/components/toast-utils";
 
 interface ToastOptions {
   action?: ToastAction;
+  /** `success`/`error` fire a matching notification haptic by default. Pass
+   *  `false` when the toast doesn't answer a user action (background errors,
+   *  connectivity changes) or the caller already fired its own haptic. */
+  haptic?: boolean;
 }
 
 interface ToastItem {
@@ -50,6 +56,7 @@ const ToastContext = createContext<ToastContextType | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const { theme } = useTheme();
+  const { notification } = useHaptics();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(0);
 
@@ -66,14 +73,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const success = useCallback(
-    (message: string, options?: ToastOptions) =>
-      show(message, "success", options),
-    [show],
+    (message: string, options?: ToastOptions) => {
+      if (options?.haptic !== false) {
+        notification(NotificationFeedbackType.Success);
+      }
+      show(message, "success", options);
+    },
+    [show, notification],
   );
   const error = useCallback(
-    (message: string, options?: ToastOptions) =>
-      show(message, "error", options),
-    [show],
+    (message: string, options?: ToastOptions) => {
+      if (options?.haptic !== false) {
+        notification(NotificationFeedbackType.Error);
+      }
+      show(message, "error", options);
+    },
+    [show, notification],
   );
   const info = useCallback(
     (message: string, options?: ToastOptions) => show(message, "info", options),

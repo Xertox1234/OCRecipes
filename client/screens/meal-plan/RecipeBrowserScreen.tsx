@@ -574,7 +574,6 @@ export default function RecipeBrowserScreen() {
         });
         navigation.goBack();
       } catch {
-        haptics.notification(Haptics.NotificationFeedbackType.Error);
         toast.error("Couldn't add the recipe to your plan. Please try again.");
       } finally {
         setAddingId(null);

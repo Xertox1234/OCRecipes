@@ -48,7 +48,9 @@ describe("SessionExpiryBridge", () => {
     capturedListener?.();
 
     expect(mockExpireSession).toHaveBeenCalledTimes(1);
-    expect(mockToastError).toHaveBeenCalledWith(EXPIRED_MESSAGE);
+    expect(mockToastError).toHaveBeenCalledWith(EXPIRED_MESSAGE, {
+      haptic: false,
+    });
   });
 
   it("ignores the event when there is no live session (not authenticated)", () => {

@@ -173,7 +173,6 @@ export default function ChatListScreen() {
       } else {
         userMessage = "Could not create conversation. Please try again.";
       }
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error(userMessage);
     }
   }, [haptics, toast, createConversationAsync, navigation, isRecipeMode]);
@@ -200,13 +199,12 @@ export default function ChatListScreen() {
         onConfirm: () =>
           deleteConversationMutate(id, {
             onError: () => {
-              haptics.notification(Haptics.NotificationFeedbackType.Error);
               toast.error("Couldn't delete the chat. Please try again.");
             },
           }),
       });
     },
-    [confirm, deleteConversationMutate, haptics, toast],
+    [confirm, deleteConversationMutate, toast],
   );
 
   const renderItem = useCallback(

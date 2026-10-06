@@ -19,7 +19,8 @@ export function QueryErrorToastBridge(): null {
 
   useEffect(() => {
     return subscribeToQueryErrors((message) => {
-      toast.error(message);
+      // Background failure, not a reply to a tap — no haptic.
+      toast.error(message, { haptic: false });
     });
   }, [toast]);
 

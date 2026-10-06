@@ -105,10 +105,9 @@ export default function QuickLogScreen() {
 
   React.useEffect(() => {
     if (session.speechError) {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error(session.speechError);
     }
-  }, [session.speechError, toast, haptics]);
+  }, [session.speechError, toast]);
 
   React.useEffect(() => {
     if (session.parseError) toast.error(session.parseError);

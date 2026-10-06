@@ -559,7 +559,6 @@ export function useNutritionLookup(params: {
       navigation.popTo("Main", { screen: "HomeTab" });
     },
     onError: (err) => {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error(
         err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED
           ? "Too many requests. Please wait a moment and try again."

@@ -28,7 +28,6 @@ import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
 import type { ChatMessage } from "@/hooks/useChat";
-import * as Haptics from "expo-haptics";
 import { ApiError } from "@/lib/api-error";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 
@@ -1244,9 +1243,9 @@ describe("add_recipe_to_plan", () => {
       expect(state.toastError).not.toHaveBeenCalledWith(
         "Couldn't add the recipe to your plan. Please try again.",
       );
-      expect(state.hapticsNotification).toHaveBeenCalledWith(
-        Haptics.NotificationFeedbackType.Error,
-      );
+      // toast.error fires the Error haptic itself — a second one here would
+      // double-buzz.
+      expect(state.hapticsNotification).not.toHaveBeenCalled();
       expect(state.addItem).not.toHaveBeenCalled();
       expect(state.toastSuccess).not.toHaveBeenCalled();
 
@@ -1279,9 +1278,9 @@ describe("add_recipe_to_plan", () => {
         "Couldn't add the recipe to your plan. Please try again.",
       );
     });
-    expect(state.hapticsNotification).toHaveBeenCalledWith(
-      Haptics.NotificationFeedbackType.Error,
-    );
+    // toast.error fires the Error haptic itself — a second one here would
+    // double-buzz.
+    expect(state.hapticsNotification).not.toHaveBeenCalled();
     expect(state.addItem).not.toHaveBeenCalled();
     expect(state.toastSuccess).not.toHaveBeenCalled();
 
