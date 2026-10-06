@@ -96,4 +96,27 @@ describe("runEvalSuite refusal gates", () => {
       "AI_INTEGRATIONS_OPENAI_API_KEY is required",
     );
   });
+
+  it("REFUSES an unknown --candidate feature before the key gates", async () => {
+    process.argv.push("--candidate", "nope=openai/x");
+    await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
+    expect(loggedErrors()).toMatch(/unknown feature "nope"/);
+    expect(loggedErrors()).not.toMatch(
+      /OPENROUTER_API_KEY or ANTHROPIC_API_KEY/,
+    );
+  });
+
+  it("a valid --candidate under NODE_ENV=production --allow-prod is accepted (not refused, not ignored)", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.argv.push(
+      "--allow-prod",
+      "--candidate",
+      "coach-chat=openai/gpt-6-luna",
+    );
+    // No keys stubbed → the run stops at the judge key gate, which comes AFTER
+    // candidate parsing: reaching it proves the candidate parsed under production.
+    await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
+    expect(loggedErrors()).toMatch(/OPENROUTER_API_KEY or ANTHROPIC_API_KEY/);
+    expect(loggedErrors()).not.toMatch(/--candidate/);
+  });
 });

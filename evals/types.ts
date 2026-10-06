@@ -207,6 +207,8 @@ export interface EvalCaseResult {
   /** Serialised service output passed to the LLM judge */
   output: string;
   assertions: AssertionResult;
+  /** Violations found by checking the sample's recorded AI calls (wrong model, fallback, none recorded) */
+  aiCallViolations?: string[];
   rubricScores: RubricScore[];
   /**
    * Model identifier used by the LLM judge for this case. Persisted per-case
@@ -239,6 +241,8 @@ export interface EvalRunResult {
   runId: string;
   timestamp: string;
   judgeModel: string;
+  /** Raw --candidate spec when the run used per-feature model overrides */
+  candidate?: string;
   totalCases: number;
   /** Number of samples per test case (>1 enables sample-averaging) */
   samplesPerCase: number;
