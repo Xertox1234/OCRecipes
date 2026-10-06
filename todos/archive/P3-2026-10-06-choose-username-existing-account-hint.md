@@ -1,6 +1,6 @@
 ---
 title: "ChooseUsername: tell existing users to sign in and connect Apple instead"
-status: backlog
+status: done
 priority: low
 created: 2026-10-06
 updated: 2026-10-06
@@ -21,12 +21,18 @@ The server is correct here: it must not guess that a relay address belongs to an
 
 ## Acceptance Criteria
 
-- [ ] `client/screens/ChooseUsernameScreen.tsx` shows a short hint: "Already have an OCRecipes account? Sign in with your password, then connect Apple in Settings → Sign-in methods." It includes a way back to Login. The existing "Back to sign in" button may be enough if the hint sits next to it.
-- [ ] The copy is static, with no server text.
-- [ ] A render test asserts the hint is present.
+- [x] `client/screens/ChooseUsernameScreen.tsx` shows a short hint: "Already have an OCRecipes account? Sign in with your password, then connect Apple in Settings → Sign-in methods." It includes a way back to Login. The existing "Back to sign in" button may be enough if the hint sits next to it.
+- [x] The copy is static, with no server text.
+- [x] A render test asserts the hint is present.
 
 ## Implementation Notes
 
 - Screen: `client/screens/ChooseUsernameScreen.tsx`, with tests in `client/screens/__tests__/ChooseUsernameScreen.test.tsx`.
 - Do not change the server linking policy. Auto-linking on a relay or unmatched email is an account-takeover risk.
 - Auth-adjacent UI: never delegate to cheap workers.
+
+## Updates
+
+### 2026-10-06
+
+- Done. The hint sits just above "Back to sign in", which is the way back to Login. Copy made provider-neutral for the coming Google button: "Already have an OCRecipes account? Sign in with your password instead, then add this sign-in under Settings → Sign-in methods." Test in `client/screens/__tests__/ChooseUsernameScreen.test.tsx` (failed before the change, passes after).

@@ -147,6 +147,15 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
           >
             Continue
           </Button>
+          {/* A relay or unmatched email never auto-links (server policy), so
+              an existing user would otherwise make a second account here. */}
+          <ThemedText
+            type="small"
+            style={[styles.hint, { color: theme.textSecondary }]}
+          >
+            Already have an OCRecipes account? Sign in with your password
+            instead, then add this sign-in under Settings → Sign-in methods.
+          </ThemedText>
           <Button
             variant="ghost"
             onPress={() => navigation.navigate("Login")}
@@ -170,4 +179,5 @@ const styles = StyleSheet.create({
   ageRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   ageLabel: { flexShrink: 1 },
   button: { marginTop: Spacing.sm },
+  hint: { marginTop: Spacing.lg },
 });
