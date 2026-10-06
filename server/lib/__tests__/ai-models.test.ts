@@ -23,8 +23,34 @@ describe("AI_FEATURES table", () => {
     }
   });
 
-  it("day one: every model is its fallback with the openai/ prefix and no adapt", () => {
+  // Owner-approved switches (spec §6 step 5). Every other row still runs
+  // today's model: its fallback with the openai/ prefix and no adapt.
+  const SWITCHED: Record<string, AiFeatureConfig> = {
+    "coach-chat": {
+      model: "openai/gpt-6-luna",
+      fallback: "gpt-4o-mini",
+      json: false,
+      vision: false,
+      adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
+    },
+    "coach-pro-chat": {
+      model: "openai/gpt-6-luna",
+      fallback: "gpt-4o-mini",
+      json: false,
+      vision: false,
+      adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
+    },
+  };
+
+  it("switched rows are exactly the approved ones", () => {
+    for (const [name, row] of Object.entries(SWITCHED)) {
+      expect(AI_FEATURES[name as keyof typeof AI_FEATURES], name).toEqual(row);
+    }
+  });
+
+  it("every other row is its fallback with the openai/ prefix and no adapt", () => {
     for (const [name, row] of rows) {
+      if (name in SWITCHED) continue;
       expect(row.model, name).toBe(`openai/${row.fallback}`);
       expect(row.adapt, name).toBeUndefined();
     }

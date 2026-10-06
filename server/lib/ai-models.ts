@@ -9,9 +9,9 @@
  * image_url part) — scripts/ai-smoke.ts reproduces them per row.
  */
 export interface AiAdapt {
-  drop?: string[];
-  rename?: Record<string, string>;
-  set?: Record<string, unknown>;
+  drop?: readonly string[];
+  rename?: Readonly<Record<string, string>>;
+  set?: Readonly<Record<string, unknown>>;
 }
 
 export interface AiFeatureConfig {
@@ -24,11 +24,18 @@ export interface AiFeatureConfig {
 
 const FAST = { model: "openai/gpt-4o-mini", fallback: "gpt-4o-mini" } as const;
 const HEAVY = { model: "openai/gpt-4o", fallback: "gpt-4o" } as const;
+// GPT-6 Luna (owner ruling 2026-10-06, both coach chats): no temperature
+// parameter; low reasoning effort keeps chat latency and cost down.
+const LUNA = {
+  model: "openai/gpt-6-luna",
+  fallback: "gpt-4o-mini",
+  adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
+} as const;
 
 export const AI_FEATURES = {
   // Coach
-  "coach-chat": { ...FAST, json: false, vision: false }, // nutrition-coach generateCoachResponse (stream)
-  "coach-pro-chat": { ...FAST, json: false, vision: false }, // nutrition-coach generateCoachProResponse (stream, tools)
+  "coach-chat": { ...LUNA, json: false, vision: false }, // nutrition-coach generateCoachResponse (stream)
+  "coach-pro-chat": { ...LUNA, json: false, vision: false }, // nutrition-coach generateCoachProResponse (stream, tools)
   "coach-notebook-extract": { ...FAST, json: true, vision: false }, // notebook-extraction extractNotebookEntries
   // Recipe chat
   "recipe-chat": { ...HEAVY, json: false, vision: false }, // recipe-chat generateRecipeChatResponse (stream)

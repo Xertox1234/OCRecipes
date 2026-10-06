@@ -555,8 +555,8 @@ describe("aiChat (streaming)", () => {
     expect(c.calls).toEqual([
       {
         feature: "coach-chat",
-        requestedModel: "openai/gpt-4o-mini",
-        answeredModel: "openai/gpt-4o-mini",
+        requestedModel: "openai/gpt-6-luna", // the coach-chat row
+        answeredModel: "openai/gpt-4o-mini", // what the fake chunks report
         answeredProvider: "Azure",
         fellBack: false,
       },
