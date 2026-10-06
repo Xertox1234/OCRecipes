@@ -18,6 +18,7 @@ import Animated, {
   useAnimatedStyle,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
+import { PressableScale } from "@/components/PressableScale";
 import type { ScanPhase } from "../types/scan-phase";
 import {
   getBarcodeLockActions,
@@ -291,7 +292,7 @@ export function ProductChip({
       {/* Actions by variant */}
       {variant === "barcode_lock" && (
         <>
-          <TouchableOpacity
+          <PressableScale
             style={styles.btnPrimary}
             onPress={
               barcodeLockActions.primary.intent === "proceedToLabel"
@@ -304,8 +305,8 @@ export function ProductChip({
             <Text style={styles.btnPrimaryText}>
               {barcodeLockActions.primary.label}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </PressableScale>
+          <PressableScale
             style={styles.btnSecondary}
             onPress={
               barcodeLockActions.secondary.intent === "proceedToLabel"
@@ -318,29 +319,29 @@ export function ProductChip({
             <Text style={styles.btnSecondaryText}>
               {barcodeLockActions.secondary.label}
             </Text>
-          </TouchableOpacity>
+          </PressableScale>
         </>
       )}
 
       {variant === "step2_review" &&
         (screenReaderEnabled ? (
           <>
-            <TouchableOpacity
+            <PressableScale
               style={styles.btnPrimary}
               onPress={onStepConfirmed}
               accessibilityLabel="Confirm nutrition values"
               accessibilityRole="button"
             >
               <Text style={styles.btnPrimaryText}>Looks right →</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </PressableScale>
+            <PressableScale
               style={styles.btnSecondary}
               onPress={onEditStep2}
               accessibilityLabel="Edit nutrition values"
               accessibilityRole="button"
             >
               <Text style={styles.btnSecondaryText}>Edit values</Text>
-            </TouchableOpacity>
+            </PressableScale>
           </>
         ) : (
           <TouchableOpacity
@@ -360,14 +361,14 @@ export function ProductChip({
 
       {variant === "step2_confirmed" && (
         <>
-          <TouchableOpacity
+          <PressableScale
             style={styles.btnPrimary}
             onPress={onConfirm}
             accessibilityLabel="Finish scan"
             accessibilityRole="button"
           >
             <Text style={styles.btnPrimaryText}>Looks right →</Text>
-          </TouchableOpacity>
+          </PressableScale>
           <Text style={styles.caption}>
             Optional: point at the front of the package to continue.
           </Text>
@@ -377,22 +378,22 @@ export function ProductChip({
       {variant === "step3_review" &&
         (screenReaderEnabled ? (
           <>
-            <TouchableOpacity
+            <PressableScale
               style={styles.btnPrimary}
               onPress={onConfirm}
               accessibilityLabel="Confirm product complete"
               accessibilityRole="button"
             >
               <Text style={styles.btnPrimaryText}>Looks right →</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </PressableScale>
+            <PressableScale
               style={styles.btnSecondary}
               onPress={onEditStep3}
               accessibilityLabel="Edit front label values"
               accessibilityRole="button"
             >
               <Text style={styles.btnSecondaryText}>Edit values</Text>
-            </TouchableOpacity>
+            </PressableScale>
           </>
         ) : (
           <TouchableOpacity
@@ -411,14 +412,14 @@ export function ProductChip({
         ))}
 
       {variant === "session_complete" && (
-        <TouchableOpacity
+        <PressableScale
           style={styles.btnPrimary}
           onPress={onConfirm}
           accessibilityLabel="Complete scan session"
           accessibilityRole="button"
         >
           <Text style={styles.btnPrimaryText}>Done →</Text>
-        </TouchableOpacity>
+        </PressableScale>
       )}
 
       {variant === "smart_photo" && phase.type === "SMART_CONFIRMED" && (
@@ -440,7 +441,7 @@ export function ProductChip({
               {getChipConfidenceLabel(phase.classification.overallConfidence)}
             </Text>
           </View>
-          <TouchableOpacity
+          <PressableScale
             style={[styles.btnPrimary, isSmartConfirming && styles.btnPending]}
             onPress={onSmartPhotoConfirm}
             disabled={isSmartConfirming}
@@ -458,7 +459,7 @@ export function ProductChip({
             ) : (
               <Text style={styles.btnPrimaryText}>Looks right →</Text>
             )}
-          </TouchableOpacity>
+          </PressableScale>
         </>
       )}
 
@@ -467,14 +468,14 @@ export function ProductChip({
           <Text style={styles.errorText}>
             Couldn&apos;t identify this. Try again?
           </Text>
-          <TouchableOpacity
+          <PressableScale
             style={styles.btnPrimary}
             onPress={onRetry}
             accessibilityLabel="Retry smart photo analysis"
             accessibilityRole="button"
           >
             <Text style={styles.btnPrimaryText}>Try again</Text>
-          </TouchableOpacity>
+          </PressableScale>
         </>
       )}
     </Animated.View>

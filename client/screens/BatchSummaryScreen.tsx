@@ -16,7 +16,9 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useBatchScan } from "@/context/BatchScanContext";
 import { useBatchConfirm } from "@/hooks/useBatchConfirm";
 import { SwipeableRow } from "@/components/SwipeableRow";
+import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { formatBatchSaveSuccess } from "@/lib/log-success";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
@@ -68,6 +70,7 @@ export default function BatchSummaryScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const toast = useToast();
+  const haptics = useHaptics();
   const {
     getItems,
     pendingCount,
@@ -201,6 +204,8 @@ export default function BatchSummaryScreen() {
 
   const handleQuantityChange = useCallback(
     (id: string, quantity: number) => {
+      // Only the stepper buttons call this; at a bound they're disabled.
+      haptics.selection();
       updateItemQuantity(id, quantity);
       setItems((prev) =>
         prev.map((i) =>
@@ -210,7 +215,7 @@ export default function BatchSummaryScreen() {
         ),
       );
     },
-    [updateItemQuantity],
+    [haptics, updateItemQuantity],
   );
 
   const renderItem = useCallback(
@@ -325,9 +330,13 @@ export default function BatchSummaryScreen() {
         accessibilityLabel="Save destination"
       >
         {DESTINATIONS.map((dest) => (
-          <Pressable
+          <PressableScale
+            scaleTo={0.95}
             key={dest.key}
-            onPress={() => setDestination(dest.key)}
+            onPress={() => {
+              if (dest.key !== destination) haptics.selection();
+              setDestination(dest.key);
+            }}
             style={[
               styles.destinationOption,
               {
@@ -360,12 +369,12 @@ export default function BatchSummaryScreen() {
             >
               {dest.label}
             </Text>
-          </Pressable>
+          </PressableScale>
         ))}
       </View>
 
       {/* Confirm button */}
-      <Pressable
+      <PressableScale
         onPress={handleConfirm}
         disabled={!canConfirm}
         style={[
@@ -391,7 +400,7 @@ export default function BatchSummaryScreen() {
               : `Add ${resolvedItems.length} item${resolvedItems.length !== 1 ? "s" : ""} to ${getDestinationLabel(destination)}`}
           </Text>
         )}
-      </Pressable>
+      </PressableScale>
     </View>
   );
 }
@@ -474,12 +483,13 @@ const BatchItemRow = React.memo(function BatchItemRow({
                 accessibilityState={{ disabled: item.quantity <= 1 }}
                 accessibilityLabel={`Decrease quantity, currently ${item.quantity}`}
                 hitSlop={8}
-                style={[
+                style={({ pressed }) => [
                   styles.stepperButton,
                   {
                     borderColor: theme.border,
                     opacity: item.quantity <= 1 ? 0.3 : 1,
                   },
+                  pressed && { opacity: 0.7 },
                 ]}
               >
                 <Feather name="minus" size={14} color={theme.text} />
@@ -497,12 +507,13 @@ const BatchItemRow = React.memo(function BatchItemRow({
                 accessibilityState={{ disabled: item.quantity >= 99 }}
                 accessibilityLabel={`Increase quantity, currently ${item.quantity}`}
                 hitSlop={8}
-                style={[
+                style={({ pressed }) => [
                   styles.stepperButton,
                   {
                     borderColor: theme.border,
                     opacity: item.quantity >= 99 ? 0.3 : 1,
                   },
+                  pressed && { opacity: 0.7 },
                 ]}
               >
                 <Feather name="plus" size={14} color={theme.text} />
@@ -557,6 +568,7 @@ const BatchItemRow = React.memo(function BatchItemRow({
                 Failed
               </Text>
               <Pressable
+                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
                 onPress={() => onRetry(item.id)}
                 accessibilityRole="button"
                 accessibilityLabel="Retry nutrition lookup"
