@@ -851,6 +851,47 @@ tester.run(
 // rather than the one example its author happened to picture.
 //
 // Add a row here before changing either function. A row is cheaper than a round.
+tester.run(
+  "no-direct-chat-completions",
+  plugin.rules["no-direct-chat-completions"],
+  {
+    valid: [
+      {
+        code: "await aiChat('coach-chat', params);",
+        filename: abs("server/services/x.ts"),
+      },
+      {
+        code: "await openai.audio.transcriptions.create({ file });",
+        filename: abs("server/services/voice-transcription.ts"),
+      },
+      {
+        code: "await dalleClient.images.generate({ prompt });",
+        filename: abs("server/services/recipe-generation.ts"),
+      },
+      {
+        code: "await deps.openrouter.chat.completions.create(body);",
+        filename: abs("server/lib/ai-client.ts"),
+      },
+      {
+        code: "type M = Parameters<typeof openai.chat.completions.create>[0];",
+        filename: abs("server/services/nutrition-coach.ts"),
+      },
+    ],
+    invalid: [
+      {
+        code: "await openai.chat.completions.create({ model: 'gpt-4o', messages });",
+        filename: abs("server/services/x.ts"),
+        errors: [{ messageId: "useAiChat" }],
+      },
+      {
+        code: "await client.chat.completions.create(body);",
+        filename: abs("server/scripts/seed-recipes.ts"),
+        errors: [{ messageId: "useAiChat" }],
+      },
+    ],
+  },
+);
+
 describe("no-shadowed-route-paramlist — specifier resolution", () => {
   const linter = new Linter();
 
