@@ -242,8 +242,10 @@ export function comparePaired(
   const shared = [...base.keys()].filter((id) => cand.has(id)).sort();
 
   const dimensionNames = new Set<string>();
-  for (const id of shared)
+  for (const id of shared) {
     for (const d of base.get(id)!.dims.keys()) dimensionNames.add(d);
+    for (const d of cand.get(id)!.dims.keys()) dimensionNames.add(d);
+  }
 
   const dimensions: PairedDimension[] = [...dimensionNames]
     .sort()
@@ -265,7 +267,7 @@ export function comparePaired(
         lower: ci.lower,
         upper: ci.upper,
         threshold,
-        pass: ci.lower >= threshold,
+        pass: diffs.length > 0 && ci.lower >= threshold,
         cases: diffs.length,
       };
     });
@@ -274,6 +276,7 @@ export function comparePaired(
     (id) => base.get(id)!.allPassed && !cand.get(id)!.allPassed,
   );
   const passed =
+    dimensions.length > 0 &&
     missingCases.length === 0 &&
     newAssertionFailures.length === 0 &&
     dimensions.every((d) => d.pass);
