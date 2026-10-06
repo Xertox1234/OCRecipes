@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import LabelAnalysisScreen from "../LabelAnalysisScreen";
+import { confirmLabelAnalysis } from "@/lib/photo-upload";
 
 const {
   mockGoBack,
@@ -14,7 +15,9 @@ const {
   mockDeleteAsync,
   mockRoute,
   capturedPressProps,
+  mockToastSuccess,
 } = vi.hoisted(() => ({
+  mockToastSuccess: vi.fn(),
   mockGoBack: vi.fn(),
   mockPop: vi.fn(),
   mockNavigate: vi.fn(),
@@ -46,7 +49,7 @@ vi.mock("@react-navigation/elements", () => ({
 
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
-    success: vi.fn(),
+    success: mockToastSuccess,
     error: vi.fn(),
     info: vi.fn(),
     dismiss: vi.fn(),
@@ -279,5 +282,55 @@ describe("LabelAnalysisScreen — touch targets meet the 44pt minimum (P2-2026-0
     expect(increase.height).toBeGreaterThanOrEqual(44);
     const parent = screen.getByLabelText("Decrease servings").parentElement;
     expect(parseFloat(parent?.style.padding ?? "0")).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("LabelAnalysisScreen — logging the label", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRoute.params = { imageUri: IMAGE_URI, barcode: BARCODE };
+    mockUpload.mockResolvedValue({
+      sessionId: "session-1",
+      labelData: {
+        servingSize: "1 cup",
+        servingsPerContainer: 2,
+        calories: 250,
+        totalFat: 10,
+        saturatedFat: 2,
+        transFat: 0,
+        cholesterol: 5,
+        sodium: 300,
+        totalCarbs: 30,
+        dietaryFiber: 3,
+        totalSugars: 12,
+        addedSugars: 5,
+        protein: 8,
+        vitaminD: null,
+        calcium: null,
+        iron: null,
+        potassium: null,
+        confidence: 0.9,
+      },
+    });
+    vi.mocked(confirmLabelAnalysis).mockResolvedValue(
+      {} as Awaited<ReturnType<typeof confirmLabelAnalysis>>,
+    );
+  });
+
+  it("confirms the log with the calories the button showed, keeping its own confidence haptic", async () => {
+    renderComponent(<LabelAnalysisScreen />);
+
+    const logButton = await screen.findByText("Log 250 cal");
+    await act(async () => {
+      fireEvent.click(logButton);
+    });
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
+    // The screen fires a confidence-tiered haptic (Warning on a shaky read),
+    // so the toast must not add a second, always-Success buzz.
+    expect(mockToastSuccess).toHaveBeenCalledWith("Added · 250 kcal", {
+      haptic: false,
+    });
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
   });
 });

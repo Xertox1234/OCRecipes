@@ -62,6 +62,9 @@ vi.mock("@/lib/token-storage", () => ({
 describe("useNutritionLookup — addToLogMutation error surfacing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps implementations; drop any mockImplementation a test
+    // set so it can't answer the next test's requests.
+    mockApiRequest.mockReset();
   });
 
   it("surfaces an error toast when POST /api/scanned-items fails", async () => {
@@ -137,6 +140,40 @@ describe("useNutritionLookup — addToLogMutation error surfacing", () => {
     expect(mockReset).not.toHaveBeenCalled();
     expect(mockGoBack).not.toHaveBeenCalled();
     expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  it("confirms the log with a calorie toast and leaves the haptic to it", async () => {
+    // Keyed on the method: a named product also fires a micronutrient GET,
+    // which would otherwise consume a one-shot mock meant for the POST.
+    mockApiRequest.mockImplementation(async (method: string) => ({
+      json: async () => (method === "POST" ? { id: 1 } : {}),
+    }));
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ imageUri: "photo.jpg" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    act(() => {
+      result.current.setNutrition({
+        productName: "Oat bar",
+        servingSize: "1 bar",
+        calories: 212.6,
+      });
+    });
+
+    await act(async () => {
+      result.current.handleAddToLog();
+    });
+
+    await waitFor(() =>
+      expect(mockToastSuccess).toHaveBeenCalledWith("Added · 213 kcal"),
+    );
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+    // The toast fires the Success haptic itself — a second one here would
+    // double-buzz.
+    expect(mockNotification).not.toHaveBeenCalled();
   });
 
   // P1-2026-09-23: addToLogMutation used to invalidate only scannedItems and

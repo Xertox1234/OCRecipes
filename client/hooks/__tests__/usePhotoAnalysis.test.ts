@@ -1,18 +1,28 @@
 // @vitest-environment jsdom
 import React from "react";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 
 import { usePhotoAnalysis } from "../usePhotoAnalysis";
-import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
+import {
+  calculateTotals,
+  confirmPhotoAnalysis,
+  type PhotoAnalysisResponse,
+} from "@/lib/photo-upload";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 const {
   mockImpact,
   mockNotification,
   mockUploadPhotoForAnalysis,
   mockDeleteAsyncLegacy,
+  mockGoBack,
+  mockToastSuccess,
 } = vi.hoisted(() => ({
+  mockGoBack: vi.fn(),
+  mockToastSuccess: vi.fn(),
   mockImpact: vi.fn(),
   mockNotification: vi.fn(),
   mockUploadPhotoForAnalysis: vi.fn(),
@@ -20,7 +30,11 @@ const {
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn(), setParams: vi.fn() }),
+  useNavigation: () => ({
+    navigate: vi.fn(),
+    setParams: vi.fn(),
+    goBack: mockGoBack,
+  }),
   // Actually runs the focus-effect callback (and its returned cleanup) via a
   // real useEffect, instead of no-op'ing it — a no-op mock never executes the
   // cleanup closure, hiding bugs inside it from the whole test file (see
@@ -41,6 +55,14 @@ vi.mock("@/hooks/useHaptics", () => ({
     notification: mockNotification,
     selection: vi.fn(),
     disabled: false,
+  }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: mockToastSuccess,
+    error: vi.fn(),
+    info: vi.fn(),
   }),
 }));
 
@@ -149,6 +171,100 @@ describe("usePhotoAnalysis — temp photo cleanup on focus-effect teardown", () 
     expect(mockDeleteAsyncLegacy).toHaveBeenCalledWith(
       "file://cleanup-target.jpg",
       { idempotent: true },
+    );
+  });
+});
+
+describe("usePhotoAnalysis — logging the selected foods", () => {
+  const food = {
+    name: "Toast",
+    quantity: "2 slices",
+    confidence: 0.9,
+    needsClarification: false,
+    nutrition: {
+      name: "Toast",
+      calories: 240,
+      protein: 8,
+      carbs: 44,
+      fat: 3,
+      fiber: 2,
+      sugar: 4,
+      sodium: 300,
+      servingSize: "2 slices",
+      source: "usda" as const,
+    },
+  };
+
+  async function renderAnalyzed() {
+    mockUploadPhotoForAnalysis.mockResolvedValue(
+      makeResponse({ foods: [food, { ...food, name: "Butter" }] }),
+    );
+    const hook = renderUsePhotoAnalysis("file://meal.jpg");
+    await waitFor(() => expect(hook.result.current.selectedItems.size).toBe(2));
+    // Drop the analysis-complete haptic so assertions see only the log path.
+    mockNotification.mockClear();
+    return hook;
+  }
+
+  it("confirms the log with a calorie toast and leaves the haptic to it", async () => {
+    vi.mocked(calculateTotals).mockReturnValue({
+      calories: 479.6,
+      protein: 16,
+      carbs: 88,
+      fat: 6,
+    });
+    vi.mocked(confirmPhotoAnalysis).mockResolvedValue({
+      id: 1,
+      productName: "Toast, Butter",
+    });
+    const { result } = await renderAnalyzed();
+
+    await act(async () => {
+      await result.current.handleLogSelected();
+    });
+
+    expect(mockToastSuccess).toHaveBeenCalledWith("Added · 480 kcal");
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+    // The toast fires the Success haptic itself.
+    expect(mockNotification).not.toHaveBeenCalled();
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("never shows the server's error text when the log fails", async () => {
+    vi.mocked(confirmPhotoAnalysis).mockRejectedValue(
+      new ApiError("relation scanned_items violates constraint", "INTERNAL"),
+    );
+    const { result } = await renderAnalyzed();
+
+    await act(async () => {
+      await result.current.handleLogSelected();
+    });
+
+    expect(result.current.error).toBe(
+      "Couldn't save this meal. Please try again.",
+    );
+    expect(result.current.error).not.toContain("scanned_items");
+    expect(mockNotification).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+    expect(mockGoBack).not.toHaveBeenCalled();
+    // Selection survives so the user can retry.
+    expect(result.current.selectedItems.size).toBe(2);
+  });
+
+  it("explains a rate limit instead of the generic failure", async () => {
+    vi.mocked(confirmPhotoAnalysis).mockRejectedValue(
+      new ApiError("Too many requests", ErrorCode.RATE_LIMITED),
+    );
+    const { result } = await renderAnalyzed();
+
+    await act(async () => {
+      await result.current.handleLogSelected();
+    });
+
+    expect(result.current.error).toBe(
+      "Too many requests. Please wait a moment and try again.",
     );
   });
 });

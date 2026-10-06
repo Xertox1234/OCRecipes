@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -19,6 +18,7 @@ import { useBatchConfirm } from "@/hooks/useBatchConfirm";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/context/ToastContext";
+import { formatBatchSaveSuccess } from "@/lib/log-success";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -171,10 +171,14 @@ export default function BatchSummaryScreen() {
         destination,
       });
 
-      const count = resolvedItems.length;
-      const destLabel = getDestinationLabel(destination);
-      AccessibilityInfo.announceForAccessibility(
-        `${count} item${count !== 1 ? "s" : ""} saved to ${destLabel}`,
+      // The toast is the announcer (iOS announce + Android live region) and
+      // fires the Success haptic — no separate announceForAccessibility.
+      toast.success(
+        formatBatchSaveSuccess(
+          resolvedItems,
+          destination,
+          getDestinationLabel(destination),
+        ),
       );
 
       clearSession();
