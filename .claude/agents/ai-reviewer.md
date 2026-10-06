@@ -49,7 +49,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 - `server/services/front-label-analysis.ts` — nutrition-label text extraction from photos
 - `server/services/receipt-analysis.ts` — multi-photo receipt scanning (all pages as separate `image_url` entries in one call)
 
-**Text (mostly FAST rows, gpt-4o-mini — check each row in `ai-models.ts`), all under `server/services/`:** `food-nlp.ts` (natural-language food parsing, e.g. "2 eggs and toast"), `nutrition-coach.ts` (streaming chat), `meal-suggestions.ts`, `recipe-generation.ts` (premium), `recipe-chat.ts`, `cooking-session.ts` (step-by-step guidance), `ingredient-substitution.ts`, `voice-transcription.ts`, `pantry-meal-plan.ts`.
+**Text (FAST or HEAVY rows — check each row in `ai-models.ts`), all under `server/services/`:** `food-nlp.ts` (natural-language food parsing, e.g. "2 eggs and toast"), `nutrition-coach.ts` (streaming chat), `meal-suggestions.ts`, `recipe-generation.ts` (premium), `recipe-chat.ts`, `cooking-session.ts` (step-by-step guidance), `ingredient-substitution.ts`, `voice-transcription.ts`, `pantry-meal-plan.ts`.
 
 **Image generation:** `server/services/carousel-builder.ts` — recipe card images via Runware (FLUX.2 klein 9B KV default, FLUX.1 dev for curated recipes — see `server/lib/runware.ts`) with DALL-E fallback.
 

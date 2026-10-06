@@ -30,8 +30,8 @@
  *   cryptographically-random 24-char string (or $SEED_DEMO_PASSWORD if set)
  *   and is printed to stdout once on first creation.
  */
-import { aiChat } from "../lib/ai-client";
 import "dotenv/config";
+import { aiChat } from "../lib/ai-client";
 import bcrypt from "bcrypt";
 import crypto from "node:crypto";
 import pLimit from "p-limit";

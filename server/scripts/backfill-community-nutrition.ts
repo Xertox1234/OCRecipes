@@ -13,8 +13,8 @@
  *   npx tsx server/scripts/backfill-community-nutrition.ts
  *   DRY_RUN=1 npx tsx server/scripts/backfill-community-nutrition.ts
  */
-import { aiChat } from "../lib/ai-client";
 import "dotenv/config";
+import { aiChat } from "../lib/ai-client";
 import { db, pool } from "../db";
 import { communityRecipes } from "@shared/schema";
 import { isNull, eq } from "drizzle-orm";
