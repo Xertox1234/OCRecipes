@@ -4,6 +4,28 @@ import { render, screen } from "@testing-library/react";
 import * as ProductChipUtils from "../ProductChip-utils";
 import { ProductChip } from "../ProductChip";
 import type { ScanPhase } from "../../types/scan-phase";
+import type { StyleProp, ViewStyle } from "react-native";
+
+// The shared Pressable mock drops `style`, which would hide the buttons'
+// 44pt minHeight from the touch-target assertions. Render PressableScale as
+// the TouchableOpacity mock (which keeps style) with its style flattened.
+vi.mock("@/components/PressableScale", async () => {
+  const RN = await import("react-native");
+  const flat = (s: unknown): unknown =>
+    Array.isArray(s) ? Object.assign({}, ...s.map(flat).filter(Boolean)) : s;
+  return {
+    PressableScale: ({
+      style,
+      scaleTo: _scaleTo,
+      ...props
+    }: Record<string, unknown>) => (
+      <RN.TouchableOpacity
+        {...props}
+        style={flat(style) as StyleProp<ViewStyle>}
+      />
+    ),
+  };
+});
 
 const noop = () => {};
 
