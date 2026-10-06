@@ -11,9 +11,11 @@ import {
 } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import Animated from "react-native-reanimated";
 
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { ThemedText } from "@/components/ThemedText";
 import { FallbackImage } from "@/components/FallbackImage";
@@ -66,6 +68,8 @@ function RecipeCardInner({
 }: RecipeCardProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { trigger: triggerHeartPop, animatedStyle: heartPopStyle } =
+    useSuccessPop(1.4);
   const [ingredientsExpanded, setIngredientsExpanded] = useState(false);
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
 
@@ -104,9 +108,16 @@ function RecipeCardInner({
 
   const handleFavourite = useCallback(() => {
     if (isSaving || !onFavourite) return;
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    // A saved recipe's heart flips at tap (optimistic toggle), so it pops —
+    // the pop fires its own Success haptic. An unsaved one saves first and
+    // the save is the Success moment, so it keeps the light tap.
+    if (isSaved && !isFavourited) {
+      triggerHeartPop();
+    } else {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    }
     onFavourite();
-  }, [isSaving, onFavourite, haptics]);
+  }, [isSaving, onFavourite, isSaved, isFavourited, triggerHeartPop, haptics]);
 
   return (
     <View
@@ -361,12 +372,14 @@ function RecipeCardInner({
                 disabled: !!isSaving,
               }}
             >
-              <Ionicons
-                name={isFavourited ? "heart" : "heart-outline"}
-                size={20}
-                color={isFavourited ? theme.error : theme.text}
-                accessible={false}
-              />
+              <Animated.View style={heartPopStyle}>
+                <Ionicons
+                  name={isFavourited ? "heart" : "heart-outline"}
+                  size={20}
+                  color={isFavourited ? theme.error : theme.text}
+                  accessible={false}
+                />
+              </Animated.View>
             </Pressable>
           )}
         </View>

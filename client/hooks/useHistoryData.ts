@@ -190,10 +190,23 @@ export function useHistoryData() {
 
   const handleFavourite = useCallback(
     (itemId: number) => {
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      // The toggle is optimistic, so the heart flips at tap: favouriting is
+      // a Success moment, unfavouriting a light tap. Read from the cache at
+      // tap time so this callback stays stable for the memoised rows.
+      const wasFavourited = queryClient
+        .getQueryData<{ pages: PaginatedResponse<ScannedItemResponse>[] }>(
+          QUERY_KEYS.scannedItems,
+        )
+        ?.pages.flatMap((page) => page.items)
+        .find((item) => item.id === itemId)?.isFavourited;
+      if (wasFavourited === false) {
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
+      } else {
+        haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      }
       toggleFavourite.mutate(itemId);
     },
-    [haptics, toggleFavourite],
+    [queryClient, haptics, toggleFavourite],
   );
 
   const handleGroceryList = useCallback(
