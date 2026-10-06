@@ -26,6 +26,11 @@ describe("parseCandidate", () => {
       /unknown feature "nope"/,
     );
   });
+  it("rejects a provider with no pinned OpenRouter host", () => {
+    expect(() =>
+      parseCandidate("coach-chat=anthropic/claude-sonnet-4.6"),
+    ).toThrow(/no pinned OpenRouter host/);
+  });
   it("rejects a model without a provider prefix", () => {
     expect(() => parseCandidate("coach-chat=gpt-6-luna")).toThrow(
       /provider\/model/,

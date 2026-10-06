@@ -68,6 +68,26 @@ export const AI_FEATURES = {
 
 export type AiFeature = keyof typeof AI_FEATURES;
 
+/**
+ * The ONE OpenRouter host each provider's models may run on (sent as
+ * `provider.only`). The privacy policy names these hosts, so a request must
+ * never route elsewhere — e.g. OpenRouter also serves gpt-6-luna on Amazon
+ * Bedrock. Adding a provider here requires a privacy-policy update first.
+ */
+export const PINNED_HOSTS: Readonly<Record<string, string>> = {
+  openai: "azure",
+  google: "google-vertex",
+};
+
+export function hostForModel(model: string): string | undefined {
+  const slash = model.indexOf("/");
+  if (slash < 1) return undefined;
+  const provider = model.slice(0, slash);
+  return Object.prototype.hasOwnProperty.call(PINNED_HOSTS, provider)
+    ? PINNED_HOSTS[provider]
+    : undefined;
+}
+
 export function isAiFeature(name: string): name is AiFeature {
   return Object.prototype.hasOwnProperty.call(AI_FEATURES, name);
 }
