@@ -52,6 +52,17 @@ describe("ChooseUsernameScreen", () => {
     expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeTruthy();
   });
 
+  it("tells someone who already has an account to sign in and connect instead", () => {
+    renderScreen();
+    expect(
+      screen.getByText(
+        /Already have an OCRecipes account\? Sign in with your password instead, then add this sign-in under Settings → Sign-in methods\./,
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+    expect(mockNavigate).toHaveBeenCalledWith("Login");
+  });
+
   it("an email taken meanwhile sends them back to sign in, not 'username taken'", async () => {
     mockComplete.mockRejectedValue(new ApiError("raw", "EMAIL_IN_USE", 409));
     renderScreen();
