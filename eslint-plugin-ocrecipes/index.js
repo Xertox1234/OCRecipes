@@ -959,6 +959,48 @@ const noShadowedRouteParamList = {
   },
 };
 
+// ─── no-direct-chat-completions ─────────────────────────────────────────────
+// Every chat/vision completion goes through aiChat() (server/lib/ai-client.ts)
+// so the per-feature model table, OpenRouter routing and fallback apply
+// (OpenRouter routing spec §3.8). Matches the CALL, not the import, so
+// audio.transcriptions / images.generate on the openai client stay legal.
+const AI_CLIENT_FILE = "server/lib/ai-client.ts";
+const noDirectChatCompletions = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Disallow direct chat.completions.create — use aiChat()",
+    },
+    messages: {
+      useAiChat:
+        "Call aiChat(feature, params) from server/lib/ai-client.ts instead of chat.completions.create (add a row to server/lib/ai-models.ts).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const rel = toRepoRelative(context.filename ?? context.getFilename());
+    if (rel === AI_CLIENT_FILE) return {};
+    return {
+      CallExpression(node) {
+        const c = node.callee;
+        if (
+          c.type === "MemberExpression" &&
+          c.property.type === "Identifier" &&
+          c.property.name === "create" &&
+          c.object.type === "MemberExpression" &&
+          c.object.property.type === "Identifier" &&
+          c.object.property.name === "completions" &&
+          c.object.object.type === "MemberExpression" &&
+          c.object.object.property.type === "Identifier" &&
+          c.object.object.property.name === "chat"
+        ) {
+          context.report({ node, messageId: "useAiChat" });
+        }
+      },
+    };
+  },
+};
+
 // ─── Plugin export ──────────────────────────────────────────────────────────
 module.exports = {
   rules: {
@@ -968,5 +1010,6 @@ module.exports = {
     "no-error-message-in-ui": noErrorMessageInUi,
     "no-dead-apiRequest-guard": noDeadApiRequestGuard,
     "no-shadowed-route-paramlist": noShadowedRouteParamList,
+    "no-direct-chat-completions": noDirectChatCompletions,
   },
 };
