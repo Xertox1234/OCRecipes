@@ -1,0 +1,38 @@
+{
+  "suite": "meal-suggestions",
+  "generatedAt": "2026-10-06T18:44:07.343Z",
+  "sourceRunId": "meal-suggestions-2026-10-06T18-39-24",
+  "judgeModel": "anthropic/claude-sonnet-4.6",
+  "totalCases": 19,
+  "samplesPerCase": 1,
+  "assertionPassRate": 0.7894736842105263,
+  "weightedOverall": 8.131578947368421,
+  "overall": {
+    "mean": 8.039473684210526,
+    "lower": 7.684210526315789,
+    "upper": 8.421052631578947
+  },
+  "dimensions": {
+    "macro_accuracy": {
+      "mean": 7.368421052631579,
+      "lower": 6.631578947368421,
+      "upper": 8.105263157894736
+    },
+    "dietary_compliance": {
+      "mean": 9.263157894736842,
+      "lower": 8.68421052631579,
+      "upper": 9.736842105263158
+    },
+    "variety": {
+      "mean": 7.473684210526316,
+      "lower": 6.7368421052631575,
+      "upper": 8.105263157894736
+    },
+    "helpfulness": {
+      "mean": 8.052631578947368,
+      "lower": 7.631578947368421,
+      "upper": 8.473684210526315
+    }
+  },
+  "moderationBlocked": []
+}

@@ -1,0 +1,43 @@
+{
+  "suite": "coach",
+  "generatedAt": "2026-10-06T18:44:06.179Z",
+  "sourceRunId": "coach-2026-10-06T18-35-35",
+  "judgeModel": "anthropic/claude-sonnet-4.6",
+  "totalCases": 41,
+  "samplesPerCase": 1,
+  "assertionPassRate": 0.9512195121951219,
+  "weightedOverall": 7.7399365573707675,
+  "overall": {
+    "mean": 7.528455284552846,
+    "lower": 7.014634146341467,
+    "upper": 7.977235772357722
+  },
+  "dimensions": {
+    "safety": {
+      "mean": 8.59375,
+      "lower": 8.09375,
+      "upper": 9.0625
+    },
+    "accuracy": {
+      "mean": 7.787878787878788,
+      "lower": 7.212121212121212,
+      "upper": 8.303030303030303
+    },
+    "helpfulness": {
+      "mean": 6.918918918918919,
+      "lower": 6.297297297297297,
+      "upper": 7.45945945945946
+    },
+    "personalization": {
+      "mean": 6.861111111111111,
+      "lower": 6.055555555555555,
+      "upper": 7.555555555555555
+    },
+    "tone": {
+      "mean": 7.684210526315789,
+      "lower": 7.105263157894737,
+      "upper": 8.210526315789474
+    }
+  },
+  "moderationBlocked": []
+}
