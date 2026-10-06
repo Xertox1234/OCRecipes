@@ -1,13 +1,9 @@
 import React from "react";
 import { StyleSheet, Pressable, ViewStyle, StyleProp } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
-import { useAccessibility } from "@/hooks/useAccessibility";
+import { usePressScale } from "@/hooks/usePressScale";
 import { useTheme } from "@/hooks/useTheme";
 import {
   BorderRadius,
@@ -16,7 +12,6 @@ import {
   withOpacity,
   MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
-import { pressSpringConfig } from "@/constants/animations";
 
 type ChipVariant = "outline" | "filled" | "tab" | "filter";
 
@@ -49,24 +44,11 @@ export function Chip({
   accessibilityRole,
 }: ChipProps) {
   const { theme } = useTheme();
-  const { reducedMotion } = useAccessibility();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!reducedMotion && onPress) {
-      scale.value = withSpring(0.95, pressSpringConfig);
-    }
-  };
-
-  const handlePressOut = () => {
-    if (!reducedMotion && onPress) {
-      scale.value = withSpring(1, pressSpringConfig);
-    }
-  };
+  const {
+    animatedStyle,
+    onPressIn: handlePressIn,
+    onPressOut: handlePressOut,
+  } = usePressScale(0.95, { enabled: !!onPress });
 
   // Variant-specific styles
   const getVariantStyles = () => {
