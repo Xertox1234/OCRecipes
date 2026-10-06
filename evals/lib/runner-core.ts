@@ -5,7 +5,11 @@ import pLimit from "p-limit";
 import { runAssertions, runStructuralAssertions } from "../assertions";
 import { bootstrapMeanCI, mulberry32 } from "./bootstrap";
 import { persistResults } from "./eval-results-store";
-import { judgeGeneric, DEFAULT_JUDGE_MODEL } from "./judge-generic";
+import {
+  judgeGeneric,
+  currentJudgeModel,
+  resolveJudgeBackend,
+} from "./judge-generic";
 import type {
   EvalTestCase,
   EvalCaseResult,
@@ -287,7 +291,7 @@ export function aggregateResults(
   return {
     runId,
     timestamp,
-    judgeModel: DEFAULT_JUDGE_MODEL,
+    judgeModel: currentJudgeModel(),
     totalCases: cases.length,
     samplesPerCase,
     assertionPassRate,
@@ -417,8 +421,10 @@ export async function runEvalSuite(
     process.exit(1);
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("Error: ANTHROPIC_API_KEY is required.");
+  try {
+    resolveJudgeBackend();
+  } catch (err) {
+    console.error(`Error: ${(err as Error).message}`);
     process.exit(1);
   }
   if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
@@ -506,7 +512,7 @@ export async function runEvalSuite(
           failures: [`Case threw an exception: ${errorMsg}`],
         },
         rubricScores: [],
-        judgeModel: DEFAULT_JUDGE_MODEL,
+        judgeModel: currentJudgeModel(),
         timestamp: new Date().toISOString(),
         latencyMs: 0,
         wordCount: 0,

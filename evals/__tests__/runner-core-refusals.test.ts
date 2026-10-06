@@ -41,6 +41,7 @@ describe("runEvalSuite refusal gates", () => {
     // memory), and real keys may exist — stub all three every test.
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("OPENROUTER_API_KEY", "");
     vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "");
   });
 
@@ -67,13 +68,25 @@ describe("runEvalSuite refusal gates", () => {
     await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
     // Proves the gate actually released: the run proceeded to the NEXT
     // refusal (missing API key) instead of the prod refusal.
-    expect(loggedErrors()).toContain("ANTHROPIC_API_KEY is required");
+    expect(loggedErrors()).toContain("OPENROUTER_API_KEY or ANTHROPIC_API_KEY");
     expect(loggedErrors()).not.toContain("refusing to run evals");
   });
 
   it("REFUSES a run without ANTHROPIC_API_KEY (the judge cannot score)", async () => {
     await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
-    expect(loggedErrors()).toContain("ANTHROPIC_API_KEY is required");
+    expect(loggedErrors()).toContain("OPENROUTER_API_KEY or ANTHROPIC_API_KEY");
+  });
+
+  it("starts past the key gate with only OPENROUTER_API_KEY", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-test");
+    // AI_INTEGRATIONS_OPENAI_API_KEY still empty: the NEXT gate fires, proving the judge gate passed.
+    await expect(runEvalSuite([], minimalConfig)).rejects.toThrow("exit:1");
+    expect(loggedErrors()).toContain(
+      "AI_INTEGRATIONS_OPENAI_API_KEY is required",
+    );
+    expect(loggedErrors()).not.toMatch(
+      /OPENROUTER_API_KEY or ANTHROPIC_API_KEY/,
+    );
   });
 
   it("REFUSES a run without AI_INTEGRATIONS_OPENAI_API_KEY (the service under eval cannot answer)", async () => {
