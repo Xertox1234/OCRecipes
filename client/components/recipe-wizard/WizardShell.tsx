@@ -231,11 +231,19 @@ export default function WizardShell({
       const created = await createMutation.mutateAsync(payload);
 
       if (returnToMealPlan) {
-        await addItemMutation.mutateAsync({
-          recipeId: created.id,
-          mealType: returnToMealPlan.mealType,
-          plannedDate: returnToMealPlan.plannedDate,
-        });
+        try {
+          await addItemMutation.mutateAsync({
+            recipeId: created.id,
+            mealType: returnToMealPlan.mealType,
+            plannedDate: returnToMealPlan.plannedDate,
+          });
+        } catch {
+          // The recipe exists now, so staying open for a retry would save a
+          // second copy. Close and say what actually happened.
+          toast.error("Recipe saved, but it couldn't be added to your plan.");
+          onSaveComplete();
+          return;
+        }
         // From the plan the moment is the add, confirmed only once it lands.
         // The toast fires its own Success haptic.
         toast.success(

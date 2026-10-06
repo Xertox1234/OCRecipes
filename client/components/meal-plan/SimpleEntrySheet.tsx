@@ -72,6 +72,9 @@ function SimpleEntrySheetContentInner(
   const [error, setError] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const isAddingRef = useRef(false);
+  // The recipe a failed add already created, keyed by the dish name that built
+  // it, so a retry adds that recipe instead of creating a second copy.
+  const createdRecipeRef = useRef<{ title: string; id: number } | null>(null);
 
   const parseFoodText = useParseFoodText();
   const createRecipe = useCreateMealPlanRecipe();
@@ -105,6 +108,7 @@ function SimpleEntrySheetContentInner(
       setIsAdding(false);
       setShowUpgrade(false);
       isAddingRef.current = false;
+      createdRecipeRef.current = null;
     } else if (isListening) {
       stopListening();
     }
@@ -154,49 +158,63 @@ function SimpleEntrySheetContentInner(
     setIsAdding(true);
     setError(null);
 
+    const title = dishName.trim();
+    let step: "estimate" | "add" = "estimate";
     try {
-      // 1. Parse food text to get nutrition estimate
-      const result = await parseFoodText.mutateAsync(dishName.trim());
-      const items = result?.items;
+      let recipeId: number;
+      if (createdRecipeRef.current?.title === title) {
+        recipeId = createdRecipeRef.current.id;
+        step = "add";
+      } else {
+        createdRecipeRef.current = null;
 
-      if (!items?.length) {
-        showError("Couldn't estimate nutrition. Try a simpler description.");
-        isAddingRef.current = false;
-        setIsAdding(false);
-        return;
+        // 1. Parse food text to get nutrition estimate
+        const result = await parseFoodText.mutateAsync(title);
+        const items = result?.items;
+
+        if (!items?.length) {
+          showError("Couldn't estimate nutrition. Try a simpler description.");
+          isAddingRef.current = false;
+          setIsAdding(false);
+          return;
+        }
+
+        // 2. Sum nutrition across all parsed items into per-serving values
+        let totalCal = 0;
+        let totalProtein = 0;
+        let totalCarbs = 0;
+        let totalFat = 0;
+        for (const item of items) {
+          totalCal += item.calories ?? 0;
+          totalProtein += item.protein ?? 0;
+          totalCarbs += item.carbs ?? 0;
+          totalFat += item.fat ?? 0;
+        }
+
+        // 3. Create a slim meal plan recipe
+        step = "add";
+        const recipe = await createRecipe.mutateAsync({
+          title,
+          sourceType: "quick_entry",
+          caloriesPerServing: Math.round(totalCal).toString(),
+          proteinPerServing: Math.round(totalProtein).toString(),
+          carbsPerServing: Math.round(totalCarbs).toString(),
+          fatPerServing: Math.round(totalFat).toString(),
+          servings: 1,
+        });
+        createdRecipeRef.current = { title, id: recipe.id };
+        recipeId = recipe.id;
       }
-
-      // 2. Sum nutrition across all parsed items into per-serving values
-      let totalCal = 0;
-      let totalProtein = 0;
-      let totalCarbs = 0;
-      let totalFat = 0;
-      for (const item of items) {
-        totalCal += item.calories ?? 0;
-        totalProtein += item.protein ?? 0;
-        totalCarbs += item.carbs ?? 0;
-        totalFat += item.fat ?? 0;
-      }
-
-      // 3. Create a slim meal plan recipe
-      const recipe = await createRecipe.mutateAsync({
-        title: dishName.trim(),
-        sourceType: "quick_entry",
-        caloriesPerServing: Math.round(totalCal).toString(),
-        proteinPerServing: Math.round(totalProtein).toString(),
-        carbsPerServing: Math.round(totalCarbs).toString(),
-        fatPerServing: Math.round(totalFat).toString(),
-        servings: 1,
-      });
 
       // 4. Add to meal plan
       await addItem.mutateAsync({
-        recipeId: recipe.id,
+        recipeId,
         plannedDate,
         mealType,
         servings,
       });
 
+      createdRecipeRef.current = null;
       invalidateMealPlanItems(queryClient);
       // The sheet closes, so confirm with a toast (fires its own Success).
       toast.success(formatPlanAddSuccess(plannedDate, mealType));
@@ -204,6 +222,8 @@ function SimpleEntrySheetContentInner(
     } catch (err) {
       if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
         setShowUpgrade(true);
+      } else if (step === "add") {
+        showError("Couldn't add it to your plan. Please try again.");
       } else {
         showError("Couldn't estimate nutrition. Try a simpler description.");
       }

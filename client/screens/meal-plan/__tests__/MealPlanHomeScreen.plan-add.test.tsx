@@ -192,4 +192,29 @@ describe("MealPlanHomeScreen — adding a meal suggestion", () => {
     });
     expect(mockToastSuccess).not.toHaveBeenCalled();
   });
+
+  // The recipe was created before the add failed, and the modal stays open,
+  // so tapping the suggestion again must reuse it, not create a second copy.
+  it("retrying the same suggestion after a failed add reuses the recipe", async () => {
+    mockAddItem
+      .mockRejectedValueOnce(new Error("500"))
+      .mockResolvedValueOnce({ id: 1 });
+    renderComponent(<MealPlanHomeScreen />);
+
+    fireEvent.click(screen.getByLabelText("Pick suggestion"));
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledOnce();
+    });
+
+    fireEvent.click(screen.getByLabelText("Pick suggestion"));
+
+    await waitFor(() => {
+      expect(mockToastSuccess).toHaveBeenCalledOnce();
+    });
+    expect(mockCreateRecipe).toHaveBeenCalledOnce();
+    expect(mockAddItem).toHaveBeenCalledTimes(2);
+    expect(mockAddItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recipeId: 31 }),
+    );
+  });
 });

@@ -1159,28 +1159,42 @@ export default function MealPlanHomeScreen() {
     [features.aiMealSuggestions, haptics],
   );
 
+  const createdSuggestionRecipeRef = useRef<{
+    title: string;
+    id: number;
+  } | null>(null);
+
   const handleSelectSuggestion = useCallback(
     async (suggestion: MealSuggestion) => {
       try {
-        // Create recipe from suggestion
-        const recipe = await createRecipe({
+        // A failed add leaves the modal open with the recipe already created;
+        // tapping the same suggestion again reuses it instead of a new copy.
+        const pending = createdSuggestionRecipeRef.current;
+        const recipe =
+          pending?.title === suggestion.title
+            ? { id: pending.id }
+            : await createRecipe({
+                title: suggestion.title,
+                description: suggestion.description,
+                difficulty: suggestion.difficulty,
+                prepTimeMinutes: suggestion.prepTimeMinutes,
+                instructions: suggestion.instructions,
+                dietTags: suggestion.dietTags,
+                sourceType: "ai_suggestion",
+                caloriesPerServing: suggestion.calories,
+                proteinPerServing: suggestion.protein,
+                carbsPerServing: suggestion.carbs,
+                fatPerServing: suggestion.fat,
+                ingredients: suggestion.ingredients?.map((ing) => ({
+                  name: ing.name,
+                  quantity: ing.quantity,
+                  unit: ing.unit,
+                })),
+              });
+        createdSuggestionRecipeRef.current = {
           title: suggestion.title,
-          description: suggestion.description,
-          difficulty: suggestion.difficulty,
-          prepTimeMinutes: suggestion.prepTimeMinutes,
-          instructions: suggestion.instructions,
-          dietTags: suggestion.dietTags,
-          sourceType: "ai_suggestion",
-          caloriesPerServing: suggestion.calories,
-          proteinPerServing: suggestion.protein,
-          carbsPerServing: suggestion.carbs,
-          fatPerServing: suggestion.fat,
-          ingredients: suggestion.ingredients?.map((ing) => ({
-            name: ing.name,
-            quantity: ing.quantity,
-            unit: ing.unit,
-          })),
-        });
+          id: recipe.id,
+        };
 
         // Add to meal plan
         await addMealPlanItem({
@@ -1189,6 +1203,7 @@ export default function MealPlanHomeScreen() {
           mealType: suggestMealType,
         });
 
+        createdSuggestionRecipeRef.current = null;
         // The modal closes, so confirm with a toast (fires its own Success).
         toast.success(formatPlanAddSuccess(selectedDateStr, suggestMealType));
         setSuggestModalVisible(false);
