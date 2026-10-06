@@ -14,6 +14,7 @@
     "server:build": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server_dist --alias:@shared=./shared",
     "server:prod": "NODE_ENV=production node server_dist/index.js",
     "predb:push": "tsx scripts/check-timestamptz-migration.ts",
+    "ai:smoke": "npx tsx scripts/ai-smoke.ts",
     "db:push": "drizzle-kit push",
     "lint": "ESLINT_NO_TYPE_AWARE= npx expo lint && node scripts/check-react-compiler-bailouts.js",
     "lint:fix": "npx expo lint --fix",
