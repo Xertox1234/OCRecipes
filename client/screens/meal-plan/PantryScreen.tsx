@@ -237,7 +237,7 @@ export default function PantryScreen() {
         },
       });
     },
-    [haptics, toast, deleteMutation],
+    [toast, deleteMutation],
   );
 
   const handleDelete = useCallback(
