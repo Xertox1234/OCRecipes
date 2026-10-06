@@ -21,11 +21,11 @@ Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-inj
 
 ## Project AI Architecture
 
-### Central configuration (`server/lib/openai.ts`)
+### Central configuration (`server/lib/ai-client.ts`, `server/lib/ai-models.ts`, `server/lib/openai.ts`)
 
-- `MODEL_FAST = "gpt-4o-mini"` — lightweight: parsing, classification, coaching
-- `MODEL_HEAVY = "gpt-4o"` — vision, recipe generation, meal planning
-- Timeout tiers: `OPENAI_TIMEOUT_FAST_MS` 15s (food-nlp: simple text parsing) · `OPENAI_TIMEOUT_STREAM_MS` 30s (nutrition-coach: streaming chat) · `OPENAI_TIMEOUT_HEAVY_MS` 60s (recipe/meal generation: large budgets) · `OPENAI_TIMEOUT_IMAGE_MS` 120s (DALL-E image generation)
+- Every chat/vision call goes through `aiChat(feature, params, options)` in `server/lib/ai-client.ts` — never `openai.chat.completions.create` directly (lint rule `ocrecipes/no-direct-chat-completions`). The model is not in the call: each feature is a row in `AI_FEATURES` (`server/lib/ai-models.ts`) with `model` (OpenRouter id), `fallback` (direct-OpenAI model), and `json`/`vision` flags. A new AI call means a new row.
+- Tiers today: the FAST rows use `gpt-4o-mini` (parsing, classification, coaching); the HEAVY rows use `gpt-4o` (vision, recipe generation, meal planning).
+- Timeout tiers (still in `server/lib/openai.ts`, passed as `aiChat`'s third argument): `OPENAI_TIMEOUT_FAST_MS` 15s (food-nlp: simple text parsing) · `OPENAI_TIMEOUT_STREAM_MS` 30s (nutrition-coach: streaming chat) · `OPENAI_TIMEOUT_HEAVY_MS` 60s (recipe/meal generation: large budgets) · `OPENAI_TIMEOUT_IMAGE_MS` 120s (DALL-E image generation)
 - `isAiConfigured` — true only when the API key is set
 
 ### AI safety (`server/lib/ai-safety.ts`)
@@ -42,14 +42,14 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 
 ## AI Services Inventory
 
-**Vision (MODEL_HEAVY = gpt-4o):**
+**Vision (HEAVY rows, gpt-4o):**
 
 - `server/services/photo-analysis.ts` — 4 intents: log/calories/recipe/identify; confidence scoring, follow-up when < 0.7
 - `server/services/menu-analysis.ts` — restaurant menu photo scanning & nutritional analysis
 - `server/services/front-label-analysis.ts` — nutrition-label text extraction from photos
 - `server/services/receipt-analysis.ts` — multi-photo receipt scanning (all pages as separate `image_url` entries in one call)
 
-**Text (MODEL_FAST = gpt-4o-mini), all under `server/services/`:** `food-nlp.ts` (natural-language food parsing, e.g. "2 eggs and toast"), `nutrition-coach.ts` (streaming chat), `meal-suggestions.ts`, `recipe-generation.ts` (premium), `recipe-chat.ts`, `cooking-session.ts` (step-by-step guidance), `ingredient-substitution.ts`, `voice-transcription.ts`, `pantry-meal-plan.ts`.
+**Text (mostly FAST rows, gpt-4o-mini — check each row in `ai-models.ts`), all under `server/services/`:** `food-nlp.ts` (natural-language food parsing, e.g. "2 eggs and toast"), `nutrition-coach.ts` (streaming chat), `meal-suggestions.ts`, `recipe-generation.ts` (premium), `recipe-chat.ts`, `cooking-session.ts` (step-by-step guidance), `ingredient-substitution.ts`, `voice-transcription.ts`, `pantry-meal-plan.ts`.
 
 **Image generation:** `server/services/carousel-builder.ts` — recipe card images via Runware (FLUX.2 klein 9B KV default, FLUX.1 dev for curated recipes — see `server/lib/runware.ts`) with DALL-E fallback.
 
@@ -60,7 +60,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 - **Dietary context helper:** `buildDietaryContext(userProfile)` from `server/lib/dietary-context.ts` returns a pre-sanitized dietary context string (diet type, allergies, preferences) for prompts.
 - **Response validation (required):** parse AI output with `validateAiResponse(JSON.parse(content), ZodSchema)`; on `null`, `sendError(res, 500, "Failed to parse AI response", ErrorCode.AI_PARSE_ERROR)`.
 - **Dangerous-advice check:** for coaching and suggestion services, run `containsDangerousDietaryAdvice(aiResponse)` on the output before returning; on a hit, `logger.warn` the response and `sendError(res, 422, "Unable to provide this advice", ErrorCode.SAFETY_FILTER)`.
-- **Multi-photo vision calls:** send all images of a multi-page document in a single API call — each as a `{ type: "image_url", image_url: { url: <data-URI>, detail: "high" } }` entry alongside the text prompt; `MODEL_HEAVY`, `max_completion_tokens: 4096`, low temperature (0.2) for structured extraction, `response_format: { type: "json_object" }`.
+- **Multi-photo vision calls:** send all images of a multi-page document in a single API call — each as a `{ type: "image_url", image_url: { url: <data-URI>, detail: "high" } }` entry alongside the text prompt; a HEAVY (vision) row, `max_completion_tokens: 4096`, low temperature (0.2) for structured extraction, `response_format: { type: "json_object" }`.
 - **Cache-first pattern for AI calls:** (1) build a composite cache key — itemId + userId + `calculateProfileHash(userProfile)`; (2) on hit, `fireAndForget("cache-hit", storage.incrementCacheHit(cached.id))` and return the cached payload with `cacheId`; (3) on miss, call OpenAI; (4) write the cache with an `expiresAt` TTL (e.g. 30 days) — fire-and-forget OK for non-critical writes — and return the result with `cacheId`.
 
 ## Review Checklist — AI/LLM
@@ -79,7 +79,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 
 ### Model & Cost
 
-- [ ] Correct model choice: `MODEL_FAST` for text, `MODEL_HEAVY` for vision — using `gpt-4o` for simple text parsing wastes money
+- [ ] Correct model choice: the call goes through `aiChat` with a feature whose `ai-models.ts` row has the right tier (FAST for text, HEAVY for vision) and accurate `json`/`vision` flags — using `gpt-4o` for simple text parsing wastes money
 - [ ] Appropriate `max_completion_tokens` — not excessively large (e.g. 16000 for a yes/no question)
 - [ ] `temperature` set appropriately (low for extraction, higher for creative)
 - [ ] Timeout from the correct tier constant (`OPENAI_TIMEOUT_*_MS`)
