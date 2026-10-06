@@ -17,6 +17,8 @@ const REQUEST_CONTENT_PATTERNS = [
   /too many tokens/i,
   /content[_ ]?filter/i,
   /content management policy/i,
+  /requires moderation/i,
+  /input was flagged/i,
 ];
 
 export function classifyAiFailure(err: unknown): AiFailureKind {
@@ -25,7 +27,7 @@ export function classifyAiFailure(err: unknown): AiFailureKind {
     const status = err.status;
     if (status === undefined) return "transport"; // connection / timeout
     if (status === 402) return "balance";
-    if (status === 429 || status >= 500) return "transport";
+    if (status === 408 || status === 429 || status >= 500) return "transport";
     const text = `${String(err.code ?? "")} ${err.message}`;
     return REQUEST_CONTENT_PATTERNS.some((p) => p.test(text))
       ? "request"
