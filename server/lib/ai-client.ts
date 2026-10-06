@@ -307,7 +307,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
 }
 
 function defaultDeps(): AiChatDeps {
-  const key = process.env.OPENROUTER_API_KEY;
+  const key = process.env.OPENROUTER_API_KEY?.trim() || undefined;
   return {
     openrouter: key
       ? (new OpenAI({

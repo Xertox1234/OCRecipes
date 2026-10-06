@@ -124,16 +124,17 @@ OCRecipes/
 
 ## Environment Variables
 
-| Variable                          | Required | Description                    |
-| --------------------------------- | -------- | ------------------------------ |
-| `DATABASE_URL`                    | Yes      | PostgreSQL connection string   |
-| `JWT_SECRET`                      | Yes      | JWT token signing secret       |
-| `AI_INTEGRATIONS_OPENAI_API_KEY`  | Yes      | OpenAI API key                 |
-| `AI_INTEGRATIONS_OPENAI_BASE_URL` | No       | Custom OpenAI endpoint         |
-| `USDA_API_KEY`                    | Yes      | USDA FoodData Central API key  |
-| `API_NINJAS_KEY`                  | Yes      | API Ninjas nutrition API key   |
-| `SPOONACULAR_API_KEY`             | No       | Spoonacular recipe catalog API |
-| `EXPO_PUBLIC_DOMAIN`              | No       | Public API domain for mobile   |
+| Variable                          | Required | Description                                                  |
+| --------------------------------- | -------- | ------------------------------------------------------------ |
+| `DATABASE_URL`                    | Yes      | PostgreSQL connection string                                 |
+| `JWT_SECRET`                      | Yes      | JWT token signing secret                                     |
+| `AI_INTEGRATIONS_OPENAI_API_KEY`  | Yes      | OpenAI API key                                               |
+| `AI_INTEGRATIONS_OPENAI_BASE_URL` | No       | Custom OpenAI endpoint                                       |
+| `OPENROUTER_API_KEY`              | No       | Routes AI chat/vision via OpenRouter (unset ⇒ OpenAI direct) |
+| `USDA_API_KEY`                    | Yes      | USDA FoodData Central API key                                |
+| `API_NINJAS_KEY`                  | Yes      | API Ninjas nutrition API key                                 |
+| `SPOONACULAR_API_KEY`             | No       | Spoonacular recipe catalog API                               |
+| `EXPO_PUBLIC_DOMAIN`              | No       | Public API domain for mobile                                 |
 
 ---
 

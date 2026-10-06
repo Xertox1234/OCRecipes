@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import OpenAI from "openai";
 import { createAiChat, withAiCallContext } from "../ai-client";
 import type { AiChatDeps } from "../ai-client";
@@ -548,5 +548,36 @@ describe("aiChat (streaming)", () => {
       }),
       expect.any(String),
     );
+  });
+});
+
+describe("aiChat default deps", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("an empty OPENROUTER_API_KEY is treated as unset", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "  ");
+    vi.resetModules();
+    const mod = await import("../ai-client");
+    const { openai } = await import("../openai");
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      completion("gpt-4o-mini") as unknown as Awaited<
+        ReturnType<typeof openai.chat.completions.create>
+      >,
+    );
+    await mod.aiChat("coach-notebook-extract", params);
+    expect(openai.chat.completions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-4o-mini" }),
+      undefined,
+    );
+    // The fallback path above is also what a failed OpenRouter call lands on,
+    // so discriminate with fallback off: no client => the "key required" error.
+    const c: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
+    await expect(
+      mod.withAiCallContext(c, () =>
+        mod.aiChat("coach-notebook-extract", params),
+      ),
+    ).rejects.toThrow(/OPENROUTER_API_KEY is required when fallback is off/);
   });
 });

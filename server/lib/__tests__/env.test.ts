@@ -215,3 +215,27 @@ describe("validateEnv email verification (Resend)", () => {
     expect(() => validateEnv()).not.toThrow();
   });
 });
+
+describe("validateEnv OPENROUTER_API_KEY", () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE };
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.RECEIPT_VALIDATION_STUB;
+    process.env.NODE_ENV = "development";
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it("accepts an optional OPENROUTER_API_KEY and passes it through", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    const { validateEnv } = await load();
+    expect(validateEnv().OPENROUTER_API_KEY).toBe("sk-or-test");
+  });
+
+  it("OPENROUTER_API_KEY is optional", async () => {
+    const { validateEnv } = await load();
+    expect(validateEnv().OPENROUTER_API_KEY).toBeUndefined();
+  });
+});
