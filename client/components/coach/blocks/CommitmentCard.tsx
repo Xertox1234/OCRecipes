@@ -6,7 +6,9 @@ import {
   StyleSheet,
   AccessibilityInfo,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
+import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { withOpacity } from "@/constants/theme";
 import type { CommitmentCard as CommitmentCardType } from "@shared/schemas/coach-blocks";
 
@@ -26,6 +28,8 @@ const CommitmentCard = React.memo(function CommitmentCard({
   isAccepted,
 }: Props) {
   const { theme } = useTheme();
+  const { trigger: triggerCheckPop, animatedStyle: checkPopStyle } =
+    useSuccessPop(1.4);
   const [localAccepted, setLocalAccepted] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
@@ -64,22 +68,24 @@ const CommitmentCard = React.memo(function CommitmentCard({
          * screen-reader users into expecting a toggle gesture since the View
          * has no onPress (the Accept Pressable below is the actual control).
          */}
-        <View
-          style={[
-            styles.checkbox,
-            accepted
-              ? { backgroundColor: theme.success }
-              : { borderColor: theme.link, borderWidth: 2 },
-          ]}
-          accessible={false}
-          importantForAccessibility="no"
-        >
-          {accepted && (
-            <Text style={styles.checkmark} accessible={false}>
-              {"✓"}
-            </Text>
-          )}
-        </View>
+        <Animated.View style={checkPopStyle}>
+          <View
+            style={[
+              styles.checkbox,
+              accepted
+                ? { backgroundColor: theme.success }
+                : { borderColor: theme.link, borderWidth: 2 },
+            ]}
+            accessible={false}
+            importantForAccessibility="no"
+          >
+            {accepted && (
+              <Text style={styles.checkmark} accessible={false}>
+                {"✓"}
+              </Text>
+            )}
+          </View>
+        </Animated.View>
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
       </View>
       <Text style={[styles.followUp, { color: theme.textSecondary }]}>
@@ -94,6 +100,9 @@ const CommitmentCard = React.memo(function CommitmentCard({
             ]}
             onPress={() => {
               setLocalAccepted(true);
+              // Accept is local-first (the POST failure is non-fatal), so the
+              // tap is the success moment. The pop fires its own Success haptic.
+              triggerCheckPop();
               // Announce acceptance to screen readers. Android picks this up
               // via re-render; iOS needs the explicit announce call.
               AccessibilityInfo.announceForAccessibility("Commitment accepted");
