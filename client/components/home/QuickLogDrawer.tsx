@@ -160,7 +160,8 @@ export function QuickLogDrawer({
       onClose();
       const label =
         totalCalories > 0 ? `${firstName} · ${totalCalories} cal` : firstName;
-      toast.success(`Logged! ${label}`);
+      // useQuickLogSession already fired the Success haptic.
+      toast.success(`Logged! ${label}`, { haptic: false });
     },
     [onClose, toast],
   );
