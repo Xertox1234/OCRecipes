@@ -11,7 +11,7 @@ import type {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
-import { AI_FEATURES, adaptParams } from "./ai-models";
+import { AI_FEATURES, adaptParams, hostForModel } from "./ai-models";
 import type { AiFeature, AiFeatureConfig } from "./ai-models";
 import { getAiCallContext, withAiCallContext } from "./ai-call-context";
 import type { AiCallContext } from "./ai-call-context";
@@ -213,6 +213,14 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     if (fallbackAllowed && deps.breaker.isOpen())
       return callFallback("circuit-open");
 
+    const host = hostForModel(requestedModel);
+    if (!host) {
+      // Table rows are pinned by test; only an eval override can get here.
+      throw new Error(
+        `aiChat(${feature}): no pinned OpenRouter host for "${requestedModel}" (add it to PINNED_HOSTS after the privacy policy names it)`,
+      );
+    }
+
     const body = {
       ...adaptParams(
         params as unknown as Record<string, unknown>,
@@ -220,7 +228,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         override?.set,
       ),
       model: requestedModel,
-      provider: { zdr: true },
+      provider: { zdr: true, only: [host] },
     };
 
     try {

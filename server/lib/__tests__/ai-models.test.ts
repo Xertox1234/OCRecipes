@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import {
   AI_FEATURES,
   adaptParams,
+  hostForModel,
   isAiFeature,
   type AiFeatureConfig,
 } from "../ai-models";
@@ -26,6 +27,12 @@ describe("AI_FEATURES table", () => {
     for (const [name, row] of rows) {
       expect(row.model, name).toBe(`openai/${row.fallback}`);
       expect(row.adapt, name).toBeUndefined();
+    }
+  });
+
+  it("every row's model has a pinned OpenRouter host", () => {
+    for (const [name, row] of rows) {
+      expect(hostForModel(row.model), name).toBeDefined();
     }
   });
 
@@ -79,5 +86,17 @@ describe("adaptParams", () => {
     const params = { temperature: 0.5 };
     adaptParams(params, { drop: ["temperature"] });
     expect(params).toEqual({ temperature: 0.5 });
+  });
+});
+
+describe("hostForModel", () => {
+  it("pins OpenAI models to Azure and Google models to Vertex", () => {
+    expect(hostForModel("openai/gpt-4o-mini")).toBe("azure");
+    expect(hostForModel("openai/gpt-6-luna")).toBe("azure");
+    expect(hostForModel("google/gemini-3.8-flash")).toBe("google-vertex");
+  });
+  it("has no host for an unlisted provider", () => {
+    expect(hostForModel("anthropic/claude-sonnet-4.6")).toBeUndefined();
+    expect(hostForModel("gpt-4o")).toBeUndefined();
   });
 });

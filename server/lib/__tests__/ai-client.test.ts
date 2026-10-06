@@ -86,7 +86,7 @@ describe("aiChat (non-streaming)", () => {
     );
   });
 
-  it("key set → OpenRouter with the row model, zdr, adapted params", async () => {
+  it("key set → OpenRouter with the row model, zdr, pinned host, adapted params", async () => {
     vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
       completion("openai/gpt-4o-mini", "Azure"),
     );
@@ -94,7 +94,11 @@ describe("aiChat (non-streaming)", () => {
     const res = await aiChat("coach-notebook-extract", params);
     expect(res.model).toBe("openai/gpt-4o-mini");
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
-      { ...params, model: "openai/gpt-4o-mini", provider: { zdr: true } },
+      {
+        ...params,
+        model: "openai/gpt-4o-mini",
+        provider: { zdr: true, only: ["azure"] },
+      },
       undefined,
     );
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
@@ -245,6 +249,23 @@ describe("aiChat inside a call context", () => {
         fellBack: false,
       },
     ]);
+  });
+
+  it("an override model with no pinned host throws before any request", async () => {
+    const deps = makeDeps();
+    const aiChat = createAiChat(deps);
+    const c = ctx({
+      overrides: {
+        "coach-notebook-extract": { model: "anthropic/claude-sonnet-4.6" },
+      },
+    });
+    await expect(
+      withAiCallContext(c, () => aiChat("coach-notebook-extract", params)),
+    ).rejects.toThrow(
+      /no pinned OpenRouter host for "anthropic\/claude-sonnet-4.6"/,
+    );
+    expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
+    expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
 
   it("fallback off → an OpenRouter failure throws (no silent fallback)", async () => {

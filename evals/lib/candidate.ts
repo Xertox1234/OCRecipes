@@ -1,4 +1,8 @@
-import { AI_FEATURES, isAiFeature } from "../../server/lib/ai-models";
+import {
+  AI_FEATURES,
+  hostForModel,
+  isAiFeature,
+} from "../../server/lib/ai-models";
 import type { AiFeature } from "../../server/lib/ai-models";
 import type {
   AiCallRecord,
@@ -39,6 +43,11 @@ export function parseCandidate(spec: string): Overrides {
     if (!/^[a-z0-9-]+\/[^/]+$/.test(model)) {
       throw new Error(
         `--candidate: "${model}" must be an OpenRouter provider/model id`,
+      );
+    }
+    if (!hostForModel(model)) {
+      throw new Error(
+        `--candidate: "${model}" has no pinned OpenRouter host (see PINNED_HOSTS in server/lib/ai-models.ts)`,
       );
     }
     const set: Record<string, unknown> = {};
