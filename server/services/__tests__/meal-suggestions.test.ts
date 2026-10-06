@@ -256,7 +256,7 @@ describe("meal-suggestions", () => {
   });
 
   describe("aiResponseSchema", () => {
-    it("should require exactly 3 suggestions", () => {
+    it("accepts 1 to 3 suggestions, rejects none, and trims extras to 3", () => {
       const makeSuggestion = (title: string) => ({
         title,
         description: "desc",
@@ -283,12 +283,30 @@ describe("meal-suggestions", () => {
         }),
       ).not.toThrow();
 
-      // Invalid: 2 suggestions
-      expect(() =>
+      // Valid: fewer than 3. The model sometimes returns fewer on a tight
+      // budget (eval meal-suggestion-over-budget-edge-15, 2026-10-06), and
+      // 1-2 usable suggestions beat an error.
+      expect(
         aiResponseSchema.parse({
           suggestions: [makeSuggestion("A"), makeSuggestion("B")],
-        }),
-      ).toThrow();
+        }).suggestions,
+      ).toHaveLength(2);
+      expect(
+        aiResponseSchema.parse({ suggestions: [makeSuggestion("A")] })
+          .suggestions,
+      ).toHaveLength(1);
+
+      // Invalid: none
+      expect(() => aiResponseSchema.parse({ suggestions: [] })).toThrow();
+
+      // Extras beyond 3 are trimmed, not an error
+      expect(
+        aiResponseSchema
+          .parse({
+            suggestions: ["A", "B", "C", "D"].map(makeSuggestion),
+          })
+          .suggestions.map((x) => x.title),
+      ).toEqual(["A", "B", "C"]);
     });
   });
 
@@ -430,7 +448,7 @@ describe("meal-suggestions", () => {
       );
 
       await expect(generateMealSuggestions(baseInput)).rejects.toThrow(
-        /exactly 3 element/,
+        /description/,
       );
     });
 

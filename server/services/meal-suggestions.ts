@@ -45,7 +45,12 @@ const mealSuggestionSchema = z.object({
 });
 
 const aiResponseSchema = z.object({
-  suggestions: z.array(mealSuggestionSchema).length(3),
+  // We ask for 3; on a tight budget the model sometimes returns fewer. 1-2
+  // usable suggestions beat an error, and extras are trimmed to 3.
+  suggestions: z
+    .array(mealSuggestionSchema)
+    .min(1)
+    .transform((s) => s.slice(0, 3)),
 });
 
 export { mealSuggestionSchema, aiResponseSchema };
