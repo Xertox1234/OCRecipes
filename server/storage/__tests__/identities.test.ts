@@ -259,6 +259,30 @@ describe("identities storage", () => {
         await ids.completeLinkFromTicket(ticket, { markEmailVerified: false }),
       ).toBeUndefined();
     });
+
+    it("completeLinkByTicketHash completes a link from the ticket's hash alone (2FA verify path)", async () => {
+      const target = await createTestUser(getTestTx());
+      const ticket = await ids.createPendingSignIn({
+        ...baseTicket,
+        kind: "link",
+        targetUserId: target.id,
+      });
+      const intruder = await createTestUser(getTestTx());
+      expect(
+        await ids.completeLinkByTicketHash(sha256Hex(ticket), {
+          markEmailVerified: false,
+          targetUserId: intruder.id,
+        }),
+      ).toBeUndefined();
+      const identity = await ids.completeLinkByTicketHash(sha256Hex(ticket), {
+        markEmailVerified: false,
+        targetUserId: target.id,
+      });
+      expect(identity).toMatchObject({ userId: target.id, provider: "google" });
+      expect(
+        await ids.completeLinkFromTicket(ticket, { markEmailVerified: false }),
+      ).toBeUndefined();
+    });
   });
 
   describe("getSignInMethods", () => {

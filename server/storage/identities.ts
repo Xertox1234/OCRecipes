@@ -175,14 +175,30 @@ export async function completeLinkFromTicket(
   ticket: string,
   opts: { markEmailVerified: boolean },
 ): Promise<UserIdentity | undefined> {
+  return completeLinkByTicketHash(sha256Hex(ticket), opts);
+}
+
+/**
+ * Same as completeLinkFromTicket, from the ticket's hash. The 2FA verify path
+ * holds only the hash (mfa_challenges.link_ticket_hash) and passes the
+ * challenge's user, so a challenge can only ever complete a link to its own
+ * account.
+ */
+export async function completeLinkByTicketHash(
+  ticketHash: string,
+  opts: { markEmailVerified: boolean; targetUserId?: string },
+): Promise<UserIdentity | undefined> {
   return db.transaction(async (tx) => {
     const [t] = await tx
       .delete(pendingSocialSignIns)
       .where(
         and(
-          eq(pendingSocialSignIns.ticketHash, sha256Hex(ticket)),
+          eq(pendingSocialSignIns.ticketHash, ticketHash),
           eq(pendingSocialSignIns.kind, "link"),
           gt(pendingSocialSignIns.expiresAt, sql`now()`),
+          opts.targetUserId === undefined
+            ? undefined
+            : eq(pendingSocialSignIns.targetUserId, opts.targetUserId),
         ),
       )
       .returning();
