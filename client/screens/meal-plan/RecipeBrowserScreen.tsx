@@ -23,6 +23,7 @@ import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { Chip } from "@/components/Chip";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
@@ -235,9 +236,10 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
     <Pressable
       onPress={() => onPress(item)}
       disabled={adding}
-      style={[
+      style={({ pressed }) => [
         styles.recipeCard,
         { backgroundColor: withOpacity(theme.text, 0.04) },
+        pressed && { opacity: 0.7 },
       ]}
       accessibilityRole="button"
       accessibilityState={{ disabled: adding }}
@@ -309,13 +311,16 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
           accessibilityLabel={
             isFavourited ? "Remove from favourites" : "Add to favourites"
           }
-          style={{
-            width: 44,
-            height: 44,
-            justifyContent: "center",
-            alignItems: "center",
-            marginRight: Spacing.sm,
-          }}
+          style={({ pressed }) => [
+            {
+              width: 44,
+              height: 44,
+              justifyContent: "center",
+              alignItems: "center",
+              marginRight: Spacing.sm,
+            },
+            pressed && { opacity: 0.7 },
+          ]}
         >
           <Animated.View style={heartPopStyle}>
             <Ionicons
@@ -741,7 +746,10 @@ export default function RecipeBrowserScreen() {
                 setSearchText("");
                 setDebouncedQuery("");
               }}
-              style={styles.clearSearchButton}
+              style={({ pressed }) => [
+                styles.clearSearchButton,
+                pressed && { opacity: 0.7 },
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Clear search"
             >
@@ -764,7 +772,7 @@ export default function RecipeBrowserScreen() {
         {/* Action row (no tabs) */}
         <View style={styles.actionRow}>
           <View style={{ flex: 1 }} />
-          <Pressable
+          <PressableScale
             onPress={() =>
               // Root-qualified: this screen is also registered in the Profile
               // and Coach stacks, where a bare "RecipeEntryHub" resolves
@@ -802,7 +810,7 @@ export default function RecipeBrowserScreen() {
             >
               Add
             </ThemedText>
-          </Pressable>
+          </PressableScale>
         </View>
 
         {/* Filter chips */}
@@ -930,7 +938,8 @@ export default function RecipeBrowserScreen() {
             }}
             accessibilityLabel="Filter quick meals under 30 minutes"
           />
-          <Pressable
+          <PressableScale
+            scaleTo={0.95}
             onPress={() => {
               filterSheetRef.current?.present();
               setIsFilterSheetOpen(true);
@@ -957,7 +966,7 @@ export default function RecipeBrowserScreen() {
                 </ThemedText>
               </View>
             )}
-          </Pressable>
+          </PressableScale>
         </ScrollView>
       </Animated.View>
 

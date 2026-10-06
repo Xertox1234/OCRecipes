@@ -12,6 +12,7 @@ import * as Haptics from "expo-haptics";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { IngredientIcon } from "@/components/IngredientIcon";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -209,7 +210,8 @@ export default function ReceiptMealPlanScreen() {
             {DAY_OPTIONS.map((days) => {
               const isSelected = days === selectedDays;
               return (
-                <Pressable
+                <PressableScale
+                  scaleTo={0.95}
                   key={days}
                   onPress={() => setSelectedDays(days)}
                   style={[
@@ -237,7 +239,7 @@ export default function ReceiptMealPlanScreen() {
                   >
                     {days} days
                   </ThemedText>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View>
@@ -262,7 +264,7 @@ export default function ReceiptMealPlanScreen() {
             </View>
           )}
 
-          <Pressable
+          <PressableScale
             onPress={handleGenerate}
             style={[
               styles.generateButton,
@@ -282,7 +284,7 @@ export default function ReceiptMealPlanScreen() {
             >
               Generate Meal Plan
             </ThemedText>
-          </Pressable>
+          </PressableScale>
         </ScrollView>
       </View>
     );
@@ -376,7 +378,7 @@ export default function ReceiptMealPlanScreen() {
           },
         ]}
       >
-        <Pressable
+        <PressableScale
           onPress={handleSave}
           disabled={saveMutation.isPending || totalMealCount === 0}
           style={[
@@ -398,7 +400,7 @@ export default function ReceiptMealPlanScreen() {
               Add to Meal Plan ({totalMealCount} meals)
             </ThemedText>
           )}
-        </Pressable>
+        </PressableScale>
       </View>
     </View>
   );
@@ -425,7 +427,10 @@ function MealCard({
     >
       <Pressable
         onPress={() => setExpanded((prev) => !prev)}
-        style={styles.mealCardHeader}
+        style={({ pressed }) => [
+          styles.mealCardHeader,
+          pressed && { opacity: 0.7 },
+        ]}
         accessibilityRole="button"
         accessibilityLabel={`${meal.mealType}: ${meal.title}. ${meal.caloriesPerServing} calories per serving`}
         accessibilityHint={expanded ? "Collapse details" : "Expand details"}
@@ -458,6 +463,7 @@ function MealCard({
             {Math.round(meal.caloriesPerServing)} cal
           </ThemedText>
           <Pressable
+            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             onPress={onRemove}
             hitSlop={8}
             accessibilityRole="button"

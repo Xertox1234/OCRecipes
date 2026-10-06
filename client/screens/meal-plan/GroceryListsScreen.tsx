@@ -7,6 +7,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
@@ -84,6 +85,7 @@ export default function GroceryListsScreen() {
           ? () => null
           : () => (
               <Pressable
+                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
                 onPress={() => navigation.goBack()}
                 hitSlop={12}
                 accessibilityRole="button"
@@ -149,9 +151,10 @@ export default function GroceryListsScreen() {
           haptics.selection();
           navigation.navigate("GroceryList", { listId: item.id });
         }}
-        style={[
+        style={({ pressed }) => [
           styles.listItem,
           { backgroundColor: withOpacity(theme.text, 0.04) },
+          pressed && { opacity: 0.7 },
         ]}
         accessibilityRole="button"
         accessibilityLabel={item.title}
@@ -167,6 +170,7 @@ export default function GroceryListsScreen() {
           </ThemedText>
         </View>
         <Pressable
+          style={({ pressed }) => [pressed && { opacity: 0.7 }]}
           onPress={() => handleDelete(item.id)}
           hitSlop={8}
           accessibilityRole="button"
@@ -240,7 +244,7 @@ export default function GroceryListsScreen() {
               >
                 Something went wrong. Check your connection and try again.
               </ThemedText>
-              <Pressable
+              <PressableScale
                 onPress={() => {
                   haptics.impact();
                   void refetch();
@@ -255,7 +259,7 @@ export default function GroceryListsScreen() {
                 <ThemedText style={{ color: theme.buttonText }}>
                   Try Again
                 </ThemedText>
-              </Pressable>
+              </PressableScale>
             </View>
           ) : (
             <View style={styles.emptyState}>
@@ -331,7 +335,7 @@ export default function GroceryListsScreen() {
                 />
               </View>
               <View style={styles.datePickerActions}>
-                <Pressable
+                <PressableScale
                   onPress={() => setShowDatePicker(false)}
                   style={[styles.cancelButton, { borderColor: theme.border }]}
                   accessibilityRole="button"
@@ -340,8 +344,8 @@ export default function GroceryListsScreen() {
                   <ThemedText style={{ color: theme.textSecondary }}>
                     Cancel
                   </ThemedText>
-                </Pressable>
-                <Pressable
+                </PressableScale>
+                <PressableScale
                   onPress={handleGenerate}
                   disabled={isCreatingList}
                   style={[
@@ -357,7 +361,7 @@ export default function GroceryListsScreen() {
                   <ThemedText style={{ color: theme.buttonText }}>
                     {isCreatingList ? "Generating..." : "Generate"}
                   </ThemedText>
-                </Pressable>
+                </PressableScale>
               </View>
             </View>
           ) : null
@@ -366,7 +370,7 @@ export default function GroceryListsScreen() {
 
       {/* FAB */}
       {!showDatePicker && (
-        <Pressable
+        <PressableScale
           onPress={() => {
             haptics.impact();
             setShowDatePicker(true);
@@ -383,7 +387,7 @@ export default function GroceryListsScreen() {
           {...behindContentA11yProps}
         >
           <Feather name="plus" size={24} color={theme.buttonText} />
-        </Pressable>
+        </PressableScale>
       )}
       <ConfirmationModal />
     </View>

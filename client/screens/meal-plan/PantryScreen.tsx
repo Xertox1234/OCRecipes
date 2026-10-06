@@ -18,6 +18,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { IngredientIcon } from "@/components/IngredientIcon";
@@ -123,6 +124,7 @@ function PantryItemRow({
         </View>
       )}
       <Pressable
+        style={({ pressed }) => [pressed && { opacity: 0.7 }]}
         onPress={() => onDelete(item.id)}
         hitSlop={8}
         accessibilityRole="button"
@@ -188,6 +190,7 @@ export default function PantryScreen() {
           ? () => null
           : () => (
               <Pressable
+                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
                 onPress={() => navigation.goBack()}
                 hitSlop={12}
                 accessibilityRole="button"
@@ -292,7 +295,7 @@ export default function PantryScreen() {
             Track your pantry items, get expiration alerts, and auto-deduct from
             grocery lists. Upgrade to premium to unlock.
           </ThemedText>
-          <Pressable
+          <PressableScale
             onPress={() => setShowUpgradeModal(true)}
             style={[
               styles.upgradeButton,
@@ -306,7 +309,7 @@ export default function PantryScreen() {
             >
               Upgrade
             </ThemedText>
-          </Pressable>
+          </PressableScale>
         </View>
         <UpgradeModal
           visible={showUpgradeModal}
@@ -413,7 +416,7 @@ export default function PantryScreen() {
             <View style={styles.listHeaderTop}>
               <ThemedText style={styles.listTitle}>Your Pantry</ThemedText>
               {features.receiptScanner && (
-                <Pressable
+                <PressableScale
                   onPress={() => {
                     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
                     navigation.navigate("ReceiptCapture");
@@ -431,7 +434,7 @@ export default function PantryScreen() {
                   >
                     Scan Receipt
                   </ThemedText>
-                </Pressable>
+                </PressableScale>
               )}
             </View>
             <ThemedText
@@ -486,7 +489,7 @@ export default function PantryScreen() {
               onSubmitEditing={handleAddItem}
               accessibilityLabel="Add pantry item"
             />
-            <Pressable
+            <PressableScale
               onPress={handleAddItem}
               disabled={!newItemName.trim() || createMutation.isPending}
               style={[
@@ -501,7 +504,7 @@ export default function PantryScreen() {
               accessibilityLabel="Add item to pantry"
             >
               <Feather name="plus" size={20} color={theme.buttonText} />
-            </Pressable>
+            </PressableScale>
           </View>
         }
         stickySectionHeadersEnabled

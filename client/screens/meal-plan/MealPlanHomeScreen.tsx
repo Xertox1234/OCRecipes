@@ -31,6 +31,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
 import { SwipeableRow } from "@/components/SwipeableRow";
@@ -177,7 +178,8 @@ const DateStripItem = React.memo(function DateStripItem({
   const dayNum = date.getDate();
 
   return (
-    <Pressable
+    <PressableScale
+      scaleTo={0.95}
       onPress={() => onPress(date)}
       style={[
         styles.dateStripItem,
@@ -219,7 +221,7 @@ const DateStripItem = React.memo(function DateStripItem({
           style={[styles.dateStripDot, { backgroundColor: theme.accentSolid }]}
         />
       )}
-    </Pressable>
+    </PressableScale>
   );
 });
 
@@ -301,7 +303,7 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   return (
     <Pressable
       onPress={() => !isOrphaned && onPress(item)}
-      style={[
+      style={({ pressed }) => [
         styles.mealSlotItem,
         {
           backgroundColor: isOrphaned
@@ -310,6 +312,7 @@ export const MealSlotItem = React.memo(function MealSlotItem({
               ? withOpacity(theme.success, 0.08)
               : withOpacity(theme.text, 0.04),
         },
+        pressed && { opacity: 0.7 },
       ]}
       accessibilityRole="button"
       accessibilityLabel={accessLabel}
@@ -319,13 +322,16 @@ export const MealSlotItem = React.memo(function MealSlotItem({
       {canConfirm && (
         <Pressable
           onPress={() => !isConfirmed && onConfirm(item.id)}
-          style={{
-            width: 44,
-            height: 44,
-            justifyContent: "center",
-            alignItems: "center",
-            marginRight: Spacing.sm,
-          }}
+          style={({ pressed }) => [
+            {
+              width: 44,
+              height: 44,
+              justifyContent: "center",
+              alignItems: "center",
+              marginRight: Spacing.sm,
+            },
+            pressed && { opacity: 0.7 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel={
             isConfirmed ? `${name} confirmed` : `Confirm ${name} as eaten`
@@ -360,12 +366,15 @@ export const MealSlotItem = React.memo(function MealSlotItem({
       </View>
       <Pressable
         onPress={() => onRemove(item.id)}
-        style={{
-          width: 44,
-          height: 44,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
+        style={({ pressed }) => [
+          {
+            width: 44,
+            height: 44,
+            justifyContent: "center",
+            alignItems: "center",
+          },
+          pressed && { opacity: 0.7 },
+        ]}
         accessibilityRole="button"
         accessibilityLabel={`Remove ${name}`}
       >
@@ -461,7 +470,10 @@ export const MealSlotSection = React.memo(function MealSlotSection({
     <View style={styles.mealSlotSection}>
       <Pressable
         onPress={() => onToggle(mealType)}
-        style={styles.mealSlotHeader}
+        style={({ pressed }) => [
+          styles.mealSlotHeader,
+          pressed && { opacity: 0.7 },
+        ]}
         accessibilityRole="button"
         accessibilityState={{ expanded: isExpanded }}
         accessibilityLabel={headerAccessLabel}
@@ -484,7 +496,8 @@ export const MealSlotSection = React.memo(function MealSlotSection({
           ) : null}
         </ThemedText>
         {isExpanded && (
-          <Pressable
+          <PressableScale
+            scaleTo={0.95}
             onPress={() => onSuggest(mealType)}
             hitSlop={8}
             style={[
@@ -517,7 +530,7 @@ export const MealSlotSection = React.memo(function MealSlotSection({
             >
               Suggest
             </ThemedText>
-          </Pressable>
+          </PressableScale>
         )}
         <Feather
           name={isExpanded ? "chevron-up" : "chevron-down"}
@@ -577,9 +590,10 @@ export const MealSlotSection = React.memo(function MealSlotSection({
           )}
           <Pressable
             onPress={() => onAddItem(mealType)}
-            style={[
+            style={({ pressed }) => [
               styles.addItemButton,
               { borderColor: withOpacity(theme.text, 0.1) },
+              pressed && { opacity: 0.7 },
             ]}
             accessibilityRole="button"
             accessibilityLabel={`Add ${label.toLowerCase()} item`}
@@ -1503,7 +1517,8 @@ export default function MealPlanHomeScreen() {
         {/* Top Action Buttons */}
         <View style={styles.topActions}>
           {topActions.map((action) => (
-            <Pressable
+            <PressableScale
+              scaleTo={0.95}
               key={action.id}
               onPress={action.onPress}
               hitSlop={8}
@@ -1537,13 +1552,14 @@ export default function MealPlanHomeScreen() {
                   </ThemedText>
                 </View>
               )}
-            </Pressable>
+            </PressableScale>
           ))}
         </View>
 
         {/* Month/Year Header with arrows */}
         <View style={styles.monthHeader}>
           <Pressable
+            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             onPress={handlePrevWeek}
             hitSlop={12}
             accessibilityRole="button"
@@ -1553,6 +1569,7 @@ export default function MealPlanHomeScreen() {
           </Pressable>
           <ThemedText style={styles.monthTitle}>{monthYear}</ThemedText>
           <Pressable
+            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             onPress={handleNextWeek}
             hitSlop={12}
             accessibilityRole="button"
