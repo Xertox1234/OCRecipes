@@ -13,7 +13,7 @@ import {
   BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
-import { ImpactFeedbackStyle, NotificationFeedbackType } from "expo-haptics";
+import { ImpactFeedbackStyle } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
@@ -22,6 +22,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useUnifiedRecipes } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
 import {
   Spacing,
   BorderRadius,
@@ -154,7 +155,8 @@ function QuickAddSheetContentInner(
           plannedDate,
           mealType,
         });
-        haptics.notification(NotificationFeedbackType.Success);
+        // The sheet closes, so confirm with a toast (fires its own Success).
+        toast.success(formatPlanAddSuccess(plannedDate, mealType));
         onDismiss();
       } catch {
         toast.error("Couldn't add the recipe to your plan. Please try again.");

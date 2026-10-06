@@ -18,6 +18,8 @@ import { InlineMicButton } from "@/components/InlineMicButton";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
+import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
 import { useParseFoodText } from "@/hooks/useFoodParse";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import {
@@ -56,6 +58,7 @@ function SimpleEntrySheetContentInner(
 ) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const inputRef = useRef<TextInput>(null);
 
@@ -195,7 +198,8 @@ function SimpleEntrySheetContentInner(
       });
 
       invalidateMealPlanItems(queryClient);
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      // The sheet closes, so confirm with a toast (fires its own Success).
+      toast.success(formatPlanAddSuccess(plannedDate, mealType));
       onDismiss();
     } catch (err) {
       if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
@@ -216,7 +220,7 @@ function SimpleEntrySheetContentInner(
     createRecipe,
     addItem,
     queryClient,
-    haptics,
+    toast,
     showError,
     onDismiss,
   ]);

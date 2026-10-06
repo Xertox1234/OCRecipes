@@ -213,3 +213,25 @@ export function formatPlanSaveSuccess(
 ): string {
   return `Added to ${dayLabel} ${MEAL_LABELS[mealType]}`;
 }
+
+/**
+ * `formatPlanSaveSuccess` for callers that only hold the ISO `plannedDate`
+ * (the meal-plan sheets, recipe browser and wizard). The weekday is rebuilt
+ * from the date's parts as a LOCAL date — never `new Date(iso)`, which reads
+ * UTC midnight and names the previous day at UTC-negative offsets (see
+ * `formatPlanSaveSuccess` above).
+ */
+export function formatPlanAddSuccess(
+  plannedDate: string,
+  mealType: string,
+): string {
+  const [year, month, day] = plannedDate.split("-").map(Number);
+  const weekday = new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday: "long",
+  });
+  // Route params type the meal as a plain string; an unknown value still
+  // confirms the add, just without a meal label.
+  return Object.hasOwn(MEAL_LABELS, mealType)
+    ? formatPlanSaveSuccess(weekday, mealType as MealType)
+    : `Added to ${weekday}`;
+}

@@ -77,7 +77,10 @@ import type {
 import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
-import { planBannerA11yLabel } from "@/components/coach/coach-chat-utils";
+import {
+  formatPlanAddSuccess,
+  planBannerA11yLabel,
+} from "@/components/coach/coach-chat-utils";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 const RECIPE_HEADER_EXPANDED = 160;
@@ -588,6 +591,8 @@ export default function RecipeBrowserScreen() {
           plannedDate,
           mealType,
         });
+        // The screen closes, so confirm with a toast (fires its own Success).
+        toast.success(formatPlanAddSuccess(plannedDate, mealType));
         navigation.goBack();
       } catch {
         toast.error("Couldn't add the recipe to your plan. Please try again.");

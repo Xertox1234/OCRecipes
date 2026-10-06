@@ -10,6 +10,8 @@ const mockCreateRecipe = vi.fn();
 const mockAddItem = vi.fn();
 const mockStartListening = vi.fn();
 const mockStopListening = vi.fn();
+const mockNotification = vi.fn();
+const mockToastSuccess = vi.fn();
 
 let mockIsListening = false;
 let mockTranscript = "";
@@ -41,7 +43,15 @@ vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
     impact: vi.fn(),
     selection: vi.fn(),
-    notification: vi.fn(),
+    notification: (...args: unknown[]) => mockNotification(...args),
+  }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: (...args: unknown[]) => mockToastSuccess(...args),
+    error: vi.fn(),
+    info: vi.fn(),
   }),
 }));
 
@@ -190,6 +200,64 @@ describe("SimpleEntrySheet", () => {
         }),
       );
     });
+  });
+
+  // The sheet closes on add, so the confirmation is a toast (it fires its own
+  // Success haptic — no second buzz).
+  it("a successful add toasts the day and meal, with no extra Success haptic", async () => {
+    mockParseFoodText.mockResolvedValue({
+      items: [
+        {
+          name: "chicken stir fry",
+          quantity: 1,
+          calories: 350,
+          protein: 30,
+          carbs: 20,
+          fat: 12,
+        },
+      ],
+    });
+    mockCreateRecipe.mockResolvedValue({ id: 42 });
+    mockAddItem.mockResolvedValue({ id: 1 });
+
+    renderComponent(
+      <SimpleEntrySheetContent {...defaultProps} plannedDate="2026-09-02" />,
+    );
+    fireEvent.change(screen.getByLabelText("Dish name"), {
+      target: { value: "chicken stir fry" },
+    });
+    fireEvent.click(screen.getByText("Add"));
+
+    await waitFor(() => {
+      expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
+    });
+    expect(mockToastSuccess).toHaveBeenCalledExactlyOnceWith(
+      "Added to Wednesday Lunch",
+    );
+    expect(mockNotification).not.toHaveBeenCalled();
+  });
+
+  it("a failed add gives no success toast", async () => {
+    mockParseFoodText.mockResolvedValue({
+      items: [{ name: "soup", quantity: 1, calories: 100 }],
+    });
+    mockCreateRecipe.mockResolvedValue({ id: 42 });
+    mockAddItem.mockRejectedValue(new Error("500"));
+
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+    fireEvent.change(screen.getByLabelText("Dish name"), {
+      target: { value: "soup" },
+    });
+    fireEvent.click(screen.getByText("Add"));
+
+    await waitFor(() => {
+      expect(mockAddItem).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn't estimate nutrition/)).toBeTruthy();
+    });
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+    expect(defaultProps.onDismiss).not.toHaveBeenCalled();
   });
 
   it("shows error when parse returns empty items", async () => {

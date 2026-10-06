@@ -47,6 +47,7 @@ import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
+import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
@@ -1188,7 +1189,8 @@ export default function MealPlanHomeScreen() {
           mealType: suggestMealType,
         });
 
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        // The modal closes, so confirm with a toast (fires its own Success).
+        toast.success(formatPlanAddSuccess(selectedDateStr, suggestMealType));
         setSuggestModalVisible(false);
         invalidateMealPlanItems(queryClient);
       } catch {
@@ -1202,7 +1204,6 @@ export default function MealPlanHomeScreen() {
       addMealPlanItem,
       selectedDateStr,
       suggestMealType,
-      haptics,
       toast,
       queryClient,
     ],
