@@ -6,6 +6,7 @@ import {
   InStreamError,
   classifyAiFailure,
   countsTowardBreaker,
+  isModerationBlock,
 } from "../ai-failure";
 
 const apiError = (status: number, message: string, code?: string) =>
@@ -125,5 +126,28 @@ describe("CircuitBreaker", () => {
     expect(breaker.isOpen()).toBe(false);
     breaker.recordFailure();
     expect(breaker.isOpen()).toBe(true);
+  });
+});
+
+describe("isModerationBlock", () => {
+  it("is true for an OpenRouter moderation 403", () => {
+    expect(
+      isModerationBlock(
+        apiError(403, "403 This model requires moderation: input was flagged"),
+      ),
+    ).toBe(true);
+    expect(isModerationBlock(new Error("Your input was flagged"))).toBe(true);
+  });
+
+  it("is false for a plain 403", () => {
+    expect(isModerationBlock(apiError(403, "Forbidden"))).toBe(false);
+  });
+
+  it("is false for a context-length 400 and for non-errors", () => {
+    expect(
+      isModerationBlock(apiError(400, "maximum context length exceeded")),
+    ).toBe(false);
+    expect(isModerationBlock("requires moderation")).toBe(false);
+    expect(isModerationBlock(undefined)).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { runEvalSuite } from "../lib/runner-core";
 import type { SuiteConfig } from "../lib/runner-core";
 import { getAiCallContext } from "../../server/lib/ai-call-context";
 import { AI_FEATURES } from "../../server/lib/ai-models";
+import type { AiCallRecord } from "../../server/lib/ai-call-context";
 import type { EvalTestCase } from "../types";
 
 const writeFileSync = vi.hoisted(() => vi.fn());
@@ -116,5 +117,90 @@ describe("runEvalSuite per-sample AI call checks", () => {
       "Error: --candidate names feature(s) no sample called: coach-pro-chat",
     );
     expect(writeFileSync).not.toHaveBeenCalled();
+  });
+
+  describe("moderation-blocked samples", () => {
+    const model = AI_FEATURES["coach-chat"].model;
+    const case2 = { ...testCase, id: "case-2" } as unknown as EvalTestCase;
+    const failedRecord = (error: {
+      kind: "request" | "transport";
+      moderated: boolean;
+      message: string;
+    }) => ({
+      feature: "coach-chat" as const,
+      requestedModel: model,
+      answeredModel: null,
+      answeredProvider: null,
+      fellBack: false,
+      error,
+    });
+    const cleanRecord = {
+      feature: "coach-chat" as const,
+      requestedModel: model,
+      answeredModel: model,
+      answeredProvider: "Azure",
+      fellBack: false,
+    };
+    const moderatedFailure = failedRecord({
+      kind: "request",
+      moderated: true,
+      message: "requires moderation",
+    });
+    const written = () =>
+      JSON.parse(writeFileSync.mock.calls[0][1] as string) as {
+        totalCases: number;
+        cases: { testCaseId: string }[];
+        moderationBlocked: { testCaseId: string; features: string[] }[];
+      };
+    const generate = (byCase: Record<string, unknown>) =>
+      configWith(async (tc) => {
+        getAiCallContext()!.calls.push(
+          byCase[tc.id] as unknown as AiCallRecord,
+        );
+        return { text: "hi", latencyMs: 1, wordCount: 1 };
+      });
+
+    it("writes the report without the blocked sample and lists it", async () => {
+      const config = generate({
+        "case-1": moderatedFailure,
+        "case-2": cleanRecord,
+      });
+      await runEvalSuite([testCase, case2], config);
+      expect(exitSpy).not.toHaveBeenCalled();
+      const report = written();
+      expect(report.moderationBlocked).toEqual([
+        { testCaseId: "case-1", features: ["coach-chat"] },
+      ]);
+      expect(report.cases.map((c) => c.testCaseId)).toEqual(["case-2"]);
+      expect(report.totalCases).toBe(1);
+    });
+
+    it("still refuses on a non-moderation failure and says why", async () => {
+      const config = generate({
+        "case-1": failedRecord({
+          kind: "transport",
+          moderated: false,
+          message: "503 upstream",
+        }),
+        "case-2": cleanRecord,
+      });
+      await expect(runEvalSuite([testCase, case2], config)).rejects.toThrow(
+        "exit:1",
+      );
+      expect(loggedErrors()).toMatch(/call failed \(transport\)/);
+      expect(writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it("refuses when every sample is moderation-blocked", async () => {
+      const config = generate({
+        "case-1": moderatedFailure,
+        "case-2": moderatedFailure,
+      });
+      await expect(runEvalSuite([testCase, case2], config)).rejects.toThrow(
+        "exit:1",
+      );
+      expect(loggedErrors()).toMatch(/every sample .*moderation/i);
+      expect(writeFileSync).not.toHaveBeenCalled();
+    });
   });
 });

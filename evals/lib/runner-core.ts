@@ -17,7 +17,12 @@ import type {
   AiModelOverride,
 } from "../../server/lib/ai-call-context";
 import type { AiFeature } from "../../server/lib/ai-models";
-import { checkCallRecords, parseCandidate, unusedOverrides } from "./candidate";
+import {
+  checkCallRecords,
+  isModerationOnlySample,
+  parseCandidate,
+  unusedOverrides,
+} from "./candidate";
 import type {
   EvalTestCase,
   EvalCaseResult,
@@ -163,6 +168,7 @@ async function evaluateCase(
     latencyMs,
     wordCount,
     aiCallViolations,
+    aiCalls: aiCtx.calls,
   };
 }
 
@@ -569,7 +575,30 @@ export async function runEvalSuite(
     }
   }
 
-  const violating = settled.filter(
+  // Samples the provider's moderation blocked can never be scored (fallback is
+  // off in evals by design, spec §3.7): report them, keep them out of scoring.
+  const scored: EvalCaseResult[] = [];
+  const moderationBlocked: NonNullable<EvalRunResult["moderationBlocked"]> = [];
+  for (const c of settled) {
+    if (c.aiCalls && isModerationOnlySample(c.aiCalls, overrides)) {
+      const features = [
+        ...new Set(c.aiCalls.filter((k) => k.error).map((k) => k.feature)),
+      ];
+      moderationBlocked.push({ testCaseId: c.testCaseId, features });
+      console.warn(
+        `  ⚠ ${c.testCaseId}: blocked by provider moderation (${features.join(", ")}) — not scored; production answers it via the OpenAI fallback`,
+      );
+    } else {
+      scored.push(c);
+    }
+  }
+  if (moderationBlocked.length > 0) {
+    console.warn(
+      `  ⚠ ${moderationBlocked.length} sample(s) blocked by provider moderation and excluded from scoring`,
+    );
+  }
+
+  const violating = scored.filter(
     (c) => c.aiCallViolations && c.aiCallViolations.length > 0,
   );
   if (violating.length > 0) {
@@ -590,8 +619,16 @@ export async function runEvalSuite(
     process.exit(1);
   }
 
-  const runResult = aggregateResults(settled, config, samplesPerCase);
+  if (scored.length === 0 && moderationBlocked.length > 0) {
+    console.error(
+      "Error: every sample was blocked by provider moderation — nothing was scored, refusing to write a report.",
+    );
+    process.exit(1);
+  }
+
+  const runResult = aggregateResults(scored, config, samplesPerCase);
   runResult.candidate = candidateArg;
+  runResult.moderationBlocked = moderationBlocked;
   printSummary(runResult, config);
 
   const resultsDir = path.join(__dirname, "..", "results");

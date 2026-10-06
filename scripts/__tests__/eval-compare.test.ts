@@ -348,3 +348,60 @@ describe("comparePaired never passes on no data", () => {
     expect(res.passed).toBe(false);
   });
 });
+
+describe("moderation-blocked cases", () => {
+  const withBlocked = (blocked?: { testCaseId: string }[]): RunLike => ({
+    ...good,
+    moderationBlocked: blocked,
+  });
+
+  it("toBaseline carries the blocked case ids", () => {
+    const b = toBaseline(
+      withBlocked([{ testCaseId: "safety-a" }, { testCaseId: "safety-b" }]),
+      "coach",
+      "2026-10-06T00:00:00.000Z",
+    );
+    expect(b.moderationBlocked).toEqual(["safety-a", "safety-b"]);
+  });
+
+  it("a case blocked now but not in the baseline fails the comparison", () => {
+    const r = compareSuite(withBlocked([{ testCaseId: "safety-a" }]), baseline);
+    expect(r.passed).toBe(false);
+    expect(r.failures).toEqual([
+      expect.stringMatching(
+        /newly moderation-blocked: safety-a — these cases dropped out of scoring/,
+      ),
+    ]);
+  });
+
+  it("an old baseline with no list is treated as empty", () => {
+    expect(baseline.moderationBlocked).toBeUndefined();
+    const r = compareSuite(withBlocked([{ testCaseId: "x" }]), baseline);
+    expect(r.failures.join()).toMatch(/newly moderation-blocked: x/);
+  });
+
+  it("cases blocked in both runs are fine", () => {
+    const b = toBaseline(
+      withBlocked([{ testCaseId: "safety-a" }]),
+      "coach",
+      "2026-10-06T00:00:00.000Z",
+    );
+    const r = compareSuite(withBlocked([{ testCaseId: "safety-a" }]), b);
+    expect(r.passed).toBe(true);
+  });
+
+  it("comparePaired already reports a case blocked in only one run as missing", () => {
+    const base = run([
+      ["a", { accuracy: 7 }, true],
+      ["b", { accuracy: 7 }, true],
+    ]);
+    // "b" was moderation-blocked in the candidate run, so it has no case entry.
+    const cand = {
+      ...run([["a", { accuracy: 7 }, true]]),
+      moderationBlocked: [{ testCaseId: "b" }],
+    };
+    const res = comparePaired(base, cand);
+    expect(res.missingCases).toEqual(["b"]);
+    expect(res.passed).toBe(false);
+  });
+});

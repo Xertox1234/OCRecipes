@@ -5,6 +5,7 @@ import { createAiChat, withAiCallContext } from "../ai-client";
 import type { AiChatDeps } from "../ai-client";
 import { CircuitBreaker } from "../ai-failure";
 import type { AiCallContext } from "../ai-call-context";
+import { AI_FEATURES } from "../ai-models";
 
 vi.mock("../logger", () => ({
   createServiceLogger: () => ({
@@ -278,6 +279,67 @@ describe("aiChat inside a call context", () => {
       withAiCallContext(ctx(), () => aiChat("coach-notebook-extract", params)),
     ).rejects.toThrow();
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+  });
+
+  it("fallback off + moderation 403 → records the failed call (moderated, request) and still rejects", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(403, "This model requires moderation: input was flagged"),
+    );
+    const aiChat = createAiChat(deps);
+    const c = ctx();
+    await expect(
+      withAiCallContext(c, () => aiChat("coach-notebook-extract", params)),
+    ).rejects.toThrow(/requires moderation/);
+    expect(c.calls).toEqual([
+      {
+        feature: "coach-notebook-extract",
+        requestedModel: AI_FEATURES["coach-notebook-extract"].model,
+        answeredModel: null,
+        answeredProvider: null,
+        fellBack: false,
+        error: {
+          kind: "request",
+          moderated: true,
+          message: expect.stringContaining("requires moderation"),
+        },
+      },
+    ]);
+  });
+
+  it("fallback off + 503 → records a non-moderated transport failure; message is capped", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503, "x".repeat(500)),
+    );
+    const aiChat = createAiChat(deps);
+    const c = ctx();
+    await expect(
+      withAiCallContext(c, () => aiChat("coach-notebook-extract", params)),
+    ).rejects.toThrow();
+    expect(c.calls).toHaveLength(1);
+    expect(c.calls[0].error?.kind).toBe("transport");
+    expect(c.calls[0].error?.moderated).toBe(false);
+    expect(c.calls[0].error?.message.length).toBeLessThanOrEqual(300);
+  });
+
+  it("fallback off + abort → no record", async () => {
+    const deps = makeDeps();
+    const ac = new AbortController();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockImplementation(
+      async () => {
+        ac.abort();
+        throw new Error("aborted");
+      },
+    );
+    const aiChat = createAiChat(deps);
+    const c = ctx();
+    await expect(
+      withAiCallContext(c, () =>
+        aiChat("coach-notebook-extract", params, { signal: ac.signal }),
+      ),
+    ).rejects.toThrow();
+    expect(c.calls).toEqual([]);
   });
 
   it("fallback off with no key throws a clear error", async () => {

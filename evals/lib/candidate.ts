@@ -77,6 +77,38 @@ export function modelMatches(
   );
 }
 
+/**
+ * Violations for one record, split into the "call failed" line (errored
+ * records only) and every other check. A failed call has no answer, so the
+ * answered-by / fell-back checks only apply to records without an error.
+ */
+function recordViolations(
+  c: AiCallRecord,
+  overrides: Overrides,
+): { failed: string | null; others: string[] } {
+  const others: string[] = [];
+  const expected = overrides[c.feature]?.model ?? AI_FEATURES[c.feature].model;
+  if (c.requestedModel !== expected) {
+    others.push(
+      `${c.feature}: requested ${c.requestedModel}, expected ${expected}`,
+    );
+  }
+  if (c.error) {
+    const tag = c.error.moderated ? `${c.error.kind}, moderated` : c.error.kind;
+    return {
+      failed: `${c.feature}: call failed (${tag}): ${c.error.message}`,
+      others,
+    };
+  }
+  if (c.fellBack) others.push(`${c.feature}: fell back to the OpenAI path`);
+  if (!modelMatches(c.requestedModel, c.answeredModel)) {
+    others.push(
+      `${c.feature}: requested ${c.requestedModel} but answered by ${c.answeredModel ?? "unknown"}`,
+    );
+  }
+  return { failed: null, others };
+}
+
 export function checkCallRecords(
   calls: AiCallRecord[],
   overrides: Overrides,
@@ -88,22 +120,33 @@ export function checkCallRecords(
   }
   const violations: string[] = [];
   for (const c of calls) {
-    const expected =
-      overrides[c.feature]?.model ?? AI_FEATURES[c.feature].model;
-    if (c.requestedModel !== expected) {
-      violations.push(
-        `${c.feature}: requested ${c.requestedModel}, expected ${expected}`,
-      );
-    }
-    if (c.fellBack)
-      violations.push(`${c.feature}: fell back to the OpenAI path`);
-    if (!modelMatches(c.requestedModel, c.answeredModel)) {
-      violations.push(
-        `${c.feature}: requested ${c.requestedModel} but answered by ${c.answeredModel ?? "unknown"}`,
-      );
-    }
+    const { failed, others } = recordViolations(c, overrides);
+    if (failed) violations.push(failed);
+    violations.push(...others);
   }
   return violations;
+}
+
+/**
+ * True when the provider's moderation blocked at least one call and nothing
+ * else is wrong with the sample: every errored record is a moderation block
+ * and `checkCallRecords` minus those lines is empty. `overrides` must be the
+ * run's, so a clean record is judged against the model it was meant to use.
+ */
+export function isModerationOnlySample(
+  calls: AiCallRecord[],
+  overrides: Overrides = {},
+): boolean {
+  let moderated = 0;
+  for (const c of calls) {
+    const { failed, others } = recordViolations(c, overrides);
+    if (others.length > 0) return false;
+    if (failed) {
+      if (!c.error?.moderated) return false;
+      moderated++;
+    }
+  }
+  return moderated > 0;
 }
 
 /**

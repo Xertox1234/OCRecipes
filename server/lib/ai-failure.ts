@@ -10,6 +10,9 @@ export class InStreamError extends Error {
   }
 }
 
+// OpenRouter's moderation on some models (e.g. openai/*) rejects the input.
+const MODERATION_PATTERNS = [/requires moderation/i, /input was flagged/i];
+
 // 4xx caused by THIS request's content (spec §3.4) — warn, no Sentry, no breaker.
 const REQUEST_CONTENT_PATTERNS = [
   /context[_ ]length/i,
@@ -17,9 +20,14 @@ const REQUEST_CONTENT_PATTERNS = [
   /too many tokens/i,
   /content[_ ]?filter/i,
   /content management policy/i,
-  /requires moderation/i,
-  /input was flagged/i,
+  ...MODERATION_PATTERNS,
 ];
+
+/** True when the provider's moderation (not our request shape) rejected the input. */
+export function isModerationBlock(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return MODERATION_PATTERNS.some((p) => p.test(err.message));
+}
 
 export function classifyAiFailure(err: unknown): AiFailureKind {
   if (err instanceof InStreamError) return "transport";
