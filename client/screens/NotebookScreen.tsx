@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
+import { PressableScale } from "@/components/PressableScale";
 import { useToast } from "@/context/ToastContext";
 import {
   useNotebookEntries,
@@ -102,9 +103,10 @@ export default function NotebookScreen() {
       const isCompleted = item.status === "completed";
       return (
         <Pressable
-          style={[
+          style={({ pressed }) => [
             styles.entryCard,
             { backgroundColor: theme.backgroundSecondary },
+            pressed && { opacity: 0.7 },
           ]}
           onPress={() =>
             navigation.navigate("NotebookEntry", { entryId: item.id })
@@ -137,6 +139,7 @@ export default function NotebookScreen() {
             </View>
             <View style={styles.entryActions}>
               <Pressable
+                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
                 onPress={() => handleArchive(item)}
                 hitSlop={12}
                 accessibilityRole="button"
@@ -152,7 +155,10 @@ export default function NotebookScreen() {
               <Pressable
                 onPress={() => handleDelete(item)}
                 hitSlop={12}
-                style={{ marginTop: Spacing.xs }}
+                style={({ pressed }) => [
+                  { marginTop: Spacing.xs },
+                  pressed && { opacity: 0.7 },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Delete entry"
               >
@@ -184,7 +190,7 @@ export default function NotebookScreen() {
           My Notebook
         </Text>
         <View style={styles.headerActions}>
-          <Pressable
+          <PressableScale
             onPress={() => navigation.navigate("NotebookEntry", {})}
             style={[styles.newBtn, { backgroundColor: theme.accentSolid }]}
             hitSlop={{ top: 7, bottom: 7 }}
@@ -192,11 +198,14 @@ export default function NotebookScreen() {
             accessibilityLabel="Create new notebook entry"
           >
             <Text style={styles.newBtnText}>+ New</Text>
-          </Pressable>
+          </PressableScale>
           <Pressable
             onPress={() => navigation.goBack()}
             hitSlop={12}
-            style={{ marginLeft: Spacing.sm }}
+            style={({ pressed }) => [
+              { marginLeft: Spacing.sm },
+              pressed && { opacity: 0.7 },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
@@ -211,7 +220,8 @@ export default function NotebookScreen() {
         contentContainerStyle={styles.filterRow}
       >
         {FILTERS.map((f) => (
-          <Pressable
+          <PressableScale
+            scaleTo={0.95}
             key={f}
             onPress={() => setFilter(f)}
             style={[
@@ -242,7 +252,7 @@ export default function NotebookScreen() {
                       ? "Preference"
                       : f.charAt(0).toUpperCase() + f.slice(1)}
             </Text>
-          </Pressable>
+          </PressableScale>
         ))}
       </ScrollView>
 
