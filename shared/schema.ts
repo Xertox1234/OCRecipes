@@ -85,6 +85,12 @@ export const users = pgTable(
       .notNull(),
     tokenVersion: integer("token_version").default(0).notNull(),
     /**
+     * When the second factor (authenticator app) was turned on; NULL = off.
+     * Not a secret — the secret lives in user_mfa. Read by
+     * secondFactor.requiresSecondFactor on every sign-in path.
+     */
+    mfaEnabledAt: timestamp("mfa_enabled_at", { withTimezone: true }),
+    /**
      * Password reset (emailed 6-digit code). HMAC-SHA256 hex of `userId:code`
      * keyed from JWT_SECRET (server/lib/password-reset-code.ts); NULL = no live
      * code. One live code per account: issuing overwrites, a reset or a
@@ -246,6 +252,82 @@ export const pendingSocialSignIns = pgTable(
     ),
     expiresIdx: index("pending_social_sign_ins_expires_at_idx").on(
       table.expiresAt,
+    ),
+  }),
+);
+
+/**
+ * Second factor (authenticator app). One row per account that has started or
+ * finished setup. Never serialized to a client.
+ */
+export const userMfa = pgTable("user_mfa", {
+  userId: varchar("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** AES-256-GCM (MFA_SECRET_ENC_KEY) of the base32 secret; NULL until confirmed. */
+  totpSecretEnc: text("totp_secret_enc"),
+  /** Highest accepted TOTP time step — replay guard (a code is usable once). */
+  totpLastStep: integer("totp_last_step"),
+  /** Setup in progress: encrypted candidate secret + its expiry. */
+  pendingSecretEnc: text("pending_secret_enc"),
+  pendingExpiresAt: timestamp("pending_expires_at", { withTimezone: true }),
+  /** Consecutive failed second-factor checks (reset by any success). */
+  failedAttempts: integer("failed_attempts").default(0).notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+});
+
+/** One-time recovery codes, stored hashed (server/lib/mfa/mfa-secrets.ts). */
+export const mfaRecoveryCodes = pgTable(
+  "mfa_recovery_codes",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** sha256(`${userId}:${normalizedCode}`) */
+    codeHash: text("code_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userHashUnique: uniqueIndex("mfa_recovery_codes_user_hash_unique").on(
+      table.userId,
+      table.codeHash,
+    ),
+  }),
+);
+
+/**
+ * A sign-in whose password/provider check passed but whose second factor has
+ * not. Single use; the client holds only the random token, stored here hashed.
+ */
+export const mfaChallenges = pgTable(
+  "mfa_challenges",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** users.token_version at creation — a reset or sign-out-everywhere kills it. */
+    tokenVersion: integer("token_version").notNull(),
+    purpose: text("purpose").notNull(),
+    /** purpose=link: sha256 of the pending link ticket, completed only after verify. */
+    linkTicketHash: text("link_ticket_hash"),
+    linkMarkEmailVerified: boolean("link_mark_email_verified")
+      .default(false)
+      .notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("mfa_challenges_user_id_idx").on(table.userId),
+    purposeCheck: check(
+      "mfa_challenges_purpose_check",
+      sql`${table.purpose} in ('login', 'link')`,
     ),
   }),
 );
@@ -1363,6 +1445,8 @@ export type UserIdentity = typeof userIdentities.$inferSelect;
 export type InsertUserIdentity = typeof userIdentities.$inferInsert;
 export type AuthNonce = typeof authNonces.$inferSelect;
 export type PendingSocialSignIn = typeof pendingSocialSignIns.$inferSelect;
+export type UserMfa = typeof userMfa.$inferSelect;
+export type MfaChallenge = typeof mfaChallenges.$inferSelect;
 export type InsertScannedItem = z.infer<typeof insertScannedItemSchema>;
 export type ScannedItem = typeof scannedItems.$inferSelect;
 export type InsertDailyLog = z.infer<typeof insertDailyLogSchema>;
