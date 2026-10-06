@@ -202,6 +202,8 @@ export interface PairedResult {
   dimensions: PairedDimension[];
   newAssertionFailures: string[];
   missingCases: string[];
+  /** Non-null when the two runs were scored by different judges (spec §5). */
+  judgeMismatch: string | null;
   passed: boolean;
 }
 
@@ -275,12 +277,23 @@ export function comparePaired(
   const newAssertionFailures = shared.filter(
     (id) => base.get(id)!.allPassed && !cand.get(id)!.allPassed,
   );
+  const judgeMismatch =
+    baseline.judgeModel === candidate.judgeModel
+      ? null
+      : `judge model differs: baseline ${baseline.judgeModel}, candidate ${candidate.judgeModel} — runs scored by different judges are not comparable`;
   const passed =
+    judgeMismatch === null &&
     dimensions.length > 0 &&
     missingCases.length === 0 &&
     newAssertionFailures.length === 0 &&
     dimensions.every((d) => d.pass);
-  return { dimensions, newAssertionFailures, missingCases, passed };
+  return {
+    dimensions,
+    newAssertionFailures,
+    missingCases,
+    judgeMismatch,
+    passed,
+  };
 }
 
 export function renderPaired(result: PairedResult): string {
@@ -303,8 +316,10 @@ export function renderPaired(result: PairedResult): string {
   );
   lines.push(
     `Cases missing from one run: ${result.missingCases.join(", ") || "none"}`,
-    "",
   );
+  if (result.judgeMismatch)
+    lines.push(`Judge mismatch: ${result.judgeMismatch}`);
+  lines.push("");
   return lines.join("\n");
 }
 

@@ -3,6 +3,7 @@ import {
   checkCallRecords,
   modelMatches,
   parseCandidate,
+  unusedOverrides,
 } from "../lib/candidate";
 import type { AiCallRecord } from "../../server/lib/ai-call-context";
 
@@ -115,5 +116,40 @@ describe("checkCallRecords", () => {
         {},
       ),
     ).toEqual([]);
+  });
+});
+
+describe("unusedOverrides", () => {
+  const rec = (feature: AiCallRecord["feature"]): AiCallRecord => ({
+    feature,
+    requestedModel: "m/x",
+    answeredModel: "m/x",
+    answeredProvider: null,
+    fellBack: false,
+  });
+
+  it("returns override features no sample called", () => {
+    expect(
+      unusedOverrides(
+        {
+          "coach-chat": { model: "a/b" },
+          "photo-analyze": { model: "a/b" },
+        },
+        [[rec("coach-chat")], []],
+      ),
+    ).toEqual(["photo-analyze"]);
+  });
+
+  it("counts a feature called by any sample as used", () => {
+    expect(
+      unusedOverrides({ "coach-chat": { model: "a/b" } }, [
+        [],
+        [rec("coach-chat")],
+      ]),
+    ).toEqual([]);
+  });
+
+  it("returns [] when there are no overrides", () => {
+    expect(unusedOverrides({}, [[rec("coach-chat")]])).toEqual([]);
   });
 });

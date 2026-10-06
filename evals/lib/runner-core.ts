@@ -13,10 +13,11 @@ import {
 import { withAiCallContext } from "../../server/lib/ai-call-context";
 import type {
   AiCallContext,
+  AiCallRecord,
   AiModelOverride,
 } from "../../server/lib/ai-call-context";
 import type { AiFeature } from "../../server/lib/ai-models";
-import { checkCallRecords, parseCandidate } from "./candidate";
+import { checkCallRecords, parseCandidate, unusedOverrides } from "./candidate";
 import type {
   EvalTestCase,
   EvalCaseResult,
@@ -68,6 +69,7 @@ async function evaluateCase(
   samplesPerCase: number = 1,
   logBuffer: string[] | null = null,
   overrides: Partial<Record<AiFeature, AiModelOverride>> = {},
+  callsSink: AiCallRecord[][] = [],
 ): Promise<EvalCaseResult> {
   const log = (line: string) => {
     if (logBuffer) logBuffer.push(line);
@@ -81,6 +83,8 @@ async function evaluateCase(
   // 1. Generate response — pass the full testCase so each suite's callback
   //    can extract whichever fields it needs without assumptions here.
   const aiCtx: AiCallContext = { overrides, fallback: "off", calls: [] };
+  // Registered before generation so a sample that throws still counts.
+  callsSink.push(aiCtx.calls);
   const generated = await withAiCallContext(aiCtx, () =>
     config.generateResponse(testCase),
   );
@@ -463,6 +467,12 @@ export async function runEvalSuite(
     console.error(`Error: ${(err as Error).message}`);
     process.exit(1);
   }
+  if (!process.env.OPENROUTER_API_KEY?.trim()) {
+    console.error(
+      "Error: OPENROUTER_API_KEY is required — eval generation runs through OpenRouter with the fallback off (spec §3.7).",
+    );
+    process.exit(1);
+  }
   if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
     console.error("Error: AI_INTEGRATIONS_OPENAI_API_KEY is required.");
     process.exit(1);
@@ -503,6 +513,7 @@ export async function runEvalSuite(
     }
   }
 
+  const callsPerSample: AiCallRecord[][] = [];
   const rawResults = await Promise.allSettled(
     tasks.map((task) =>
       limit(() =>
@@ -515,6 +526,7 @@ export async function runEvalSuite(
           samplesPerCase,
           task.logBuffer,
           overrides,
+          callsPerSample,
         ),
       ),
     ),
@@ -566,6 +578,14 @@ export async function runEvalSuite(
     }
     console.error(
       `Error: ${violating.length} sample(s) were not answered by the requested model — refusing to write a report.`,
+    );
+    process.exit(1);
+  }
+
+  const unused = unusedOverrides(overrides, callsPerSample);
+  if (unused.length > 0) {
+    console.error(
+      `Error: --candidate names feature(s) no sample called: ${unused.join(", ")}`,
     );
     process.exit(1);
   }

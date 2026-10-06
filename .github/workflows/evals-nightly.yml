@@ -34,12 +34,18 @@ permissions:
 
 env:
   # Pinned here, not in code: a default-model bump in evals/lib/judge-generic.ts
-  # must not silently move the baseline.
-  EVAL_JUDGE_MODEL: claude-sonnet-4-6
+  # must not silently move the baseline. OpenRouter-form id of the same model:
+  # with OPENROUTER_API_KEY set the judge prefers OpenRouter, which rejects the
+  # Anthropic-direct form. The first run after this change warns "judge model
+  # changed" (compareSuite) and needs a rebaseline=true dispatch.
+  EVAL_JUDGE_MODEL: anthropic/claude-sonnet-4.6
   EVAL_SAMPLES_PER_CASE: "1"
   EVAL_PARALLELISM: "4"
   LOG_LEVEL: silent
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  # Eval generation runs through OpenRouter with the fallback off, so this
+  # secret is required; the owner adds it.
+  OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
   AI_INTEGRATIONS_OPENAI_API_KEY: ${{ secrets.AI_INTEGRATIONS_OPENAI_API_KEY }}
   # Optional secret. When unset it expands to "", and the OpenAI client falls
   # back to its default endpoint (baseURL || default in the SDK).

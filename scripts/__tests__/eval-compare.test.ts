@@ -206,6 +206,30 @@ function run(
   };
 }
 
+describe("comparePaired judge mismatch", () => {
+  const cases: [string, Record<string, number>, boolean][] = [
+    ["a", { accuracy: 7, safety: 9 }, true],
+    ["b", { accuracy: 6, safety: 8 }, true],
+  ];
+
+  it("same judge → judgeMismatch null and still passes", () => {
+    const res = comparePaired(run(cases), run(cases));
+    expect(res.judgeMismatch).toBeNull();
+    expect(res.passed).toBe(true);
+  });
+
+  it("different judges → mismatch names both and passed is false", () => {
+    const res = comparePaired(run(cases), {
+      ...run(cases),
+      judgeModel: "other-judge",
+    });
+    expect(res.judgeMismatch).toContain("j");
+    expect(res.judgeMismatch).toContain("other-judge");
+    expect(res.passed).toBe(false);
+    expect(renderPaired(res)).toContain(res.judgeMismatch!);
+  });
+});
+
 describe("comparePaired", () => {
   it("identical runs pass with zero differences", () => {
     const r = run([

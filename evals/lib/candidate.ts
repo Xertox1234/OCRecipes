@@ -96,3 +96,18 @@ export function checkCallRecords(
   }
   return violations;
 }
+
+/**
+ * Override features that no sample's recorded calls used. A candidate report
+ * for a model that never ran is the named risk (spec §3.7).
+ */
+export function unusedOverrides(
+  overrides: Overrides,
+  callsPerSample: AiCallRecord[][],
+): string[] {
+  const called = new Set<string>();
+  for (const calls of callsPerSample) {
+    for (const c of calls) called.add(c.feature);
+  }
+  return Object.keys(overrides).filter((f) => !called.has(f));
+}

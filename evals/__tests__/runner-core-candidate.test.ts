@@ -57,6 +57,7 @@ describe("runEvalSuite per-sample AI call checks", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "sk-test");
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-test");
     writeFileSync.mockClear();
   });
 
@@ -96,5 +97,24 @@ describe("runEvalSuite per-sample AI call checks", () => {
     expect(loggedErrors()).not.toMatch(/not answered by the requested model/);
     expect(exitSpy).not.toHaveBeenCalled();
     expect(writeFileSync).toHaveBeenCalled();
+  });
+
+  it("exits 1 and writes no report when a --candidate feature was never called", async () => {
+    process.argv.push("--candidate", "coach-pro-chat=openai/gpt-6-luna");
+    const config = configWith(async () => {
+      getAiCallContext()!.calls.push({
+        feature: "coach-chat",
+        requestedModel: AI_FEATURES["coach-chat"].model,
+        answeredModel: AI_FEATURES["coach-chat"].model,
+        answeredProvider: "Azure",
+        fellBack: false,
+      });
+      return { text: "hi", latencyMs: 1, wordCount: 1 };
+    });
+    await expect(runEvalSuite([testCase], config)).rejects.toThrow("exit:1");
+    expect(loggedErrors()).toContain(
+      "Error: --candidate names feature(s) no sample called: coach-pro-chat",
+    );
+    expect(writeFileSync).not.toHaveBeenCalled();
   });
 });
