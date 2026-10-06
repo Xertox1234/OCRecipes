@@ -1,6 +1,9 @@
 import React, { createContext, useContext, ReactNode } from "react";
 import { useAuth, type DeleteAccountProof } from "@/hooks/useAuth";
 import type {
+  MfaProof,
+  MfaVerifyResult,
+  SessionResult,
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
@@ -11,7 +14,8 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<User>;
+  /** A 2FA account answers with a challenge; the caller opens MfaChallenge. */
+  login: (username: string, password: string) => Promise<SessionResult>;
   register: (
     username: string,
     password: string,
@@ -40,14 +44,27 @@ interface AuthContextType {
     username: string,
     ageConfirmed: boolean,
   ) => Promise<void>;
-  linkWithPassword: (ticket: string, password: string) => Promise<void>;
-  linkWithProvider: (ticket: string, provider: SocialProvider) => Promise<void>;
+  linkWithPassword: (
+    ticket: string,
+    password: string,
+  ) => Promise<SessionResult>;
+  /** Null when the provider sheet was cancelled. */
+  linkWithProvider: (
+    ticket: string,
+    provider: SocialProvider,
+  ) => Promise<SessionResult | null>;
   /** Null when the provider sheet was cancelled. */
   connectProvider: (
     provider: SocialProvider,
     password: string,
   ) => Promise<SignInMethods | null>;
   disconnectProvider: (provider: SocialProvider) => Promise<SignInMethods>;
+  /** Check a two-step code; does NOT sign in (call finishSignIn). */
+  verifySecondFactor: (
+    challenge: string,
+    proof: MfaProof,
+  ) => Promise<MfaVerifyResult>;
+  finishSignIn: (user: User, token: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);

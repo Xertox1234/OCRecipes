@@ -115,8 +115,12 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       if (mode === "login") {
-        await login(username.trim(), password);
+        const result = await login(username.trim(), password);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
+        // Two-step accounts sign in on the next screen.
+        if (result.status === "mfa_required") {
+          navigation.navigate("MfaChallenge", { challenge: result.challenge });
+        }
       } else {
         const result = await register(
           username.trim(),
@@ -220,6 +224,8 @@ export default function LoginScreen() {
                 methods: r.methods,
                 email: r.email,
               });
+            } else if (r.status === "mfa_required") {
+              navigation.navigate("MfaChallenge", { challenge: r.challenge });
             }
           }}
           onError={setError}

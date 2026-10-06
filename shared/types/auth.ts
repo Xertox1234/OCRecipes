@@ -31,7 +31,27 @@ export interface ApiError {
     | "TOKEN_INVALID"
     | "TOKEN_REVOKED"
     | "NO_TOKEN"
-    | "EMAIL_NOT_VERIFIED";
+    | "EMAIL_NOT_VERIFIED"
+    | "MFA_CHALLENGE_INVALID"
+    | "MFA_CODE_INVALID"
+    | "MFA_LOCKED";
+}
+
+// ── Two-step verification ───────────────────────────────────────────────────
+/** A password/provider check passed; the account's second factor is next. */
+export type MfaChallengeResult = { status: "mfa_required"; challenge: string };
+export type SignedInResult = { status: "signed_in"; user: User; token: string };
+/** What every existing-account sign-in path answers (login, link). */
+export type SessionResult = SignedInResult | MfaChallengeResult;
+/** POST /api/auth/mfa/verify — a used recovery code comes back replaced. */
+export interface MfaVerifyResult extends SignedInResult {
+  replacementRecoveryCode?: string;
+}
+export type MfaProof = { code: string } | { recoveryCode: string };
+/** /api/auth/me → twoFactor. */
+export interface TwoFactorStatus {
+  enabled: boolean;
+  recoveryCodesRemaining: number;
 }
 
 // ── Sign in with Google / Apple ─────────────────────────────────────────────
@@ -40,7 +60,8 @@ export type SignInMethod = "password" | SocialProvider;
 
 /** POST /api/auth/social (and the sign-up / link follow-ups). */
 export type SocialSignInResult =
-  | { status: "signed_in"; user: User; token: string }
+  | SignedInResult
+  | MfaChallengeResult
   | { status: "choose_username"; ticket: string; suggestedUsername: string }
   | {
       status: "link_required";

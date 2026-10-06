@@ -90,6 +90,26 @@ describe("LoginScreen — auth-failure error copy (H6)", () => {
     expect(screen.queryByText(/401/)).toBeNull();
   });
 
+  it("a two-step account goes to the code screen with its challenge", async () => {
+    mockLogin.mockResolvedValue({
+      status: "mfa_required",
+      challenge: "c".repeat(43),
+    });
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "rightpass1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("MfaChallenge", {
+        challenge: "c".repeat(43),
+      }),
+    );
+  });
+
   it("shows static registration copy (not err.message) when register rejects", async () => {
     mockRegister.mockRejectedValue(
       new Error("409: username_taken from server"),

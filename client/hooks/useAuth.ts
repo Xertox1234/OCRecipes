@@ -10,6 +10,9 @@ import {
 } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import type {
+  MfaProof,
+  MfaVerifyResult,
+  SessionResult,
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
@@ -295,15 +298,54 @@ export function useAuth() {
     registerPushToken().catch(() => {});
   }, []);
 
+  // Every existing-account path (login, link) may answer with a two-step
+  // challenge instead of a session. Store a session only when one came back;
+  // hand the challenge to the caller, which routes to MfaChallengeScreen.
+  const settle = useCallback(
+    async (body: {
+      status?: string;
+      challenge?: string;
+      user?: User;
+      token?: string;
+    }): Promise<SessionResult> => {
+      if (body.status === "mfa_required" && body.challenge) {
+        return { status: "mfa_required", challenge: body.challenge };
+      }
+      if (!body.user || !body.token) throw new Error("No session returned");
+      await establishSession(body.user, body.token);
+      return { status: "signed_in", user: body.user, token: body.token };
+    },
+    [establishSession],
+  );
+
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (username: string, password: string): Promise<SessionResult> => {
       const response = await apiRequest("POST", "/api/auth/login", {
         username,
         password,
       });
-      const { user, token } = await response.json();
+      return settle(await response.json());
+    },
+    [settle],
+  );
+
+  /** Check a two-step code. Does NOT sign in — the screen calls finishSignIn. */
+  const verifySecondFactor = useCallback(
+    async (challenge: string, proof: MfaProof): Promise<MfaVerifyResult> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/verify", {
+        challenge,
+        ...proof,
+      });
+      return (await res.json()) as MfaVerifyResult;
+    },
+    [],
+  );
+
+  // Kept separate from verifySecondFactor so the challenge screen can show a
+  // replacement recovery code BEFORE the navigator swaps to the signed-in app.
+  const finishSignIn = useCallback(
+    async (user: User, token: string) => {
       await establishSession(user, token);
-      return user;
     },
     [establishSession],
   );
@@ -346,32 +388,34 @@ export function useAuth() {
   );
 
   const linkWithPassword = useCallback(
-    async (ticket: string, password: string) => {
+    async (ticket: string, password: string): Promise<SessionResult> => {
       const res = await apiRequest("POST", "/api/auth/social/link", {
         ticket,
         password,
       });
-      const { user, token } = await res.json();
-      await establishSession(user, token);
+      return settle(await res.json());
     },
-    [establishSession],
+    [settle],
   );
 
   const linkWithProvider = useCallback(
-    async (ticket: string, provider: SocialProvider) => {
+    async (
+      ticket: string,
+      provider: SocialProvider,
+    ): Promise<SessionResult | null> => {
       const { nonce, nonceHash } = await fetchNonce("link");
       const token = await getProviderToken(provider, nonceHash);
-      if (!token) return;
+      // Null = the provider sheet was cancelled; nothing happened.
+      if (!token) return null;
       const res = await apiRequest("POST", "/api/auth/social/link", {
         ticket,
         provider,
         nonce,
         idToken: token.idToken,
       });
-      const { user, token: session } = await res.json();
-      await establishSession(user, session);
+      return settle(await res.json());
     },
-    [establishSession],
+    [settle],
   );
 
   const register = useCallback(
@@ -612,5 +656,7 @@ export function useAuth() {
     linkWithProvider,
     connectProvider,
     disconnectProvider,
+    verifySecondFactor,
+    finishSignIn,
   };
 }

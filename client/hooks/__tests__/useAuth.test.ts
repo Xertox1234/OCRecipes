@@ -1398,4 +1398,100 @@ describe("useAuth", () => {
       expect(mockTokenStorage.clear).not.toHaveBeenCalled();
     });
   });
+
+  describe("two-step verification", () => {
+    const challenge = { status: "mfa_required", challenge: "c".repeat(43) };
+    function jsonOnce(body: unknown) {
+      mockApiRequest.mockResolvedValueOnce({
+        json: () => Promise.resolve(body),
+      });
+    }
+    async function ready() {
+      mockTokenStorage.get.mockResolvedValue(null);
+      const hook = renderHook(() => useAuth());
+      await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+      return hook;
+    }
+
+    it("login hands back the challenge and stores no session", async () => {
+      const { result } = await ready();
+      jsonOnce(challenge);
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.login("chef", "pw-123456");
+      });
+      expect(out).toEqual(challenge);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("login without 2FA still signs in and reports signed_in", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user: fakeUser, token: "t-1" });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.login("chef", "pw-123456");
+      });
+      expect(out).toMatchObject({ status: "signed_in", user: fakeUser });
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-1");
+    });
+
+    it("linkWithPassword hands back the challenge and stores no session", async () => {
+      const { result } = await ready();
+      jsonOnce(challenge);
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.linkWithPassword("t2", "pw-123456");
+      });
+      expect(out).toEqual(challenge);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+
+    it("linkWithProvider hands back the challenge and stores no session", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-l", nonceHash: "hash-l" });
+      mockGetProviderToken.mockResolvedValue({ idToken: "id-2" });
+      jsonOnce(challenge);
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.linkWithProvider("t3", "apple");
+      });
+      expect(out).toEqual(challenge);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+
+    it("verifySecondFactor posts the proof and does NOT sign in by itself", async () => {
+      const { result } = await ready();
+      const verified = {
+        status: "signed_in",
+        user: fakeUser,
+        token: "t-2",
+        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      };
+      jsonOnce(verified);
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.verifySecondFactor(challenge.challenge, {
+          code: "123456",
+        });
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/verify",
+        { challenge: challenge.challenge, code: "123456" },
+      );
+      expect(out).toEqual(verified);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("finishSignIn stores the session", async () => {
+      const { result } = await ready();
+      await act(async () => {
+        await result.current.finishSignIn(fakeUser, "t-3");
+      });
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-3");
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+  });
 });

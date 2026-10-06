@@ -18,6 +18,7 @@ import { useToast } from "@/context/ToastContext";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { SessionResult } from "@shared/types/auth";
 import {
   connectErrorOutcome,
   connectPromptMode,
@@ -60,6 +61,14 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
     setError(outcome.message);
   };
 
+  // A two-step account links only after its code: swap this prompt for the
+  // challenge (replace, so Back doesn't return to a used ticket).
+  const toChallenge = (result: SessionResult | null) => {
+    if (result?.status !== "mfa_required") return;
+    setBusy(false);
+    navigation.replace("MfaChallenge", { challenge: result.challenge });
+  };
+
   // No try/finally in either handler: React Compiler cannot lower a `finally`.
   const onPassword = async () => {
     if (busy) return;
@@ -70,8 +79,9 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
     }
     setBusy(true);
     try {
-      await linkWithPassword(ticket, password);
+      const result = await linkWithPassword(ticket, password);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
+      toChallenge(result);
     } catch (err) {
       fail(err, "password");
     }
@@ -82,9 +92,10 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
     setError("");
     setBusy(true);
     try {
-      await linkWithProvider(ticket, mode.provider);
+      const result = await linkWithProvider(ticket, mode.provider);
       // A cancelled sheet resolves without signing in: re-enable the button.
       setBusy(false);
+      toChallenge(result);
     } catch (err) {
       fail(err, "provider");
     }

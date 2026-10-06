@@ -14,6 +14,7 @@ import ForgotPasswordScreen from "@/screens/ForgotPasswordScreen";
 import ChooseUsernameScreen from "@/screens/ChooseUsernameScreen";
 import ConnectAccountScreen from "@/screens/ConnectAccountScreen";
 import ResetPasswordScreen from "@/screens/ResetPasswordScreen";
+import MfaChallengeScreen from "@/screens/MfaChallengeScreen";
 import ScanScreen from "@/screens/ScanScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
 import PhotoIntentScreen from "@/screens/PhotoIntentScreen";
@@ -72,6 +73,8 @@ export type RootStackParamList = {
     email: string;
   };
   ResetPassword: { email: string };
+  /** Two-step verification: the challenge from login / Google-Apple / link. */
+  MfaChallenge: { challenge: string };
   VerifyEmail:
     | {
         token?: string;
@@ -281,6 +284,11 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="ResetPassword"
             component={ResetPasswordScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="MfaChallenge"
+            component={MfaChallengeScreen}
             options={{ headerShown: false }}
           />
         </>
