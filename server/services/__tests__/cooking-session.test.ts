@@ -7,7 +7,7 @@ import {
 } from "../cooking-session";
 import type { CookingSessionIngredient } from "@shared/types/cook-session";
 
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import { batchNutritionLookup, type NutritionData } from "../nutrition-lookup";
 import {
   calculateCookedNutrition,
@@ -21,14 +21,9 @@ import {
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
+
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   OPENAI_TIMEOUT_HEAVY_MS: 30000,
   MODEL_FAST: "gpt-4o-mini",
   MODEL_HEAVY: "gpt-4o",
@@ -118,7 +113,7 @@ beforeEach(() => {
 
 describe("analyzeIngredientPhoto", () => {
   it("returns parsed ingredients from a valid OpenAI response", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+    vi.mocked(aiChat).mockResolvedValue(
       createMockChatCompletion(
         JSON.stringify({
           ingredients: [
@@ -154,14 +149,16 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("uses low detail for photos when count >= 4", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+    vi.mocked(aiChat).mockResolvedValue(
       createMockChatCompletion(JSON.stringify({ ingredients: [] })),
     );
 
     await analyzeIngredientPhoto("base64data", "image/jpeg", 4);
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0];
-    const messages = (callArgs[0] as { messages: unknown[] }).messages;
+    const callArgs = vi.mocked(aiChat).mock.calls[0];
+    expect(callArgs[0]).toBe("cooking-ingredient-photo");
+    expect(callArgs[2]).toEqual({ timeout: 30000 });
+    const messages = (callArgs[1] as { messages: unknown[] }).messages;
     const userMessage = messages[1] as {
       content: { image_url: { detail: string } }[];
     };
@@ -169,14 +166,14 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("uses high detail for photos when count < 4", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+    vi.mocked(aiChat).mockResolvedValue(
       createMockChatCompletion(JSON.stringify({ ingredients: [] })),
     );
 
     await analyzeIngredientPhoto("base64data", "image/jpeg", 3);
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0];
-    const messages = (callArgs[0] as { messages: unknown[] }).messages;
+    const callArgs = vi.mocked(aiChat).mock.calls[0];
+    const messages = (callArgs[1] as { messages: unknown[] }).messages;
     const userMessage = messages[1] as {
       content: { image_url: { detail: string } }[];
     };
@@ -184,9 +181,7 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("throws IngredientAnalysisError when OpenAI returns no content", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
-      createMockChatCompletion(null),
-    );
+    vi.mocked(aiChat).mockResolvedValue(createMockChatCompletion(null));
 
     await expect(
       analyzeIngredientPhoto("base64data", "image/jpeg", 0),
@@ -197,7 +192,7 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("throws IngredientAnalysisError when OpenAI returns invalid JSON", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+    vi.mocked(aiChat).mockResolvedValue(
       createMockChatCompletion("not json {{{"),
     );
 
@@ -210,7 +205,7 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("throws IngredientAnalysisError when response fails Zod validation", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+    vi.mocked(aiChat).mockResolvedValue(
       createMockChatCompletion(JSON.stringify({ wrong_key: "bad schema" })),
     );
 
@@ -223,7 +218,7 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("assigns unique IDs to each detected ingredient", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+    vi.mocked(aiChat).mockResolvedValue(
       createMockChatCompletion(
         JSON.stringify({
           ingredients: [

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { openai, MODEL_HEAVY } from "../lib/openai";
+import { aiChat } from "../lib/ai-client";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -59,8 +59,7 @@ export async function analyzeFrontLabel(
 
   let response;
   try {
-    response = await openai.chat.completions.create({
-      model: MODEL_HEAVY,
+    response = await aiChat("front-label-scan", {
       max_completion_tokens: 300,
       temperature: 0.2,
       messages: [

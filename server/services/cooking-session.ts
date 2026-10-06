@@ -1,4 +1,5 @@
-import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
+import { aiChat } from "../lib/ai-client";
+import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import {
   photoAnalysisResponseSchema,
@@ -70,9 +71,9 @@ export async function analyzeIngredientPhoto(
   mimetype: string,
   currentPhotoCount: number,
 ): Promise<CookingSessionIngredient[]> {
-  const completion = await openai.chat.completions.create(
+  const completion = await aiChat(
+    "cooking-ingredient-photo",
     {
-      model: MODEL_HEAVY,
       temperature: 0.2,
       messages: [
         { role: "system", content: INGREDIENT_ANALYSIS_PROMPT },

@@ -3,16 +3,8 @@ import { analyzeFrontLabel } from "../front-label-analysis";
 
 const mockCreate = vi.fn();
 
-vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: (...args: unknown[]) => mockCreate(...args),
-      },
-    },
-  },
-  MODEL_FAST: "gpt-4o-mini",
-  MODEL_HEAVY: "gpt-4o",
+vi.mock("../../lib/ai-client", () => ({
+  aiChat: (...args: unknown[]) => mockCreate(...args),
 }));
 
 vi.mock("../../lib/ai-safety", () => ({
@@ -163,7 +155,9 @@ describe("front-label-analysis", () => {
 
       await analyzeFrontLabel("base64data");
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      expect(mockCreate.mock.calls[0][0]).toBe("front-label-scan");
+      expect(mockCreate.mock.calls[0]).toHaveLength(2); // no options argument
+      const callArgs = mockCreate.mock.calls[0][1];
       const imageContent = callArgs.messages[1].content.find(
         (c: { type: string }) => c.type === "image_url",
       );

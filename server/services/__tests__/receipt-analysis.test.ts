@@ -1,20 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { analyzeReceiptPhotos, _testInternals } from "../receipt-analysis";
 
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import { createMockChatCompletion } from "../../__tests__/factories";
 
 const { receiptItemSchema, receiptAnalysisSchema } = _testInternals;
 
-// Mock OpenAI
+// Mock the AI entry point
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
+
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   MODEL_FAST: "gpt-4o-mini",
   MODEL_HEAVY: "gpt-4o",
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
@@ -25,9 +20,7 @@ vi.mock("../../lib/ai-safety", () => ({
 }));
 
 function mockOpenAIResponse(content: string) {
-  vi.mocked(openai.chat.completions.create).mockResolvedValue(
-    createMockChatCompletion(content),
-  );
+  vi.mocked(aiChat).mockResolvedValue(createMockChatCompletion(content));
 }
 
 describe("Receipt Analysis Service", () => {
@@ -360,9 +353,12 @@ describe("Receipt Analysis Service", () => {
       ]);
 
       expect(result.items).toHaveLength(1);
+      expect(vi.mocked(aiChat).mock.calls[0][0]).toBe("receipt-scan");
+      expect(vi.mocked(aiChat).mock.calls[0][2]).toEqual({ timeout: 60_000 });
       // Verify OpenAI was called with all images
-      const callArgs = vi.mocked(openai.chat.completions.create).mock
-        .calls[0][0] as { messages: { content: unknown }[] };
+      const callArgs = vi.mocked(aiChat).mock.calls[0][1] as {
+        messages: { content: unknown }[];
+      };
       const userMessage = callArgs.messages[1].content as {
         type: string;
       }[];
@@ -380,8 +376,9 @@ describe("Receipt Analysis Service", () => {
 
       await analyzeReceiptPhotos(["photo1", "photo2"]);
 
-      const callArgs = vi.mocked(openai.chat.completions.create).mock
-        .calls[0][0] as { messages: { content: unknown }[] };
+      const callArgs = vi.mocked(aiChat).mock.calls[0][1] as {
+        messages: { content: unknown }[];
+      };
       const userContent = callArgs.messages[1].content as {
         type: string;
         text?: string;
@@ -400,8 +397,9 @@ describe("Receipt Analysis Service", () => {
 
       await analyzeReceiptPhotos(["photo1"]);
 
-      const callArgs = vi.mocked(openai.chat.completions.create).mock
-        .calls[0][0] as { messages: { content: unknown }[] };
+      const callArgs = vi.mocked(aiChat).mock.calls[0][1] as {
+        messages: { content: unknown }[];
+      };
       const userContent = callArgs.messages[1].content as {
         type: string;
         text?: string;
@@ -411,9 +409,7 @@ describe("Receipt Analysis Service", () => {
     });
 
     it("throws on OpenAI API error", async () => {
-      vi.mocked(openai.chat.completions.create).mockRejectedValue(
-        new Error("API timeout"),
-      );
+      vi.mocked(aiChat).mockRejectedValue(new Error("API timeout"));
 
       await expect(analyzeReceiptPhotos(["base64data"])).rejects.toThrow(
         "Failed to analyze receipt photo",
@@ -421,9 +417,7 @@ describe("Receipt Analysis Service", () => {
     });
 
     it("throws when OpenAI returns no content", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion(null),
-      );
+      vi.mocked(aiChat).mockResolvedValue(createMockChatCompletion(null));
 
       await expect(analyzeReceiptPhotos(["base64data"])).rejects.toThrow(
         "No response from receipt analysis",

@@ -1,16 +1,11 @@
 import { analyzeMenuPhoto, MenuAnalysisResult } from "../menu-analysis";
 
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import { storage } from "../../storage";
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
+
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   MODEL_FAST: "gpt-4o-mini",
   MODEL_HEAVY: "gpt-4o",
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
@@ -23,7 +18,7 @@ vi.mock("../../storage", () => ({
   },
 }));
 
-const mockCreate = vi.mocked(openai.chat.completions.create);
+const mockCreate = vi.mocked(aiChat);
 const mockGetUser = vi.mocked(storage.getUser);
 const mockGetUserProfile = vi.mocked(storage.getUserProfile);
 
@@ -93,9 +88,10 @@ describe("Menu Analysis", () => {
 
       await analyzeMenuPhoto("abc123data", "user-1");
 
+      expect(mockCreate.mock.calls[0]![2]).toEqual({ timeout: 60_000 });
       expect(mockCreate).toHaveBeenCalledWith(
+        "menu-scan",
         expect.objectContaining({
-          model: expect.any(String),
           response_format: { type: "json_object" },
           messages: expect.arrayContaining([
             expect.objectContaining({
@@ -176,7 +172,7 @@ describe("Menu Analysis", () => {
 
       await analyzeMenuPhoto("img", "user-1");
 
-      const callArgs = mockCreate.mock.calls[0]![0] as any;
+      const callArgs = mockCreate.mock.calls[0]![1] as any;
       const systemMsg = callArgs.messages[0].content;
       expect(systemMsg).toContain("2000");
       expect(systemMsg).toContain("150g");
@@ -196,7 +192,7 @@ describe("Menu Analysis", () => {
 
       expect(result.menuItems).toHaveLength(2);
       // System message should not contain personalization
-      const callArgs = mockCreate.mock.calls[0]![0] as any;
+      const callArgs = mockCreate.mock.calls[0]![1] as any;
       const systemMsg = callArgs.messages[0].content;
       expect(systemMsg).not.toContain("Daily calorie goal");
     });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { storage } from "../storage";
-import { openai, MODEL_HEAVY, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
+import { aiChat } from "../lib/ai-client";
+import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 import {
@@ -113,9 +114,9 @@ export async function analyzeMenuPhoto(
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "menu-scan",
       {
-        model: MODEL_HEAVY,
         messages: [
           {
             role: "system",
