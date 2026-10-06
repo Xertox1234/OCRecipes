@@ -1,0 +1,83 @@
+// server/lib/__tests__/ai-models.test.ts
+// @vitest-environment node
+import { describe, it, expect } from "vitest";
+import {
+  AI_FEATURES,
+  adaptParams,
+  isAiFeature,
+  type AiFeatureConfig,
+} from "../ai-models";
+
+describe("AI_FEATURES table", () => {
+  const rows: [string, AiFeatureConfig][] = Object.entries(AI_FEATURES);
+
+  it("has one row per call site (30)", () => {
+    expect(rows).toHaveLength(30);
+  });
+
+  it("every model has a provider/ prefix and no fallback does", () => {
+    for (const [name, row] of rows) {
+      expect(row.model, name).toMatch(/^[a-z0-9-]+\/[^/]+$/);
+      expect(row.fallback, name).not.toContain("/");
+    }
+  });
+
+  it("day one: every model is its fallback with the openai/ prefix and no adapt", () => {
+    for (const [name, row] of rows) {
+      expect(row.model, name).toBe(`openai/${row.fallback}`);
+      expect(row.adapt, name).toBeUndefined();
+    }
+  });
+
+  it("isAiFeature narrows known names only", () => {
+    expect(isAiFeature("coach-chat")).toBe(true);
+    expect(isAiFeature("nope")).toBe(false);
+    expect(isAiFeature("toString")).toBe(false);
+  });
+});
+
+describe("adaptParams", () => {
+  it("returns a copy unchanged when there is no adapt", () => {
+    const params = { temperature: 0.5, max_completion_tokens: 10 };
+    const out = adaptParams(params, undefined);
+    expect(out).toEqual(params);
+    expect(out).not.toBe(params);
+  });
+
+  it("drops keys", () => {
+    expect(
+      adaptParams({ temperature: 0.5, n: 1 }, { drop: ["temperature"] }),
+    ).toEqual({ n: 1 });
+  });
+
+  it("renames keys, never overwriting an existing target", () => {
+    expect(
+      adaptParams(
+        { max_completion_tokens: 10 },
+        { rename: { max_completion_tokens: "max_tokens" } },
+      ),
+    ).toEqual({ max_tokens: 10 });
+    expect(
+      adaptParams(
+        { max_completion_tokens: 10, max_tokens: 99 },
+        { rename: { max_completion_tokens: "max_tokens" } },
+      ),
+    ).toEqual({ max_tokens: 99 });
+  });
+
+  it("applies set last, and extraSet overrides the row's set", () => {
+    expect(
+      adaptParams(
+        { temperature: 0.5 },
+        { drop: ["temperature"], set: { reasoning_effort: "low" } },
+        { reasoning_effort: "medium" },
+      ),
+    ).toEqual({ reasoning_effort: "medium" });
+  });
+
+  it("does not mutate the input", () => {
+    const params = { temperature: 0.5 };
+    adaptParams(params, { drop: ["temperature"] });
+    expect(params).toEqual({ temperature: 0.5 });
+  });
+});
