@@ -23,6 +23,10 @@ import {
   type PhotoAnalysisResponse,
 } from "@/lib/photo-upload";
 import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
+import { formatLogSuccess } from "@/lib/log-success";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
+import { useToast } from "@/context/ToastContext";
 
 type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -32,6 +36,7 @@ type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
 export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
   const navigation = useNavigation<PhotoAnalysisScreenNavigationProp>();
   const haptics = useHaptics();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const intentConfig = INTENT_CONFIG[intent];
 
@@ -326,11 +331,19 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
 
       invalidateFoodLogQueries(queryClient);
 
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      // `totals` sums the same per-food calories sent above, which the server
+      // logs as one item. The toast fires the Success haptic itself.
+      toast.success(formatLogSuccess(totals.calories));
       navigation.goBack();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save";
-      setError(message);
+      // Never surface err.message — it can carry raw server or network text.
+      // /api/photos/confirm emits RATE_LIMITED (crudRateLimit); everything
+      // else (validation, storage, network, missing token) is generic.
+      setError(
+        err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED
+          ? "Too many requests. Please wait a moment and try again."
+          : "Couldn't save this meal. Please try again.",
+      );
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsConfirming(false);

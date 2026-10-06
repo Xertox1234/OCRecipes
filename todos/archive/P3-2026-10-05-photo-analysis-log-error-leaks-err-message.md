@@ -1,9 +1,9 @@
 ---
 title: "Photo-analysis log failure shows raw err.message in the UI"
-status: backlog
+status: done
 priority: low
 created: 2026-10-05
-updated: 2026-10-05
+updated: 2026-10-06
 assignee:
 labels: [deferred, client]
 github_issue:
@@ -21,9 +21,9 @@ Surfaced by the 2026-10-05 interaction-feel audit (scan → log slice). Out of s
 
 ## Acceptance Criteria
 
-- [ ] The catch branch maps the error to a user-safe message (follow how `useNutritionLookup`'s `onError` maps `ApiError.code`) instead of showing `err.message`
-- [ ] Error haptic and `InlineError` behaviour unchanged; draft selection preserved
-- [ ] Test covers a thrown error with an internal message and asserts it is not rendered
+- [x] The catch branch maps the error to a user-safe message (follow how `useNutritionLookup`'s `onError` maps `ApiError.code`) instead of showing `err.message`
+- [x] Error haptic and `InlineError` behaviour unchanged; draft selection preserved
+- [x] Test covers a thrown error with an internal message and asserts it is not rendered
 
 ## Implementation Notes
 

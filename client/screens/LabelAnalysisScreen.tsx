@@ -54,6 +54,7 @@ import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
 import type { VerificationSubmitResponse } from "@shared/types/verification";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
+import { formatLogSuccess } from "@/lib/log-success";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import {
@@ -274,14 +275,25 @@ export default function LabelAnalysisScreen() {
     };
   }, [imageUri, barcode, retryToken, toast, retryUpload]);
 
+  // The variable is the servings count at tap time, so the POST and the
+  // success toast agree even if the stepper moves while the request is out.
   const { mutate: confirmLog, isPending: isConfirming } = useMutation({
-    mutationFn: () => {
+    mutationFn: (servingsAtTap: number) => {
       if (!sessionId) throw new Error("No session");
-      return confirmLabelAnalysis(sessionId, servings);
+      return confirmLabelAnalysis(sessionId, servingsAtTap);
     },
-    onSuccess: () => {
+    onSuccess: (_data, servingsAtTap) => {
       haptics.notification(
         getConfidenceHapticType(getConfidenceTier(labelData?.confidence ?? 0)),
+      );
+      // Same number the "Log N cal" button showed — the server logs
+      // per-serving calories × servings. `haptic: false`: the confidence-tiered
+      // haptic above already answered the tap (Warning on a shaky read).
+      toast.success(
+        formatLogSuccess(
+          scaleByServings(labelData?.calories, servingsAtTap, 0),
+        ),
+        { haptic: false },
       );
       invalidateFoodLogQueries(queryClient);
       navigation.goBack();
@@ -389,7 +401,7 @@ export default function LabelAnalysisScreen() {
     if (verificationMode && verifyBarcode) {
       verifyLog();
     } else {
-      confirmLog();
+      confirmLog(servings);
     }
   }, [
     sessionId,
@@ -398,6 +410,7 @@ export default function LabelAnalysisScreen() {
     verifyBarcode,
     confirmLog,
     verifyLog,
+    servings,
   ]);
 
   const adjustServings = useCallback(

@@ -13,9 +13,7 @@ import {
   useQuery,
   onlineManager,
 } from "@tanstack/react-query";
-import * as Haptics from "expo-haptics";
 
-import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAuthContext } from "@/context/AuthContext";
 import { apiRequest } from "@/lib/query-client";
@@ -32,6 +30,7 @@ import {
   type ServingSizeInfo,
 } from "@/lib/serving-size-utils";
 import { enqueue } from "@/lib/offline-queue";
+import { formatLogSuccess } from "@/lib/log-success";
 import type { ScannedItemResponse } from "@/types/api";
 import { deriveLogGate } from "@/screens/nutrition-detail-utils";
 import {
@@ -59,7 +58,6 @@ export function useNutritionLookup(params: {
 
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
   const queryClient = useQueryClient();
-  const haptics = useHaptics();
   const toast = useToast();
   const { user } = useAuthContext();
 
@@ -491,21 +489,28 @@ export function useNutritionLookup(params: {
     [barcode],
   );
 
-  const addToLogMutation = useMutation<ScannedItemResponse | undefined, Error>({
+  // The variable is the nutrition snapshot the user tapped "Add" on, so the
+  // POST and the success toast report the same values even if state moves on
+  // while the request is in flight.
+  const addToLogMutation = useMutation<
+    ScannedItemResponse | undefined,
+    Error,
+    NutritionData | null
+  >({
     // "always" so mutationFn RUNS while offline and the branch below can enqueue
     // the log durably. With the default "online", an offline tap pauses the
     // mutation in-memory (mutationFn never runs) and the queued write is lost on
     // force-quit — defeating the durable offline queue this hook integrates.
     networkMode: "always",
-    mutationFn: async () => {
-      if (!lookup.nutrition) return undefined;
+    mutationFn: async (nutrition) => {
+      if (!nutrition) return undefined;
 
       if (!onlineManager.isOnline()) {
         await enqueue({
           endpoint: "/api/scanned-items",
           method: "POST",
           body: {
-            ...lookup.nutrition,
+            ...nutrition,
             servings: servingQuantity,
             userId: user?.id,
           },
@@ -514,20 +519,20 @@ export function useNutritionLookup(params: {
       }
 
       const response = await apiRequest("POST", "/api/scanned-items", {
-        ...lookup.nutrition,
+        ...nutrition,
         servings: servingQuantity,
         userId: user?.id,
       });
       return response.json() as Promise<ScannedItemResponse>;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, nutrition) => {
       // Online success returns the created item; the offline-queued path (and the
       // no-nutrition no-op) return undefined. Invalidate ONLY on real online
       // success — the drain invalidates after replaying the queued POST on
       // reconnect, so invalidating on the queued path would just resume a paused
       // refetch that races the drain (S1; mirrors useQuickLogSession's guard).
-      // The success haptic + navigation reset still fire so the optimistic
-      // offline UX is unchanged.
+      // The success toast + navigation still fire so the optimistic offline UX
+      // is unchanged.
       if (data !== undefined) {
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.scannedItems,
@@ -539,7 +544,11 @@ export function useNutritionLookup(params: {
           queryKey: ["/api/daily-budget"],
         });
       }
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      // `nutrition` holds the already-scaled values (the serving stepper
+      // rescales it, and the server stores it as sent), so its calories are
+      // what was logged. The toast fires the Success haptic itself. No toast
+      // for the no-nutrition no-op — nothing was added.
+      if (nutrition) toast.success(formatLogSuccess(nutrition.calories));
       // NOT goBack(), and NOT safeGoBack(). NutritionDetail is pushed from
       // inside the scan fullScreenModal, so canGoBack() is true and goBack()
       // lands the user back on the live camera. (ScanScreen's returnAfterLog
@@ -570,7 +579,7 @@ export function useNutritionLookup(params: {
   });
 
   const handleAddToLog = () => {
-    addToLogMutation.mutate();
+    addToLogMutation.mutate(lookup.nutrition);
   };
 
   const logGate = deriveLogGate({ ocrText, labelUsed: lookup.labelUsed });
