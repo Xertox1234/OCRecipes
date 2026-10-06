@@ -4,11 +4,10 @@ import {
   detectAllergens,
   type AllergenMatch,
 } from "@shared/constants/allergens";
+import { aiChat } from "../lib/ai-client";
 import {
-  openai,
   OPENAI_TIMEOUT_HEAVY_MS,
   OPENAI_TIMEOUT_IMAGE_MS,
-  MODEL_HEAVY,
 } from "../lib/openai";
 import {
   sanitizeContextField,
@@ -380,9 +379,9 @@ export async function* generateRecipeChatResponse(
 
   let stream;
   try {
-    stream = await openai.chat.completions.create(
+    stream = await aiChat(
+      "recipe-chat",
       {
-        model: MODEL_HEAVY,
         stream: true,
         messages: [
           { role: "system", content: systemPrompt },
@@ -516,9 +515,9 @@ export async function analyzeImageForRecipe(
   mimeType: "image/jpeg" | "image/png" | "image/webp" = "image/jpeg",
 ): Promise<string> {
   try {
-    const response = await openai.chat.completions.create(
+    const response = await aiChat(
+      "recipe-chat-image",
       {
-        model: MODEL_HEAVY,
         messages: [
           {
             role: "user",

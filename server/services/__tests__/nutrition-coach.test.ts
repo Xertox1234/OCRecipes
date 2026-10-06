@@ -5,7 +5,7 @@ import {
   SAFETY_OVERRIDE_SENTINEL,
 } from "../nutrition-coach";
 import type { CoachContext, CoachProChunk } from "../nutrition-coach";
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import { executeToolCall } from "../coach-tools";
 import {
   sanitizeUserInput,
@@ -13,16 +13,10 @@ import {
   containsUnsafeCoachAdvice,
 } from "../../lib/ai-safety";
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
+
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   OPENAI_TIMEOUT_STREAM_MS: 30_000,
-  MODEL_FAST: "gpt-4o-mini",
 }));
 
 vi.mock("../coach-tools", () => ({
@@ -149,7 +143,7 @@ describe("generateCoachProResponse", () => {
       { content: "there!" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
 
     const messages = [{ role: "user" as const, content: "Hi" }];
     const result = await collectStream(
@@ -165,7 +159,7 @@ describe("generateCoachProResponse", () => {
       { content: "Hello" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
     vi.mocked(sanitizeUserInput).mockImplementation((text) => `USER:${text}`);
     vi.mocked(sanitizeContextField).mockImplementation((text) => `CTX:${text}`);
 
@@ -179,7 +173,8 @@ describe("generateCoachProResponse", () => {
       generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
     );
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    expect(vi.mocked(aiChat).mock.calls[0][0]).toBe("coach-pro-chat");
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     const sentMessages = (
       callArgs as { messages: { role: string; content: string }[] }
     ).messages;
@@ -219,7 +214,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "stop" },
     ]);
 
-    vi.mocked(openai.chat.completions.create)
+    vi.mocked(aiChat)
       .mockResolvedValueOnce(toolCallStream as any)
       .mockResolvedValueOnce(textStream as any);
 
@@ -266,7 +261,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "stop" },
     ]);
 
-    vi.mocked(openai.chat.completions.create)
+    vi.mocked(aiChat)
       .mockResolvedValueOnce(toolCallStream as any)
       .mockResolvedValueOnce(textStream as any);
 
@@ -332,9 +327,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "tool_calls" },
     ]);
 
-    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
-      bigToolCallStream as any,
-    );
+    vi.mocked(aiChat).mockResolvedValueOnce(bigToolCallStream as any);
 
     vi.mocked(executeToolCall).mockResolvedValue({
       name: "food",
@@ -377,7 +370,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "stop" },
     ]);
 
-    vi.mocked(openai.chat.completions.create)
+    vi.mocked(aiChat)
       .mockResolvedValueOnce(toolCallStream as any)
       .mockResolvedValueOnce(textStream as any);
 
@@ -421,7 +414,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "stop" },
     ]);
 
-    vi.mocked(openai.chat.completions.create)
+    vi.mocked(aiChat)
       .mockResolvedValueOnce(toolCallStream as any)
       .mockResolvedValueOnce(textStream as any);
 
@@ -460,7 +453,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "stop" },
     ]);
 
-    vi.mocked(openai.chat.completions.create)
+    vi.mocked(aiChat)
       .mockResolvedValueOnce(toolCallStream as any)
       .mockResolvedValueOnce(textStream as any);
 
@@ -516,7 +509,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "stop" },
     ]);
 
-    vi.mocked(openai.chat.completions.create)
+    vi.mocked(aiChat)
       .mockResolvedValueOnce(round1Stream as any)
       .mockResolvedValueOnce(round2Stream as any)
       .mockResolvedValueOnce(round3Stream as any);
@@ -536,15 +529,13 @@ describe("generateCoachProResponse", () => {
       "Let me check Rice has 130 cal and beans have 120 cal.",
     );
     // OpenAI called 3 times (2 tool rounds + 1 final)
-    expect(openai.chat.completions.create).toHaveBeenCalledTimes(3);
+    expect(aiChat).toHaveBeenCalledTimes(3);
     // Two tool calls executed
     expect(executeToolCall).toHaveBeenCalledTimes(2);
   });
 
   it("yields error message when OpenAI API call fails", async () => {
-    vi.mocked(openai.chat.completions.create).mockRejectedValue(
-      new Error("API down"),
-    );
+    vi.mocked(aiChat).mockRejectedValue(new Error("API down"));
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
@@ -564,9 +555,7 @@ describe("generateCoachProResponse", () => {
   // Production always passes a live signal, so the control must too (see the
   // free-tier equivalent).
   it("still logs a real API failure at ERROR when a live, never-aborted signal is passed", async () => {
-    vi.mocked(openai.chat.completions.create).mockRejectedValue(
-      new Error("API down"),
-    );
+    vi.mocked(aiChat).mockRejectedValue(new Error("API down"));
     const controller = new AbortController();
 
     const messages = [{ role: "user" as const, content: "Hello" }];
@@ -588,7 +577,7 @@ describe("generateCoachProResponse", () => {
   it("does not log at ERROR and yields nothing when the API call is aborted", async () => {
     const controller = new AbortController();
     controller.abort();
-    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+    vi.mocked(aiChat).mockRejectedValue(
       new Error("This operation was aborted"),
     );
 
@@ -636,9 +625,7 @@ describe("generateCoachProResponse", () => {
       },
     };
 
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
-      errorStream as any,
-    );
+    vi.mocked(aiChat).mockResolvedValue(errorStream as any);
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
@@ -690,9 +677,7 @@ describe("generateCoachProResponse", () => {
       },
     };
 
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
-      abortedStream as any,
-    );
+    vi.mocked(aiChat).mockResolvedValue(abortedStream as any);
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
@@ -746,7 +731,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "stop" },
     ]);
 
-    vi.mocked(openai.chat.completions.create)
+    vi.mocked(aiChat)
       .mockResolvedValueOnce(toolCallStream as any)
       .mockResolvedValueOnce(textStream as any);
 
@@ -809,7 +794,7 @@ describe("generateCoachProResponse", () => {
       { finish_reason: "stop" },
     ]);
 
-    vi.mocked(openai.chat.completions.create)
+    vi.mocked(aiChat)
       .mockResolvedValueOnce(toolCallStream as any)
       .mockResolvedValueOnce(textStream as any);
 
@@ -833,7 +818,7 @@ describe("generateCoachProResponse", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
 
     const context: CoachContext = {
       ...DEFAULT_CONTEXT,
@@ -844,7 +829,7 @@ describe("generateCoachProResponse", () => {
     const messages = [{ role: "user" as const, content: "Hi" }];
     await collectStream(generateCoachProResponse(messages, context, "user-1"));
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     const systemMsg = (
       callArgs as { messages: { role: string; content: string }[] }
     ).messages[0];
@@ -866,7 +851,7 @@ describe("generateCoachResponse", () => {
       { content: "Hello!" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
     vi.mocked(sanitizeUserInput).mockImplementation((text) => `USER:${text}`);
     vi.mocked(sanitizeContextField).mockImplementation((text) => `CTX:${text}`);
 
@@ -877,7 +862,8 @@ describe("generateCoachResponse", () => {
     ];
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    expect(vi.mocked(aiChat).mock.calls[0][0]).toBe("coach-chat");
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     const sentMessages = (
       callArgs as { messages: { role: string; content: string }[] }
     ).messages;
@@ -894,7 +880,7 @@ describe("generateCoachResponse", () => {
       { content: longContent },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
     vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
 
     const messages = [{ role: "user" as const, content: "Extreme diet plan" }];
@@ -919,7 +905,7 @@ describe("generateCoachResponse", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
 
     const context: CoachContext = {
       ...DEFAULT_CONTEXT,
@@ -929,7 +915,7 @@ describe("generateCoachResponse", () => {
     const messages = [{ role: "user" as const, content: "Hi" }];
     await collectStream(generateCoachResponse(messages, context));
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     const systemMsg = (
       callArgs as { messages: { role: string; content: string }[] }
     ).messages[0];
@@ -943,7 +929,7 @@ describe("generateCoachResponse", () => {
       { content: "question!" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
 
     const messages = [{ role: "user" as const, content: "What should I eat?" }];
     const result = await collectStream(
@@ -954,9 +940,7 @@ describe("generateCoachResponse", () => {
   });
 
   it("yields error message when OpenAI API call fails", async () => {
-    vi.mocked(openai.chat.completions.create).mockRejectedValue(
-      new Error("API down"),
-    );
+    vi.mocked(aiChat).mockRejectedValue(new Error("API down"));
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
@@ -977,9 +961,7 @@ describe("generateCoachResponse", () => {
   // control must too: a regression to a bare `if (abortSignal)` presence check
   // would otherwise pass while hiding every real failure.
   it("still logs a real API failure at ERROR when a live, never-aborted signal is passed", async () => {
-    vi.mocked(openai.chat.completions.create).mockRejectedValue(
-      new Error("API down"),
-    );
+    vi.mocked(aiChat).mockRejectedValue(new Error("API down"));
     const controller = new AbortController();
 
     const messages = [{ role: "user" as const, content: "Hello" }];
@@ -996,7 +978,7 @@ describe("generateCoachResponse", () => {
   it("does not log at ERROR and yields nothing when the API call is aborted", async () => {
     const controller = new AbortController();
     controller.abort();
-    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+    vi.mocked(aiChat).mockRejectedValue(
       new Error("This operation was aborted"),
     );
 
@@ -1036,9 +1018,7 @@ describe("generateCoachResponse", () => {
       },
     };
 
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
-      errorStream as any,
-    );
+    vi.mocked(aiChat).mockResolvedValue(errorStream as any);
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
@@ -1088,9 +1068,7 @@ describe("generateCoachResponse", () => {
       },
     };
 
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(
-      abortedStream as any,
-    );
+    vi.mocked(aiChat).mockResolvedValue(abortedStream as any);
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
@@ -1113,7 +1091,7 @@ describe("generateCoachResponse", () => {
       { content: "Here is advice." },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
     vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
 
     const messages = [{ role: "user" as const, content: "Fasting plan" }];
@@ -1139,7 +1117,7 @@ describe("generateCoachResponse", () => {
       { content: "there!" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
     vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
 
     const chunks: string[] = [];
@@ -1159,14 +1137,14 @@ describe("generateCoachResponse", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
 
     // "Hi" routes to vague_request — prompt should include the number-anchored
     // clarifying question instruction from that intent bundle.
     const messages = [{ role: "user" as const, content: "Hi" }];
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     const systemMsg = (
       callArgs as { messages: { role: string; content: string }[] }
     ).messages[0];
@@ -1180,7 +1158,7 @@ describe("generateCoachResponse", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
 
     // Personalized message routes to personalized_advice — prompt should include
     // the graceful over-goal acknowledgment example from that bundle.
@@ -1192,7 +1170,7 @@ describe("generateCoachResponse", () => {
     ];
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     const systemMsg = (
       callArgs as { messages: { role: string; content: string }[] }
     ).messages[0];
@@ -1204,12 +1182,12 @@ describe("generateCoachResponse", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
 
     const messages = [{ role: "user" as const, content: "Hi" }];
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     const systemMsg = (
       callArgs as { messages: { role: string; content: string }[] }
     ).messages[0];
@@ -1219,7 +1197,7 @@ describe("generateCoachResponse", () => {
 
 describe("Pro tier prompt differentiation", () => {
   function capturedSystemPrompt(): string {
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     return (callArgs as { messages: { role: string; content: string }[] })
       .messages[0].content;
   }
@@ -1231,7 +1209,7 @@ describe("Pro tier prompt differentiation", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
   });
 
   it("adds the dedicated-coach persona and memory-display instructions to the Pro prompt", async () => {
@@ -1263,12 +1241,12 @@ describe("Pro tier prompt differentiation", () => {
     );
     expect(capturedSystemPrompt()).toContain("Never write markdown images");
 
-    vi.mocked(openai.chat.completions.create).mockClear();
+    vi.mocked(aiChat).mockClear();
     const stream = createMockStream([
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
     expect(capturedSystemPrompt()).toContain("Never write markdown images");
   });
@@ -1280,12 +1258,12 @@ describe("Pro tier prompt differentiation", () => {
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
     expect(capturedSystemPrompt()).not.toContain("confirm or cancel");
 
-    vi.mocked(openai.chat.completions.create).mockClear();
+    vi.mocked(aiChat).mockClear();
     const stream = createMockStream([
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
     await collectStream(
       generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
     );
@@ -1295,7 +1273,7 @@ describe("Pro tier prompt differentiation", () => {
 
 describe("due-commitments follow-up rendering", () => {
   function capturedSystemPrompt(): string {
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     return (callArgs as { messages: { role: string; content: string }[] })
       .messages[0].content;
   }
@@ -1307,7 +1285,7 @@ describe("due-commitments follow-up rendering", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
   });
 
   it("renders the due-commitments section before the notebook, with untrusted-data fencing and check-in rules", async () => {
@@ -1361,12 +1339,12 @@ describe("due-commitments follow-up rendering", () => {
       "Frequently logged foods (past 30 days): Greek yogurt (12×), chicken breast (8×)",
     );
 
-    vi.mocked(openai.chat.completions.create).mockClear();
+    vi.mocked(aiChat).mockClear();
     const stream = createMockStream([
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
     expect(capturedSystemPrompt()).not.toContain("Frequently logged foods");
   });
@@ -1374,7 +1352,7 @@ describe("due-commitments follow-up rendering", () => {
 
 describe("ABOUT THIS USER rendering", () => {
   function capturedSystemPrompt(): string {
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     return (callArgs as { messages: { role: string; content: string }[] })
       .messages[0].content;
   }
@@ -1390,7 +1368,7 @@ describe("ABOUT THIS USER rendering", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
   });
 
   it("renders all set fields as labeled lines, humanizing snake_case values", async () => {
@@ -1532,7 +1510,7 @@ describe("current time rendering", () => {
   const FIXED_INSTANT = new Date(Date.UTC(2026, 6, 11, 1, 12));
 
   function capturedSystemPrompt(): string {
-    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1];
     return (callArgs as { messages: { role: string; content: string }[] })
       .messages[0].content;
   }
@@ -1546,7 +1524,7 @@ describe("current time rendering", () => {
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
-    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(aiChat).mockResolvedValue(stream as any);
   });
 
   afterEach(() => {

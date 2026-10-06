@@ -6,10 +6,11 @@ import {
   RECIPE_SUGGESTION_CHIPS,
   generateRecipeChatResponse,
   buildRemixSystemPrompt,
+  analyzeImageForRecipe,
 } from "../recipe-chat";
 import type { ChatMessage } from "@shared/schema";
 
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import { generateRecipeImage } from "../recipe-generation";
 
 function createMessage(
@@ -219,17 +220,11 @@ describe("recipe-chat service", () => {
   });
 });
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
+
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   OPENAI_TIMEOUT_HEAVY_MS: 30_000,
   OPENAI_TIMEOUT_IMAGE_MS: 15_000,
-  MODEL_HEAVY: "gpt-4o",
 }));
 
 vi.mock("../recipe-generation", () => ({
@@ -268,7 +263,7 @@ describe("generateRecipeChatResponse — API call parameters", () => {
       instructions: ["Cook"],
       dietTags: [],
     });
-    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+    vi.mocked(aiChat).mockResolvedValueOnce(
       (async function* () {
         yield {
           choices: [{ delta: { content: recipeJson }, finish_reason: "stop" }],
@@ -286,8 +281,8 @@ describe("generateRecipeChatResponse — API call parameters", () => {
       /* drain */
     }
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock
-      .calls[0][0] as any;
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1] as any;
+    expect(vi.mocked(aiChat).mock.calls[0][0]).toBe("recipe-chat");
     expect(callArgs.temperature).toBe(0.5);
   });
 });
@@ -324,7 +319,7 @@ describe("generateRecipeChatResponse — imageUnavailable on timeout", () => {
       },
     ];
 
-    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+    vi.mocked(aiChat).mockResolvedValueOnce(
       (async function* () {
         for (const c of fakeChunks) yield c;
       })() as any,
@@ -360,7 +355,6 @@ describe("generateRecipeChatResponse — imageUnavailable on timeout", () => {
 
   it("yields imageUnavailable when image generation throws", async () => {
     const { generateRecipeChatResponse } = await import("../recipe-chat");
-    const { openai } = await import("../../lib/openai");
     const { generateRecipeImage } = await import("../recipe-generation");
 
     const recipeJson = JSON.stringify({
@@ -387,7 +381,7 @@ describe("generateRecipeChatResponse — imageUnavailable on timeout", () => {
       { choices: [{ delta: { content: "\n```" }, finish_reason: "stop" }] },
     ];
 
-    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+    vi.mocked(aiChat).mockResolvedValueOnce(
       (async function* () {
         for (const c of fakeChunks) yield c;
       })() as any,
@@ -429,7 +423,7 @@ describe("generateRecipeChatResponse — prompt injection sanitization (M1)", ()
     );
 
     // Simulate a minimal streaming response so the generator completes
-    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+    vi.mocked(aiChat).mockResolvedValueOnce(
       (async function* () {
         yield {
           choices: [{ delta: { content: "No recipe" }, finish_reason: "stop" }],
@@ -471,8 +465,7 @@ describe("generateRecipeChatResponse — prompt injection sanitization (M1)", ()
     );
 
     // Verify the sanitized sentinel values (not the raw payload) reached OpenAI
-    const callArgs = vi.mocked(openai.chat.completions.create).mock
-      .calls[0][0] as any;
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1] as any;
     const historyMessages: { role: string; content: string }[] =
       callArgs.messages.slice(1); // skip the leading system prompt
 
@@ -489,7 +482,7 @@ describe("system prompts forbid markdown images/links", () => {
     "Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not display them: images are dropped and links lose their URL.";
 
   it("buildSystemPrompt (chat flow) includes the forbid-markdown-images/links instruction", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+    vi.mocked(aiChat).mockResolvedValueOnce(
       (async function* () {
         yield {
           choices: [{ delta: { content: "No recipe" }, finish_reason: "stop" }],
@@ -507,8 +500,7 @@ describe("system prompts forbid markdown images/links", () => {
       /* drain */
     }
 
-    const callArgs = vi.mocked(openai.chat.completions.create).mock
-      .calls[0][0] as any;
+    const callArgs = vi.mocked(aiChat).mock.calls[0][1] as any;
     const systemPromptContent = callArgs.messages[0].content as string;
 
     expect(systemPromptContent).toContain(forbidsMarkdownImagesAndLinks);
@@ -526,5 +518,21 @@ describe("system prompts forbid markdown images/links", () => {
     );
 
     expect(prompt).toContain(forbidsMarkdownImagesAndLinks);
+  });
+});
+
+describe("analyzeImageForRecipe — routing", () => {
+  it("routes through aiChat as recipe-chat-image with the image timeout", async () => {
+    vi.mocked(aiChat).mockResolvedValueOnce({
+      choices: [{ message: { content: "eggs\nflour" } }],
+    } as any);
+
+    await analyzeImageForRecipe("abc123");
+
+    const call = vi.mocked(aiChat).mock.calls[0];
+    expect(call[0]).toBe("recipe-chat-image");
+    expect((call[1] as any).max_completion_tokens).toBe(500);
+    expect((call[1] as any).temperature).toBe(0.3);
+    expect(call[2]).toEqual({ timeout: 15_000 });
   });
 });

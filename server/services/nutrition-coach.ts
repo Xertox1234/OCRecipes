@@ -1,6 +1,8 @@
 import { createHash } from "crypto";
 import { civilDateString } from "../lib/civil-date";
-import { openai, OPENAI_TIMEOUT_STREAM_MS, MODEL_FAST } from "../lib/openai";
+import { aiChat } from "../lib/ai-client";
+import { OPENAI_TIMEOUT_STREAM_MS } from "../lib/openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import {
   sanitizeUserInput,
   sanitizeContextField,
@@ -551,9 +553,9 @@ export async function* generateCoachResponse(
 
   let stream;
   try {
-    stream = await openai.chat.completions.create(
+    stream = await aiChat(
+      "coach-chat",
       {
-        model: MODEL_FAST,
         stream: true,
         messages: [
           { role: "system", content: systemPrompt },
@@ -676,13 +678,11 @@ export async function* generateCoachProResponse(
   while (toolCallCount <= MAX_TOOL_CALLS_PER_RESPONSE) {
     let stream;
     try {
-      stream = await openai.chat.completions.create(
+      stream = await aiChat(
+        "coach-pro-chat",
         {
-          model: MODEL_FAST,
           stream: true,
-          messages: conversation as Parameters<
-            typeof openai.chat.completions.create
-          >[0]["messages"],
+          messages: conversation as ChatCompletionMessageParam[],
           tools,
           max_completion_tokens: 1500,
           temperature: 0.5,
