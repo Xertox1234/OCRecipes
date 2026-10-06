@@ -111,15 +111,8 @@ describe("checkCallRecords", () => {
   });
   it("baseline (no overrides) checks against the table model", () => {
     expect(
-      checkCallRecords(
-        [
-          rec({
-            requestedModel: "openai/gpt-4o-mini",
-            answeredModel: "openai/gpt-4o-mini",
-          }),
-        ],
-        {},
-      ),
+      // coach-chat's table model is openai/gpt-6-luna (rec's default)
+      checkCallRecords([rec()], {}),
     ).toEqual([]);
   });
 });
