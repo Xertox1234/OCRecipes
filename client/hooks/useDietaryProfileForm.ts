@@ -3,6 +3,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 
+import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
@@ -33,6 +34,7 @@ interface DietaryProfile {
 export function useDietaryProfileForm() {
   const navigation = useNavigation();
   const haptics = useHaptics();
+  const toast = useToast();
   const queryClient = useQueryClient();
 
   const [isSaving, setIsSaving] = useState(false);
@@ -158,7 +160,8 @@ export function useDietaryProfileForm() {
         queryKey: QUERY_KEYS.dietaryProfile,
       });
 
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      // The toast survives the goBack and fires its own Success haptic.
+      toast.success("Dietary profile saved");
       navigation.goBack();
     } catch {
       // Error is displayed to user via setSaveError below

@@ -1,18 +1,13 @@
 // client/screens/TasteProfileScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
-import {
-  View,
-  StyleSheet,
-  Pressable,
-  Alert,
-  AccessibilityInfo,
-} from "react-native";
+import { View, StyleSheet, Pressable, AccessibilityInfo } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TastePicksGrid } from "@/components/TastePicksGrid";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
 import { useNavigation } from "@react-navigation/native";
 import { apiRequest } from "@/lib/query-client";
@@ -32,6 +27,7 @@ export default function TasteProfileScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<TasteProfileScreenNavigationProp>();
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   const [candidates, setCandidates] = useState<RecipeCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -154,14 +150,16 @@ export default function TasteProfileScreen() {
       // labels on return without requiring a manual pull-to-refresh.
       void queryClient.invalidateQueries({ queryKey: ["/api/carousel"] });
       setIsDirty(false);
+      toast.success("Taste picks saved");
       navigation.goBack();
     } catch (err) {
       logger.error("handleSave failed:", err);
-      Alert.alert("Something went wrong", "Please try again.");
+      // Picks stay selected (isDirty stays true) so the user can retry.
+      toast.error("Couldn't save your picks. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedIds, navigation, queryClient]);
+  }, [selectedIds, navigation, queryClient, toast]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
