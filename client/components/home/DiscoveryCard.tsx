@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeOut } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { FontFamily, Spacing, BorderRadius } from "@/constants/theme";
 import type { DiscoveryCard as DiscoveryCardType } from "./discovery-cards-config";
 
@@ -43,7 +44,10 @@ export function DiscoveryCard({
       </ThemedText>
       <Pressable
         onPress={onDismiss}
-        style={styles.dismissButton}
+        style={({ pressed }) => [
+          styles.dismissButton,
+          pressed && { opacity: 0.7 },
+        ]}
         accessibilityRole="button"
         accessibilityLabel="Dismiss"
         hitSlop={8}
@@ -57,14 +61,14 @@ export function DiscoveryCard({
       <ThemedText style={styles.subtitle} numberOfLines={1}>
         {card.subtitle}
       </ThemedText>
-      <Pressable
+      <PressableScale
         onPress={onPress}
         style={styles.cta}
         accessibilityRole="button"
         accessibilityLabel={card.ctaLabel}
       >
         <ThemedText style={styles.ctaText}>{card.ctaLabel} →</ThemedText>
-      </Pressable>
+      </PressableScale>
     </Animated.View>
   );
 }

@@ -573,7 +573,10 @@ export default function HomeScreen() {
       >
         <Pressable
           onPress={handleCalorieTap}
-          style={styles.collapsedBarContent}
+          style={({ pressed }) => [
+            styles.collapsedBarContent,
+            pressed && { opacity: 0.7 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel={
             budgetErrored
