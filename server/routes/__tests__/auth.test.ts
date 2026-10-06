@@ -6,6 +6,7 @@ import bcrypt from "bcrypt";
 import { storage, ReservedUsernameError } from "../../storage";
 import { detectImageMimeType } from "../../lib/image-mime";
 import { register } from "../auth";
+import { generateToken } from "../../middleware/auth";
 import { ZodError } from "zod";
 import { ipKeyGenerator } from "../_rate-limiters";
 import {
@@ -60,6 +61,7 @@ vi.mock("../../storage", () => ({
     getUserByUsernameForAuth: vi.fn(),
     getUserByEmailForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
+    createMfaChallenge: vi.fn(),
     createUser: vi.fn(),
     getUser: vi.fn(),
     updateUser: vi.fn(),
@@ -599,6 +601,36 @@ describe("Auth Routes", () => {
       expect(res.body.token).toBe("mock-jwt-token");
       expect(res.body.user.username).toBe("testuser");
       expect(res.body.user).not.toHaveProperty("password");
+    });
+
+    it("2FA account: right password → 200 mfa_required and NO token", async () => {
+      // 200, not 4xx: loginAccountLimiter skips successful requests, so a
+      // non-2xx here would count a CORRECT password as a failed login.
+      vi.mocked(generateToken).mockClear();
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("password123", 4);
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+        createMockUser({
+          password: hash,
+          tokenVersion: 5,
+          mfaEnabledAt: new Date("2026-10-05T00:00:00Z"),
+        }),
+      );
+
+      const res = await request(app).post("/api/auth/login").send({
+        username: "testuser",
+        password: "password123",
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        status: "mfa_required",
+        challenge: expect.any(String),
+      });
+      expect(generateToken).not.toHaveBeenCalled();
+      expect(storage.createMfaChallenge).toHaveBeenCalledWith(
+        expect.objectContaining({ tokenVersion: 5, purpose: "login" }),
+      );
     });
 
     it("returns 401 for non-existent user", async () => {

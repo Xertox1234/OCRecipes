@@ -44,6 +44,7 @@ vi.mock("../../storage", () => ({
     getUserForAuth: vi.fn(),
     getUserByUsername: vi.fn(),
     getUser: vi.fn(),
+    createMfaChallenge: vi.fn(),
   },
 }));
 vi.mock("express-rate-limit");
@@ -404,7 +405,7 @@ describe("POST /api/auth/social", () => {
     expect(storage.setAppleRefreshToken).not.toHaveBeenCalled();
   });
 
-  it("a linked Apple user stopped at a 403 gate never has a token revoked", async () => {
+  it("a linked Apple user stopped at the 2FA challenge has nothing written or revoked", async () => {
     // Revoking can end the whole Apple authorization of a real account.
     vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
     vi.mocked(verifyAppleIdToken).mockResolvedValue({
@@ -430,8 +431,13 @@ describe("POST /api/auth/social", () => {
       nonce: "n",
       authorizationCode: "c",
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      status: "mfa_required",
+      challenge: expect.any(String),
+    });
     expect(storage.setAppleRefreshToken).not.toHaveBeenCalled();
+    expect(storage.touchIdentity).not.toHaveBeenCalled();
     expect(revokeAppleToken).not.toHaveBeenCalled();
   });
 
@@ -505,7 +511,7 @@ describe("POST /api/auth/social", () => {
     expect(input.appleRefreshTokenEnc).not.toContain("refresh-1");
   });
 
-  it("SECOND_FACTOR_REQUIRED: 403, no token, nothing inserted", async () => {
+  it("2FA account: 200 mfa_required, no token, nothing inserted", async () => {
     vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
     vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
     vi.mocked(storage.findIdentity).mockResolvedValue(
@@ -519,9 +525,14 @@ describe("POST /api/auth/social", () => {
       createMockUser({ id: "u1", emailVerified: true }),
     );
     const res = await request(app()).post("/api/auth/social").send(body);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("mfa_required");
     expect(res.body.token).toBeUndefined();
+    expect(storage.createMfaChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", purpose: "login" }),
+    );
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
+    expect(storage.touchIdentity).not.toHaveBeenCalled();
   });
 });
 
@@ -628,7 +639,7 @@ describe("POST /api/auth/social/link", () => {
     });
   });
 
-  it("MFA account: right password → 403 and NO identity row", async () => {
+  it("MFA account: right password → mfa_required and NO identity row yet", async () => {
     vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
     vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
     vi.mocked(storage.getUserForAuth).mockResolvedValue(
@@ -641,7 +652,14 @@ describe("POST /api/auth/social/link", () => {
     const res = await request(app())
       .post("/api/auth/social/link")
       .send({ ticket: "t", password: "right-pass1" });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      status: "mfa_required",
+      challenge: expect.any(String),
+    });
+    expect(storage.createMfaChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", purpose: "link" }),
+    );
     expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
   });
 

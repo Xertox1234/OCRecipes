@@ -1,11 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { storage, ReservedUsernameError, isReservedUsername } from "../storage";
 import type { ProviderName } from "../storage";
-import {
-  generateToken,
-  requireAuth,
-  type AuthenticatedRequest,
-} from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { handleRouteError, formatZodError } from "./_helpers";
@@ -24,7 +20,6 @@ import {
   providerParamSchema,
   type ReauthProof,
 } from "./_schemas";
-import { serializeUser } from "./_serialize-user";
 import { emailVerificationEnabled } from "../lib/email-config";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches } from "../lib/password-check";
@@ -49,6 +44,10 @@ import {
 } from "../lib/social-identity/token-crypto";
 import { reportError } from "../lib/error-reporter";
 import { signInGate, secondFactor } from "../lib/social-identity/sign-in-gates";
+import {
+  beginSession,
+  issueSession as issueSessionFor,
+} from "../lib/mfa/begin-session";
 import { suggestUsername } from "../lib/social-identity/suggest-username";
 import type {
   ProviderClaims,
@@ -141,15 +140,12 @@ export async function appleRefreshTokenFor(
   }
 }
 
+/** Ungated mint for a brand-new account (complete-sign-up); 401 if it vanished. */
 export async function issueSession(userId: string) {
-  const user = await storage.getUser(userId);
-  if (!user)
+  const session = await issueSessionFor(userId);
+  if (!session)
     throw new HttpFailure(401, ErrorCode.UNAUTHORIZED, "User not found");
-  return {
-    status: "signed_in" as const,
-    user: serializeUser(user),
-    token: generateToken(user.id, user.tokenVersion, user.emailVerified),
-  };
+  return session;
 }
 
 async function methodsFor(
@@ -390,15 +386,22 @@ export function register(app: Express): void {
           });
           if (!gate.ok)
             throw new HttpFailure(gate.status, gate.code, gate.message);
-          if (appleTokenEnc && linked) {
-            await storage.setAppleRefreshToken(
-              linked.id,
-              user.id,
-              appleTokenEnc,
-            );
-          }
-          if (linked) await storage.touchIdentity(linked.id, user.id);
-          return res.json(await issueSession(user.id));
+          // A 2FA account gets a challenge; these writes then never happen
+          // (nothing is written before the second factor passes).
+          return res.json(
+            await beginSession(user, {
+              beforeSession: async () => {
+                if (appleTokenEnc && linked) {
+                  await storage.setAppleRefreshToken(
+                    linked.id,
+                    user.id,
+                    appleTokenEnc,
+                  );
+                }
+                if (linked) await storage.touchIdentity(linked.id, user.id);
+              },
+            }),
+          );
         }
 
         if (decision.kind === "auto_link") {
@@ -409,6 +412,14 @@ export function register(app: Express): void {
           });
           if (!gate.ok)
             throw new HttpFailure(gate.status, gate.code, gate.message);
+          // decideLink never auto-links a 2FA account; refuse anyway rather
+          // than attach a provider without the second factor.
+          if (secondFactor.requiresSecondFactor(user))
+            throw new HttpFailure(
+              403,
+              ErrorCode.SECOND_FACTOR_REQUIRED,
+              "Second factor required",
+            );
           try {
             await storage.insertIdentity({
               userId: user.id,
@@ -602,14 +613,15 @@ export function register(app: Express): void {
           emailWillBeVerified: markEmailVerified,
           verificationOn: emailVerificationEnabled(),
         });
-        // Gate BEFORE inserting: a password alone never attaches a provider to an MFA account.
         if (!gate.ok)
           throw new HttpFailure(gate.status, gate.code, gate.message);
 
-        let identity;
+        // A password alone never attaches a provider to a 2FA account:
+        // beginSession links nothing until /api/auth/mfa/verify passes.
+        let session;
         try {
-          identity = await storage.completeLinkFromTicket(body.ticket, {
-            markEmailVerified,
+          session = await beginSession(target, {
+            link: { ticket: body.ticket, markEmailVerified },
           });
         } catch (err) {
           if (isUniqueViolation(err))
@@ -620,8 +632,8 @@ export function register(app: Express): void {
             );
           throw err;
         }
-        if (!identity) throw expired;
-        res.json(await issueSession(target.id));
+        if (!session) throw expired;
+        res.json(session);
       } catch (error) {
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "link provider");

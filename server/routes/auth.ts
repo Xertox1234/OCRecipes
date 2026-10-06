@@ -65,6 +65,7 @@ import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
 import { serializeUser } from "./_serialize-user";
 import { reauthenticate, revokeAppleIdentities } from "./auth-social";
+import { beginSession } from "../lib/mfa/begin-session";
 
 export { serializeUser };
 
@@ -355,13 +356,10 @@ export function register(app: Express): void {
           );
         }
 
-        const token = generateToken(
-          user.id.toString(),
-          user.tokenVersion,
-          user.emailVerified,
-        );
-
-        res.json({ user: serializeUser(user), token });
+        // A 2FA account gets a challenge (HTTP 200 — loginAccountLimiter skips
+        // successful requests, so a 4xx would count this correct password as
+        // a failed login), not a token.
+        res.json(await beginSession(user));
       } catch (error) {
         handleRouteError(res, error, "log in");
       }

@@ -27,14 +27,22 @@ describe("signInGate", () => {
       ),
     ).toEqual({ ok: true });
   });
-  it("blocks with SECOND_FACTOR_REQUIRED when the account needs one", () => {
+  it("never blocks on the second factor — beginSession challenges instead", () => {
     vi.spyOn(gates.secondFactor, "requiresSecondFactor").mockReturnValue(true);
     expect(
       gates.signInGate(user, {
         emailWillBeVerified: false,
         verificationOn: true,
       }),
-    ).toMatchObject({ ok: false, status: 403, code: "SECOND_FACTOR_REQUIRED" });
+    ).toEqual({ ok: true });
     vi.restoreAllMocks();
+  });
+  it("requiresSecondFactor is true exactly when mfa_enabled_at is set", () => {
+    expect(
+      gates.secondFactor.requiresSecondFactor({ mfaEnabledAt: null }),
+    ).toBe(false);
+    expect(
+      gates.secondFactor.requiresSecondFactor({ mfaEnabledAt: new Date() }),
+    ).toBe(true);
   });
 });
