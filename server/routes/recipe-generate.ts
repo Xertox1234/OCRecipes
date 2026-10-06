@@ -76,7 +76,7 @@ export function register(app: Express): void {
         });
 
         // Atomic re-check + log. Even though this endpoint does not persist
-        // the recipe, the AI call burns MODEL_HEAVY tokens and must count
+        // the recipe, the AI call burns the heavy recipe model tokens and must count
         // against the daily quota (H1 from 2026-04-18 audit). Without this
         // the quota check at the top always reads 0 and the user can call
         // unlimited generations. recipeId is null for preview.

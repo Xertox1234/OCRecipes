@@ -1,20 +1,12 @@
 import { parseNaturalLanguageFood } from "../food-nlp";
 
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import { lookupNutrition, type NutritionData } from "../nutrition-lookup";
 
 // Mock OpenAI
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   OPENAI_TIMEOUT_FAST_MS: 15_000,
-  MODEL_FAST: "gpt-4o-mini",
-  MODEL_HEAVY: "gpt-4o",
 }));
 
 // Mock nutrition lookup
@@ -32,7 +24,7 @@ vi.mock("../../lib/ai-safety", () => ({
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
-const mockCreate = vi.mocked(openai.chat.completions.create);
+const mockCreate = vi.mocked(aiChat);
 const mockLookup = vi.mocked(lookupNutrition);
 
 type LlmItem = Record<string, unknown>;
@@ -83,6 +75,7 @@ describe("Food NLP", () => {
       expect(result[0].unit).toBe("large");
       expect(result[0].calories).toBe(143);
       expect(result[0].protein).toBe(12.6);
+      expect(mockCreate.mock.calls[0][0]).toBe("food-nlp-parse");
     });
 
     it("handles multiple food items", async () => {

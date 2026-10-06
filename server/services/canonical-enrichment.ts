@@ -9,6 +9,7 @@
  * by the caller.
  */
 
+import { aiChat } from "../lib/ai-client";
 import { z } from "zod";
 import { createServiceLogger, toError } from "../lib/logger";
 import { storage } from "../storage";
@@ -18,12 +19,7 @@ import {
   isRunwareConfigured,
   RUNWARE_MODEL_HQ,
 } from "../lib/runware";
-import {
-  openai,
-  dalleClient,
-  MODEL_HEAVY,
-  OPENAI_TIMEOUT_IMAGE_MS,
-} from "../lib/openai";
+import { dalleClient, OPENAI_TIMEOUT_IMAGE_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import {
   buildImagePrompt,
@@ -261,9 +257,9 @@ export async function generateEditorialContent(
     `Respond with valid JSON only, no markdown fences.`;
 
   try {
-    const completion = await openai.chat.completions.create(
+    const completion = await aiChat(
+      "canonical-editorial",
       {
-        model: MODEL_HEAVY,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

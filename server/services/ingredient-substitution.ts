@@ -5,6 +5,7 @@
  * then falls back to GPT-4o for uncommon ingredients.
  */
 
+import { aiChat } from "../lib/ai-client";
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
 import {
@@ -19,7 +20,7 @@ import {
   ALLERGEN_INGREDIENT_MAP,
   type AllergySeverity,
 } from "@shared/constants/allergens";
-import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
+import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { getSpoonacularSubstitutes } from "./recipe-catalog";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -368,9 +369,9 @@ Respond with JSON only:
   ]
 }`;
 
-  const response = await openai.chat.completions.create(
+  const response = await aiChat(
+    "ingredient-substitution",
     {
-      model: MODEL_HEAVY,
       temperature: 0.4,
       messages: [
         {

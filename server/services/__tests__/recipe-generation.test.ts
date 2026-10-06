@@ -7,7 +7,8 @@ import {
   generateAndPatchRecipeImage,
 } from "../recipe-generation";
 
-import { openai, dalleClient } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
+import { dalleClient } from "../../lib/openai";
 
 // Mock fs to avoid writing to disk in tests
 vi.mock("node:fs", async () => {
@@ -35,14 +36,8 @@ vi.mock("node:fs", async () => {
 });
 
 // Mock the openai module
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   dalleClient: {
     images: {
       generate: vi.fn(),
@@ -51,8 +46,6 @@ vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
   OPENAI_TIMEOUT_IMAGE_MS: 120_000,
   OPENAI_TIMEOUT_FAST_MS: 30_000,
-  MODEL_FAST: "gpt-4o-mini",
-  MODEL_HEAVY: "gpt-4o",
   // isAiConfigured: false keeps isArtDirectorLLMEnabled() → false,
   // so image-art-direction uses the deterministic path (no LLM calls in tests).
   isAiConfigured: false,
@@ -75,7 +68,7 @@ const runwareMock = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/runware", () => runwareMock);
 
-const mockCreate = vi.mocked(openai.chat.completions.create);
+const mockCreate = vi.mocked(aiChat);
 const mockImageGenerate = vi.mocked(dalleClient.images.generate);
 const mockRunwareGenerate = runwareMock.generateImage;
 
@@ -152,6 +145,7 @@ describe("Recipe Generation", () => {
       expect(result.instructions).toContain("Grill chicken");
       expect(result.instructions).toContain("Toss salad");
       expect(result.dietTags).toEqual(["high-protein", "low-carb"]);
+      expect(mockCreate.mock.calls[0][0]).toBe("recipe-generate");
     });
 
     it("handles instructions as array of strings", async () => {
@@ -371,7 +365,7 @@ describe("Recipe Generation", () => {
         dietPreferences: ["gluten-free"],
       });
 
-      const prompt = mockCreate.mock.calls[0][0].messages[1].content as string;
+      const prompt = mockCreate.mock.calls[0][1].messages[1].content as string;
       expect(prompt).toContain("Peanuts");
       expect(prompt).toContain("vegan");
       expect(prompt).toContain("gluten-free");

@@ -1,12 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { classifyTurn, CLASSIFY_TURN_TIMEOUT_MS } from "../classify-turn";
-import { openai } from "../../../lib/openai";
+import { aiChat } from "../../../lib/ai-client";
 import { createMockChatCompletion } from "../../../__tests__/factories";
 
-vi.mock("../../../lib/openai", () => ({
-  openai: { chat: { completions: { create: vi.fn() } } },
-  MODEL_FAST: "gpt-4o-mini",
-}));
+vi.mock("../../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../../lib/ai-safety", () => ({
   sanitizeUserInput: vi.fn((t: string) => t),
   sanitizeContextField: vi.fn((t: string) => t),
@@ -24,7 +21,7 @@ vi.mock("../../../lib/ai-safety", () => ({
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
-const mockCreate = vi.mocked(openai.chat.completions.create);
+const mockCreate = vi.mocked(aiChat);
 const returns = (json: unknown) =>
   mockCreate.mockResolvedValue(createMockChatCompletion(JSON.stringify(json)));
 
@@ -56,7 +53,8 @@ describe("classifyTurn", () => {
   it("uses a short timeout and JSON mode", async () => {
     returns({ class: "other" });
     await classifyTurn("thanks!", "Chicken Curry");
-    const [body, opts] = mockCreate.mock.calls[0];
+    const [feature, body, opts] = mockCreate.mock.calls[0];
+    expect(feature).toBe("finder-classify-turn");
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(opts?.timeout).toBe(CLASSIFY_TURN_TIMEOUT_MS);
   });

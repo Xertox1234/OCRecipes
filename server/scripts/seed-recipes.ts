@@ -31,6 +31,7 @@
  *   and is printed to stdout once on first creation.
  */
 import "dotenv/config";
+import { aiChat } from "../lib/ai-client";
 import bcrypt from "bcrypt";
 import crypto from "node:crypto";
 import pLimit from "p-limit";
@@ -44,7 +45,6 @@ import {
   normalizeProductName,
 } from "../services/recipe-generation";
 import { inferMealTypes } from "../lib/meal-type-inference";
-import { openai, MODEL_FAST } from "../lib/openai";
 import {
   ALLOW_PROD_SEED_FLAG,
   shouldSeedAsPlatformOwned,
@@ -344,9 +344,9 @@ async function estimateMacros(
     .map((i) => `${i.quantity} ${i.unit} ${i.name}`.trim())
     .join(", ");
   try {
-    const response = await openai.chat.completions.create(
+    const response = await aiChat(
+      "script-seed-macros",
       {
-        model: MODEL_FAST,
         temperature: 0,
         max_completion_tokens: 200,
         messages: [

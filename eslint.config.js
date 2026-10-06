@@ -146,6 +146,11 @@ module.exports = defineConfig([
       "ocrecipes/no-as-string-req": "error",
     },
   },
+  {
+    files: ["server/**/*.ts"],
+    plugins: { ocrecipes: ocrecipesPlugin },
+    rules: { "ocrecipes/no-direct-chat-completions": "error" },
+  },
   // Type-aware async-safety rules. Omitted when ESLINT_NO_TYPE_AWARE is set
   // (pre-commit), so commits stay fast. CI runs npm run lint without the flag.
   ...(process.env.ESLINT_NO_TYPE_AWARE

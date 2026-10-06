@@ -8,23 +8,15 @@ import {
 } from "../meal-suggestions";
 import type { MealSuggestionInput } from "../meal-suggestions";
 
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import {
   createMockChatCompletion,
   createMockUserProfile,
 } from "../../__tests__/factories";
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
-  MODEL_FAST: "gpt-4o-mini",
-  MODEL_HEAVY: "gpt-4o",
 }));
 
 describe("meal-suggestions", () => {
@@ -301,7 +293,7 @@ describe("meal-suggestions", () => {
   });
 
   describe("generateMealSuggestions", () => {
-    const mockCreate = vi.mocked(openai.chat.completions.create);
+    const mockCreate = vi.mocked(aiChat);
 
     const baseSuggestion = {
       title: "Grilled Chicken",
@@ -347,8 +339,9 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(baseInput);
 
-      const callArgs = mockCreate.mock.calls[0][0] as any;
+      const callArgs = mockCreate.mock.calls[0][1] as any;
       expect(callArgs.temperature).toBe(0.5);
+      expect(mockCreate.mock.calls[0][0]).toBe("meal-suggestions");
     });
 
     it("returns 3 validated suggestions from AI", async () => {
@@ -377,7 +370,7 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(input);
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      const callArgs = mockCreate.mock.calls[0][1];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).toContain("Oatmeal");
       expect(userMessage).toContain("300 cal");
@@ -398,7 +391,7 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(input);
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      const callArgs = mockCreate.mock.calls[0][1];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).toContain("DIETARY REQUIREMENTS");
       expect(userMessage).toContain("vegan");
@@ -448,7 +441,7 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(baseInput);
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      const callArgs = mockCreate.mock.calls[0][1];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).toContain("No meals planned yet today");
     });
@@ -465,7 +458,7 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(input);
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      const callArgs = mockCreate.mock.calls[0][1];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).toContain("Chicken Tikka");
       expect(userMessage).toContain("Beef Stew");
@@ -484,7 +477,7 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(input);
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      const callArgs = mockCreate.mock.calls[0][1];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).not.toContain("AVOID SUGGESTING");
     });
@@ -496,7 +489,7 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(baseInput);
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      const callArgs = mockCreate.mock.calls[0][1];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).not.toContain("AVOID SUGGESTING");
     });
@@ -517,7 +510,7 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(input);
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      const callArgs = mockCreate.mock.calls[0][1];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).toContain(
         "IMPORTANT: The user is 135g short on protein today",
@@ -539,7 +532,7 @@ describe("meal-suggestions", () => {
 
       await generateMealSuggestions(input);
 
-      const callArgs = mockCreate.mock.calls[0][0];
+      const callArgs = mockCreate.mock.calls[0][1];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).not.toContain("IMPORTANT");
     });

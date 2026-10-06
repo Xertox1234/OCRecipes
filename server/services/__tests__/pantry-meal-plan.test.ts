@@ -9,7 +9,7 @@ import {
 } from "../pantry-meal-plan";
 import type { PantryMealPlanInput } from "../pantry-meal-plan";
 
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import { storage } from "../../storage";
 import {
   createMockPantryItem,
@@ -18,17 +18,9 @@ import {
   createMockChatCompletion,
 } from "../../__tests__/factories";
 
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
-  MODEL_FAST: "gpt-4o-mini",
-  MODEL_HEAVY: "gpt-4o",
 }));
 
 vi.mock("../../storage", () => ({
@@ -221,7 +213,7 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should return a valid plan when AI responds correctly", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
 
@@ -233,9 +225,7 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should throw if AI returns empty content", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion(null),
-      );
+      vi.mocked(aiChat).mockResolvedValue(createMockChatCompletion(null));
 
       await expect(generateMealPlanFromPantry(BASE_INPUT)).rejects.toThrow(
         "No response from AI",
@@ -243,9 +233,7 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should throw if AI returns invalid JSON", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion("not json"),
-      );
+      vi.mocked(aiChat).mockResolvedValue(createMockChatCompletion("not json"));
 
       await expect(generateMealPlanFromPantry(BASE_INPUT)).rejects.toThrow(
         "AI returned invalid JSON response",
@@ -253,7 +241,7 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should throw a ZodError if AI returns valid JSON of the wrong shape", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify({ unexpected: true })),
       );
 
@@ -263,9 +251,7 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should throw if OpenAI API fails", async () => {
-      vi.mocked(openai.chat.completions.create).mockRejectedValue(
-        new Error("API timeout"),
-      );
+      vi.mocked(aiChat).mockRejectedValue(new Error("API timeout"));
 
       await expect(generateMealPlanFromPantry(BASE_INPUT)).rejects.toThrow(
         "Failed to generate meal plan",
@@ -273,20 +259,18 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should call OpenAI with correct parameters", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
 
       await generateMealPlanFromPantry(BASE_INPUT);
 
-      expect(openai.chat.completions.create).toHaveBeenCalledTimes(1);
-      const callArgs = vi.mocked(openai.chat.completions.create).mock
-        .calls[0][0] as {
-        model: string;
+      expect(aiChat).toHaveBeenCalledTimes(1);
+      const callArgs = vi.mocked(aiChat).mock.calls[0][1] as {
         response_format: { type: string };
         messages: { content: string }[];
       };
-      expect(callArgs.model).toBe("gpt-4o");
+      expect(vi.mocked(aiChat).mock.calls[0][0]).toBe("pantry-meal-plan");
       expect(callArgs.response_format).toEqual({ type: "json_object" });
 
       // Verify pantry items appear in the prompt
@@ -298,7 +282,7 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should include dietary context when profile is provided", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
 
@@ -318,7 +302,7 @@ describe("pantry-meal-plan", () => {
       await generateMealPlanFromPantry(inputWithProfile);
 
       const userMessage = (
-        vi.mocked(openai.chat.completions.create).mock.calls[0][0] as {
+        vi.mocked(aiChat).mock.calls[0][1] as {
           messages: { content: string }[];
         }
       ).messages[1].content;
@@ -328,7 +312,7 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should indicate expiring items in the prompt", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
 
@@ -345,7 +329,7 @@ describe("pantry-meal-plan", () => {
       await generateMealPlanFromPantry(expiringInput);
 
       const userMessage = (
-        vi.mocked(openai.chat.completions.create).mock.calls[0][0] as {
+        vi.mocked(aiChat).mock.calls[0][1] as {
           messages: { content: string }[];
         }
       ).messages[1].content;
@@ -362,7 +346,7 @@ describe("pantry-meal-plan", () => {
       ).rejects.toBeInstanceOf(EmptyPantryError);
 
       expect(storage.getUserProfile).not.toHaveBeenCalled();
-      expect(openai.chat.completions.create).not.toHaveBeenCalled();
+      expect(aiChat).not.toHaveBeenCalled();
     });
 
     it("should generate a plan from the user's pantry, profile, and goals", async () => {
@@ -381,7 +365,7 @@ describe("pantry-meal-plan", () => {
           dailyFatGoal: 60,
         }),
       );
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
 
@@ -389,7 +373,7 @@ describe("pantry-meal-plan", () => {
 
       expect(result.days).toHaveLength(1);
       const userMessage = (
-        vi.mocked(openai.chat.completions.create).mock.calls[0][0] as {
+        vi.mocked(aiChat).mock.calls[0][1] as {
           messages: { content: string }[];
         }
       ).messages[1].content;
@@ -404,14 +388,14 @@ describe("pantry-meal-plan", () => {
       );
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getUser).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
       );
 
       await buildPantryMealPlanForUser("user1", 3);
 
       const userMessage = (
-        vi.mocked(openai.chat.completions.create).mock.calls[0][0] as {
+        vi.mocked(aiChat).mock.calls[0][1] as {
           messages: { content: string }[];
         }
       ).messages[1].content;

@@ -1,3 +1,4 @@
+import { aiChat } from "../lib/ai-client";
 import pLimit from "p-limit";
 import { z } from "zod";
 import { lookupNutrition, type NutritionData } from "./nutrition-lookup";
@@ -6,7 +7,7 @@ import {
   scaleToGrams,
   type NutrientValues,
 } from "./portion-nutrition";
-import { openai, OPENAI_TIMEOUT_FAST_MS, MODEL_FAST } from "../lib/openai";
+import { OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
 import {
   sanitizeUserInput,
   validateAiResponse,
@@ -71,9 +72,9 @@ export async function parseNaturalLanguageFood(
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "food-nlp-parse",
       {
-        model: MODEL_FAST,
         temperature: 0.1,
         // ~46 tokens per item with lookupName + grams (measured 2026-09-26:
         // 13 items = 597 tokens, which truncated at the old 500). 1500 fits ~30.

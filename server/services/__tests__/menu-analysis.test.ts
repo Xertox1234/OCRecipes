@@ -6,8 +6,6 @@ import { storage } from "../../storage";
 vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 
 vi.mock("../../lib/openai", () => ({
-  MODEL_FAST: "gpt-4o-mini",
-  MODEL_HEAVY: "gpt-4o",
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
 }));
 

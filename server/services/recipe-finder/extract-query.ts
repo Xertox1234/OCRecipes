@@ -1,6 +1,7 @@
 // server/services/recipe-finder/extract-query.ts
+import { aiChat } from "../../lib/ai-client";
 import { z } from "zod";
-import { openai, OPENAI_TIMEOUT_FAST_MS, MODEL_FAST } from "../../lib/openai";
+import { OPENAI_TIMEOUT_FAST_MS } from "../../lib/openai";
 import {
   sanitizeUserInput,
   sanitizeContextField,
@@ -42,9 +43,9 @@ export async function extractQuery(
 
   let content: string | null | undefined;
   try {
-    const response = await openai.chat.completions.create(
+    const response = await aiChat(
+      "finder-extract-query",
       {
-        model: MODEL_FAST,
         temperature: 0,
         max_completion_tokens: 150,
         response_format: { type: "json_object" },
