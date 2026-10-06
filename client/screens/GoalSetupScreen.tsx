@@ -20,6 +20,7 @@ import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
@@ -215,6 +216,7 @@ export default function GoalSetupScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<GoalSetupScreenNavigationProp>();
   const queryClient = useQueryClient();
@@ -304,7 +306,9 @@ export default function GoalSetupScreen() {
       void queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      // After the awaited updateUser, so a failed local update never
+      // celebrates. The toast survives the goBack and fires its own haptic.
+      toast.success("Goals saved");
       navigation.goBack();
     },
     onError: () => {
