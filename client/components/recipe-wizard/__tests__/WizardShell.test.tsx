@@ -10,15 +10,18 @@ import { renderComponent } from "../../../../test/utils/render-component";
 import WizardShell from "../WizardShell";
 import { inferCuisine, inferDietTags } from "@/lib/recipe-tag-inference";
 
-const { mockNotification, mockToastSuccess } = vi.hoisted(() => ({
-  mockNotification: vi.fn(),
-  mockToastSuccess: vi.fn(),
-}));
+const { mockNotification, mockToastSuccess, mockToastError } = vi.hoisted(
+  () => ({
+    mockNotification: vi.fn(),
+    mockToastSuccess: vi.fn(),
+    mockToastError: vi.fn(),
+  }),
+);
 
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
     success: mockToastSuccess,
-    error: vi.fn(),
+    error: mockToastError,
     info: vi.fn(),
   }),
 }));
@@ -502,6 +505,7 @@ describe("WizardShell", () => {
     beforeEach(() => {
       mockNotification.mockClear();
       mockToastSuccess.mockClear();
+      mockToastError.mockClear();
     });
 
     it("toasts the day and meal once the add resolves, with no extra Success haptic", async () => {
@@ -518,7 +522,9 @@ describe("WizardShell", () => {
       expect(mockNotification).not.toHaveBeenCalled();
     });
 
-    it("a failed add gives neither the toast nor a Success haptic", async () => {
+    // The recipe already exists at that point, so retrying Save would make a
+    // second copy. The wizard closes and says what actually happened.
+    it("a failed add closes the wizard with a saved-but-not-added error, no success", async () => {
       mutateCreate.mockResolvedValue({ id: 77 });
       mutateAddItem.mockRejectedValue(new Error("500"));
       const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
@@ -526,12 +532,30 @@ describe("WizardShell", () => {
 
       saveFromPlan(onSaveComplete);
 
-      await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+      await waitFor(() => expect(onSaveComplete).toHaveBeenCalledOnce());
+      expect(mockToastError).toHaveBeenCalledExactlyOnceWith(
+        "Recipe saved, but it couldn't be added to your plan.",
+      );
+      expect(alertSpy).not.toHaveBeenCalled();
       alertSpy.mockRestore();
+      expect(mutateCreate).toHaveBeenCalledOnce();
       expect(mockToastSuccess).not.toHaveBeenCalled();
       expect(mockNotification).not.toHaveBeenCalledWith(
         Haptics.NotificationFeedbackType.Success,
       );
+    });
+
+    it("a failed create keeps the Alert and stays open", async () => {
+      mutateCreate.mockRejectedValue(new Error("500"));
+      const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const onSaveComplete = vi.fn();
+
+      saveFromPlan(onSaveComplete);
+
+      await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+      alertSpy.mockRestore();
+      expect(mutateAddItem).not.toHaveBeenCalled();
+      expect(mockToastError).not.toHaveBeenCalled();
       expect(onSaveComplete).not.toHaveBeenCalled();
     });
   });

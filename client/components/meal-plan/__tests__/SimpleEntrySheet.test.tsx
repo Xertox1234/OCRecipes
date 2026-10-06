@@ -76,6 +76,8 @@ vi.mock("@/components/UpgradeModal", () => ({
     visible ? "UPGRADE_MODAL_SHOWN" : null,
 }));
 
+const ADD_ERROR = "Couldn't add it to your plan. Please try again.";
+
 describe("SimpleEntrySheet", () => {
   const defaultProps = {
     mealType: "lunch" as const,
@@ -237,7 +239,14 @@ describe("SimpleEntrySheet", () => {
     expect(mockNotification).not.toHaveBeenCalled();
   });
 
-  it("a failed add gives no success toast", async () => {
+  function submitDish(name: string) {
+    fireEvent.change(screen.getByLabelText("Dish name"), {
+      target: { value: name },
+    });
+    fireEvent.click(screen.getByText("Add"));
+  }
+
+  it("a failed add says it couldn't add to the plan, with no success toast", async () => {
     mockParseFoodText.mockResolvedValue({
       items: [{ name: "soup", quantity: 1, calories: 100 }],
     });
@@ -245,19 +254,73 @@ describe("SimpleEntrySheet", () => {
     mockAddItem.mockRejectedValue(new Error("500"));
 
     renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText("Dish name"), {
-      target: { value: "soup" },
+    submitDish("soup");
+
+    await waitFor(() => {
+      expect(screen.getByText(ADD_ERROR)).toBeTruthy();
     });
+    expect(screen.queryByText(/Couldn't estimate nutrition/)).toBeNull();
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+    expect(defaultProps.onDismiss).not.toHaveBeenCalled();
+  });
+
+  // The recipe was already created, so a retry must reuse it, not parse and
+  // create a second copy.
+  it("retrying after a failed add reuses the created recipe", async () => {
+    mockParseFoodText.mockResolvedValue({
+      items: [{ name: "soup", quantity: 1, calories: 100 }],
+    });
+    mockCreateRecipe.mockResolvedValue({ id: 42 });
+    mockAddItem
+      .mockRejectedValueOnce(new Error("500"))
+      .mockResolvedValueOnce({ id: 1 });
+
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+    submitDish("soup");
+    await waitFor(() => {
+      expect(screen.getByText(ADD_ERROR)).toBeTruthy();
+    });
+
     fireEvent.click(screen.getByText("Add"));
 
     await waitFor(() => {
-      expect(mockAddItem).toHaveBeenCalled();
+      expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
     });
+    expect(mockParseFoodText).toHaveBeenCalledOnce();
+    expect(mockCreateRecipe).toHaveBeenCalledOnce();
+    expect(mockAddItem).toHaveBeenCalledTimes(2);
+    expect(mockAddItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recipeId: 42 }),
+    );
+    expect(mockToastSuccess).toHaveBeenCalledOnce();
+  });
+
+  it("a changed dish name after a failed add creates a fresh recipe", async () => {
+    mockParseFoodText.mockResolvedValue({
+      items: [{ name: "soup", quantity: 1, calories: 100 }],
+    });
+    mockCreateRecipe
+      .mockResolvedValueOnce({ id: 42 })
+      .mockResolvedValueOnce({ id: 43 });
+    mockAddItem
+      .mockRejectedValueOnce(new Error("500"))
+      .mockResolvedValueOnce({ id: 1 });
+
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+    submitDish("soup");
     await waitFor(() => {
-      expect(screen.getByText(/Couldn't estimate nutrition/)).toBeTruthy();
+      expect(screen.getByText(ADD_ERROR)).toBeTruthy();
     });
-    expect(mockToastSuccess).not.toHaveBeenCalled();
-    expect(defaultProps.onDismiss).not.toHaveBeenCalled();
+
+    submitDish("tomato soup");
+
+    await waitFor(() => {
+      expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
+    });
+    expect(mockCreateRecipe).toHaveBeenCalledTimes(2);
+    expect(mockAddItem).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recipeId: 43 }),
+    );
   });
 
   it("shows error when parse returns empty items", async () => {
