@@ -5,6 +5,7 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AiFeature } from "./ai-models";
+import type { AiFailureKind } from "./ai-failure";
 
 export interface AiModelOverride {
   model: string;
@@ -17,6 +18,8 @@ export interface AiCallRecord {
   answeredModel: string | null;
   answeredProvider: string | null;
   fellBack: boolean;
+  /** Set when the call failed and (fallback off) the error was re-thrown. */
+  error?: { kind: AiFailureKind; moderated: boolean; message: string };
 }
 
 export interface AiCallContext {

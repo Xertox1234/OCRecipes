@@ -20,6 +20,7 @@ import {
   classifyAiFailure,
   countsTowardBreaker,
   InStreamError,
+  isModerationBlock,
 } from "./ai-failure";
 import type { AiFailureKind } from "./ai-failure";
 import { openai } from "./openai";
@@ -273,7 +274,22 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           "ai-client",
         );
       }
-      if (!fallbackAllowed) throw err;
+      if (!fallbackAllowed) {
+        // Eval context: say WHY the call failed before the caller's catch eats it.
+        ctx?.calls.push({
+          feature,
+          requestedModel,
+          answeredModel: null,
+          answeredProvider: null,
+          fellBack: false,
+          error: {
+            kind,
+            moderated: isModerationBlock(err),
+            message: message.slice(0, 300),
+          },
+        });
+        throw err;
+      }
       return callFallback(kind);
     }
   }

@@ -37,6 +37,8 @@ export interface RunLike {
     rubricScores: { dimension: string; score: number }[];
     assertions: { passed: boolean };
   }[];
+  /** Samples blocked by provider moderation (excluded from `cases`) */
+  moderationBlocked?: { testCaseId: string }[];
 }
 
 export interface EvalBaseline {
@@ -50,6 +52,8 @@ export interface EvalBaseline {
   weightedOverall: number;
   overall: Interval;
   dimensions: Record<string, Interval>;
+  /** Case ids that were moderation-blocked (unscored) in the source run */
+  moderationBlocked?: string[];
 }
 
 export function perCaseMeans(run: RunLike): number[] {
@@ -95,6 +99,9 @@ export function toBaseline(
     weightedOverall: run.weightedOverall,
     overall: bootstrapMeanCI(perCaseMeans(run)),
     dimensions,
+    ...(run.moderationBlocked && {
+      moderationBlocked: run.moderationBlocked.map((b) => b.testCaseId),
+    }),
   };
 }
 
@@ -148,6 +155,17 @@ export function compareSuite(current: RunLike, baseline: EvalBaseline) {
   if (current.assertionPassRate + EPS < baseline.assertionPassRate) {
     failures.push(
       `assertions: pass rate ${current.assertionPassRate.toFixed(3)} dropped below the baseline ${baseline.assertionPassRate.toFixed(3)}`,
+    );
+  }
+
+  // A case dropping out of scoring must not pass silently.
+  const wasBlocked = new Set(baseline.moderationBlocked ?? []);
+  const newlyBlocked = (current.moderationBlocked ?? [])
+    .map((b) => b.testCaseId)
+    .filter((id) => !wasBlocked.has(id));
+  if (newlyBlocked.length > 0) {
+    failures.push(
+      `newly moderation-blocked: ${newlyBlocked.join(", ")} — these cases dropped out of scoring`,
     );
   }
 

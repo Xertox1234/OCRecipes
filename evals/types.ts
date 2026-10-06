@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CoachContext } from "../server/services/nutrition-coach";
+import type { AiCallRecord } from "../server/lib/ai-call-context";
 
 // Widened to string for generic runner; per-service aliases below for type docs.
 export type RubricDimension = string;
@@ -209,6 +210,8 @@ export interface EvalCaseResult {
   assertions: AssertionResult;
   /** Violations found by checking the sample's recorded AI calls (wrong model, fallback, none recorded) */
   aiCallViolations?: string[];
+  /** The AI calls this sample made (incl. failed ones), so the run step can classify it */
+  aiCalls?: AiCallRecord[];
   rubricScores: RubricScore[];
   /**
    * Model identifier used by the LLM judge for this case. Persisted per-case
@@ -243,6 +246,8 @@ export interface EvalRunResult {
   judgeModel: string;
   /** Raw --candidate spec when the run used per-feature model overrides */
   candidate?: string;
+  /** Samples OpenRouter's moderation blocked — excluded from scoring, listed here */
+  moderationBlocked?: { testCaseId: string; features: string[] }[];
   totalCases: number;
   /** Number of samples per test case (>1 enables sample-averaging) */
   samplesPerCase: number;

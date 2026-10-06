@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   checkCallRecords,
+  isModerationOnlySample,
   modelMatches,
   parseCandidate,
   unusedOverrides,
 } from "../lib/candidate";
+import { AI_FEATURES } from "../../server/lib/ai-models";
 import type { AiCallRecord } from "../../server/lib/ai-call-context";
 
 describe("parseCandidate", () => {
@@ -149,5 +151,66 @@ describe("unusedOverrides", () => {
 
   it("returns [] when there are no overrides", () => {
     expect(unusedOverrides({}, [[rec("coach-chat")]])).toEqual([]);
+  });
+});
+
+describe("failed-call records", () => {
+  const model = AI_FEATURES["coach-chat"].model;
+  const failed = (error: NonNullable<AiCallRecord["error"]>): AiCallRecord => ({
+    feature: "coach-chat",
+    requestedModel: model,
+    answeredModel: null,
+    answeredProvider: null,
+    fellBack: false,
+    error,
+  });
+  const moderated = failed({
+    kind: "request",
+    moderated: true,
+    message: "requires moderation",
+  });
+  const transport = failed({
+    kind: "transport",
+    moderated: false,
+    message: "503 upstream",
+  });
+  const clean: AiCallRecord = {
+    feature: "coach-chat",
+    requestedModel: model,
+    answeredModel: model,
+    answeredProvider: "Azure",
+    fellBack: false,
+  };
+
+  it("checkCallRecords says why a call failed, not 'no AI calls'", () => {
+    expect(checkCallRecords([moderated], {})).toEqual([
+      "coach-chat: call failed (request, moderated): requires moderation",
+    ]);
+    expect(checkCallRecords([transport], {})).toEqual([
+      "coach-chat: call failed (transport): 503 upstream",
+    ]);
+    expect(checkCallRecords([], {})[0]).toMatch(/no AI calls recorded/);
+  });
+
+  it("isModerationOnlySample: only moderated failures (plus clean calls)", () => {
+    expect(isModerationOnlySample([moderated])).toBe(true);
+    expect(isModerationOnlySample([moderated, clean])).toBe(true);
+    expect(isModerationOnlySample([moderated, moderated])).toBe(true);
+  });
+
+  it("isModerationOnlySample is strict", () => {
+    expect(isModerationOnlySample([])).toBe(false);
+    expect(isModerationOnlySample([clean])).toBe(false);
+    expect(isModerationOnlySample([moderated, transport])).toBe(false);
+    // another violation in the same sample: a fallback on a clean record
+    expect(
+      isModerationOnlySample([moderated, { ...clean, fellBack: true }]),
+    ).toBe(false);
+    // wrong model on a clean record, judged against the run's overrides
+    expect(
+      isModerationOnlySample([moderated, clean], {
+        "coach-chat": { model: "openai/gpt-4o-mini" },
+      }),
+    ).toBe(false);
   });
 });
