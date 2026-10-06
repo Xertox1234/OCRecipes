@@ -29,8 +29,9 @@ import {
   MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
 import {
-  toastSpringConfig,
+  bannerEntrySpring,
   toastExitTimingConfig,
+  toastSpringConfig,
 } from "@/constants/animations";
 import { getToastColors, getToastAccessibilityRole } from "./toast-utils";
 import type { ToastVariant, ToastAction } from "./toast-utils";
@@ -122,7 +123,9 @@ export function Toast({
 
   const entering = reducedMotion
     ? undefined
-    : SlideInUp.springify().damping(20).stiffness(200);
+    : SlideInUp.springify()
+        .damping(bannerEntrySpring.damping)
+        .stiffness(bannerEntrySpring.stiffness);
 
   return (
     <GestureDetector gesture={swipeGesture}>

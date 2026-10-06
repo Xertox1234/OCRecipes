@@ -71,6 +71,38 @@ export const speedDialStaggerDelay = 50;
 /** Pixels threshold to trigger date strip week change */
 export const dateStripSwipeThreshold = 50;
 
+/** Spring configuration for the date strip settling back after a swipe */
+export const dateStripSnapBackSpringConfig: WithSpringConfig = {
+  damping: 20,
+  stiffness: 200,
+};
+
+/** Spring parameters for banner entrances (toast, offline banner), applied
+ *  through a layout-animation builder's `.damping()` / `.stiffness()`. */
+export const bannerEntrySpring = {
+  damping: 20,
+  stiffness: 200,
+} as const;
+
+/** Spring parameters for the speed-dial mini-FAB entrances (builder API). */
+export const speedDialEntrySpring = {
+  damping: 16,
+  stiffness: 180,
+} as const;
+
+/** Spring for the step pill's check overshooting and settling back */
+export const stepCheckSpringConfig: WithSpringConfig = { damping: 10 };
+
+/** Spring for the scan reticle corners settling after the lock snap */
+export const reticleSettleSpringConfig: WithSpringConfig = { damping: 12 };
+
+/** Spring parameters for chat bubble entrances. Layout-animation builders
+ *  take these through `.damping()` / `.stiffness()`, not a config object. */
+export const chatBubbleEntrySpring = {
+  damping: 18,
+  stiffness: 150,
+} as const;
+
 /** Spring configuration for success pop animations (favourite, confirm) —
  *  allows overshoot for a snappy bounce feel */
 export const successPopConfig: WithSpringConfig = {

@@ -22,7 +22,10 @@ import {
   TAB_BAR_HEIGHT,
   withOpacity,
 } from "@/constants/theme";
-import { speedDialStaggerDelay } from "@/constants/animations";
+import {
+  speedDialEntrySpring,
+  speedDialStaggerDelay,
+} from "@/constants/animations";
 
 interface SpeedDialAction {
   icon: string;
@@ -121,8 +124,8 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
           const entering = reducedMotion
             ? undefined
             : FadeInUp.springify()
-                .damping(16)
-                .stiffness(180)
+                .damping(speedDialEntrySpring.damping)
+                .stiffness(speedDialEntrySpring.stiffness)
                 .delay(reverseIndex * speedDialStaggerDelay);
 
           return (

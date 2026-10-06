@@ -14,6 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 import type { ScanPhase } from "../types/scan-phase";
+import { reticleSettleSpringConfig } from "@/constants/animations";
 import { getReticleTarget, getConfidenceFromPhase } from "./ScanReticle-utils";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -160,7 +161,7 @@ export function ScanReticle({ phase, reducedMotion }: Props) {
 
     if (phase.type === "BARCODE_LOCKED") {
       cornerScale.value = withSpring(1.1, SPRING_SNAP, () => {
-        cornerScale.value = withSpring(1, { damping: 12 });
+        cornerScale.value = withSpring(1, reticleSettleSpringConfig);
       });
     }
   }, [phase, cx, cy, rw, rh, confidence, cornerScale, sw, sh]);

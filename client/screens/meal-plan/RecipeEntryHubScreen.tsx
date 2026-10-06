@@ -1,10 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, View, ScrollView, Pressable, Text } from "react-native";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -20,6 +16,7 @@ import {
   IMPORT_RECIPE_SNAP_POINTS,
 } from "@/components/meal-plan/ImportRecipeSheet";
 import { useHaptics } from "@/hooks/useHaptics";
+import { usePressScale } from "@/hooks/usePressScale";
 import { useTheme } from "@/hooks/useTheme";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
@@ -94,19 +91,11 @@ const CARDS: CardDef[] = [
 function ActionCard({ card, onPress }: { card: CardDef; onPress: () => void }) {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.97, { damping: 15, stiffness: 300 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
-  };
+  const {
+    animatedStyle,
+    onPressIn: handlePressIn,
+    onPressOut: handlePressOut,
+  } = usePressScale(0.97);
 
   const handlePress = () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);

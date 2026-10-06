@@ -14,6 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { stepCheckSpringConfig } from "@/constants/animations";
 import type { ScanPhase } from "../types/scan-phase";
 import {
   getStepDotState,
@@ -40,8 +41,8 @@ function StepSegment({ label, state }: SegmentProps) {
   useEffect(() => {
     if (prevState.current !== "done" && state === "done") {
       if (!reducedMotion) {
-        checkScale.value = withSpring(1.25, { damping: 10 }, () => {
-          checkScale.value = withSpring(1, { damping: 10 });
+        checkScale.value = withSpring(1.25, stepCheckSpringConfig, () => {
+          checkScale.value = withSpring(1, stepCheckSpringConfig);
         });
       }
       if (Platform.OS === "ios") {
