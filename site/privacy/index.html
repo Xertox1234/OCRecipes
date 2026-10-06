@@ -11,7 +11,7 @@
 <main>
 <p class="crumb"><a href="/">OCRecipes</a></p>
 <h1>Privacy Policy</h1>
-<p class="meta">Effective October 4, 2026</p>
+<p class="meta">Effective October 6, 2026</p>
 
 <p>This policy explains what information the OCRecipes app collects, why, who it goes to, how long we keep it, and the choices you have. OCRecipes is operated by Family Meal Planning Services (“we”, “us”), based in Alberta, Canada. Questions or requests: <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>.</p>
 
@@ -19,7 +19,7 @@
 <ul>
   <li>We collect what the app needs to track your nutrition, analyze food, and coach you.</li>
   <li>We never sell your information and never share it with advertisers. The app has no ads and no tracking.</li>
-  <li>Some features send your information to service providers, such as OpenAI for food photo analysis and the AI coach. They are listed below with what each receives.</li>
+  <li>Some features send your information to service providers, such as OpenRouter and the AI companies it connects us to (OpenAI, Google) for food photo analysis and the AI coach. They are listed below with what each receives.</li>
   <li>You can export your data and delete your account from the app at any time.</li>
 </ul>
 
@@ -66,7 +66,9 @@
 <table>
   <thead><tr><th scope="col">Provider</th><th scope="col">What it does</th><th scope="col">What it receives</th></tr></thead>
   <tbody>
-    <tr><td>OpenAI</td><td>Photo analysis, voice transcription, food text logging, AI coach, recipe chat and generation, meal plans</td><td>Your photos and voice recordings when you use those features, your messages, and the profile details a feature needs (for example goals, allergies, diet type, weight, activity level, today’s intake)</td></tr>
+    <tr><td>OpenRouter</td><td>Routes our AI requests to the companies that run the AI models, without keeping a copy (zero data retention)</td><td>Your photos when you use those features, your messages, and the profile details a feature needs (for example goals, allergies, diet type, weight, activity level, today’s intake)</td></tr>
+    <tr><td>OpenAI</td><td>Photo analysis, food text logging, AI coach, recipe chat and generation, meal plans (these models run on Microsoft Azure, reached through OpenRouter); also used directly as a backup, and for voice transcription and pictures</td><td>Your photos and voice recordings when you use those features, your messages, and the profile details a feature needs (for example goals, allergies, diet type, weight, activity level, today’s intake)</td></tr>
+    <tr><td>Google (Vertex AI)</td><td>Photo scanning (identifying foods, labels and recipes in a photo)</td><td>The photo and the scan instructions only — not your profile, goals or chats</td></tr>
     <tr><td>Runware (OpenAI as backup)</td><td>Recipe pictures</td><td>Recipe titles, cuisines and ingredients</td></tr>
     <tr><td>Spoonacular</td><td>Recipe search</td><td>Search words, diet type, and intolerances based on your allergies</td></tr>
     <tr><td>USDA, Health Canada’s Canadian Nutrient File, API Ninjas, Open Food Facts</td><td>Nutrition facts</td><td>Food names or barcodes only</td></tr>
