@@ -58,6 +58,10 @@ vi.mock("../../lib/openai", () => ({
   },
 }));
 
+// cooking-session (loaded for real below) imports aiChat; stub it so the
+// partial lib/openai mock above is never asked for the `openai` client.
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
+
 // Mock only analyzeIngredientPhoto; let calculateSessionNutrition,
 // calculateSessionMacros, and IngredientAnalysisError pass through to real
 // implementations (nutrition functions use the mocked batchNutritionLookup

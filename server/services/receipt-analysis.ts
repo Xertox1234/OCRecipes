@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { openai, MODEL_HEAVY, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
+import { aiChat } from "../lib/ai-client";
+import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
@@ -109,9 +110,9 @@ export async function analyzeReceiptPhotos(
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "receipt-scan",
       {
-        model: MODEL_HEAVY,
         messages: [
           {
             role: "system",

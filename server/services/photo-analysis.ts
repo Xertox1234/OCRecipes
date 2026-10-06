@@ -11,13 +11,8 @@ import {
   type ContentType,
 } from "@shared/constants/classification";
 import { getCuisineForFood } from "./cultural-food-map";
-import {
-  openai,
-  MODEL_HEAVY,
-  MODEL_FAST,
-  OPENAI_TIMEOUT_HEAVY_MS,
-  OPENAI_TIMEOUT_FAST_MS,
-} from "../lib/openai";
+import { aiChat } from "../lib/ai-client";
+import { OPENAI_TIMEOUT_HEAVY_MS, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
@@ -334,9 +329,9 @@ export async function analyzeRecipePhoto(
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "photo-recipe",
       {
-        model: MODEL_HEAVY,
         max_completion_tokens: 2000,
         temperature: 0.2,
         messages: [
@@ -451,9 +446,9 @@ export async function structureRecipeFromText(
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "photo-recipe-text",
       {
-        model: MODEL_FAST,
         max_completion_tokens: 2000,
         temperature: 0.2,
         messages: [
@@ -503,9 +498,9 @@ export async function analyzeLabelPhoto(
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "photo-label",
       {
-        model: MODEL_HEAVY,
         max_completion_tokens: 800,
         temperature: 0.2,
         messages: [
@@ -597,9 +592,9 @@ export async function analyzePhoto(
 
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "photo-analyze",
       {
-        model: MODEL_HEAVY,
         max_completion_tokens: maxTokens,
         temperature: 0.3,
         messages: [
@@ -673,9 +668,9 @@ export async function refineAnalysis(
   const sanitizedAnswer = sanitizeUserInput(answer);
 
   try {
-    const response = await openai.chat.completions.create(
+    const response = await aiChat(
+      "photo-refine",
       {
-        model: MODEL_HEAVY,
         max_completion_tokens: LOG_MAX_TOKENS,
         temperature: 0.3,
         messages: [
@@ -821,9 +816,9 @@ export async function classifyAndAnalyze(
   // Step 1: Classify
   let response;
   try {
-    response = await openai.chat.completions.create(
+    response = await aiChat(
+      "photo-classify",
       {
-        model: MODEL_FAST,
         max_completion_tokens: 150,
         temperature: 0.1,
         messages: [
