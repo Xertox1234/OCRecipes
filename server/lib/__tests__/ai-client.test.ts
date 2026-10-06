@@ -391,6 +391,18 @@ describe("aiChat (streaming)", () => {
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
 
+  it("a role-only first chunk alone commits to OpenRouter (error after it is not a fallback)", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream([chunk(null), new Error("mid-stream")]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    const stream = await aiChat("coach-chat", sparams);
+    await expect(collect(stream)).rejects.toThrow("mid-stream");
+    expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+  });
+
   it("an HTTP error before any chunk falls back", async () => {
     const deps = makeDeps();
     vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
