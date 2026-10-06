@@ -9,6 +9,7 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
+import { bannerEntrySpring } from "@/constants/animations";
 import {
   Spacing,
   BorderRadius,
@@ -47,7 +48,9 @@ export function OfflineBanner() {
 
   const entering = reducedMotion
     ? undefined
-    : SlideInUp.springify().damping(20).stiffness(200);
+    : SlideInUp.springify()
+        .damping(bannerEntrySpring.damping)
+        .stiffness(bannerEntrySpring.stiffness);
   const exiting = reducedMotion ? undefined : SlideOutUp.duration(200);
 
   return (

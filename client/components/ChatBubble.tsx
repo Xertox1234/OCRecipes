@@ -9,6 +9,7 @@ import { spokenMarkdown } from "@/components/markdown-text-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, FontFamily, BorderRadius } from "@/constants/theme";
+import { chatBubbleEntrySpring } from "@/constants/animations";
 
 interface ChatBubbleProps {
   role: "user" | "assistant" | "system";
@@ -34,8 +35,14 @@ export function ChatBubble({
   const entering = reducedMotion
     ? undefined
     : isUser
-      ? SlideInRight.springify().damping(18).stiffness(150).duration(200)
-      : SlideInLeft.springify().damping(18).stiffness(150).delay(100);
+      ? SlideInRight.springify()
+          .damping(chatBubbleEntrySpring.damping)
+          .stiffness(chatBubbleEntrySpring.stiffness)
+          .duration(200)
+      : SlideInLeft.springify()
+          .damping(chatBubbleEntrySpring.damping)
+          .stiffness(chatBubbleEntrySpring.stiffness)
+          .delay(100);
 
   if (isUser) {
     return (

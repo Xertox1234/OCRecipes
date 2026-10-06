@@ -58,7 +58,10 @@ import {
   withOpacity,
   FAB_CLEARANCE,
 } from "@/constants/theme";
-import { dateStripSwipeThreshold } from "@/constants/animations";
+import {
+  dateStripSnapBackSpringConfig,
+  dateStripSwipeThreshold,
+} from "@/constants/animations";
 import {
   MEAL_LABELS,
   computeItemMacros,
@@ -1302,10 +1305,10 @@ export default function MealPlanHomeScreen() {
           } else if (e.translationX > dateStripSwipeThreshold) {
             scheduleOnRN(handlePrevWeek);
           }
-          dateStripTranslateX.value = withSpring(0, {
-            damping: 20,
-            stiffness: 200,
-          });
+          dateStripTranslateX.value = withSpring(
+            0,
+            dateStripSnapBackSpringConfig,
+          );
         }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dateStripTranslateX is a stable shared value ref
     [reducedMotion, handleNextWeek, handlePrevWeek],
