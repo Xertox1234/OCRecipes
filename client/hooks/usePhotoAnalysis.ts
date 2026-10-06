@@ -33,6 +33,30 @@ type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
   "PhotoAnalysis"
 >;
 
+/**
+ * User-safe copy for a failed analysis. Never err.message: uploadPhotoForAnalysis
+ * throws "Upload failed: <status>", "Invalid response from server", "Not
+ * authenticated" and native/network text. Branches on the codes
+ * /api/photos/analyze emits; the two session-limit codes are string literals
+ * from server/storage/sessions.ts, not ErrorCode members.
+ */
+function analysisErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case ErrorCode.LIMIT_REACHED:
+        return "You've reached today's scan limit. Try again tomorrow, or upgrade for unlimited scans.";
+      case ErrorCode.RATE_LIMITED:
+        return "Too many requests. Please wait a moment and try again.";
+      case ErrorCode.IMAGE_TOO_LARGE:
+        return "This photo is too large to analyze. Please try another.";
+      case "SESSION_LIMIT_REACHED":
+      case "USER_SESSION_LIMIT":
+        return "Too many scans in progress. Please wait a moment and try again.";
+    }
+  }
+  return "Couldn't analyze this photo. Please try again.";
+}
+
 export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
   const navigation = useNavigation<PhotoAnalysisScreenNavigationProp>();
   const haptics = useHaptics();
@@ -171,8 +195,7 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
         );
       } catch (err) {
         if (abortController.signal.aborted || isAbortError(err)) return;
-        const message = err instanceof Error ? err.message : "Analysis failed";
-        setError(message);
+        setError(analysisErrorMessage(err));
         haptics.notification(Haptics.NotificationFeedbackType.Error);
       } finally {
         if (abortControllerRef.current === abortController) {

@@ -268,3 +268,53 @@ describe("usePhotoAnalysis — logging the selected foods", () => {
     );
   });
 });
+
+describe("usePhotoAnalysis — analysis failure copy", () => {
+  async function failWith(err: unknown) {
+    mockUploadPhotoForAnalysis.mockRejectedValue(err);
+    const hook = renderUsePhotoAnalysis("file://meal.jpg");
+    await waitFor(() => expect(hook.result.current.error).not.toBeNull());
+    return hook.result.current.error;
+  }
+
+  it("never shows the thrown error's text", async () => {
+    const error = await failWith(
+      new ApiError("Upload failed: 500", "INTERNAL"),
+    );
+    expect(error).toBe("Couldn't analyze this photo. Please try again.");
+    expect(mockNotification).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+  });
+
+  it("treats non-API failures (network, auth, bad response) as generic", async () => {
+    expect(await failWith(new TypeError("Network request failed"))).toBe(
+      "Couldn't analyze this photo. Please try again.",
+    );
+  });
+
+  it.each([
+    [
+      ErrorCode.LIMIT_REACHED,
+      "You've reached today's scan limit. Try again tomorrow, or upgrade for unlimited scans.",
+    ],
+    [
+      ErrorCode.RATE_LIMITED,
+      "Too many requests. Please wait a moment and try again.",
+    ],
+    [
+      ErrorCode.IMAGE_TOO_LARGE,
+      "This photo is too large to analyze. Please try another.",
+    ],
+    [
+      "SESSION_LIMIT_REACHED",
+      "Too many scans in progress. Please wait a moment and try again.",
+    ],
+    [
+      "USER_SESSION_LIMIT",
+      "Too many scans in progress. Please wait a moment and try again.",
+    ],
+  ])("explains %s", async (code, copy) => {
+    expect(await failWith(new ApiError("Upload failed: 429", code))).toBe(copy);
+  });
+});
