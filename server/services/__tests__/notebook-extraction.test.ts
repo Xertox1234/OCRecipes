@@ -5,7 +5,7 @@ import {
   extractNotebookEntries,
   shouldUpdateStrategy,
 } from "../notebook-extraction";
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
 import { SYSTEM_PROMPT_BOUNDARY } from "../../lib/ai-safety";
 import { civilDateString } from "../../lib/civil-date";
 
@@ -26,12 +26,7 @@ function mockCompletion(content: string): ChatCompletion {
   };
 }
 
-vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: { completions: { create: vi.fn() } },
-  },
-  MODEL_FAST: "gpt-4o-mini",
-}));
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -43,7 +38,7 @@ vi.mock("../../lib/logger", () => ({
   logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-const mockCreate = vi.mocked(openai.chat.completions.create);
+const mockCreate = vi.mocked(aiChat);
 
 describe("Notebook Extraction", () => {
   beforeEach(() => {
@@ -108,7 +103,8 @@ describe("Notebook Extraction", () => {
       { now, tz },
     );
 
-    const request = mockCreate.mock.calls[0][0];
+    expect(mockCreate.mock.calls[0][0]).toBe("coach-notebook-extract");
+    const request = mockCreate.mock.calls[0][1];
     const systemPrompt = request.messages[0].content as string;
     expect(systemPrompt).toContain(
       `Current date for this user: ${civilDateString(now, tz)}`,
@@ -136,7 +132,7 @@ describe("Notebook Extraction", () => {
       { now, tz },
     );
 
-    const request = mockCreate.mock.calls[0][0];
+    const request = mockCreate.mock.calls[0][1];
     const systemPrompt = request.messages[0].content as string;
     expect(systemPrompt).toContain(
       `Current date for this user: ${civilDateString(now, tz)}`,
@@ -214,7 +210,7 @@ describe("Notebook Extraction", () => {
       { tz: "UTC" },
     );
 
-    const request = mockCreate.mock.calls[0][0];
+    const request = mockCreate.mock.calls[0][1];
     expect(request.messages[0].content).toContain(SYSTEM_PROMPT_BOUNDARY);
   });
 

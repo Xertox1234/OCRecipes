@@ -1,5 +1,5 @@
 // server/services/notebook-extraction.ts
-import { openai, MODEL_FAST } from "../lib/openai";
+import { aiChat } from "../lib/ai-client";
 import { civilDateString } from "../lib/civil-date";
 import {
   extractionResultSchema,
@@ -28,7 +28,7 @@ interface ConversationMessage {
 // This prompt does NOT participate in `getSystemPromptTemplateVersion` /
 // `hashCoachCacheKey` (nutrition-coach.ts / coach-pro-chat.ts) — those hash
 // only `buildSystemPrompt`'s output. `extractNotebookEntries` makes its own,
-// uncached `openai.chat.completions.create` call, so editing this prompt's
+// uncached `aiChat` call, so editing this prompt's
 // text has no cache-invalidation consequence.
 function buildExtractionPrompt(now: Date, tz: string): string {
   return `You are a coaching analyst. Given a conversation between a nutrition coach and a user, extract structured insights.
@@ -91,8 +91,7 @@ export async function extractNotebookEntries(
       : extractionPrompt +
         '\n- Do NOT include "coaching_strategy" entries this time.';
 
-    const response = await openai.chat.completions.create({
-      model: MODEL_FAST,
+    const response = await aiChat("coach-notebook-extract", {
       messages: [
         { role: "system", content: prompt },
         ...messages

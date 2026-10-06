@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { generateCoachProResponse } from "../nutrition-coach";
 import type { CoachContext } from "../nutrition-coach";
-import { openai } from "../../lib/openai";
+import { aiChat } from "../../lib/ai-client";
+
+vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 
 vi.mock("../../lib/openai", () => ({
-  openai: { chat: { completions: { create: vi.fn() } } },
   OPENAI_TIMEOUT_STREAM_MS: 30_000,
-  MODEL_FAST: "gpt-4o-mini",
 }));
 vi.mock("../coach-tools", () => ({
   getToolDefinitions: vi.fn().mockReturnValue([
@@ -87,7 +87,7 @@ function createMockStream(
 }
 
 async function toolNamesSent(): Promise<string[]> {
-  vi.mocked(openai.chat.completions.create).mockResolvedValue(
+  vi.mocked(aiChat).mockResolvedValue(
     createMockStream([{ content: "hi" }, { finish_reason: "stop" }]) as any,
   );
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -98,7 +98,8 @@ async function toolNamesSent(): Promise<string[]> {
   )) {
     // drain
   }
-  const body = vi.mocked(openai.chat.completions.create).mock.calls[0][0] as {
+  expect(vi.mocked(aiChat).mock.calls[0][0]).toBe("coach-pro-chat");
+  const body = vi.mocked(aiChat).mock.calls[0][1] as {
     tools: { function: { name: string } }[];
   };
   return body.tools.map((t) => t.function.name);
