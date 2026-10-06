@@ -1,0 +1,38 @@
+{
+  "suite": "recipe-generation",
+  "generatedAt": "2026-10-06T20:04:29.132Z",
+  "sourceRunId": "recipe-generation-2026-10-06T20-01-25",
+  "judgeModel": "anthropic/claude-sonnet-4.6",
+  "totalCases": 12,
+  "samplesPerCase": 1,
+  "assertionPassRate": 0.9166666666666666,
+  "weightedOverall": 8.400000000000002,
+  "overall": {
+    "mean": 8.208333333333334,
+    "lower": 7.875,
+    "upper": 8.5
+  },
+  "dimensions": {
+    "ingredient_coherence": {
+      "mean": 8.5,
+      "lower": 8.083333333333334,
+      "upper": 8.833333333333334
+    },
+    "instruction_clarity": {
+      "mean": 8.833333333333334,
+      "lower": 8.583333333333334,
+      "upper": 9
+    },
+    "dietary_compliance": {
+      "mean": 9.166666666666666,
+      "lower": 8.416666666666666,
+      "upper": 9.833333333333334
+    },
+    "creativity": {
+      "mean": 6.333333333333333,
+      "lower": 5.833333333333333,
+      "upper": 6.833333333333333
+    }
+  },
+  "moderationBlocked": []
+}

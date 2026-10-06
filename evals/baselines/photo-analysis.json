@@ -1,0 +1,33 @@
+{
+  "suite": "photo-analysis",
+  "generatedAt": "2026-10-06T20:04:29.725Z",
+  "sourceRunId": "photo-analysis-2026-10-06T20-03-25",
+  "judgeModel": "anthropic/claude-sonnet-4.6",
+  "totalCases": 12,
+  "samplesPerCase": 1,
+  "assertionPassRate": 1,
+  "weightedOverall": 6.683333333333333,
+  "overall": {
+    "mean": 6.569444444444444,
+    "lower": 5.388888888888888,
+    "upper": 7.708333333333335
+  },
+  "dimensions": {
+    "identification_accuracy": {
+      "mean": 6.75,
+      "lower": 5.416666666666667,
+      "upper": 8.083333333333334
+    },
+    "portion_plausibility": {
+      "mean": 6.9,
+      "lower": 6.1,
+      "upper": 7.6
+    },
+    "confidence_calibration": {
+      "mean": 6.333333333333333,
+      "lower": 4.916666666666667,
+      "upper": 7.75
+    }
+  },
+  "moderationBlocked": []
+}
