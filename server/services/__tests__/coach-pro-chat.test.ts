@@ -2268,6 +2268,34 @@ describe("handleCoachChat — recipe offer (Coach Pro, RECIPE_OFFER_ENABLED on)"
     });
   });
 
+  it("free Coach with both flags on: no Pro generator, and the free generator gets no offerRecipe", async () => {
+    vi.mocked(generateCoachResponse).mockReturnValue(
+      fakeStream(["free reply"]),
+    );
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      userRow("chili recipe please"),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "chili recipe please",
+          isCoachPro: false,
+          finder,
+          turnKey: TURN,
+        }),
+      ),
+    );
+    expect(generateCoachProResponse).not.toHaveBeenCalled();
+    expect(generateCoachResponse).toHaveBeenCalledTimes(1);
+    const args = vi.mocked(generateCoachResponse).mock.calls[0] as unknown[];
+    expect(
+      args.some(
+        (a) => typeof a === "object" && a !== null && "offerRecipe" in a,
+      ),
+    ).toBe(false);
+    expect(runCoachFinderTurn).not.toHaveBeenCalled();
+  });
+
   it("flag off: passes offerRecipe: false", async () => {
     vi.stubEnv("RECIPE_OFFER_ENABLED", "");
     vi.mocked(storage.getChatMessages).mockResolvedValue([userRow("hi")]);

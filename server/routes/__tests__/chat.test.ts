@@ -1677,6 +1677,112 @@ describe("Chat Routes", () => {
             expect(storage.deleteChatMessage).not.toHaveBeenCalled();
             expect(generateCoachProResponse).not.toHaveBeenCalled();
           });
+
+          it("offer → typed chat → prose reply: a tap on the OLD offer ends quietly", async () => {
+            vi.mocked(storage.getChatMessages).mockResolvedValue([
+              createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+              createMockChatMessage({
+                id: 2,
+                role: "assistant",
+                content: "Want a recipe?",
+                metadata: { blocks: [offerBlock] },
+              }),
+              createMockChatMessage({
+                id: 3,
+                role: "user",
+                content: "how much protein is in it?",
+              }),
+              createMockChatMessage({
+                id: 4,
+                role: "assistant",
+                content: "About 25g per bowl.",
+                metadata: null,
+              }),
+            ]);
+            const res = await send({
+              content: "Yes",
+              finderAction: { type: "offer_yes", flowId: OFFER_FLOW },
+            });
+            expect(res.status).toBe(200);
+            expect(res.text).toBe('data: {"done":true}\n\n');
+            expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+            expect(storage.createChatMessage).not.toHaveBeenCalled();
+            expect(generateCoachProResponse).not.toHaveBeenCalled();
+          });
+
+          it("after a repost_adjust, adjust_generate with the OLD card's flowId ends quietly and claims nothing", async () => {
+            const NEW_FLOW = "44444444-4444-4444-8444-444444444444";
+            vi.mocked(storage.getChatMessages).mockResolvedValue([
+              createMockChatMessage({
+                id: 2,
+                role: "assistant",
+                content: "card",
+                metadata: { blocks: [adjustBlock] },
+              }),
+              createMockChatMessage({ id: 3, role: "user", content: "chili" }),
+              createMockChatMessage({
+                id: 4,
+                role: "assistant",
+                content: "card again",
+                metadata: {
+                  blocks: [
+                    {
+                      ...adjustBlock,
+                      flow: { ...adjustBlock.flow, flowId: NEW_FLOW },
+                    },
+                  ],
+                },
+              }),
+            ]);
+            const res = await send({
+              content: "Generate",
+              finderAction: {
+                type: "adjust_generate",
+                flowId: OFFER_FLOW,
+                settings: { servings: 4, spice: "medium", time: "moderate" },
+              },
+            });
+            expect(res.status).toBe(200);
+            expect(res.text).toBe('data: {"done":true}\n\n');
+            expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+            expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+            expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+          });
+
+          it("a typed Coach message still goes through the limit check, with finder taps excluded", async () => {
+            vi.mocked(generateCoachProResponse).mockImplementation(
+              async function* () {
+                yield { type: "content" as const, content: "Sure." };
+              },
+            );
+            const res = await send({ content: "how am I doing today?" });
+            expect(res.status).toBe(200);
+            expect(
+              storage.createChatMessageWithLimitCheck,
+            ).toHaveBeenCalledWith(
+              1,
+              "1",
+              "how am I doing today?",
+              expect.any(Number),
+              "coach",
+              { excludeFinderTaps: true },
+            );
+            expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+          });
+
+          it("flag off: a typed Coach message keeps today's five-argument limit check", async () => {
+            vi.stubEnv("RECIPE_OFFER_ENABLED", "");
+            vi.mocked(generateCoachProResponse).mockImplementation(
+              async function* () {
+                yield { type: "content" as const, content: "Sure." };
+              },
+            );
+            await send({ content: "how am I doing today?" });
+            const calls = vi.mocked(storage.createChatMessageWithLimitCheck)
+              .mock.calls;
+            expect(calls).toHaveLength(1);
+            expect(calls[0]).toHaveLength(5);
+          });
         });
       });
 

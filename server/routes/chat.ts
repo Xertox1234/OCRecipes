@@ -468,13 +468,25 @@ export function register(app: Express): void {
               : features.coachPro
                 ? features.coachProDailyMessages
                 : features.dailyCoachMessages;
-          message = await storage.createChatMessageWithLimitCheck(
-            id,
-            req.userId,
-            sanitizedContent,
-            dailyLimit,
-            conversationType,
-          );
+          // Offer flag on: only typed Coach messages count toward the daily
+          // limit — finder tap rows (finderInput) are left out of the count.
+          message =
+            offerEnabled && !isRecipeChat && !isRemixChat
+              ? await storage.createChatMessageWithLimitCheck(
+                  id,
+                  req.userId,
+                  sanitizedContent,
+                  dailyLimit,
+                  conversationType,
+                  { excludeFinderTaps: true },
+                )
+              : await storage.createChatMessageWithLimitCheck(
+                  id,
+                  req.userId,
+                  sanitizedContent,
+                  dailyLimit,
+                  conversationType,
+                );
           if (!message) {
             return sendError(
               res,
