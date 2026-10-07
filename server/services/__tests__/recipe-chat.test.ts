@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildRecipeContext,
   checkRecipeAllergens,
@@ -549,7 +549,7 @@ describe("generateRecipeChatResponse — allergenDetail option", () => {
       typeof import("../../lib/dietary-context")
     >("../../lib/dietary-context");
     const { buildDietaryContext } = await import("../../lib/dietary-context");
-    vi.mocked(buildDietaryContext).mockImplementation(
+    vi.mocked(buildDietaryContext).mockImplementationOnce(
       actual.buildDietaryContext,
     );
     vi.mocked(aiChat).mockResolvedValueOnce(
@@ -573,6 +573,13 @@ describe("generateRecipeChatResponse — allergenDetail option", () => {
     return callArgs.messages[0].content as string;
   }
 
+  afterEach(async () => {
+    // Restore the file's top-level factory behaviour (mockReturnValue("")).
+    const { buildDietaryContext } = await import("../../lib/dietary-context");
+    vi.mocked(buildDietaryContext).mockReset();
+    vi.mocked(buildDietaryContext).mockReturnValue("");
+  });
+
   it("default (no option) keeps the basic allergen text", async () => {
     const prompt = await systemPromptFor();
     expect(prompt).toContain("MUST AVOID these allergens");
@@ -583,5 +590,15 @@ describe("generateRecipeChatResponse — allergenDetail option", () => {
     const prompt = await systemPromptFor({ allergenDetail: "extended" });
     expect(prompt).toContain("CRITICAL ALLERGY RESTRICTIONS");
     expect(prompt).not.toContain("MUST AVOID these allergens");
+  });
+});
+
+describe("buildDietaryContext mock isolation (after allergenDetail swap)", () => {
+  it("is back to the file's mocked behaviour, not the real implementation", async () => {
+    const { buildDietaryContext } = await import("../../lib/dietary-context");
+    const out = buildDietaryContext({
+      allergies: [{ name: "peanuts", severity: "severe" }],
+    } as any);
+    expect(out).toBe("");
   });
 });
