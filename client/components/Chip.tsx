@@ -205,8 +205,19 @@ export function Chip({
     );
   }
 
+  // A selectable chip shown without `onPress` (e.g. an old, inert finder
+  // card) still tells a screen reader which option was picked. No toggle
+  // role: a role here would promise a gesture that does nothing.
+  const staticA11y = selectable
+    ? {
+        accessible: true,
+        accessibilityLabel: accessibilityLabel || label,
+        accessibilityState: { selected, disabled: true },
+      }
+    : {};
+
   return (
-    <Animated.View style={chipStyles}>
+    <Animated.View style={chipStyles} {...staticA11y}>
       <ThemedText maxScale={MAX_FONT_SCALE_CONSTRAINED} style={textStyles}>
         {label}
       </ThemedText>

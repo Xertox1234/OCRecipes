@@ -45,6 +45,7 @@ import {
   finderItemNavParams,
   lockedFinderButtons,
 } from "@/components/recipe-finder/recipe-finder-utils";
+import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
 import {
   isFinderBlockType,
@@ -832,6 +833,8 @@ export default function CoachChat({
   const handleFinderAction = useCallback(
     (action: FinderAction, label: string) => {
       if (isStreaming || !conversationId) return;
+      // Same tap feedback as RecipeChef's finder handler.
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setOptimisticMessage(label);
       setStreamBlocks([]);
       setStreamingError(null);
@@ -841,8 +844,12 @@ export default function CoachChat({
       startStream(conversationId, label, { finderAction: action });
       onMessageSent?.();
     },
-    [isStreaming, conversationId, ttsStop, startStream, onMessageSent],
+    [isStreaming, conversationId, haptics, ttsStop, startStream, onMessageSent],
   );
+
+  // The adjust card's choices by flowId, so a card row that remounts (the
+  // list virtualizes rows scrolled out of view) keeps what the user picked.
+  const [adjustChoices] = useState<AdjustChoicesStore>(() => new Map());
 
   const handleOpenFinderItem = useCallback(
     (item: FinderItem) => {
@@ -965,6 +972,7 @@ export default function CoachChat({
                   onLockedFinderButton={openUpgrade}
                   onOpenFinderItem={handleOpenFinderItem}
                   messageContent={msg.content}
+                  adjustChoices={adjustChoices}
                 />
               );
             })}
@@ -1031,6 +1039,7 @@ export default function CoachChat({
       handleFinderAction,
       openUpgrade,
       handleOpenFinderItem,
+      adjustChoices,
       generatedRecipes,
       savingRecipeMessageId,
       handleSaveGeneratedRecipe,

@@ -9,7 +9,16 @@ import RecipeChatScreen from "@/screens/RecipeChatScreen";
 import { finderActionSchema } from "@shared/schemas/recipe-finder";
 
 const { chat } = vi.hoisted(() => ({
-  chat: { messages: [] as unknown[], sendMessage: vi.fn() },
+  chat: {
+    messages: [] as unknown[],
+    sendMessage: vi.fn(),
+    /** The finished reply's live copy, before the saved row lands. */
+    pending: null as unknown,
+  },
+}));
+
+vi.mock("@/hooks/usePendingAssistantBridge", () => ({
+  usePendingAssistantBridge: () => chat.pending,
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -95,6 +104,42 @@ const adjustMessage = message(
 beforeEach(() => {
   chat.sendMessage.mockReset();
   chat.messages = [];
+  chat.pending = null;
+});
+
+describe("RecipeChef — the adjust card survives the pending → saved swap", () => {
+  it("keeps the choices made on the pending card and Generate sends them", () => {
+    // The card first renders live in the pending bubble (key "pending-assistant").
+    chat.pending = {
+      content: "",
+      recipe: null,
+      finder: (adjustMessage.metadata as { finder: unknown }).finder,
+    };
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Hot" }));
+    expect(screen.getByTestId("adjust-servings").textContent).toBe("10");
+
+    // The refetch lands: the saved row (key = its id) replaces the pending one.
+    chat.pending = null;
+    chat.messages = [adjustMessage];
+    rerender(<RecipeChatScreen />);
+    expect(screen.getAllByTestId("adjust-servings")).toHaveLength(1);
+    expect(screen.getByTestId("adjust-servings").textContent).toBe("10");
+    expect(
+      screen.getByRole("radio", { name: "Hot" }).getAttribute("aria-selected"),
+    ).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    const [, , , opts] = chat.sendMessage.mock.calls[0];
+    expect(opts.finderAction).toEqual({
+      type: "adjust_generate",
+      flowId: FLOW,
+      settings: { servings: 10, spice: "hot", time: "moderate" },
+    });
+    expect(finderActionSchema.safeParse(opts.finderAction).success).toBe(true);
+  });
 });
 
 describe("RecipeChef — offer + adjust", () => {

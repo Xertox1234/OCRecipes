@@ -4,6 +4,7 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
+import * as Haptics from "expo-haptics";
 import CoachChat from "@/components/coach/CoachChat";
 import { finderActionSchema } from "@shared/schemas/recipe-finder";
 
@@ -198,5 +199,17 @@ describe("Coach — offer + adjust", () => {
     ];
     renderCoach();
     expect(screen.getByText("Here is something new.")).toBeDefined();
+  });
+});
+
+describe("Coach — finder tap haptic", () => {
+  it("a finder tap buzzes once, like RecipeChef's", () => {
+    chat.messages = [offerMessage];
+    renderCoach();
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(Haptics.impactAsync).toHaveBeenCalledWith(
+      Haptics.ImpactFeedbackStyle.Light,
+    );
   });
 });

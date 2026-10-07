@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
+import { act, screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import * as Haptics from "expo-haptics";
 import { RecipeAdjust } from "../RecipeAdjust";
@@ -172,5 +172,151 @@ describe("RecipeAdjust — actions", () => {
     fireEvent.click(generate);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
+/** React keeps every prop on the host node's fiber — including ones the
+ *  DOM mock declines to wire (see LogActionBar.test.tsx for the precedent). */
+function reactProp(node: Element, name: string): (event: unknown) => void {
+  const key = Object.keys(node).find((k) => k.startsWith("__reactProps$"));
+  if (!key) throw new Error("React props key not found on node");
+  const handler = (node as unknown as Record<string, Record<string, unknown>>)[
+    key
+  ][name];
+  if (typeof handler !== "function") throw new Error(`${name} not a function`);
+  return handler as (event: unknown) => void;
+}
+
+describe("RecipeAdjust — fix round 1", () => {
+  it("More servings disables at 20", () => {
+    setup({
+      block: { ...block, prefill: { ...block.prefill, servings: 19 } },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    expect(screen.getByTestId("adjust-servings").textContent).toBe("20");
+    expect(
+      screen
+        .getByRole("button", { name: "More servings" })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
+  });
+
+  it("screen-reader increment/decrement step the stepper", () => {
+    setup();
+    const stepper = screen.getByRole("adjustable", { name: "Servings" });
+    act(() =>
+      reactProp(
+        stepper,
+        "onAccessibilityAction",
+      )({
+        nativeEvent: { actionName: "increment" },
+      }),
+    );
+    expect(screen.getByTestId("adjust-servings").textContent).toBe("9");
+    act(() =>
+      reactProp(
+        stepper,
+        "onAccessibilityAction",
+      )({
+        nativeEvent: { actionName: "decrement" },
+      }),
+    );
+    act(() =>
+      reactProp(
+        stepper,
+        "onAccessibilityAction",
+      )({
+        nativeEvent: { actionName: "decrement" },
+      }),
+    );
+    expect(screen.getByTestId("adjust-servings").textContent).toBe("7");
+  });
+
+  it("the stepper's value reads as servings, and its visible label is not read again", () => {
+    setup();
+    const stepper = screen.getByRole("adjustable", { name: "Servings" });
+    const props = Object.keys(stepper).find((k) =>
+      k.startsWith("__reactProps$"),
+    ) as string;
+    const value = (
+      stepper as unknown as Record<string, Record<string, unknown>>
+    )[props].accessibilityValue as { text: string };
+    expect(value.text).toBe("8 servings");
+    expect(
+      screen.getByText("Servings").closest("[aria-hidden='true']"),
+    ).not.toBeNull();
+  });
+
+  it("an old card still tells a screen reader which options were picked", () => {
+    setup({ isActive: false });
+    expect(screen.getByLabelText("Mild").getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByLabelText("Hot").getAttribute("aria-selected")).toBe(
+      "false",
+    );
+  });
+
+  it("keeps the choices across a remount of the same flow", () => {
+    const store = new Map();
+    const onAction = vi.fn();
+    const first = renderComponent(
+      <RecipeAdjust
+        block={block}
+        isActive
+        onAction={onAction}
+        choicesStore={store}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Hot" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Pork" }));
+    first.unmount();
+
+    renderComponent(
+      <RecipeAdjust
+        block={block}
+        isActive
+        onAction={onAction}
+        choicesStore={store}
+      />,
+    );
+    expect(screen.getByTestId("adjust-servings").textContent).toBe("9");
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(onAction.mock.calls[0][0]).toEqual({
+      type: "adjust_generate",
+      flowId: FLOW,
+      settings: { servings: 9, spice: "hot", time: "moderate" },
+      answers: [{ question: "Beef, pork, or a mix?", answer: "Pork" }],
+    });
+  });
+
+  it("a different flow starts from its own prefill", () => {
+    const store = new Map();
+    const first = renderComponent(
+      <RecipeAdjust
+        block={block}
+        isActive
+        onAction={vi.fn()}
+        choicesStore={store}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    first.unmount();
+    renderComponent(
+      <RecipeAdjust
+        block={{
+          ...block,
+          flow: {
+            ...block.flow,
+            flowId: "11111111-1111-4111-8111-111111111111",
+          },
+        }}
+        isActive
+        onAction={vi.fn()}
+        choicesStore={store}
+      />,
+    );
+    expect(screen.getByTestId("adjust-servings").textContent).toBe("8");
   });
 });

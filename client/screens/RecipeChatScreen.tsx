@@ -66,6 +66,7 @@ import {
   finderItemNavParams,
   lockedFinderButtons,
 } from "@/components/recipe-finder/recipe-finder-utils";
+import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import type {
   FinderAction,
@@ -480,6 +481,10 @@ export default function RecipeChatScreen() {
   );
   const [showUpgrade, setShowUpgrade] = useState(false);
 
+  // The adjust card's choices by flowId: the card first renders in the
+  // pending bubble, then remounts as the saved row — same flow, same choices.
+  const [adjustChoices] = useState<AdjustChoicesStore>(() => new Map());
+
   // A finder tap sends its visible label as the message, with the action.
   const handleFinderAction = useCallback(
     (action: FinderAction, label: string) => {
@@ -733,6 +738,7 @@ export default function RecipeChatScreen() {
               onAction={handleFinderAction}
               onLockedButton={openUpgrade}
               onOpenItem={handleOpenFinderItem}
+              adjustChoices={adjustChoices}
             />
           ) : null}
         </View>
@@ -750,6 +756,7 @@ export default function RecipeChatScreen() {
       handleFinderAction,
       openUpgrade,
       handleOpenFinderItem,
+      adjustChoices,
     ],
   );
 

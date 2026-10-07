@@ -27,6 +27,9 @@ export interface AdjustState {
   answers: Record<string, string>;
 }
 
+/** A chat screen's adjust-card choices, keyed by the card's flowId. */
+export type AdjustChoicesStore = Map<string, AdjustState>;
+
 export function clampServings(n: number): number {
   if (!Number.isFinite(n)) return MIN_SERVINGS;
   return Math.min(MAX_SERVINGS, Math.max(MIN_SERVINGS, Math.round(n)));

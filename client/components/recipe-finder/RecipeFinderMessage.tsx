@@ -13,6 +13,7 @@ import { RecipeQuestions } from "./RecipeQuestions";
 import { RecipeOffer } from "./RecipeOffer";
 import { RecipeAdjust } from "./RecipeAdjust";
 import { FINDER_BUTTON_LABELS, answersLabel } from "./recipe-finder-utils";
+import type { AdjustChoicesStore } from "./recipe-offer-utils";
 
 export interface RecipeFinderMessageProps {
   block: FinderBlock;
@@ -27,6 +28,8 @@ export interface RecipeFinderMessageProps {
   onAction: (action: FinderAction, label: string) => void;
   onLockedButton: (button: FinderButton) => void;
   onOpenItem: (item: FinderItem) => void;
+  /** The screen's adjust-card choices by flowId; survives a card remount. */
+  adjustChoices?: AdjustChoicesStore;
 }
 
 const NO_LOCKS: FinderButton[] = [];
@@ -40,6 +43,7 @@ export function RecipeFinderMessage({
   onAction,
   onLockedButton,
   onOpenItem,
+  adjustChoices,
 }: RecipeFinderMessageProps) {
   // The server mints flowIds; the client only echoes the block's own back.
   const flowId = block.flow.flowId;
@@ -90,6 +94,7 @@ export function RecipeFinderMessage({
         block={block}
         isActive={isActive}
         onAction={handleCardAction}
+        choicesStore={adjustChoices}
       />
     );
   }

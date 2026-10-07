@@ -21,6 +21,8 @@ import {
   MAX_SERVINGS,
   MIN_SERVINGS,
   SPICE_LABELS,
+  type AdjustChoicesStore,
+  type AdjustState,
   avoidingAccessibilityLabel,
   buildAdjustAction,
   clampServings,
@@ -37,21 +39,49 @@ export interface RecipeAdjustProps {
   isActive: boolean;
   /** `label` is the visible user bubble and the request `content`. */
   onAction: (action: FinderAction, label: string) => void;
+  /**
+   * The chat screen's working choices, by flowId. The card can remount with
+   * the same flow (RecipeChef's pending bubble → saved row, or a list row
+   * scrolled out and back), and must not reset to the prefill when it does.
+   */
+  choicesStore?: AdjustChoicesStore;
 }
 
 export const RecipeAdjust = React.memo(function RecipeAdjust({
   block,
   isActive,
   onAction,
+  choicesStore,
 }: RecipeAdjustProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const [servings, setServings] = useState(() =>
-    clampServings(block.prefill.servings),
+  const flowId = block.flow.flowId;
+  const [choices, setChoices] = useState<AdjustState>(
+    () =>
+      choicesStore?.get(flowId) ?? {
+        servings: clampServings(block.prefill.servings),
+        spice: block.prefill.spice,
+        time: block.prefill.time,
+        answers: {},
+      },
   );
-  const [spice, setSpice] = useState<SpiceLevel>(block.prefill.spice);
-  const [time, setTime] = useState<CookingTimeId>(block.prefill.time);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const { servings, spice, time, answers } = choices;
+
+  const updateChoices = (patch: Partial<AdjustState>) => {
+    const next = { ...choices, ...patch };
+    choicesStore?.set(flowId, next);
+    setChoices(next);
+  };
+  const setServings = (n: number) => updateChoices({ servings: n });
+  const setSpice = (s: SpiceLevel) => updateChoices({ spice: s });
+  const setTime = (t: CookingTimeId) => updateChoices({ time: t });
+  // Tapping the picked option again clears the answer.
+  const toggleAnswer = (question: string, option: string) => {
+    const next = { ...answers };
+    if (answers[question] === option) delete next[question];
+    else next[question] = option;
+    updateChoices({ answers: next });
+  };
 
   const title = block.flow.dish ?? block.flow.query.q;
   const noted = notedText(block.noted);
@@ -93,7 +123,15 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
       </ThemedText>
 
       <View style={styles.row}>
-        <ThemedText style={labelStyle}>Servings</ThemedText>
+        {/* The stepper below carries "Servings" — don't read it twice. */}
+        <ThemedText
+          style={labelStyle}
+          accessible={false}
+          importantForAccessibility="no"
+          accessibilityElementsHidden
+        >
+          Servings
+        </ThemedText>
         <View
           accessible
           accessibilityRole="adjustable"
@@ -102,7 +140,7 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
             min: MIN_SERVINGS,
             max: MAX_SERVINGS,
             now: servings,
-            text: `${servings}`,
+            text: `${servings} servings`,
           }}
           accessibilityState={{ disabled: !isActive }}
           accessibilityActions={[
@@ -229,19 +267,7 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
                 accessibilityRole="radio"
                 style={styles.chip}
                 onPress={
-                  isActive
-                    ? () =>
-                        // Tapping the picked option again clears the answer.
-                        setAnswers((prev) => {
-                          const next = { ...prev };
-                          if (prev[q.question] === option) {
-                            delete next[q.question];
-                          } else {
-                            next[q.question] = option;
-                          }
-                          return next;
-                        })
-                    : undefined
+                  isActive ? () => toggleAnswer(q.question, option) : undefined
                 }
               />
             ))}
