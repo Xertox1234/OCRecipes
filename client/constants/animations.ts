@@ -103,6 +103,13 @@ export const chatBubbleEntrySpring = {
   stiffness: 150,
 } as const;
 
+/** Spring parameters for the chat send button popping in as typing starts
+ *  (builder API). */
+export const sendButtonEntrySpring = {
+  damping: 14,
+  stiffness: 260,
+} as const;
+
 /** Timing for one half of a typing-dot pulse (fade up, or fade back down) */
 export const typingDotPulseTimingConfig: WithTimingConfig = {
   duration: 400,

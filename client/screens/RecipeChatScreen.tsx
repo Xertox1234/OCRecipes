@@ -15,7 +15,6 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
-  ActivityIndicator,
   AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -43,6 +42,7 @@ import {
 } from "@/constants/theme";
 import { ThemedText } from "@/components/ThemedText";
 import { TypingDots } from "@/components/TypingDots";
+import { SendButton } from "@/components/SendButton";
 import { MarkdownText } from "@/components/MarkdownText";
 import { spokenMarkdown } from "@/components/markdown-text-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -970,32 +970,11 @@ export default function RecipeChatScreen() {
           accessibilityLabel="Recipe request"
           accessibilityHint="Describe what you want to cook"
         />
-        <Pressable
+        <SendButton
           onPress={() => handleSend()}
-          disabled={!inputText.trim() || isStreaming}
-          style={[
-            styles.sendButton,
-            {
-              backgroundColor:
-                inputText.trim() && !isStreaming
-                  ? theme.accentSolid
-                  : withOpacity(theme.text, 0.12),
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Send message"
-          accessibilityState={{ disabled: !inputText.trim() || isStreaming }}
-        >
-          {isStreaming ? (
-            <ActivityIndicator size="small" color={theme.textSecondary} />
-          ) : (
-            <Feather
-              name="send"
-              size={18}
-              color={inputText.trim() ? theme.buttonText : theme.textSecondary}
-            />
-          )}
-        </Pressable>
+          canSend={inputText.trim().length > 0}
+          busy={isStreaming}
+        />
       </View>
       <UpgradeModal
         visible={showUpgrade}
@@ -1105,12 +1084,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     fontSize: 16,
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

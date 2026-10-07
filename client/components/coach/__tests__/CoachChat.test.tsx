@@ -20,10 +20,11 @@ import CoachChat from "../CoachChat";
 // Mutable container for the onError callback CoachChat passes to useCoachStream,
 // so the test can trigger a 429 limit error after render. vi.hoisted is required
 // because vi.mock factories are hoisted above imports.
-const { coachStreamRef } = vi.hoisted(() => ({
+const { coachStreamRef, mockImpact } = vi.hoisted(() => ({
   coachStreamRef: {
     onError: null as ((message: string, code?: string) => void) | null,
   },
+  mockImpact: vi.fn(),
 }));
 
 vi.mock("@/hooks/useCoachStream", () => ({
@@ -113,7 +114,7 @@ vi.mock("@/context/ToastContext", () => ({
 
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
-    impact: vi.fn(),
+    impact: mockImpact,
     notification: vi.fn(),
     selection: vi.fn(),
   }),
@@ -126,7 +127,9 @@ const warmUpHook = {
   reset: vi.fn(),
 };
 
-function renderCoachChat(overrides: { onMessageSent?: () => void } = {}) {
+function renderCoachChat(
+  overrides: { onMessageSent?: () => void; initialMessage?: string } = {},
+) {
   return renderComponent(
     <CoachChat
       conversationId={1}
@@ -289,6 +292,34 @@ describe("CoachChat — onMessageSent", () => {
     fireEvent.click(screen.getByLabelText("Send message"));
 
     expect(onMessageSent).toHaveBeenCalledOnce();
+  });
+});
+
+describe("CoachChat — send haptic", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Positive control for the zero below: a tap on send buzzes once.
+  it("buzzes once when the user taps send", () => {
+    renderCoachChat();
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Hello coach" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+
+    expect(mockImpact).toHaveBeenCalledOnce();
+  });
+
+  // Programmatic sends (suggestion hand-off, voice, quick replies, retry)
+  // pass a string; their own trigger owns any haptic.
+  it("does not buzz for a programmatic send", () => {
+    const onMessageSent = vi.fn();
+    renderCoachChat({ onMessageSent, initialMessage: "Plan my dinner" });
+
+    expect(onMessageSent).toHaveBeenCalledOnce();
+    expect(mockImpact).not.toHaveBeenCalled();
   });
 });
 

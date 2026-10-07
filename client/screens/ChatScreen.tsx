@@ -13,7 +13,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   AccessibilityInfo,
 } from "react-native";
 import {
@@ -24,16 +23,12 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import Animated, {
-  FadeInUp,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from "react-native-reanimated";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ChatBubble } from "@/components/ChatBubble";
 import { ThemedText } from "@/components/ThemedText";
 import { TypingDots } from "@/components/TypingDots";
+import { SendButton } from "@/components/SendButton";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -55,7 +50,6 @@ import {
   withOpacity,
   TAB_BAR_HEIGHT,
 } from "@/constants/theme";
-import { pressSpringConfig } from "@/constants/animations";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
@@ -188,8 +182,6 @@ const SuggestedPrompts = React.memo(function SuggestedPrompts({
   );
 });
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 function ChatSkeleton() {
   React.useEffect(() => {
     AccessibilityInfo.announceForAccessibility("Loading");
@@ -262,15 +254,9 @@ export default function ChatScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute<ChatScreenRouteProp>();
   const headerInset = useHeaderContentInset(Spacing.md);
-
-  const sendButtonScale = useSharedValue(1);
-  const sendButtonStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: sendButtonScale.value }],
-  }));
 
   const conversationId =
     route.params && "conversationId" in route.params
@@ -465,11 +451,11 @@ export default function ChatScreen() {
   );
 
   const handlePromptSelect = useCallback(
+    // handleSend buzzes; a second impact here would double it.
     (prompt: string) => {
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       void handleSend(prompt);
     },
-    [haptics, handleSend],
+    [handleSend],
   );
 
   const renderItem = useCallback(({ item }: { item: DisplayMessage }) => {
@@ -596,45 +582,12 @@ export default function ChatScreen() {
             accessibilityLabel="Message input"
             accessibilityHint="Type your question for NutriCoach"
           />
-          <AnimatedPressable
+          <SendButton
             onPress={() => handleSend()}
-            onPressIn={() => {
-              if (!reducedMotion) {
-                sendButtonScale.value = withSpring(0.85, pressSpringConfig);
-              }
-            }}
-            onPressOut={() => {
-              if (!reducedMotion) {
-                sendButtonScale.value = withSpring(1, pressSpringConfig);
-              }
-            }}
-            disabled={!inputText.trim() || isStreaming}
-            style={[
-              styles.sendButton,
-              sendButtonStyle,
-              {
-                backgroundColor:
-                  inputText.trim() && !isStreaming
-                    ? theme.accentSolid
-                    : withOpacity(theme.text, 0.12),
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Send message"
-            accessibilityState={{ disabled: !inputText.trim() || isStreaming }}
-          >
-            {isStreaming ? (
-              <ActivityIndicator color={theme.textSecondary} size="small" />
-            ) : (
-              <Feather
-                name="send"
-                size={18}
-                color={
-                  inputText.trim() ? theme.buttonText : theme.textSecondary
-                }
-              />
-            )}
-          </AnimatedPressable>
+            canSend={inputText.trim().length > 0}
+            busy={isStreaming}
+            style={styles.sendButton}
+          />
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -753,11 +706,6 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
     marginBottom: 2,
   },
 });
