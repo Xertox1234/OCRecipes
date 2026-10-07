@@ -1,10 +1,18 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { StyleSheet, Pressable, ViewStyle, StyleProp } from "react-native";
-import Animated from "react-native-reanimated";
+import Animated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { useHaptics } from "@/hooks/useHaptics";
 import { usePressScale } from "@/hooks/usePressScale";
 import { useTheme } from "@/hooks/useTheme";
+import { chipSelectTimingConfig } from "@/constants/animations";
 import {
   BorderRadius,
   Spacing,
@@ -20,7 +28,11 @@ interface ChipProps {
   label: string;
   /** Visual variant */
   variant?: ChipVariant;
-  /** Whether the chip is selected/active */
+  /**
+   * Whether the chip is selected/active. Passing it (even `false`) makes the
+   * chip selectable: a press ticks the `selection()` haptic before `onPress`,
+   * so callers must not buzz themselves. Omit it for action chips.
+   */
   selected?: boolean;
   /** Press handler */
   onPress?: () => void;
@@ -33,25 +45,30 @@ interface ChipProps {
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedThemedText = Animated.createAnimatedComponent(ThemedText);
 
 export function Chip({
   label,
   variant = "outline",
-  selected = false,
+  selected: selectedProp,
   onPress,
   style,
   accessibilityLabel,
   accessibilityRole,
 }: ChipProps) {
+  const selected = selectedProp ?? false;
+  const selectable = selectedProp !== undefined;
   const { theme } = useTheme();
+  const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
   const {
     animatedStyle,
     onPressIn: handlePressIn,
     onPressOut: handlePressOut,
   } = usePressScale(0.95, { enabled: !!onPress });
 
-  // Variant-specific styles
-  const getVariantStyles = () => {
+  // Variant-specific styles for either end of the selected fade
+  const getVariantStyles = (selected: boolean) => {
     if (variant === "tab") {
       return {
         backgroundColor: selected
@@ -87,14 +104,56 @@ export function Chip({
 
     // Outline variant
     return {
-      backgroundColor: selected ? withOpacity(theme.link, 0.06) : "transparent",
+      // Alpha-0 link rather than "transparent" so the fade keeps its hue.
+      backgroundColor: withOpacity(theme.link, selected ? 0.06 : 0),
       borderWidth: 1,
       borderColor: theme.link,
       textColor: selected ? theme.link : theme.text,
     };
   };
 
-  const variantStyles = getVariantStyles();
+  const variantStyles = getVariantStyles(selected);
+  const off = getVariantStyles(false);
+  const on = getVariantStyles(true);
+
+  // Starts at the current state so a chip never fades in on mount.
+  const selectProgress = useSharedValue(selected ? 1 : 0);
+  const prevSelectedRef = useRef(selected);
+  useEffect(() => {
+    if (prevSelectedRef.current === selected) return;
+    prevSelectedRef.current = selected;
+    selectProgress.value = withTiming(selected ? 1 : 0, {
+      ...chipSelectTimingConfig,
+      duration: reducedMotion ? 0 : chipSelectTimingConfig.duration,
+    });
+  }, [selected, reducedMotion, selectProgress]);
+
+  const animatedChipStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      selectProgress.value,
+      [0, 1],
+      [off.backgroundColor, on.backgroundColor],
+    ),
+    borderColor: interpolateColor(
+      selectProgress.value,
+      [0, 1],
+      [off.borderColor, on.borderColor],
+    ),
+  }));
+  // Text fades with the background — the tab variant swaps to white text on
+  // the accent fill, which would flash white-on-pale if it snapped.
+  const animatedTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      selectProgress.value,
+      [0, 1],
+      [off.textColor, on.textColor],
+    ),
+  }));
+
+  const handlePress = () => {
+    if (selectable) haptics.selection();
+    onPress?.();
+  };
 
   const getChipSizeStyle = () => {
     if (variant === "filled") return styles.chipFilled;
@@ -126,7 +185,7 @@ export function Chip({
   if (onPress) {
     return (
       <AnimatedPressable
-        onPress={onPress}
+        onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         accessibilityRole={
@@ -134,11 +193,14 @@ export function Chip({
         }
         accessibilityLabel={accessibilityLabel || label}
         accessibilityState={{ selected }}
-        style={[chipStyles, animatedStyle]}
+        style={[chipStyles, animatedChipStyle, animatedStyle]}
       >
-        <ThemedText maxScale={MAX_FONT_SCALE_CONSTRAINED} style={textStyles}>
+        <AnimatedThemedText
+          maxScale={MAX_FONT_SCALE_CONSTRAINED}
+          style={[textStyles, animatedTextStyle]}
+        >
           {label}
-        </ThemedText>
+        </AnimatedThemedText>
       </AnimatedPressable>
     );
   }

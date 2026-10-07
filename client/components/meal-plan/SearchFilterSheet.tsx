@@ -84,12 +84,12 @@ export function SearchFilterSheet({
     setLiveMinProtein(filters.minProtein ?? 0);
   }, [filters.minProtein]);
 
+  // Chips tick on their own; only the sliders buzz here, on release.
   const updateFilter = useCallback(
     <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => {
-      haptics.selection();
       onFiltersChange({ ...filters, [key]: value });
     },
-    [filters, onFiltersChange, haptics],
+    [filters, onFiltersChange],
   );
 
   return (
@@ -125,6 +125,7 @@ export function SearchFilterSheet({
         onValueChange={(val: number) => setLiveMaxPrepTime(val)}
         onSlidingComplete={(val: number) => {
           setLiveMaxPrepTime(val);
+          haptics.selection();
           updateFilter("maxPrepTime", val > 0 ? val : undefined);
         }}
         minimumTrackTintColor={theme.link}
@@ -158,6 +159,7 @@ export function SearchFilterSheet({
         onValueChange={(val: number) => setLiveMaxCalories(val)}
         onSlidingComplete={(val: number) => {
           setLiveMaxCalories(val);
+          haptics.selection();
           updateFilter("maxCalories", val > 0 ? val : undefined);
         }}
         minimumTrackTintColor={theme.link}
@@ -190,6 +192,7 @@ export function SearchFilterSheet({
         onValueChange={(val: number) => setLiveMinProtein(val)}
         onSlidingComplete={(val: number) => {
           setLiveMinProtein(val);
+          haptics.selection();
           updateFilter("minProtein", val > 0 ? val : undefined);
         }}
         minimumTrackTintColor={theme.link}

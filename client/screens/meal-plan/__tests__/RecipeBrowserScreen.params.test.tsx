@@ -40,6 +40,7 @@
 import React from "react";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
+import * as Haptics from "expo-haptics";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import RecipeBrowserScreen from "../RecipeBrowserScreen";
 
@@ -360,6 +361,27 @@ describe("RecipeBrowserScreen — filter sheet iOS a11y-leaf fix", () => {
     expect(
       screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
     ).toBe("false");
+  });
+});
+
+describe("RecipeBrowserScreen — filter chips tick once per tap", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRouteParams.value = {};
+  });
+
+  it.each([
+    "Curated",
+    "Safe for me",
+    "Italian",
+    "Vegan",
+    "Easy",
+    "From my pantry",
+    "Quick meals",
+  ])("%s gives one selection tick", (label) => {
+    renderComponent(<RecipeBrowserScreen />);
+    fireEvent.click(screen.getByText(label));
+    expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -130,7 +130,6 @@ export const ServingControls = React.memo(function ServingControls({
                   setShowCustomInput(false);
                   setServingSizeGrams(opt.grams);
                   recalculateNutrition(opt.grams, servingQuantity);
-                  haptics.selection();
                 }}
                 accessibilityLabel={`Set serving to ${opt.label}`}
                 accessibilityRole="radio"
@@ -145,7 +144,6 @@ export const ServingControls = React.memo(function ServingControls({
             style={styles.servingChip}
             onPress={() => {
               setShowCustomInput(true);
-              haptics.selection();
             }}
             accessibilityLabel="Enter custom serving size"
             accessibilityRole="radio"

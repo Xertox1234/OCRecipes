@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import * as Haptics from "expo-haptics";
 import { ServingControls } from "../ServingControls";
 
 const baseProps = {
@@ -91,4 +92,15 @@ describe("ServingControls — serving of unknown weight", () => {
     // while the stepper reads two.
     expect(recalculateNutrition).toHaveBeenCalledWith(null, 1.5);
   });
+});
+
+describe("ServingControls — serving chip haptics", () => {
+  it.each(["Set serving to 1 bowl", "Enter custom serving size"])(
+    "%s gives one selection tick",
+    (label) => {
+      renderComponent(<ServingControls {...baseProps} />);
+      fireEvent.click(screen.getByLabelText(label));
+      expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+    },
+  );
 });

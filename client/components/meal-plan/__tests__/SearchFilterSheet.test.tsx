@@ -30,8 +30,10 @@ vi.mock("@/hooks/useTheme", () => ({
   }),
 }));
 
+const { mockSelection } = vi.hoisted(() => ({ mockSelection: vi.fn() }));
+
 vi.mock("@/hooks/useHaptics", () => ({
-  useHaptics: () => ({ selection: vi.fn(), impact: vi.fn() }),
+  useHaptics: () => ({ selection: mockSelection, impact: vi.fn() }),
 }));
 
 describe("SearchFilterSheet", () => {
@@ -114,4 +116,32 @@ describe("SearchFilterSheet", () => {
     );
     expect(screen.queryByText("Reset filters")).toBeNull();
   });
+});
+
+describe("SearchFilterSheet — chip haptics", () => {
+  beforeEach(() => mockSelection.mockClear());
+
+  it.each(["Newest", "My Recipes"])(
+    "tapping %s gives one selection tick",
+    (label) => {
+      const onFiltersChange = vi.fn();
+      renderComponent(
+        <SearchFilterSheet
+          filters={{
+            sort: "relevance",
+            maxPrepTime: undefined,
+            maxCalories: undefined,
+            minProtein: undefined,
+            source: "all",
+          }}
+          onFiltersChange={onFiltersChange}
+          onReset={vi.fn()}
+          activeFilterCount={0}
+        />,
+      );
+      fireEvent.click(screen.getByText(label));
+      expect(onFiltersChange).toHaveBeenCalledOnce();
+      expect(mockSelection).toHaveBeenCalledTimes(1);
+    },
+  );
 });

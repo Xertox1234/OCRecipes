@@ -54,6 +54,12 @@ export const focusTimingConfig: WithTimingConfig = {
   easing: Easing.out(Easing.cubic),
 };
 
+/** Timing for a Chip's selected-state colour fade (background, border, text) */
+export const chipSelectTimingConfig: WithTimingConfig = {
+  duration: 180,
+  easing: Easing.out(Easing.cubic),
+};
+
 /** Spring configuration for tab icon focus pop — allows overshoot for playful bounce */
 export const tabIconPopConfig: WithSpringConfig = {
   damping: 12,
