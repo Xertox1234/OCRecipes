@@ -499,6 +499,13 @@ export function useSendMessage(
             }
             if (data.done) {
               receivedDone = true;
+              // End-of-stream flush: `done` can arrive before the 16 ms timer
+              // above fires (e.g. a {finder, content} offer event), and the
+              // stream state is cleared right after — publish the pending
+              // content now so the pending-bubble bridge can capture it.
+              if (isStreamingRef.current) {
+                setStreamingContent(streamingContentRef.current);
+              }
               void queryClient.invalidateQueries({
                 queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
               });

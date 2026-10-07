@@ -1,6 +1,6 @@
 ---
 title: "RecipeChef recipe offer streams its buttons without the question text"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-07
 updated: 2026-10-07
@@ -55,3 +55,7 @@ On the client, `useChat` (`client/hooks/useChat.ts` ~488-498) flushes `data.cont
 ### 2026-10-07
 
 - Initial creation, from the Task 14 review.
+
+### 2026-10-07 (done)
+
+- Server: the `recipe_offer` finder SSE event now carries `content` (other blocks unchanged). Client: `useChat` flushes pending content on `done`. Tests added in chat.test.ts, useChat.test.ts, RecipeChatScreen.test.tsx.

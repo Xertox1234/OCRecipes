@@ -985,6 +985,48 @@ describe("RecipeChatScreen — recipe finder", () => {
     }
   });
 
+  it("the pending bubble shows a streamed offer's question text without the reply hint", () => {
+    const userMessage: ChatMessage = {
+      id: 1,
+      conversationId: 11,
+      role: "user",
+      content: "spaghetti",
+      metadata: null,
+      createdAt: new Date().toISOString(),
+    };
+    mockChatMessagesData.value = [userMessage];
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+    const offerBlock = {
+      type: "recipe_offer",
+      flow: {
+        flowId: FLOW_NEW,
+        stage: "offer",
+        request: "spaghetti",
+        query: { q: "spaghetti" },
+        round: 0,
+        shownIds: [],
+        dish: "Spaghetti",
+        details: { ingredients: [], fromConversation: false },
+      },
+    };
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      streamingContent:
+        'Want me to make spaghetti?\n\nReply "yes", "search", or "no".',
+      streamingFinder: offerBlock,
+      isStreaming: true,
+    };
+    rerender(<RecipeChatScreen />);
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      streamingContent: "",
+      streamingFinder: null,
+      isStreaming: false,
+    };
+    rerender(<RecipeChatScreen />);
+    expect(screen.getByText("Want me to make spaghetti?")).toBeDefined();
+  });
+
   it("buttons are inactive while a reply is streaming", () => {
     mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
     mockSendMessageState.value = {

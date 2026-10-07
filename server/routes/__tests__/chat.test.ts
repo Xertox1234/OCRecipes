@@ -1495,6 +1495,39 @@ describe("Chat Routes", () => {
           expect(generateRecipeChatResponse).not.toHaveBeenCalled();
         });
 
+        it("the offer SSE event carries the persisted question text; other finder events do not", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(afterNo());
+          const offerRes = await send({ content: "actually, make it spicy" });
+          const offerEvent = offerRes.text
+            .split("\n")
+            .filter((l) => l.startsWith("data: "))
+            .map((l) => JSON.parse(l.slice(6)))
+            .find((d) => d.finder?.type === "recipe_offer");
+          expect(offerEvent).toBeDefined();
+          const persisted = vi
+            .mocked(storage.createChatMessage)
+            .mock.calls.find(
+              (c) =>
+                (c[4] as { finder?: { type: string } } | undefined)?.finder
+                  ?.type === "recipe_offer",
+            );
+          expect(persisted).toBeDefined();
+          expect(offerEvent.content).toBe(persisted![3]);
+          expect(offerEvent.content.length).toBeGreaterThan(0);
+
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(offerBlock),
+          );
+          const adjustRes = await send({ content: "yes please!" });
+          const adjustEvent = adjustRes.text
+            .split("\n")
+            .filter((l) => l.startsWith("data: "))
+            .map((l) => JSON.parse(l.slice(6)))
+            .find((d) => d.finder?.type === "recipe_adjust");
+          expect(adjustEvent).toBeDefined();
+          expect(adjustEvent).not.toHaveProperty("content");
+        });
+
         it("typed text after a close goes to the finder path, not the legacy quota path", async () => {
           vi.mocked(storage.getChatMessages).mockResolvedValue(afterNo());
           const res = await send({ content: "actually, make it spicy" });

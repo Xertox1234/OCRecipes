@@ -755,6 +755,68 @@ describe("useSendMessage", () => {
       expect(result.current.streamingStatus).toBeNull();
     });
 
+    it("a finder event's content shows when done arrives in the same chunk", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("t");
+      const { result } = renderHook(() => useSendMessage(42), { wrapper });
+      let p!: Promise<void>;
+      await act(async () => {
+        p = result.current.sendMessage("spaghetti");
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.responseText =
+          `data: ${JSON.stringify({ finder: block, content: "Want a recipe?" })}\n` +
+          'data: {"done":true}\n';
+        xhrInstance.onprogress?.(new ProgressEvent("progress"));
+      });
+      // Still streaming (onload not fired): the content must already be
+      // published, not left to the 16 ms timer that `done` would outrun.
+      expect(result.current.isStreaming).toBe(true);
+      expect(result.current.streamingContent).toBe("Want a recipe?");
+      expect(result.current.streamingFinder).toEqual(block);
+      await act(async () => {
+        xhrInstance.onload?.(new ProgressEvent("load"));
+        await p;
+      });
+    });
+
+    it("an ordinary streamed text reply still publishes on the timer and clears at the end", async () => {
+      vi.useFakeTimers();
+      try {
+        const { wrapper } = createQueryWrapper();
+        mockTokenStorage.get.mockResolvedValue("t");
+        const { result } = renderHook(() => useSendMessage(42), { wrapper });
+        let p!: Promise<void>;
+        await act(async () => {
+          p = result.current.sendMessage("hi");
+          await Promise.resolve();
+          await Promise.resolve();
+          xhrInstance.responseText = 'data: {"content":"Hel"}\n';
+          xhrInstance.onprogress?.(new ProgressEvent("progress"));
+        });
+        expect(result.current.streamingContent).toBe("");
+        await act(async () => {
+          vi.advanceTimersByTime(20);
+        });
+        expect(result.current.streamingContent).toBe("Hel");
+        await act(async () => {
+          xhrInstance.responseText += 'data: {"content":"lo"}\n';
+          xhrInstance.onprogress?.(new ProgressEvent("progress"));
+          vi.advanceTimersByTime(20);
+        });
+        expect(result.current.streamingContent).toBe("Hello");
+        await act(async () => {
+          xhrInstance.responseText += 'data: {"done":true}\n';
+          xhrInstance.onload?.(new ProgressEvent("load"));
+          await p;
+        });
+        expect(result.current.streamingContent).toBe("");
+        expect(result.current.isStreaming).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("ignores a malformed finder event", async () => {
       const { wrapper } = createQueryWrapper();
       mockTokenStorage.get.mockResolvedValue("t");

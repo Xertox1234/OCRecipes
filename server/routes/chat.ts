@@ -619,7 +619,14 @@ export function register(app: Express): void {
                 );
                 if (!res.writableEnded) {
                   res.write(
-                    `data: ${JSON.stringify({ finder: turn.block })}\n\n`,
+                    `data: ${JSON.stringify(
+                      // Only the offer carries its question text: the client
+                      // shows it in the pending bubble before the refetch.
+                      // Every other block's event stays {finder} alone.
+                      turn.block.type === "recipe_offer"
+                        ? { finder: turn.block, content: turn.content }
+                        : { finder: turn.block },
+                    )}\n\n`,
                   );
                 }
                 if (!finderHistory.some((m) => m.role === "user")) {
