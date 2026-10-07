@@ -849,6 +849,9 @@ export async function* handleCoachChat(
         if (isAborted()) break;
         continue;
       }
+      // terminal_tool is only emitted when the caller passes offerRecipe,
+      // which nothing does yet — the offer wiring lands in a later task.
+      if (chunk.type === "terminal_tool") continue;
       if (isAborted()) break;
       fullResponse += chunk.content;
       yield { type: "content", content: chunk.content };
