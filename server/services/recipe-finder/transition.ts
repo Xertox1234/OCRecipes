@@ -114,6 +114,14 @@ function noneOfThese(flow: FinderFlow): FinderStep {
     : { kind: "generate", request: flow.request, flow };
 }
 
+/** Offer context to copy forward; flag-off flows never carry it. */
+function offerContext(flow: FinderFlow) {
+  return {
+    ...(flow.dish !== undefined ? { dish: flow.dish } : {}),
+    ...(flow.details !== undefined ? { details: flow.details } : {}),
+  };
+}
+
 function answered(flow: FinderFlow, request: string): FinderStep {
   return {
     kind: "search_community",
@@ -121,6 +129,7 @@ function answered(flow: FinderFlow, request: string): FinderStep {
     round: 1,
     excludeIds: flow.shownIds,
     priorShownIds: flow.shownIds,
+    ...offerContext(flow),
   };
 }
 
@@ -310,7 +319,7 @@ export function planFinderStep(
     }
   }
 
-  // Flag off: the offer-flow typed commands have no meaning.
+  // Reached for typed yes/no/search on stages that don't handle them.
   if (
     input.command === "yes" ||
     input.command === "no" ||
@@ -332,6 +341,7 @@ export function planFinderStep(
     round: flow.round,
     excludeIds: [],
     priorShownIds: flow.shownIds,
+    ...offerContext(flow),
   };
 }
 

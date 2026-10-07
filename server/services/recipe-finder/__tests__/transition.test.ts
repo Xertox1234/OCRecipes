@@ -661,6 +661,142 @@ describe("offer/adjust actions", () => {
   });
 });
 
+describe("offer context survives every later hop (offer on)", () => {
+  it("offer_search → None of these → answers → round-1 zero results keeps dish + details", () => {
+    const searchStep = planFinderStep(
+      offerBlock() as FinderBlock,
+      actOn("offer_search"),
+      ON,
+    );
+    const o1 = finderOutcome(
+      searchStep,
+      { kind: "community", query: { q: "x" }, items: [item(3)] },
+      ctx,
+      ON,
+    );
+    if (o1.kind !== "message") throw new Error("expected message");
+    const noneStep = planFinderStep(
+      o1.block,
+      { kind: "action", action: { type: "none_of_these", flowId: NEXT } },
+      ON,
+    );
+    expect(noneStep.kind).toBe("ask_clarifying");
+    const o2 = finderOutcome(
+      noneStep,
+      {
+        kind: "questions",
+        questions: [{ question: "Time?", options: ["20 min", "1 hour"] }],
+      },
+      { ...ctx, nextFlowId: F_OTHER },
+      ON,
+    );
+    if (o2.kind !== "message") throw new Error("expected message");
+    const answersStep = planFinderStep(
+      o2.block,
+      {
+        kind: "action",
+        action: {
+          type: "answers",
+          flowId: F_OTHER,
+          answers: [{ question: "Time?", answer: "20 min" }],
+        },
+      },
+      ON,
+    );
+    expect(answersStep).toMatchObject({
+      kind: "search_community",
+      round: 1,
+      dish: "Spaghetti and meatballs",
+    });
+    const o3 = finderOutcome(
+      answersStep,
+      { kind: "community", query: { q: "x" }, items: [] },
+      ctx,
+      ON,
+    );
+    expect(o3.kind === "build_adjust" && o3.flow).toMatchObject({
+      dish: "Spaghetti and meatballs",
+      details: { servings: 8 },
+    });
+  });
+  it("typed refinement on a results block carries dish + details", () => {
+    const withCtx = results({
+      flow: flow({
+        dish: "Spaghetti and meatballs",
+        details: { servings: 8, ingredients: [], fromConversation: false },
+      }),
+    });
+    expect(
+      planFinderStep(
+        withCtx,
+        { kind: "typed", text: "spicier", command: null },
+        ON,
+      ),
+    ).toMatchObject({
+      kind: "search_community",
+      dish: "Spaghetti and meatballs",
+      details: { servings: 8 },
+    });
+  });
+});
+
+describe("remaining table cells (offer on)", () => {
+  const typed = (command: "yes" | "no" | "none_of_these") => ({
+    kind: "typed" as const,
+    text: command,
+    command,
+  });
+  it("adjust_generate without settings → invalid_for_stage", () => {
+    expect(
+      planFinderStep(
+        adjustBlock() as FinderBlock,
+        actOn("adjust_generate"),
+        ON,
+      ),
+    ).toEqual(INVALID);
+  });
+  it("typed yes on adjust → generate_with_settings with the prefill", () => {
+    expect(
+      planFinderStep(adjustBlock() as FinderBlock, typed("yes"), ON),
+    ).toMatchObject({
+      kind: "generate_with_settings",
+      settings: { servings: 8, spice: "mild", time: "moderate" },
+      answers: [],
+    });
+  });
+  it("typed no on adjust → close", () => {
+    expect(
+      planFinderStep(adjustBlock() as FinderBlock, typed("no"), ON),
+    ).toEqual({ kind: "close" });
+  });
+  it("none_of_these action on questions and on offer → invalid_for_stage", () => {
+    expect(planFinderStep(questions(), actOn("none_of_these"), ON)).toEqual(
+      INVALID,
+    );
+    expect(
+      planFinderStep(offerBlock() as FinderBlock, actOn("none_of_these"), ON),
+    ).toEqual(INVALID);
+  });
+  it("stale flowId on adjust → stale_flow", () => {
+    const stale = {
+      ...adjustBlock(),
+      flow: flow({ flowId: F_OTHER, stage: "adjust" }),
+    };
+    expect(
+      planFinderStep(stale as FinderBlock, actOn("adjust_cancel"), ON),
+    ).toEqual({ kind: "ignore", reason: "stale_flow" });
+  });
+  it("typed none_of_these on results at round 1 → build_adjust", () => {
+    expect(
+      planFinderStep(
+        results({ flow: flow({ round: 1 }) }),
+        typed("none_of_these"),
+        ON,
+      ).kind,
+    ).toBe("build_adjust");
+  });
+});
+
 describe("flag off is unchanged", () => {
   it("generate action still generates directly", () => {
     expect(planFinderStep(results(), actOn("generate")).kind).toBe("generate");
@@ -684,6 +820,15 @@ describe("flag off is unchanged", () => {
         }),
       ),
     ).toEqual(INVALID);
+  });
+  it("flag-off flows never gain dish/details", () => {
+    const step = planFinderStep(results(), {
+      kind: "typed",
+      text: "spicier",
+      command: null,
+    });
+    expect(step).not.toHaveProperty("dish");
+    expect(step).not.toHaveProperty("details");
   });
   it("new typed commands with the flag off → invalid_for_stage", () => {
     for (const command of ["yes", "no", "search"] as const) {
