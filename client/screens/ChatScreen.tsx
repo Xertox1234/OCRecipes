@@ -384,6 +384,11 @@ export default function ChatScreen() {
     content: string;
     savedUserCount: number;
     conversationId: number | null;
+    /** requestError already showing at send time. useSendMessage only
+     *  clears it once the request starts, and a first message awaits the
+     *  conversation create before that, so it must clear before an error
+     *  can count as this send's. */
+    staleError: string | null;
   } | null>(null);
   const showPendingUser =
     pendingUser !== null &&
@@ -405,7 +410,14 @@ export default function ChatScreen() {
   // refetch that would replace the local copy, so drop it here and give the
   // draft back for a resend.
   useEffect(() => {
-    if (requestError && pendingUser) {
+    if (!pendingUser) return;
+    if (pendingUser.staleError !== null) {
+      if (requestError === null) {
+        setPendingUser({ ...pendingUser, staleError: null });
+      }
+      return;
+    }
+    if (requestError) {
       setPendingUser(null);
       setInputText((current) => current || pendingUser.content);
     }
@@ -449,7 +461,12 @@ export default function ChatScreen() {
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setInputText("");
-      setPendingUser({ content, savedUserCount, conversationId });
+      setPendingUser({
+        content,
+        savedUserCount,
+        conversationId,
+        staleError: requestError,
+      });
 
       try {
         if (conversationId === null) {
@@ -501,6 +518,7 @@ export default function ChatScreen() {
       isMalformedId,
       haptics,
       savedUserCount,
+      requestError,
       conversationId,
       createConversation,
       navigation,

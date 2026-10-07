@@ -248,6 +248,56 @@ describe("ChatScreen — the message you just sent", () => {
     ).toBe("How much protein today?");
   });
 
+  // useSendMessage only clears requestError when the next request starts,
+  // and a first message awaits the conversation create before that. An
+  // error left over from an earlier chat must not drop the new message.
+  it("ignores an error left over from an earlier send", () => {
+    mockRouteParams.value = {};
+    mockCreateMutateAsync.mockReturnValue(new Promise(() => {}));
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Too many requests",
+    };
+    renderComponent(<ChatScreen />);
+
+    typeAndSend("How much protein today?");
+
+    expect(screen.getByText("How much protein today?")).toBeTruthy();
+    expect(
+      (screen.getByPlaceholderText("Ask NutriCoach...") as HTMLInputElement)
+        .value,
+    ).toBe("");
+  });
+
+  // ...but once the stale error clears, a fresh failure still counts.
+  it("still drops it for a fresh failure after a stale error clears", () => {
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Too many requests",
+    };
+    const { rerender } = renderComponent(<ChatScreen />);
+    typeAndSend("How much protein today?");
+
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: null,
+    };
+    rerender(<ChatScreen />);
+    expect(screen.getByText("How much protein today?")).toBeTruthy();
+
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Too many requests",
+    };
+    rerender(<ChatScreen />);
+
+    expect(screen.queryByText("How much protein today?")).toBeNull();
+    expect(
+      (screen.getByPlaceholderText("Ask NutriCoach...") as HTMLInputElement)
+        .value,
+    ).toBe("How much protein today?");
+  });
+
   it("drops it and gives the draft back when starting the chat fails", async () => {
     mockRouteParams.value = {};
     mockCreateMutateAsync.mockRejectedValue(new Error("network down"));
