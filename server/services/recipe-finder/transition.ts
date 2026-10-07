@@ -131,6 +131,9 @@ export function planFinderStep(
         return latest.type === "recipe_questions" && action.answers
           ? answered(flow, appendAnswers(flow.request, action.answers))
           : { kind: "ignore", reason: "invalid_for_stage" };
+      default:
+        // offer/adjust actions are handled in a later task
+        return { kind: "ignore", reason: "invalid_for_stage" };
     }
   }
 

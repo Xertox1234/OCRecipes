@@ -109,3 +109,72 @@ describe("registration", () => {
     expect(isFinderBlockType("recipe_card")).toBe(false);
   });
 });
+
+const OFFER_FID = "00000000-0000-4000-8000-000000000000";
+const offerFlow = {
+  flowId: OFFER_FID,
+  stage: "offer",
+  request: "Spaghetti and meatballs",
+  query: { q: "spaghetti and meatballs" },
+  round: 0,
+  shownIds: [],
+  dish: "Spaghetti and meatballs",
+  details: { servings: 8, ingredients: [], fromConversation: false },
+};
+
+describe("offer/adjust schema", () => {
+  it("parses an offer block", () => {
+    expect(
+      finderBlockSchema.safeParse({ type: "recipe_offer", flow: offerFlow })
+        .success,
+    ).toBe(true);
+    expect(isFinderBlockType("recipe_offer")).toBe(true);
+    expect(isFinderBlockType("recipe_adjust")).toBe(true);
+  });
+  it("adjust_generate requires settings", () => {
+    expect(
+      finderActionSchema.safeParse({
+        type: "adjust_generate",
+        flowId: OFFER_FID,
+      }).success,
+    ).toBe(false);
+    expect(
+      finderActionSchema.safeParse({
+        type: "adjust_generate",
+        flowId: OFFER_FID,
+        settings: { servings: 8, spice: "mild", time: "moderate" },
+      }).success,
+    ).toBe(true);
+  });
+  it.each([
+    [{ servings: 0, spice: "mild", time: "moderate" }],
+    [{ servings: 21, spice: "mild", time: "moderate" }],
+    [{ servings: 2, spice: "extreme", time: "moderate" }],
+    [{ servings: 2, spice: "mild", time: "under_20" }],
+  ])("rejects tampered settings %j", (settings) => {
+    expect(
+      finderActionSchema.safeParse({
+        type: "adjust_generate",
+        flowId: OFFER_FID,
+        settings,
+      }).success,
+    ).toBe(false);
+  });
+  it("old results blocks still parse (flow without dish/details)", () => {
+    expect(
+      finderBlockSchema.safeParse({
+        type: "recipe_results",
+        source: "community",
+        items: [],
+        actions: [],
+        notice: "no_matches",
+        flow: {
+          ...offerFlow,
+          stage: "results",
+          dish: undefined,
+          details: undefined,
+        },
+      }).success,
+    ).toBe(true);
+  });
+});

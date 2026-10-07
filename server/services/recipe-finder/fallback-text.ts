@@ -40,6 +40,10 @@ export function finderFallbackText(block: FinderBlock): string {
     );
     return `A few quick questions:\n${lines.join("\n")}\n\nReply with your answers, or "generate" to create a recipe now.`;
   }
+  if (block.type !== "recipe_results") {
+    // offer/adjust blocks get their fallback text in a later task
+    throw new Error("unhandled block");
+  }
   switch (block.notice) {
     case "generate_limit":
       return "You've reached today's limit for generated recipes. Community and Spoonacular searches still work.";
