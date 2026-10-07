@@ -84,11 +84,12 @@ const ARGS = '{"dish":"Chili","from_conversation":false}';
 async function run(
   options?: { offerRecipe?: boolean },
   intent?: Parameters<typeof generateCoachProResponse>[5],
+  context: CoachContext = CONTEXT,
 ) {
   const out: unknown[] = [];
   for await (const c of generateCoachProResponse(
     [{ role: "user", content: "chili recipe" }],
-    CONTEXT,
+    context,
     "u1",
     undefined,
     undefined,
@@ -261,5 +262,69 @@ describe("Coach Pro offer_recipe terminal tool", () => {
       "offer_recipe",
     );
     expect(sentBody().messages[0].content).toContain("DEFAULT_BLOCKS");
+  });
+
+  it("finder off + offerRecipe: no tool, default prompt", async () => {
+    vi.stubEnv("RECIPE_FINDER_ENABLED", "");
+    vi.mocked(aiChat).mockResolvedValue(
+      mockStream([
+        { content: "hi" },
+        { finish_reason: "stop" },
+      ]) as unknown as Awaited<ReturnType<typeof aiChat>>,
+    );
+    await run({ offerRecipe: true });
+    expect(sentBody().tools.map((t) => t.function.name)).not.toContain(
+      "offer_recipe",
+    );
+    expect(sentBody().messages[0].content).toContain("DEFAULT_BLOCKS");
+  });
+
+  it("no blocksPrompt + offerRecipe: no tool", async () => {
+    vi.mocked(aiChat).mockResolvedValue(
+      mockStream([
+        { content: "hi" },
+        { finish_reason: "stop" },
+      ]) as unknown as Awaited<ReturnType<typeof aiChat>>,
+    );
+    await run({ offerRecipe: true }, undefined, {
+      ...CONTEXT,
+      blocksPrompt: undefined,
+    });
+    expect(sentBody().tools.map((t) => t.function.name)).not.toContain(
+      "offer_recipe",
+    );
+  });
+
+  it("offerRecipe false + hallucinated offer_recipe call: executed like any unknown tool, no terminal_tool", async () => {
+    vi.mocked(executeToolCall).mockResolvedValue({
+      error: "unknown tool",
+    } as unknown as Awaited<ReturnType<typeof executeToolCall>>);
+    vi.mocked(aiChat)
+      .mockResolvedValueOnce(
+        mockStream([
+          {
+            tool_calls: [
+              {
+                index: 0,
+                id: "c1",
+                function: { name: "offer_recipe", arguments: ARGS },
+              },
+            ],
+          },
+          { finish_reason: "tool_calls" },
+        ]) as unknown as Awaited<ReturnType<typeof aiChat>>,
+      )
+      .mockResolvedValueOnce(
+        mockStream([
+          { content: "ok" },
+          { finish_reason: "stop" },
+        ]) as unknown as Awaited<ReturnType<typeof aiChat>>,
+      );
+    const out = await run({ offerRecipe: false });
+    expect(executeToolCall).toHaveBeenCalledTimes(1);
+    expect(out).not.toContainEqual(
+      expect.objectContaining({ type: "terminal_tool" }),
+    );
+    expect(out).toContainEqual({ type: "content", content: "ok" });
   });
 });

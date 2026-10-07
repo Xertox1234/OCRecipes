@@ -643,16 +643,18 @@ export async function* generateCoachProResponse(
   // One flag drives both the tool and the prompt rule so the model is never
   // told to call a tool it does not have (safety turns get neither).
   const offerTool =
-    !!options?.offerRecipe && resolvedIntent !== "safety_refusal";
-  const promptContext: CoachContext =
-    offerTool && context.blocksPrompt
-      ? {
-          ...context,
-          blocksPrompt: getBlocksSystemPrompt(isRecipeFinderEnabled(), {
-            offer: true,
-          }),
-        }
-      : context;
+    !!options?.offerRecipe &&
+    isRecipeFinderEnabled() &&
+    !!context.blocksPrompt &&
+    resolvedIntent !== "safety_refusal";
+  const promptContext: CoachContext = offerTool
+    ? {
+        ...context,
+        blocksPrompt: getBlocksSystemPrompt(isRecipeFinderEnabled(), {
+          offer: true,
+        }),
+      }
+    : context;
   const systemPrompt = buildSystemPrompt(promptContext, resolvedIntent, {
     tz,
     tier: "pro",
@@ -811,9 +813,13 @@ export async function* generateCoachProResponse(
 
     // offer_recipe is terminal: hand the first call's raw args to the caller
     // and stop. Other calls from this round are dropped, unexecuted.
-    const offerCall = Array.from(pendingToolCalls.values()).find(
-      (tc) => tc.name === "offer_recipe",
-    );
+    // Gated on offerTool: a model that hallucinates the call when it was not
+    // offered falls through to executeToolCall like any unknown tool.
+    const offerCall = offerTool
+      ? Array.from(pendingToolCalls.values()).find(
+          (tc) => tc.name === "offer_recipe",
+        )
+      : undefined;
     if (offerCall) {
       yield {
         type: "terminal_tool",
