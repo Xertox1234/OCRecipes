@@ -103,6 +103,15 @@ export const chatBubbleEntrySpring = {
   stiffness: 150,
 } as const;
 
+/** Timing for one half of a typing-dot pulse (fade up, or fade back down) */
+export const typingDotPulseTimingConfig: WithTimingConfig = {
+  duration: 400,
+  easing: Easing.inOut(Easing.ease),
+};
+
+/** Milliseconds between successive typing dots starting their pulse */
+export const typingDotStaggerDelay = 150;
+
 /** Spring configuration for success pop animations (favourite, confirm) —
  *  allows overshoot for a snappy bounce feel */
 export const successPopConfig: WithSpringConfig = {
