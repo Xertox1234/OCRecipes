@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import Animated from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
+import { PressableScale } from "@/components/PressableScale";
 import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { withOpacity } from "@/constants/theme";
 import type { CommitmentCard as CommitmentCardType } from "@shared/schemas/coach-blocks";
@@ -93,7 +94,7 @@ const CommitmentCard = React.memo(function CommitmentCard({
       </Text>
       {!accepted && (
         <View style={styles.actions}>
-          <Pressable
+          <PressableScale
             style={[
               styles.acceptBtn,
               { backgroundColor: withOpacity(theme.link, 0.2) },
@@ -119,9 +120,12 @@ const CommitmentCard = React.memo(function CommitmentCard({
             <Text style={[styles.acceptText, { color: theme.link }]}>
               Accept
             </Text>
-          </Pressable>
+          </PressableScale>
           <Pressable
-            style={styles.dismissBtn}
+            style={({ pressed }) => [
+              styles.dismissBtn,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={() => setDismissed(true)}
             hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
             accessibilityRole="button"

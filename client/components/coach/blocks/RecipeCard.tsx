@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
+import { PressableScale } from "@/components/PressableScale";
 import type { RecipeCard as RecipeCardType } from "@shared/schemas/coach-blocks";
 
 interface Props {
@@ -38,7 +39,7 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
         </Text>
       </View>
       <View style={styles.actions}>
-        <Pressable
+        <PressableScale
           style={[styles.primaryBtn, { backgroundColor: theme.accentSolid }]}
           onPress={() =>
             onAction?.({
@@ -59,14 +60,17 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
           hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
         >
           <Text style={styles.primaryBtnText}>View</Text>
-        </Pressable>
+        </PressableScale>
         {/* Only a `spoonacular` card carries a Spoonacular catalog id — the add
             flow goes through POST /api/meal-plan/catalog/:id/save, which
             requires that id. `community`/`generated` recipes have no catalog
             id to save, so they keep "View" alone. */}
         {recipe.source === "spoonacular" && (
           <Pressable
-            style={styles.secondaryBtn}
+            style={({ pressed }) => [
+              styles.secondaryBtn,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={() =>
               onAction?.({
                 type: "add_recipe_to_plan",

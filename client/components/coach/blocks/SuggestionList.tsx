@@ -20,12 +20,13 @@ const SuggestionList = React.memo(function SuggestionList({
       {block.items.map((item, i) => (
         <Pressable
           key={i}
-          style={[
+          style={({ pressed }) => [
             styles.item,
             i < block.items.length - 1 && {
               borderBottomWidth: 1,
               borderBottomColor: theme.border,
             },
+            pressed && { opacity: 0.7 },
           ]}
           onPress={() =>
             item.action && onAction?.(item.action as Record<string, unknown>)

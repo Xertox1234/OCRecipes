@@ -20,15 +20,16 @@ const onDismiss = vi.fn();
 // vi.hoisted so the same fn instance backs both the mock factory (which
 // vi.mock hoists above these imports) and the assertions below — mirrors
 // client/components/recipe-chat/__tests__/RecipeCard.test.tsx.
-const { mockImpact } = vi.hoisted(() => ({
+const { mockImpact, mockSelection } = vi.hoisted(() => ({
   mockImpact: vi.fn(),
+  mockSelection: vi.fn(),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
     impact: mockImpact,
     notification: vi.fn(),
-    selection: vi.fn(),
+    selection: mockSelection,
   }),
 }));
 
@@ -145,17 +146,21 @@ describe("PlanSlotPickerSheet", () => {
     expect(screen.queryByTestId(`plan-slot-dot-${days[0].iso}`)).not.toBeNull();
   });
 
-  it("fires haptic feedback via useHaptics on day-chip select, meal-chip select, and confirm", () => {
+  // Picking a day or meal is a selection (a tick); confirming is the action
+  // (an impact). One buzz per tap either way.
+  it("ticks on day-chip and meal-chip select, and gives confirm an impact", () => {
     renderComponent(<PlanSlotPickerSheet {...baseProps} />);
 
     fireEvent.click(screen.getAllByRole("button", { name: /day-slot/i })[2]);
-    expect(mockImpact).toHaveBeenCalledTimes(1);
+    expect(mockSelection).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByText("Dinner"));
-    expect(mockImpact).toHaveBeenCalledTimes(2);
+    expect(mockSelection).toHaveBeenCalledTimes(2);
+    expect(mockImpact).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-    expect(mockImpact).toHaveBeenCalledTimes(3);
+    expect(mockImpact).toHaveBeenCalledTimes(1);
+    expect(mockSelection).toHaveBeenCalledTimes(2);
   });
 
   it("does not fire confirm's haptic when the button is disabled (no meal chosen)", () => {

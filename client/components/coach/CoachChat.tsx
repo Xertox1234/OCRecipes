@@ -990,7 +990,10 @@ export default function CoachChat({
             {isRetryTarget && (
               <Pressable
                 onPress={handleRetry}
-                style={styles.retryButton}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  pressed && { opacity: 0.7 },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Regenerate response"
               >
@@ -1074,7 +1077,10 @@ export default function CoachChat({
           <InlineError message="Couldn’t load this conversation." />
           <Pressable
             onPress={() => void refetchMessages()}
-            style={styles.historyRetryButton}
+            style={({ pressed }) => [
+              styles.historyRetryButton,
+              pressed && { opacity: 0.7 },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Retry loading conversation"
             hitSlop={8}
@@ -1161,6 +1167,7 @@ export default function CoachChat({
             {"You’ve reached today’s coaching limit."}
           </Text>
           <Pressable
+            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             onPress={() => setShowUpgrade(true)}
             accessibilityRole="button"
             accessibilityLabel="Upgrade to Coach Pro"
