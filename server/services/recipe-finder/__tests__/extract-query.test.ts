@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ChatMessage } from "@shared/schema";
 import { extractQuery, rawQuery, extractOfferDetails } from "../extract-query";
+import {
+  sanitizeContextField,
+  sanitizeUserInput,
+} from "../../../lib/ai-safety";
 import { aiChat } from "../../../lib/ai-client";
 import { createMockChatCompletion } from "../../../__tests__/factories";
 
@@ -124,5 +129,50 @@ describe("extractOfferDetails", () => {
       dish: null,
       details: { ingredients: [], fromConversation: false },
     });
+  });
+
+  it("rejects an over-long dish (null, not truncated)", async () => {
+    aiReturns({ dish: "x".repeat(81), ingredients: [] });
+    const out = await extractOfferDetails("make it", []);
+    expect(out.dish).toBeNull();
+  });
+
+  it("cleans control/zero-width chars with the real sanitiser", async () => {
+    const actual = await vi.importActual<
+      typeof import("../../../lib/ai-safety")
+    >("../../../lib/ai-safety");
+    vi.mocked(sanitizeContextField).mockImplementation(
+      actual.sanitizeContextField,
+    );
+    const raw = "Chi\u200Bli\u0000 con carne";
+    const expected = actual.sanitizeContextField(raw, 81).trim();
+    aiReturns({ dish: raw, ingredients: [] });
+    const out = await extractOfferDetails("chili", []);
+    expect(out.dish).toBe(expected || null);
+    expect(out.dish ?? "").not.toMatch(/[\u200B\u0000]/);
+  });
+
+  it("sends only the last 6 history turns, sanitising history and text", async () => {
+    const history = Array.from({ length: 8 }, (_, i) => ({
+      id: i,
+      conversationId: 1,
+      role: i % 2 ? "assistant" : "user",
+      content: `turn-${i}`,
+      metadata: null,
+      turnKey: null,
+      createdAt: new Date(),
+    })) as ChatMessage[];
+    aiReturns({ dish: "Chili", ingredients: [] });
+    await extractOfferDetails("latest-text", history);
+    const call = mockCreate.mock.calls[0][1] as {
+      messages: { role: string; content: string }[];
+    };
+    const prompt = call.messages[1].content;
+    expect(prompt).not.toContain("turn-0");
+    expect(prompt).not.toContain("turn-1");
+    for (const i of [2, 3, 4, 5, 6, 7]) expect(prompt).toContain(`turn-${i}`);
+    expect(vi.mocked(sanitizeUserInput)).toHaveBeenCalledWith("latest-text");
+    expect(vi.mocked(sanitizeUserInput)).toHaveBeenCalledWith("turn-6");
+    expect(vi.mocked(sanitizeContextField)).toHaveBeenCalledWith("turn-7", 300);
   });
 });

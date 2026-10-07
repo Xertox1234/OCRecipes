@@ -8,6 +8,7 @@ import {
   validateAiResponse,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../../lib/ai-safety";
+import { parseDish } from "./offer";
 import { createServiceLogger, toError } from "../../lib/logger";
 import type { ChatMessage } from "@shared/schema";
 import {
@@ -114,7 +115,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
 }
 
 const aiOfferSchema = z.object({
-  dish: z.string().nullable().optional(),
+  dish: z.unknown().optional(),
   servings: z.unknown().optional(),
   spice: z.unknown().optional(),
   time: z.unknown().optional(),
@@ -171,7 +172,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
     const content = response.choices[0]?.message?.content;
     if (!content) return failed();
     const ai = validateAiResponse(JSON.parse(content), aiOfferSchema);
-    const dish = ai?.dish?.trim().slice(0, 80);
+    const dish = ai ? parseDish(ai.dish) : null;
     if (!ai || !dish) return failed();
 
     const details: RecipeDetails = { ingredients: [], fromConversation: false };

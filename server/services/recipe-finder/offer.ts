@@ -56,6 +56,23 @@ const DISH_MAX = 80;
 const INGREDIENT_MAX = 60;
 const INGREDIENTS_MAX = 15;
 
+/**
+ * Shared dish parse (offer tool + extractOfferDetails). Sanitises one char over
+ * the cap so an over-long dish fails max(80) rather than being silently
+ * truncated into a plausible-looking one. Null on any failure.
+ */
+export function parseDish(raw: unknown): string | null {
+  const parsed = z
+    .string()
+    .trim()
+    .min(1)
+    .max(DISH_MAX)
+    .safeParse(
+      typeof raw === "string" ? sanitizeContextField(raw, DISH_MAX + 1) : raw,
+    );
+  return parsed.success ? parsed.data : null;
+}
+
 export interface OfferRecipeArgs {
   dish: string;
   from_conversation: boolean;
@@ -80,24 +97,13 @@ export const offerRecipeArgsSchema: z.ZodType<
     return z.NEVER;
   }
   const r = raw as Record<string, unknown>;
-  // Sanitise one char over the cap so an over-long "dish" fails max(80)
-  // rather than being silently truncated into a plausible-looking one.
-  const dish = z
-    .string()
-    .trim()
-    .min(1)
-    .max(DISH_MAX)
-    .safeParse(
-      typeof r.dish === "string"
-        ? sanitizeContextField(r.dish, DISH_MAX + 1)
-        : r.dish,
-    );
-  if (!dish.success) {
+  const dish = parseDish(r.dish);
+  if (dish === null) {
     ctx.addIssue({ code: "custom", message: "invalid dish" });
     return z.NEVER;
   }
   const out: OfferRecipeArgs = {
-    dish: dish.data,
+    dish,
     from_conversation: r.from_conversation === true,
   };
   const servings = recipeDetailsSchema.shape.servings.safeParse(r.servings);

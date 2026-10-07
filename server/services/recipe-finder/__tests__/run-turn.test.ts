@@ -363,6 +363,39 @@ describe("executeFinderStep: offer steps", () => {
     expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
   });
 
+  it("generate_with_settings with a mismatched flowId → ignored, no claim", async () => {
+    const out = await executeFinderStep(
+      {
+        kind: "generate_with_settings",
+        flow: { ...adjustBlock.flow, flowId: NEXT },
+        settings,
+        answers: [],
+      },
+      ctx({ offer: true, latest: adjustBlock }),
+    );
+    expect(out).toEqual({ kind: "ignored" });
+    expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+  });
+
+  it("offer on: round-1 search with no results → recipe_adjust, no claim", async () => {
+    vi.mocked(extractQuery).mockResolvedValue({ q: "chili" });
+    vi.mocked(findCommunity).mockResolvedValue([]);
+    vi.mocked(askDishFollowUps).mockResolvedValue([]);
+    const out = await executeFinderStep(
+      {
+        kind: "search_community",
+        request: "Chili",
+        round: 1,
+        excludeIds: [],
+        priorShownIds: [],
+        dish: "Chili",
+      },
+      ctx({ offer: true }),
+    );
+    expect(out.kind === "message" && out.block.type).toBe("recipe_adjust");
+    expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+  });
+
   it("generate_with_settings when latest is not an adjust block → ignored", async () => {
     const out = await executeFinderStep(
       {

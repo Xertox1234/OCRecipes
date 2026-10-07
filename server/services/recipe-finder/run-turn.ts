@@ -139,6 +139,7 @@ export async function executeFinderStep(
       // Validate BEFORE claiming: a rejected answer must cost nothing.
       if (
         ctx.latest?.type !== "recipe_adjust" ||
+        ctx.latest.flow.flowId !== step.flow.flowId ||
         !validateAdjustAnswers(ctx.latest, step.answers)
       ) {
         return { kind: "ignored" };
