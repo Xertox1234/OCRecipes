@@ -371,6 +371,30 @@ export default function ChatScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage]);
 
+  // The messages query isn't refetched until the reply finishes, so the
+  // text just sent is held locally until the saved copy lands. Keyed on the
+  // saved user-message count at send time, not on matching text, so
+  // repeating an earlier message still shows straight away.
+  const savedUserCount = (messages ?? []).filter(
+    (m) => m.role === "user",
+  ).length;
+  const [pendingUser, setPendingUser] = useState<{
+    content: string;
+    savedUserCount: number;
+  } | null>(null);
+  const showPendingUser =
+    pendingUser !== null && savedUserCount <= pendingUser.savedUserCount;
+
+  // A request that failed before any reply (requestError) never triggers the
+  // refetch that would replace the local copy, so drop it here and give the
+  // draft back for a resend.
+  useEffect(() => {
+    if (requestError && pendingUser) {
+      setPendingUser(null);
+      setInputText((current) => current || pendingUser.content);
+    }
+  }, [requestError, pendingUser]);
+
   // Build display messages from fetched messages only; streaming renders in
   // ListFooterComponent so token updates do not invalidate visible rows.
   const displayMessages = useMemo(() => {
@@ -380,6 +404,14 @@ export default function ChatScreen() {
       content: m.content,
       createdAt: m.createdAt,
     }));
+    if (showPendingUser) {
+      mappedMessages.push({
+        id: "pending-user",
+        role: "user",
+        content: pendingUser.content,
+        createdAt: new Date().toISOString(),
+      });
+    }
     if (pendingAssistantContent) {
       mappedMessages.push({
         id: "pending-assistant",
@@ -389,7 +421,7 @@ export default function ChatScreen() {
       });
     }
     return mappedMessages;
-  }, [messages, pendingAssistantContent]);
+  }, [messages, pendingAssistantContent, showPendingUser, pendingUser]);
 
   const handleSend = useCallback(
     async (text?: string) => {
@@ -401,6 +433,7 @@ export default function ChatScreen() {
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setInputText("");
+      setPendingUser({ content, savedUserCount });
 
       try {
         if (conversationId === null) {
@@ -422,6 +455,12 @@ export default function ChatScreen() {
           });
         }
       } catch (e) {
+        // sendMessage reports its own failures through requestError (see the
+        // effect below); this catch is the conversation-create failure, so
+        // nothing was sent. Drop the local copy and give the draft back,
+        // unless the user has already started typing something new.
+        setPendingUser(null);
+        setInputText((current) => current || content);
         const message =
           e instanceof Error ? e.message : "Failed to send message";
         if (
@@ -441,6 +480,7 @@ export default function ChatScreen() {
       isStreaming,
       isMalformedId,
       haptics,
+      savedUserCount,
       conversationId,
       createConversation,
       navigation,
@@ -503,7 +543,10 @@ export default function ChatScreen() {
   ) : null;
 
   const isEmpty =
-    !isLoading && (!messages || messages.length === 0) && !isStreaming;
+    !isLoading &&
+    (!messages || messages.length === 0) &&
+    !isStreaming &&
+    !showPendingUser;
 
   return (
     <KeyboardAvoidingView
