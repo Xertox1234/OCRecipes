@@ -472,6 +472,11 @@ export default function CoachChat({
       ).trim();
       if (!content || isStreaming) return;
 
+      // Only a tap or the return key buzzes. String callers (voice, quick
+      // replies, retry, suggestion hand-off) get feedback from their trigger.
+      if (typeof text !== "string") {
+        haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      }
       setInputText("");
       setOptimisticMessage(content);
       setStreamBlocks([]);
@@ -518,6 +523,7 @@ export default function CoachChat({
       startStream,
       onMessageSent,
       setInputText,
+      haptics,
     ],
   );
 

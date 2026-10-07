@@ -98,6 +98,16 @@ vi.mock("@/hooks/useChat", () => ({
   useCreateConversation: () => ({ mutateAsync: mockCreateMutateAsync }),
 }));
 
+const { mockImpact } = vi.hoisted(() => ({ mockImpact: vi.fn() }));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: mockImpact,
+    notification: vi.fn(),
+    selection: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
   useAcknowledgeReminders: () => ({ acknowledge: mockAcknowledge }),
 }));
@@ -123,6 +133,31 @@ beforeEach(() => {
     streamError: null,
     requestError: null,
   };
+});
+
+describe("ChatScreen — send haptic", () => {
+  // Positive control for the prompt case: a typed send buzzes once.
+  it("buzzes once for a typed send", () => {
+    renderComponent(<ChatScreen />);
+    fireEvent.change(screen.getByPlaceholderText("Ask NutriCoach..."), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+
+    expect(mockImpact).toHaveBeenCalledOnce();
+  });
+
+  // One buzz per moment: tapping a suggested prompt used to buzz in the
+  // prompt handler and again in handleSend.
+  it("buzzes once when a suggested prompt is tapped", () => {
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText("Suggested prompt: Suggest a healthy snack"),
+    );
+
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+    expect(mockImpact).toHaveBeenCalledOnce();
+  });
 });
 
 describe("ChatScreen — reminder acknowledgment", () => {

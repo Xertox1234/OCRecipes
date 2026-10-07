@@ -116,6 +116,7 @@ export const SlideInUp = createLayoutAnimation("SlideInUp");
 export const SlideOutUp = createLayoutAnimation("SlideOutUp");
 export const SlideOutDown = createLayoutAnimation("SlideOutDown");
 export const LinearTransition = createLayoutAnimation("LinearTransition");
+export const ZoomIn = createLayoutAnimation("ZoomIn");
 
 /** Map RN accessibility props to DOM aria attributes, stripping unknown DOM props. */
 function mapA11yProps(props: Record<string, unknown>) {

@@ -3,21 +3,18 @@ import {
   StyleSheet,
   View,
   TextInput,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
-import {
-  BorderRadius,
-  FontFamily,
-  Spacing,
-  withOpacity,
-} from "@/constants/theme";
+import Animated, { ZoomIn } from "react-native-reanimated";
+import { BorderRadius, FontFamily, Spacing } from "@/constants/theme";
+import { sendButtonEntrySpring } from "@/constants/animations";
 import { useTheme } from "@/hooks/useTheme";
+import { useAccessibility } from "@/hooks/useAccessibility";
 import { InlineError } from "@/components/InlineError";
+import { SendButton } from "@/components/SendButton";
 
 interface CoachChatBaseProps {
   /** Slot rendered above the message list (header, close button, etc). */
@@ -99,6 +96,7 @@ export function CoachChatBase({
   accessibilityViewIsModal,
 }: CoachChatBaseProps) {
   const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
 
   const canSend =
     canSendProp !== undefined
@@ -151,27 +149,18 @@ export function CoachChatBase({
             maxLength={2000}
           />
           {showSendButton ? (
-            <Pressable
-              style={[
-                styles.sendBtn,
-                {
-                  backgroundColor: canSend
-                    ? theme.accentSolid
-                    : withOpacity(theme.text, 0.12),
-                },
-              ]}
-              onPress={onSend}
-              disabled={!canSend}
-              accessibilityRole="button"
-              accessibilityLabel="Send message"
-              accessibilityState={{ disabled: !canSend }}
+            // Pops in as it replaces the input adornment (mic) on first keystroke.
+            <Animated.View
+              entering={
+                reducedMotion
+                  ? undefined
+                  : ZoomIn.springify()
+                      .damping(sendButtonEntrySpring.damping)
+                      .stiffness(sendButtonEntrySpring.stiffness)
+              }
             >
-              <Feather
-                name="send"
-                size={16}
-                color={canSend ? theme.buttonText : theme.textSecondary}
-              />
-            </Pressable>
+              <SendButton onPress={onSend} canSend={canSend} iconSize={16} />
+            </Animated.View>
           ) : (
             (inputAdornment ?? null)
           )}
@@ -201,13 +190,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     fontSize: 14,
     fontFamily: FontFamily.regular,
-  },
-  sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
   },
   inlineError: {
     marginHorizontal: Spacing.sm,
