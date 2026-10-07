@@ -378,12 +378,28 @@ export default function ChatScreen() {
   const savedUserCount = (messages ?? []).filter(
     (m) => m.role === "user",
   ).length;
+  // Tied to its conversation: the screen stays mounted when the Coach tab
+  // re-points it at another one.
   const [pendingUser, setPendingUser] = useState<{
     content: string;
     savedUserCount: number;
+    conversationId: number | null;
   } | null>(null);
   const showPendingUser =
-    pendingUser !== null && savedUserCount <= pendingUser.savedUserCount;
+    pendingUser !== null &&
+    pendingUser.conversationId === conversationId &&
+    savedUserCount <= pendingUser.savedUserCount;
+
+  // Once its own conversation holds the saved copy, the pending copy is
+  // done with. A different conversation only hides it: during a first send
+  // the new id reaches the pending copy a render before the route.
+  const pendingUserSaved =
+    pendingUser !== null &&
+    pendingUser.conversationId === conversationId &&
+    savedUserCount > pendingUser.savedUserCount;
+  useEffect(() => {
+    if (pendingUserSaved) setPendingUser(null);
+  }, [pendingUserSaved]);
 
   // A request that failed before any reply (requestError) never triggers the
   // refetch that would replace the local copy, so drop it here and give the
@@ -433,12 +449,16 @@ export default function ChatScreen() {
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setInputText("");
-      setPendingUser({ content, savedUserCount });
+      setPendingUser({ content, savedUserCount, conversationId });
 
       try {
         if (conversationId === null) {
           // Auto-create a conversation if none exists
           const conversation = await createConversation.mutateAsync(undefined);
+          // The pending copy follows the new conversation's id.
+          setPendingUser((p) =>
+            p ? { ...p, conversationId: conversation.id } : p,
+          );
           navigation.setParams({ conversationId: conversation.id });
           // navigation.setParams doesn't apply until the next render, so
           // sendMessage (closed over the pre-update conversationId) would

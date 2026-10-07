@@ -192,6 +192,42 @@ describe("ChatScreen — the message you just sent", () => {
     expect(screen.getAllByText("Thanks")).toHaveLength(2);
   });
 
+  // ChatScreen stays mounted when the Coach tab re-points it at another
+  // conversation, so a finished send must not follow it there.
+  it("does not follow you into another conversation", () => {
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+    const { rerender } = renderComponent(<ChatScreen />);
+    typeAndSend("How much protein today?");
+
+    mockUseChatMessages.mockReturnValue({
+      data: [userMessage(1, "How much protein today?")],
+      isLoading: false,
+    });
+    rerender(<ChatScreen />);
+
+    mockRouteParams.value = { conversationId: 7 };
+    mockUseChatMessages.mockReturnValue({ data: [], isLoading: false });
+    rerender(<ChatScreen />);
+
+    expect(screen.queryByText("How much protein today?")).toBeNull();
+  });
+
+  // A first message starts the conversation; its copy must survive the id
+  // arriving.
+  it("keeps it while a new conversation is created", async () => {
+    mockRouteParams.value = {};
+    mockCreateMutateAsync.mockResolvedValue({ id: 99 });
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+    const { rerender } = renderComponent(<ChatScreen />);
+
+    typeAndSend("How much protein today?");
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalled());
+    mockRouteParams.value = { conversationId: 99 };
+    rerender(<ChatScreen />);
+
+    expect(screen.getByText("How much protein today?")).toBeTruthy();
+  });
+
   // sendMessage reports a failed request through requestError rather than
   // rejecting, and no refetch follows, so the local copy must go here too.
   it("drops it and gives the draft back when the request fails", () => {
