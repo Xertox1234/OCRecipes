@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
@@ -122,7 +123,7 @@ export default function DietTypeScreen() {
           {DIET_TYPES.map((diet) => {
             const selected = data.dietType === diet.id;
             return (
-              <Pressable
+              <SelectableTile
                 key={diet.id}
                 onPress={() => selectDietType(diet.id)}
                 accessibilityLabel={`${diet.name}: ${diet.description}`}
@@ -179,7 +180,7 @@ export default function DietTypeScreen() {
                     <Feather name="check" size={14} color={theme.buttonText} />
                   </View>
                 ) : null}
-              </Pressable>
+              </SelectableTile>
             );
           })}
         </View>

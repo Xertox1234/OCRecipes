@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
@@ -129,7 +130,8 @@ export default function HealthConditionsScreen() {
           {HEALTH_CONDITIONS.map((condition) => {
             const selected = data.healthConditions.includes(condition.id);
             return (
-              <Pressable
+              <SelectableTile
+                shape="row"
                 key={condition.id}
                 onPress={() => toggleCondition(condition.id)}
                 accessibilityLabel={`${condition.name}: ${condition.description}`}
@@ -188,7 +190,7 @@ export default function HealthConditionsScreen() {
                     style={[styles.checkbox, { borderColor: theme.border }]}
                   />
                 )}
-              </Pressable>
+              </SelectableTile>
             );
           })}
         </View>

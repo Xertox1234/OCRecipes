@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
@@ -118,7 +119,7 @@ export default function GoalsScreen() {
             {GOALS.map((goal) => {
               const selected = data.primaryGoal === goal.id;
               return (
-                <Pressable
+                <SelectableTile
                   key={goal.id}
                   onPress={() => selectGoal(goal.id)}
                   accessibilityLabel={goal.name}
@@ -155,7 +156,7 @@ export default function GoalsScreen() {
                   >
                     {goal.name}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -169,7 +170,8 @@ export default function GoalsScreen() {
             {ACTIVITY_LEVELS.map((level) => {
               const selected = data.activityLevel === level.id;
               return (
-                <Pressable
+                <SelectableTile
+                  shape="row"
                   key={level.id}
                   onPress={() => selectActivityLevel(level.id)}
                   accessibilityLabel={`${level.name}: ${level.description}`}
@@ -210,7 +212,7 @@ export default function GoalsScreen() {
                       style={[styles.radio, { borderColor: theme.border }]}
                     />
                   )}
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
