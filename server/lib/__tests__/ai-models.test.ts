@@ -12,8 +12,8 @@ import {
 describe("AI_FEATURES table", () => {
   const rows: [string, AiFeatureConfig][] = Object.entries(AI_FEATURES);
 
-  it("has one row per call site (30)", () => {
-    expect(rows).toHaveLength(30);
+  it("has one row per call site (31)", () => {
+    expect(rows).toHaveLength(31);
   });
 
   it("every model has a provider/ prefix and no fallback does", () => {
