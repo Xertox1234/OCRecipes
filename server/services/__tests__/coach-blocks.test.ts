@@ -172,6 +172,51 @@ describe("server-only finder blocks", () => {
     const { blocks } = parseBlocksFromContent(content);
     expect(blocks.map((b) => b.type)).toEqual(["quick_replies"]);
   });
+
+  it("drops model-authored recipe_offer and recipe_adjust blocks but accepts server-built ones", () => {
+    // (a) validateBlocks DROPS model-authored blocks of type recipe_offer and recipe_adjust
+    const modelContent =
+      "Here you go.\n```coach_blocks\n" +
+      JSON.stringify([
+        {
+          type: "recipe_offer",
+          flow: { ...flow, stage: "offer" },
+        },
+        {
+          type: "recipe_adjust",
+          prefill: { servings: 4, spice: "mild", time: "quick" },
+          avoiding: [],
+          noted: {},
+          followUps: [],
+          flow: { ...flow, stage: "adjust", dish: "Pasta" },
+        },
+        {
+          type: "quick_replies",
+          options: [{ label: "Yes", message: "Yes" }],
+        },
+      ]) +
+      "\n```";
+    const { blocks: modelBlocks } = parseBlocksFromContent(modelContent);
+    // Only quick_replies should survive; offer and adjust are dropped
+    expect(modelBlocks.map((b) => b.type)).toEqual(["quick_replies"]);
+
+    // (b) coachBlockSchema ACCEPTS a schema-valid server-built recipe_offer and recipe_adjust block
+    const serverOfferBlock = {
+      type: "recipe_offer" as const,
+      flow: { ...flow, stage: "offer" as const },
+    };
+    const serverAdjustBlock = {
+      type: "recipe_adjust" as const,
+      prefill: { servings: 4, spice: "mild" as const, time: "quick" as const },
+      avoiding: [],
+      noted: { dislikes: [] },
+      followUps: [],
+      flow: { ...flow, stage: "adjust" as const, dish: "Pasta" },
+    };
+    // Both should validate against coachBlockSchema
+    expectResponseToMatch(serverOfferBlock, coachBlockSchema);
+    expectResponseToMatch(serverAdjustBlock, coachBlockSchema);
+  });
 });
 
 describe("getBlocksSystemPrompt", () => {
