@@ -21,6 +21,8 @@ export interface ProbeRun {
   set: ProbeSet;
   called: boolean;
   reachedToolLoop: boolean;
+  /** The call (or the classifier) failed; says nothing about the model. */
+  errored?: boolean;
 }
 
 export interface SetScore {
@@ -32,6 +34,10 @@ export interface ProbeReport {
   ask: SetScore;
   recipe_negative: SetScore;
   coach_negative: SetScore;
+  /** Errored runs per set (429/timeout/classifier failure). */
+  errored: Record<ProbeSet, number>;
+  /** Cases with fewer than 2 non-errored runs; any makes the run fail. */
+  inconclusive: number;
   pass: boolean;
 }
 
@@ -50,15 +56,28 @@ export function scoreProbe(runs: ProbeRun[]): ProbeReport {
     recipe_negative: { majority: 0, total: 0 },
     coach_negative: { majority: 0, total: 0 },
   };
+  const errored: Record<ProbeSet, number> = {
+    ask: 0,
+    recipe_negative: 0,
+    coach_negative: 0,
+  };
+  let inconclusive = 0;
   for (const caseRuns of byCase.values()) {
     const set = caseRuns[0].set;
     score[set].total += 1;
-    const hits = caseRuns.filter((r) => r.called && r.reachedToolLoop).length;
+    errored[set] += caseRuns.filter((r) => r.errored).length;
+    if (caseRuns.filter((r) => !r.errored).length < 2) inconclusive += 1;
+    const hits = caseRuns.filter(
+      (r) => !r.errored && r.called && r.reachedToolLoop,
+    ).length;
     if (hits >= 2) score[set].majority += 1;
   }
   return {
     ...score,
+    errored,
+    inconclusive,
     pass:
+      inconclusive === 0 &&
       score.ask.majority >= 8 &&
       score.recipe_negative.majority === 0 &&
       score.coach_negative.majority <= 1,
@@ -98,7 +117,9 @@ async function main(): Promise<void> {
   const { getBlocksSystemPrompt } = await import(
     "../server/services/coach-blocks"
   );
-  const { getToolDefinitions } = await import("../server/services/coach-tools");
+  const { TOOL_DEFINITIONS } = await import(
+    "../server/services/nutrition-coach"
+  );
   const { classifyTurn } = await import(
     "../server/services/recipe-finder/classify-turn"
   );
@@ -123,7 +144,7 @@ async function main(): Promise<void> {
   ) as ProbeCase[];
 
   const tools = [
-    ...getToolDefinitions().filter(
+    ...TOOL_DEFINITIONS.filter(
       (t) => !("function" in t && t.function.name === "search_recipes"),
     ),
     OFFER_RECIPE_TOOL,
@@ -142,12 +163,37 @@ async function main(): Promise<void> {
   for (const c of cases) {
     let reachedToolLoop = true;
     if (c.routedByClassifyTurn) {
-      const cls = await withAiCallContext(
-        { overrides: {}, fallback: "off", calls: [] },
-        () => classifyTurn(c.message, c.currentRecipeTitle ?? ""),
+      const clsCtx: AiCallContext = {
+        overrides: {},
+        fallback: "off",
+        calls: [],
+      };
+      const cls = await withAiCallContext(clsCtx, () =>
+        classifyTurn(c.message, c.currentRecipeTitle ?? ""),
       );
+      // classifyTurn swallows its own errors and returns "new_request". With
+      // the fallback off, aiChat records a failed call's error on the context
+      // (ai-call-context.ts AiCallRecord.error); a call that never answered has
+      // no answeredModel. Either way the class is a fallback, not a measurement.
+      const classifierFailed =
+        clsCtx.calls.length === 0 ||
+        clsCtx.calls.some((r) => r.error || !r.answeredModel);
+      console.log(
+        `  classifyTurn(${c.id}) → ${cls}${classifierFailed ? " (CLASSIFIER FAILED)" : ""}`,
+      );
+      if (classifierFailed) {
+        for (let i = 0; i < RUNS_PER_CASE; i++) {
+          runs.push({
+            id: c.id,
+            set: c.set,
+            called: false,
+            reachedToolLoop: false,
+            errored: true,
+          });
+        }
+        continue;
+      }
       reachedToolLoop = cls === "new_request" || cls === "other";
-      console.log(`  classifyTurn(${c.id}) → ${cls}`);
     }
     if (!reachedToolLoop) {
       for (let i = 0; i < RUNS_PER_CASE; i++) {
@@ -180,46 +226,67 @@ async function main(): Promise<void> {
           fallback: "off",
           calls: [],
         };
-        const res = await withAiCallContext(aiCtx, () =>
-          aiChat("coach-pro-chat", {
-            messages,
-            tools,
-            max_completion_tokens: 1500,
-            temperature: 0.5,
-          }),
-        );
-        settings.push(String(res.model));
-        const calls = res.choices[0]?.message?.tool_calls ?? [];
-        return calls.some(
-          (t) => t.type === "function" && t.function.name === "offer_recipe",
-        );
+        try {
+          const res = await withAiCallContext(aiCtx, () =>
+            aiChat("coach-pro-chat", {
+              messages,
+              tools,
+              max_completion_tokens: 1500,
+              temperature: 0.5,
+            }),
+          );
+          settings.push(String(res.model));
+          const calls = res.choices[0]?.message?.tool_calls ?? [];
+          return {
+            called: calls.some(
+              (t) =>
+                t.type === "function" && t.function.name === "offer_recipe",
+            ),
+            errored: false,
+          };
+        } catch (err) {
+          console.error(
+            `  ! ${c.id}: call failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return { called: false, errored: true };
+        }
       }),
     );
-    for (const called of results) {
-      runs.push({ id: c.id, set: c.set, called, reachedToolLoop });
+    for (const r of results) {
+      runs.push({
+        id: c.id,
+        set: c.set,
+        called: r.called,
+        reachedToolLoop,
+        errored: r.errored,
+      });
     }
     console.log(
-      `  ${c.id} [${c.set}] intent=${intent} called=${results.map((r) => (r ? "Y" : "n")).join("")}`,
+      `  ${c.id} [${c.set}] intent=${intent} called=${results.map((r) => (r.errored ? "E" : r.called ? "Y" : "n")).join("")}`,
     );
   }
 
   const report = scoreProbe(runs);
   console.log(`\nModel(s) that answered: ${[...new Set(settings)].join(", ")}`);
   for (const set of SETS) {
-    console.log(`\n## ${set}: ${report[set].majority}/${report[set].total}`);
+    console.log(
+      `\n## ${set}: ${report[set].majority}/${report[set].total} (errored runs: ${report.errored[set]})`,
+    );
     const ids = [
       ...new Set(runs.filter((r) => r.set === set).map((r) => r.id)),
     ];
     for (const id of ids) {
       const cr = runs.filter((r) => r.id === id);
       const cell = cr
-        .map((r) => (!r.reachedToolLoop ? "-" : r.called ? "Y" : "n"))
+        .map((r) =>
+          r.errored ? "E" : !r.reachedToolLoop ? "-" : r.called ? "Y" : "n",
+        )
         .join("");
       console.log(`| ${id} | ${cell} |`);
     }
   }
   console.log(
-    `\nask ${report.ask.majority}/${report.ask.total} (need >=8), recipe_negative ${report.recipe_negative.majority}/${report.recipe_negative.total} (need 0), coach_negative ${report.coach_negative.majority}/${report.coach_negative.total} (need <=1) => ${report.pass ? "PASS" : "FAIL"}`,
+    `\nask ${report.ask.majority}/${report.ask.total} (need >=8), recipe_negative ${report.recipe_negative.majority}/${report.recipe_negative.total} (need 0), coach_negative ${report.coach_negative.majority}/${report.coach_negative.total} (need <=1) => ${report.inconclusive > 0 ? `INCONCLUSIVE (${report.inconclusive} case(s) with <2 non-errored runs)` : report.pass ? "PASS" : "FAIL"}`,
   );
   process.exit(report.pass ? 0 : 1);
 }

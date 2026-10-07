@@ -30,7 +30,7 @@ const log = createServiceLogger("nutrition-coach");
  * `Object.freeze` traps accidental top-level mutation (e.g. a future caller
  * pushing extra tools) since this reference is now shared across requests.
  */
-const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
+export const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
 
 /**
  * Sentinel yielded by generateCoachResponse when the safety check fires after
