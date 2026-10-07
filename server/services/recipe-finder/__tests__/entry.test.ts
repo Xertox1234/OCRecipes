@@ -157,6 +157,49 @@ describe("decideRecipeChefEntry (§3.3)", () => {
   });
 });
 
+describe("matchTypedFinderCommand — offer phrases (stage-gated)", () => {
+  it.each([
+    ["Yes please!", "recipe_offer", "yes"],
+    ["  OK. ", "recipe_offer", "yes"],
+    ["go ahead", "recipe_adjust", "yes"],
+    ["No thanks", "recipe_offer", "no"],
+    ["not now!", "recipe_adjust", "no"],
+    ["Search OCRecipes", "recipe_offer", "search"],
+    ["search for one", "recipe_offer", "search"],
+    ["search", "recipe_adjust", null],
+    ["yes please!", "recipe_results", null],
+    ["no", "recipe_questions", null],
+    ["yes with extra garlic", "recipe_offer", null],
+  ] as const)("%j at %s → %s", (text, stage, expected) => {
+    expect(matchTypedFinderCommand(text, stage)).toBe(expected);
+  });
+});
+
+describe("decideRecipeChefEntry — offer on (legacy → offer, H3)", () => {
+  const afterNo = () => [
+    msg("user", null, "pasta"),
+    msg("assistant", null, "No problem."),
+  ];
+  it("no block, no card, prior user turns → start", () => {
+    expect(
+      decideRecipeChefEntry(afterNo(), "actually, make it spicy", {
+        offer: true,
+      }),
+    ).toEqual({
+      kind: "finder",
+      input: { kind: "start", text: "actually, make it spicy" },
+    });
+  });
+  it("offer off → legacy (unchanged)", () => {
+    expect(
+      decideRecipeChefEntry(afterNo(), "actually, make it spicy", {
+        offer: false,
+      }),
+    ).toEqual({ kind: "legacy" });
+    expect(decideRecipeChefEntry(afterNo(), "x")).toEqual({ kind: "legacy" });
+  });
+});
+
 describe("decideCoachFinderEntry", () => {
   const cardLatest = [
     msg("user"),

@@ -40,6 +40,7 @@ import type { ChatMessage } from "@shared/schema";
 import { finderActionSchema } from "@shared/schemas/recipe-finder";
 import {
   isRecipeFinderEnabled,
+  isRecipeOfferEnabled,
   decideRecipeChefEntry,
   getLatestFinderBlock,
   isActionCurrent,
@@ -362,6 +363,7 @@ export function register(app: Express): void {
           );
         }
         const finderEnabled = isRecipeFinderEnabled();
+        const offerEnabled = isRecipeOfferEnabled();
         const finderAction = parsed.data.finderAction;
         if (
           finderAction &&
@@ -430,6 +432,7 @@ export function register(app: Express): void {
             const entry = decideRecipeChefEntry(
               finderHistory,
               sanitizedContent,
+              { offer: offerEnabled },
             );
             if (entry.kind === "finder") {
               recipeFinderInput = entry.input;
@@ -547,11 +550,13 @@ export function register(app: Express): void {
             // ─── RECIPE / REMIX CHAT PATH ────────────────────────
             // ─── RECIPE FINDER STEP (RecipeChef, flag on) ────────
             let finderGeneration: GenerationMessages | null = null;
+            let finderAllergenDetail: "extended" | undefined;
             if (recipeFinderInput) {
               const finderProfile = await storage.getUserProfile(req.userId);
-              const { step } = prepareFinderTurn(
+              const { step, latest } = prepareFinderTurn(
                 finderHistory,
                 recipeFinderInput,
+                { offer: offerEnabled },
               );
               const label = finderStatusLabel(step);
               if (label) {
@@ -563,8 +568,24 @@ export function register(app: Express): void {
                 history: finderHistory,
                 profile: finderProfile,
                 features,
+                offer: offerEnabled,
+                latest,
               });
-              if (turn.kind === "message") {
+              if (turn.kind === "close" || turn.kind === "plain") {
+                // Plain reply, no block: the user row stays and the turn is
+                // answered. Streamed as content, like a normal chat reply.
+                await storage.createChatMessage(
+                  id,
+                  req.userId,
+                  "assistant",
+                  turn.content,
+                );
+                if (!res.writableEnded) {
+                  res.write(
+                    `data: ${JSON.stringify({ content: turn.content })}\n\n`,
+                  );
+                }
+              } else if (turn.kind === "message") {
                 await storage.createChatMessage(
                   id,
                   req.userId,
@@ -592,8 +613,8 @@ export function register(app: Express): void {
                 // answer, so don't leave a dangling user bubble.
                 await storage.deleteChatMessage(userMessage.id, req.userId);
               } else if (turn.kind === "generate") {
-                // close/plain only occur with the offer flag on (Task 12 wires them).
                 finderGeneration = turn.messages;
+                finderAllergenDetail = turn.allergenDetail;
                 // A round-1 search that found nothing falls through to
                 // Generate: update the thinking bubble.
                 if (step.kind !== "generate") {
@@ -654,8 +675,15 @@ export function register(app: Express): void {
                 contextMessages,
                 profile,
                 sanitizedScreenContext,
-                remixPromptOverride
-                  ? { systemPromptOverride: remixPromptOverride }
+                remixPromptOverride || finderAllergenDetail
+                  ? {
+                      ...(remixPromptOverride
+                        ? { systemPromptOverride: remixPromptOverride }
+                        : {}),
+                      ...(finderAllergenDetail
+                        ? { allergenDetail: finderAllergenDetail }
+                        : {}),
+                    }
                   : undefined,
               )) {
                 // On this path `aborted` starts false and stays false unless

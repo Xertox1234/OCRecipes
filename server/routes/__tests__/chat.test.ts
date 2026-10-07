@@ -17,7 +17,11 @@ import { register } from "../chat";
 import { findCommunity } from "../../services/recipe-finder/find-community";
 import { findOnline } from "../../services/recipe-finder/find-online";
 import { classifyTurn } from "../../services/recipe-finder/classify-turn";
-import type { RecipeResultsBlock } from "@shared/schemas/recipe-finder";
+import { extractOfferDetails } from "../../services/recipe-finder/extract-query";
+import type {
+  FinderBlock,
+  RecipeResultsBlock,
+} from "@shared/schemas/recipe-finder";
 import {
   createMockChatConversation,
   createMockChatMessage,
@@ -114,6 +118,10 @@ vi.mock("../../services/recipe-chat", async () => {
 vi.mock("../../services/recipe-finder/extract-query", () => ({
   extractQuery: vi.fn(async (text: string) => ({ q: text.slice(0, 200) })),
   rawQuery: vi.fn((text: string) => ({ q: text.slice(0, 200) })),
+  extractOfferDetails: vi.fn(),
+}));
+vi.mock("../../services/recipe-finder/ask-follow-ups", () => ({
+  askDishFollowUps: vi.fn(async () => []),
 }));
 vi.mock("../../services/recipe-finder/find-community", () => ({
   findCommunity: vi.fn(),
@@ -1350,6 +1358,136 @@ describe("Chat Routes", () => {
         const res = await send({ content: "now a dessert" });
         expect(res.text).toContain('"finder":{"type":"recipe_results"');
         expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      describe("offer flow (RECIPE_OFFER_ENABLED on)", () => {
+        const OFFER_FLOW = "33333333-3333-4333-8333-333333333333";
+        const offerFlow = {
+          flowId: OFFER_FLOW,
+          stage: "offer" as const,
+          request: "Spaghetti",
+          query: { q: "spaghetti" },
+          round: 0 as const,
+          shownIds: [],
+          dish: "Spaghetti",
+          details: { ingredients: [], fromConversation: false },
+        };
+        const offerBlock: FinderBlock = {
+          type: "recipe_offer",
+          flow: offerFlow,
+        };
+        const adjustBlock: FinderBlock = {
+          type: "recipe_adjust",
+          prefill: { servings: 4, spice: "medium", time: "moderate" },
+          avoiding: [],
+          noted: { dislikes: [] },
+          followUps: [],
+          flow: { ...offerFlow, stage: "adjust" },
+        };
+        const withBlock = (block: FinderBlock) => [
+          createMockChatMessage({ id: 1, role: "user", content: "spaghetti" }),
+          createMockChatMessage({
+            id: 2,
+            role: "assistant",
+            content: "Want a recipe?",
+            metadata: { metadataVersion: 1, finder: block },
+          }),
+        ];
+        const afterNo = () => [
+          createMockChatMessage({ id: 1, role: "user", content: "spaghetti" }),
+          createMockChatMessage({
+            id: 2,
+            role: "assistant",
+            content: "No problem.",
+            metadata: null,
+          }),
+        ];
+
+        beforeEach(() => {
+          vi.stubEnv("RECIPE_OFFER_ENABLED", "true");
+          vi.mocked(extractOfferDetails).mockResolvedValue({
+            dish: "Spicy spaghetti",
+            details: { ingredients: [], fromConversation: false },
+          });
+        });
+
+        it('a "No" tap closes with "No problem." and never generates', async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(offerBlock),
+          );
+          const res = await send({
+            content: "No",
+            finderAction: { type: "offer_no", flowId: OFFER_FLOW },
+          });
+          expect(res.status).toBe(200);
+          expect(storage.createChatMessage).toHaveBeenCalledWith(
+            1,
+            "1",
+            "assistant",
+            "No problem.",
+          );
+          expect(res.text).toContain("No problem.");
+          expect(res.text).not.toContain('"finder"');
+          expect(res.text).toContain('"done":true');
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        });
+
+        it("typed text after a close goes to the finder path, not the legacy quota path", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(afterNo());
+          const res = await send({ content: "actually, make it spicy" });
+          expect(res.status).toBe(200);
+          expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+            1,
+            "1",
+            "actually, make it spicy",
+          );
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+          expect(res.text).toContain('"type":"recipe_offer"');
+        });
+
+        it("a card is latest and classifyTurn says other → legacy path, unchanged (deliberate carve-out)", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+          vi.mocked(classifyTurn).mockResolvedValue("other");
+          await send({ content: "how long does it keep?" });
+          expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalled();
+          expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).toHaveBeenCalled();
+        });
+
+        it('typed "yes" on a live offer builds the adjust card and claims nothing', async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(offerBlock),
+          );
+          const res = await send({ content: "yes please!" });
+          expect(res.text).toContain('"type":"recipe_adjust"');
+          expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        });
+
+        it("Generate on a live adjust card claims once and asks for extended allergen detail", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(adjustBlock),
+          );
+          const res = await send({
+            content: "Generate",
+            finderAction: {
+              type: "adjust_generate",
+              flowId: OFFER_FLOW,
+              settings: { servings: 4, spice: "medium", time: "moderate" },
+            },
+          });
+          expect(res.status).toBe(200);
+          expect(storage.claimRecipeGeneration).toHaveBeenCalledTimes(1);
+          expect(generateRecipeChatResponse).toHaveBeenCalledTimes(1);
+          expect(
+            vi.mocked(generateRecipeChatResponse).mock.calls[0][3],
+          ).toMatchObject({ allergenDetail: "extended" });
+        });
       });
 
       it("remix never enters the flow", async () => {

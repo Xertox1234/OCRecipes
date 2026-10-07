@@ -8,7 +8,7 @@ import {
 } from "@shared/schemas/recipe-finder";
 import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
 import type { CoachIntent } from "../coach-intent-classifier";
-import type { FinderInput } from "./transition";
+import type { FinderInput, TypedFinderCommand } from "./transition";
 
 export function finderBlockFromMetadata(metadata: unknown): FinderBlock | null {
   if (!metadata || typeof metadata !== "object") return null;
@@ -75,6 +75,29 @@ const NONE_PHRASES = new Set([
   "none of them",
 ]);
 
+const YES_PHRASES = new Set([
+  "yes",
+  "yes please",
+  "sure",
+  "go ahead",
+  "do it",
+  "ok",
+  "okay",
+  "yep",
+]);
+const NO_PHRASES = new Set([
+  "no",
+  "no thanks",
+  "no thank you",
+  "nope",
+  "not now",
+]);
+const SEARCH_PHRASES = new Set([
+  "search",
+  "search ocrecipes",
+  "search for one",
+]);
+
 export function normalizeCommand(text: string): string {
   return text
     .toLowerCase()
@@ -93,9 +116,16 @@ export function normalizeCommand(text: string): string {
 export function matchTypedFinderCommand(
   text: string,
   stage: FinderBlock["type"],
-): "generate" | "none_of_these" | null {
+): TypedFinderCommand | null {
   const t = normalizeCommand(text);
   if (GENERATE_PHRASES.has(t)) return "generate";
+  // Offer-flow phrases are gated by stage: those stages only exist with
+  // RECIPE_OFFER_ENABLED on, so flag-off behaviour is unchanged.
+  if (stage === "recipe_offer" || stage === "recipe_adjust") {
+    if (YES_PHRASES.has(t)) return "yes";
+    if (NO_PHRASES.has(t)) return "no";
+    if (stage === "recipe_offer" && SEARCH_PHRASES.has(t)) return "search";
+  }
   if (stage === "recipe_results" && NONE_PHRASES.has(t)) {
     return "none_of_these";
   }
@@ -111,6 +141,7 @@ export type RecipeChefEntry =
 export function decideRecipeChefEntry(
   history: ChatMessage[],
   text: string,
+  opts?: { offer?: boolean },
 ): RecipeChefEntry {
   const latest = getLatestFinderBlock(history);
   if (latest) {
@@ -128,6 +159,8 @@ export function decideRecipeChefEntry(
   if (!history.some((m) => m.role === "user")) {
     return { kind: "finder", input: { kind: "start", text } };
   }
+  // Offer on: legacy generation is replaced by the offer (H3).
+  if (opts?.offer) return { kind: "finder", input: { kind: "start", text } };
   return { kind: "legacy" };
 }
 
