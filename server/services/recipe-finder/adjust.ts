@@ -35,7 +35,8 @@ export function buildAdjustBlock(args: {
   nextFlowId: string;
 }): RecipeAdjustBlock {
   const { flow, profile, followUps, nextFlowId } = args;
-  const dish = flow.dish ?? flow.query.q;
+  // flow.dish is capped at 80 chars, but query.q allows 200.
+  const dish = (flow.dish ?? flow.query.q).slice(0, 80).trim() || "recipe";
   const details = flow.details ?? { ingredients: [], fromConversation: false };
 
   const profileServings =

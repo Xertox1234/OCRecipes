@@ -132,6 +132,17 @@ describe("buildAdjustBlock", () => {
     expect(recipeAdjustBlockSchema.safeParse(b).success).toBe(true);
   });
 
+  it("clamps a long query.q dish to 80 chars so the block still parses", () => {
+    const b = buildAdjustBlock({
+      flow: flow({ query: { q: "x".repeat(150) } }),
+      profile: null,
+      followUps: [],
+      nextFlowId: NEXT,
+    });
+    expect(b.flow.dish).toHaveLength(80);
+    expect(recipeAdjustBlockSchema.safeParse(b).success).toBe(true);
+  });
+
   it("clamps profile servings into 1-20", () => {
     const hi = buildAdjustBlock({
       flow: offerFlow(),

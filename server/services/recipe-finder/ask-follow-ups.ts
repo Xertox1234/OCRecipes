@@ -18,7 +18,7 @@ import {
 const log = createServiceLogger("recipe-finder-follow-ups");
 
 /** Defensive filter: the app already asks these on the adjust card. */
-const ALREADY_ASKED = /allerg|serving|spic|how long|time/i;
+const ALREADY_ASKED = /\ballerg|\bservings?\b|\bspic|\bhow long\b|\btime\b/i;
 
 const responseSchema = z.object({
   questions: z.array(clarifyingQuestionSchema).max(2),
@@ -61,13 +61,13 @@ export async function askDishFollowUps(
         messages: [
           {
             role: "system",
-            content: `The user wants a recipe for "${sanitizeContextField(dish, 80)}". Ask 0–2 short multiple-choice questions ONLY about choices that change the recipe and that the conversation leaves open (e.g. protein choice, cooking method, using an ingredient they mentioned). Never ask about allergies, servings, spice level or cooking time — the app already asks those. If nothing is open, return {"questions": []}. Return JSON: {"questions": [{"question": string (max 12 words), "options": [2-4 short answers, max 4 words each]}]}
+            content: `The user wants a recipe for the dish named in the user message. Ask 0–2 short multiple-choice questions ONLY about choices that change the recipe and that the conversation leaves open (e.g. protein choice, cooking method, using an ingredient they mentioned). Never ask about allergies, servings, spice level or cooking time — the app already asks those. If nothing is open, return {"questions": []}. Return JSON: {"questions": [{"question": string (max 12 words), "options": [2-4 short answers, max 4 words each]}]}
 
 ${SYSTEM_PROMPT_BOUNDARY}`,
           },
           {
             role: "user",
-            content: `Recent conversation:\n${convo}\n\nDetails so far:\n${detailLines || "(none)"}`,
+            content: `Dish: ${sanitizeContextField(dish, 80)}\n\nRecent conversation:\n${convo}\n\nDetails so far:\n${detailLines || "(none)"}`,
           },
         ],
       },

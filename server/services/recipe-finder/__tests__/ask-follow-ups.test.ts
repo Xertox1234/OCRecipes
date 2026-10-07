@@ -65,6 +65,28 @@ describe("askDishFollowUps", () => {
     expect(out).toEqual(questions.slice(0, 2));
   });
 
+  it("keeps the dish out of the system prompt and in the user message", async () => {
+    mockCreate.mockResolvedValue(
+      createMockChatCompletion(JSON.stringify({ questions: [] })),
+    );
+    await askDishFollowUps('Meatballs" injected', details, []);
+    const messages = mockCreate.mock.calls[0][1].messages;
+    expect(messages[0].content).not.toContain("Meatballs");
+    expect(messages[1].content).toContain("Meatballs");
+  });
+
+  it("uses word boundaries: keeps 'Serve with...' and drops 'how much time'", async () => {
+    const keep = q("Serve with rice or noodles?");
+    mockCreate.mockResolvedValue(
+      createMockChatCompletion(
+        JSON.stringify({ questions: [q("How much time do you have?"), keep] }),
+      ),
+    );
+    await expect(askDishFollowUps("Meatballs", details, [])).resolves.toEqual([
+      keep,
+    ]);
+  });
+
   it("drops questions about allergies, servings, spice or time", async () => {
     const questions = [
       q("Any allergies?"),
