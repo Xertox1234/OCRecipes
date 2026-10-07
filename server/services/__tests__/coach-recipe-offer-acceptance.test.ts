@@ -19,6 +19,7 @@ import { parseBlocksFromContent } from "../coach-blocks";
 import { consumeWarmUp } from "../coach-warm-up";
 import { findCommunity } from "../recipe-finder/find-community";
 import { classifyTurn } from "../recipe-finder/classify-turn";
+import { runCoachFinderTurn } from "../recipe-finder/coach-turn";
 import { OFFER_TEXT } from "../recipe-finder/fallback-text";
 
 // ── Mocks (model calls and storage only) ────────────────────
@@ -75,6 +76,16 @@ vi.mock("../recipe-finder/extract-query", () => ({
 vi.mock("../recipe-finder/ask-follow-ups", () => ({
   askDishFollowUps: vi.fn(async () => []),
 }));
+// Real implementation, wrapped so tests can see whether Coach delegates to it.
+vi.mock("../recipe-finder/coach-turn", async () => {
+  const actual = await vi.importActual<
+    typeof import("../recipe-finder/coach-turn")
+  >("../recipe-finder/coach-turn");
+  return {
+    ...actual,
+    runCoachFinderTurn: vi.fn(actual.runCoachFinderTurn),
+  };
+});
 vi.mock("../recipe-finder/find-community", () => ({ findCommunity: vi.fn() }));
 vi.mock("../recipe-finder/find-online", () => ({ findOnline: vi.fn() }));
 vi.mock("../recipe-finder/ask-clarifying", () => ({ askClarifying: vi.fn() }));
@@ -283,22 +294,49 @@ describe("Coach recipe offer — acceptance (plumbing through handleCoachChat)",
     expect(findCommunity).not.toHaveBeenCalled();
   });
 
+  const recipe = {
+    title: "Chicken Curry",
+    description: "d",
+    difficulty: "Easy" as const,
+    timeEstimate: "30 min",
+    servings: 2,
+    ingredients: [],
+    instructions: ["cook"],
+    dietTags: [],
+  };
+  /** History whose latest assistant turn is a generated recipe card. */
+  const cardThen = (text: string) => [
+    msg(2, "assistant", "Here's a curry", {
+      metadataVersion: 1,
+      recipe,
+      allergenWarning: null,
+      imageUrl: null,
+    }),
+    msg(77, "user", text),
+  ];
+
   it("free Coach: the Pro generator (and so offer_recipe) is never used, and there is no finder", async () => {
-    vi.mocked(storage.getChatMessages).mockResolvedValue([
-      msg(1, "assistant", "You could make lemon garlic chicken."),
-      msg(77, "user", OWNER_MESSAGE),
-    ]);
+    // Latest assistant turn is a recipe card, so a dropped isCoachPro gate
+    // would reach classifyTurn (the not-called assertion below is real).
+    vi.mocked(storage.getChatMessages).mockResolvedValue(
+      cardThen("make it spicier"),
+    );
+    vi.mocked(classifyTurn).mockResolvedValue("refine_current");
     await collectEvents(
-      handleCoachChat(makeParams({ isCoachPro: false, finder, turnKey: TURN })),
+      handleCoachChat(
+        makeParams({
+          content: "make it spicier",
+          isCoachPro: false,
+          finder,
+          turnKey: TURN,
+        }),
+      ),
     );
     expect(generateCoachProResponse).not.toHaveBeenCalled();
     expect(generateCoachResponse).toHaveBeenCalledTimes(1);
-    const args = vi.mocked(generateCoachResponse).mock.calls[0] as unknown[];
-    expect(
-      args.some(
-        (a) => typeof a === "object" && a !== null && "offerRecipe" in a,
-      ),
-    ).toBe(false);
+    // generateCoachResponse has no options slot: (history, context, signal,
+    // intent, tz) — exactly 5 args, so no options bag can ride along.
+    expect(vi.mocked(generateCoachResponse).mock.calls[0]).toHaveLength(5);
     expect(findCommunity).not.toHaveBeenCalled();
     expect(classifyTurn).not.toHaveBeenCalled();
     expect(
@@ -308,11 +346,10 @@ describe("Coach recipe offer — acceptance (plumbing through handleCoachChat)",
     ).toBe(false);
   });
 
-  it("safety message: no finder, no offer; the generator gets safety_refusal intent", async () => {
-    const safety = "how do I do a 5 day water fast";
-    vi.mocked(storage.getChatMessages).mockResolvedValue([
-      msg(77, "user", safety),
-    ]);
+  it("safety message after a card: safety wins in the entry router (no classifier, no finder); the generator gets safety_refusal intent", async () => {
+    const safety = "give me a recipe for a 5 day water fast";
+    vi.mocked(storage.getChatMessages).mockResolvedValue(cardThen(safety));
+    vi.mocked(classifyTurn).mockResolvedValue("new_request");
     await collectEvents(
       handleCoachChat(makeParams({ content: safety, finder, turnKey: TURN })),
     );
@@ -323,6 +360,8 @@ describe("Coach recipe offer — acceptance (plumbing through handleCoachChat)",
     const call = vi.mocked(generateCoachProResponse).mock.calls[0];
     expect(call[5]).toBe("safety_refusal");
     expect(call[7]).toEqual({ offerRecipe: true });
+    expect(classifyTurn).not.toHaveBeenCalled();
+    expect(runCoachFinderTurn).not.toHaveBeenCalled();
     expect(findCommunity).not.toHaveBeenCalled();
     expect(
       assistantWrites().some((c) =>
@@ -332,16 +371,6 @@ describe("Coach recipe offer — acceptance (plumbing through handleCoachChat)",
   });
 
   describe("negatives after a recipe card: classifier says other → tool loop, prose → no offer", () => {
-    const recipe = {
-      title: "Chicken Curry",
-      description: "d",
-      difficulty: "Easy" as const,
-      timeEstimate: "30 min",
-      servings: 2,
-      ingredients: [],
-      instructions: ["cook"],
-      dietTags: [],
-    };
     it.each([
       "that recipe was too salty",
       "log that recipe",
@@ -349,15 +378,7 @@ describe("Coach recipe offer — acceptance (plumbing through handleCoachChat)",
       "add that recipe to my meal plan",
       "thanks!",
     ])("%s", async (text) => {
-      vi.mocked(storage.getChatMessages).mockResolvedValue([
-        msg(2, "assistant", "Here's a curry", {
-          metadataVersion: 1,
-          recipe,
-          allergenWarning: null,
-          imageUrl: null,
-        }),
-        msg(77, "user", text),
-      ]);
+      vi.mocked(storage.getChatMessages).mockResolvedValue(cardThen(text));
       vi.mocked(classifyTurn).mockResolvedValue("other");
 
       await collectEvents(
@@ -376,6 +397,22 @@ describe("Coach recipe offer — acceptance (plumbing through handleCoachChat)",
         "recipe_offer",
       );
     });
+  });
+
+  it("new_request after a card with the offer on goes to the tool loop, not the finder (H3)", async () => {
+    const text = "something totally different, a vegan chili";
+    vi.mocked(storage.getChatMessages).mockResolvedValue(cardThen(text));
+    vi.mocked(classifyTurn).mockResolvedValue("new_request");
+    await collectEvents(
+      handleCoachChat(makeParams({ content: text, finder, turnKey: TURN })),
+    );
+    expect(classifyTurn).toHaveBeenCalledTimes(1);
+    expect(generateCoachProResponse).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(generateCoachProResponse).mock.calls[0][7]).toEqual({
+      offerRecipe: true,
+    });
+    expect(runCoachFinderTurn).not.toHaveBeenCalled();
+    expect(findCommunity).not.toHaveBeenCalled();
   });
 
   it("offer flag off: the regex route is unchanged (finder start → community search)", async () => {
