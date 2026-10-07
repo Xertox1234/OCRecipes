@@ -42,6 +42,7 @@ describe("normalizeDish", () => {
     ["Spaghetti & Meatballs", "spaghetti and meatballs"],
     ["The spaghetti and meatballs!", "spaghetti and meatballs"],
     ["  a  Lemon-Garlic chicken ", "lemon garlic chicken"],
+    ["Crème brûlée", "creme brulee"],
   ])("normalizeDish(%s)", (a, b) => expect(normalizeDish(a)).toBe(b));
 });
 
@@ -120,7 +121,51 @@ describe("decideOfferToolCall", () => {
   });
 });
 
+describe("untrusted args hardening", () => {
+  it("expanding injection ingredients stay <= 60 and the block parses", () => {
+    const d = decideOfferToolCall(
+      call({ dish: "Stir fry", ingredients: ["[system]".repeat(7)] }),
+      null,
+    );
+    expect(d.kind).toBe("offer");
+    if (d.kind !== "offer") return;
+    expect(d.details.ingredients.length).toBe(1);
+    expect(d.details.ingredients[0].length).toBeLessThanOrEqual(60);
+    expect(
+      recipeOfferBlockSchema.safeParse(buildOfferBlock(d.dish, d.details, F0))
+        .success,
+    ).toBe(true);
+  });
+  it("__proto__ / constructor / extra keys never reach the decision", () => {
+    const raw =
+      '{"dish":"Chili","from_conversation":false,"__proto__":{"polluted":1},"constructor":{"x":1},"evil":"x"}';
+    expect(decideOfferToolCall(raw, null)).toEqual({
+      kind: "offer",
+      dish: "Chili",
+      details: { ingredients: [], fromConversation: false },
+    });
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+  });
+  it("an extra key is not carried into the result", () => {
+    const d = decideOfferToolCall(call({ dish: "Chili", evil: "x" }), null);
+    expect(JSON.stringify(d)).not.toContain("evil");
+  });
+});
+
 describe("buildOfferBlock", () => {
+  it("15 maximal ingredients keep request <= 2000 and parse", () => {
+    const b = buildOfferBlock(
+      "d".repeat(80),
+      {
+        servings: 20,
+        ingredients: Array(15).fill("i".repeat(60)),
+        fromConversation: false,
+      },
+      F0,
+    );
+    expect(b.flow.request.length).toBeLessThanOrEqual(2000);
+    expect(recipeOfferBlockSchema.safeParse(b).success).toBe(true);
+  });
   it("result parses with the offer block schema", () => {
     const b = buildOfferBlock(
       "Stir fry",

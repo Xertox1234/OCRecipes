@@ -112,7 +112,9 @@ export const offerRecipeArgsSchema: z.ZodType<
     out.ingredients = r.ingredients
       .filter((i): i is string => typeof i === "string")
       .slice(0, INGREDIENTS_MAX)
-      .map((i) => sanitizeContextField(i, INGREDIENT_MAX))
+      .map((i) =>
+        sanitizeContextField(i, INGREDIENT_MAX).slice(0, INGREDIENT_MAX).trim(),
+      )
       .filter((i) => i.length > 0);
   }
   return out;
@@ -122,6 +124,8 @@ export const offerRecipeArgsSchema: z.ZodType<
 export function normalizeDish(dish: string): string {
   return dish
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
@@ -141,7 +145,8 @@ export function buildOfferBlock(
     details.ingredients.length && `with ${details.ingredients.join(", ")}`,
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(" ")
+    .slice(0, 2000);
   return {
     type: "recipe_offer",
     flow: {
