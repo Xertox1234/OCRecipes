@@ -2,13 +2,13 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
-  Pressable,
   StyleSheet,
   ActivityIndicator,
   AccessibilityInfo,
   Platform,
 } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
+import { PressableScale } from "@/components/PressableScale";
 import type { ActionCard as ActionCardType } from "@shared/schemas/coach-blocks";
 
 type FeedbackState = "idle" | "loading" | "success" | "error";
@@ -91,7 +91,7 @@ const ActionCard = React.memo(function ActionCard({
           {block.subtitle}
         </Text>
       </View>
-      <Pressable
+      <PressableScale
         style={[styles.button, { backgroundColor: buttonBg }]}
         onPress={handlePress}
         disabled={state !== "idle"}
@@ -105,7 +105,7 @@ const ActionCard = React.memo(function ActionCard({
         ) : (
           <Text style={styles.buttonText}>{label}</Text>
         )}
-      </Pressable>
+      </PressableScale>
     </View>
   );
 });

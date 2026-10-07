@@ -6,6 +6,7 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
+import { PressableScale } from "@/components/PressableScale";
 import type { CoachContextData } from "@/hooks/useCoachContext";
 
 interface Props {
@@ -45,7 +46,7 @@ const CoachDashboard = React.memo(function CoachDashboard({
     >
       <Pressable
         onPress={toggleExpanded}
-        style={styles.header}
+        style={({ pressed }) => [styles.header, pressed && { opacity: 0.7 }]}
         accessibilityLabel={
           expanded ? "Collapse dashboard" : "Expand dashboard"
         }
@@ -122,7 +123,10 @@ const CoachDashboard = React.memo(function CoachDashboard({
         {topInsights.map((insight) => (
           <Pressable
             key={insight.id}
-            style={styles.insightRow}
+            style={({ pressed }) => [
+              styles.insightRow,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={() => onSuggestionPress(insight.content)}
             accessibilityRole="button"
             accessibilityLabel={`Discuss: ${insight.content}`}
@@ -143,7 +147,8 @@ const CoachDashboard = React.memo(function CoachDashboard({
           contentContainerStyle={styles.chipsContent}
         >
           {suggestions.map((s, i) => (
-            <Pressable
+            <PressableScale
+              scaleTo={0.95}
               key={i}
               style={[
                 styles.chip,
@@ -154,7 +159,7 @@ const CoachDashboard = React.memo(function CoachDashboard({
               accessibilityRole="button"
             >
               <Text style={[styles.chipText, { color: theme.link }]}>{s}</Text>
-            </Pressable>
+            </PressableScale>
           ))}
         </ScrollView>
       )}
