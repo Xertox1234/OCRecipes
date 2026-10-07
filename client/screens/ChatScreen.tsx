@@ -83,7 +83,9 @@ const CoachStreamingFooter = React.memo(function CoachStreamingFooter({
   const { theme } = useTheme();
 
   if (content) {
-    return <ChatBubble role="assistant" content={content} isStreaming />;
+    return (
+      <ChatBubble role="assistant" content={content} isStreaming animateEntry />
+    );
   }
 
   return (
@@ -538,7 +540,12 @@ export default function ChatScreen() {
 
   const renderItem = useCallback(({ item }: { item: DisplayMessage }) => {
     return (
-      <ChatBubble role={item.role} content={item.content} isStreaming={false} />
+      <ChatBubble
+        role={item.role}
+        content={item.content}
+        isStreaming={false}
+        animateEntry={item.id === "pending-user"}
+      />
     );
   }, []);
 

@@ -18,6 +18,10 @@ interface ChatBubbleProps {
   isStreaming?: boolean;
   onSpeak?: () => void;
   isSpeaking?: boolean;
+  /** Slide in on mount. Only a live copy sets this (a message just sent,
+   *  a reply streaming in); saved messages (history, scroll-back, the swap
+   *  once a reply is saved) appear in place instead of replaying it. */
+  animateEntry?: boolean;
 }
 
 export function ChatBubble({
@@ -25,6 +29,7 @@ export function ChatBubble({
   content,
   onSpeak,
   isSpeaking,
+  animateEntry = false,
 }: ChatBubbleProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -32,17 +37,18 @@ export function ChatBubble({
 
   if (!content) return null;
 
-  const entering = reducedMotion
-    ? undefined
-    : isUser
-      ? SlideInRight.springify()
-          .damping(chatBubbleEntrySpring.damping)
-          .stiffness(chatBubbleEntrySpring.stiffness)
-          .duration(200)
-      : SlideInLeft.springify()
-          .damping(chatBubbleEntrySpring.damping)
-          .stiffness(chatBubbleEntrySpring.stiffness)
-          .delay(100);
+  const entering =
+    reducedMotion || !animateEntry
+      ? undefined
+      : isUser
+        ? SlideInRight.springify()
+            .damping(chatBubbleEntrySpring.damping)
+            .stiffness(chatBubbleEntrySpring.stiffness)
+            .duration(200)
+        : SlideInLeft.springify()
+            .damping(chatBubbleEntrySpring.damping)
+            .stiffness(chatBubbleEntrySpring.stiffness)
+            .delay(100);
 
   if (isUser) {
     return (

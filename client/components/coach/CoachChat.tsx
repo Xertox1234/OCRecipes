@@ -1006,7 +1006,7 @@ export default function CoachChat({
       }
 
       if (item.type === "optimistic") {
-        return <ChatBubble role="user" content={item.content} />;
+        return <ChatBubble role="user" content={item.content} animateEntry />;
       }
 
       return null;
