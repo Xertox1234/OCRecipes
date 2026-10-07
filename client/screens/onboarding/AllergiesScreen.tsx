@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
@@ -120,7 +121,8 @@ export default function AllergiesScreen() {
             const selected = isAllergenSelected(allergen.id);
             const severity = getAllergenSeverity(allergen.id);
             return (
-              <Pressable
+              <SelectableTile
+                shape="row"
                 key={allergen.id}
                 onPress={() => toggleAllergen(allergen.id)}
                 accessibilityLabel={`${allergen.name}${selected ? `, selected${severity ? `, severity: ${severity}` : ""}` : ""}`}
@@ -166,7 +168,7 @@ export default function AllergiesScreen() {
                 ) : selected ? (
                   <Feather name="check" size={18} color={theme.success} />
                 ) : null}
-              </Pressable>
+              </SelectableTile>
             );
           })}
         </View>
@@ -189,7 +191,8 @@ export default function AllergiesScreen() {
             </ThemedText>
             <View style={styles.severityOptions}>
               {SEVERITY_OPTIONS.map((option) => (
-                <Pressable
+                <SelectableTile
+                  shape="row"
                   key={option.value}
                   onPress={() => setSeverity(option.value)}
                   accessibilityLabel={`${option.label}: ${option.description}`}
@@ -221,7 +224,7 @@ export default function AllergiesScreen() {
                   >
                     {option.description}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               ))}
             </View>
           </View>

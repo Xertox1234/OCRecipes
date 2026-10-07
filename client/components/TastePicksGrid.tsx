@@ -1,7 +1,8 @@
 import React, { useCallback } from "react";
-import { View, FlatList, Pressable, Image, StyleSheet } from "react-native";
+import { View, FlatList, Image, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
+import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
@@ -25,7 +26,7 @@ const RecipeCard = React.memo(function RecipeCard({
 }) {
   const { theme } = useTheme();
   return (
-    <Pressable
+    <SelectableTile
       onPress={() => onToggle(item.id)}
       accessibilityLabel={
         item.cuisineOrigin
@@ -71,7 +72,7 @@ const RecipeCard = React.memo(function RecipeCard({
           </ThemedText>
         )}
       </View>
-    </Pressable>
+    </SelectableTile>
   );
 });
 

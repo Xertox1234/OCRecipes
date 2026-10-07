@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
@@ -14,17 +15,13 @@ import {
   SKILL_LEVELS,
   COOKING_TIMES,
 } from "@/constants/dietary-options";
-import { useHaptics } from "@/hooks/useHaptics";
-import * as Haptics from "expo-haptics";
 
 export default function PreferencesScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const haptics = useHaptics();
   const { data, updateData, prevStep, nextStep } = useOnboarding();
 
   const toggleCuisine = (cuisineId: string) => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     const isSelected = data.cuisinePreferences.includes(cuisineId);
     if (isSelected) {
       updateData({
@@ -40,14 +37,12 @@ export default function PreferencesScreen() {
   };
 
   const selectSkillLevel = (levelId: string) => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     updateData({
       cookingSkillLevel: data.cookingSkillLevel === levelId ? null : levelId,
     });
   };
 
   const selectCookingTime = (timeId: string) => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     updateData({
       cookingTimeAvailable:
         data.cookingTimeAvailable === timeId ? null : timeId,
@@ -55,7 +50,6 @@ export default function PreferencesScreen() {
   };
 
   const toggleDislike = (dislikeId: string) => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     const isSelected = data.foodDislikes.includes(dislikeId);
     if (isSelected) {
       updateData({
@@ -109,7 +103,8 @@ export default function PreferencesScreen() {
             {CUISINES.map((cuisine) => {
               const selected = data.cuisinePreferences.includes(cuisine.id);
               return (
-                <Pressable
+                <SelectableTile
+                  shape="chip"
                   key={cuisine.id}
                   onPress={() => toggleCuisine(cuisine.id)}
                   accessibilityLabel={cuisine.name}
@@ -134,7 +129,7 @@ export default function PreferencesScreen() {
                   >
                     {cuisine.name}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -154,7 +149,8 @@ export default function PreferencesScreen() {
             {COMMON_DISLIKES.map((dislike) => {
               const selected = data.foodDislikes.includes(dislike.id);
               return (
-                <Pressable
+                <SelectableTile
+                  shape="chip"
                   key={dislike.id}
                   onPress={() => toggleDislike(dislike.id)}
                   accessibilityLabel={dislike.name}
@@ -179,7 +175,7 @@ export default function PreferencesScreen() {
                   >
                     {dislike.name}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -197,7 +193,8 @@ export default function PreferencesScreen() {
             {SKILL_LEVELS.map((level) => {
               const selected = data.cookingSkillLevel === level.id;
               return (
-                <Pressable
+                <SelectableTile
+                  shape="row"
                   key={level.id}
                   onPress={() => selectSkillLevel(level.id)}
                   accessibilityLabel={`${level.name}: ${level.description}`}
@@ -238,7 +235,7 @@ export default function PreferencesScreen() {
                       style={[styles.radio, { borderColor: theme.border }]}
                     />
                   )}
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -256,7 +253,8 @@ export default function PreferencesScreen() {
             {COOKING_TIMES.map((time) => {
               const selected = data.cookingTimeAvailable === time.id;
               return (
-                <Pressable
+                <SelectableTile
+                  shape="row"
                   key={time.id}
                   onPress={() => selectCookingTime(time.id)}
                   accessibilityLabel={`${time.name}: ${time.description}`}
@@ -297,7 +295,7 @@ export default function PreferencesScreen() {
                       style={[styles.radio, { borderColor: theme.border }]}
                     />
                   )}
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
