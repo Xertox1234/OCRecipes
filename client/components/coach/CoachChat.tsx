@@ -964,6 +964,7 @@ export default function CoachChat({
                   onFinderAction={handleFinderAction}
                   onLockedFinderButton={openUpgrade}
                   onOpenFinderItem={handleOpenFinderItem}
+                  messageContent={msg.content}
                 />
               );
             })}

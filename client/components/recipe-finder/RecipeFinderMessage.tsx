@@ -10,10 +10,15 @@ import type {
 } from "@shared/schemas/recipe-finder";
 import { RecipeResultsList } from "./RecipeResultsList";
 import { RecipeQuestions } from "./RecipeQuestions";
+import { RecipeOffer } from "./RecipeOffer";
+import { RecipeAdjust } from "./RecipeAdjust";
 import { FINDER_BUTTON_LABELS, answersLabel } from "./recipe-finder-utils";
 
 export interface RecipeFinderMessageProps {
   block: FinderBlock;
+  /** The message text. Both chats hide it under a finder block; the offer
+   *  shows it, since the server wrote the offer copy there. */
+  content?: string;
   isActive: boolean;
   /** Passed to the results list; see RecipeResultsListProps. */
   announceArrival?: boolean;
@@ -28,6 +33,7 @@ const NO_LOCKS: FinderButton[] = [];
 
 export function RecipeFinderMessage({
   block,
+  content,
   isActive,
   announceArrival,
   lockedButtons = NO_LOCKS,
@@ -58,6 +64,35 @@ export function RecipeFinderMessage({
     [isActive, onAction, flowId],
   );
 
+  // Offer + adjust buttons send their own action shapes; this gate keeps the
+  // "only the latest finder block is live" rule in one place.
+  const handleCardAction = useCallback(
+    (action: FinderAction, label: string) => {
+      if (!isActive) return;
+      onAction(action, label);
+    },
+    [isActive, onAction],
+  );
+
+  if (block.type === "recipe_offer") {
+    return (
+      <RecipeOffer
+        block={block}
+        content={content}
+        isActive={isActive}
+        onAction={handleCardAction}
+      />
+    );
+  }
+  if (block.type === "recipe_adjust") {
+    return (
+      <RecipeAdjust
+        block={block}
+        isActive={isActive}
+        onAction={handleCardAction}
+      />
+    );
+  }
   if (block.type === "recipe_results") {
     return (
       <RecipeResultsList
@@ -70,8 +105,6 @@ export function RecipeFinderMessage({
       />
     );
   }
-  // offer/adjust blocks render nothing until the client UI task
-  if (block.type !== "recipe_questions") return null;
   return (
     <RecipeQuestions
       block={block}
