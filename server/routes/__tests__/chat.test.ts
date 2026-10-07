@@ -1431,6 +1431,9 @@ describe("Chat Routes", () => {
           expect(res.text).toContain('"done":true');
           expect(storage.deleteChatMessage).not.toHaveBeenCalled();
           expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
           expect(generateRecipeChatResponse).not.toHaveBeenCalled();
         });
 
@@ -1450,6 +1453,68 @@ describe("Chat Routes", () => {
           expect(res.text).toContain('"type":"recipe_offer"');
         });
 
+        it("an off-screen card is not refined: card, offer, No, then typed text → fresh offer, no generation", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue([
+            ...cardHistory(),
+            createMockChatMessage({ id: 3, role: "user", content: "dessert" }),
+            createMockChatMessage({
+              id: 4,
+              role: "assistant",
+              content: "Want a recipe?",
+              metadata: { metadataVersion: 1, finder: offerBlock },
+            }),
+            createMockChatMessage({ id: 5, role: "user", content: "No" }),
+            createMockChatMessage({
+              id: 6,
+              role: "assistant",
+              content: "No problem.",
+              metadata: null,
+            }),
+          ]);
+          vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+          const res = await send({ content: "actually, make it spicy" });
+          expect(res.text).toContain('"type":"recipe_offer"');
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        });
+
+        it("card is latest + refine_current still refines via the legacy path (flag on)", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+          vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+          await send({ content: "make it spicier" });
+          expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalled();
+          expect(generateRecipeChatResponse).toHaveBeenCalled();
+        });
+
+        it("plain reply (no dish named): persisted without metadata, no claim, user row kept, auto-titled", async () => {
+          vi.mocked(extractOfferDetails).mockResolvedValue({
+            dish: null,
+            details: { ingredients: [], fromConversation: false },
+          });
+          vi.mocked(storage.getChatMessages).mockResolvedValue([]);
+          const res = await send({ content: "hmm" });
+          expect(res.text).toContain("Which dish did you have in mind?");
+          expect(res.text).toContain('"done":true');
+          expect(storage.createChatMessage).toHaveBeenCalledWith(
+            1,
+            "1",
+            "assistant",
+            "Which dish did you have in mind?",
+          );
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
+          expect(storage.updateChatConversationTitle).toHaveBeenCalledWith(
+            1,
+            "1",
+            "hmm",
+          );
+        });
+
         it("a card is latest and classifyTurn says other → legacy path, unchanged (deliberate carve-out)", async () => {
           vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
           vi.mocked(classifyTurn).mockResolvedValue("other");
@@ -1466,6 +1531,9 @@ describe("Chat Routes", () => {
           const res = await send({ content: "yes please!" });
           expect(res.text).toContain('"type":"recipe_adjust"');
           expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
           expect(generateRecipeChatResponse).not.toHaveBeenCalled();
         });
 

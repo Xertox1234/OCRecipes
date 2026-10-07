@@ -116,12 +116,13 @@ export function normalizeCommand(text: string): string {
 export function matchTypedFinderCommand(
   text: string,
   stage: FinderBlock["type"],
+  offer = false,
 ): TypedFinderCommand | null {
   const t = normalizeCommand(text);
   if (GENERATE_PHRASES.has(t)) return "generate";
-  // Offer-flow phrases are gated by stage: those stages only exist with
-  // RECIPE_OFFER_ENABLED on, so flag-off behaviour is unchanged.
-  if (stage === "recipe_offer" || stage === "recipe_adjust") {
+  // Offer-flow phrases need the flag AND the stage: offer/adjust blocks can
+  // outlive a flag flip-off, so the stage alone is not enough.
+  if (offer && (stage === "recipe_offer" || stage === "recipe_adjust")) {
     if (YES_PHRASES.has(t)) return "yes";
     if (NO_PHRASES.has(t)) return "no";
     if (stage === "recipe_offer" && SEARCH_PHRASES.has(t)) return "search";
@@ -150,11 +151,17 @@ export function decideRecipeChefEntry(
       input: {
         kind: "typed",
         text,
-        command: matchTypedFinderCommand(text, latest.type),
+        command: matchTypedFinderCommand(
+          text,
+          latest.type,
+          opts?.offer === true,
+        ),
       },
     };
   }
-  const card = getLatestRecipe(history, { latestOnly: false });
+  // Offer on: refine is only for a card ON SCREEN (the latest message);
+  // an older card with a text reply since gets an offer instead.
+  const card = getLatestRecipe(history, { latestOnly: opts?.offer === true });
   if (card) return { kind: "classify", recipeTitle: card.title };
   if (!history.some((m) => m.role === "user")) {
     return { kind: "finder", input: { kind: "start", text } };

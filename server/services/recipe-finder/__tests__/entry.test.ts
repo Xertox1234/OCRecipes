@@ -171,7 +171,15 @@ describe("matchTypedFinderCommand — offer phrases (stage-gated)", () => {
     ["no", "recipe_questions", null],
     ["yes with extra garlic", "recipe_offer", null],
   ] as const)("%j at %s → %s", (text, stage, expected) => {
-    expect(matchTypedFinderCommand(text, stage)).toBe(expected);
+    expect(matchTypedFinderCommand(text, stage, true)).toBe(expected);
+  });
+  it("flag off: a leftover offer/adjust block gets no yes/no/search (as before)", () => {
+    expect(matchTypedFinderCommand("yes", "recipe_offer")).toBeNull();
+    expect(matchTypedFinderCommand("no", "recipe_adjust", false)).toBeNull();
+    expect(matchTypedFinderCommand("search", "recipe_offer", false)).toBeNull();
+    expect(matchTypedFinderCommand("generate", "recipe_offer")).toBe(
+      "generate",
+    );
   });
 });
 
@@ -188,6 +196,42 @@ describe("decideRecipeChefEntry — offer on (legacy → offer, H3)", () => {
     ).toEqual({
       kind: "finder",
       input: { kind: "start", text: "actually, make it spicy" },
+    });
+  });
+  it("an earlier card that is not the latest message: offer on → start, off → classify", () => {
+    const h = [
+      msg("user"),
+      msg("assistant", {
+        metadataVersion: 1,
+        recipe,
+        allergenWarning: null,
+        imageUrl: null,
+      }),
+      msg("user"),
+      msg("assistant", null, "No problem."),
+    ];
+    expect(decideRecipeChefEntry(h, "make it spicy", { offer: true })).toEqual({
+      kind: "finder",
+      input: { kind: "start", text: "make it spicy" },
+    });
+    expect(decideRecipeChefEntry(h, "make it spicy")).toEqual({
+      kind: "classify",
+      recipeTitle: "Chicken Curry",
+    });
+  });
+  it("offer on: the card IS the latest message → classify (refine exception)", () => {
+    const h = [
+      msg("user"),
+      msg("assistant", {
+        metadataVersion: 1,
+        recipe,
+        allergenWarning: null,
+        imageUrl: null,
+      }),
+    ];
+    expect(decideRecipeChefEntry(h, "spicier", { offer: true })).toEqual({
+      kind: "classify",
+      recipeTitle: "Chicken Curry",
     });
   });
   it("offer off → legacy (unchanged)", () => {

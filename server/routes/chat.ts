@@ -585,6 +585,16 @@ export function register(app: Express): void {
                     `data: ${JSON.stringify({ content: turn.content })}\n\n`,
                   );
                 }
+                if (!finderHistory.some((m) => m.role === "user")) {
+                  fireAndForget(
+                    "recipe-finder-auto-title",
+                    storage.updateChatConversationTitle(
+                      id,
+                      req.userId,
+                      sanitizedContent.slice(0, 50),
+                    ),
+                  );
+                }
               } else if (turn.kind === "message") {
                 await storage.createChatMessage(
                   id,
