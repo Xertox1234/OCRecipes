@@ -135,6 +135,11 @@ export async function* runCoachFinderTurn(
     // already claimed it — no status yield here: the route returns the
     // generator at a yield once the client leaves, which would drop the
     // claimed recipe unpersisted.
+    // close/plain only occur with the offer flag on (wired in a later task).
+    if (turn.kind !== "generate") {
+      await storage.deleteChatMessage(p.userMessageId, p.userId);
+      return;
+    }
     generation = turn.messages;
   }
 

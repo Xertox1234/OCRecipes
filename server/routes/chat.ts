@@ -591,7 +591,8 @@ export function register(app: Express): void {
                 // e.g. Search Spoonacular on a Spoonacular list — nothing to
                 // answer, so don't leave a dangling user bubble.
                 await storage.deleteChatMessage(userMessage.id, req.userId);
-              } else {
+              } else if (turn.kind === "generate") {
+                // close/plain only occur with the offer flag on (Task 12 wires them).
                 finderGeneration = turn.messages;
                 // A round-1 search that found nothing falls through to
                 // Generate: update the thinking bubble.

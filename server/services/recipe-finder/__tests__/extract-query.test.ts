@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { extractQuery, rawQuery } from "../extract-query";
+import { extractQuery, rawQuery, extractOfferDetails } from "../extract-query";
 import { aiChat } from "../../../lib/ai-client";
 import { createMockChatCompletion } from "../../../__tests__/factories";
 
@@ -90,5 +90,39 @@ describe("rawQuery", () => {
   it("caps q at 200 chars and never returns an empty q", () => {
     expect(rawQuery("x".repeat(300)).q).toHaveLength(200);
     expect(rawQuery("   ").q).toBe("recipe");
+  });
+});
+
+describe("extractOfferDetails", () => {
+  it("maps dish + servings 8 and validates each field", async () => {
+    aiReturns({
+      dish: "Spaghetti and meatballs",
+      servings: 8,
+      spice: null,
+      time: null,
+      ingredients: [],
+    });
+    await expect(
+      extractOfferDetails("make spaghetti and meatballs for 8", []),
+    ).resolves.toEqual({
+      dish: "Spaghetti and meatballs",
+      details: { servings: 8, ingredients: [], fromConversation: false },
+    });
+    expect(mockCreate.mock.calls[0][0]).toBe("finder-extract-offer");
+  });
+
+  it("drops servings 99 but keeps the dish", async () => {
+    aiReturns({ dish: "Chili", servings: 99, ingredients: [] });
+    const out = await extractOfferDetails("chili for 99", []);
+    expect(out.dish).toBe("Chili");
+    expect(out.details.servings).toBeUndefined();
+  });
+
+  it("returns dish null when the AI call throws", async () => {
+    mockCreate.mockRejectedValue(new Error("boom"));
+    await expect(extractOfferDetails("chili", [])).resolves.toEqual({
+      dish: null,
+      details: { ingredients: [], fromConversation: false },
+    });
   });
 });

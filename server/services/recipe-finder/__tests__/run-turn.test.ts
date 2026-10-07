@@ -12,15 +12,20 @@ import {
 } from "../run-turn";
 import { buildFinderGenerationMessages } from "../generate";
 import { storage } from "../../../storage";
-import { extractQuery } from "../extract-query";
+import { extractQuery, extractOfferDetails } from "../extract-query";
 import { findCommunity } from "../find-community";
 import { findOnline } from "../find-online";
 import { askClarifying } from "../ask-clarifying";
+import { askDishFollowUps } from "../ask-follow-ups";
 
 vi.mock("../../../storage", () => ({
   storage: { claimRecipeGeneration: vi.fn(), claimSpoonacularSearch: vi.fn() },
 }));
-vi.mock("../extract-query", () => ({ extractQuery: vi.fn() }));
+vi.mock("../extract-query", () => ({
+  extractQuery: vi.fn(),
+  extractOfferDetails: vi.fn(),
+}));
+vi.mock("../ask-follow-ups", () => ({ askDishFollowUps: vi.fn() }));
 vi.mock("../find-community", () => ({ findCommunity: vi.fn() }));
 vi.mock("../find-online", () => ({ findOnline: vi.fn() }));
 vi.mock("../ask-clarifying", () => ({ askClarifying: vi.fn() }));
@@ -287,5 +292,153 @@ describe("buildFinderGenerationMessages", () => {
     const msgs = buildFinderGenerationMessages({ mode: "refine", history });
     expect(msgs[0].content).toContain('[Recipe: {"title":"Curry"');
     expect(msgs[1]).toEqual({ role: "user", content: "make it spicier" });
+  });
+});
+
+describe("executeFinderStep: offer steps", () => {
+  const offerFlow: FinderFlow = {
+    flowId: "00000000-0000-4000-8000-000000000001",
+    stage: "offer",
+    request: "Chili",
+    query: { q: "Chili" },
+    round: 0,
+    shownIds: [],
+    dish: "Chili",
+    details: { ingredients: [], fromConversation: false },
+  };
+  const adjustBlock = {
+    type: "recipe_adjust" as const,
+    prefill: { servings: 2, spice: "mild" as const, time: "moderate" as const },
+    avoiding: [],
+    noted: { dislikes: [] },
+    followUps: [{ question: "Beans?", options: ["Yes", "No"] }],
+    flow: { ...offerFlow, stage: "adjust" as const },
+  };
+  const settings = adjustBlock.prefill;
+
+  it("build_adjust → recipe_adjust message, nothing claimed", async () => {
+    vi.mocked(askDishFollowUps).mockResolvedValue(adjustBlock.followUps);
+    const out = await executeFinderStep(
+      { kind: "build_adjust", flow: offerFlow },
+      ctx({ offer: true }),
+    );
+    expect(out.kind).toBe("message");
+    if (out.kind !== "message") return;
+    expect(out.block.type).toBe("recipe_adjust");
+    expectResponseToMatch(out.block, finderBlockSchema);
+    expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+  });
+
+  it("generate_with_settings with a valid answer claims once and generates", async () => {
+    vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(true);
+    const out = await executeFinderStep(
+      {
+        kind: "generate_with_settings",
+        flow: adjustBlock.flow,
+        settings,
+        answers: [{ question: "Beans?", answer: "Yes" }],
+      },
+      ctx({ offer: true, latest: adjustBlock }),
+    );
+    expect(storage.claimRecipeGeneration).toHaveBeenCalledTimes(1);
+    expect(out.kind).toBe("generate");
+    if (out.kind !== "generate") return;
+    expect(out.allergenDetail).toBe("extended");
+    expect(out.messages[out.messages.length - 1].content).toContain(
+      "Create a recipe for:",
+    );
+  });
+
+  it("generate_with_settings with an un-offered answer → ignored, no claim", async () => {
+    const out = await executeFinderStep(
+      {
+        kind: "generate_with_settings",
+        flow: adjustBlock.flow,
+        settings,
+        answers: [{ question: "Beans?", answer: "Maybe" }],
+      },
+      ctx({ offer: true, latest: adjustBlock }),
+    );
+    expect(out).toEqual({ kind: "ignored" });
+    expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+  });
+
+  it("generate_with_settings when latest is not an adjust block → ignored", async () => {
+    const out = await executeFinderStep(
+      {
+        kind: "generate_with_settings",
+        flow: adjustBlock.flow,
+        settings,
+        answers: [],
+      },
+      ctx({ offer: true, latest: null }),
+    );
+    expect(out).toEqual({ kind: "ignored" });
+    expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+  });
+
+  it("generate_with_settings at the limit → generate_limit notice", async () => {
+    vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(false);
+    const out = await executeFinderStep(
+      {
+        kind: "generate_with_settings",
+        flow: adjustBlock.flow,
+        settings,
+        answers: [],
+      },
+      ctx({ offer: true, latest: adjustBlock }),
+    );
+    if (out.kind !== "message" || out.block.type !== "recipe_results") {
+      throw new Error("expected results");
+    }
+    expect(out.block.notice).toBe("generate_limit");
+  });
+
+  it("close → No problem., nothing claimed", async () => {
+    const out = await executeFinderStep(
+      { kind: "close" },
+      ctx({ offer: true }),
+    );
+    expect(out).toEqual({ kind: "close", content: "No problem." });
+    expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+  });
+
+  it("offer_from_text with no dish → plain question", async () => {
+    vi.mocked(extractOfferDetails).mockResolvedValue({
+      dish: null,
+      details: { ingredients: [], fromConversation: false },
+    });
+    const out = await executeFinderStep(
+      { kind: "offer_from_text", text: "thanks" },
+      ctx({ offer: true }),
+    );
+    expect(out).toEqual({
+      kind: "plain",
+      content: "Which dish did you have in mind?",
+    });
+  });
+
+  it("offer_from_text with a dish → recipe_offer message", async () => {
+    vi.mocked(extractOfferDetails).mockResolvedValue({
+      dish: "Chili",
+      details: { ingredients: [], fromConversation: false },
+    });
+    const out = await executeFinderStep(
+      { kind: "offer_from_text", text: "chili" },
+      ctx({ offer: true }),
+    );
+    expect(out.kind === "message" && out.block.type).toBe("recipe_offer");
+  });
+
+  it("offer → recipe_offer message", async () => {
+    const out = await executeFinderStep(
+      {
+        kind: "offer",
+        dish: "Chili",
+        details: { ingredients: [], fromConversation: false },
+      },
+      ctx({ offer: true }),
+    );
+    expect(out.kind === "message" && out.block.type).toBe("recipe_offer");
   });
 });

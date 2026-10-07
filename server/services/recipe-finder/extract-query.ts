@@ -9,8 +9,13 @@ import {
   SYSTEM_PROMPT_BOUNDARY,
 } from "../../lib/ai-safety";
 import { createServiceLogger, toError } from "../../lib/logger";
+import type { ChatMessage } from "@shared/schema";
 import {
+  recipeDetailsSchema,
+  cookingTimeSchema,
+  spiceLevelSchema,
   recipeQuerySchema,
+  type RecipeDetails,
   type RecipeQuery,
 } from "@shared/schemas/recipe-finder";
 
@@ -106,4 +111,93 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
     }
   }
   return result;
+}
+
+const aiOfferSchema = z.object({
+  dish: z.string().nullable().optional(),
+  servings: z.unknown().optional(),
+  spice: z.unknown().optional(),
+  time: z.unknown().optional(),
+  ingredients: z.unknown().optional(),
+});
+
+/**
+ * Coach/RecipeChef typed text -> offer. Never throws: any failure yields
+ * `dish: null` (the caller asks which dish).
+ */
+export async function extractOfferDetails(
+  text: string,
+  history: ChatMessage[],
+): Promise<{ dish: string | null; details: RecipeDetails }> {
+  const failed = () => ({
+    dish: null,
+    details: { ingredients: [], fromConversation: false } as RecipeDetails,
+  });
+  try {
+    const convo = history
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .slice(-6)
+      .map((m) =>
+        m.role === "user"
+          ? `User: ${sanitizeUserInput(m.content).slice(0, 300)}`
+          : `Assistant: ${sanitizeContextField(m.content, 300)}`,
+      )
+      .join("\n");
+    const response = await aiChat(
+      "finder-extract-offer",
+      {
+        temperature: 0,
+        max_completion_tokens: 200,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: `You extract a recipe request from the user's latest message, using the recent conversation only to resolve references like "that" or "make it for 8".
+Return JSON: {"dish": string|null, "servings": integer|null, "spice": "mild"|"medium"|"hot"|null, "time": "quick"|"moderate"|"leisurely"|null, "ingredients": string[]}
+- "dish": the specific dish the user wants a recipe for, or null if the latest message names no dish (e.g. "thanks").
+- "servings", "spice", "time": only if the user stated them, else null.
+- "ingredients": ingredients the user asked to use, else [].
+
+${SYSTEM_PROMPT_BOUNDARY}`,
+          },
+          {
+            role: "user",
+            content: `Recent conversation:\n${convo || "(none)"}\n\nLatest message: ${sanitizeUserInput(text)}`,
+          },
+        ],
+      },
+      { timeout: OPENAI_TIMEOUT_FAST_MS },
+    );
+    const content = response.choices[0]?.message?.content;
+    if (!content) return failed();
+    const ai = validateAiResponse(JSON.parse(content), aiOfferSchema);
+    const dish = ai?.dish?.trim().slice(0, 80);
+    if (!ai || !dish) return failed();
+
+    const details: RecipeDetails = { ingredients: [], fromConversation: false };
+    const servings = recipeDetailsSchema.shape.servings.safeParse(
+      ai.servings ?? undefined,
+    );
+    if (servings.success && servings.data !== undefined) {
+      details.servings = servings.data;
+    }
+    const spice = spiceLevelSchema.safeParse(ai.spice);
+    if (spice.success) details.spice = spice.data;
+    const time = cookingTimeSchema.safeParse(ai.time);
+    if (time.success) details.time = time.data;
+    if (Array.isArray(ai.ingredients)) {
+      const parsed = recipeDetailsSchema.shape.ingredients.safeParse(
+        ai.ingredients
+          .filter((i): i is string => typeof i === "string")
+          .map((i) => sanitizeContextField(i, 60))
+          .filter((i) => i.length > 0)
+          .slice(0, 15),
+      );
+      if (parsed.success) details.ingredients = parsed.data;
+    }
+    return { dish, details };
+  } catch (error) {
+    log.warn({ err: toError(error) }, "extractOfferDetails failed; no dish");
+    return failed();
+  }
 }
