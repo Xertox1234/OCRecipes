@@ -119,7 +119,10 @@ export async function executeFinderStep(
   }
 
   const outcome = finderOutcome(step, result, finderCtx);
-  if (outcome.kind === "ignore") return { kind: "ignored" };
+  // build_adjust is only produced with the offer flag on (wired in a later task).
+  if (outcome.kind === "ignore" || outcome.kind === "build_adjust") {
+    return { kind: "ignored" };
+  }
   if (outcome.kind === "message") {
     return {
       kind: "message",
