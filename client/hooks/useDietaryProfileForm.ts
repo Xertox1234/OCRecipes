@@ -97,7 +97,6 @@ export function useDietaryProfileForm() {
     const existing = allergies.find((a) => a.name === allergenId);
     if (existing) {
       setAllergies(allergies.filter((a) => a.name !== allergenId));
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     } else {
       setSelectedAllergen(allergenId);
     }
@@ -108,7 +107,6 @@ export function useDietaryProfileForm() {
       const filtered = allergies.filter((a) => a.name !== selectedAllergen);
       setAllergies([...filtered, { name: selectedAllergen, severity }]);
       setSelectedAllergen(null);
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     }
   };
 
@@ -118,7 +116,6 @@ export function useDietaryProfileForm() {
     } else {
       setHealthConditions([...healthConditions, conditionId]);
     }
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const toggleDislike = (dislikeId: string) => {
@@ -127,7 +124,6 @@ export function useDietaryProfileForm() {
     } else {
       setFoodDislikes([...foodDislikes, dislikeId]);
     }
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const toggleCuisine = (cuisineId: string) => {
@@ -136,7 +132,6 @@ export function useDietaryProfileForm() {
     } else {
       setCuisinePreferences([...cuisinePreferences, cuisineId]);
     }
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleSave = async () => {
@@ -200,6 +195,5 @@ export function useDietaryProfileForm() {
     toggleDislike,
     toggleCuisine,
     handleSave,
-    haptics,
   };
 }

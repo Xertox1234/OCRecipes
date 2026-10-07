@@ -1,16 +1,10 @@
 import React, { useRef } from "react";
-import {
-  AccessibilityInfo,
-  View,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-} from "react-native";
+import { AccessibilityInfo, View, StyleSheet, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { EmptyState } from "@/components/EmptyState";
@@ -196,7 +190,6 @@ export default function EditDietaryProfileScreen() {
     toggleDislike,
     toggleCuisine,
     handleSave,
-    haptics,
   } = useDietaryProfileForm();
 
   // Announce the error transition for screen readers (cross-platform — the
@@ -279,7 +272,8 @@ export default function EditDietaryProfileScreen() {
               const allergy = allergies.find((a) => a.name === allergen.id);
               const selected = !!allergy;
               return (
-                <Pressable
+                <SelectableTile
+                  shape="chip"
                   key={allergen.id}
                   onPress={() => toggleAllergen(allergen.id)}
                   accessibilityLabel={allergen.name}
@@ -333,7 +327,7 @@ export default function EditDietaryProfileScreen() {
                       </ThemedText>
                     </View>
                   )}
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -351,10 +345,11 @@ export default function EditDietaryProfileScreen() {
               </ThemedText>
               <View style={styles.severityOptions}>
                 {SEVERITY_OPTIONS.map((option) => (
-                  <Pressable
+                  <SelectableTile
                     key={option.value}
                     onPress={() => setSeverity(option.value)}
                     accessibilityLabel={`${option.label}: ${option.description}`}
+                    accessibilityRole="button"
                     style={[
                       styles.severityOption,
                       {
@@ -376,7 +371,7 @@ export default function EditDietaryProfileScreen() {
                     <ThemedText type="small" style={{ fontWeight: "600" }}>
                       {option.label}
                     </ThemedText>
-                  </Pressable>
+                  </SelectableTile>
                 ))}
               </View>
             </View>
@@ -392,7 +387,8 @@ export default function EditDietaryProfileScreen() {
             {HEALTH_CONDITIONS.map((condition) => {
               const selected = healthConditions.includes(condition.id);
               return (
-                <Pressable
+                <SelectableTile
+                  shape="row"
                   key={condition.id}
                   onPress={() => toggleHealthCondition(condition.id)}
                   accessibilityLabel={condition.name}
@@ -433,7 +429,7 @@ export default function EditDietaryProfileScreen() {
                       style={[styles.checkbox, { borderColor: theme.border }]}
                     />
                   )}
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -452,11 +448,11 @@ export default function EditDietaryProfileScreen() {
             {DIET_TYPES.map((diet) => {
               const selected = dietType === diet.id;
               return (
-                <Pressable
+                <SelectableTile
+                  shape="chip"
                   key={diet.id}
                   onPress={() => {
                     setDietType(dietType === diet.id ? null : diet.id);
-                    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
                   }}
                   accessibilityLabel={diet.name}
                   accessibilityRole="radio"
@@ -480,7 +476,7 @@ export default function EditDietaryProfileScreen() {
                   >
                     {diet.name}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -495,7 +491,8 @@ export default function EditDietaryProfileScreen() {
             {COMMON_DISLIKES.map((dislike) => {
               const selected = foodDislikes.includes(dislike.id);
               return (
-                <Pressable
+                <SelectableTile
+                  shape="chip"
                   key={dislike.id}
                   onPress={() => toggleDislike(dislike.id)}
                   accessibilityLabel={dislike.name}
@@ -520,7 +517,7 @@ export default function EditDietaryProfileScreen() {
                   >
                     {dislike.name}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -539,11 +536,10 @@ export default function EditDietaryProfileScreen() {
             {GOALS.map((goal) => {
               const selected = primaryGoal === goal.id;
               return (
-                <Pressable
+                <SelectableTile
                   key={goal.id}
                   onPress={() => {
                     setPrimaryGoal(primaryGoal === goal.id ? null : goal.id);
-                    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
                   }}
                   accessibilityLabel={goal.name}
                   accessibilityRole="radio"
@@ -575,7 +571,7 @@ export default function EditDietaryProfileScreen() {
                   >
                     {goal.name}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -594,13 +590,13 @@ export default function EditDietaryProfileScreen() {
             {ACTIVITY_LEVELS.map((level) => {
               const selected = activityLevel === level.id;
               return (
-                <Pressable
+                <SelectableTile
+                  shape="row"
                   key={level.id}
                   onPress={() => {
                     setActivityLevel(
                       activityLevel === level.id ? null : level.id,
                     );
-                    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
                   }}
                   accessibilityLabel={`${level.name}: ${level.description}`}
                   accessibilityRole="radio"
@@ -640,7 +636,7 @@ export default function EditDietaryProfileScreen() {
                       style={[styles.radio, { borderColor: theme.border }]}
                     />
                   )}
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -655,7 +651,8 @@ export default function EditDietaryProfileScreen() {
             {CUISINES.map((cuisine) => {
               const selected = cuisinePreferences.includes(cuisine.id);
               return (
-                <Pressable
+                <SelectableTile
+                  shape="chip"
                   key={cuisine.id}
                   onPress={() => toggleCuisine(cuisine.id)}
                   accessibilityLabel={cuisine.name}
@@ -680,7 +677,7 @@ export default function EditDietaryProfileScreen() {
                   >
                     {cuisine.name}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -699,13 +696,13 @@ export default function EditDietaryProfileScreen() {
             {SKILL_LEVELS.map((level) => {
               const selected = cookingSkillLevel === level.id;
               return (
-                <Pressable
+                <SelectableTile
+                  shape="row"
                   key={level.id}
                   onPress={() => {
                     setCookingSkillLevel(
                       cookingSkillLevel === level.id ? null : level.id,
                     );
-                    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
                   }}
                   accessibilityLabel={`${level.name}: ${level.description}`}
                   accessibilityRole="radio"
@@ -745,7 +742,7 @@ export default function EditDietaryProfileScreen() {
                       style={[styles.radio, { borderColor: theme.border }]}
                     />
                   )}
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
@@ -764,13 +761,13 @@ export default function EditDietaryProfileScreen() {
             {COOKING_TIMES.map((time) => {
               const selected = cookingTimeAvailable === time.id;
               return (
-                <Pressable
+                <SelectableTile
+                  shape="row"
                   key={time.id}
                   onPress={() => {
                     setCookingTimeAvailable(
                       cookingTimeAvailable === time.id ? null : time.id,
                     );
-                    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
                   }}
                   accessibilityLabel={`${time.name}: ${time.description}`}
                   accessibilityRole="radio"
@@ -810,7 +807,7 @@ export default function EditDietaryProfileScreen() {
                       style={[styles.radio, { borderColor: theme.border }]}
                     />
                   )}
-                </Pressable>
+                </SelectableTile>
               );
             })}
           </View>
