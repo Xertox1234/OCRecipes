@@ -186,7 +186,7 @@ describe("server-only finder blocks", () => {
           type: "recipe_adjust",
           prefill: { servings: 4, spice: "mild", time: "quick" },
           avoiding: [],
-          noted: {},
+          noted: { dislikes: [] },
           followUps: [],
           flow: { ...flow, stage: "adjust", dish: "Pasta" },
         },

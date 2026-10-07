@@ -48,12 +48,12 @@ export function finderFallbackText(block: FinderBlock): string {
     case "recipe_offer":
       return `${OFFER_TEXT}\n\nReply "yes", "search", or "no".`;
     case "recipe_adjust": {
-      const dish = block.flow.dish || "This recipe";
+      const dish = block.flow.dish;
       const servings = block.prefill.servings;
       const spice = block.prefill.spice;
-      const timeLabel = COOKING_TIMES.find(
-        (t) => t.id === block.prefill.time,
-      )!.description;
+      const timeLabel =
+        COOKING_TIMES.find((t) => t.id === block.prefill.time)?.description ??
+        block.prefill.time;
       return `${dish} — ${servings} servings, ${spice}, ${timeLabel}.\n\nReply "generate" to make it.`;
     }
     case "recipe_results": {
