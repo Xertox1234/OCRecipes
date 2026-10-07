@@ -408,7 +408,9 @@ export function register(app: Express): void {
                   flowId: finderAction.flowId,
                   type: finderAction.type,
                 },
-                ...(isRecipeChat
+                // Offer flag on: Coach finder taps (offer/card/list buttons)
+                // don't count toward the Coach Pro daily message limit.
+                ...(isRecipeChat || offerEnabled
                   ? {}
                   : { coachDailyLimit: features.coachProDailyMessages }),
               },

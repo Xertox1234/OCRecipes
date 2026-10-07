@@ -965,6 +965,64 @@ describe("Chat Routes", () => {
         expect(storage.deleteChatMessage).not.toHaveBeenCalled();
       });
 
+      describe("recipe offer flag on", () => {
+        beforeEach(() => {
+          vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
+          vi.stubEnv("RECIPE_OFFER_ENABLED", "true");
+        });
+        afterEach(() => {
+          vi.unstubAllEnvs();
+        });
+
+        it("a blocks-only reply (offer_recipe) saved before the close keeps the user row", async () => {
+          setupDisconnect();
+          let capturedSignal: AbortSignal | undefined;
+          vi.mocked(generateCoachProResponse).mockImplementation(
+            async function* (_h, _c, _u, signal) {
+              capturedSignal = signal;
+              yield {
+                type: "terminal_tool" as const,
+                name: "offer_recipe" as const,
+                args: JSON.stringify({
+                  dish: "Chili",
+                  from_conversation: false,
+                }),
+              };
+            },
+          );
+          // The offer row lands only after the client has gone: nothing was
+          // streamed as content, so only the saved turnKey row can tell the
+          // settle that this turn was answered.
+          let persisted: ReturnType<typeof createMockChatMessage> | undefined;
+          vi.mocked(storage.createChatMessage).mockImplementation(
+            async (...args) => {
+              await untilAborted(capturedSignal!);
+              persisted = createMockChatMessage({
+                id: 43,
+                role: "assistant",
+                content: args[3],
+                metadata: args[4],
+                turnKey: args[5] ?? null,
+              });
+              return persisted;
+            },
+          );
+          vi.mocked(storage.getChatMessageByTurnKey).mockImplementation(
+            async () => persisted,
+          );
+
+          await postAndDisconnect(() => true);
+
+          expect(assistantWrites()).toHaveLength(1);
+          expect(assistantWrites()[0][4]).toEqual({
+            blocks: [expect.objectContaining({ type: "recipe_offer" })],
+          });
+          // Once by the service's dedup, once by the H6 settle.
+          expect(storage.getChatMessageByTurnKey).toHaveBeenCalledTimes(2);
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        });
+      });
+
       it("control: a completed stream neither refunds nor adds a second write", async () => {
         setupDisconnect();
         vi.mocked(generateCoachProResponse).mockImplementation(
@@ -1555,6 +1613,70 @@ describe("Chat Routes", () => {
           expect(
             vi.mocked(generateRecipeChatResponse).mock.calls[0][3],
           ).toMatchObject({ allergenDetail: "extended" });
+        });
+
+        it("RecipeChef: an offer_yes tap reaches build_adjust (not invalid_for_stage)", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(offerBlock),
+          );
+          const res = await send({
+            content: "Yes",
+            finderAction: { type: "offer_yes", flowId: OFFER_FLOW },
+          });
+          expect(res.status).toBe(200);
+          expect(res.text).toContain('"type":"recipe_adjust"');
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+        });
+
+        describe("Coach Pro taps", () => {
+          beforeEach(() => {
+            vi.mocked(storage.getChatConversation).mockResolvedValue(
+              createMockChatConversation(),
+            );
+            vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(
+              undefined,
+            );
+            vi.mocked(storage.getDailySummary).mockResolvedValue({
+              totalCalories: 0,
+              totalProtein: 0,
+              totalCarbs: 0,
+              totalFat: 0,
+              itemCount: 0,
+            });
+            vi.mocked(storage.getChatMessages).mockResolvedValue([
+              createMockChatMessage({
+                id: 2,
+                role: "assistant",
+                content: "Want a recipe?",
+                metadata: { blocks: [offerBlock] },
+              }),
+            ]);
+          });
+
+          it("a finder tap does not count toward the Coach Pro daily limit", async () => {
+            const res = await send({
+              content: "Yes",
+              finderAction: { type: "offer_yes", flowId: OFFER_FLOW },
+            });
+            expect(res.status).toBe(200);
+            expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+              1,
+              "1",
+              "Yes",
+              { action: { flowId: OFFER_FLOW, type: "offer_yes" } },
+            );
+          });
+
+          it("an offer_yes tap reaches build_adjust (not invalid_for_stage)", async () => {
+            const res = await send({
+              content: "Yes",
+              finderAction: { type: "offer_yes", flowId: OFFER_FLOW },
+            });
+            expect(res.text).toContain('"type":"recipe_adjust"');
+            expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+            expect(generateCoachProResponse).not.toHaveBeenCalled();
+          });
         });
       });
 
