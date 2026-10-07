@@ -287,7 +287,16 @@ export default function CoachChat({
     volume,
     startListening,
     stopListening,
+    error: speechError,
   } = useSpeechToText();
+
+  // Without this a denied mic permission left the tap with no response.
+  // The toast brings its own error haptic and announcement.
+  useEffect(() => {
+    if (speechError) {
+      toast.error(speechError);
+    }
+  }, [speechError, toast]);
 
   const {
     isSpeaking,

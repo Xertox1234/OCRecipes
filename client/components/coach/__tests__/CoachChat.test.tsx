@@ -20,12 +20,16 @@ import CoachChat from "../CoachChat";
 // Mutable container for the onError callback CoachChat passes to useCoachStream,
 // so the test can trigger a 429 limit error after render. vi.hoisted is required
 // because vi.mock factories are hoisted above imports.
-const { coachStreamRef, mockImpact } = vi.hoisted(() => ({
-  coachStreamRef: {
-    onError: null as ((message: string, code?: string) => void) | null,
-  },
-  mockImpact: vi.fn(),
-}));
+const { coachStreamRef, mockImpact, speechState, mockToastError } = vi.hoisted(
+  () => ({
+    coachStreamRef: {
+      onError: null as ((message: string, code?: string) => void) | null,
+    },
+    mockImpact: vi.fn(),
+    speechState: { error: null as string | null },
+    mockToastError: vi.fn(),
+  }),
+);
 
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: (opts: {
@@ -76,6 +80,7 @@ vi.mock("@/hooks/useSpeechToText", () => ({
     volume: -2,
     startListening: vi.fn(),
     stopListening: vi.fn(),
+    error: speechState.error,
   }),
 }));
 
@@ -109,7 +114,7 @@ vi.mock("@/hooks/useMealPlan", () => ({
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: vi.fn(), error: mockToastError, info: vi.fn() }),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -292,6 +297,29 @@ describe("CoachChat — onMessageSent", () => {
     fireEvent.click(screen.getByLabelText("Send message"));
 
     expect(onMessageSent).toHaveBeenCalledOnce();
+  });
+});
+
+describe("CoachChat — voice input errors", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    speechState.error = null;
+  });
+
+  it("stays quiet while voice input has no error", () => {
+    renderCoachChat();
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  // A denied mic permission used to leave the tap with no response at all.
+  it("tells the user when voice input fails", () => {
+    speechState.error =
+      "Microphone or speech recognition permission not granted.";
+    renderCoachChat();
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Microphone or speech recognition permission not granted.",
+    );
   });
 });
 
