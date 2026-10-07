@@ -169,6 +169,10 @@ export default function CoachChat({
     setInputTextState(text);
   }, []);
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
+  // The latest assistant message id when the footer took the finished
+  // reply's blocks. A newer saved message carrying blocks replaces them.
+  const streamBlocksBaselineRef = useRef<number | null>(null);
+  const lastAssistantIdRef = useRef<number | null>(null);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -319,7 +323,10 @@ export default function CoachChat({
       const liveBlocks = (blocks ?? []).filter(
         (b) => !isFinderBlockType(b.type),
       );
-      if (liveBlocks.length > 0) setStreamBlocks(liveBlocks);
+      if (liveBlocks.length > 0) {
+        streamBlocksBaselineRef.current = lastAssistantIdRef.current;
+        setStreamBlocks(liveBlocks);
+      }
       if (activeConvIdRef.current !== null) {
         void queryClient.invalidateQueries({
           queryKey: [
@@ -454,6 +461,24 @@ export default function CoachChat({
     const last = messages[messages.length - 1];
     return last.role === "assistant" ? last.id : null;
   }, [messages]);
+
+  useEffect(() => {
+    lastAssistantIdRef.current = lastAssistantMessageId;
+  }, [lastAssistantMessageId]);
+
+  // The server saves a reply's blocks into its message metadata, so once
+  // the refetched message renders them the footer copy would be a second
+  // set (two rows of quick replies, two cards) until the next send.
+  useEffect(() => {
+    if (
+      streamBlocks.length > 0 &&
+      lastAssistantMessageId !== null &&
+      lastAssistantMessageId !== streamBlocksBaselineRef.current &&
+      messageBlocks.has(lastAssistantMessageId)
+    ) {
+      setStreamBlocks([]);
+    }
+  }, [streamBlocks.length, lastAssistantMessageId, messageBlocks]);
 
   // Show interim transcript in input field while listening
   useEffect(() => {

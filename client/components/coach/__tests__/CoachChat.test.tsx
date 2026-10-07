@@ -20,22 +20,30 @@ import CoachChat from "../CoachChat";
 // Mutable container for the onError callback CoachChat passes to useCoachStream,
 // so the test can trigger a 429 limit error after render. vi.hoisted is required
 // because vi.mock factories are hoisted above imports.
-const { coachStreamRef, mockImpact, speechState, mockToastError } = vi.hoisted(
-  () => ({
-    coachStreamRef: {
-      onError: null as ((message: string, code?: string) => void) | null,
-    },
-    mockImpact: vi.fn(),
-    speechState: { error: null as string | null },
-    mockToastError: vi.fn(),
-  }),
-);
+const {
+  coachStreamRef,
+  messagesState,
+  mockImpact,
+  speechState,
+  mockToastError,
+} = vi.hoisted(() => ({
+  coachStreamRef: {
+    onError: null as ((message: string, code?: string) => void) | null,
+    onDone: null as ((fullText: string, blocks?: unknown[]) => void) | null,
+  },
+  messagesState: { data: [] as unknown[] },
+  mockImpact: vi.fn(),
+  speechState: { error: null as string | null },
+  mockToastError: vi.fn(),
+}));
 
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: (opts: {
     onError: (message: string, code?: string) => void;
+    onDone: (fullText: string, blocks?: unknown[]) => void;
   }) => {
     coachStreamRef.onError = opts.onError;
+    coachStreamRef.onDone = opts.onDone;
     return {
       startStream: vi.fn(),
       abortStream: vi.fn(),
@@ -67,7 +75,7 @@ vi.mock("@/components/UpgradeModal", () => ({
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useChatMessages: () => ({ data: [] }),
+  useChatMessages: () => ({ data: messagesState.data }),
   useDeleteChatMessageForRetry: () => ({ mutateAsync: vi.fn() }),
   useSaveRecipeFromChat: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -297,6 +305,83 @@ describe("CoachChat — onMessageSent", () => {
     fireEvent.click(screen.getByLabelText("Send message"));
 
     expect(onMessageSent).toHaveBeenCalledOnce();
+  });
+});
+
+describe("CoachChat — a finished reply's blocks", () => {
+  const quickReplies = {
+    type: "quick_replies",
+    options: [{ label: "Yes please", message: "Yes, show me more" }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    messagesState.data = [];
+  });
+  afterEach(() => {
+    messagesState.data = [];
+  });
+
+  // Positive control: before the saved message lands, the footer shows them.
+  it("shows the streamed blocks once the reply finishes", () => {
+    renderCoachChat();
+    act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
+
+    expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
+  });
+
+  // The server saves the same blocks into the message's metadata, so once
+  // the refetched message renders them the footer copy must go.
+  it("shows them once after the saved message arrives", () => {
+    const { rerender } = renderCoachChat();
+    act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
+
+    messagesState.data = [
+      {
+        id: 7,
+        role: "assistant",
+        content: "Here you go",
+        metadata: { blocks: [quickReplies] },
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    act(() =>
+      rerender(
+        <CoachChat
+          conversationId={1}
+          onCreateConversation={vi.fn().mockResolvedValue(1)}
+          isCoachPro={false}
+          warmUpHook={warmUpHook}
+        />,
+      ),
+    );
+
+    expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
+  });
+
+  // An earlier reply that already carried blocks must not clear the new
+  // reply's footer copy before the new message is saved.
+  it("keeps the footer copy while only an older reply is on screen", () => {
+    messagesState.data = [
+      {
+        id: 5,
+        role: "assistant",
+        content: "Earlier",
+        metadata: {
+          blocks: [
+            {
+              type: "quick_replies",
+              options: [{ label: "Older", message: "Older reply" }],
+            },
+          ],
+        },
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    renderCoachChat();
+    act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
+
+    expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
   });
 });
 
