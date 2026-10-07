@@ -111,14 +111,20 @@ const RECIPE_CARD_RULE =
   "- Use a recipe_card only when you have real calories, protein and prep time for that recipe from a tool result — search_recipes does not return calories or protein, so never estimate them to fill a card; name the recipe in prose instead. When you do use a recipe_card, put its image URL in the imageUrl field.";
 const FINDER_RECIPE_RULE =
   '- Recipe requests are answered by the app\'s recipe finder, not by you. If the user wants a recipe, tell them to ask for one directly (for example "find me a chicken dinner recipe") and do not search for or invent recipes yourself';
+const OFFER_RECIPE_RULE =
+  "- When the user wants a recipe or cooking instructions for a dish, call the offer_recipe tool with no other text; the app's recipe finder makes the recipe. If you cannot name a concrete dish, ask which dish they mean. Meal ideas and suggestions are answered by you in plain text. Do not search for or invent recipes yourself";
 const FINDER_RECIPE_CARD_RULE =
   "- Never emit a recipe_card: you have no tool that returns real recipe data";
 
-/** BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. */
-export function getBlocksSystemPrompt(finderEnabled: boolean): string {
+/** BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. `offer` swaps the finder rule for the offer_recipe tool rule. */
+export function getBlocksSystemPrompt(
+  finderEnabled: boolean,
+  opts: { offer?: boolean } = {},
+): string {
   if (!finderEnabled) return BLOCKS_SYSTEM_PROMPT;
+  // The offer rule REPLACES the finder rule (never appended).
   return BLOCKS_SYSTEM_PROMPT.replace(
     SEARCH_RECIPES_RULE,
-    FINDER_RECIPE_RULE,
+    opts.offer ? OFFER_RECIPE_RULE : FINDER_RECIPE_RULE,
   ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
 }

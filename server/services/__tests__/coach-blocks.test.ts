@@ -188,4 +188,21 @@ describe("getBlocksSystemPrompt", () => {
     // The example still validates.
     expect(parseBlocksFromContent(on).blocks.length).toBeGreaterThan(0);
   });
+
+  it("with offer on, replaces the finder rule with the offer_recipe rule", () => {
+    const offer = getBlocksSystemPrompt(true, { offer: true });
+    expect(offer).toContain("offer_recipe tool");
+    expect(offer).not.toContain("ask for one directly");
+    expect(offer).not.toContain("search_recipes");
+    expect(parseBlocksFromContent(offer).blocks.length).toBeGreaterThan(0);
+  });
+
+  it("default output is unchanged by the offer option existing", () => {
+    expect(getBlocksSystemPrompt(false, { offer: true })).toBe(
+      BLOCKS_SYSTEM_PROMPT,
+    );
+    expect(getBlocksSystemPrompt(true, {})).toBe(getBlocksSystemPrompt(true));
+    expect(getBlocksSystemPrompt(true)).toContain("ask for one directly");
+    expect(getBlocksSystemPrompt(true)).toMatchSnapshot();
+  });
 });

@@ -300,7 +300,7 @@ interface BuildPromptOptions {
   tier?: "free" | "pro";
 }
 
-function buildSystemPrompt(
+export function buildSystemPrompt(
   context: CoachContext,
   intent: CoachIntent = "personalized_advice",
   { now = new Date(), tz = "UTC", tier = "free" }: BuildPromptOptions = {},
