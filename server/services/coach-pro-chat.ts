@@ -14,7 +14,7 @@
  * Extracted from server/routes/chat.ts to keep route handlers thin.
  */
 
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { civilDateString, civilDateToInstant } from "../lib/civil-date";
 import { storage } from "../storage";
 import {
@@ -44,20 +44,24 @@ import {
   truncateHistoryToBudget,
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
-import type { DailyLog, UserProfile } from "@shared/schema";
+import type { ChatMessage, DailyLog, UserProfile } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { MeasurementUnit } from "@shared/lib/units";
 import type { FinderAction } from "@shared/schemas/recipe-finder";
 import {
   classifyTurn,
   decideCoachFinderEntry,
+  getLatestFinderBlock,
   isRecipeFinderEnabled,
+  isRecipeOfferEnabled,
   type FinderFeatures,
 } from "./recipe-finder";
 import {
   runCoachFinderTurn,
   type CoachFinderTurnEntry,
 } from "./recipe-finder/coach-turn";
+import { buildOfferBlock, decideOfferToolCall } from "./recipe-finder/offer";
+import { OFFER_TEXT, finderFallbackText } from "./recipe-finder/fallback-text";
 
 const log = createServiceLogger("coach-pro-chat");
 
@@ -515,6 +519,133 @@ interface CoachTierConfig {
   extractNotebook: boolean;
 }
 
+/** Persists the assistant reply once per turnKey (SSE retries replay turns). */
+async function persistCoachReply(
+  conversationId: number,
+  userId: string,
+  turnKey: string | undefined,
+  text: string,
+  metadata: Record<string, unknown> | null,
+): Promise<void> {
+  if (turnKey) {
+    const existing = await storage.getChatMessageByTurnKey(
+      conversationId,
+      turnKey,
+    );
+    if (existing) {
+      log.info(
+        { turnKey },
+        "assistant message already persisted, skipping duplicate write",
+      );
+      return;
+    }
+    await storage.createChatMessage(
+      conversationId,
+      userId,
+      "assistant",
+      text,
+      metadata,
+      turnKey,
+    );
+  } else {
+    await storage.createChatMessage(
+      conversationId,
+      userId,
+      "assistant",
+      text,
+      metadata,
+    );
+  }
+}
+
+const NO_DISH_TEXT = "Which dish did you have in mind?";
+
+/**
+ * Delivers an `offer_recipe` terminal tool call (spec §4.2, H4). Every reply
+ * is SAVED (with the turnKey) BEFORE it is yielded: the route stops iterating
+ * at a yield once the client leaves, and its H6 settle keeps the user row only
+ * if it finds the saved turnKey row. Returns false only for invalid args after
+ * streamed text — that text stands and the caller's normal save path runs.
+ */
+async function* deliverOfferToolCall(a: {
+  params: CoachChatParams;
+  finder: NonNullable<CoachChatParams["finder"]>;
+  rawArgs: string;
+  /** Includes this turn's user row. */
+  history: ChatMessage[];
+  /** Streamed pre-tool text (blocks stripped) — kept as the lead line. */
+  leadText: string;
+  leadBlocks: CoachBlock[];
+  maybeAutoTitle: () => void;
+}): AsyncGenerator<CoachChatEvent, boolean> {
+  const { conversationId, userId, content, turnKey } = a.params;
+  const save = (text: string, metadata: Record<string, unknown> | null) =>
+    persistCoachReply(conversationId, userId, turnKey, text, metadata);
+  const withLead = (text: string) =>
+    a.leadText ? `${a.leadText}\n\n${text}` : text;
+
+  const decision = decideOfferToolCall(
+    a.rawArgs,
+    getLatestFinderBlock(a.history),
+  );
+  switch (decision.kind) {
+    case "invalid": {
+      if (a.leadText || a.leadBlocks.length > 0) return false;
+      await save(NO_DISH_TEXT, null);
+      a.maybeAutoTitle();
+      yield { type: "content", content: NO_DISH_TEXT };
+      return true;
+    }
+    case "adjust": {
+      // Repeat = yes: the same dish while the offer is open is a "Yes" tap.
+      // The typed user row (route-inserted, finder.userMessageId) carries it.
+      yield* runCoachFinderTurn({
+        conversationId,
+        userId,
+        content,
+        turnKey,
+        history: a.history,
+        userMessageId: a.finder.userMessageId,
+        entry: {
+          kind: "finder",
+          input: {
+            kind: "action",
+            action: { type: "offer_yes", flowId: decision.flow.flowId },
+          },
+          offer: true,
+        },
+        features: a.finder.features,
+      });
+      return true;
+    }
+    case "repost_adjust": {
+      // Same dish while the card is live: re-post the same prefill under a
+      // new flowId so the card stays the latest, live block.
+      const block = {
+        ...decision.block,
+        flow: { ...decision.block.flow, flowId: randomUUID() },
+      };
+      const blocks: CoachBlock[] = [...a.leadBlocks, block];
+      await save(withLead(finderFallbackText(block)), { blocks });
+      a.maybeAutoTitle();
+      yield { type: "blocks", blocks };
+      return true;
+    }
+    case "offer": {
+      const block = buildOfferBlock(
+        decision.dish,
+        decision.details,
+        randomUUID(),
+      );
+      const blocks: CoachBlock[] = [...a.leadBlocks, block];
+      await save(withLead(OFFER_TEXT), { blocks });
+      a.maybeAutoTitle();
+      yield { type: "blocks", blocks };
+      return true;
+    }
+  }
+}
+
 /**
  * Orchestrates the coach chat response — yields SSE events for the route
  * handler to write, handles persistence and side-effects internally.
@@ -558,6 +689,10 @@ export async function* handleCoachChat(
       ? classifyIntent(content, { recipeRequests: false }).intent
       : classifiedIntent;
 
+  // RECIPE_OFFER_ENABLED (spec 2026-10-06). Also requires the finder param:
+  // the offer tool's repeat = yes delegation needs this turn's user row.
+  const offerOn = !!params.finder && isRecipeOfferEnabled();
+
   // ── Recipe finder (Coach Pro, flag on) — early return (R2) ──
   if (params.finder && isCoachPro) {
     const recent = await storage.getChatMessages(conversationId, 20, userId);
@@ -566,13 +701,16 @@ export async function* handleCoachChat(
       content,
       classifiedIntent,
       params.finder.action,
+      { offer: offerOn },
     );
     let finderEntry: CoachFinderTurnEntry | null = null;
     if (entry.kind === "finder") {
-      finderEntry = { kind: "finder", input: entry.input };
+      finderEntry = { kind: "finder", input: entry.input, offer: offerOn };
     } else if (entry.kind === "classify") {
       const turn = await classifyTurn(content, entry.recipeTitle);
-      if (turn === "new_request") {
+      // Offer on (H3): only refine_current stays in the finder; new_request
+      // and other go to the tool loop, where the model decides.
+      if (turn === "new_request" && !offerOn) {
         finderEntry = {
           kind: "finder",
           input: { kind: "start", text: content },
@@ -809,6 +947,7 @@ export async function* handleCoachChat(
   }
 
   let fullResponse = "";
+  let offerToolArgs: string | null = null;
 
   if (cachedResponse) {
     // Send cached response in 3 chunks with minimal delay
@@ -837,6 +976,7 @@ export async function* handleCoachChat(
       // redundant classifyIntent call inside the generator.
       intent,
       tz,
+      { offerRecipe: offerOn },
     )) {
       if (chunk.type === "tool_calls") {
         // Yielded immediately when the tools are detected, before they run —
@@ -849,9 +989,12 @@ export async function* handleCoachChat(
         if (isAborted()) break;
         continue;
       }
-      // terminal_tool is only emitted when the caller passes offerRecipe,
-      // which nothing does yet — the offer wiring lands in a later task.
-      if (chunk.type === "terminal_tool") continue;
+      // offer_recipe ends the generator; it is handled after the loop. A
+      // client that already left gets nothing saved (as for plain text).
+      if (chunk.type === "terminal_tool") {
+        if (offerOn && !isAborted()) offerToolArgs = chunk.args;
+        break;
+      }
       if (isAborted()) break;
       fullResponse += chunk.content;
       yield { type: "content", content: chunk.content };
@@ -886,36 +1029,39 @@ export async function* handleCoachChat(
     blocks = parsedBlocks.blocks;
   }
 
-  if (fullResponse && !isAborted()) {
-    if (turnKey) {
-      const existing = await storage.getChatMessageByTurnKey(
-        conversationId,
-        turnKey,
-      );
-      if (existing) {
-        log.info(
-          { turnKey },
-          "assistant message already persisted, skipping duplicate write",
-        );
-      } else {
-        await storage.createChatMessage(
-          conversationId,
-          userId,
-          "assistant",
-          textContent,
-          blocks.length > 0 ? { blocks } : null,
-          turnKey,
-        );
-      }
-    } else {
-      await storage.createChatMessage(
-        conversationId,
-        userId,
-        "assistant",
-        textContent,
-        blocks.length > 0 ? { blocks } : null,
+  const maybeAutoTitle = () => {
+    if (!isAborted() && history.length <= 1) {
+      const shortTitle =
+        content.slice(0, 50) + (content.length > 50 ? "..." : "");
+      fireAndForget(
+        "coach-chat-auto-title",
+        storage.updateChatConversationTitle(conversationId, userId, shortTitle),
       );
     }
+  };
+
+  // ── offer_recipe (offer flag on) — save BEFORE yield, then return ──
+  if (offerToolArgs !== null && params.finder) {
+    const handled = yield* deliverOfferToolCall({
+      params,
+      finder: params.finder,
+      rawArgs: offerToolArgs,
+      history,
+      leadText: textContent.trim(),
+      leadBlocks: blocks,
+      maybeAutoTitle,
+    });
+    if (handled) return;
+  }
+
+  if (fullResponse && !isAborted()) {
+    await persistCoachReply(
+      conversationId,
+      userId,
+      turnKey,
+      textContent,
+      blocks.length > 0 ? { blocks } : null,
+    );
   }
 
   // Cache write after DB write (ordering fix: cache should only exist for persisted messages)
@@ -931,14 +1077,7 @@ export async function* handleCoachChat(
     );
   }
 
-  if (!isAborted() && history.length <= 1) {
-    const shortTitle =
-      content.slice(0, 50) + (content.length > 50 ? "..." : "");
-    fireAndForget(
-      "coach-chat-auto-title",
-      storage.updateChatConversationTitle(conversationId, userId, shortTitle),
-    );
-  }
+  maybeAutoTitle();
 
   // Send blocks in the final event for Coach Pro
   if (!isAborted() && blocks.length > 0) {

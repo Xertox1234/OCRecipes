@@ -308,3 +308,130 @@ describe("decideCoachFinderEntry", () => {
     ).toEqual({ kind: "none" });
   });
 });
+
+describe("decideCoachFinderEntry — offer on (H2/H3)", () => {
+  const F1 = "11111111-1111-4111-8111-111111111111";
+  const offerFlow = {
+    flowId: F1,
+    stage: "offer" as const,
+    request: "Chili",
+    query: { q: "Chili" },
+    round: 0 as const,
+    shownIds: [],
+    dish: "Chili",
+    details: { ingredients: [], fromConversation: false },
+  };
+  const offerBlock: FinderBlock = { type: "recipe_offer", flow: offerFlow };
+  const adjustBlock: FinderBlock = {
+    type: "recipe_adjust",
+    prefill: { servings: 2, spice: "mild", time: "moderate" },
+    avoiding: [],
+    noted: { dislikes: [] },
+    followUps: [],
+    flow: { ...offerFlow, stage: "adjust" },
+  };
+  const live = (b: FinderBlock) => [
+    msg("assistant", { blocks: [b] }),
+    msg("user"),
+  ];
+  const on = { offer: true };
+
+  it("a live offer + typed yes → finder with the typed command (stays in the finder)", () => {
+    expect(
+      decideCoachFinderEntry(
+        live(offerBlock),
+        "yes please",
+        "vague_request",
+        undefined,
+        on,
+      ),
+    ).toEqual({
+      kind: "finder",
+      input: { kind: "typed", text: "yes please", command: "yes" },
+    });
+  });
+  it("a live adjust + typed generate → finder (no offer→card→offer loop)", () => {
+    expect(
+      decideCoachFinderEntry(
+        live(adjustBlock),
+        "generate",
+        "vague_request",
+        undefined,
+        on,
+      ),
+    ).toEqual({
+      kind: "finder",
+      input: { kind: "typed", text: "generate", command: "generate" },
+    });
+  });
+  it("a live offer + other typed text → none (tool loop)", () => {
+    expect(
+      decideCoachFinderEntry(
+        live(offerBlock),
+        "make it for 6 instead",
+        "vague_request",
+        undefined,
+        on,
+      ),
+    ).toEqual({ kind: "none" });
+  });
+  it("a live adjust + free text → none (tool loop)", () => {
+    expect(
+      decideCoachFinderEntry(
+        live(adjustBlock),
+        "can you add mushrooms",
+        "vague_request",
+        undefined,
+        on,
+      ),
+    ).toEqual({ kind: "none" });
+  });
+  it("intent recipe_request with no block → none (the model decides)", () => {
+    expect(
+      decideCoachFinderEntry(
+        [msg("user")],
+        "find me a chicken recipe",
+        "recipe_request",
+        undefined,
+        on,
+      ),
+    ).toEqual({ kind: "none" });
+  });
+  it("a live recipe_results + typed text → finder (unchanged)", () => {
+    expect(
+      decideCoachFinderEntry(
+        live(block),
+        "something with rice",
+        "vague_request",
+        undefined,
+        on,
+      ),
+    ).toEqual({
+      kind: "finder",
+      input: { kind: "typed", text: "something with rice", command: null },
+    });
+  });
+  it("a recipe card latest → classify, as today", () => {
+    const h = [
+      msg("user"),
+      msg("assistant", {
+        metadataVersion: 1,
+        recipe,
+        allergenWarning: null,
+        imageUrl: null,
+      }),
+      msg("user"),
+    ];
+    expect(
+      decideCoachFinderEntry(h, "spicier", "vague_request", undefined, on),
+    ).toEqual({ kind: "classify", recipeTitle: "Chicken Curry" });
+  });
+  it("offer off: a leftover offer block + typed yes → finder with no command (as before)", () => {
+    expect(
+      decideCoachFinderEntry(live(offerBlock), "yes", "vague_request"),
+    ).toEqual({
+      kind: "finder",
+      input: { kind: "typed", text: "yes", command: null },
+    });
+  });
+});

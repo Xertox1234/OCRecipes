@@ -36,7 +36,12 @@ import { register as registerNotebookRoutes } from "../../routes/notebook";
 import { generateRecipeChatResponse } from "../recipe-chat";
 import { findCommunity } from "../recipe-finder/find-community";
 import { classifyTurn } from "../recipe-finder/classify-turn";
-import type { RecipeResultsBlock } from "@shared/schemas/recipe-finder";
+import type {
+  FinderBlock,
+  RecipeResultsBlock,
+} from "@shared/schemas/recipe-finder";
+import { runCoachFinderTurn } from "../recipe-finder/coach-turn";
+import { OFFER_TEXT } from "../recipe-finder/fallback-text";
 
 // ── Mocks ───────────────────────────────────────────────────
 
@@ -85,7 +90,21 @@ vi.mock("../recipe-chat", async () => {
 });
 vi.mock("../recipe-finder/extract-query", () => ({
   extractQuery: vi.fn(async (t: string) => ({ q: t })),
+  extractOfferDetails: vi.fn(),
 }));
+vi.mock("../recipe-finder/ask-follow-ups", () => ({
+  askDishFollowUps: vi.fn(async () => []),
+}));
+// Real implementation, wrapped so tests can see how Coach delegates to it.
+vi.mock("../recipe-finder/coach-turn", async () => {
+  const actual = await vi.importActual<
+    typeof import("../recipe-finder/coach-turn")
+  >("../recipe-finder/coach-turn");
+  return {
+    ...actual,
+    runCoachFinderTurn: vi.fn(actual.runCoachFinderTurn),
+  };
+});
 vi.mock("../recipe-finder/find-community", () => ({ findCommunity: vi.fn() }));
 vi.mock("../recipe-finder/find-online", () => ({ findOnline: vi.fn() }));
 vi.mock("../recipe-finder/ask-clarifying", () => ({ askClarifying: vi.fn() }));
@@ -2153,5 +2172,500 @@ describe("handleCoachChat — recipe finder (Coach Pro, flag on)", () => {
     );
     expect(generateCoachProResponse).toHaveBeenCalled();
     expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleCoachChat — recipe offer (Coach Pro, RECIPE_OFFER_ENABLED on)", () => {
+  const TURN = "22222222-2222-4222-8222-222222222222";
+  const OFFER_FLOW = "33333333-3333-4333-8333-333333333333";
+  const finder = {
+    userMessageId: 77,
+    features: {
+      catalogSave: true,
+      recipeGeneration: true,
+      dailyRecipeGenerations: 20,
+    },
+  };
+  const offerFlow = {
+    flowId: OFFER_FLOW,
+    stage: "offer" as const,
+    request: "Chili",
+    query: { q: "Chili" },
+    round: 0 as const,
+    shownIds: [],
+    dish: "Chili",
+    details: { ingredients: [], fromConversation: false },
+  };
+  const offerBlock: FinderBlock = { type: "recipe_offer", flow: offerFlow };
+  const adjustBlock: FinderBlock = {
+    type: "recipe_adjust",
+    prefill: { servings: 4, spice: "medium", time: "moderate" },
+    avoiding: [],
+    noted: { dislikes: [] },
+    followUps: [],
+    flow: { ...offerFlow, stage: "adjust" },
+  };
+  const recipe = {
+    title: "Chicken Curry",
+    description: "d",
+    difficulty: "Easy" as const,
+    timeEstimate: "30 min",
+    servings: 2,
+    ingredients: [],
+    instructions: ["cook"],
+    dietTags: [],
+  };
+  const userRow = (content: string) =>
+    createMockChatMessage({ id: 77, role: "user", content });
+  const assistantWith = (block: FinderBlock) =>
+    createMockChatMessage({
+      id: 2,
+      role: "assistant",
+      content: "Want a recipe?",
+      metadata: { blocks: [block] },
+    });
+  /** The generator makes ONLY the terminal offer_recipe call. */
+  function toolOnly(args: unknown, lead?: string) {
+    vi.mocked(generateCoachProResponse).mockImplementation(async function* () {
+      if (lead) yield { type: "content" as const, content: lead };
+      yield {
+        type: "terminal_tool" as const,
+        name: "offer_recipe" as const,
+        args: JSON.stringify(args),
+      };
+    });
+  }
+  const assistantWrites = () =>
+    vi
+      .mocked(storage.createChatMessage)
+      .mock.calls.filter((c) => c[2] === "assistant");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupDefaultStorage();
+    vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
+    vi.stubEnv("RECIPE_OFFER_ENABLED", "true");
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+    vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(true);
+    vi.mocked(parseBlocksFromContent).mockImplementation((t: string) => ({
+      text: t,
+      blocks: [],
+    }));
+    vi.mocked(generateCoachProResponse).mockReturnValue(
+      fakeProStream(["coach reply"]),
+    );
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("passes offerRecipe: true to the generator", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([userRow("hi")]);
+    await collectEvents(
+      handleCoachChat(makeParams({ content: "hi", finder, turnKey: TURN })),
+    );
+    // 8th arg (index 7) of generateCoachProResponse is the options bag.
+    expect(vi.mocked(generateCoachProResponse).mock.calls[0][7]).toEqual({
+      offerRecipe: true,
+    });
+  });
+
+  it("flag off: passes offerRecipe: false", async () => {
+    vi.stubEnv("RECIPE_OFFER_ENABLED", "");
+    vi.mocked(storage.getChatMessages).mockResolvedValue([userRow("hi")]);
+    await collectEvents(
+      handleCoachChat(makeParams({ content: "hi", finder, turnKey: TURN })),
+    );
+    expect(vi.mocked(generateCoachProResponse).mock.calls[0][7]).toEqual({
+      offerRecipe: false,
+    });
+  });
+
+  it("saves the offer (with the turnKey) BEFORE yielding the blocks event", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      userRow("chili recipe please"),
+    ]);
+    toolOnly({ dish: "Chili", from_conversation: false });
+    const order: string[] = [];
+    vi.mocked(storage.createChatMessage).mockImplementation(async () => {
+      order.push("save");
+      return createMockChatMessage();
+    });
+    const events: CoachChatEvent[] = [];
+    for await (const e of handleCoachChat(
+      makeParams({ content: "chili recipe please", finder, turnKey: TURN }),
+    )) {
+      order.push(`yield:${e.type}`);
+      events.push(e);
+    }
+    expect(order).toEqual(["save", "yield:blocks"]);
+    expect(storage.getChatMessageByTurnKey).toHaveBeenCalledWith(1, TURN);
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      OFFER_TEXT,
+      {
+        blocks: [
+          expect.objectContaining({
+            type: "recipe_offer",
+            flow: expect.objectContaining({ dish: "Chili", stage: "offer" }),
+          }),
+        ],
+      },
+      TURN,
+    );
+    expect(events).toEqual([
+      {
+        type: "blocks",
+        blocks: [expect.objectContaining({ type: "recipe_offer" })],
+      },
+    ]);
+    // First message of the conversation → auto-titled like any reply.
+    expect(storage.updateChatConversationTitle).toHaveBeenCalled();
+  });
+
+  it("keeps streamed pre-tool text as the offer message's lead line", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([userRow("chili?")]);
+    toolOnly({ dish: "Chili", from_conversation: true }, "Good choice!");
+    await collectEvents(
+      handleCoachChat(makeParams({ content: "chili?", finder, turnKey: TURN })),
+    );
+    expect(assistantWrites()).toHaveLength(1);
+    expect(assistantWrites()[0][3]).toBe(`Good choice!\n\n${OFFER_TEXT}`);
+  });
+
+  it("does not double-write when the turnKey row already exists", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([userRow("chili")]);
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(
+      createMockChatMessage({ role: "assistant", turnKey: TURN }),
+    );
+    toolOnly({ dish: "Chili", from_conversation: false });
+    await collectEvents(
+      handleCoachChat(makeParams({ content: "chili", finder, turnKey: TURN })),
+    );
+    expect(assistantWrites()).toHaveLength(0);
+  });
+
+  it("repeat = yes: same dish while the offer is open → runCoachFinderTurn with offer_yes for that flow (adjust card)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+      assistantWith(offerBlock),
+      userRow("sounds good, let's do the chili"),
+    ]);
+    toolOnly({ dish: "chili", from_conversation: true });
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "sounds good, let's do the chili",
+          finder,
+          turnKey: TURN,
+        }),
+      ),
+    );
+    expect(runCoachFinderTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessageId: 77,
+        turnKey: TURN,
+        entry: {
+          kind: "finder",
+          input: {
+            kind: "action",
+            action: { type: "offer_yes", flowId: OFFER_FLOW },
+          },
+          offer: true,
+        },
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: "blocks",
+      blocks: [{ type: "recipe_adjust" }],
+    });
+    expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+    expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("after No (closed offer), the same dish gets a fresh offer, not the card", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+      assistantWith(offerBlock),
+      createMockChatMessage({ id: 3, role: "user", content: "No" }),
+      createMockChatMessage({
+        id: 4,
+        role: "assistant",
+        content: "No problem.",
+        metadata: null,
+      }),
+      userRow("actually, chili after all"),
+    ]);
+    toolOnly({ dish: "Chili", from_conversation: true });
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "actually, chili after all",
+          finder,
+          turnKey: TURN,
+        }),
+      ),
+    );
+    expect(runCoachFinderTurn).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      type: "blocks",
+      blocks: [{ type: "recipe_offer" }],
+    });
+    const saved = assistantWrites()[0][4] as { blocks: FinderBlock[] };
+    expect(saved.blocks[0].flow.flowId).not.toBe(OFFER_FLOW);
+  });
+
+  it("same dish while the card is live → re-posts the card under a new flowId (save first)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+      assistantWith(adjustBlock),
+      userRow("so the chili then"),
+    ]);
+    toolOnly({ dish: "Chili", from_conversation: true });
+    const order: string[] = [];
+    vi.mocked(storage.createChatMessage).mockImplementation(async () => {
+      order.push("save");
+      return createMockChatMessage();
+    });
+    const events: CoachChatEvent[] = [];
+    for await (const e of handleCoachChat(
+      makeParams({ content: "so the chili then", finder, turnKey: TURN }),
+    )) {
+      order.push(`yield:${e.type}`);
+      events.push(e);
+    }
+    expect(order).toEqual(["save", "yield:blocks"]);
+    const saved = vi.mocked(storage.createChatMessage).mock.calls[0];
+    const block = (saved[4] as { blocks: FinderBlock[] }).blocks[0];
+    expect(block.type).toBe("recipe_adjust");
+    expect(block.flow.flowId).not.toBe(OFFER_FLOW);
+    expect(block).toMatchObject({ prefill: adjustBlock.prefill });
+    expect(saved[5]).toBe(TURN);
+    expect(runCoachFinderTurn).not.toHaveBeenCalled();
+  });
+
+  it("invalid tool args and no text → saves and yields 'Which dish did you have in mind?'", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      userRow("turn that into a recipe"),
+    ]);
+    toolOnly({ dish: "", from_conversation: true });
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "turn that into a recipe",
+          finder,
+          turnKey: TURN,
+        }),
+      ),
+    );
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      "Which dish did you have in mind?",
+      null,
+      TURN,
+    );
+    expect(events).toEqual([
+      { type: "content", content: "Which dish did you have in mind?" },
+    ]);
+  });
+
+  it("invalid tool args after streamed text → the streamed text stands (normal save)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([userRow("that")]);
+    toolOnly("not json at all", "Which recipe did you mean?");
+    await collectEvents(
+      handleCoachChat(makeParams({ content: "that", finder, turnKey: TURN })),
+    );
+    expect(assistantWrites()).toHaveLength(1);
+    expect(assistantWrites()[0][3]).toBe("Which recipe did you mean?");
+    expect(assistantWrites()[0][4]).toBeNull();
+  });
+
+  it("typed free text on a live offer goes to the tool loop (H2)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      assistantWith(offerBlock),
+      userRow("make it for 6 instead"),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({ content: "make it for 6 instead", finder, turnKey: TURN }),
+      ),
+    );
+    expect(generateCoachProResponse).toHaveBeenCalled();
+    expect(runCoachFinderTurn).not.toHaveBeenCalled();
+  });
+
+  it("a recipe_request with no live block goes to the tool loop, not the regex route", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      userRow("Find me a chicken recipe"),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          finder,
+          turnKey: TURN,
+        }),
+      ),
+    );
+    expect(generateCoachProResponse).toHaveBeenCalled();
+    expect(runCoachFinderTurn).not.toHaveBeenCalled();
+  });
+
+  describe("a recipe card is the latest message", () => {
+    const cardHistory = () => [
+      createMockChatMessage({
+        role: "assistant",
+        content: "Here!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+      userRow("now a dessert"),
+    ];
+    it("classifyTurn new_request → tool loop (the model decides)", async () => {
+      vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+      vi.mocked(classifyTurn).mockResolvedValue("new_request");
+      await collectEvents(
+        handleCoachChat(makeParams({ content: "now a dessert", finder })),
+      );
+      expect(generateCoachProResponse).toHaveBeenCalled();
+      expect(runCoachFinderTurn).not.toHaveBeenCalled();
+    });
+    it("classifyTurn refine_current → runCoachFinderTurn with refine", async () => {
+      vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+      vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+      vi.mocked(generateRecipeChatResponse).mockImplementation(
+        async function* () {
+          yield { content: "Spicier!" };
+          yield { done: true };
+        },
+      );
+      await collectEvents(
+        handleCoachChat(makeParams({ content: "spicier", finder })),
+      );
+      expect(runCoachFinderTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ entry: { kind: "refine" } }),
+      );
+      expect(generateCoachProResponse).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("finder taps thread the offer option", () => {
+    it("an offer_yes tap reaches build_adjust (not invalid_for_stage)", async () => {
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        assistantWith(offerBlock),
+        userRow("Yes"),
+      ]);
+      const events = await collectEvents(
+        handleCoachChat(
+          makeParams({
+            content: "Yes",
+            turnKey: TURN,
+            finder: {
+              ...finder,
+              action: { type: "offer_yes", flowId: OFFER_FLOW },
+            },
+          }),
+        ),
+      );
+      expect(events.at(-1)).toMatchObject({
+        type: "blocks",
+        blocks: [{ type: "recipe_adjust" }],
+      });
+      expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        expect.any(String),
+        { blocks: [expect.objectContaining({ type: "recipe_adjust" })] },
+        TURN,
+      );
+    });
+
+    it('an offer_no tap persists "No problem." with no metadata and keeps the user row', async () => {
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        assistantWith(offerBlock),
+        userRow("No"),
+      ]);
+      const events = await collectEvents(
+        handleCoachChat(
+          makeParams({
+            content: "No",
+            turnKey: TURN,
+            finder: {
+              ...finder,
+              action: { type: "offer_no", flowId: OFFER_FLOW },
+            },
+          }),
+        ),
+      );
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        "No problem.",
+        null,
+        TURN,
+      );
+      expect(events).toEqual([{ type: "content", content: "No problem." }]);
+      expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("an adjust_generate tap generates with extended allergen detail", async () => {
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        assistantWith(adjustBlock),
+        userRow("Generate"),
+      ]);
+      vi.mocked(generateRecipeChatResponse).mockImplementation(
+        async function* () {
+          yield { content: "Here you go" };
+          yield { content: "", recipe, allergenWarning: null };
+          yield { done: true };
+        },
+      );
+      await collectEvents(
+        handleCoachChat(
+          makeParams({
+            content: "Generate",
+            turnKey: TURN,
+            finder: {
+              ...finder,
+              action: {
+                type: "adjust_generate",
+                flowId: OFFER_FLOW,
+                settings: adjustBlock.prefill,
+              },
+            },
+          }),
+        ),
+      );
+      expect(storage.claimRecipeGeneration).toHaveBeenCalledTimes(1);
+      expect(
+        vi.mocked(generateRecipeChatResponse).mock.calls[0][3],
+      ).toMatchObject({ allergenDetail: "extended" });
+    });
+
+    it("typed 'yes please' on a live offer stays in the finder → adjust card", async () => {
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        assistantWith(offerBlock),
+        userRow("yes please"),
+      ]);
+      const events = await collectEvents(
+        handleCoachChat(
+          makeParams({ content: "yes please", finder, turnKey: TURN }),
+        ),
+      );
+      expect(generateCoachProResponse).not.toHaveBeenCalled();
+      expect(events.at(-1)).toMatchObject({
+        type: "blocks",
+        blocks: [{ type: "recipe_adjust" }],
+      });
+    });
   });
 });

@@ -187,23 +187,29 @@ export function decideCoachFinderEntry(
   text: string,
   intent: CoachIntent,
   action?: FinderAction,
+  opts?: { offer?: boolean },
 ): CoachFinderEntry {
+  const offer = opts?.offer === true;
   if (action) return { kind: "finder", input: { kind: "action", action } };
   if (intent === "safety_refusal") return { kind: "none" };
   const latest = getLatestFinderBlock(history);
   if (latest) {
-    return {
-      kind: "finder",
-      input: {
-        kind: "typed",
-        text,
-        command: matchTypedFinderCommand(text, latest.type),
-      },
-    };
+    const command = matchTypedFinderCommand(text, latest.type, offer);
+    // Offer on (H2): on a live offer/card only an exact command stays in the
+    // finder; any other text goes to the tool loop, which may re-offer.
+    if (
+      offer &&
+      command === null &&
+      (latest.type === "recipe_offer" || latest.type === "recipe_adjust")
+    ) {
+      return { kind: "none" };
+    }
+    return { kind: "finder", input: { kind: "typed", text, command } };
   }
   const card = getLatestRecipe(history, { latestOnly: true });
   if (card) return { kind: "classify", recipeTitle: card.title };
-  if (intent === "recipe_request") {
+  // Offer on: the model (offer_recipe tool) is the single decider of new asks.
+  if (intent === "recipe_request" && !offer) {
     return { kind: "finder", input: { kind: "start", text } };
   }
   return { kind: "none" };
