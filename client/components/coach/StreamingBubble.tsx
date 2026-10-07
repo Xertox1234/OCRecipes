@@ -42,6 +42,7 @@ const StreamingBubble = memo(function StreamingBubble({
           content={streamingContent}
           onSpeak={() => ttsSpeak(-1, streamingContent)}
           isSpeaking={speakingMessageId === -1 && isSpeaking}
+          animateEntry
         />
       ) : null}
       {streamBlocks.map((block, i) => (

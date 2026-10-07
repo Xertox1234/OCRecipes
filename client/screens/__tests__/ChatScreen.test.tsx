@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent, render, waitFor } from "@testing-library/react";
+import { SlideInRight } from "react-native-reanimated";
 import { renderComponent } from "../../../test/utils/render-component";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import {
@@ -312,6 +313,52 @@ describe("ChatScreen — the message you just sent", () => {
       (screen.getByPlaceholderText("Ask NutriCoach...") as HTMLInputElement)
         .value,
     ).toBe("How much protein today?");
+  });
+});
+
+describe("ChatScreen — bubble entrance", () => {
+  let userSpring: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    userSpring = vi.spyOn(
+      SlideInRight as unknown as { springify: () => unknown },
+      "springify",
+    );
+  });
+  afterEach(() => {
+    userSpring.mockRestore();
+  });
+
+  // Positive control: the message just sent slides in.
+  it("slides in the message you just sent", () => {
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+    renderComponent(<ChatScreen />);
+    fireEvent.change(screen.getByPlaceholderText("Ask NutriCoach..."), {
+      target: { value: "Hi coach" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+
+    expect(screen.getByText("Hi coach")).toBeTruthy();
+    expect(userSpring).toHaveBeenCalled();
+  });
+
+  it("shows saved messages without sliding them in", () => {
+    mockUseChatMessages.mockReturnValue({
+      data: [
+        {
+          id: 1,
+          conversationId: 42,
+          role: "user",
+          content: "Earlier question",
+          metadata: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      isLoading: false,
+    });
+    renderComponent(<ChatScreen />);
+
+    expect(screen.getByText("Earlier question")).toBeTruthy();
+    expect(userSpring).not.toHaveBeenCalled();
   });
 });
 
