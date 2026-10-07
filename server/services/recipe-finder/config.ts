@@ -7,6 +7,11 @@ export function isRecipeFinderEnabled(): boolean {
   return process.env.RECIPE_FINDER_ENABLED === "true";
 }
 
+/** Spec 2026-10-06 §8: offer + adjust card; requires the finder. */
+export function isRecipeOfferEnabled(): boolean {
+  return isRecipeFinderEnabled() && process.env.RECIPE_OFFER_ENABLED === "true";
+}
+
 /** D9: per-user Spoonacular list searches per day. */
 export const DEFAULT_SPOONACULAR_DAILY_CAP = 10;
 
