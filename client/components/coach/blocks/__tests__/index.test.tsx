@@ -7,9 +7,16 @@
 import React from "react";
 import { screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
+import { FadeInDown } from "react-native-reanimated";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import BlockRenderer from "../index";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+
+const { a11y } = vi.hoisted(() => ({ a11y: { reducedMotion: false } }));
+
+vi.mock("@/hooks/useAccessibility", () => ({
+  useAccessibility: () => a11y,
+}));
 
 vi.mock("../ActionCard", () => ({
   default: () => <div data-testid="r-action" />,
@@ -128,6 +135,56 @@ describe("BlockRenderer", () => {
   it("renders nothing for an unknown block type (default branch)", () => {
     const { container } = renderComponent(
       <BlockRenderer block={{ type: "mystery" } as unknown as CoachBlock} />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("BlockRenderer — entrance", () => {
+  const quickReplies = {
+    type: "quick_replies",
+    options: [{ label: "Yes", message: "Yes" }],
+  } as unknown as CoachBlock;
+
+  let springify: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    a11y.reducedMotion = false;
+    springify = vi.spyOn(
+      FadeInDown as unknown as { springify: () => unknown },
+      "springify",
+    );
+  });
+  afterEach(() => {
+    springify.mockRestore();
+  });
+
+  // Positive control: the live footer copy animates in.
+  it("animates in when asked", () => {
+    renderComponent(<BlockRenderer block={quickReplies} animateEntry />);
+    expect(springify).toHaveBeenCalled();
+    expect(screen.getByTestId("r-quick")).toBeTruthy();
+  });
+
+  // Saved messages (history, scroll-back, the swap after a reply) appear
+  // without replaying an entrance.
+  it("does not animate by default", () => {
+    renderComponent(<BlockRenderer block={quickReplies} />);
+    expect(springify).not.toHaveBeenCalled();
+  });
+
+  it("does not animate under reduced motion", () => {
+    a11y.reducedMotion = true;
+    renderComponent(<BlockRenderer block={quickReplies} animateEntry />);
+    expect(springify).not.toHaveBeenCalled();
+    expect(screen.getByTestId("r-quick")).toBeTruthy();
+  });
+
+  it("still renders nothing for an unknown block type", () => {
+    const { container } = renderComponent(
+      <BlockRenderer
+        block={{ type: "mystery" } as unknown as CoachBlock}
+        animateEntry
+      />,
     );
     expect(container.firstChild).toBeNull();
   });

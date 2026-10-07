@@ -51,6 +51,7 @@ const StreamingBubble = memo(function StreamingBubble({
           onAction={onBlockAction}
           onQuickReply={onQuickReply}
           onCommitmentAccept={onCommitmentAccept}
+          animateEntry
         />
       ))}
       {isStreaming && !streamingContent && statusText ? (

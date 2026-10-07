@@ -1,4 +1,5 @@
 import React from "react";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import ActionCard from "./ActionCard";
 import SuggestionList from "./SuggestionList";
@@ -8,6 +9,8 @@ import QuickReplies from "./QuickReplies";
 import RecipeCard from "./RecipeCard";
 import MealPlanCard from "./MealPlanCard";
 import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMessage";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { chatBubbleEntrySpring } from "@/constants/animations";
 import type {
   FinderAction,
   FinderButton,
@@ -32,11 +35,35 @@ interface BlockRendererProps {
   onFinderAction?: (action: FinderAction, label: string) => void;
   onLockedFinderButton?: (button: FinderButton) => void;
   onOpenFinderItem?: (item: FinderItem) => void;
+  /** Slide the block in on mount. Only the live copy of a just-finished
+   *  reply sets this; saved messages (history, scroll-back, the swap once
+   *  the reply is saved) appear without replaying an entrance. */
+  animateEntry?: boolean;
 }
 
 const noop = () => {};
 
 export default function BlockRenderer({
+  animateEntry = false,
+  ...props
+}: BlockRendererProps) {
+  const { reducedMotion } = useAccessibility();
+  const content = renderBlock(props);
+
+  if (!content || !animateEntry || reducedMotion) return content;
+
+  return (
+    <Animated.View
+      entering={FadeInDown.springify()
+        .damping(chatBubbleEntrySpring.damping)
+        .stiffness(chatBubbleEntrySpring.stiffness)}
+    >
+      {content}
+    </Animated.View>
+  );
+}
+
+function renderBlock({
   block,
   onAction,
   onQuickReply,
@@ -49,7 +76,7 @@ export default function BlockRenderer({
   onFinderAction,
   onLockedFinderButton,
   onOpenFinderItem,
-}: BlockRendererProps) {
+}: Omit<BlockRendererProps, "animateEntry">) {
   switch (block.type) {
     case "action_card":
       return <ActionCard block={block} onAction={onAction} />;
