@@ -33,6 +33,7 @@ import Animated, {
 
 import { ChatBubble } from "@/components/ChatBubble";
 import { ThemedText } from "@/components/ThemedText";
+import { TypingDots } from "@/components/TypingDots";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -102,7 +103,7 @@ const CoachStreamingFooter = React.memo(function CoachStreamingFooter({
         style={[styles.typingAvatarDot, { backgroundColor: theme.accentSolid }]}
       />
       <View style={styles.typingIndicator}>
-        <ActivityIndicator size="small" color={theme.textSecondary} />
+        <TypingDots color={theme.textSecondary} />
       </View>
     </View>
   );

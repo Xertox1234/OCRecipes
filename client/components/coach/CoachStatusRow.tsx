@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { StyleSheet, View, Text, AccessibilityInfo } from "react-native";
 import { FontFamily, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
+import { PulsingDot } from "@/components/TypingDots";
 
 interface CoachStatusRowProps {
   statusText: string;
@@ -33,7 +34,7 @@ export function CoachStatusRow({ statusText }: CoachStatusRowProps) {
 
   return (
     <View style={styles.row}>
-      <View style={[styles.dot, { backgroundColor: theme.accentSolid }]} />
+      <PulsingDot size={22} color={theme.accentSolid} />
       <Text
         style={[styles.text, { color: theme.textSecondary }]}
         accessibilityLabel={statusText}
@@ -51,12 +52,6 @@ const styles = StyleSheet.create({
     gap: 9, // matches ChatBubble avatar dot column (22px dot + 9px gap)
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
-  },
-  dot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    flexShrink: 0,
   },
   text: {
     fontSize: 14,

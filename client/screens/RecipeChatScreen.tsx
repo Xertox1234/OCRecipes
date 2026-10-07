@@ -42,6 +42,7 @@ import {
   Typography,
 } from "@/constants/theme";
 import { ThemedText } from "@/components/ThemedText";
+import { TypingDots } from "@/components/TypingDots";
 import { MarkdownText } from "@/components/MarkdownText";
 import { spokenMarkdown } from "@/components/markdown-text-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -173,7 +174,7 @@ const RecipeStreamingFooter = React.memo(function RecipeStreamingFooter({
           accessibilityLabel={status ?? "RecipeChef is thinking"}
           accessibilityLiveRegion="polite"
         >
-          <ActivityIndicator size="small" color={theme.textSecondary} />
+          <TypingDots color={theme.textSecondary} />
           {status ? (
             <ThemedText style={{ color: theme.textSecondary }}>
               {status}
