@@ -343,10 +343,11 @@ describe("Coach recipe offer — acceptance (plumbing through handleCoachChat)",
       dietTags: [],
     };
     it.each([
+      "that recipe was too salty",
+      "log that recipe",
+      "how many calories in that recipe",
+      "add that recipe to my meal plan",
       "thanks!",
-      "that looks great",
-      "how many calories is that?",
-      "how long does it keep in the fridge?",
     ])("%s", async (text) => {
       vi.mocked(storage.getChatMessages).mockResolvedValue([
         msg(2, "assistant", "Here's a curry", {
