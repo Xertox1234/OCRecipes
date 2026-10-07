@@ -638,27 +638,19 @@ export default function RecipeBrowserScreen() {
     [isPremium, haptics],
   );
 
-  const handleToggleCuisine = useCallback(
-    (cuisine: string) => {
-      haptics.selection();
-      setFilters((prev) => ({
-        ...prev,
-        activeCuisine: prev.activeCuisine === cuisine ? undefined : cuisine,
-      }));
-    },
-    [haptics],
-  );
+  const handleToggleCuisine = useCallback((cuisine: string) => {
+    setFilters((prev) => ({
+      ...prev,
+      activeCuisine: prev.activeCuisine === cuisine ? undefined : cuisine,
+    }));
+  }, []);
 
-  const handleToggleDiet = useCallback(
-    (diet: string) => {
-      haptics.selection();
-      setFilters((prev) => ({
-        ...prev,
-        activeDiet: prev.activeDiet === diet ? undefined : diet,
-      }));
-    },
-    [haptics],
-  );
+  const handleToggleDiet = useCallback((diet: string) => {
+    setFilters((prev) => ({
+      ...prev,
+      activeDiet: prev.activeDiet === diet ? undefined : diet,
+    }));
+  }, []);
 
   const handleClearFilters = useCallback(() => {
     haptics.selection();
@@ -824,7 +816,6 @@ export default function RecipeBrowserScreen() {
             variant="filter"
             selected={filters.curatedOnly}
             onPress={() => {
-              haptics.selection();
               setFilters((prev) => ({
                 ...prev,
                 curatedOnly: !prev.curatedOnly,
@@ -837,7 +828,6 @@ export default function RecipeBrowserScreen() {
             variant="filter"
             selected={filters.safeForMe}
             onPress={() => {
-              haptics.selection();
               setFilters((prev) => ({
                 ...prev,
                 safeForMe: !prev.safeForMe,
@@ -890,7 +880,6 @@ export default function RecipeBrowserScreen() {
               variant="filter"
               selected={filters.activeDifficulty === d.toLowerCase()}
               onPress={() => {
-                haptics.selection();
                 setFilters((prev) => ({
                   ...prev,
                   activeDifficulty:
@@ -913,7 +902,6 @@ export default function RecipeBrowserScreen() {
             variant="filter"
             selected={filters.pantryMode}
             onPress={() => {
-              haptics.selection();
               setFilters((prev) => ({
                 ...prev,
                 pantryMode: !prev.pantryMode,
@@ -926,7 +914,6 @@ export default function RecipeBrowserScreen() {
             variant="filter"
             selected={filters.advanced.maxPrepTime === 30}
             onPress={() => {
-              haptics.selection();
               setFilters((prev) => ({
                 ...prev,
                 advanced: {

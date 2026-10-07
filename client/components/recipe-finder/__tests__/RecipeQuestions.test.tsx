@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
+import * as Haptics from "expo-haptics";
 import { RecipeQuestions } from "../RecipeQuestions";
 import type { RecipeQuestionsBlock } from "@shared/schemas/recipe-finder";
 
@@ -74,5 +75,15 @@ describe("RecipeQuestions", () => {
       <RecipeQuestions block={block} isActive onSubmit={vi.fn()} />,
     );
     expect(screen.getByText("Or type your answer.")).toBeDefined();
+  });
+});
+
+describe("RecipeQuestions — answer haptics", () => {
+  it("picking an answer gives one selection tick", () => {
+    renderComponent(
+      <RecipeQuestions block={block} isActive onSubmit={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Vegan" }));
+    expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
   });
 });
