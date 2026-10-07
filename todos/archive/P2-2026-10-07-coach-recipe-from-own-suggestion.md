@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro: 'turn that into a recipe' after a meal suggestion should generate that recipe"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-07
 updated: 2026-10-07
@@ -106,3 +106,7 @@ Recipe requests reach the Recipe Finder only when `classifyIntent` (`server/serv
 ### 2026-10-07
 
 - Filed after the owner's on-device Coach Pro test. In the same session, prod routing was confirmed in the Railway logs: the coach-pro-chat requests went to openrouter, model `openai/gpt-6-luna`, with Azure as the answering provider.
+
+### 2026-10-07 (superseded)
+
+- Superseded by the coach recipe offer work: server PR #1330 (merged, flag `RECIPE_OFFER_ENABLED` off). Coach Pro now uses a terminal `offer_recipe` tool instead of the regex. The owner's exact message got an offer in 3/3 probe runs (ask 9/9, 0 false alarms). The client UI follows in its own PR.
