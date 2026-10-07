@@ -110,6 +110,9 @@ export const sendButtonEntrySpring = {
   stiffness: 260,
 } as const;
 
+/** Milliseconds for a used quick-reply row to fade out */
+export const quickRepliesExitDuration = 180;
+
 /** Timing for one half of a typing-dot pulse (fade up, or fade back down) */
 export const typingDotPulseTimingConfig: WithTimingConfig = {
   duration: 400,
