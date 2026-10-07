@@ -48,20 +48,18 @@ function tiles() {
 }
 
 // Every checkbox/radio tile on the screen, not a hand-picked sample: each
-// one is tapped in a fresh render and must give exactly one selection tick
+// one is tapped in turn (one render) and must give exactly one selection tick
 // and no impact buzz.
 describe("onboarding selectable tiles — one selection tick per pick", () => {
   it.each(SCREENS)("%s: every tile ticks once", (_name, Screen) => {
-    const { unmount } = renderComponent(<Screen />);
+    renderComponent(<Screen />);
     const count = tiles().length;
-    unmount();
     // Denominator: the screen must actually render tiles.
     expect(count).toBeGreaterThan(0);
 
     for (let i = 0; i < count; i++) {
       vi.mocked(Haptics.selectionAsync).mockClear();
       vi.mocked(Haptics.impactAsync).mockClear();
-      const r = renderComponent(<Screen />);
       fireEvent.click(tiles()[i]);
       expect(
         vi.mocked(Haptics.selectionAsync).mock.calls.length,
@@ -71,7 +69,6 @@ describe("onboarding selectable tiles — one selection tick per pick", () => {
         vi.mocked(Haptics.impactAsync),
         `tile ${i}`,
       ).not.toHaveBeenCalled();
-      r.unmount();
     }
   });
 

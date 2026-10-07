@@ -56,16 +56,14 @@ beforeEach(() => {
 
 describe("EditDietaryProfileScreen — one selection tick per pick", () => {
   it("every checkbox and radio tile ticks once, with no impact buzz", () => {
-    const { unmount } = renderComponent(<EditDietaryProfileScreen />);
+    renderComponent(<EditDietaryProfileScreen />);
     const count = tiles().length;
-    unmount();
     // Denominator: all ten tile groups render.
     expect(count).toBeGreaterThan(20);
 
     for (let i = 0; i < count; i++) {
       vi.mocked(Haptics.selectionAsync).mockClear();
       vi.mocked(Haptics.impactAsync).mockClear();
-      const r = renderComponent(<EditDietaryProfileScreen />);
       fireEvent.click(tiles()[i]);
       expect(
         vi.mocked(Haptics.selectionAsync).mock.calls.length,
@@ -75,7 +73,6 @@ describe("EditDietaryProfileScreen — one selection tick per pick", () => {
         vi.mocked(Haptics.impactAsync),
         `tile ${i}`,
       ).not.toHaveBeenCalled();
-      r.unmount();
     }
   });
 
