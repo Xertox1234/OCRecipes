@@ -135,6 +135,186 @@ beforeEach(() => {
   };
 });
 
+describe("ChatScreen — the message you just sent", () => {
+  const userMessage = (id: number, content: string) => ({
+    id,
+    conversationId: 42,
+    role: "user",
+    content,
+    metadata: null,
+    createdAt: new Date().toISOString(),
+  });
+
+  function typeAndSend(text: string) {
+    fireEvent.change(screen.getByPlaceholderText("Ask NutriCoach..."), {
+      target: { value: text },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+  }
+
+  // The messages query isn't refetched until the reply finishes, so without
+  // a local copy the sent text vanished from the input and showed nowhere.
+  it("shows it while the reply is on its way", () => {
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+    renderComponent(<ChatScreen />);
+
+    typeAndSend("How much protein today?");
+
+    expect(screen.getByText("How much protein today?")).toBeTruthy();
+  });
+
+  it("shows it once after the saved message arrives", () => {
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+    const { rerender } = renderComponent(<ChatScreen />);
+    typeAndSend("How much protein today?");
+
+    mockUseChatMessages.mockReturnValue({
+      data: [userMessage(1, "How much protein today?")],
+      isLoading: false,
+    });
+    rerender(<ChatScreen />);
+
+    expect(screen.getAllByText("How much protein today?")).toHaveLength(1);
+  });
+
+  // Keyed on the saved message count, not on matching text: repeating an
+  // earlier question still shows the new copy straight away.
+  it("shows a repeat of an earlier message too", () => {
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+    mockUseChatMessages.mockReturnValue({
+      data: [userMessage(1, "Thanks")],
+      isLoading: false,
+    });
+    renderComponent(<ChatScreen />);
+
+    typeAndSend("Thanks");
+
+    expect(screen.getAllByText("Thanks")).toHaveLength(2);
+  });
+
+  // ChatScreen stays mounted when the Coach tab re-points it at another
+  // conversation, so a finished send must not follow it there.
+  it("does not follow you into another conversation", () => {
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+    const { rerender } = renderComponent(<ChatScreen />);
+    typeAndSend("How much protein today?");
+
+    mockUseChatMessages.mockReturnValue({
+      data: [userMessage(1, "How much protein today?")],
+      isLoading: false,
+    });
+    rerender(<ChatScreen />);
+
+    mockRouteParams.value = { conversationId: 7 };
+    mockUseChatMessages.mockReturnValue({ data: [], isLoading: false });
+    rerender(<ChatScreen />);
+
+    expect(screen.queryByText("How much protein today?")).toBeNull();
+  });
+
+  // A first message starts the conversation; its copy must survive the id
+  // arriving.
+  it("keeps it while a new conversation is created", async () => {
+    mockRouteParams.value = {};
+    mockCreateMutateAsync.mockResolvedValue({ id: 99 });
+    mockSendMessage.mockReturnValue(new Promise(() => {}));
+    const { rerender } = renderComponent(<ChatScreen />);
+
+    typeAndSend("How much protein today?");
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalled());
+    mockRouteParams.value = { conversationId: 99 };
+    rerender(<ChatScreen />);
+
+    expect(screen.getByText("How much protein today?")).toBeTruthy();
+  });
+
+  // sendMessage reports a failed request through requestError rather than
+  // rejecting, and no refetch follows, so the local copy must go here too.
+  it("drops it and gives the draft back when the request fails", () => {
+    const { rerender } = renderComponent(<ChatScreen />);
+    typeAndSend("How much protein today?");
+    expect(screen.getByText("How much protein today?")).toBeTruthy();
+
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Too many requests",
+    };
+    rerender(<ChatScreen />);
+
+    expect(screen.queryByText("How much protein today?")).toBeNull();
+    expect(
+      (screen.getByPlaceholderText("Ask NutriCoach...") as HTMLInputElement)
+        .value,
+    ).toBe("How much protein today?");
+  });
+
+  // useSendMessage only clears requestError when the next request starts,
+  // and a first message awaits the conversation create before that. An
+  // error left over from an earlier chat must not drop the new message.
+  it("ignores an error left over from an earlier send", () => {
+    mockRouteParams.value = {};
+    mockCreateMutateAsync.mockReturnValue(new Promise(() => {}));
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Too many requests",
+    };
+    renderComponent(<ChatScreen />);
+
+    typeAndSend("How much protein today?");
+
+    expect(screen.getByText("How much protein today?")).toBeTruthy();
+    expect(
+      (screen.getByPlaceholderText("Ask NutriCoach...") as HTMLInputElement)
+        .value,
+    ).toBe("");
+  });
+
+  // ...but once the stale error clears, a fresh failure still counts.
+  it("still drops it for a fresh failure after a stale error clears", () => {
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Too many requests",
+    };
+    const { rerender } = renderComponent(<ChatScreen />);
+    typeAndSend("How much protein today?");
+
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: null,
+    };
+    rerender(<ChatScreen />);
+    expect(screen.getByText("How much protein today?")).toBeTruthy();
+
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Too many requests",
+    };
+    rerender(<ChatScreen />);
+
+    expect(screen.queryByText("How much protein today?")).toBeNull();
+    expect(
+      (screen.getByPlaceholderText("Ask NutriCoach...") as HTMLInputElement)
+        .value,
+    ).toBe("How much protein today?");
+  });
+
+  it("drops it and gives the draft back when starting the chat fails", async () => {
+    mockRouteParams.value = {};
+    mockCreateMutateAsync.mockRejectedValue(new Error("network down"));
+    renderComponent(<ChatScreen />);
+
+    typeAndSend("How much protein today?");
+
+    await waitFor(() =>
+      expect(screen.queryByText("How much protein today?")).toBeNull(),
+    );
+    expect(
+      (screen.getByPlaceholderText("Ask NutriCoach...") as HTMLInputElement)
+        .value,
+    ).toBe("How much protein today?");
+  });
+});
+
 describe("ChatScreen — send haptic", () => {
   // Positive control for the prompt case: a typed send buzzes once.
   it("buzzes once for a typed send", () => {
