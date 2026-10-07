@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Pressable,
   StyleSheet,
   AccessibilityInfo,
   Platform,
@@ -14,7 +13,10 @@ import Animated, {
   cancelAnimation,
   useReducedMotion,
 } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
+import { PressableScale } from "@/components/PressableScale";
 import { volumeToScale } from "@/lib/volume-scale";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -30,9 +32,10 @@ export default function CoachMicButton({
   onPress,
 }: Props) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
-  const isFirstRender = React.useRef(true);
+  const prevListeningRef = React.useRef(isListening);
 
   React.useEffect(() => {
     if (isListening && !reducedMotion) {
@@ -44,16 +47,24 @@ export default function CoachMicButton({
   }, [isListening, volume, reducedMotion, scale]);
 
   React.useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
+    // Only a real start/stop transition: skips mount and any re-run
+    // caused by another dependency changing identity.
+    if (prevListeningRef.current === isListening) return;
+    prevListeningRef.current = isListening;
+    // Keyed on the state, not the press: a start that never happens
+    // (permission denied) stays silent, and an automatic stop at the end
+    // of speech still gets its "got it" tick.
+    haptics.impact(
+      isListening
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light,
+    );
     if (Platform.OS === "ios") {
       AccessibilityInfo.announceForAccessibility(
         isListening ? "Listening" : "Stopped listening",
       );
     }
-  }, [isListening]);
+  }, [isListening, haptics]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -75,7 +86,8 @@ export default function CoachMicButton({
         {isListening ? "Listening" : ""}
       </Text>
       <Animated.View style={animatedStyle}>
-        <Pressable
+        <PressableScale
+          scaleTo={0.85}
           style={[
             styles.button,
             { backgroundColor: isListening ? theme.error : theme.accentSolid },
@@ -91,7 +103,7 @@ export default function CoachMicButton({
             color={theme.buttonText}
             accessible={false}
           />
-        </Pressable>
+        </PressableScale>
       </Animated.View>
     </View>
   );
