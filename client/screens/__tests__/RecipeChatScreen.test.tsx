@@ -985,6 +985,9 @@ describe("RecipeChatScreen — recipe finder", () => {
     }
   });
 
+  // useSendMessage is mocked here, so this covers only the screen half; the
+  // hook half (content published before the stream state clears) is owned by
+  // useChat.test.ts.
   it("the pending bubble shows a streamed offer's question text without the reply hint", () => {
     const userMessage: ChatMessage = {
       id: 1,

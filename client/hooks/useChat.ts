@@ -455,6 +455,7 @@ export function useSendMessage(
         let pendingFlush = false;
         let sseErrorReceived = false;
         let sseBuffer = "";
+        let yieldForRender = false;
 
         const processLine = (line: string) => {
           if (!line.startsWith("data: ")) return;
@@ -505,6 +506,9 @@ export function useSendMessage(
               // content now so the pending-bubble bridge can capture it.
               if (isStreamingRef.current) {
                 setStreamingContent(streamingContentRef.current);
+                // Only when the timer had not published it yet; see the
+                // yield after the stream promise below.
+                if (pendingFlush) yieldForRender = true;
               }
               void queryClient.invalidateQueries({
                 queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
@@ -618,6 +622,12 @@ export function useSendMessage(
 
           xhr.send(requestBody);
         });
+
+        // On the onload-only path the done-flush, this continuation and the
+        // `finally` clear would otherwise land in one React batch, with the
+        // clear winning and no render ever seeing the content. Yield one
+        // macrotask so that render happens while isStreaming is still true.
+        if (yieldForRender) await new Promise((r) => setTimeout(r, 0));
 
         // Stream ended — check if it completed normally
         if (aborted) {
