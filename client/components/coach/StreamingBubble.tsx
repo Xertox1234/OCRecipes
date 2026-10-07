@@ -42,6 +42,7 @@ const StreamingBubble = memo(function StreamingBubble({
           content={streamingContent}
           onSpeak={() => ttsSpeak(-1, streamingContent)}
           isSpeaking={speakingMessageId === -1 && isSpeaking}
+          animateEntry
         />
       ) : null}
       {streamBlocks.map((block, i) => (
@@ -51,6 +52,7 @@ const StreamingBubble = memo(function StreamingBubble({
           onAction={onBlockAction}
           onQuickReply={onQuickReply}
           onCommitmentAccept={onCommitmentAccept}
+          animateEntry
         />
       ))}
       {isStreaming && !streamingContent && statusText ? (

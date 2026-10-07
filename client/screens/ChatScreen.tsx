@@ -83,7 +83,9 @@ const CoachStreamingFooter = React.memo(function CoachStreamingFooter({
   const { theme } = useTheme();
 
   if (content) {
-    return <ChatBubble role="assistant" content={content} isStreaming />;
+    return (
+      <ChatBubble role="assistant" content={content} isStreaming animateEntry />
+    );
   }
 
   return (
@@ -371,6 +373,58 @@ export default function ChatScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage]);
 
+  // The messages query isn't refetched until the reply finishes, so the
+  // text just sent is held locally until the saved copy lands. Keyed on the
+  // saved user-message count at send time, not on matching text, so
+  // repeating an earlier message still shows straight away.
+  const savedUserCount = (messages ?? []).filter(
+    (m) => m.role === "user",
+  ).length;
+  // Tied to its conversation: the screen stays mounted when the Coach tab
+  // re-points it at another one.
+  const [pendingUser, setPendingUser] = useState<{
+    content: string;
+    savedUserCount: number;
+    conversationId: number | null;
+    /** requestError already showing at send time. useSendMessage only
+     *  clears it once the request starts, and a first message awaits the
+     *  conversation create before that, so it must clear before an error
+     *  can count as this send's. */
+    staleError: string | null;
+  } | null>(null);
+  const showPendingUser =
+    pendingUser !== null &&
+    pendingUser.conversationId === conversationId &&
+    savedUserCount <= pendingUser.savedUserCount;
+
+  // Once its own conversation holds the saved copy, the pending copy is
+  // done with. A different conversation only hides it: during a first send
+  // the new id reaches the pending copy a render before the route.
+  const pendingUserSaved =
+    pendingUser !== null &&
+    pendingUser.conversationId === conversationId &&
+    savedUserCount > pendingUser.savedUserCount;
+  useEffect(() => {
+    if (pendingUserSaved) setPendingUser(null);
+  }, [pendingUserSaved]);
+
+  // A request that failed before any reply (requestError) never triggers the
+  // refetch that would replace the local copy, so drop it here and give the
+  // draft back for a resend.
+  useEffect(() => {
+    if (!pendingUser) return;
+    if (pendingUser.staleError !== null) {
+      if (requestError === null) {
+        setPendingUser({ ...pendingUser, staleError: null });
+      }
+      return;
+    }
+    if (requestError) {
+      setPendingUser(null);
+      setInputText((current) => current || pendingUser.content);
+    }
+  }, [requestError, pendingUser]);
+
   // Build display messages from fetched messages only; streaming renders in
   // ListFooterComponent so token updates do not invalidate visible rows.
   const displayMessages = useMemo(() => {
@@ -380,6 +434,14 @@ export default function ChatScreen() {
       content: m.content,
       createdAt: m.createdAt,
     }));
+    if (showPendingUser) {
+      mappedMessages.push({
+        id: "pending-user",
+        role: "user",
+        content: pendingUser.content,
+        createdAt: new Date().toISOString(),
+      });
+    }
     if (pendingAssistantContent) {
       mappedMessages.push({
         id: "pending-assistant",
@@ -389,7 +451,7 @@ export default function ChatScreen() {
       });
     }
     return mappedMessages;
-  }, [messages, pendingAssistantContent]);
+  }, [messages, pendingAssistantContent, showPendingUser, pendingUser]);
 
   const handleSend = useCallback(
     async (text?: string) => {
@@ -401,11 +463,21 @@ export default function ChatScreen() {
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setInputText("");
+      setPendingUser({
+        content,
+        savedUserCount,
+        conversationId,
+        staleError: requestError,
+      });
 
       try {
         if (conversationId === null) {
           // Auto-create a conversation if none exists
           const conversation = await createConversation.mutateAsync(undefined);
+          // The pending copy follows the new conversation's id.
+          setPendingUser((p) =>
+            p ? { ...p, conversationId: conversation.id } : p,
+          );
           navigation.setParams({ conversationId: conversation.id });
           // navigation.setParams doesn't apply until the next render, so
           // sendMessage (closed over the pre-update conversationId) would
@@ -422,6 +494,12 @@ export default function ChatScreen() {
           });
         }
       } catch (e) {
+        // sendMessage reports its own failures through requestError (see the
+        // effect below); this catch is the conversation-create failure, so
+        // nothing was sent. Drop the local copy and give the draft back,
+        // unless the user has already started typing something new.
+        setPendingUser(null);
+        setInputText((current) => current || content);
         const message =
           e instanceof Error ? e.message : "Failed to send message";
         if (
@@ -441,6 +519,8 @@ export default function ChatScreen() {
       isStreaming,
       isMalformedId,
       haptics,
+      savedUserCount,
+      requestError,
       conversationId,
       createConversation,
       navigation,
@@ -460,7 +540,12 @@ export default function ChatScreen() {
 
   const renderItem = useCallback(({ item }: { item: DisplayMessage }) => {
     return (
-      <ChatBubble role={item.role} content={item.content} isStreaming={false} />
+      <ChatBubble
+        role={item.role}
+        content={item.content}
+        isStreaming={false}
+        animateEntry={item.id === "pending-user"}
+      />
     );
   }, []);
 
@@ -503,7 +588,10 @@ export default function ChatScreen() {
   ) : null;
 
   const isEmpty =
-    !isLoading && (!messages || messages.length === 0) && !isStreaming;
+    !isLoading &&
+    (!messages || messages.length === 0) &&
+    !isStreaming &&
+    !showPendingUser;
 
   return (
     <KeyboardAvoidingView

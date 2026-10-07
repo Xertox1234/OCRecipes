@@ -11,6 +11,7 @@ import { ImpactFeedbackStyle } from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
+import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
@@ -154,7 +155,10 @@ export function PlanSlotPickerSheet({
             accessibilityRole="button"
             accessibilityLabel="Close plan slot picker"
             hitSlop={12}
-            style={styles.closeButton}
+            style={({ pressed }) => [
+              styles.closeButton,
+              pressed && { opacity: 0.7 },
+            ]}
           >
             <Feather name="x" size={22} color={theme.textSecondary} />
           </Pressable>
@@ -174,10 +178,11 @@ export function PlanSlotPickerSheet({
               const selected = day.iso === selectedDate;
               const hasItems = datesWithItems.has(day.iso);
               return (
-                <Pressable
+                <PressableScale
+                  scaleTo={0.95}
                   key={day.iso}
                   onPress={() => {
-                    haptics.impact(ImpactFeedbackStyle.Light);
+                    haptics.selection();
                     setSelectedDate(day.iso);
                   }}
                   accessibilityRole="button"
@@ -216,7 +221,7 @@ export function PlanSlotPickerSheet({
                       ]}
                     />
                   ) : null}
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View>
@@ -225,10 +230,11 @@ export function PlanSlotPickerSheet({
             {PLAN_SLOT_MEAL_TYPES.map((meal) => {
               const selected = meal === selectedMeal;
               return (
-                <Pressable
+                <PressableScale
+                  scaleTo={0.95}
                   key={meal}
                   onPress={() => {
-                    haptics.impact(ImpactFeedbackStyle.Light);
+                    haptics.selection();
                     setSelectedMeal(meal);
                   }}
                   accessibilityRole="button"
@@ -249,12 +255,12 @@ export function PlanSlotPickerSheet({
                   >
                     {MEAL_LABELS[meal]}
                   </ThemedText>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View>
 
-          <Pressable
+          <PressableScale
             onPress={handleConfirm}
             disabled={confirmDisabled}
             accessibilityRole="button"
@@ -279,7 +285,7 @@ export function PlanSlotPickerSheet({
                 Add to Plan
               </ThemedText>
             )}
-          </Pressable>
+          </PressableScale>
         </View>
       </View>
     </Modal>

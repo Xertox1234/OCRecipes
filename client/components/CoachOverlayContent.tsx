@@ -418,6 +418,7 @@ export function CoachOverlayContent({
               role={msg.role}
               content={msg.content}
               isStreaming={msg.id === -1}
+              animateEntry={msg.id < 0}
             />
           ))}
           {isStreaming && !streamingContent && statusText ? (

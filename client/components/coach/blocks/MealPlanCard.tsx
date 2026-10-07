@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
+import { PressableScale } from "@/components/PressableScale";
 import type { MealPlanCard as MealPlanCardType } from "@shared/schemas/coach-blocks";
 
 interface Props {
@@ -23,7 +24,7 @@ const MealPlanCard = React.memo(function MealPlanCard({
     >
       <Pressable
         onPress={() => setExpanded(!expanded)}
-        style={styles.header}
+        style={({ pressed }) => [styles.header, pressed && { opacity: 0.7 }]}
         accessibilityRole="button"
         accessibilityLabel={
           expanded ? "Collapse meal plan" : "Expand meal plan"
@@ -65,7 +66,7 @@ const MealPlanCard = React.memo(function MealPlanCard({
         ))}
 
       {expanded && (
-        <Pressable
+        <PressableScale
           style={[styles.addBtn, { backgroundColor: theme.accentSolid }]}
           onPress={() =>
             onAction?.({ type: "add_meal_plan", plan: block.days })
@@ -74,7 +75,7 @@ const MealPlanCard = React.memo(function MealPlanCard({
           accessibilityLabel="Add to meal plan"
         >
           <Text style={styles.addBtnText}>Add to Meal Plan</Text>
-        </Pressable>
+        </PressableScale>
       )}
     </View>
   );
