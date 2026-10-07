@@ -160,6 +160,7 @@ export function buildRecipeContext(
 function buildSystemPrompt(
   userProfile: UserProfile | null | undefined,
   imageAnalysis?: string,
+  allergenDetail: "basic" | "extended" = "basic",
 ): string {
   const parts = [
     "You are RecipeChef, a creative and knowledgeable AI chef built into the OCRecipes nutrition tracking app.",
@@ -194,7 +195,7 @@ function buildSystemPrompt(
 
   // User dietary context
   const dietaryContext = buildDietaryContext(userProfile, {
-    allergenDetail: "basic",
+    allergenDetail,
   });
   if (dietaryContext) {
     parts.push("USER DIETARY PROFILE:");
@@ -360,11 +361,14 @@ export async function* generateRecipeChatResponse(
   }[],
   userProfile: UserProfile | null | undefined,
   imageAnalysis?: string,
-  options?: { systemPromptOverride?: string },
+  options?: {
+    systemPromptOverride?: string;
+    allergenDetail?: "basic" | "extended";
+  },
 ): AsyncGenerator<RecipeChatSSEEvent> {
   const systemPrompt =
     options?.systemPromptOverride ??
-    buildSystemPrompt(userProfile, imageAnalysis);
+    buildSystemPrompt(userProfile, imageAnalysis, options?.allergenDetail);
 
   // Sanitize all message roles — user input with full injection filter,
   // assistant/system content (may contain recipe data from DB) with context

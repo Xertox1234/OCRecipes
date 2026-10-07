@@ -25,8 +25,8 @@ import {
 } from "./generate";
 
 export type CoachFinderTurnEntry =
-  | { kind: "finder"; input: FinderInput }
-  | { kind: "refine" };
+  /** `offer`: RECIPE_OFFER_ENABLED; absent/false = today's behaviour exactly. */
+  { kind: "finder"; input: FinderInput; offer?: boolean } | { kind: "refine" };
 
 export interface CoachFinderTurnParams {
   conversationId: number;
@@ -91,6 +91,7 @@ export async function* runCoachFinderTurn(
 ): AsyncGenerator<CoachChatEvent> {
   const profile = await storage.getUserProfile(p.userId);
   let generation: GenerationMessages;
+  let allergenDetail: "extended" | undefined;
 
   if (p.entry.kind === "refine") {
     yield { type: "status", label: "Updating your recipe…" };
@@ -111,7 +112,10 @@ export async function* runCoachFinderTurn(
       history: p.history,
     });
   } else {
-    const { step } = prepareFinderTurn(p.history, p.entry.input);
+    const offer = p.entry.offer === true;
+    const { latest, step } = prepareFinderTurn(p.history, p.entry.input, {
+      offer,
+    });
     const label = finderStatusLabel(step);
     if (label) yield { type: "status", label };
     const turn = await executeFinderStep(step, {
@@ -120,6 +124,8 @@ export async function* runCoachFinderTurn(
       history: p.history,
       profile,
       features: p.features,
+      offer,
+      latest,
     });
     if (turn.kind === "ignored") {
       await storage.deleteChatMessage(p.userMessageId, p.userId);
@@ -131,18 +137,34 @@ export async function* runCoachFinderTurn(
       yield { type: "blocks", blocks: [turn.block] };
       return;
     }
+    // Offer flag only: "No problem." closes the flow with NO metadata, so it
+    // is the latest assistant message with no live block. The user row stays.
+    if (turn.kind === "close" || turn.kind === "plain") {
+      await persistAssistant(p, turn.content, null);
+      maybeAutoTitle(p);
+      yield { type: "content", content: turn.content };
+      return;
+    }
     // A round-1 search that found nothing has fallen through to Generate and
     // already claimed it — no status yield here: the route returns the
     // generator at a yield once the client leaves, which would drop the
     // claimed recipe unpersisted.
     generation = turn.messages;
+    allergenDetail = turn.allergenDetail;
   }
 
   let text = "";
   let recipe: RecipeChatRecipe | null = null;
   let allergenWarning: string | null = null;
   let imageUrl: string | null = null;
-  for await (const event of generateRecipeChatResponse(generation, profile)) {
+  // Only the adjusted (offer-flag) path asks for extended allergen detail;
+  // every other call keeps today's two-argument shape.
+  const events = allergenDetail
+    ? generateRecipeChatResponse(generation, profile, undefined, {
+        allergenDetail,
+      })
+    : generateRecipeChatResponse(generation, profile);
+  for await (const event of events) {
     if ("recipe" in event && event.recipe) {
       recipe = event.recipe;
       allergenWarning = event.allergenWarning;

@@ -74,6 +74,46 @@ describe("chat quota — recipe finder generation quota and Spoonacular cap", ()
     expect(legacy).not.toBeNull();
   });
 
+  it("Coach: excludeFinderTaps leaves finder tap rows out of the typed daily limit", async () => {
+    const coach = await createChatConversation(testUser.id, "Coach", "coach");
+    for (const [i, flowId] of [FLOW_A, FLOW_B].entries()) {
+      const r = await createFinderUserMessage(
+        coach.id,
+        testUser.id,
+        `tap ${i}`,
+        {
+          action: { flowId, type: "offer_yes" },
+        },
+      );
+      expect(r.status).toBe("created");
+    }
+    // Limit 3: two tap rows + two typed rows (limit − 1 typed).
+    for (const text of ["hi", "how am I doing?"]) {
+      await createChatMessage(coach.id, testUser.id, "user", text);
+    }
+    // Without the option (flag off) the taps count: 4 ≥ 3 → rejected.
+    expect(
+      await createChatMessageWithLimitCheck(
+        coach.id,
+        testUser.id,
+        "one more",
+        3,
+        "coach",
+      ),
+    ).toBeNull();
+    // With it, only the 2 typed rows count → accepted.
+    expect(
+      await createChatMessageWithLimitCheck(
+        coach.id,
+        testUser.id,
+        "one more",
+        3,
+        "coach",
+        { excludeFinderTaps: true },
+      ),
+    ).not.toBeNull();
+  });
+
   it("a claimed Generate counts, and shares the limit with the legacy path", async () => {
     const conv = await createChatConversation(testUser.id, "Recipe", "recipe");
     const r1 = await createFinderUserMessage(conv.id, testUser.id, "Generate", {

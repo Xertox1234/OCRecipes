@@ -3,6 +3,7 @@ import {
   isRecipeFinderEnabled,
   getSpoonacularDailyCap,
   isOnlineCatalogConfigured,
+  isRecipeOfferEnabled,
   DEFAULT_SPOONACULAR_DAILY_CAP,
 } from "../config";
 
@@ -42,5 +43,21 @@ describe("recipe finder config", () => {
     expect(isOnlineCatalogConfigured()).toBe(false);
     vi.stubEnv("SPOONACULAR_API_KEY", "k");
     expect(isOnlineCatalogConfigured()).toBe(true);
+  });
+});
+
+describe("isRecipeOfferEnabled", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("needs BOTH flags", () => {
+    vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
+    vi.stubEnv("RECIPE_OFFER_ENABLED", "true");
+    expect(isRecipeOfferEnabled()).toBe(true);
+    vi.stubEnv("RECIPE_FINDER_ENABLED", "false");
+    expect(isRecipeOfferEnabled()).toBe(false);
+  });
+  it("is off by default", () => {
+    vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
+    vi.stubEnv("RECIPE_OFFER_ENABLED", "");
+    expect(isRecipeOfferEnabled()).toBe(false);
   });
 });

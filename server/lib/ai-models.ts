@@ -65,6 +65,8 @@ export const AI_FEATURES = {
   "finder-classify-turn": { ...FAST, json: true, vision: false }, // recipe-finder/classify-turn
   "finder-ask-clarifying": { ...FAST, json: true, vision: false }, // recipe-finder/ask-clarifying
   "finder-extract-query": { ...FAST, json: true, vision: false }, // recipe-finder/extract-query
+  "finder-extract-offer": { ...FAST, json: true, vision: false }, // recipe-finder/extract-query extractOfferDetails
+  "finder-dish-follow-ups": { ...FAST, json: true, vision: false }, // recipe-finder/ask-follow-ups
   // Images / covers
   "image-art-direction": { ...FAST, json: true, vision: false }, // image-art-direction resolveArtDirection
   "cookbook-cover-subject": { ...FAST, json: true, vision: false }, // cookbook-cover deriveCoverSubject

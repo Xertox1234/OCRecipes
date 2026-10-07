@@ -17,7 +17,11 @@ import { register } from "../chat";
 import { findCommunity } from "../../services/recipe-finder/find-community";
 import { findOnline } from "../../services/recipe-finder/find-online";
 import { classifyTurn } from "../../services/recipe-finder/classify-turn";
-import type { RecipeResultsBlock } from "@shared/schemas/recipe-finder";
+import { extractOfferDetails } from "../../services/recipe-finder/extract-query";
+import type {
+  FinderBlock,
+  RecipeResultsBlock,
+} from "@shared/schemas/recipe-finder";
 import {
   createMockChatConversation,
   createMockChatMessage,
@@ -114,6 +118,10 @@ vi.mock("../../services/recipe-chat", async () => {
 vi.mock("../../services/recipe-finder/extract-query", () => ({
   extractQuery: vi.fn(async (text: string) => ({ q: text.slice(0, 200) })),
   rawQuery: vi.fn((text: string) => ({ q: text.slice(0, 200) })),
+  extractOfferDetails: vi.fn(),
+}));
+vi.mock("../../services/recipe-finder/ask-follow-ups", () => ({
+  askDishFollowUps: vi.fn(async () => []),
 }));
 vi.mock("../../services/recipe-finder/find-community", () => ({
   findCommunity: vi.fn(),
@@ -957,6 +965,64 @@ describe("Chat Routes", () => {
         expect(storage.deleteChatMessage).not.toHaveBeenCalled();
       });
 
+      describe("recipe offer flag on", () => {
+        beforeEach(() => {
+          vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
+          vi.stubEnv("RECIPE_OFFER_ENABLED", "true");
+        });
+        afterEach(() => {
+          vi.unstubAllEnvs();
+        });
+
+        it("a blocks-only reply (offer_recipe) saved before the close keeps the user row", async () => {
+          setupDisconnect();
+          let capturedSignal: AbortSignal | undefined;
+          vi.mocked(generateCoachProResponse).mockImplementation(
+            async function* (_h, _c, _u, signal) {
+              capturedSignal = signal;
+              yield {
+                type: "terminal_tool" as const,
+                name: "offer_recipe" as const,
+                args: JSON.stringify({
+                  dish: "Chili",
+                  from_conversation: false,
+                }),
+              };
+            },
+          );
+          // The offer row lands only after the client has gone: nothing was
+          // streamed as content, so only the saved turnKey row can tell the
+          // settle that this turn was answered.
+          let persisted: ReturnType<typeof createMockChatMessage> | undefined;
+          vi.mocked(storage.createChatMessage).mockImplementation(
+            async (...args) => {
+              await untilAborted(capturedSignal!);
+              persisted = createMockChatMessage({
+                id: 43,
+                role: "assistant",
+                content: args[3],
+                metadata: args[4],
+                turnKey: args[5] ?? null,
+              });
+              return persisted;
+            },
+          );
+          vi.mocked(storage.getChatMessageByTurnKey).mockImplementation(
+            async () => persisted,
+          );
+
+          await postAndDisconnect(() => true);
+
+          expect(assistantWrites()).toHaveLength(1);
+          expect(assistantWrites()[0][4]).toEqual({
+            blocks: [expect.objectContaining({ type: "recipe_offer" })],
+          });
+          // Once by the service's dedup, once by the H6 settle.
+          expect(storage.getChatMessageByTurnKey).toHaveBeenCalledTimes(2);
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        });
+      });
+
       it("control: a completed stream neither refunds nor adds a second write", async () => {
         setupDisconnect();
         vi.mocked(generateCoachProResponse).mockImplementation(
@@ -1350,6 +1416,374 @@ describe("Chat Routes", () => {
         const res = await send({ content: "now a dessert" });
         expect(res.text).toContain('"finder":{"type":"recipe_results"');
         expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      describe("offer flow (RECIPE_OFFER_ENABLED on)", () => {
+        const OFFER_FLOW = "33333333-3333-4333-8333-333333333333";
+        const offerFlow = {
+          flowId: OFFER_FLOW,
+          stage: "offer" as const,
+          request: "Spaghetti",
+          query: { q: "spaghetti" },
+          round: 0 as const,
+          shownIds: [],
+          dish: "Spaghetti",
+          details: { ingredients: [], fromConversation: false },
+        };
+        const offerBlock: FinderBlock = {
+          type: "recipe_offer",
+          flow: offerFlow,
+        };
+        const adjustBlock: FinderBlock = {
+          type: "recipe_adjust",
+          prefill: { servings: 4, spice: "medium", time: "moderate" },
+          avoiding: [],
+          noted: { dislikes: [] },
+          followUps: [],
+          flow: { ...offerFlow, stage: "adjust" },
+        };
+        const withBlock = (block: FinderBlock) => [
+          createMockChatMessage({ id: 1, role: "user", content: "spaghetti" }),
+          createMockChatMessage({
+            id: 2,
+            role: "assistant",
+            content: "Want a recipe?",
+            metadata: { metadataVersion: 1, finder: block },
+          }),
+        ];
+        const afterNo = () => [
+          createMockChatMessage({ id: 1, role: "user", content: "spaghetti" }),
+          createMockChatMessage({
+            id: 2,
+            role: "assistant",
+            content: "No problem.",
+            metadata: null,
+          }),
+        ];
+
+        beforeEach(() => {
+          vi.stubEnv("RECIPE_OFFER_ENABLED", "true");
+          vi.mocked(extractOfferDetails).mockResolvedValue({
+            dish: "Spicy spaghetti",
+            details: { ingredients: [], fromConversation: false },
+          });
+        });
+
+        it('a "No" tap closes with "No problem." and never generates', async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(offerBlock),
+          );
+          const res = await send({
+            content: "No",
+            finderAction: { type: "offer_no", flowId: OFFER_FLOW },
+          });
+          expect(res.status).toBe(200);
+          expect(storage.createChatMessage).toHaveBeenCalledWith(
+            1,
+            "1",
+            "assistant",
+            "No problem.",
+          );
+          expect(res.text).toContain("No problem.");
+          expect(res.text).not.toContain('"finder"');
+          expect(res.text).toContain('"done":true');
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        });
+
+        it("typed text after a close goes to the finder path, not the legacy quota path", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(afterNo());
+          const res = await send({ content: "actually, make it spicy" });
+          expect(res.status).toBe(200);
+          expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+            1,
+            "1",
+            "actually, make it spicy",
+          );
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+          expect(res.text).toContain('"type":"recipe_offer"');
+        });
+
+        it("an off-screen card is not refined: card, offer, No, then typed text → fresh offer, no generation", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue([
+            ...cardHistory(),
+            createMockChatMessage({ id: 3, role: "user", content: "dessert" }),
+            createMockChatMessage({
+              id: 4,
+              role: "assistant",
+              content: "Want a recipe?",
+              metadata: { metadataVersion: 1, finder: offerBlock },
+            }),
+            createMockChatMessage({ id: 5, role: "user", content: "No" }),
+            createMockChatMessage({
+              id: 6,
+              role: "assistant",
+              content: "No problem.",
+              metadata: null,
+            }),
+          ]);
+          vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+          const res = await send({ content: "actually, make it spicy" });
+          expect(res.text).toContain('"type":"recipe_offer"');
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        });
+
+        it("card is latest + refine_current still refines via the legacy path (flag on)", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+          vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+          await send({ content: "make it spicier" });
+          expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalled();
+          expect(generateRecipeChatResponse).toHaveBeenCalled();
+        });
+
+        it("plain reply (no dish named): persisted without metadata, no claim, user row kept, auto-titled", async () => {
+          vi.mocked(extractOfferDetails).mockResolvedValue({
+            dish: null,
+            details: { ingredients: [], fromConversation: false },
+          });
+          vi.mocked(storage.getChatMessages).mockResolvedValue([]);
+          const res = await send({ content: "hmm" });
+          expect(res.text).toContain("Which dish did you have in mind?");
+          expect(res.text).toContain('"done":true');
+          expect(storage.createChatMessage).toHaveBeenCalledWith(
+            1,
+            "1",
+            "assistant",
+            "Which dish did you have in mind?",
+          );
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
+          expect(storage.updateChatConversationTitle).toHaveBeenCalledWith(
+            1,
+            "1",
+            "hmm",
+          );
+        });
+
+        it("a card is latest and classifyTurn says other → legacy path, unchanged (deliberate carve-out)", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+          vi.mocked(classifyTurn).mockResolvedValue("other");
+          await send({ content: "how long does it keep?" });
+          expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalled();
+          expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).toHaveBeenCalled();
+        });
+
+        it('typed "yes" on a live offer builds the adjust card and claims nothing', async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(offerBlock),
+          );
+          const res = await send({ content: "yes please!" });
+          expect(res.text).toContain('"type":"recipe_adjust"');
+          expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+          expect(
+            storage.createChatMessageWithLimitCheck,
+          ).not.toHaveBeenCalled();
+          expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        });
+
+        it("Generate on a live adjust card claims once and asks for extended allergen detail", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(adjustBlock),
+          );
+          const res = await send({
+            content: "Generate",
+            finderAction: {
+              type: "adjust_generate",
+              flowId: OFFER_FLOW,
+              settings: { servings: 4, spice: "medium", time: "moderate" },
+            },
+          });
+          expect(res.status).toBe(200);
+          expect(storage.claimRecipeGeneration).toHaveBeenCalledTimes(1);
+          expect(generateRecipeChatResponse).toHaveBeenCalledTimes(1);
+          expect(
+            vi.mocked(generateRecipeChatResponse).mock.calls[0][3],
+          ).toMatchObject({ allergenDetail: "extended" });
+        });
+
+        it("RecipeChef: an offer_yes tap reaches build_adjust (not invalid_for_stage)", async () => {
+          vi.mocked(storage.getChatMessages).mockResolvedValue(
+            withBlock(offerBlock),
+          );
+          const res = await send({
+            content: "Yes",
+            finderAction: { type: "offer_yes", flowId: OFFER_FLOW },
+          });
+          expect(res.status).toBe(200);
+          expect(res.text).toContain('"type":"recipe_adjust"');
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+        });
+
+        describe("Coach Pro taps", () => {
+          beforeEach(() => {
+            vi.mocked(storage.getChatConversation).mockResolvedValue(
+              createMockChatConversation(),
+            );
+            vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(
+              undefined,
+            );
+            vi.mocked(storage.getDailySummary).mockResolvedValue({
+              totalCalories: 0,
+              totalProtein: 0,
+              totalCarbs: 0,
+              totalFat: 0,
+              itemCount: 0,
+            });
+            vi.mocked(storage.getChatMessages).mockResolvedValue([
+              createMockChatMessage({
+                id: 2,
+                role: "assistant",
+                content: "Want a recipe?",
+                metadata: { blocks: [offerBlock] },
+              }),
+            ]);
+          });
+
+          it("a finder tap does not count toward the Coach Pro daily limit", async () => {
+            const res = await send({
+              content: "Yes",
+              finderAction: { type: "offer_yes", flowId: OFFER_FLOW },
+            });
+            expect(res.status).toBe(200);
+            expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+              1,
+              "1",
+              "Yes",
+              { action: { flowId: OFFER_FLOW, type: "offer_yes" } },
+            );
+          });
+
+          it("an offer_yes tap reaches build_adjust (not invalid_for_stage)", async () => {
+            const res = await send({
+              content: "Yes",
+              finderAction: { type: "offer_yes", flowId: OFFER_FLOW },
+            });
+            expect(res.text).toContain('"type":"recipe_adjust"');
+            expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+            expect(generateCoachProResponse).not.toHaveBeenCalled();
+          });
+
+          it("offer → typed chat → prose reply: a tap on the OLD offer ends quietly", async () => {
+            vi.mocked(storage.getChatMessages).mockResolvedValue([
+              createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+              createMockChatMessage({
+                id: 2,
+                role: "assistant",
+                content: "Want a recipe?",
+                metadata: { blocks: [offerBlock] },
+              }),
+              createMockChatMessage({
+                id: 3,
+                role: "user",
+                content: "how much protein is in it?",
+              }),
+              createMockChatMessage({
+                id: 4,
+                role: "assistant",
+                content: "About 25g per bowl.",
+                metadata: null,
+              }),
+            ]);
+            const res = await send({
+              content: "Yes",
+              finderAction: { type: "offer_yes", flowId: OFFER_FLOW },
+            });
+            expect(res.status).toBe(200);
+            expect(res.text).toBe('data: {"done":true}\n\n');
+            expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+            expect(storage.createChatMessage).not.toHaveBeenCalled();
+            expect(generateCoachProResponse).not.toHaveBeenCalled();
+          });
+
+          it("after a repost_adjust, adjust_generate with the OLD card's flowId ends quietly and claims nothing", async () => {
+            const NEW_FLOW = "44444444-4444-4444-8444-444444444444";
+            vi.mocked(storage.getChatMessages).mockResolvedValue([
+              createMockChatMessage({
+                id: 2,
+                role: "assistant",
+                content: "card",
+                metadata: { blocks: [adjustBlock] },
+              }),
+              createMockChatMessage({ id: 3, role: "user", content: "chili" }),
+              createMockChatMessage({
+                id: 4,
+                role: "assistant",
+                content: "card again",
+                metadata: {
+                  blocks: [
+                    {
+                      ...adjustBlock,
+                      flow: { ...adjustBlock.flow, flowId: NEW_FLOW },
+                    },
+                  ],
+                },
+              }),
+            ]);
+            const res = await send({
+              content: "Generate",
+              finderAction: {
+                type: "adjust_generate",
+                flowId: OFFER_FLOW,
+                settings: { servings: 4, spice: "medium", time: "moderate" },
+              },
+            });
+            expect(res.status).toBe(200);
+            expect(res.text).toBe('data: {"done":true}\n\n');
+            expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+            expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+            expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+          });
+
+          it("a typed Coach message still goes through the limit check, with finder taps excluded", async () => {
+            vi.mocked(generateCoachProResponse).mockImplementation(
+              async function* () {
+                yield { type: "content" as const, content: "Sure." };
+              },
+            );
+            const res = await send({ content: "how am I doing today?" });
+            expect(res.status).toBe(200);
+            expect(
+              storage.createChatMessageWithLimitCheck,
+            ).toHaveBeenCalledWith(
+              1,
+              "1",
+              "how am I doing today?",
+              expect.any(Number),
+              "coach",
+              { excludeFinderTaps: true },
+            );
+            expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+          });
+
+          it("flag off: a typed Coach message keeps today's five-argument limit check", async () => {
+            vi.stubEnv("RECIPE_OFFER_ENABLED", "");
+            vi.mocked(generateCoachProResponse).mockImplementation(
+              async function* () {
+                yield { type: "content" as const, content: "Sure." };
+              },
+            );
+            await send({ content: "how am I doing today?" });
+            const calls = vi.mocked(storage.createChatMessageWithLimitCheck)
+              .mock.calls;
+            expect(calls).toHaveLength(1);
+            expect(calls[0]).toHaveLength(5);
+          });
+        });
       });
 
       it("remix never enters the flow", async () => {

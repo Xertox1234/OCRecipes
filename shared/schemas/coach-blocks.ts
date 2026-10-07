@@ -4,6 +4,8 @@ import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
 import {
   recipeResultsBlockSchema,
   recipeQuestionsBlockSchema,
+  recipeOfferBlockSchema,
+  recipeAdjustBlockSchema,
 } from "./recipe-finder";
 
 // ── Action types for cards ──────────────────────────────────────────
@@ -304,6 +306,8 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   mealPlanCardSchema,
   recipeResultsBlockSchema,
   recipeQuestionsBlockSchema,
+  recipeOfferBlockSchema,
+  recipeAdjustBlockSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;

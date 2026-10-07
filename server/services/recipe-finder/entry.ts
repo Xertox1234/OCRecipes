@@ -8,7 +8,7 @@ import {
 } from "@shared/schemas/recipe-finder";
 import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
 import type { CoachIntent } from "../coach-intent-classifier";
-import type { FinderInput } from "./transition";
+import type { FinderInput, TypedFinderCommand } from "./transition";
 
 export function finderBlockFromMetadata(metadata: unknown): FinderBlock | null {
   if (!metadata || typeof metadata !== "object") return null;
@@ -75,6 +75,29 @@ const NONE_PHRASES = new Set([
   "none of them",
 ]);
 
+const YES_PHRASES = new Set([
+  "yes",
+  "yes please",
+  "sure",
+  "go ahead",
+  "do it",
+  "ok",
+  "okay",
+  "yep",
+]);
+const NO_PHRASES = new Set([
+  "no",
+  "no thanks",
+  "no thank you",
+  "nope",
+  "not now",
+]);
+const SEARCH_PHRASES = new Set([
+  "search",
+  "search ocrecipes",
+  "search for one",
+]);
+
 export function normalizeCommand(text: string): string {
   return text
     .toLowerCase()
@@ -93,9 +116,17 @@ export function normalizeCommand(text: string): string {
 export function matchTypedFinderCommand(
   text: string,
   stage: FinderBlock["type"],
-): "generate" | "none_of_these" | null {
+  offer = false,
+): TypedFinderCommand | null {
   const t = normalizeCommand(text);
   if (GENERATE_PHRASES.has(t)) return "generate";
+  // Offer-flow phrases need the flag AND the stage: offer/adjust blocks can
+  // outlive a flag flip-off, so the stage alone is not enough.
+  if (offer && (stage === "recipe_offer" || stage === "recipe_adjust")) {
+    if (YES_PHRASES.has(t)) return "yes";
+    if (NO_PHRASES.has(t)) return "no";
+    if (stage === "recipe_offer" && SEARCH_PHRASES.has(t)) return "search";
+  }
   if (stage === "recipe_results" && NONE_PHRASES.has(t)) {
     return "none_of_these";
   }
@@ -111,6 +142,7 @@ export type RecipeChefEntry =
 export function decideRecipeChefEntry(
   history: ChatMessage[],
   text: string,
+  opts?: { offer?: boolean },
 ): RecipeChefEntry {
   const latest = getLatestFinderBlock(history);
   if (latest) {
@@ -119,15 +151,23 @@ export function decideRecipeChefEntry(
       input: {
         kind: "typed",
         text,
-        command: matchTypedFinderCommand(text, latest.type),
+        command: matchTypedFinderCommand(
+          text,
+          latest.type,
+          opts?.offer === true,
+        ),
       },
     };
   }
-  const card = getLatestRecipe(history, { latestOnly: false });
+  // Offer on: refine is only for a card ON SCREEN (the latest message);
+  // an older card with a text reply since gets an offer instead.
+  const card = getLatestRecipe(history, { latestOnly: opts?.offer === true });
   if (card) return { kind: "classify", recipeTitle: card.title };
   if (!history.some((m) => m.role === "user")) {
     return { kind: "finder", input: { kind: "start", text } };
   }
+  // Offer on: legacy generation is replaced by the offer (H3).
+  if (opts?.offer) return { kind: "finder", input: { kind: "start", text } };
   return { kind: "legacy" };
 }
 
@@ -147,23 +187,29 @@ export function decideCoachFinderEntry(
   text: string,
   intent: CoachIntent,
   action?: FinderAction,
+  opts?: { offer?: boolean },
 ): CoachFinderEntry {
+  const offer = opts?.offer === true;
   if (action) return { kind: "finder", input: { kind: "action", action } };
   if (intent === "safety_refusal") return { kind: "none" };
   const latest = getLatestFinderBlock(history);
   if (latest) {
-    return {
-      kind: "finder",
-      input: {
-        kind: "typed",
-        text,
-        command: matchTypedFinderCommand(text, latest.type),
-      },
-    };
+    const command = matchTypedFinderCommand(text, latest.type, offer);
+    // Offer on (H2): on a live offer/card only an exact command stays in the
+    // finder; any other text goes to the tool loop, which may re-offer.
+    if (
+      offer &&
+      command === null &&
+      (latest.type === "recipe_offer" || latest.type === "recipe_adjust")
+    ) {
+      return { kind: "none" };
+    }
+    return { kind: "finder", input: { kind: "typed", text, command } };
   }
   const card = getLatestRecipe(history, { latestOnly: true });
   if (card) return { kind: "classify", recipeTitle: card.title };
-  if (intent === "recipe_request") {
+  // Offer on: the model (offer_recipe tool) is the single decider of new asks.
+  if (intent === "recipe_request" && !offer) {
     return { kind: "finder", input: { kind: "start", text } };
   }
   return { kind: "none" };

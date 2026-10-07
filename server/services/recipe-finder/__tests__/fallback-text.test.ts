@@ -3,6 +3,8 @@ import { finderFallbackText } from "../fallback-text";
 import type {
   RecipeResultsBlock,
   RecipeQuestionsBlock,
+  RecipeOfferBlock,
+  RecipeAdjustBlock,
 } from "@shared/schemas/recipe-finder";
 
 const flow = {
@@ -98,6 +100,30 @@ describe("finderFallbackText", () => {
     };
     expect(finderFallbackText(q)).toBe(
       'A few quick questions:\n1. How much time do you have? (Under 20 minutes / An hour or more)\n\nReply with your answers, or "generate" to create a recipe now.',
+    );
+  });
+
+  it("offer text is the fixed copy + typed hints", () => {
+    const offerBlock: RecipeOfferBlock = {
+      type: "recipe_offer",
+      flow: { ...flow, stage: "offer" },
+    };
+    expect(finderFallbackText(offerBlock)).toBe(
+      'I can make this into a recipe right here in the chat. Want me to get started?\nI can also search OCRecipes for something similar.\n\nReply "yes", "search", or "no".',
+    );
+  });
+
+  it("adjust text lists the prefill and how to proceed", () => {
+    const adjustBlock: RecipeAdjustBlock = {
+      type: "recipe_adjust",
+      prefill: { servings: 8, spice: "mild", time: "moderate" },
+      avoiding: [],
+      noted: { dislikes: [] },
+      followUps: [],
+      flow: { ...flow, stage: "adjust", dish: "Spaghetti and meatballs" },
+    };
+    expect(finderFallbackText(adjustBlock)).toBe(
+      'Spaghetti and meatballs — 8 servings, mild, 30-60 minutes.\n\nReply "generate" to make it.',
     );
   });
 });

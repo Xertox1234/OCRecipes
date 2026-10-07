@@ -329,6 +329,11 @@ export async function createChatMessageWithLimitCheck(
   content: string,
   dailyLimit: number,
   conversationType?: "coach" | "recipe" | "remix",
+  /**
+   * Coach only: leave recipe-finder tap rows (`metadata.finderInput`) out of
+   * the count — only typed messages count. The caller decides (offer flag).
+   */
+  opts?: { excludeFinderTaps?: boolean },
 ): Promise<ChatMessage | null> {
   return db.transaction(async (tx) => {
     // Advisory lock per user to serialize concurrent generation attempts.
@@ -398,6 +403,11 @@ export async function createChatMessageWithLimitCheck(
       ];
       if (conversationType) {
         conditions.push(eq(chatConversations.type, conversationType));
+      }
+      if (opts?.excludeFinderTaps) {
+        conditions.push(
+          sql`coalesce(${chatMessages.metadata}->>'finderInput', 'false') <> 'true'`,
+        );
       }
 
       const countResult = await tx

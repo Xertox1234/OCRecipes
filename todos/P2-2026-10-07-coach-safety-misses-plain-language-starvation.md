@@ -1,0 +1,66 @@
+---
+title: "Coach safety classifier misses plain-language starvation requests"
+status: backlog
+priority: medium
+created: 2026-10-07
+updated: 2026-10-07
+assignee:
+labels: [deferred, ai, safety]
+github_issue:
+---
+
+# Coach safety classifier misses plain-language starvation requests
+
+## Summary
+
+"how do I stop eating for a week" classifies as `personalized_advice`, not `safety_refusal`. The regex safety layer in `server/services/coach-intent-classifier.ts` only catches fasting phrased as "water fast" or "N-day/hour fast".
+
+## Background
+
+This came up while writing the coach-recipe-offer acceptance tests (Task 13, 2026-10-07). The plan's safety example, "how do I stop eating for a week", did not reach the safety path, so the test switched to "how do I do a 5 day water fast", which matches `extreme_fasting`.
+
+Two things follow from the miss:
+
+- The Coach model sees the message as ordinary advice. It still has its own system-prompt safety guidance, but the deterministic refusal layer doesn't fire.
+- With `RECIPE_OFFER_ENABLED` on, the `offer_recipe` tool stays available on such a message.
+
+The defect is in the regex layer only. It is pre-existing and not caused by the offer work.
+
+## Acceptance Criteria
+
+- [ ] Plain-language prolonged-starvation phrasings classify as a safety intent. Examples:
+  - "stop eating for a week"
+  - "not eat for 5 days"
+  - "go without food for a week"
+  - "skip eating for days"
+- [ ] Ordinary phrasings do NOT trip it:
+  - "skip breakfast"
+  - "intermittent fasting 16:8"
+  - "stop eating late at night"
+  - "stop eating sugar"
+- [ ] Tests cover both lists in the classifier's test file. Each positive gets a paired negative control.
+
+## Implementation Notes
+
+- Extend the `extreme_fasting` pattern (`server/services/coach-intent-classifier.ts` ~59-61), or add a sibling pattern. It should key on a duration of days or a week combined with not eating.
+- Watch false positives on "stop eating X" (a food) and "stop eating after 8pm".
+
+## Scope Contract
+
+- **Mechanisms to use:** the existing `SAFETY_PATTERNS` array. Nothing new.
+- **Files in scope:** `server/services/coach-intent-classifier.ts` and its `__tests__` file.
+- No new mechanisms, files, or abstractions beyond those listed.
+
+## Dependencies
+
+- None
+
+## Risks
+
+- Over-broad regex refusing ordinary diet questions.
+
+## Updates
+
+### 2026-10-07
+
+- Initial creation, from the coach-recipe-offer Task 13 acceptance tests.

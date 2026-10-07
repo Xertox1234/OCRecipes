@@ -310,11 +310,7 @@ export const SKILL_LEVELS: SkillLevelOption[] = [
   },
 ];
 
-export const COOKING_TIMES: CookingTimeOption[] = [
-  { id: "quick", name: "Quick", description: "Under 30 minutes" },
-  { id: "moderate", name: "Moderate", description: "30-60 minutes" },
-  { id: "leisurely", name: "Leisurely", description: "1+ hours, no rush" },
-];
+export { COOKING_TIMES } from "@shared/constants/cooking-times";
 
 // Label lookup for display
 export const ALLERGEN_LABELS: Record<string, string> = Object.fromEntries(

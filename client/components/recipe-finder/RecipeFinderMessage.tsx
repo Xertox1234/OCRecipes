@@ -70,6 +70,8 @@ export function RecipeFinderMessage({
       />
     );
   }
+  // offer/adjust blocks render nothing until the client UI task
+  if (block.type !== "recipe_questions") return null;
   return (
     <RecipeQuestions
       block={block}

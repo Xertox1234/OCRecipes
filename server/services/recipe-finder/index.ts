@@ -1,6 +1,7 @@
 // server/services/recipe-finder/index.ts
 export {
   isRecipeFinderEnabled,
+  isRecipeOfferEnabled,
   getSpoonacularDailyCap,
   isOnlineCatalogConfigured,
 } from "./config";

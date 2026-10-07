@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildRecipeContext,
   checkRecipeAllergens,
@@ -534,5 +534,71 @@ describe("analyzeImageForRecipe — routing", () => {
     expect((call[1] as any).max_completion_tokens).toBe(500);
     expect((call[1] as any).temperature).toBe(0.3);
     expect(call[2]).toEqual({ timeout: 15_000 });
+  });
+});
+
+describe("generateRecipeChatResponse — allergenDetail option", () => {
+  const profile = {
+    allergies: [{ name: "peanuts", severity: "severe" }],
+  } as any;
+
+  async function systemPromptFor(options?: {
+    allergenDetail?: "basic" | "extended";
+  }): Promise<string> {
+    const actual = await vi.importActual<
+      typeof import("../../lib/dietary-context")
+    >("../../lib/dietary-context");
+    const { buildDietaryContext } = await import("../../lib/dietary-context");
+    vi.mocked(buildDietaryContext).mockImplementationOnce(
+      actual.buildDietaryContext,
+    );
+    vi.mocked(aiChat).mockResolvedValueOnce(
+      (async function* () {
+        yield {
+          choices: [{ delta: { content: "hi" }, finish_reason: "stop" }],
+        };
+      })() as any,
+    );
+    const gen = generateRecipeChatResponse(
+      [{ role: "user", content: "make a recipe" }],
+      profile,
+      undefined,
+      options,
+    );
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _chunk of gen) {
+      /* drain */
+    }
+    const callArgs = vi.mocked(aiChat).mock.calls.at(-1)![1] as any;
+    return callArgs.messages[0].content as string;
+  }
+
+  afterEach(async () => {
+    // Restore the file's top-level factory behaviour (mockReturnValue("")).
+    const { buildDietaryContext } = await import("../../lib/dietary-context");
+    vi.mocked(buildDietaryContext).mockReset();
+    vi.mocked(buildDietaryContext).mockReturnValue("");
+  });
+
+  it("default (no option) keeps the basic allergen text", async () => {
+    const prompt = await systemPromptFor();
+    expect(prompt).toContain("MUST AVOID these allergens");
+    expect(prompt).not.toContain("CRITICAL ALLERGY RESTRICTIONS");
+  });
+
+  it("allergenDetail: extended uses the CRITICAL ALLERGY RESTRICTIONS block", async () => {
+    const prompt = await systemPromptFor({ allergenDetail: "extended" });
+    expect(prompt).toContain("CRITICAL ALLERGY RESTRICTIONS");
+    expect(prompt).not.toContain("MUST AVOID these allergens");
+  });
+});
+
+describe("buildDietaryContext mock isolation (after allergenDetail swap)", () => {
+  it("is back to the file's mocked behaviour, not the real implementation", async () => {
+    const { buildDietaryContext } = await import("../../lib/dietary-context");
+    const out = buildDietaryContext({
+      allergies: [{ name: "peanuts", severity: "severe" }],
+    } as any);
+    expect(out).toBe("");
   });
 });

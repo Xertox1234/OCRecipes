@@ -18,6 +18,8 @@ import {
 } from "./coach-tools";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
+import { OFFER_RECIPE_TOOL } from "./recipe-finder/offer";
+import { getBlocksSystemPrompt } from "./coach-blocks";
 import type { UserProfile } from "@shared/schema";
 import { weightFromKg, weightUnitLabel } from "@shared/lib/units";
 import type { MeasurementUnit } from "@shared/lib/units";
@@ -30,7 +32,7 @@ const log = createServiceLogger("nutrition-coach");
  * `Object.freeze` traps accidental top-level mutation (e.g. a future caller
  * pushing extra tools) since this reference is now shared across requests.
  */
-const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
+export const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
 
 /**
  * Sentinel yielded by generateCoachResponse when the safety check fires after
@@ -49,7 +51,10 @@ export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
  */
 export type CoachProChunk =
   | { type: "content"; content: string }
-  | { type: "tool_calls"; toolNames: string[] };
+  | { type: "tool_calls"; toolNames: string[] }
+  // offer_recipe is terminal: the round's other calls are dropped and the
+  // generator returns. `args` is the raw accumulated arguments string.
+  | { type: "terminal_tool"; name: "offer_recipe"; args: string };
 
 /**
  * Allergy at the prompt boundary. Severity is optional defense-in-depth:
@@ -300,7 +305,7 @@ interface BuildPromptOptions {
   tier?: "free" | "pro";
 }
 
-function buildSystemPrompt(
+export function buildSystemPrompt(
   context: CoachContext,
   intent: CoachIntent = "personalized_advice",
   { now = new Date(), tz = "UTC", tier = "free" }: BuildPromptOptions = {},
@@ -629,12 +634,28 @@ export async function* generateCoachProResponse(
   intent?: CoachIntent,
   /** IANA timezone of the requesting user — threads through to day-bucketed tool calls and the prompt's "Current time" line. */
   tz: string = "UTC",
+  options?: { offerRecipe?: boolean },
 ): AsyncGenerator<CoachProChunk> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
   const resolvedIntent =
     intent ?? classifyIntent(lastUserMessage, { recipeRequests: false }).intent;
-  const systemPrompt = buildSystemPrompt(context, resolvedIntent, {
+  // One flag drives both the tool and the prompt rule so the model is never
+  // told to call a tool it does not have (safety turns get neither).
+  const offerTool =
+    !!options?.offerRecipe &&
+    isRecipeFinderEnabled() &&
+    !!context.blocksPrompt &&
+    resolvedIntent !== "safety_refusal";
+  const promptContext: CoachContext = offerTool
+    ? {
+        ...context,
+        blocksPrompt: getBlocksSystemPrompt(isRecipeFinderEnabled(), {
+          offer: true,
+        }),
+      }
+    : context;
+  const systemPrompt = buildSystemPrompt(promptContext, resolvedIntent, {
     tz,
     tier: "pro",
   });
@@ -646,11 +667,12 @@ export async function* generateCoachProResponse(
   // could still call it on any message the classifier does not route to
   // recipe_request and give the prose "couldn't find" answer the finder
   // replaces (spec §3.3). Flag off → today's tools.
-  const tools = isRecipeFinderEnabled()
+  const baseTools = isRecipeFinderEnabled()
     ? TOOL_DEFINITIONS.filter(
         (t) => !("function" in t && t.function.name === "search_recipes"),
       )
     : [...TOOL_DEFINITIONS];
+  const tools = offerTool ? [...baseTools, OFFER_RECIPE_TOOL] : baseTools;
 
   const sanitizedMessages = messages.map((m) => ({
     role: m.role,
@@ -787,6 +809,24 @@ export async function* generateCoachProResponse(
     // If finish_reason is not "tool_calls", we're done
     if (finishReason !== "tool_calls" || pendingToolCalls.size === 0) {
       break;
+    }
+
+    // offer_recipe is terminal: hand the first call's raw args to the caller
+    // and stop. Other calls from this round are dropped, unexecuted.
+    // Gated on offerTool: a model that hallucinates the call when it was not
+    // offered falls through to executeToolCall like any unknown tool.
+    const offerCall = offerTool
+      ? Array.from(pendingToolCalls.values()).find(
+          (tc) => tc.name === "offer_recipe",
+        )
+      : undefined;
+    if (offerCall) {
+      yield {
+        type: "terminal_tool",
+        name: "offer_recipe",
+        args: offerCall.arguments,
+      };
+      return;
     }
 
     // Execute tool calls

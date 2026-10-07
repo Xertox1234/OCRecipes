@@ -1,0 +1,169 @@
+[
+  {
+    "id": "ask-turn-that-owner",
+    "set": "ask",
+    "history": [
+      {
+        "role": "user",
+        "content": "I have chicken breast, spinach, rice, a lemon and some garlic. What could I make?"
+      },
+      {
+        "role": "assistant",
+        "content": "How about lemon garlic chicken with spinach rice? It uses everything you have and comes together in about 30 minutes."
+      }
+    ],
+    "message": "Can you turn that into a recipe for me?"
+  },
+  {
+    "id": "ask-turn-that-short",
+    "set": "ask",
+    "history": [
+      { "role": "user", "content": "What's a good dinner with salmon?" },
+      {
+        "role": "assistant",
+        "content": "Honey-garlic salmon with roasted broccoli is a solid, high-protein dinner."
+      }
+    ],
+    "message": "Turn that into a recipe"
+  },
+  {
+    "id": "ask-chicken-thighs",
+    "set": "ask",
+    "history": [],
+    "message": "Can you make me a recipe for chicken thighs?"
+  },
+  {
+    "id": "ask-low-carb-dinner",
+    "set": "ask",
+    "history": [],
+    "message": "Come up with a low carb dinner recipe"
+  },
+  {
+    "id": "ask-healthy-pasta",
+    "set": "ask",
+    "history": [],
+    "message": "Make me a healthy pasta dish"
+  },
+  {
+    "id": "ask-chicken-curry",
+    "set": "ask",
+    "history": [],
+    "message": "How do I make chicken curry?"
+  },
+  {
+    "id": "ask-recipe-for-that",
+    "set": "ask",
+    "history": [
+      { "role": "user", "content": "What should I make with ground turkey?" },
+      {
+        "role": "assistant",
+        "content": "Turkey taco bowls with black beans and a squeeze of lime would be great."
+      }
+    ],
+    "message": "Can I get the recipe for that?"
+  },
+  {
+    "id": "ask-high-protein-chicken",
+    "set": "ask",
+    "history": [],
+    "message": "Find me a high protein chicken recipe"
+  },
+  {
+    "id": "ask-salmon-rice",
+    "set": "ask",
+    "history": [],
+    "message": "Create a recipe with salmon and rice"
+  },
+  {
+    "id": "rneg-too-salty",
+    "set": "recipe_negative",
+    "routedByClassifyTurn": true,
+    "currentRecipeTitle": "Lemon Garlic Chicken with Spinach Rice",
+    "history": [
+      { "role": "user", "content": "Find me a chicken dinner recipe" },
+      {
+        "role": "assistant",
+        "content": "Here's a recipe: Lemon Garlic Chicken with Spinach Rice (520 cal, 42g protein, 30 min)."
+      }
+    ],
+    "message": "that recipe was too salty"
+  },
+  {
+    "id": "rneg-log-that",
+    "set": "recipe_negative",
+    "routedByClassifyTurn": true,
+    "currentRecipeTitle": "Lemon Garlic Chicken with Spinach Rice",
+    "history": [
+      { "role": "user", "content": "Find me a chicken dinner recipe" },
+      {
+        "role": "assistant",
+        "content": "Here's a recipe: Lemon Garlic Chicken with Spinach Rice (520 cal, 42g protein, 30 min)."
+      }
+    ],
+    "message": "log that recipe"
+  },
+  {
+    "id": "rneg-calories",
+    "set": "recipe_negative",
+    "routedByClassifyTurn": true,
+    "currentRecipeTitle": "Lemon Garlic Chicken with Spinach Rice",
+    "history": [
+      { "role": "user", "content": "Find me a chicken dinner recipe" },
+      {
+        "role": "assistant",
+        "content": "Here's a recipe: Lemon Garlic Chicken with Spinach Rice (520 cal, 42g protein, 30 min)."
+      }
+    ],
+    "message": "how many calories in that recipe"
+  },
+  {
+    "id": "rneg-add-to-plan",
+    "set": "recipe_negative",
+    "routedByClassifyTurn": true,
+    "currentRecipeTitle": "Lemon Garlic Chicken with Spinach Rice",
+    "history": [
+      { "role": "user", "content": "Find me a chicken dinner recipe" },
+      {
+        "role": "assistant",
+        "content": "Here's a recipe: Lemon Garlic Chicken with Spinach Rice (520 cal, 42g protein, 30 min)."
+      }
+    ],
+    "message": "add that recipe to my meal plan"
+  },
+  {
+    "id": "cneg-dinner",
+    "set": "coach_negative",
+    "history": [],
+    "message": "what should I have for dinner?"
+  },
+  {
+    "id": "cneg-make-with",
+    "set": "coach_negative",
+    "history": [],
+    "message": "what can I make with chicken, rice and spinach?"
+  },
+  {
+    "id": "cneg-pasta-goals",
+    "set": "coach_negative",
+    "history": [],
+    "message": "is pasta OK for my goals?"
+  },
+  {
+    "id": "cneg-snacks",
+    "set": "coach_negative",
+    "history": [],
+    "message": "give me a few high-protein snack ideas"
+  },
+  {
+    "id": "cneg-pre-run",
+    "set": "coach_negative",
+    "history": [],
+    "message": "what's a good breakfast before a run?"
+  },
+  {
+    "id": "cneg-hungry",
+    "set": "coach_negative",
+    "history": [],
+    "message": "I'm hungry, any ideas?"
+  }
+]
