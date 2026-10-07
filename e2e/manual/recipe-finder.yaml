@@ -90,7 +90,9 @@ env:
     visible: "Start a new coach conversation"
     timeout: 20000
 - tapOn: "Start a new coach conversation"
-- tapOn: "Message your nutrition coach"
+# iOS reads the input as its label plus placeholder; Maestro text is a
+# full-string regex.
+- tapOn: "Message your nutrition coach.*"
 - inputText: "Find me a chicken dinner recipe"
 - tapOn: "Send message"
 - extendedWaitUntil:

@@ -9,6 +9,7 @@ import QuickReplies from "./QuickReplies";
 import RecipeCard from "./RecipeCard";
 import MealPlanCard from "./MealPlanCard";
 import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMessage";
+import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { chatBubbleEntrySpring } from "@/constants/animations";
 import type {
@@ -35,6 +36,11 @@ interface BlockRendererProps {
   onFinderAction?: (action: FinderAction, label: string) => void;
   onLockedFinderButton?: (button: FinderButton) => void;
   onOpenFinderItem?: (item: FinderItem) => void;
+  /** The message's text — the recipe offer shows it (the chat hides the
+   *  bubble under a finder block). */
+  messageContent?: string;
+  /** The chat's adjust-card choices by flowId; survives a card remount. */
+  adjustChoices?: AdjustChoicesStore;
   /** Slide the block in on mount. Only the live copy of a just-finished
    *  reply sets this; saved messages (history, scroll-back, the swap once
    *  the reply is saved) appear without replaying an entrance. */
@@ -76,6 +82,8 @@ function renderBlock({
   onFinderAction,
   onLockedFinderButton,
   onOpenFinderItem,
+  messageContent,
+  adjustChoices,
 }: Omit<BlockRendererProps, "animateEntry">) {
   switch (block.type) {
     case "action_card":
@@ -107,9 +115,13 @@ function renderBlock({
       return <MealPlanCard block={block} onAction={onAction} />;
     case "recipe_results":
     case "recipe_questions":
+    case "recipe_offer":
+    case "recipe_adjust":
       return (
         <RecipeFinderMessage
           block={block}
+          content={messageContent}
+          adjustChoices={adjustChoices}
           isActive={!!isActive}
           lockedButtons={lockedFinderButtons}
           onAction={onFinderAction ?? noop}

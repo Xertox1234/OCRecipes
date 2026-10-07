@@ -1,0 +1,153 @@
+# e2e/manual/recipe-offer.yaml
+appId: com.ocrecipes.app
+name: "Manual - Recipe offer and adjust card in RecipeChef and Coach Pro"
+# MANUAL ONLY (outside e2e/flows/** — CI never discovers it). Needs:
+#   - server: RECIPE_FINDER_ENABLED=true RECIPE_OFFER_ENABLED=true npm run server:dev
+#     (both flags; recipe-finder.yaml covers the offer-OFF behaviour, so the
+#     two files can't share one server run)
+#   - a dev-client build that includes the offer client (RecipeOffer + RecipeAdjust)
+#   - a Premium (Coach Pro) account:
+#       maestro test -e USERNAME=… -e PASSWORD=… e2e/manual/recipe-offer.yaml
+#   - Android: adb reverse tcp:8081 tcp:8081 AND tcp:3000 tcp:3000 (the bundle's
+#     API domain is localhost:3000, which on the emulator is the emulator)
+# appId is the Android package; the helpers only openLink, so it also runs on
+# iOS (bundle com.williamtower.ocrecipes) — checked on the iOS simulator.
+# AI output varies, so every assertion is on app- or server-authored text:
+# the offer copy ("…Want me to get started?"), the Yes/Search/No buttons, the
+# adjust card's "Servings" and "Generate", and the card's "Save … recipe".
+# In Coach the model decides whether to call offer_recipe, so a missing offer
+# gets one nudge (a `when:` gate). Older finder blocks stay on screen with
+# their buttons disabled, so every button tap and wait asks for `enabled: true`.
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+- runFlow: ../helpers/launch-app.yaml
+- runFlow:
+    file: ../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# ── RecipeChef: offer → Search → community list ──────────────────────
+- openLink: "ocrecipes://recipe-chat"
+# iOS reads the input as its label plus placeholder ("Recipe request Describe
+# what you want to cook..."); Maestro text is a full-string regex.
+- extendedWaitUntil:
+    visible: "Recipe request.*"
+    timeout: 15000
+- tapOn: "Recipe request.*"
+- inputText: "spaghetti and meatballs for 8"
+- tapOn: "Send message"
+# RecipeChef's first message always gets the offer (server-authored copy).
+- extendedWaitUntil:
+    visible: "(?s).*Want me to get started\\?.*"
+    timeout: 45000
+- extendedWaitUntil:
+    visible:
+      text: "Search"
+      enabled: true
+    timeout: 15000
+- assertVisible:
+    text: "Yes"
+    enabled: true
+- assertVisible:
+    text: "No"
+    enabled: true
+# The offer sits just above the composer: pin the list's end first (see the
+# scroll note in recipe-finder.yaml — a row behind the composer still counts
+# as visible, and tapping it lands on the tab bar).
+- waitForAnimationToEnd
+- scroll
+- tapOn:
+    text: "Search"
+    enabled: true
+# Either a community list or the no-match notice.
+- extendedWaitUntil:
+    visible: "(From the community|No community recipes matched\\.)"
+    timeout: 45000
+- assertVisible:
+    text: "Generate"
+    enabled: true
+- tapOn: "Close"
+
+# ── Coach Pro: offer → Yes → adjust card → Generate → recipe card ─────
+- tapOn:
+    id: "tab-coach"
+- extendedWaitUntil:
+    visible: "Start a new coach conversation"
+    timeout: 20000
+- tapOn: "Start a new coach conversation"
+# Like RecipeChef's input, iOS reads label plus placeholder ("Message your
+# nutrition coach Ask your coach..."), so the selector needs the trailing `.*`.
+- tapOn: "Message your nutrition coach.*"
+- inputText: "Can you make me a recipe for chicken thighs?"
+- tapOn: "Send message"
+# The model is the single decider here (offer_recipe tool). If it answers in
+# prose instead of offering, nudge it once; the second wait is the real gate.
+- extendedWaitUntil:
+    visible: "(?s).*Want me to get started\\?.*"
+    timeout: 60000
+    optional: true
+- runFlow:
+    when:
+      notVisible: "(?s).*Want me to get started\\?.*"
+    commands:
+      - tapOn: "Message your nutrition coach.*"
+      - inputText: "Please make that into a recipe for me."
+      - tapOn: "Send message"
+      - extendedWaitUntil:
+          visible: "(?s).*Want me to get started\\?.*"
+          timeout: 60000
+- extendedWaitUntil:
+    visible:
+      text: "Yes"
+      enabled: true
+    timeout: 15000
+- assertVisible:
+    text: "Search"
+    enabled: true
+- assertVisible:
+    text: "No"
+    enabled: true
+- waitForAnimationToEnd
+- scroll
+- tapOn:
+    text: "Yes"
+    enabled: true
+# The adjust card (server-built from the offer's dish + profile). It's taller
+# than the screen, and where the list settles varies between runs (top-first
+# or pinned to its end), so key the arrival on either end of the card (its
+# Generate is the only one in this new conversation) and look at each end
+# explicitly.
+- extendedWaitUntil:
+    visible: "(Servings|Generate)"
+    timeout: 45000
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Servings"
+    direction: UP
+    timeout: 15000
+# The servings stepper is one adjustable element (VoiceOver swipes up/down),
+# so its +/- buttons aren't in the tree; the row labels are.
+- assertVisible: "Spice"
+# Back to the card's end: its Cancel / Generate row sits just above the
+# composer (see the scroll note above).
+- scroll
+- waitForAnimationToEnd
+- assertVisible: "Time"
+- assertVisible: "Cancel"
+- tapOn:
+    text: "Generate"
+    enabled: true
+# The generated card (RecipeChef's card). Its header reads "Recipe: <title>.
+# …" (app-authored prefix); the card is taller than the screen, so its Save
+# row ("Save <title> recipe") only shows after pinning the list's end.
+- extendedWaitUntil:
+    visible: "Recipe: .*"
+    timeout: 120000
+- waitForAnimationToEnd
+- scroll
+- extendedWaitUntil:
+    visible: "Save .* recipe"
+    timeout: 15000
