@@ -1,7 +1,12 @@
 import React from "react";
-import { ScrollView, Text, Pressable, StyleSheet } from "react-native";
+import { ScrollView, Text, StyleSheet } from "react-native";
+import Animated, { FadeOut } from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { PressableScale } from "@/components/PressableScale";
 import { withOpacity } from "@/constants/theme";
+import { quickRepliesExitDuration } from "@/constants/animations";
 import type { QuickReplies as QuickRepliesType } from "@shared/schemas/coach-blocks";
 
 interface Props {
@@ -20,35 +25,49 @@ const QuickReplies = React.memo(function QuickReplies({
   used,
 }: Props) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
+  // Unmounting the Animated.View plays its exit, so the row fades out
+  // instead of vanishing when a reply is picked.
   if (used) return null;
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.container}
-      contentContainerStyle={styles.content}
+    <Animated.View
+      exiting={
+        reducedMotion ? undefined : FadeOut.duration(quickRepliesExitDuration)
+      }
     >
-      {block.options.map((option, i) => (
-        <Pressable
-          key={i}
-          style={[
-            styles.chip,
-            {
-              backgroundColor: withOpacity(theme.link, 0.15),
-              borderColor: withOpacity(theme.link, 0.3),
-            },
-          ]}
-          onPress={() => onSelect?.(option.message, blockKey)}
-          hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
-          accessibilityRole="button"
-          accessibilityLabel={option.label}
-        >
-          <Text style={[styles.chipText, { color: theme.link }]}>
-            {option.label}
-          </Text>
-        </Pressable>
-      ))}
-    </ScrollView>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
+        {block.options.map((option, i) => (
+          <PressableScale
+            key={i}
+            scaleTo={0.95}
+            style={[
+              styles.chip,
+              {
+                backgroundColor: withOpacity(theme.link, 0.15),
+                borderColor: withOpacity(theme.link, 0.3),
+              },
+            ]}
+            onPress={() => {
+              haptics.selection();
+              onSelect?.(option.message, blockKey);
+            }}
+            hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={option.label}
+          >
+            <Text style={[styles.chipText, { color: theme.link }]}>
+              {option.label}
+            </Text>
+          </PressableScale>
+        ))}
+      </ScrollView>
+    </Animated.View>
   );
 });
 
