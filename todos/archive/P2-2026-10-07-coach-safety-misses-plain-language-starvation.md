@@ -69,22 +69,10 @@ The defect is in the regex layer only. It is pre-existing and not caused by the 
 
 - Added sibling `prolonged_starvation` pattern to `SAFETY_PATTERNS` (day/week or 24+ hour durations, plus reflexive "starve myself"; a named food, clock time or quantity does not match).
 - Tests (#1333): 14 positives (incl. "go 7 days without eating", "how long can I go without food") and 14 negatives (incl. "stop eating meat for a week", "fast for 12 hours"); red before, green after.
-- Follow-up: the pattern is now built from shared quantity, duration and hedge lists. It adds:
-  - months, spelled-out numbers, "a couple (of)", "the whole/a full/an entire" and hedges ("more than", "at least");
-  - contractions tied to their auxiliary ("dont", "cant", "wont", "haven't eaten", "cannot");
-  - "went/gone N days without food", "eat nothing for a week" and "starved myself".
-
-  A word that only ends in "nt" ("consistent eating for a week") does not trip. After "without eating", only a listed food or eating-habit word ("meat", "out", "dairy", ...) makes it a diet question. Any other word still trips ("without eating to lose weight"), because a safety router must over-refuse an unknown word rather than pass it. Quantities accept ranges ("2-3 days", "two or three days"), "3+", decimals, glued units ("3days") and "48h". Tests: 52 positives and 31 negatives.
-
-  The final probe (180 rows) compared main f16f02e5, the previous head 5ab4029a and this head:
-  | Slice | Rows | Head wrong | Main wrong |
-  |---|---|---|---|
-  | Non-food tails | 80 | 20 | 20 |
-  | Listed foods | 20 | 0 | 15 |
-  | Unlisted foods | 20 | 15 | 15 |
-  | Quantity formats | 44 | 0 | 36 |
-  | Short hours | 16 | 0 | 0 |
-  - **Non-food tails:** the 20 misses are all the bare frame "go without eating ..." with no duration, which main does not trip either.
-  - **Unlisted foods:** these over-refuse ("without eating pizza"). That is the safe direction, and main behaves the same.
-  - No phrasing that should trip is refused by main but passed by this head (0 rows).
-  - The earlier 324-row probe against main still gives 0 wrong.
+- Follow-up (after #1333): #1333's pattern is kept unchanged, and a SECOND `prolonged_starvation` entry adds wider phrasings. Because of the second entry, this change can only add refusals, never remove one.
+  - The added phrasings are months, number words, ranges ("2-3 days", "two or three days"), "3+", decimals, glued units ("3days"), "48h" and hedges ("more than a week").
+  - Contractions are tied to their auxiliary ("dont", "isn't", "shan't", "haven't eaten"), so "consistent eating for a week" is not read as a negation.
+  - Also added: "went/gone N days without food", "eat nothing for a week" and "starved myself".
+  - Earlier attempts to veto "without eating <food>" were dropped. Every veto list also let real starvation phrasing through ("without eating to lose weight", "after my surgery", "out of guilt"). So "can I go a week without eating meat" still over-refuses, as #1333 does. The new went/gone frames over-refuse the same way where main answered ("I went a week without eating pizza", "I went a week without eating well"). Both are the safe direction.
+  - Tests: 56 positives and 27 negatives.
+  - Probe on a generated 1630-row corpus (12 negating verbs x 14 quantity formats x 9 units, 5 "without eating" frames x 20 tails, 12 "-nt word" rows, 6 controls), against main f16f02e5: main refuses 362, this head refuses 1260, 0 rows that main refuses pass here. Short hours, "-nt" words, "I'm starving" and "stop eating sugar" stay ordinary. The zero is a property of this corpus. The two-entry structure is what guarantees it in general.

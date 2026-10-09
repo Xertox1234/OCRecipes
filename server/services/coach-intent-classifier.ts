@@ -33,19 +33,12 @@ const STARVE_HEDGE =
 const QTY_DURATION = `${STARVE_HEDGE}(?:${STARVE_QTY}\\s*)?${STARVE_DURATION}`;
 const FOR_DURATION = `for\\s+${QTY_DURATION}`;
 // A negating verb. The contraction is tied to its auxiliary ("don't", "dont",
-// "can't", "wont"), so a word that merely ends in "nt" ("consistent eating",
+// "can't", "wont", "shan't"), so a word that merely ends in "nt" ("consistent eating",
 // "plant eating") is not read as a negation.
 const STARVE_NEGATION =
-  "\\b(?:stop|quit|skip|avoid|cease|not|cannot|(?:do|does|did|wo|ca|could|would|should|must|have|has|had|is|are|was|were|ai|need|might|ought)n['\\u2019]?t)";
+  "\\b(?:stop|quit|skip|avoid|cease|not|cannot|(?:do|does|did|wo|ca|could|would|should|must|have|has|had|is|are|was|were|ai|need|might|ought|sha)n['\\u2019]?t)";
 const GO = "\\b(?:go|going|goes|went|gone)";
-// "without eating" / "without food". A known food or eating-habit word right
-// after "eating" ("without eating meat", "without eating out") makes it a diet
-// question. Any OTHER word still counts as not eating ("without eating to lose
-// weight"): this is a safety router, so an unlisted word must over-refuse
-// rather than slip through.
-const DIET_WORD =
-  "(?:out|late|after|at\\s+night|between|meat|red\\s+meat|beef|pork|chicken|fish|seafood|eggs?|dairy|cheese|milk|sugar|sweets|candy|chocolate|desserts?|carbs?|bread|pasta|rice|gluten|wheat|grains?|junk|fast\\s+food|fried|processed|snacks?|chips|soda|fruit|vegetables|veggies|breakfast|lunch|dinner|meals?\\s+out|takeout|takeaway)";
-const WITHOUT_EATING = `without\\s+(?:food|eating(?!\\s+${DIET_WORD}\\b))\\b`;
+const WITHOUT_EATING = "without\\s+(?:eating|food)\\b";
 const PROLONGED_STARVATION = new RegExp(
   [
     // stop/skip/not/don't (or "dont")/haven't eat(ing/en) [anything] for <duration>
@@ -114,14 +107,26 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
   },
   {
     // Plain-language prolonged starvation — "stop eating for a week", "not eat
-    // for four days", "go a couple days without food", "dont eat for a month",
+    // for 5 days", "go without food for a week", "go 7 days without eating",
     // "how long can I go without food". The verb must be followed DIRECTLY by
     // (an optional "anything/food/at all") and then the duration, so a named
     // food ("stop eating meat for a week"), a clock time ("stop eating after
-    // 8pm"), "eating out" or a quantity ("so much junk") never matches. Only
-    // day/week/month or 24+ hour durations trip it; "fast for 12 hours" and
-    // "stop eating 2 hours before sleep" stay ordinary. "starve/starved
-    // myself" (reflexive) trips; "starving, what should I eat" does not.
+    // 8pm") or a quantity ("stop eating so much junk") never matches. Only
+    // day/week (or 24+ hour) durations trip it; "fast for 12 hours" and "stop
+    // eating 2 hours before sleep" stay ordinary. "starve myself" (reflexive)
+    // trips; "starving, what should I eat" and "starve off hunger" do not.
+    pattern:
+      /(?:(?:\b(?:stop|quit|skip|avoid|cease|not)|n['\u2019]t)\s+eat(?:ing)?\s+(?:(?:anything|any\s+food|food|at\s+all|entirely|completely|altogether)\s+)*for\s+(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\b|\bgo(?:ing)?\s+(?:for\s+)?(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\s+without\s+(?:eating|food)\b|\bgo(?:ing)?\s+without\s+(?:eating|food)\s+for\s+(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\b|\bstarv(?:e|ing)\s+(?:myself|yourself|himself|herself|themselves|ourselves)\b|\bhow\s+long\s+(?:can|could|would)\s+(?:i|you|a\s+person|someone|one)\s+(?:go|survive|last)\s+without\s+(?:eating|food)\b)/i,
+    name: "prolonged_starvation",
+  },
+  {
+    // Wider phrasings of the same intent, as a SECOND entry so the one above
+    // (#1333) keeps everything it already refuses: this entry can only add
+    // refusals, never remove one. Adds months, number words, ranges ("2-3
+    // days", "3+", "1.5 weeks", "48h"), hedges ("more than a week"),
+    // contractions tied to their auxiliary ("dont", "isn't", "haven't
+    // eaten" — so "consistent eating" is not a negation), "went/gone N days
+    // without food", "eat nothing for a week" and "starved myself".
     pattern: PROLONGED_STARVATION,
     name: "prolonged_starvation",
   },

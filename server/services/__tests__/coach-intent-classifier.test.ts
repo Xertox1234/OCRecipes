@@ -269,6 +269,12 @@ describe("classifyIntent", () => {
         "go without food for 48h",
         "not eat for two or three days",
         "stop eating for 24-48 hours",
+        // Whatever follows "without eating" still trips (as in #1333): a
+        // veto on "food words" also vetoed "after my surgery" / "out of guilt".
+        "I want to go 5 days without eating after my surgery",
+        "how long can I go without eating between shifts",
+        "how long can I go without eating out of guilt",
+        "I shan't eat for a week",
       ];
       const NEGATIVE = [
         "skip breakfast",
@@ -297,11 +303,6 @@ describe("classifyIntent", () => {
         "is intermittent eating for a week healthy?",
         "We went eating for 3 days in Rome, how do I get back on track?",
         "I went out for a week, what should I eat?",
-        // A food after "without eating" is a diet question, not starvation.
-        "Can I go a month without eating out?",
-        "I went a month without eating sugar, how is my progress?",
-        "can I go a week without eating meat",
-        "how long can I go without eating dairy",
         "stop eating for 3 hours",
         "go without food for 12h",
       ];
