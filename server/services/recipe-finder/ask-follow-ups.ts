@@ -1,11 +1,9 @@
 // server/services/recipe-finder/ask-follow-ups.ts
 import { aiChat } from "../../lib/ai-client";
-import { z } from "zod";
 import { OPENAI_TIMEOUT_FAST_MS } from "../../lib/openai";
 import {
   sanitizeUserInput,
   sanitizeContextField,
-  validateAiResponse,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../../lib/ai-safety";
 import { createServiceLogger, toError } from "../../lib/logger";
@@ -20,9 +18,8 @@ const log = createServiceLogger("recipe-finder-follow-ups");
 /** Defensive filter: the app already asks these on the adjust card. */
 const ALREADY_ASKED = /\ballerg|\bservings?\b|\bspic|\bhow long\b|\btime\b/i;
 
-const responseSchema = z.object({
-  questions: z.array(clarifyingQuestionSchema).max(2),
-});
+/** The adjust card's followUps cap (recipeAdjustBlockSchema). */
+const MAX_FOLLOW_UPS = 2;
 
 /** 0–2 dish-specific follow-up questions. Never throws; [] on any failure. */
 export async function askDishFollowUps(
@@ -81,20 +78,21 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
         ? (json as { questions: unknown }).questions
         : undefined;
     if (!Array.isArray(raw)) return [];
-    const kept = raw
-      .filter(
-        (q: unknown) =>
-          !(
-            q &&
-            typeof q === "object" &&
-            "question" in q &&
-            typeof q.question === "string" &&
-            ALREADY_ASKED.test(q.question)
-          ),
-      )
-      .slice(0, 2);
-    const parsed = validateAiResponse({ questions: kept }, responseSchema);
-    return parsed ? parsed.questions : [];
+    // Per item, so one malformed question drops only itself, not the batch.
+    // A repeat is dropped too: validateAdjustAnswers takes one answer per
+    // question, and the client answers each listed question.
+    const valid: ClarifyingQuestion[] = [];
+    for (const item of raw) {
+      const parsed = clarifyingQuestionSchema.safeParse(item);
+      if (
+        parsed.success &&
+        !ALREADY_ASKED.test(parsed.data.question) &&
+        !valid.some((v) => v.question === parsed.data.question)
+      ) {
+        valid.push(parsed.data);
+      }
+    }
+    return valid.slice(0, MAX_FOLLOW_UPS);
   } catch (error) {
     log.warn({ err: toError(error) }, "askDishFollowUps failed; no follow-ups");
     return [];

@@ -126,14 +126,19 @@ export const offerRecipeArgsSchema: z.ZodType<
   return out;
 });
 
-/** For COMPARISON only, never display. */
+/**
+ * For COMPARISON only, never display. Folds Latin accents (\u00e9 \u2192 e) but keeps
+ * every script's letters, digits and the marks that belong to them (Devanagari
+ * vowel signs, the dakuten in \u304c), so a non-Latin dish never normalises to "".
+ */
 export function normalizeDish(dish: string): string {
   return dish
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .normalize("NFC")
     .replace(/&/g, " and ")
-    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/[^\p{L}\p{M}\p{N} ]/gu, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^(a|an|the) /, "")

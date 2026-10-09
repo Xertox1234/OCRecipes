@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ChatMessage } from "@shared/schema";
 import { extractQuery, rawQuery, extractOfferDetails } from "../extract-query";
 import {
@@ -39,6 +39,25 @@ function aiReturns(json: unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+// clearAllMocks keeps a mockImplementation: put the identity sanitisers back
+// so a real-sanitiser test cannot leak into the next one.
+afterEach(() => {
+  vi.mocked(sanitizeContextField).mockImplementation((t: string) => t);
+  vi.mocked(sanitizeUserInput).mockImplementation((t: string) => t);
+});
+
+/** Swaps the identity mocks for the real sanitisers (undone in afterEach). */
+async function useRealSanitisers() {
+  const actual = await vi.importActual<typeof import("../../../lib/ai-safety")>(
+    "../../../lib/ai-safety",
+  );
+  vi.mocked(sanitizeContextField).mockImplementation(
+    actual.sanitizeContextField,
+  );
+  vi.mocked(sanitizeUserInput).mockImplementation(actual.sanitizeUserInput);
+  return actual;
+}
 
 describe("extractQuery", () => {
   it("maps the AI JSON onto a RecipeQuery, dropping nulls", async () => {
@@ -138,12 +157,7 @@ describe("extractOfferDetails", () => {
   });
 
   it("cleans control/zero-width chars with the real sanitiser", async () => {
-    const actual = await vi.importActual<
-      typeof import("../../../lib/ai-safety")
-    >("../../../lib/ai-safety");
-    vi.mocked(sanitizeContextField).mockImplementation(
-      actual.sanitizeContextField,
-    );
+    const actual = await useRealSanitisers();
     const raw = "Chi\u200Bli\u0000 con carne";
     const expected = actual.sanitizeContextField(raw, 81).trim();
     aiReturns({ dish: raw, ingredients: [] });
@@ -171,8 +185,47 @@ describe("extractOfferDetails", () => {
     expect(prompt).not.toContain("turn-0");
     expect(prompt).not.toContain("turn-1");
     for (const i of [2, 3, 4, 5, 6, 7]) expect(prompt).toContain(`turn-${i}`);
-    expect(vi.mocked(sanitizeUserInput)).toHaveBeenCalledWith("latest-text");
-    expect(vi.mocked(sanitizeUserInput)).toHaveBeenCalledWith("turn-6");
+    expect(vi.mocked(sanitizeContextField)).toHaveBeenCalledWith(
+      "latest-text",
+      2000,
+    );
+    expect(vi.mocked(sanitizeContextField)).toHaveBeenCalledWith("turn-6", 300);
     expect(vi.mocked(sanitizeContextField)).toHaveBeenCalledWith("turn-7", 300);
+  });
+
+  it("strips zero-width chars from user turns and the latest message", async () => {
+    await useRealSanitisers();
+    const history = [
+      {
+        id: 1,
+        conversationId: 1,
+        role: "user",
+        content: "chi\u200Bli",
+        metadata: null,
+        turnKey: null,
+        createdAt: new Date(),
+      },
+    ] as ChatMessage[];
+    aiReturns({ dish: "Chili", ingredients: [] });
+    await extractOfferDetails("for\u200D 8\uFEFF", history);
+    const call = mockCreate.mock.calls[0][1] as {
+      messages: { role: string; content: string }[];
+    };
+    const prompt = call.messages[1].content;
+    expect(prompt).toContain("User: chili");
+    expect(prompt).toContain("Latest message: for 8");
+    expect(prompt).not.toMatch(/[\u200B\u200D\uFEFF]/);
+  });
+});
+
+describe("extractQuery input sanitising", () => {
+  it("strips zero-width chars before the request reaches the model", async () => {
+    await useRealSanitisers();
+    aiReturns({ q: "chili" });
+    await extractQuery("chi\u200Bli\uFEFF");
+    const call = mockCreate.mock.calls[0][1] as {
+      messages: { role: string; content: string }[];
+    };
+    expect(call.messages[1].content).toBe("chili");
   });
 });

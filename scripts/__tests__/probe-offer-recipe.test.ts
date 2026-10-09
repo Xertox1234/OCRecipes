@@ -1,9 +1,42 @@
 import { describe, it, expect } from "vitest";
 import {
+  classifierFailure,
   scoreProbe,
   type ProbeRun,
   type ProbeSet,
 } from "../probe-offer-recipe";
+
+describe("classifierFailure", () => {
+  const answered = [{ answeredModel: "m" }];
+  it("an answered call with a parsed class is a measurement", () => {
+    expect(classifierFailure(answered, null)).toBeNull();
+  });
+  it("an answered call whose JSON did not parse is flagged, not new_request", () => {
+    expect(classifierFailure(answered, "unparseable")).toBe(
+      "CLASSIFIER FAILED: unparseable reply",
+    );
+    expect(classifierFailure(answered, "empty")).toBe(
+      "CLASSIFIER FAILED: empty reply",
+    );
+  });
+  it("no call, an errored call or an unanswered call is flagged", () => {
+    expect(classifierFailure([], null)).toBe("CLASSIFIER FAILED");
+    expect(
+      classifierFailure(
+        [
+          {
+            answeredModel: null,
+            error: { kind: "transport", moderated: false, message: "t" },
+          },
+        ],
+        "call_failed",
+      ),
+    ).toBe("CLASSIFIER FAILED");
+    expect(classifierFailure([{ answeredModel: null }], null)).toBe(
+      "CLASSIFIER FAILED",
+    );
+  });
+});
 
 const runs3 = (id: string, set: ProbeSet, called: boolean[]): ProbeRun[] =>
   called.map((c) => ({ id, set, called: c, reachedToolLoop: true }));

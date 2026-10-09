@@ -12,7 +12,11 @@ import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { AiCallContext } from "../server/lib/ai-call-context";
+import type {
+  AiCallContext,
+  AiCallRecord,
+} from "../server/lib/ai-call-context";
+import type { TurnClassFallback } from "../server/services/recipe-finder/classify-turn";
 
 export type ProbeSet = "ask" | "recipe_negative" | "coach_negative";
 
@@ -84,6 +88,24 @@ export function scoreProbe(runs: ProbeRun[]): ProbeReport {
   };
 }
 
+/**
+ * Why classifyTurn's answer is not a measurement, or null when it is. With
+ * the fallback off, aiChat records a failed call's error on the context
+ * (ai-call-context.ts AiCallRecord.error); a call that never answered has no
+ * answeredModel. A call that answered can still be unusable: classifyTurn
+ * swallows bad JSON and returns "new_request", which `fallback` exposes.
+ */
+export function classifierFailure(
+  calls: Pick<AiCallRecord, "error" | "answeredModel">[],
+  fallback: TurnClassFallback,
+): string | null {
+  if (calls.length === 0 || calls.some((r) => r.error || !r.answeredModel)) {
+    return "CLASSIFIER FAILED";
+  }
+  if (fallback) return `CLASSIFIER FAILED: ${fallback} reply`;
+  return null;
+}
+
 interface ProbeCase {
   id: string;
   set: ProbeSet;
@@ -120,7 +142,7 @@ async function main(): Promise<void> {
   const { TOOL_DEFINITIONS } = await import(
     "../server/services/nutrition-coach"
   );
-  const { classifyTurn } = await import(
+  const { classifyTurnDetailed } = await import(
     "../server/services/recipe-finder/classify-turn"
   );
   const { OFFER_RECIPE_TOOL } = await import(
@@ -168,20 +190,15 @@ async function main(): Promise<void> {
         fallback: "off",
         calls: [],
       };
-      const cls = await withAiCallContext(clsCtx, () =>
-        classifyTurn(c.message, c.currentRecipeTitle ?? ""),
+      const { class: cls, fallback } = await withAiCallContext(clsCtx, () =>
+        classifyTurnDetailed(c.message, c.currentRecipeTitle ?? ""),
       );
-      // classifyTurn swallows its own errors and returns "new_request". With
-      // the fallback off, aiChat records a failed call's error on the context
-      // (ai-call-context.ts AiCallRecord.error); a call that never answered has
-      // no answeredModel. Either way the class is a fallback, not a measurement.
-      const classifierFailed =
-        clsCtx.calls.length === 0 ||
-        clsCtx.calls.some((r) => r.error || !r.answeredModel);
+      // A fallback "new_request" is not a measurement (see classifierFailure).
+      const failure = classifierFailure(clsCtx.calls, fallback);
       console.log(
-        `  classifyTurn(${c.id}) → ${cls}${classifierFailed ? " (CLASSIFIER FAILED)" : ""}`,
+        `  classifyTurn(${c.id}) → ${cls}${failure ? ` (${failure})` : ""}`,
       );
-      if (classifierFailed) {
+      if (failure) {
         for (let i = 0; i < RUNS_PER_CASE; i++) {
           runs.push({
             id: c.id,
