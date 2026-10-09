@@ -57,7 +57,7 @@ A real user who relaunches the app several times, or a flaky network that trigge
 
 ### 2026-10-09
 
-- Fixed in the read path only (`PremiumContext.tsx`, `usePremiumFeatures.ts`); no receipt validation, purchase or server code touched.
-- Finding: `/api/subscription/status` is NOT in the persisted query allowlist (`PERSISTED_QUERY_KEYS` = `QUERY_KEYS` in `client/App.tsx`), so a cold launch has no cached tier. Per the scope ruling no persister/allowlist entry was added: a cold launch after a 429 cannot show premium; it shows an unknown tier (features not locked) until a successful read. In-memory data from an earlier success is already kept by React Query across a failed refetch (now pinned by a test).
-- New `isTierUnknown` (status query errored AND no data). `usePremiumFeature` returns true while unknown, so no "Premium feature" lock is rendered for a user never confirmed free. A successful free response still locks. Server stays the entitlement authority.
-- Backoff: the app's global retry policy already never retries a 4xx (incl. 429); pinned by a test under the real policy. No server limit change.
+- Fixed in the read path only (`PremiumContext.tsx`, `query-keys.ts`); no receipt validation, purchase or server code touched.
+- The existing persister (`client/App.tsx`, 24h, cleared on logout by `useAuth` teardown via `AsyncStorage.removeItem(QUERY_CACHE_KEY)`) persists every `QUERY_KEYS` entry. The status query was not one. Added `QUERY_KEYS.subscriptionStatus` and made the status query use it. Data is plain JSON (`expiresAt` is an ISO string), so no PERSIST_BUSTER bump (new key, not a changed shape).
+- Result: a cold launch after a 429 restores the last tier saved within 24 hours. Only a first-ever launch with no saved tier still shows the locked free behavior (rare, safe). A successful free response still locks. Nothing unlocks because of an error.
+- In-memory data is kept across a failed refetch (React Query), and the global retry policy never retries a 4xx incl. 429; both pinned by tests.

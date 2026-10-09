@@ -522,30 +522,17 @@ describe("subscription status read failures never confirm the free tier", () => 
     expect(result.current.tier).toBe("premium");
     expect(result.current.isPremium).toBe(true);
     expect(result.current.features).toEqual(TIER_FEATURES.premium);
-    expect(result.current.isTierUnknown).toBe(false);
   });
 
-  it("reports the tier as unknown (not free) on a 429 with no prior data", async () => {
+  it("with no cached tier at all, a 429 keeps the old locked free behavior", async () => {
     const { result } = renderWithFetch(failing("429: Too many requests"));
-    await waitFor(() => expect(result.current.isTierUnknown).toBe(true));
+    await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.isPremiumResolved).toBe(false);
     expect(result.current.isPremium).toBe(false);
+    expect(result.current.features).toEqual(TIER_FEATURES.free);
   });
 
-  it("also treats a 5xx and a network error as unknown", async () => {
-    for (const message of ["500: boom", "Network request failed"]) {
-      const { result, unmount } = renderWithFetch(failing(message));
-      await waitFor(() => expect(result.current.isTierUnknown).toBe(true));
-      unmount();
-    }
-  });
-
-  it("is NOT unknown while the first fetch is still pending", () => {
-    const { result } = renderWithFetch(() => new Promise(() => {}));
-    expect(result.current.isTierUnknown).toBe(false);
-  });
-
-  it("a genuine successful free response is confirmed free, not unknown", async () => {
+  it("a genuine successful free response still locks", async () => {
     const { result } = renderWithFetch(async (ctx) =>
       isStatus(ctx)
         ? ({
@@ -558,7 +545,6 @@ describe("subscription status read failures never confirm the free tier", () => 
         : { count: 0 },
     );
     await waitFor(() => expect(result.current.isPremiumResolved).toBe(true));
-    expect(result.current.isTierUnknown).toBe(false);
     expect(result.current.features).toEqual(TIER_FEATURES.free);
   });
 
@@ -574,7 +560,7 @@ describe("subscription status read failures never confirm the free tier", () => 
       },
       { retry: queryClient.getDefaultOptions().queries?.retry },
     );
-    await waitFor(() => expect(result.current.isTierUnknown).toBe(true));
+    await waitFor(() => expect(result.current.isError).toBe(true));
     // Give any (wrongly scheduled) retry time to fire; retryDelay is 1ms.
     await new Promise((r) => setTimeout(r, 50));
     expect(statusCalls).toHaveBeenCalledTimes(1);
