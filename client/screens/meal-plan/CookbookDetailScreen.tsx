@@ -6,6 +6,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import Animated from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { PressableScale } from "@/components/PressableScale";
@@ -17,6 +18,8 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { listEntrance } from "@/constants/animations";
 import { useToast } from "@/context/ToastContext";
 import {
   useCookbookDetail,
@@ -42,6 +45,7 @@ export default function CookbookDetailScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
   const toast = useToast();
   const {
     data: cookbook,
@@ -147,7 +151,7 @@ export default function CookbookDetailScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: ResolvedCookbookRecipe }) => {
+    ({ item, index }: { item: ResolvedCookbookRecipe; index: number }) => {
       // The card Pressable is accessible by default, which collapses its
       // whole subtree into a single VoiceOver/TalkBack focus stop — the
       // nested RecipeAllergenLabel's own container label is never reached.
@@ -157,96 +161,100 @@ export default function CookbookDetailScreen() {
       // chips (RecipeAllergenLabel below) remain for sighted users.
       const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.allergens);
       return (
-        <SwipeableRow
-          rightAction={{
-            icon: "x",
-            label: "Remove",
-            backgroundColor: theme.error,
-            onAction: () => handleConfirmRemove(item),
-          }}
-        >
-          <Pressable
-            onPress={() => handleRecipePress(item)}
-            style={({ pressed }) => [
-              styles.recipeCard,
-              { backgroundColor: withOpacity(theme.text, 0.04) },
-              pressed && { opacity: 0.7 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}${allergenA11ySuffix}`}
-            accessibilityHint="Swipe left to remove from cookbook"
+        <Animated.View entering={listEntrance(index, reducedMotion)}>
+          <SwipeableRow
+            rightAction={{
+              icon: "x",
+              label: "Remove",
+              backgroundColor: theme.error,
+              onAction: () => handleConfirmRemove(item),
+            }}
           >
-            <FallbackImage
-              source={{ uri: item.imageUrl ?? undefined }}
-              style={styles.recipeImage}
-              fallbackStyle={{
-                ...styles.recipePlaceholder,
-                backgroundColor: withOpacity(theme.text, 0.08),
-              }}
-              fallbackIcon="image"
-              fallbackIconSize={20}
-              fallbackIconColor={withOpacity(theme.text, 0.3)}
-              accessibilityIgnoresInvertColors
-            />
-            <View style={styles.recipeContent}>
-              <ThemedText style={styles.recipeTitle} numberOfLines={2}>
-                {item.title}
-              </ThemedText>
-              <RecipeAllergenLabel allergens={item.allergens} />
-              <View style={styles.recipeMeta}>
-                <View
-                  style={[
-                    styles.typeBadge,
-                    {
-                      backgroundColor: withOpacity(
-                        item.recipeType === "community"
-                          ? theme.link
-                          : theme.success,
-                        0.12,
-                      ),
-                    },
-                  ]}
-                >
-                  <ThemedText
+            <Pressable
+              onPress={() => handleRecipePress(item)}
+              style={({ pressed }) => [
+                styles.recipeCard,
+                { backgroundColor: withOpacity(theme.text, 0.04) },
+                pressed && { opacity: 0.7 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}${allergenA11ySuffix}`}
+              accessibilityHint="Swipe left to remove from cookbook"
+            >
+              <FallbackImage
+                source={{ uri: item.imageUrl ?? undefined }}
+                style={styles.recipeImage}
+                fallbackStyle={{
+                  ...styles.recipePlaceholder,
+                  backgroundColor: withOpacity(theme.text, 0.08),
+                }}
+                fallbackIcon="image"
+                fallbackIconSize={20}
+                fallbackIconColor={withOpacity(theme.text, 0.3)}
+                accessibilityIgnoresInvertColors
+              />
+              <View style={styles.recipeContent}>
+                <ThemedText style={styles.recipeTitle} numberOfLines={2}>
+                  {item.title}
+                </ThemedText>
+                <RecipeAllergenLabel allergens={item.allergens} />
+                <View style={styles.recipeMeta}>
+                  <View
                     style={[
-                      styles.typeBadgeText,
+                      styles.typeBadge,
                       {
-                        color:
+                        backgroundColor: withOpacity(
                           item.recipeType === "community"
                             ? theme.link
                             : theme.success,
+                          0.12,
+                        ),
                       },
                     ]}
                   >
-                    {item.recipeType === "community" ? "Community" : "Personal"}
-                  </ThemedText>
+                    <ThemedText
+                      style={[
+                        styles.typeBadgeText,
+                        {
+                          color:
+                            item.recipeType === "community"
+                              ? theme.link
+                              : theme.success,
+                        },
+                      ]}
+                    >
+                      {item.recipeType === "community"
+                        ? "Community"
+                        : "Personal"}
+                    </ThemedText>
+                  </View>
+                  {item.difficulty && (
+                    <ThemedText
+                      style={[
+                        styles.recipeMetaText,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
+                      {item.difficulty}
+                    </ThemedText>
+                  )}
                 </View>
-                {item.difficulty && (
-                  <ThemedText
-                    style={[
-                      styles.recipeMetaText,
-                      { color: theme.textSecondary },
-                    ]}
-                  >
-                    {item.difficulty}
-                  </ThemedText>
-                )}
               </View>
-            </View>
-            <Pressable
-              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-              onPress={() => handleConfirmRemove(item)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Remove ${item.title}`}
-            >
-              <Feather name="trash-2" size={16} color={theme.textSecondary} />
+              <Pressable
+                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                onPress={() => handleConfirmRemove(item)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${item.title}`}
+              >
+                <Feather name="trash-2" size={16} color={theme.textSecondary} />
+              </Pressable>
             </Pressable>
-          </Pressable>
-        </SwipeableRow>
+          </SwipeableRow>
+        </Animated.View>
       );
     },
-    [theme, handleRecipePress, handleConfirmRemove],
+    [theme, handleRecipePress, handleConfirmRemove, reducedMotion],
   );
 
   if (isLoading) {

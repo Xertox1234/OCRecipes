@@ -2,6 +2,7 @@ import {
   WithSpringConfig,
   WithTimingConfig,
   Easing,
+  FadeInDown,
 } from "react-native-reanimated";
 
 /**
@@ -73,6 +74,30 @@ export const swipeActionThreshold = 80;
 
 /** Milliseconds between mini-FAB stagger appearances */
 export const speedDialStaggerDelay = 50;
+
+/** Milliseconds between list rows as they slide in on screen open */
+export const listStaggerStep = 50;
+
+/**
+ * Rows past this index slide in at the same delay as this one, so a long
+ * list never leaves a row waiting (10 × 50ms = at most half a second).
+ */
+export const listStaggerMaxIndex = 10;
+
+/** Milliseconds each list row takes to slide in */
+export const listEntranceDuration = 300;
+
+/**
+ * `entering` for row `index` of a list: rows slide in one after another,
+ * capped at `listStaggerMaxIndex`. None under reduced motion — the row
+ * simply appears.
+ */
+export function listEntrance(index: number, reducedMotion: boolean) {
+  if (reducedMotion) return undefined;
+  return FadeInDown.delay(
+    Math.min(index, listStaggerMaxIndex) * listStaggerStep,
+  ).duration(listEntranceDuration);
+}
 
 /** Pixels threshold to trigger date strip week change */
 export const dateStripSwipeThreshold = 50;

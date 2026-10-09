@@ -13,6 +13,8 @@ import { screen } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CookbookDetailScreen from "../CookbookDetailScreen";
 import type { ResolvedCookbookRecipe } from "@shared/schema";
+import { FadeInDown } from "react-native-reanimated";
+import { listStaggerMaxIndex, listStaggerStep } from "@/constants/animations";
 
 const { mockUseCookbookDetail } = vi.hoisted(() => ({
   mockUseCookbookDetail: vi.fn(),
@@ -82,5 +84,31 @@ describe("CookbookDetailScreen universal allergen label", () => {
     mockCookbook([{ ...baseRecipe, allergens: null }]);
     renderComponent(<CookbookDetailScreen />);
     expect(screen.getByLabelText("Pasta Carbonara")).toBeDefined();
+  });
+});
+
+// Rows slide in one after another when the screen opens, capped so a long
+// cookbook never leaves a row waiting.
+describe("CookbookDetailScreen row entrance", () => {
+  it("staggers each recipe row, capped", () => {
+    const delaySpy = vi.spyOn(FadeInDown, "delay");
+    const count = listStaggerMaxIndex + 2;
+    mockCookbook(
+      Array.from({ length: count }, (_, i) => ({
+        ...baseRecipe,
+        recipeId: i + 1,
+        title: `Recipe ${i + 1}`,
+      })),
+    );
+    renderComponent(<CookbookDetailScreen />);
+
+    const delays = delaySpy.mock.calls.map(([d]) => d);
+    expect(delays).toEqual(
+      Array.from(
+        { length: count },
+        (_, i) => Math.min(i, listStaggerMaxIndex) * listStaggerStep,
+      ),
+    );
+    delaySpy.mockRestore();
   });
 });
