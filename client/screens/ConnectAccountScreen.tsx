@@ -40,6 +40,7 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
   const { linkWithPassword, linkWithProvider } = useAuthContext();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [shakeKey, setShakeKey] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const mode = connectPromptMode(
@@ -67,6 +68,8 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
     setError("");
     if (!password) {
       setError("Please enter your password.");
+      setShakeKey((k) => k + 1);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
     setBusy(true);
@@ -138,7 +141,7 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
                 error={!!error}
                 errorMessage={error || undefined}
               />
-              <InlineError message={error} />
+              <InlineError message={error} shakeKey={shakeKey} />
               <Button
                 onPress={onPassword}
                 loading={busy}

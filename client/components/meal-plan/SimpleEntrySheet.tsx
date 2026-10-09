@@ -93,10 +93,16 @@ function SimpleEntrySheetContentInner(
 
   // InlineError announces the message on iOS via its own effect, so this
   // setter only needs to update state — adding an announce here would
-  // double-announce on iOS.
-  const showError = useCallback((msg: string) => {
-    setError(msg);
-  }, []);
+  // double-announce on iOS. Every caller is a failure, not a validation
+  // reject, so it buzzes without shaking; the mutations are silentError,
+  // so nothing upstream buzzes too.
+  const showError = useCallback(
+    (msg: string) => {
+      setError(msg);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+    },
+    [haptics],
+  );
 
   // Reset state when the sheet opens for a meal type, and stop any
   // in-progress voice capture when it closes.

@@ -10,12 +10,14 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import type { DeleteAccountProof } from "@/hooks/useAuth";
 import { ApiError } from "@/lib/api-error";
 import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
@@ -60,6 +62,7 @@ export function DeleteAccountModal({
   loadError = false,
 }: DeleteAccountModalProps) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const mode = deleteProofMode(
     signInMethods,
     Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : "web",
@@ -74,6 +77,7 @@ export function DeleteAccountModal({
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shakeKey, setShakeKey] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Reset state every time the modal opens so re-opening after a wrong-password
@@ -111,6 +115,7 @@ export function DeleteAccountModal({
             ? `${providerName} couldn't confirm it's you. Please try again.`
             : "Failed to delete account. Please try again.",
         );
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
         setIsDeleting(false);
       }
       return;
@@ -118,6 +123,8 @@ export function DeleteAccountModal({
     if (mode.kind !== "password") return;
     if (!password) {
       setError("Password is required");
+      setShakeKey((k) => k + 1);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
     setError(null);
@@ -135,9 +142,10 @@ export function DeleteAccountModal({
         ? "Incorrect password. Please try again."
         : message;
       setError(friendly);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       setIsDeleting(false);
     }
-  }, [password, onConfirm, isDeleting, mode, providerName]);
+  }, [password, onConfirm, isDeleting, mode, providerName, haptics]);
 
   // Nothing to confirm with while loading, or with no usable method.
   const confirmDisabled =
@@ -294,7 +302,7 @@ export function DeleteAccountModal({
                 </ThemedText>
               )}
 
-              <InlineError message={error} />
+              <InlineError message={error} shakeKey={shakeKey} />
 
               <View style={styles.buttonRow}>
                 <Button

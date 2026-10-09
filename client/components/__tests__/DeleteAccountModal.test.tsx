@@ -6,6 +6,17 @@ import type { SignInMethods } from "@shared/types/auth";
 import { ApiError } from "@/lib/api-error";
 import { renderComponent } from "../../../test/utils/render-component";
 import { DeleteAccountModal } from "../DeleteAccountModal";
+import * as Haptics from "expo-haptics";
+
+const { withSequenceSpy } = vi.hoisted(() => ({
+  withSequenceSpy: vi.fn((...vals: number[]) => vals[vals.length - 1]),
+}));
+
+// The InlineError shake runs one withSequence per validation reject.
+vi.mock("react-native-reanimated", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, default: actual.default, withSequence: withSequenceSpy };
+});
 
 const relay = { email: null, isPrivateRelay: true };
 const onConfirm = vi.fn();
@@ -88,5 +99,49 @@ describe("DeleteAccountModal", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
     const btn = screen.getByRole("button", { name: "Delete account" });
     expect(btn.getAttribute("aria-disabled")).toBe("true");
+  });
+});
+
+// A validation reject shakes the error and buzzes; a server error buzzes
+// but does not shake.
+describe("DeleteAccountModal — shake on validation reject", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("an empty password twice shakes twice and buzzes twice", () => {
+    renderModal({ password: true, google: null, apple: null });
+    const btn = screen.getByRole("button", { name: "Delete account" });
+
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+
+    expect(withSequenceSpy).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("a wrong password buzzes once but does not shake", async () => {
+    onConfirm.mockRejectedValue(new Error("Invalid credentials"));
+    renderModal({ password: true, google: null, apple: null });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+
+    expect(await screen.findByText(/Incorrect password/)).toBeTruthy();
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    expect(withSequenceSpy).not.toHaveBeenCalled();
+  });
+
+  it("an Apple confirmation the server rejects buzzes once", async () => {
+    onConfirm.mockRejectedValue(new ApiError("x", "UNAUTHORIZED", 401));
+    renderModal({ password: false, google: null, apple: relay });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm with Apple" }));
+
+    expect(await screen.findByText(/couldn't confirm/i)).toBeTruthy();
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
