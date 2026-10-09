@@ -17,6 +17,7 @@ import type {
   RecipeOfferBlock,
 } from "@shared/schemas/recipe-finder";
 import { offerDisplayText } from "./recipe-offer-utils";
+import { useCardArrivalAnnouncement } from "./useCardArrivalAnnouncement";
 
 type OfferActionType = "offer_yes" | "offer_search" | "offer_no";
 
@@ -32,18 +33,28 @@ export interface RecipeOfferProps {
   content?: string;
   /** Only the latest finder message's buttons are live (spec §4). */
   isActive: boolean;
+  /** False in RecipeChef's pending bubble; see RecipeResultsListProps. */
+  announceArrival?: boolean;
   /** `label` is the visible user bubble and the request `content`. */
   onAction: (action: FinderAction, label: string) => void;
 }
+
+const ARRIVAL_ANNOUNCEMENT = `Recipe offer: ${OFFER_BUTTONS[0].label}, ${OFFER_BUTTONS[1].label}, or ${OFFER_BUTTONS[2].label}`;
 
 export const RecipeOffer = React.memo(function RecipeOffer({
   block,
   content,
   isActive,
+  announceArrival = true,
   onAction,
 }: RecipeOfferProps) {
   const { theme } = useTheme();
   const text = offerDisplayText(content);
+  useCardArrivalAnnouncement(
+    `offer:${block.flow.flowId}`,
+    ARRIVAL_ANNOUNCEMENT,
+    { enabled: announceArrival, isActive },
+  );
 
   return (
     <View

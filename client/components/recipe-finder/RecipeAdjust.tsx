@@ -31,6 +31,7 @@ import {
   servingsAfterAccessibilityAction,
   timeLabel,
 } from "./recipe-offer-utils";
+import { useCardArrivalAnnouncement } from "./useCardArrivalAnnouncement";
 
 const SPICE_LEVELS = Object.keys(SPICE_LABELS) as SpiceLevel[];
 
@@ -38,6 +39,8 @@ export interface RecipeAdjustProps {
   block: RecipeAdjustBlock;
   /** Only the latest finder message's controls are live (spec §4). */
   isActive: boolean;
+  /** False in RecipeChef's pending bubble; see RecipeResultsListProps. */
+  announceArrival?: boolean;
   /** `label` is the visible user bubble and the request `content`. */
   onAction: (action: FinderAction, label: string) => void;
   /**
@@ -51,6 +54,7 @@ export interface RecipeAdjustProps {
 export const RecipeAdjust = React.memo(function RecipeAdjust({
   block,
   isActive,
+  announceArrival = true,
   onAction,
   choicesStore,
 }: RecipeAdjustProps) {
@@ -85,6 +89,11 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
   };
 
   const title = block.flow.dish ?? block.flow.query.q;
+  useCardArrivalAnnouncement(
+    `adjust:${flowId}`,
+    `Adjust ${title}, then Generate`,
+    { enabled: announceArrival, isActive },
+  );
   const noted = notedText(block.noted);
   const canDecrease = isActive && servings > MIN_SERVINGS;
   const canIncrease = isActive && servings < MAX_SERVINGS;

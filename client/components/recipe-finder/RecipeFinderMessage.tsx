@@ -21,7 +21,8 @@ export interface RecipeFinderMessageProps {
    *  shows it, since the server wrote the offer copy there. */
   content?: string;
   isActive: boolean;
-  /** Passed to the results list; see RecipeResultsListProps. */
+  /** Passed to the results list, offer and adjust card; see
+   *  RecipeResultsListProps. */
   announceArrival?: boolean;
   lockedButtons?: FinderButton[];
   /** `label` is the visible user bubble and the request `content`. */
@@ -84,6 +85,7 @@ export function RecipeFinderMessage({
         block={block}
         content={content}
         isActive={isActive}
+        announceArrival={announceArrival}
         onAction={handleCardAction}
       />
     );
@@ -93,6 +95,7 @@ export function RecipeFinderMessage({
       <RecipeAdjust
         block={block}
         isActive={isActive}
+        announceArrival={announceArrival}
         onAction={handleCardAction}
         choicesStore={adjustChoices}
       />
