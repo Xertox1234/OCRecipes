@@ -1,9 +1,9 @@
 ---
 title: "ai-reviewer.md: vision/text tier wording contradicts ai-models.ts"
-status: backlog
+status: done
 priority: low
 created: 2026-10-06
-updated: 2026-10-06
+updated: 2026-10-09
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -21,9 +21,9 @@ The code-reviewer raised this as a suggestion in the roster pass of #1291 (OpenR
 
 ## Acceptance Criteria
 
-- [ ] The vision bullet says that `photo-analysis.ts` has both HEAVY rows and FAST rows (`photo-classify` is FAST vision; `photo-recipe-text` is FAST text), or it drops the tier from the heading.
-- [ ] The checklist item "FAST for text, HEAVY for vision" is reworded so the row's tier is the authority, not the modality.
-- [ ] `voice-transcription.ts` moves out of the row-backed text list, for example: "(audio, direct `openai` client; no `AI_FEATURES` row)".
+- [x] The vision bullet says that `photo-analysis.ts` has both HEAVY rows and FAST rows (`photo-classify` is FAST vision; `photo-recipe-text` is FAST text), or it drops the tier from the heading.
+- [x] The checklist item "FAST for text, HEAVY for vision" is reworded so the row's tier is the authority, not the modality.
+- [x] `voice-transcription.ts` moves out of the row-backed text list, for example: "(audio, direct `openai` client; no `AI_FEATURES` row)".
 
 ## Implementation Notes
 
