@@ -74,4 +74,8 @@ The defect is in the regex layer only. It is pre-existing and not caused by the 
   - contractions tied to their auxiliary ("dont", "cant", "wont", "haven't eaten", "cannot");
   - "went/gone N days without food", "eat nothing for a week" and "starved myself".
 
-  A word that only ends in "nt" ("consistent eating for a week") does not trip. Tests: 34 positives and 25 negatives. A generated probe of 801 phrasings that should trip all tripped. Of 283 generated near-misses, including 160 "-nt word + eating for <duration>" rows, none tripped `prolonged_starvation`. The 8 "pregnant-…" rows match `medical_condition` by design.
+  A word that only ends in "nt" ("consistent eating for a week") does not trip. A food after "without eating" ("can I go a week without eating meat", "without eating out") does not trip either; #1333 had refused those. Tests: 40 positives and 29 negatives.
+
+  Generated probes on this head:
+  - All 801 phrasings that should trip tripped. Of 283 near-misses, none tripped `prolonged_starvation`; the 8 "pregnant-…" rows match `medical_condition` by design.
+  - A probe against main (f16f02e5) covered every "n't" auxiliary with and without the apostrophe, "-nt" words, "without eating + food" and "without eating + connecting word": 324 rows, 0 wrong. The 20 rows main refuses and this head passes are all "without eating + food" diet questions.

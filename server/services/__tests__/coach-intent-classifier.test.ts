@@ -249,6 +249,12 @@ describe("classifyIntent", () => {
         "eat nothing for a week",
         "I cannot eat for 5 days",
         "I haven't eaten for 3 days",
+        "I wasn't eating for 3 days",
+        "my daughter isn't eating for days",
+        "they arent eating for a week",
+        "how long can I go without eating before I faint",
+        "I went a week without eating, is that bad?",
+        "go without eating at all for 3 days",
       ];
       const NEGATIVE = [
         "skip breakfast",
@@ -277,6 +283,11 @@ describe("classifyIntent", () => {
         "is intermittent eating for a week healthy?",
         "We went eating for 3 days in Rome, how do I get back on track?",
         "I went out for a week, what should I eat?",
+        // A food after "without eating" is a diet question, not starvation.
+        "Can I go a month without eating out?",
+        "I went a month without eating sugar, how is my progress?",
+        "can I go a week without eating meat",
+        "how long can I go without eating dairy",
       ];
       it.each(POSITIVE)("%s -> safety_refusal", (msg) => {
         const r = classifyIntent(msg);

@@ -27,8 +27,14 @@ const FOR_DURATION = `for\\s+${STARVE_HEDGE}(?:${STARVE_QTY}\\s+)?${STARVE_DURAT
 // "can't", "wont"), so a word that merely ends in "nt" ("consistent eating",
 // "plant eating") is not read as a negation.
 const STARVE_NEGATION =
-  "\\b(?:stop|quit|skip|avoid|cease|not|cannot|(?:do|does|did|wo|ca|could|would|should|must|have|has|had)n['\\u2019]?t)";
+  "\\b(?:stop|quit|skip|avoid|cease|not|cannot|(?:do|does|did|wo|ca|could|would|should|must|have|has|had|is|are|was|were|ai|need|might|ought)n['\\u2019]?t)";
 const GO = "\\b(?:go|going|goes|went|gone)";
+// "without eating" / "without food" as a whole: "eating" may be followed only
+// by the end of the text, punctuation, or a connecting word ("for a week",
+// "before I faint", "at all"), never by a food ("without eating meat",
+// "without eating out").
+const WITHOUT_EATING =
+  "without\\s+(?:food|eating(?!\\s+(?!(?:anything|at\\s+all|for|or|and|since|until|till|because|before|while|when|so|but|if|then|is|was|will|would|safely|completely|entirely|properly|again)\\b)[a-z]))\\b";
 const PROLONGED_STARVATION = new RegExp(
   [
     // stop/skip/not/don't (or "dont")/haven't eat(ing/en) [anything] for <duration>
@@ -36,12 +42,12 @@ const PROLONGED_STARVATION = new RegExp(
     // eat nothing for <duration>
     `\\beat(?:ing)?\\s+nothing\\s+${FOR_DURATION}\\b`,
     // go/went/gone (for) <duration> without eating/food
-    `${GO}\\s+(?:for\\s+)?${STARVE_HEDGE}(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}\\s+without\\s+(?:eating|food)\\b`,
+    `${GO}\\s+(?:for\\s+)?${STARVE_HEDGE}(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}\\s+${WITHOUT_EATING}`,
     // go/went/gone without eating/food for <duration>
-    `${GO}\\s+without\\s+(?:eating|food)\\s+${FOR_DURATION}\\b`,
+    `${GO}\\s+${WITHOUT_EATING}(?:\\s+(?:anything|at\\s+all))?\\s+${FOR_DURATION}\\b`,
     // starve/starved/starving + reflexive
     `\\bstarv(?:e|ed|ing)\\s+(?:myself|yourself|himself|herself|themselves|ourselves)\\b`,
-    `\\bhow\\s+long\\s+(?:can|could|would)\\s+(?:i|you|a\\s+person|someone|one)\\s+(?:go|survive|last)\\s+without\\s+(?:eating|food)\\b`,
+    `\\bhow\\s+long\\s+(?:can|could|would)\\s+(?:i|you|a\\s+person|someone|one)\\s+(?:go|survive|last)\\s+${WITHOUT_EATING}`,
   ].join("|"),
   "i",
 );
