@@ -14,6 +14,7 @@ import {
   type PremiumFeatureKey,
 } from "@shared/types/premium";
 import { useAuthContext } from "./AuthContext";
+import { QUERY_KEYS } from "@/lib/query-keys";
 
 interface RecipeGenerationStatus {
   generationsToday: number;
@@ -76,7 +77,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     error: subscriptionError,
     refetch: refetchSubscription,
   } = useQuery<SubscriptionStatus>({
-    queryKey: ["/api/subscription/status"],
+    queryKey: QUERY_KEYS.subscriptionStatus,
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
