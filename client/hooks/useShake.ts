@@ -31,11 +31,13 @@ export function useShake(): {
 
   const shake = useCallback(() => {
     if (reducedMotion) return;
-    offset.value = withSequence(
-      withTiming(-6, { duration: 50 }),
-      withTiming(6, { duration: 50 }),
-      withTiming(-3, { duration: 50 }),
-      withTiming(0, { duration: 50 }),
+    offset.set(
+      withSequence(
+        withTiming(-6, { duration: 50 }),
+        withTiming(6, { duration: 50 }),
+        withTiming(-3, { duration: 50 }),
+        withTiming(0, { duration: 50 }),
+      ),
     );
   }, [reducedMotion, offset]);
 
@@ -44,16 +46,16 @@ export function useShake(): {
   useEffect(() => {
     if (reducedMotion) {
       cancelAnimation(offset);
-      offset.value = 0;
+      offset.set(0);
     }
     return () => {
       cancelAnimation(offset);
-      offset.value = 0;
+      offset.set(0);
     };
   }, [reducedMotion, offset]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: offset.value }],
+    transform: [{ translateX: offset.get() }],
   }));
 
   return { shake, animatedStyle };

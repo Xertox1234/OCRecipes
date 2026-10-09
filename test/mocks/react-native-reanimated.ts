@@ -4,7 +4,18 @@ import React from "react";
 import { vi } from "vitest";
 import { ariaHiddenProps, ariaModalProps } from "./react-native";
 
-export const useSharedValue = (init: number) => ({ value: init });
+// `get`/`set` mirror Reanimated 4's React-Compiler-safe accessors (writing
+// `.value` directly makes the compiler bail out of the file).
+export const useSharedValue = (init: number) => {
+  const sv = {
+    value: init,
+    get: () => sv.value,
+    set: (next: number) => {
+      sv.value = next;
+    },
+  };
+  return sv;
+};
 export const useAnimatedStyle = (fn: () => Record<string, unknown>) => fn();
 // Same shape as useAnimatedStyle — SVG components (e.g. CalorieRing.tsx) pass
 // animated numeric props (strokeDashoffset, etc.) this way instead of style.
