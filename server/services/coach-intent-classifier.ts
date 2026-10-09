@@ -11,6 +11,30 @@ export interface IntentClassification {
   matchedRule: string;
 }
 
+// Building blocks for the prolonged-starvation pattern below. One quantity
+// list and one duration list feed all three phrasings, so widening a
+// dimension is one edit.
+const STARVE_QTY =
+  "(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen|twenty|thirty|several|few|a\\s+few|many|some|multiple|(?:a\\s+)?couple(?:\\s+of)?|(?:the|a)\\s+(?:whole|full|entire)|an\\s+entire|\\d+)";
+const STARVE_DURATION =
+  "(?:days?|weeks?|months?|(?:2[4-9]|[3-9]\\d|\\d{3,})\\s*(?:hours?|hrs?))";
+// "for (qty) duration": the quantity is optional ("for days").
+const FOR_DURATION = `for\\s+(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}`;
+const PROLONGED_STARVATION = new RegExp(
+  [
+    // stop/skip/not/don't (or "dont") eat(ing) [anything] for <duration>
+    `(?:\\b(?:stop|quit|skip|avoid|cease|not)|n['\\u2019]?t)\\s+eat(?:ing)?\\s+(?:(?:anything|any\\s+food|food|at\\s+all|entirely|completely|altogether)\\s+)*${FOR_DURATION}\\b`,
+    // go (for) <duration> without eating/food
+    `\\bgo(?:ing)?\\s+(?:for\\s+)?(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}\\s+without\\s+(?:eating|food)\\b`,
+    // go without eating/food for <duration>
+    `\\bgo(?:ing)?\\s+without\\s+(?:eating|food)\\s+${FOR_DURATION}\\b`,
+    // starve/starved/starving + reflexive
+    `\\bstarv(?:e|ed|ing)\\s+(?:myself|yourself|himself|herself|themselves|ourselves)\\b`,
+    `\\bhow\\s+long\\s+(?:can|could|would)\\s+(?:i|you|a\\s+person|someone|one)\\s+(?:go|survive|last)\\s+without\\s+(?:eating|food)\\b`,
+  ].join("|"),
+  "i",
+);
+
 // ── Safety patterns (ordered; first match wins) ──────────────────────────────
 
 const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
@@ -62,16 +86,15 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
   },
   {
     // Plain-language prolonged starvation — "stop eating for a week", "not eat
-    // for 5 days", "go without food for a week", "go 7 days without eating",
+    // for four days", "go a couple days without food", "dont eat for a month",
     // "how long can I go without food". The verb must be followed DIRECTLY by
     // (an optional "anything/food/at all") and then the duration, so a named
     // food ("stop eating meat for a week"), a clock time ("stop eating after
-    // 8pm") or a quantity ("stop eating so much junk") never matches. Only
-    // day/week (or 24+ hour) durations trip it; "fast for 12 hours" and "stop
-    // eating 2 hours before sleep" stay ordinary. "starve myself" (reflexive)
-    // trips; "starving, what should I eat" and "starve off hunger" do not.
-    pattern:
-      /(?:(?:\b(?:stop|quit|skip|avoid|cease|not)|n['\u2019]t)\s+eat(?:ing)?\s+(?:(?:anything|any\s+food|food|at\s+all|entirely|completely|altogether)\s+)*for\s+(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\b|\bgo(?:ing)?\s+(?:for\s+)?(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\s+without\s+(?:eating|food)\b|\bgo(?:ing)?\s+without\s+(?:eating|food)\s+for\s+(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\b|\bstarv(?:e|ing)\s+(?:myself|yourself|himself|herself|themselves|ourselves)\b|\bhow\s+long\s+(?:can|could|would)\s+(?:i|you|a\s+person|someone|one)\s+(?:go|survive|last)\s+without\s+(?:eating|food)\b)/i,
+    // 8pm"), "eating out" or a quantity ("so much junk") never matches. Only
+    // day/week/month or 24+ hour durations trip it; "fast for 12 hours" and
+    // "stop eating 2 hours before sleep" stay ordinary. "starve/starved
+    // myself" (reflexive) trips; "starving, what should I eat" does not.
+    pattern: PROLONGED_STARVATION,
     name: "prolonged_starvation",
   },
   {
