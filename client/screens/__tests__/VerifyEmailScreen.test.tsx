@@ -19,6 +19,17 @@ import { renderComponent } from "../../../test/utils/render-component";
 import VerifyEmailScreen from "../VerifyEmailScreen";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import * as Haptics from "expo-haptics";
+
+const { withSequenceSpy } = vi.hoisted(() => ({
+  withSequenceSpy: vi.fn((...vals: number[]) => vals[vals.length - 1]),
+}));
+
+// The InlineError shake runs one withSequence per validation reject.
+vi.mock("react-native-reanimated", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, default: actual.default, withSequence: withSequenceSpy };
+});
 
 type Props = NativeStackScreenProps<RootStackParamList, "VerifyEmail">;
 
@@ -300,5 +311,41 @@ describe("VerifyEmailScreen — resend from the failed state", () => {
     expect(announceSpy).toHaveBeenCalledWith(
       "A new verification link has been sent.",
     );
+  });
+});
+
+// A validation reject shakes the error and buzzes; a failed resend buzzes
+// but does not shake.
+describe("VerifyEmailScreen — shake on validation reject", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("the same bad email twice shakes twice and buzzes twice", () => {
+    renderScreen({ email: "" });
+    fireEvent.change(screen.getByTestId("input-resend-email"), {
+      target: { value: "nope" },
+    });
+
+    fireEvent.click(screen.getByText("Resend email"));
+    fireEvent.click(screen.getByText("Resend email"));
+
+    expect(withSequenceSpy).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(mockResendVerificationRequest).not.toHaveBeenCalled();
+  });
+
+  it("a failed resend buzzes once but does not shake", async () => {
+    mockResendVerificationRequest.mockRejectedValue(new Error("offline"));
+    renderScreen({ email: "" });
+    fireEvent.change(screen.getByTestId("input-resend-email"), {
+      target: { value: "a@b.com" },
+    });
+    fireEvent.click(screen.getByText("Resend email"));
+
+    expect(await screen.findByText(/Couldn't resend/)).toBeTruthy();
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
+import * as Haptics from "expo-haptics";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { ThemedView } from "@/components/ThemedView";
@@ -8,6 +9,7 @@ import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
@@ -22,12 +24,14 @@ type Status = "confirming" | "confirmed" | "failed" | "pending";
 
 export default function VerifyEmailScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const tokenParam = route.params?.token;
   const [status, setStatus] = useState<Status>(
     tokenParam ? "confirming" : "pending",
   );
   const [email, setEmail] = useState(route.params?.email ?? "");
   const [error, setError] = useState("");
+  const [shakeKey, setShakeKey] = useState(0);
   const [busy, setBusy] = useState(false);
   // A verification email was actually sent only when a caller explicitly says so
   // via the `sent` param (the register path) or after a successful resend. We do
@@ -72,6 +76,8 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
     setError("");
     if (!isValidEmailShape(email)) {
       setError("Please enter a valid email address.");
+      setShakeKey((k) => k + 1);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
     setBusy(true);
@@ -86,6 +92,7 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
     } catch {
       // Resend is always neutral server-side; only a network error lands here.
       setError("Couldn't resend right now. Please try again shortly.");
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setBusy(false);
     }
@@ -127,7 +134,7 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               error={!!error}
               errorMessage={error || undefined}
             />
-            <InlineError message={error} />
+            <InlineError message={error} shakeKey={shakeKey} />
             <Button onPress={onResend} loading={busy} style={styles.button}>
               Resend verification email
             </Button>
@@ -154,7 +161,7 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               error={!!error}
               errorMessage={error || undefined}
             />
-            <InlineError message={error} />
+            <InlineError message={error} shakeKey={shakeKey} />
             {/* Prominence follows intent within the pending state. In the
                 not-sent sub-state ("Verify your email") resending is the primary
                 action, so Resend is the solid primary and Back-to-sign-in is the

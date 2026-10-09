@@ -4,6 +4,7 @@ import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { SimpleEntrySheetContent } from "../SimpleEntrySheet";
 import { ApiError } from "@/lib/api-error";
+import * as Haptics from "expo-haptics";
 
 const mockParseFoodText = vi.fn();
 const mockCreateRecipe = vi.fn();
@@ -262,6 +263,11 @@ describe("SimpleEntrySheet", () => {
     expect(screen.queryByText(/Couldn't estimate nutrition/)).toBeNull();
     expect(mockToastSuccess).not.toHaveBeenCalled();
     expect(defaultProps.onDismiss).not.toHaveBeenCalled();
+    // The mutations are silentError, so the sheet's own buzz is the only one.
+    expect(mockNotification).toHaveBeenCalledTimes(1);
+    expect(mockNotification).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
   });
 
   // The recipe was already created, so a retry must reuse it, not parse and
@@ -379,6 +385,8 @@ describe("SimpleEntrySheet", () => {
         "Couldn't estimate nutrition. Try a simpler description.",
       ),
     ).toBeNull();
+    // A premium block is an offer, not a failure: no Error buzz.
+    expect(mockNotification).not.toHaveBeenCalled();
   });
 
   it("sums nutrition across multiple parsed items", async () => {
