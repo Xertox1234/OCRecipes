@@ -1,11 +1,5 @@
 import React, { useRef, useState } from "react";
-import {
-  StyleSheet,
-  View,
-  ScrollView,
-  TextInput,
-  Pressable,
-} from "react-native";
+import { StyleSheet, View, ScrollView, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +13,7 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { ScreenScrollView } from "@/components/ScreenScrollView";
+import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -129,16 +124,20 @@ function SelectableChip({
   description,
   selected,
   onPress,
+  shape,
 }: {
   label: string;
   description?: string;
   selected: boolean;
   onPress: () => void;
+  /** `tile` in a wrapping row; `row` when the column stretches it full width. */
+  shape: "tile" | "row";
 }) {
   const { theme } = useTheme();
 
   return (
-    <Pressable
+    <SelectableTile
+      shape={shape}
       onPress={onPress}
       accessibilityLabel={label}
       accessibilityState={{ selected }}
@@ -167,7 +166,7 @@ function SelectableChip({
           {description}
         </ThemedText>
       )}
-    </Pressable>
+    </SelectableTile>
   );
 }
 
@@ -409,6 +408,7 @@ export default function GoalSetupScreen() {
                   key={option.value}
                   label={option.label}
                   selected={gender === option.value}
+                  shape="tile"
                   onPress={() => setGender(option.value)}
                 />
               ))}
@@ -439,6 +439,7 @@ export default function GoalSetupScreen() {
                   label={option.label}
                   description={option.description}
                   selected={activityLevel === option.value}
+                  shape="row"
                   onPress={() => setActivityLevel(option.value)}
                 />
               ))}
@@ -469,6 +470,7 @@ export default function GoalSetupScreen() {
                   label={option.label}
                   description={option.description}
                   selected={primaryGoal === option.value}
+                  shape="row"
                   onPress={() => setPrimaryGoal(option.value)}
                 />
               ))}

@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
 // Repo convention: renderComponent wraps RTL-for-web + QueryClient (jsdom).
 // Do NOT import @testing-library/react-native — the repo does not use it
 // (not even installed; only @testing-library/react is a dependency).
@@ -141,5 +142,34 @@ describe("ScanConflictPrompt", () => {
     );
     expect(getByLabelText(/database.*selected/i)).toBeTruthy();
     expect(getByLabelText(/label.*not selected/i)).toBeTruthy();
+  });
+});
+
+// Choosing a source is a pick: each column is a SelectableTile that ticks
+// `selection()` once (the real useHaptics → expo-haptics mock).
+describe("ScanConflictPrompt — one selection tick per pick", () => {
+  it("each source column ticks once", () => {
+    const { getAllByRole } = renderComponent(
+      <ScanConflictPrompt
+        conflictFields={["calories"]}
+        labelNutrition={label}
+        dbNutrition={db}
+        activeSource="label"
+        onChoose={() => {}}
+      />,
+    );
+    const columns = getAllByRole("radio");
+    // Denominator: the label and database columns.
+    expect(columns).toHaveLength(2);
+
+    for (const [i, column] of columns.entries()) {
+      vi.mocked(Haptics.selectionAsync).mockClear();
+      fireEvent.click(column);
+      expect(
+        vi.mocked(Haptics.selectionAsync).mock.calls.length,
+        `column ${i}`,
+      ).toBe(1);
+    }
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
   });
 });

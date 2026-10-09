@@ -1,6 +1,7 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
 import { withOpacity } from "@/constants/theme";
 import type { NutritionData } from "@/hooks/useNutritionLookup";
@@ -22,7 +23,7 @@ type Source = "database" | "label";
 // Hoisted to module scope (not defined inside ScanConflictPrompt's body) so it
 // keeps a stable component identity across renders — an in-body definition
 // would get a new identity every render, causing React to unmount/remount
-// both radio Pressables on every chooseSource tap and drop VoiceOver/TalkBack
+// both radio tiles on every chooseSource tap and drop VoiceOver/TalkBack
 // focus on the very interaction this component handles.
 function Column({
   theme,
@@ -48,7 +49,7 @@ function Column({
     )
     .join(", ");
   return (
-    <Pressable
+    <SelectableTile
       onPress={() => onChoose(source)}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
@@ -89,7 +90,7 @@ function Column({
           </Text>
         </Text>
       ))}
-    </Pressable>
+    </SelectableTile>
   );
 }
 

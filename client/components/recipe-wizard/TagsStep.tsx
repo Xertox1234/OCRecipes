@@ -1,17 +1,9 @@
 import React, { useCallback } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-} from "react-native";
-import * as Haptics from "expo-haptics";
+import { View, Text, TextInput, ScrollView, StyleSheet } from "react-native";
 import type { TagsData } from "@/hooks/useRecipeForm";
 import { DIET_TAG_OPTIONS, type DietTag } from "./types";
 import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
+import { SelectableTile } from "@/components/SelectableTile";
 import {
   Spacing,
   BorderRadius,
@@ -31,7 +23,6 @@ interface TagsStepProps {
 
 export default function TagsStep({ tags, setTags }: TagsStepProps) {
   const { theme } = useTheme();
-  const haptics = useHaptics();
 
   const handleCuisineChange = useCallback(
     (text: string) => {
@@ -42,10 +33,9 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
 
   const handleTagToggle = useCallback(
     (tag: DietTag) => {
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setTags({ ...tags, dietTags: toggleDietTag(tags.dietTags, tag) });
     },
-    [tags, setTags, haptics],
+    [tags, setTags],
   );
 
   return (
@@ -104,8 +94,9 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
           {DIET_TAG_OPTIONS.map((tag) => {
             const isActive = tags.dietTags.includes(tag);
             return (
-              <Pressable
+              <SelectableTile
                 key={tag}
+                shape="chip"
                 onPress={() => handleTagToggle(tag)}
                 style={[
                   styles.chip,
@@ -131,7 +122,7 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
                 >
                   {formatDietChipLabel(tag, isActive)}
                 </Text>
-              </Pressable>
+              </SelectableTile>
             );
           })}
         </View>

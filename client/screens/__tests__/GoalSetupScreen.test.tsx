@@ -13,12 +13,16 @@ const {
   mockUpdateUser,
   mockNotification,
   mockToastSuccess,
+  mockSelection,
+  mockImpact,
 } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
   mockApiRequest: vi.fn(),
   mockUpdateUser: vi.fn().mockResolvedValue(undefined),
   mockNotification: vi.fn(),
   mockToastSuccess: vi.fn(),
+  mockSelection: vi.fn(),
+  mockImpact: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -38,9 +42,9 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
 
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
-    impact: vi.fn(),
+    impact: mockImpact,
     notification: mockNotification,
-    selection: vi.fn(),
+    selection: mockSelection,
     disabled: false,
   }),
 }));
@@ -171,5 +175,23 @@ describe("GoalSetupScreen — save invalidates the daily-budget cache", () => {
     });
     expect(mockToastSuccess).not.toHaveBeenCalled();
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+});
+
+// Gender, activity level and goal options are SelectableTiles: each pick
+// ticks `selection()` once and never the impact buzz.
+describe("GoalSetupScreen — one selection tick per pick", () => {
+  it("every gender, activity and goal option ticks once", () => {
+    renderComponent(<GoalSetupScreen />);
+    const options = screen.getAllByRole("radio");
+    // Denominator: gender + activity + goal options all rendered.
+    expect(options.length).toBeGreaterThan(8);
+
+    for (const [i, option] of options.entries()) {
+      mockSelection.mockClear();
+      fireEvent.click(option);
+      expect(mockSelection, `option ${i}`).toHaveBeenCalledTimes(1);
+    }
+    expect(mockImpact).not.toHaveBeenCalled();
   });
 });
