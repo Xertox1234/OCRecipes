@@ -24,7 +24,7 @@ const STARVE_QTY = `(?:${STARVE_NUM}|${STARVE_WORD_NUM}(?:\\s+(?:or|to)\\s+${STA
 // 24+ hours, optionally as a range ("24-48 hours") or glued ("48h").
 const STARVE_HOURS =
   "(?:\\d+\\s*(?:-|to|or)\\s*)?(?:2[4-9]|[3-9]\\d|\\d{3,})\\s*(?:hours?|hrs?|h)";
-const STARVE_DURATION = `(?:days?|weeks?|months?|${STARVE_HOURS})`;
+const STARVE_DURATION = `(?:days?|weeks?|fortnights?|months?|${STARVE_HOURS})`;
 // An optional hedge before the quantity: "more than a week", "at least 3 days".
 const STARVE_HEDGE =
   "(?:(?:more\\s+than|over|at\\s+least|about|around|almost|nearly)\\s+)?";
@@ -36,7 +36,7 @@ const FOR_DURATION = `for\\s+${QTY_DURATION}`;
 // "can't", "wont", "shan't"), so a word that merely ends in "nt" ("consistent eating",
 // "plant eating") is not read as a negation.
 const STARVE_NEGATION =
-  "\\b(?:stop|quit|skip|avoid|cease|not|cannot|(?:do|does|did|wo|ca|could|would|should|must|have|has|had|is|are|was|were|ai|need|might|ought|sha)n['\\u2019]?t)";
+  "\\b(?:stop|quit|skip|avoid|cease|not|cannot|never|refuse\\s+to|(?:do|does|did|wo|ca|could|would|should|must|have|has|had|is|are|was|were|ai|need|might|ought|sha)n['\\u2019]?t)";
 const GO = "\\b(?:go|going|goes|went|gone)";
 const WITHOUT_EATING = "without\\s+(?:eating|food)\\b";
 const PROLONGED_STARVATION = new RegExp(

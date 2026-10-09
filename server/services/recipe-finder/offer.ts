@@ -127,9 +127,10 @@ export const offerRecipeArgsSchema: z.ZodType<
 });
 
 /**
- * For COMPARISON only, never display. Folds Latin accents (\u00e9 \u2192 e) but keeps
- * every script's letters, digits and the marks that belong to them (Devanagari
- * vowel signs, the dakuten in \u304c), so a non-Latin dish never normalises to "".
+ * For COMPARISON only, never display. Strips U+0300–036F combining marks in
+ * every script (é → e, й → и), but keeps other scripts' marks
+ * (Devanagari vowel signs, the dakuten in が), so a non-Latin dish never
+ * normalises to "".
  */
 export function normalizeDish(dish: string): string {
   return dish

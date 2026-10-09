@@ -47,8 +47,9 @@ import { logger } from "@/lib/logger";
 
 initReporter();
 
-// Persist ONLY the small, offline-critical reads (food log + daily summary +
-// frequent items + dietary profile — the centralized QUERY_KEYS). Large/ephemeral
+// Persist ONLY the small, offline-critical reads — the centralized QUERY_KEYS
+// (food log, daily summary, frequent items, daily budget, dietary profile,
+// subscription status; see client/lib/query-keys.ts). Large/ephemeral
 // payloads (recipe browse/search, chat histories, carousel — all ad-hoc keys) are
 // excluded so the single AsyncStorage cache row can't blow the Android
 // CursorWindow ~2MB limit (M5). Pairs with defaultShouldDehydrateQuery to keep
