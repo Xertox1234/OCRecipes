@@ -3,7 +3,6 @@ import { aiChat } from "../../lib/ai-client";
 import { z } from "zod";
 import { OPENAI_TIMEOUT_FAST_MS } from "../../lib/openai";
 import {
-  sanitizeUserInput,
   sanitizeContextField,
   validateAiResponse,
   SYSTEM_PROMPT_BOUNDARY,
@@ -48,10 +47,10 @@ export async function askClarifying(
 ): Promise<ClarifyingQuestion[]> {
   const transcript = history
     .slice(-4)
-    .map((m) =>
-      m.role === "user"
-        ? `User: ${sanitizeUserInput(m.content).slice(0, 300)}`
-        : `Assistant: ${sanitizeContextField(m.content, 300)}`,
+    // sanitizeContextField also strips zero-width/bidi chars (user text too).
+    .map(
+      (m) =>
+        `${m.role === "user" ? "User" : "Assistant"}: ${sanitizeContextField(m.content, 300)}`,
     )
     .join("\n");
   let content: string | null | undefined;
@@ -74,7 +73,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
           },
           {
             role: "user",
-            content: `Request: ${sanitizeUserInput(request)}\n\nRecent conversation:\n${transcript}`,
+            content: `Request: ${sanitizeContextField(request, 2000)}\n\nRecent conversation:\n${transcript}`,
           },
         ],
       },

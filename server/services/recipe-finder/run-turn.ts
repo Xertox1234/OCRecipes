@@ -125,14 +125,6 @@ export async function executeFinderStep(
       const block = buildOfferBlock(dish, details, finderCtx.nextFlowId);
       return { kind: "message", block, content: finderFallbackText(block) };
     }
-    case "offer": {
-      const block = buildOfferBlock(
-        step.dish,
-        step.details,
-        finderCtx.nextFlowId,
-      );
-      return { kind: "message", block, content: finderFallbackText(block) };
-    }
     case "build_adjust":
       return adjustMessage(step.flow, ctx, finderCtx.nextFlowId);
     case "generate_with_settings": {

@@ -77,11 +77,18 @@ export function buildAdjustBlock(args: {
   };
 }
 
-/** True iff every answer is an offered question + option pair of the block. */
+/**
+ * True iff every answer is an offered question + option pair of the block,
+ * with at most one answer per question (two would put conflicting or repeated
+ * choices into the generation prompt).
+ */
 export function validateAdjustAnswers(
   block: RecipeAdjustBlock,
   answers: FinderAnswer[],
 ): boolean {
+  if (new Set(answers.map((a) => a.question)).size !== answers.length) {
+    return false;
+  }
   return answers.every((a) =>
     block.followUps.some(
       (q) => q.question === a.question && q.options.includes(a.answer),

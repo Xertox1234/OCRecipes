@@ -5,6 +5,7 @@
 // yields only conversational text — the card arrives on the post-`done`
 // refetch, so the route's CoachChatEvent ternary needs no new arm.
 import type { ChatMessage } from "@shared/schema";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { CoachChatEvent } from "../coach-pro-chat";
 import { storage } from "../../storage";
 import { fireAndForget } from "../../lib/fire-and-forget";
@@ -18,6 +19,7 @@ import {
   type FinderFeatures,
 } from "./run-turn";
 import { finderStatusLabel, type FinderInput } from "./transition";
+import { finderBlockFromMetadata } from "./entry";
 import {
   gateRecipeGeneration,
   buildFinderGenerationMessages,
@@ -38,23 +40,47 @@ export interface CoachFinderTurnParams {
   userMessageId: number;
   entry: CoachFinderTurnEntry;
   features: FinderFeatures;
+  /** Coach's pre-tool text (offer tool path); leads the saved reply. */
+  leadText?: string;
+  /** Blocks parsed out of that pre-tool text; they precede the finder block. */
+  leadBlocks?: CoachBlock[];
+}
+
+/**
+ * On a turnKey hit nothing new was saved, so a freshly minted flowId would
+ * differ from the stored card's and its taps would be stale: swap in the
+ * stored finder block. With no stored finder block, today's blocks stand.
+ */
+export function savedBlocks(
+  existing: ChatMessage | undefined,
+  blocks: CoachBlock[],
+  fresh: CoachBlock,
+): CoachBlock[] {
+  const stored = existing ? finderBlockFromMetadata(existing.metadata) : null;
+  return stored ? blocks.map((b) => (b === fresh ? stored : b)) : blocks;
+}
+
+/** Prepends Coach's streamed pre-tool text to a saved reply. */
+export function withLead(leadText: string | undefined, text: string): string {
+  return leadText ? `${leadText}\n\n${text}` : text;
 }
 
 const LIMIT_TEXT =
   "You've reached today's limit for generated recipes. Community and Spoonacular searches still work.";
 const PREMIUM_TEXT = "Generating recipes is a Premium feature.";
 
+/** Saves once per turnKey; returns the already-saved row on a turnKey hit. */
 async function persistAssistant(
   p: CoachFinderTurnParams,
   content: string,
   metadata: Record<string, unknown> | null,
-): Promise<void> {
+): Promise<ChatMessage | undefined> {
   if (p.turnKey) {
     const existing = await storage.getChatMessageByTurnKey(
       p.conversationId,
       p.turnKey,
     );
-    if (existing) return;
+    if (existing) return existing;
   }
   await storage.createChatMessage(
     p.conversationId,
@@ -132,9 +158,17 @@ export async function* runCoachFinderTurn(
       return;
     }
     if (turn.kind === "message") {
-      await persistAssistant(p, turn.content, { blocks: [turn.block] });
+      const blocks: CoachBlock[] = [...(p.leadBlocks ?? []), turn.block];
+      const existing = await persistAssistant(
+        p,
+        withLead(p.leadText, turn.content),
+        { blocks },
+      );
       maybeAutoTitle(p);
-      yield { type: "blocks", blocks: [turn.block] };
+      yield {
+        type: "blocks",
+        blocks: savedBlocks(existing, blocks, turn.block),
+      };
       return;
     }
     // Offer flag only: "No problem." closes the flow with NO metadata, so it

@@ -205,4 +205,41 @@ describe("validateAdjustAnswers", () => {
     ).toBe(false);
     expect(validateAdjustAnswers(b, [])).toBe(true);
   });
+
+  it("rejects two answers to the same question (duplicate or conflicting)", () => {
+    const b = buildAdjustBlock({
+      flow: offerFlow(),
+      profile: null,
+      followUps: [
+        { question: "Beef, pork, or a mix?", options: ["Beef", "Mix"] },
+      ],
+      nextFlowId: NEXT,
+    });
+    const question = "Beef, pork, or a mix?";
+    expect(
+      validateAdjustAnswers(b, [
+        { question, answer: "Mix" },
+        { question, answer: "Mix" },
+      ]),
+    ).toBe(false);
+    expect(
+      validateAdjustAnswers(b, [
+        { question, answer: "Beef" },
+        { question, answer: "Mix" },
+      ]),
+    ).toBe(false);
+  });
+
+  it("with no follow-ups, accepts no answers and rejects any answer", () => {
+    const b = buildAdjustBlock({
+      flow: offerFlow(),
+      profile: null,
+      followUps: [],
+      nextFlowId: NEXT,
+    });
+    expect(validateAdjustAnswers(b, [])).toBe(true);
+    expect(
+      validateAdjustAnswers(b, [{ question: "Anything?", answer: "Yes" }]),
+    ).toBe(false);
+  });
 });

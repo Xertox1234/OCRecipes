@@ -252,6 +252,7 @@ describe("Coach recipe offer — acceptance (plumbing through handleCoachChat)",
   afterEach(() => vi.unstubAllEnvs());
 
   it("the owner's exact message after a suggestion saves an offer block", async () => {
+    // Save-before-yield is pinned by "saves the offer … BEFORE yielding" (coach-pro-chat.test.ts).
     vi.mocked(storage.getChatMessages).mockResolvedValue([
       msg(1, "user", "I have chicken, spinach, garlic, lemon and rice."),
       msg(

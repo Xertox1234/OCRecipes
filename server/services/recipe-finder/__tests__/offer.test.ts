@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { COOKING_TIME_IDS } from "@shared/constants/cooking-times";
 import {
+  finderFlowSchema,
   recipeOfferBlockSchema,
   spiceLevelSchema,
 } from "@shared/schemas/recipe-finder";
@@ -43,7 +44,15 @@ describe("normalizeDish", () => {
     ["The spaghetti and meatballs!", "spaghetti and meatballs"],
     ["  a  Lemon-Garlic chicken ", "lemon garlic chicken"],
     ["Crème brûlée", "creme brulee"],
+    ["麻婆豆腐", "麻婆豆腐"],
+    ["  麻婆豆腐！", "麻婆豆腐"],
+    ["Pâté & 餃子", "pate and 餃子"],
+    ["पनीर टिक्का", "पनीर टिक्का"],
+    ["がんもどき", "がんもどき"],
   ])("normalizeDish(%s)", (a, b) => expect(normalizeDish(a)).toBe(b));
+  it("keeps marks that are part of a non-Latin letter (が is not か)", () => {
+    expect(normalizeDish("がんも")).not.toBe(normalizeDish("かんも"));
+  });
 });
 
 describe("decideOfferToolCall", () => {
@@ -88,6 +97,13 @@ describe("decideOfferToolCall", () => {
       latest,
     );
     expect(d).toEqual({ kind: "adjust", flow: latest.flow });
+  });
+  it("repeat = yes works for a non-Latin dish name", () => {
+    const latest = buildOfferBlock("麻婆豆腐", empty, F0);
+    expect(decideOfferToolCall(call({ dish: "麻婆豆腐" }), latest)).toEqual({
+      kind: "adjust",
+      flow: latest.flow,
+    });
   });
   it("different dish while an offer is live → a fresh offer", () => {
     const latest = buildOfferBlock("Spaghetti", empty, F0);
@@ -153,7 +169,9 @@ describe("untrusted args hardening", () => {
 });
 
 describe("buildOfferBlock", () => {
-  it("15 maximal ingredients keep request <= 2000 and parse", () => {
+  // Validated input tops out near 1021 chars (80 + " for 20" + " with " +
+  // 15×60 + 14×", "), so this case never reaches the 2000 cap; the next one does.
+  it("15 maximal ingredients (the validated maximum) build a block that parses", () => {
     const b = buildOfferBlock(
       "d".repeat(80),
       {
@@ -165,6 +183,23 @@ describe("buildOfferBlock", () => {
     );
     expect(b.flow.request.length).toBeLessThanOrEqual(2000);
     expect(recipeOfferBlockSchema.safeParse(b).success).toBe(true);
+  });
+  it("caps request at 2000 when unvalidated details would exceed it", () => {
+    // RecipeDetails' TYPE carries no length bounds, so a future caller that
+    // skips the schema must still get a block the client will accept.
+    const b = buildOfferBlock(
+      "d".repeat(80),
+      {
+        servings: 20,
+        ingredients: Array(40).fill("i".repeat(60)),
+        fromConversation: false,
+      },
+      F0,
+    );
+    expect(b.flow.request).toHaveLength(2000);
+    expect(
+      finderFlowSchema.shape.request.safeParse(b.flow.request).success,
+    ).toBe(true);
   });
   it("result parses with the offer block schema", () => {
     const b = buildOfferBlock(

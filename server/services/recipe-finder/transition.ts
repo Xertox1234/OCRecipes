@@ -30,8 +30,6 @@ export type TypedFinderCommand =
 
 export type FinderInput =
   | { kind: "start"; text: string }
-  /** Coach tool path: the model already extracted the dish + details. */
-  | { kind: "offer"; dish: string; details: RecipeDetails }
   | { kind: "action"; action: FinderAction }
   | {
       kind: "typed";
@@ -69,7 +67,6 @@ export type FinderStep =
   | { kind: "ask_clarifying"; flow: FinderFlow }
   | { kind: "generate"; request: string; flow: FinderFlow }
   | { kind: "offer_from_text"; text: string }
-  | { kind: "offer"; dish: string; details: RecipeDetails }
   | { kind: "build_adjust"; flow: FinderFlow }
   | { kind: "close" }
   | {
@@ -148,8 +145,7 @@ function offerSearch(flow: FinderFlow): FinderStep {
     round: 0,
     excludeIds: [],
     priorShownIds: [],
-    ...(flow.dish !== undefined ? { dish: flow.dish } : {}),
-    ...(flow.details !== undefined ? { details: flow.details } : {}),
+    ...offerContext(flow),
   };
 }
 
@@ -163,9 +159,6 @@ function planOfferOn(
 ): FinderStep | null {
   if (input.kind === "start") {
     return { kind: "offer_from_text", text: input.text };
-  }
-  if (input.kind === "offer") {
-    return { kind: "offer", dish: input.dish, details: input.details };
   }
   if (!latest) return { kind: "ignore", reason: "no_active_flow" };
   const { flow } = latest;
@@ -278,7 +271,6 @@ export function planFinderStep(
     const planned = planOfferOn(latest, input);
     if (planned) return planned;
   }
-  if (input.kind === "offer") return INVALID; // no offer stage with the flag off
   if (input.kind === "start") {
     return {
       kind: "search_community",
@@ -374,6 +366,13 @@ export function blockedGenerateBlock(
   };
 }
 
+/**
+ * Maps a search/clarify step and its result onto what the turn delivers.
+ * close, offer_from_text and generate_with_settings have no result to map —
+ * executeFinderStep finishes them before calling this — so reaching here with
+ * one is a caller bug and throws rather than dropping the turn silently.
+ * `ignore` and `build_adjust` pass through unchanged.
+ */
 export function finderOutcome(
   step: FinderStep,
   result: FinderStepResult,
@@ -382,12 +381,11 @@ export function finderOutcome(
 ): FinderOutcome {
   switch (step.kind) {
     case "ignore":
-    case "close":
       return { kind: "ignore" };
     case "build_adjust":
       return { kind: "build_adjust", flow: step.flow };
+    case "close":
     case "offer_from_text":
-    case "offer":
     case "generate_with_settings":
       throw new Error(
         `${step.kind} is handled by the caller, not finderOutcome`,
@@ -484,7 +482,6 @@ export function finderStatusLabel(step: FinderStep): string | null {
       return "Creating your recipe…";
     case "ignore":
     case "offer_from_text":
-    case "offer":
     case "close":
       return null;
   }

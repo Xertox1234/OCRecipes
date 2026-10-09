@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { classifyTurn, CLASSIFY_TURN_TIMEOUT_MS } from "../classify-turn";
+import {
+  classifyTurn,
+  classifyTurnDetailed,
+  CLASSIFY_TURN_TIMEOUT_MS,
+} from "../classify-turn";
 import { aiChat } from "../../../lib/ai-client";
 import { createMockChatCompletion } from "../../../__tests__/factories";
 
@@ -50,6 +54,11 @@ describe("classifyTurn", () => {
     await expect(classifyTurn("x", "y")).resolves.toBe("new_request");
   });
 
+  it("falls back to new_request on unparseable JSON", async () => {
+    mockCreate.mockResolvedValue(createMockChatCompletion("not json"));
+    await expect(classifyTurn("x", "y")).resolves.toBe("new_request");
+  });
+
   it("uses a short timeout and JSON mode", async () => {
     returns({ class: "other" });
     await classifyTurn("thanks!", "Chicken Curry");
@@ -57,5 +66,44 @@ describe("classifyTurn", () => {
     expect(feature).toBe("finder-classify-turn");
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(opts?.timeout).toBe(CLASSIFY_TURN_TIMEOUT_MS);
+  });
+});
+
+describe("classifyTurnDetailed", () => {
+  it("reports no fallback when the model answered", async () => {
+    returns({ class: "new_request" });
+    await expect(classifyTurnDetailed("x", "y")).resolves.toEqual({
+      class: "new_request",
+      fallback: null,
+    });
+  });
+
+  it.each([
+    [
+      "the call throws",
+      () => mockCreate.mockRejectedValue(new Error("t")),
+      "call_failed",
+    ],
+    [
+      "the reply is empty",
+      () => mockCreate.mockResolvedValue(createMockChatCompletion("")),
+      "empty",
+    ],
+    [
+      "the JSON is unparseable",
+      () => mockCreate.mockResolvedValue(createMockChatCompletion("{nope")),
+      "unparseable",
+    ],
+    [
+      "the class is out of vocabulary",
+      () => returns({ class: "refine" }),
+      "unparseable",
+    ],
+  ] as const)("names the fallback when %s", async (_, arrange, fallback) => {
+    arrange();
+    await expect(classifyTurnDetailed("x", "y")).resolves.toEqual({
+      class: "new_request",
+      fallback,
+    });
   });
 });

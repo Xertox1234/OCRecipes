@@ -42,7 +42,8 @@ export async function extractQuery(
   text: string,
   context: { dietType?: string | null } = {},
 ): Promise<RecipeQuery> {
-  const sanitized = sanitizeUserInput(text);
+  // sanitizeContextField also strips zero-width/bidi chars (user text here).
+  const sanitized = sanitizeContextField(text, 2000);
   const dietLine = context.dietType
     ? `The user's saved diet type is "${sanitizeContextField(context.dietType, 50)}". Do not add it unless the request mentions a diet.`
     : "";
@@ -138,10 +139,9 @@ export async function extractOfferDetails(
     const convo = history
       .filter((m) => m.role === "user" || m.role === "assistant")
       .slice(-6)
-      .map((m) =>
-        m.role === "user"
-          ? `User: ${sanitizeUserInput(m.content).slice(0, 300)}`
-          : `Assistant: ${sanitizeContextField(m.content, 300)}`,
+      .map(
+        (m) =>
+          `${m.role === "user" ? "User" : "Assistant"}: ${sanitizeContextField(m.content, 300)}`,
       )
       .join("\n");
     const response = await aiChat(
@@ -163,7 +163,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
           },
           {
             role: "user",
-            content: `Recent conversation:\n${convo || "(none)"}\n\nLatest message: ${sanitizeUserInput(text)}`,
+            content: `Recent conversation:\n${convo || "(none)"}\n\nLatest message: ${sanitizeContextField(text, 2000)}`,
           },
         ],
       },

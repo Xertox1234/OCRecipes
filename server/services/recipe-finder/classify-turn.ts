@@ -2,7 +2,6 @@
 import { aiChat } from "../../lib/ai-client";
 import { z } from "zod";
 import {
-  sanitizeUserInput,
   sanitizeContextField,
   validateAiResponse,
   SYSTEM_PROMPT_BOUNDARY,
@@ -20,6 +19,9 @@ const responseSchema = z.object({
   class: z.enum(["new_request", "refine_current", "other"]),
 });
 
+/** Why the class is the "new_request" fallback; null = the model's answer. */
+export type TurnClassFallback = "call_failed" | "empty" | "unparseable" | null;
+
 /**
  * §3.3: after a recipe card, decide whether a message starts a new search,
  * refines the card on screen, or is ordinary chat. Any failure returns
@@ -30,6 +32,27 @@ export async function classifyTurn(
   message: string,
   currentRecipeTitle: string,
 ): Promise<TurnClass> {
+  return (await classifyTurnDetailed(message, currentRecipeTitle)).class;
+}
+
+/**
+ * classifyTurn plus WHY it fell back, for callers (the offer probe) that must
+ * not count a fallback "new_request" as a measurement.
+ */
+export async function classifyTurnDetailed(
+  message: string,
+  currentRecipeTitle: string,
+): Promise<{ class: TurnClass; fallback: TurnClassFallback }> {
+  const fellBack = (fallback: TurnClassFallback, error?: unknown) => {
+    if (error !== undefined) {
+      log.warn(
+        { err: toError(error) },
+        "classifyTurn failed; defaulting to new_request",
+      );
+    }
+    return { class: "new_request" as const, fallback };
+  };
+  let content: string | null | undefined;
   try {
     const response = await aiChat(
       "finder-classify-turn",
@@ -48,20 +71,24 @@ Return JSON: {"class": "new_request" | "refine_current" | "other"}
 
 ${SYSTEM_PROMPT_BOUNDARY}`,
           },
-          { role: "user", content: sanitizeUserInput(message) },
+          { role: "user", content: sanitizeContextField(message, 2000) },
         ],
       },
       { timeout: CLASSIFY_TURN_TIMEOUT_MS },
     );
-    const content = response.choices[0]?.message?.content;
-    if (!content) return "new_request";
-    const parsed = validateAiResponse(JSON.parse(content), responseSchema);
-    return parsed ? parsed.class : "new_request";
+    content = response.choices[0]?.message?.content;
   } catch (error) {
-    log.warn(
-      { err: toError(error) },
-      "classifyTurn failed; defaulting to new_request",
-    );
-    return "new_request";
+    return fellBack("call_failed", error);
   }
+  if (!content) return fellBack("empty");
+  let json: unknown;
+  try {
+    json = JSON.parse(content);
+  } catch (error) {
+    return fellBack("unparseable", error);
+  }
+  const parsed = validateAiResponse(json, responseSchema);
+  return parsed
+    ? { class: parsed.class, fallback: null }
+    : fellBack("unparseable");
 }

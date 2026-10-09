@@ -2373,6 +2373,54 @@ describe("handleCoachChat — recipe offer (Coach Pro, RECIPE_OFFER_ENABLED on)"
     expect(assistantWrites()).toHaveLength(0);
   });
 
+  it("a turnKey dedup hit on an offer yields the STORED card's flowId, not a fresh one", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([userRow("chili")]);
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(
+      createMockChatMessage({
+        role: "assistant",
+        turnKey: TURN,
+        content: OFFER_TEXT,
+        metadata: { blocks: [offerBlock] },
+      }),
+    );
+    toolOnly({ dish: "Chili", from_conversation: false });
+    const events = await collectEvents(
+      handleCoachChat(makeParams({ content: "chili", finder, turnKey: TURN })),
+    );
+    expect(assistantWrites()).toHaveLength(0);
+    expect(events.at(-1)).toEqual({ type: "blocks", blocks: [offerBlock] });
+  });
+
+  it("a turnKey dedup hit on a re-posted card yields the STORED card's flowId", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+      assistantWith(adjustBlock),
+      userRow("so the chili then"),
+    ]);
+    const stored: FinderBlock = {
+      ...adjustBlock,
+      flow: {
+        ...adjustBlock.flow,
+        flowId: "44444444-4444-4444-8444-444444444444",
+      },
+    };
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(
+      createMockChatMessage({
+        role: "assistant",
+        turnKey: TURN,
+        metadata: { blocks: [stored] },
+      }),
+    );
+    toolOnly({ dish: "Chili", from_conversation: true });
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({ content: "so the chili then", finder, turnKey: TURN }),
+      ),
+    );
+    expect(assistantWrites()).toHaveLength(0);
+    expect(events.at(-1)).toEqual({ type: "blocks", blocks: [stored] });
+  });
+
   it("repeat = yes: same dish while the offer is open → runCoachFinderTurn with offer_yes for that flow (adjust card)", async () => {
     vi.mocked(storage.getChatMessages).mockResolvedValue([
       createMockChatMessage({ id: 1, role: "user", content: "chili" }),
@@ -2409,6 +2457,56 @@ describe("handleCoachChat — recipe offer (Coach Pro, RECIPE_OFFER_ENABLED on)"
     });
     expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
     expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("a turnKey dedup hit on repeat = yes yields the STORED adjust card's flowId", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+      assistantWith(offerBlock),
+      userRow("yes, the chili"),
+    ]);
+    const stored: FinderBlock = {
+      ...adjustBlock,
+      flow: {
+        ...adjustBlock.flow,
+        flowId: "55555555-5555-4555-8555-555555555555",
+      },
+    };
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(
+      createMockChatMessage({
+        role: "assistant",
+        turnKey: TURN,
+        metadata: { blocks: [stored] },
+      }),
+    );
+    toolOnly({ dish: "chili", from_conversation: true });
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({ content: "yes, the chili", finder, turnKey: TURN }),
+      ),
+    );
+    expect(assistantWrites()).toHaveLength(0);
+    expect(events.at(-1)).toEqual({ type: "blocks", blocks: [stored] });
+  });
+
+  it("repeat = yes keeps streamed pre-tool text as the adjust message's lead line", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+      assistantWith(offerBlock),
+      userRow("yes, the chili"),
+    ]);
+    toolOnly({ dish: "chili", from_conversation: true }, "Sure!");
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({ content: "yes, the chili", finder, turnKey: TURN }),
+      ),
+    );
+    expect(assistantWrites()).toHaveLength(1);
+    const [, , , text, metadata] = assistantWrites()[0];
+    expect(text).toMatch(/^Sure!\n\n\S/);
+    const saved = (metadata as { blocks: FinderBlock[] }).blocks;
+    expect(saved.at(-1)?.type).toBe("recipe_adjust");
+    expect(events.at(-1)).toEqual({ type: "blocks", blocks: saved });
   });
 
   it("after No (closed offer), the same dish gets a fresh offer, not the card", async () => {

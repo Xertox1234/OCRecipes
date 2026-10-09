@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { askDishFollowUps } from "../ask-follow-ups";
 import { aiChat } from "../../../lib/ai-client";
+import { sanitizeContextField } from "../../../lib/ai-safety";
 import { createMockChatCompletion } from "../../../__tests__/factories";
 
 vi.mock("../../../lib/ai-client", () => ({ aiChat: vi.fn() }));
@@ -85,6 +86,61 @@ describe("askDishFollowUps", () => {
     await expect(askDishFollowUps("Meatballs", details, [])).resolves.toEqual([
       keep,
     ]);
+  });
+
+  it("keeps the valid questions when one in the batch is invalid", async () => {
+    const keep = q("Beef or pork?");
+    mockCreate.mockResolvedValue(
+      createMockChatCompletion(
+        JSON.stringify({
+          questions: [{ question: "Sauce?", options: ["only one"] }, keep],
+        }),
+      ),
+    );
+    await expect(askDishFollowUps("Meatballs", details, [])).resolves.toEqual([
+      keep,
+    ]);
+  });
+
+  it("drops a repeated question (the server accepts one answer per question)", async () => {
+    const beef = q("Beef or pork?");
+    const sauce = q("Red or white sauce?");
+    mockCreate.mockResolvedValue(
+      createMockChatCompletion(
+        JSON.stringify({ questions: [beef, beef, sauce] }),
+      ),
+    );
+    await expect(askDishFollowUps("Meatballs", details, [])).resolves.toEqual([
+      beef,
+      sauce,
+    ]);
+  });
+
+  it("puts the dish, transcript and ingredients through the sanitiser", async () => {
+    vi.mocked(sanitizeContextField).mockImplementation(
+      (t: string) => `ctx(${t})`,
+    );
+    try {
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify({ questions: [] })),
+      );
+      await askDishFollowUps("Meatballs", details, [
+        { role: "user", content: "make meatballs" },
+        { role: "assistant", content: "Sure thing" },
+      ]);
+      expect(sanitizeContextField).toHaveBeenCalledWith("Meatballs", 80);
+      expect(sanitizeContextField).toHaveBeenCalledWith("make meatballs", 300);
+      expect(sanitizeContextField).toHaveBeenCalledWith("Sure thing", 300);
+      expect(sanitizeContextField).toHaveBeenCalledWith("beef", 60);
+      // The prompt carries the sanitiser's OUTPUT, not the raw text.
+      const prompt = mockCreate.mock.calls[0][1].messages[1].content;
+      expect(prompt).toContain("Dish: ctx(Meatballs)");
+      expect(prompt).toContain("User: ctx(make meatballs)");
+      expect(prompt).toContain("Assistant: ctx(Sure thing)");
+      expect(prompt).toContain("Ingredients mentioned: ctx(beef)");
+    } finally {
+      vi.mocked(sanitizeContextField).mockImplementation((t: string) => t);
+    }
   });
 
   it("drops questions about allergies, servings, spice or time", async () => {

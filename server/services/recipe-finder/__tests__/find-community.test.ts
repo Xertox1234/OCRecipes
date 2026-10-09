@@ -68,6 +68,9 @@ function searchReturns(hits: [SearchableRecipe, number][]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks keeps queued mockResolvedValueOnce values: a test that
+  // queues a retry page it never consumes would hand it to the next test.
+  vi.mocked(searchRecipes).mockReset();
   vi.mocked(isIndexInitialized).mockReturnValue(true);
 });
 
