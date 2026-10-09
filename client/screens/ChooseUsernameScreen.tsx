@@ -39,6 +39,8 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
   // COPPA 13+ attestation — the person's own checkbox; server enforces true.
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [error, setError] = useState("");
+  // Bumped on each validation reject (not server errors) to shake the error.
+  const [shakeKey, setShakeKey] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const onSubmit = async () => {
@@ -48,6 +50,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
     const invalid = validateUsername(trimmed);
     if (invalid) {
       setError(invalid);
+      setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -110,7 +113,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
             error={!!error}
             errorMessage={error || undefined}
           />
-          <InlineError message={error} />
+          <InlineError message={error} shakeKey={shakeKey} />
 
           <Pressable
             onPress={() => {

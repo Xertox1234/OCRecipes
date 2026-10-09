@@ -48,6 +48,8 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  // Bumped on each validation reject (not server errors) to shake the error.
+  const [shakeKey, setShakeKey] = useState(0);
   const [errorField, setErrorField] = useState<ResetFormField | null>(null);
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
@@ -70,6 +72,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
     if (invalid) {
       setError(invalid.message);
       setErrorField(invalid.field);
+      setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -197,7 +200,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             accessibilityLabel="Confirm new password"
             accessibilityHint="Re-enter the new password"
           />
-          <InlineError message={error} />
+          <InlineError message={error} shakeKey={shakeKey} />
           <Button
             onPress={onSubmit}
             loading={busy}
