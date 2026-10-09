@@ -24,7 +24,7 @@ Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-inj
 ### Central configuration (`server/lib/ai-client.ts`, `server/lib/ai-models.ts`, `server/lib/openai.ts`)
 
 - Every chat/vision call goes through `aiChat(feature, params, options)` in `server/lib/ai-client.ts` — never `openai.chat.completions.create` directly (lint rule `ocrecipes/no-direct-chat-completions`). The model is not in the call: each feature is a row in `AI_FEATURES` (`server/lib/ai-models.ts`) with `model` (OpenRouter id), `fallback` (direct-OpenAI model), and `json`/`vision` flags. A new AI call means a new row.
-- Tiers today: the FAST rows use `gpt-4o-mini` (parsing, classification, coaching); the HEAVY rows use `gpt-4o` (vision, recipe generation, meal planning).
+- Tiers today: FAST rows use `gpt-4o-mini` (parsing, classification, extraction); HEAVY rows use `gpt-4o` (most vision, recipe generation, meal planning); LUNA rows use `gpt-6-luna` (both coach chats; `gpt-4o-mini` fallback). Each row picks its own tier — modality does not decide it (`photo-classify` is FAST vision, `photo-refine` is HEAVY text).
 - Timeout tiers (still in `server/lib/openai.ts`, passed as `aiChat`'s third argument): `OPENAI_TIMEOUT_FAST_MS` 15s (food-nlp: simple text parsing) · `OPENAI_TIMEOUT_STREAM_MS` 30s (nutrition-coach: streaming chat) · `OPENAI_TIMEOUT_HEAVY_MS` 60s (recipe/meal generation: large budgets) · `OPENAI_TIMEOUT_IMAGE_MS` 120s (DALL-E image generation)
 - `isAiConfigured` — true only when the API key is set
 
@@ -42,14 +42,16 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 
 ## AI Services Inventory
 
-**Vision (HEAVY rows, gpt-4o):**
+**Vision (rows with `vision: true`, mostly HEAVY — check each row's tier in `ai-models.ts`):**
 
-- `server/services/photo-analysis.ts` — 4 intents: log/calories/recipe/identify; confidence scoring, follow-up when < 0.7
+- `server/services/photo-analysis.ts` — 4 intents: log/calories/recipe/identify; confidence scoring, follow-up when < 0.7. Mixed rows: HEAVY vision (`photo-recipe`, `photo-label`, `photo-analyze`), FAST vision (`photo-classify`), and text-only rows (`photo-refine` HEAVY, `photo-recipe-text` FAST)
 - `server/services/menu-analysis.ts` — restaurant menu photo scanning & nutritional analysis
 - `server/services/front-label-analysis.ts` — nutrition-label text extraction from photos
 - `server/services/receipt-analysis.ts` — multi-photo receipt scanning (all pages as separate `image_url` entries in one call)
 
-**Text (FAST or HEAVY rows — check each row in `ai-models.ts`), all under `server/services/`:** `food-nlp.ts` (natural-language food parsing, e.g. "2 eggs and toast"), `nutrition-coach.ts` (streaming chat), `meal-suggestions.ts`, `recipe-generation.ts` (premium), `recipe-chat.ts`, `cooking-session.ts` (step-by-step guidance), `ingredient-substitution.ts`, `voice-transcription.ts`, `pantry-meal-plan.ts`.
+**Text (FAST, HEAVY or LUNA rows — check each row in `ai-models.ts`), all under `server/services/`:** `food-nlp.ts` (natural-language food parsing, e.g. "2 eggs and toast"), `nutrition-coach.ts` (streaming chat), `meal-suggestions.ts`, `recipe-generation.ts` (premium), `recipe-chat.ts`, `cooking-session.ts` (step-by-step guidance), `ingredient-substitution.ts`, `pantry-meal-plan.ts`.
+
+**Audio:** `server/services/voice-transcription.ts` — calls the direct `openai` client (`openai.audio.transcriptions.create`); no `AI_FEATURES` row, since `aiChat` covers chat/vision only.
 
 **Image generation:** `server/services/carousel-builder.ts` — recipe card images via Runware (FLUX.2 klein 9B KV default, FLUX.1 dev for curated recipes — see `server/lib/runware.ts`) with DALL-E fallback.
 
@@ -80,7 +82,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 
 ### Model & Cost
 
-- [ ] Correct model choice: the call goes through `aiChat` with a feature whose `ai-models.ts` row has the right tier (FAST for text, HEAVY for vision) and accurate `json`/`vision` flags — using `gpt-4o` for simple text parsing wastes money
+- [ ] Correct model choice: the call goes through `aiChat` with a feature whose `ai-models.ts` row has a tier that fits the task (the row's tier is the authority, not the modality — FAST suits simple parsing/classification even with an image; HEAVY suits generation and hard extraction) and accurate `json`/`vision` flags — using `gpt-4o` for simple text parsing wastes money
 - [ ] Appropriate `max_completion_tokens` — not excessively large (e.g. 16000 for a yes/no question)
 - [ ] `temperature` set appropriately (low for extraction, higher for creative)
 - [ ] Timeout from the correct tier constant (`OPENAI_TIMEOUT_*_MS`)
