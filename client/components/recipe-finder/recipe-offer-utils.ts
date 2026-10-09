@@ -3,11 +3,12 @@ import {
   COOKING_TIMES,
   type CookingTimeId,
 } from "@shared/constants/cooking-times";
-import type {
-  FinderAction,
-  FinderAnswer,
-  RecipeAdjustBlock,
-  SpiceLevel,
+import {
+  OFFER_REPLY_HINT,
+  type FinderAction,
+  type FinderAnswer,
+  type RecipeAdjustBlock,
+  type SpiceLevel,
 } from "@shared/schemas/recipe-finder";
 
 export const MIN_SERVINGS = 1;
@@ -66,14 +67,18 @@ export function buildAdjustAction(
   };
 }
 
-// RecipeChef's offer text is the old-client fallback, which ends with a
-// typed-reply hint; the buttons replace that hint, so it isn't shown above them.
-const REPLY_HINT = /\n*Reply "yes", "search", or "no"\.\s*$/;
-
-/** The offer copy the server wrote, minus the old-client reply hint. */
+/**
+ * The offer copy the server wrote, minus the old-client reply hint.
+ * RecipeChef's offer text is the old-client fallback, which ends with
+ * OFFER_REPLY_HINT; the buttons replace that hint, so it isn't shown above
+ * them.
+ */
 export function offerDisplayText(content: string | undefined): string {
   if (!content) return "";
-  return content.replace(REPLY_HINT, "").trimEnd();
+  const text = content.trimEnd();
+  return text.endsWith(OFFER_REPLY_HINT)
+    ? text.slice(0, -OFFER_REPLY_HINT.length).trimEnd()
+    : text;
 }
 
 export function avoidingAccessibilityLabel(avoiding: string[]): string {

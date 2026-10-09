@@ -7,6 +7,13 @@ import { COOKING_TIME_IDS } from "../constants/cooking-times";
 /** Max rows in one finder list (D3: 3–5 close matches). */
 export const FINDER_MAX_ITEMS = 5;
 
+/**
+ * The typed-reply hint the server ends an offer's fallback text with (for
+ * app builds without the offer buttons). Clients that show the buttons strip
+ * it — one string, so the writer and the stripper can't drift apart.
+ */
+export const OFFER_REPLY_HINT = 'Reply "yes", "search", or "no".';
+
 export const recipeQuerySchema = z.object({
   q: z.string().trim().min(1).max(200),
   cuisine: z.string().trim().min(1).max(50).optional(),

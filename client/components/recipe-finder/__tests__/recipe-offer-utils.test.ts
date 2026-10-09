@@ -1,5 +1,6 @@
 import {
   finderActionSchema,
+  OFFER_REPLY_HINT,
   type RecipeAdjustBlock,
 } from "@shared/schemas/recipe-finder";
 import {
@@ -120,6 +121,15 @@ describe("offerDisplayText", () => {
     expect(
       offerDisplayText(`${OFFER}\n\nReply "yes", "search", or "no".`),
     ).toBe(OFFER);
+  });
+
+  it("drops the shared hint constant the server appends", () => {
+    expect(offerDisplayText(`${OFFER}\n\n${OFFER_REPLY_HINT}\n`)).toBe(OFFER);
+  });
+
+  it("keeps the hint when it is not at the end", () => {
+    const content = `${OFFER_REPLY_HINT} Or just ask me anything.`;
+    expect(offerDisplayText(content)).toBe(content);
   });
 
   it("keeps Coach lead text and the offer copy as written", () => {
