@@ -63,7 +63,7 @@ prefill.
 - `client/components/recipe-finder/recipe-offer-utils.ts` — `AdjustChoicesStore`
 - `client/components/recipe-finder/RecipeAdjust.tsx` — reads and writes the store by `flowId`
 - `client/screens/RecipeChatScreen.tsx` / `client/components/coach/CoachChat.tsx` — one store per screen
-- `client/screens/__tests__/RecipeChatScreen.test.tsx` — the pending → saved swap keeps the picks
+- `client/components/recipe-finder/__tests__/offer-adjust-recipechef.test.tsx` — "the adjust card survives the pending → saved swap" (keeps the picks and checks the Generate payload); `RecipeAdjust.test.tsx` covers the remount restore at component level
 
 ## See Also
 
