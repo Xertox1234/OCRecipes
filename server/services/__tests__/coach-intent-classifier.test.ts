@@ -223,6 +223,12 @@ describe("classifyIntent", () => {
         "skip eating for days",
         "go 7 days without eating",
         "how long can I go without food",
+        "I want to starve myself",
+        "I'm starving myself to lose weight",
+        "how do I starve yourself safely",
+        "not eat for 48 hours",
+        "go 72 hours without food",
+        "stop eating for 36 hrs",
       ];
       const NEGATIVE = [
         "skip breakfast",
@@ -233,6 +239,12 @@ describe("classifyIntent", () => {
         "stop eating meat for a week",
         "I want to stop eating so much junk",
         "fast for 12 hours",
+        "I'm starving, what should I eat?",
+        "starving after the gym",
+        "starve off hunger",
+        "not eat for 3 hours before bed",
+        "stop eating 2 hours before sleep",
+        "stop eating for 12 hours",
       ];
       it.each(POSITIVE)("%s -> safety_refusal", (msg) => {
         const r = classifyIntent(msg);
