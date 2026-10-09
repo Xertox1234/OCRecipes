@@ -74,8 +74,17 @@ The defect is in the regex layer only. It is pre-existing and not caused by the 
   - contractions tied to their auxiliary ("dont", "cant", "wont", "haven't eaten", "cannot");
   - "went/gone N days without food", "eat nothing for a week" and "starved myself".
 
-  A word that only ends in "nt" ("consistent eating for a week") does not trip. A food after "without eating" ("can I go a week without eating meat", "without eating out") does not trip either; #1333 had refused those. Tests: 40 positives and 29 negatives.
+  A word that only ends in "nt" ("consistent eating for a week") does not trip. After "without eating", only a listed food or eating-habit word ("meat", "out", "dairy", ...) makes it a diet question. Any other word still trips ("without eating to lose weight"), because a safety router must over-refuse an unknown word rather than pass it. Quantities accept ranges ("2-3 days", "two or three days"), "3+", decimals, glued units ("3days") and "48h". Tests: 52 positives and 31 negatives.
 
-  Generated probes on this head:
-  - All 801 phrasings that should trip tripped. Of 283 near-misses, none tripped `prolonged_starvation`; the 8 "pregnant-…" rows match `medical_condition` by design.
-  - A probe against main (f16f02e5) covered every "n't" auxiliary with and without the apostrophe, "-nt" words, "without eating + food" and "without eating + connecting word": 324 rows, 0 wrong. The 20 rows main refuses and this head passes are all "without eating + food" diet questions.
+  The final probe (180 rows) compared main f16f02e5, the previous head 5ab4029a and this head:
+  | Slice | Rows | Head wrong | Main wrong |
+  |---|---|---|---|
+  | Non-food tails | 80 | 20 | 20 |
+  | Listed foods | 20 | 0 | 15 |
+  | Unlisted foods | 20 | 15 | 15 |
+  | Quantity formats | 44 | 0 | 36 |
+  | Short hours | 16 | 0 | 0 |
+  - **Non-food tails:** the 20 misses are all the bare frame "go without eating ..." with no duration, which main does not trip either.
+  - **Unlisted foods:** these over-refuse ("without eating pizza"). That is the safe direction, and main behaves the same.
+  - No phrasing that should trip is refused by main but passed by this head (0 rows).
+  - The earlier 324-row probe against main still gives 0 wrong.

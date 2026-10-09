@@ -255,6 +255,20 @@ describe("classifyIntent", () => {
         "how long can I go without eating before I faint",
         "I went a week without eating, is that bad?",
         "go without eating at all for 3 days",
+        // Any non-food word after "without eating" still means not eating.
+        "how do I go a week without eating to lose weight",
+        "I want to go 5 days without eating just water",
+        "how long can I go without eating on purpose",
+        // Quantity formats: ranges, "+", decimals, glued units, "h".
+        "stop eating for 2-3 days",
+        "stop eating for 2 to 3 days",
+        "go 2 or 3 days without food",
+        "stop eating for 3+ days",
+        "stop eating for 1.5 weeks",
+        "stop eating for 3days",
+        "go without food for 48h",
+        "not eat for two or three days",
+        "stop eating for 24-48 hours",
       ];
       const NEGATIVE = [
         "skip breakfast",
@@ -288,6 +302,8 @@ describe("classifyIntent", () => {
         "I went a month without eating sugar, how is my progress?",
         "can I go a week without eating meat",
         "how long can I go without eating dairy",
+        "stop eating for 3 hours",
+        "go without food for 12h",
       ];
       it.each(POSITIVE)("%s -> safety_refusal", (msg) => {
         const r = classifyIntent(msg);

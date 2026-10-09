@@ -12,29 +12,40 @@ export interface IntentClassification {
 }
 
 // Building blocks for the prolonged-starvation pattern below. One quantity
-// list and one duration list feed all three phrasings, so widening a
-// dimension is one edit.
-const STARVE_QTY =
-  "(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen|twenty|thirty|several|few|a\\s+few|many|some|multiple|(?:a\\s+)?couple(?:\\s+of)?|(?:the|a)\\s+(?:whole|full|entire)|an\\s+entire|\\d+)";
-const STARVE_DURATION =
-  "(?:days?|weeks?|months?|(?:2[4-9]|[3-9]\\d|\\d{3,})\\s*(?:hours?|hrs?))";
+// list and one duration list feed every phrasing, so widening a dimension is
+// one edit.
+const STARVE_WORD_NUM =
+  "(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen|twenty|thirty)";
+// A numeric quantity, with an optional range ("2-3", "2 to 3", "2 or 3"),
+// decimal ("1.5") or "+" ("3+").
+const STARVE_NUM =
+  "\\d+(?:\\.\\d+)?(?:\\s*(?:-|to|or)\\s*\\d+(?:\\.\\d+)?)?\\+?";
+const STARVE_QTY = `(?:${STARVE_NUM}|${STARVE_WORD_NUM}(?:\\s+(?:or|to)\\s+${STARVE_WORD_NUM})?|a|an|several|few|a\\s+few|many|some|multiple|(?:a\\s+)?couple(?:\\s+of)?|(?:the|a)\\s+(?:whole|full|entire)|an\\s+entire)`;
+// 24+ hours, optionally as a range ("24-48 hours") or glued ("48h").
+const STARVE_HOURS =
+  "(?:\\d+\\s*(?:-|to|or)\\s*)?(?:2[4-9]|[3-9]\\d|\\d{3,})\\s*(?:hours?|hrs?|h)";
+const STARVE_DURATION = `(?:days?|weeks?|months?|${STARVE_HOURS})`;
 // An optional hedge before the quantity: "more than a week", "at least 3 days".
 const STARVE_HEDGE =
   "(?:(?:more\\s+than|over|at\\s+least|about|around|almost|nearly)\\s+)?";
-// "for (hedge) (qty) duration": the quantity is optional ("for days").
-const FOR_DURATION = `for\\s+${STARVE_HEDGE}(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}`;
+// "(qty) duration": the quantity is optional ("for days") and may be glued to
+// its unit ("3days").
+const QTY_DURATION = `${STARVE_HEDGE}(?:${STARVE_QTY}\\s*)?${STARVE_DURATION}`;
+const FOR_DURATION = `for\\s+${QTY_DURATION}`;
 // A negating verb. The contraction is tied to its auxiliary ("don't", "dont",
 // "can't", "wont"), so a word that merely ends in "nt" ("consistent eating",
 // "plant eating") is not read as a negation.
 const STARVE_NEGATION =
   "\\b(?:stop|quit|skip|avoid|cease|not|cannot|(?:do|does|did|wo|ca|could|would|should|must|have|has|had|is|are|was|were|ai|need|might|ought)n['\\u2019]?t)";
 const GO = "\\b(?:go|going|goes|went|gone)";
-// "without eating" / "without food" as a whole: "eating" may be followed only
-// by the end of the text, punctuation, or a connecting word ("for a week",
-// "before I faint", "at all"), never by a food ("without eating meat",
-// "without eating out").
-const WITHOUT_EATING =
-  "without\\s+(?:food|eating(?!\\s+(?!(?:anything|at\\s+all|for|or|and|since|until|till|because|before|while|when|so|but|if|then|is|was|will|would|safely|completely|entirely|properly|again)\\b)[a-z]))\\b";
+// "without eating" / "without food". A known food or eating-habit word right
+// after "eating" ("without eating meat", "without eating out") makes it a diet
+// question. Any OTHER word still counts as not eating ("without eating to lose
+// weight"): this is a safety router, so an unlisted word must over-refuse
+// rather than slip through.
+const DIET_WORD =
+  "(?:out|late|after|at\\s+night|between|meat|red\\s+meat|beef|pork|chicken|fish|seafood|eggs?|dairy|cheese|milk|sugar|sweets|candy|chocolate|desserts?|carbs?|bread|pasta|rice|gluten|wheat|grains?|junk|fast\\s+food|fried|processed|snacks?|chips|soda|fruit|vegetables|veggies|breakfast|lunch|dinner|meals?\\s+out|takeout|takeaway)";
+const WITHOUT_EATING = `without\\s+(?:food|eating(?!\\s+${DIET_WORD}\\b))\\b`;
 const PROLONGED_STARVATION = new RegExp(
   [
     // stop/skip/not/don't (or "dont")/haven't eat(ing/en) [anything] for <duration>
@@ -42,7 +53,7 @@ const PROLONGED_STARVATION = new RegExp(
     // eat nothing for <duration>
     `\\beat(?:ing)?\\s+nothing\\s+${FOR_DURATION}\\b`,
     // go/went/gone (for) <duration> without eating/food
-    `${GO}\\s+(?:for\\s+)?${STARVE_HEDGE}(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}\\s+${WITHOUT_EATING}`,
+    `${GO}\\s+(?:for\\s+)?${QTY_DURATION}\\s+${WITHOUT_EATING}`,
     // go/went/gone without eating/food for <duration>
     `${GO}\\s+${WITHOUT_EATING}(?:\\s+(?:anything|at\\s+all))?\\s+${FOR_DURATION}\\b`,
     // starve/starved/starving + reflexive
