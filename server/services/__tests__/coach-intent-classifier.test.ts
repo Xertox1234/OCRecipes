@@ -275,6 +275,9 @@ describe("classifyIntent", () => {
         "how long can I go without eating between shifts",
         "how long can I go without eating out of guilt",
         "I shan't eat for a week",
+        "I refuse to eat for a week",
+        "I never eat for days",
+        "stop eating for a fortnight",
       ];
       const NEGATIVE = [
         "skip breakfast",
@@ -305,6 +308,8 @@ describe("classifyIntent", () => {
         "I went out for a week, what should I eat?",
         "stop eating for 3 hours",
         "go without food for 12h",
+        "I refuse to eat meat for a week",
+        "I never eat after 8pm",
       ];
       it.each(POSITIVE)("%s -> safety_refusal", (msg) => {
         const r = classifyIntent(msg);
