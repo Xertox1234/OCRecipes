@@ -11,6 +11,51 @@ export interface IntentClassification {
   matchedRule: string;
 }
 
+// Building blocks for the prolonged-starvation pattern below. One quantity
+// list and one duration list feed every phrasing, so widening a dimension is
+// one edit.
+const STARVE_WORD_NUM =
+  "(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen|twenty|thirty)";
+// A numeric quantity, with an optional range ("2-3", "2 to 3", "2 or 3"),
+// decimal ("1.5") or "+" ("3+").
+const STARVE_NUM =
+  "\\d+(?:\\.\\d+)?(?:\\s*(?:-|to|or)\\s*\\d+(?:\\.\\d+)?)?\\+?";
+const STARVE_QTY = `(?:${STARVE_NUM}|${STARVE_WORD_NUM}(?:\\s+(?:or|to)\\s+${STARVE_WORD_NUM})?|a|an|several|few|a\\s+few|many|some|multiple|(?:a\\s+)?couple(?:\\s+of)?|(?:the|a)\\s+(?:whole|full|entire)|an\\s+entire)`;
+// 24+ hours, optionally as a range ("24-48 hours") or glued ("48h").
+const STARVE_HOURS =
+  "(?:\\d+\\s*(?:-|to|or)\\s*)?(?:2[4-9]|[3-9]\\d|\\d{3,})\\s*(?:hours?|hrs?|h)";
+const STARVE_DURATION = `(?:days?|weeks?|months?|${STARVE_HOURS})`;
+// An optional hedge before the quantity: "more than a week", "at least 3 days".
+const STARVE_HEDGE =
+  "(?:(?:more\\s+than|over|at\\s+least|about|around|almost|nearly)\\s+)?";
+// "(qty) duration": the quantity is optional ("for days") and may be glued to
+// its unit ("3days").
+const QTY_DURATION = `${STARVE_HEDGE}(?:${STARVE_QTY}\\s*)?${STARVE_DURATION}`;
+const FOR_DURATION = `for\\s+${QTY_DURATION}`;
+// A negating verb. The contraction is tied to its auxiliary ("don't", "dont",
+// "can't", "wont", "shan't"), so a word that merely ends in "nt" ("consistent eating",
+// "plant eating") is not read as a negation.
+const STARVE_NEGATION =
+  "\\b(?:stop|quit|skip|avoid|cease|not|cannot|(?:do|does|did|wo|ca|could|would|should|must|have|has|had|is|are|was|were|ai|need|might|ought|sha)n['\\u2019]?t)";
+const GO = "\\b(?:go|going|goes|went|gone)";
+const WITHOUT_EATING = "without\\s+(?:eating|food)\\b";
+const PROLONGED_STARVATION = new RegExp(
+  [
+    // stop/skip/not/don't (or "dont")/haven't eat(ing/en) [anything] for <duration>
+    `${STARVE_NEGATION}\\s+eat(?:ing|en)?\\s+(?:(?:anything|any\\s+food|food|at\\s+all|entirely|completely|altogether)\\s+)*${FOR_DURATION}\\b`,
+    // eat nothing for <duration>
+    `\\beat(?:ing)?\\s+nothing\\s+${FOR_DURATION}\\b`,
+    // go/went/gone (for) <duration> without eating/food
+    `${GO}\\s+(?:for\\s+)?${QTY_DURATION}\\s+${WITHOUT_EATING}`,
+    // go/went/gone without eating/food for <duration>
+    `${GO}\\s+${WITHOUT_EATING}(?:\\s+(?:anything|at\\s+all))?\\s+${FOR_DURATION}\\b`,
+    // starve/starved/starving + reflexive
+    `\\bstarv(?:e|ed|ing)\\s+(?:myself|yourself|himself|herself|themselves|ourselves)\\b`,
+    `\\bhow\\s+long\\s+(?:can|could|would)\\s+(?:i|you|a\\s+person|someone|one)\\s+(?:go|survive|last)\\s+${WITHOUT_EATING}`,
+  ].join("|"),
+  "i",
+);
+
 // ── Safety patterns (ordered; first match wins) ──────────────────────────────
 
 const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
@@ -72,6 +117,17 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     // trips; "starving, what should I eat" and "starve off hunger" do not.
     pattern:
       /(?:(?:\b(?:stop|quit|skip|avoid|cease|not)|n['\u2019]t)\s+eat(?:ing)?\s+(?:(?:anything|any\s+food|food|at\s+all|entirely|completely|altogether)\s+)*for\s+(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\b|\bgo(?:ing)?\s+(?:for\s+)?(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\s+without\s+(?:eating|food)\b|\bgo(?:ing)?\s+without\s+(?:eating|food)\s+for\s+(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\b|\bstarv(?:e|ing)\s+(?:myself|yourself|himself|herself|themselves|ourselves)\b|\bhow\s+long\s+(?:can|could|would)\s+(?:i|you|a\s+person|someone|one)\s+(?:go|survive|last)\s+without\s+(?:eating|food)\b)/i,
+    name: "prolonged_starvation",
+  },
+  {
+    // Wider phrasings of the same intent, as a SECOND entry so the one above
+    // (#1333) keeps everything it already refuses: this entry can only add
+    // refusals, never remove one. Adds months, number words, ranges ("2-3
+    // days", "3+", "1.5 weeks", "48h"), hedges ("more than a week"),
+    // contractions tied to their auxiliary ("dont", "isn't", "haven't
+    // eaten" — so "consistent eating" is not a negation), "went/gone N days
+    // without food", "eat nothing for a week" and "starved myself".
+    pattern: PROLONGED_STARVATION,
     name: "prolonged_starvation",
   },
   {
