@@ -81,21 +81,19 @@ describe("RecipeAdjust — servings stepper", () => {
     setup({
       block: { ...block, prefill: { ...block.prefill, servings: 2 } },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Fewer servings" }));
+    fireEvent.click(screen.getByLabelText("Fewer servings"));
     expect(screen.getByTestId("adjust-servings").textContent).toBe("1");
     expect(
-      screen
-        .getByRole("button", { name: "Fewer servings" })
-        .getAttribute("aria-disabled"),
+      screen.getByLabelText("Fewer servings").getAttribute("aria-disabled"),
     ).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByLabelText("More servings"));
+    fireEvent.click(screen.getByLabelText("More servings"));
     expect(screen.getByTestId("adjust-servings").textContent).toBe("3");
   });
 
   it("ticks once per step", () => {
     setup();
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByLabelText("More servings"));
     expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
   });
 });
@@ -124,7 +122,7 @@ describe("RecipeAdjust — chips", () => {
 describe("RecipeAdjust — actions", () => {
   it("Generate sends a schema-valid action with the settings and only the answered questions", () => {
     const { onAction } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByLabelText("More servings"));
     fireEvent.click(screen.getByRole("radio", { name: "Medium" }));
     fireEvent.click(screen.getByRole("radio", { name: "Under 30 minutes" }));
     fireEvent.click(screen.getByRole("radio", { name: "Mix" }));
@@ -165,9 +163,7 @@ describe("RecipeAdjust — actions", () => {
     const generate = screen.getByRole("button", { name: "Generate" });
     expect(generate.getAttribute("aria-disabled")).toBe("true");
     expect(
-      screen
-        .getByRole("button", { name: "More servings" })
-        .getAttribute("aria-disabled"),
+      screen.getByLabelText("More servings").getAttribute("aria-disabled"),
     ).toBe("true");
     fireEvent.click(generate);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -192,12 +188,10 @@ describe("RecipeAdjust — fix round 1", () => {
     setup({
       block: { ...block, prefill: { ...block.prefill, servings: 19 } },
     });
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByLabelText("More servings"));
     expect(screen.getByTestId("adjust-servings").textContent).toBe("20");
     expect(
-      screen
-        .getByRole("button", { name: "More servings" })
-        .getAttribute("aria-disabled"),
+      screen.getByLabelText("More servings").getAttribute("aria-disabled"),
     ).toBe("true");
   });
 
@@ -268,7 +262,7 @@ describe("RecipeAdjust — fix round 1", () => {
         choicesStore={store}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByLabelText("More servings"));
     fireEvent.click(screen.getByRole("radio", { name: "Hot" }));
     fireEvent.click(screen.getByRole("radio", { name: "Pork" }));
     first.unmount();
@@ -301,7 +295,7 @@ describe("RecipeAdjust — fix round 1", () => {
         choicesStore={store}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByLabelText("More servings"));
     first.unmount();
     renderComponent(
       <RecipeAdjust

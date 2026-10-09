@@ -109,6 +109,11 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
   };
 
   const labelStyle = [styles.rowLabel, { color: theme.textSecondary }];
+  // A radiogroup below carries this same name. Android reads the labelled
+  // group node, so the visible text would be a second read there; iOS Fabric
+  // drops the group's label, so the text stays readable on iOS
+  // (`importantForAccessibility` is Android-only).
+  const groupLabelA11y = { importantForAccessibility: "no" } as const;
 
   return (
     <View
@@ -175,7 +180,9 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
       </View>
 
       <View style={styles.group}>
-        <ThemedText style={labelStyle}>Spice</ThemedText>
+        <ThemedText style={labelStyle} {...groupLabelA11y}>
+          Spice
+        </ThemedText>
         <View
           style={styles.chips}
           accessibilityRole="radiogroup"
@@ -196,7 +203,9 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
       </View>
 
       <View style={styles.group}>
-        <ThemedText style={labelStyle}>Time</ThemedText>
+        <ThemedText style={labelStyle} {...groupLabelA11y}>
+          Time
+        </ThemedText>
         <View
           style={styles.chips}
           accessibilityRole="radiogroup"
@@ -255,7 +264,9 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
           accessibilityRole="radiogroup"
           accessibilityLabel={q.question}
         >
-          <ThemedText style={styles.question}>{q.question}</ThemedText>
+          <ThemedText style={styles.question} {...groupLabelA11y}>
+            {q.question}
+          </ThemedText>
           <View style={styles.chips}>
             {q.options.map((option) => (
               <Chip
@@ -324,6 +335,10 @@ function StepperButton({
   onPress: () => void;
 }) {
   const { theme } = useTheme();
+  // The stepper around these is one adjustable node whose increment and
+  // decrement actions do the same job. iOS already hides an accessible
+  // parent's children; on Android an actionable child stays its own TalkBack
+  // stop, so the buttons leave the tree there too. Taps still work.
   return (
     <PressableScale
       onPress={onPress}
@@ -332,6 +347,8 @@ function StepperButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !enabled }}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
       style={[
         styles.stepperButton,
         { borderColor: theme.link },

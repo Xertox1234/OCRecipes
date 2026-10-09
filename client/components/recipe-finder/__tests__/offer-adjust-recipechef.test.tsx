@@ -116,8 +116,8 @@ describe("RecipeChef — the adjust card survives the pending → saved swap", (
       finder: (adjustMessage.metadata as { finder: unknown }).finder,
     };
     const { rerender } = renderComponent(<RecipeChatScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
-    fireEvent.click(screen.getByRole("button", { name: "More servings" }));
+    fireEvent.click(screen.getByLabelText("More servings"));
+    fireEvent.click(screen.getByLabelText("More servings"));
     fireEvent.click(screen.getByRole("radio", { name: "Hot" }));
     expect(screen.getByTestId("adjust-servings").textContent).toBe("10");
 
