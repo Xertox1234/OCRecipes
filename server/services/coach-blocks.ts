@@ -116,7 +116,10 @@ const OFFER_RECIPE_RULE =
 const FINDER_RECIPE_CARD_RULE =
   "- Never emit a recipe_card: you have no tool that returns real recipe data";
 
-/** BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. `offer` swaps the finder rule for the offer_recipe tool rule. */
+/**
+ * BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. `offer`
+ * swaps the finder rule for the offer_recipe tool rule.
+ */
 export function getBlocksSystemPrompt(
   finderEnabled: boolean,
   opts: { offer?: boolean } = {},

@@ -103,7 +103,7 @@ describe("registration", () => {
     ).toBe(true);
   });
 
-  it("isFinderBlockType names exactly the two finder types", () => {
+  it("isFinderBlockType accepts results/questions and rejects a non-finder type", () => {
     expect(isFinderBlockType("recipe_results")).toBe(true);
     expect(isFinderBlockType("recipe_questions")).toBe(true);
     expect(isFinderBlockType("recipe_card")).toBe(false);

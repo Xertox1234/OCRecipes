@@ -33,7 +33,6 @@ const {
   createChatMessage,
   deleteChatConversation,
   updateChatConversationTitle,
-  getDailyChatMessageCount,
   createChatMessageWithLimitCheck,
 } = await import("../chat");
 
@@ -313,23 +312,6 @@ describe("chat storage", () => {
 
       const messages = await getChatMessages(conv.id, 100, testUser.id);
       expect(messages).toEqual([]);
-    });
-  });
-
-  describe("getDailyChatMessageCount", () => {
-    it("counts user messages for the given day", async () => {
-      const conv = await createChatConversation(testUser.id, "Chat");
-      await createChatMessage(conv.id, testUser.id, "user", "Hello");
-      await createChatMessage(conv.id, testUser.id, "assistant", "Hi"); // should not count
-      await createChatMessage(conv.id, testUser.id, "user", "How are you?");
-
-      const count = await getDailyChatMessageCount(testUser.id, new Date());
-      expect(count).toBe(2);
-    });
-
-    it("returns 0 when no messages exist", async () => {
-      const count = await getDailyChatMessageCount(testUser.id, new Date());
-      expect(count).toBe(0);
     });
   });
 

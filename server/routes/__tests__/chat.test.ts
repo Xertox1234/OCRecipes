@@ -40,7 +40,6 @@ vi.mock("../../storage", () => ({
     createChatMessage: vi.fn(),
     createChatMessageWithLimitCheck: vi.fn(),
     getChatMessageByTurnKey: vi.fn(),
-    getDailyChatMessageCount: vi.fn(),
     getChatMessageCount: vi.fn(),
     getUser: vi.fn(),
     getUserProfile: vi.fn(),

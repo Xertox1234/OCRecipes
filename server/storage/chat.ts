@@ -284,31 +284,6 @@ export async function pinChatConversation(
   return updated || undefined;
 }
 
-export async function getDailyChatMessageCount(
-  userId: string,
-  date: Date,
-): Promise<number> {
-  const { startOfDay, endOfDay } = getDayBounds(date);
-
-  const result = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(chatMessages)
-    .innerJoin(
-      chatConversations,
-      eq(chatMessages.conversationId, chatConversations.id),
-    )
-    .where(
-      and(
-        eq(chatConversations.userId, userId),
-        eq(chatMessages.role, "user"),
-        gte(chatMessages.createdAt, startOfDay),
-        lt(chatMessages.createdAt, endOfDay),
-      ),
-    );
-
-  return Number(result[0]?.count ?? 0);
-}
-
 /**
  * Atomically check the daily message limit and create a chat message.
  * Wraps count-check + insert in a single transaction to prevent TOCTOU races
