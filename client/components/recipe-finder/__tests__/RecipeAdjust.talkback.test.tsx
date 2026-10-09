@@ -23,9 +23,13 @@ import type { RecipeAdjustBlock } from "@shared/schemas/recipe-finder";
 vi.mock("@/components/ThemedText", async () => {
   const RN = await import("react-native");
   const ReactMod = await import("react");
+  // The shared mock's Text takes any props; the RN type does not.
+  const MockText = RN.Text as unknown as React.ComponentType<
+    Record<string, unknown>
+  >;
   return {
     ThemedText: ({ maxScale: _maxScale, ...props }: Record<string, unknown>) =>
-      ReactMod.createElement(RN.Text, {
+      ReactMod.createElement(MockText, {
         ...props,
         "data-important-for-a11y": props.importantForAccessibility,
       }),
