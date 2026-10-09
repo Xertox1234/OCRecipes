@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@shared/types/premium";
 
 import { PremiumProvider, usePremiumContext } from "../PremiumContext";
+import { queryClient } from "@/lib/query-client";
 
 // The `default values` block exercises the REAL PremiumProvider / derivation
 // (tier, features, isPremium, dailyScanCount) instead of re-deriving it inline.
@@ -456,5 +457,126 @@ describe("isPremiumResolved — cold-start gate invariant", () => {
     // isPremiumResolved must flip to true — the gate opens, CoachPro route mounts
     await waitFor(() => expect(result.current.isPremiumResolved).toBe(true));
     expect(result.current.features.coachPro).toBe(true);
+  });
+});
+
+// A rate-limited (429), other non-2xx, or network-failed status read must never
+// downgrade a known tier, and must not render the "Premium feature" lock as if
+// the user were confirmed free. Only a SUCCESSFUL free response locks.
+describe("subscription status read failures never confirm the free tier", () => {
+  const STATUS_KEY = ["/api/subscription/status"];
+  const premium: SubscriptionStatus = {
+    tier: "premium",
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    features: TIER_FEATURES.premium,
+    isActive: true,
+    streakUnlocks: [],
+  };
+  type Ctx = { queryKey: readonly unknown[] };
+  const isStatus = (ctx: Ctx) => ctx.queryKey[0] === STATUS_KEY[0];
+
+  function renderWithFetch(
+    queryFn: (ctx: Ctx) => Promise<unknown>,
+    opts: {
+      seed?: SubscriptionStatus;
+      retry?: boolean | number | ((count: number, error: Error) => boolean);
+    } = {},
+  ) {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: opts.retry ?? false,
+          retryDelay: 1,
+          gcTime: Infinity,
+          queryFn,
+        },
+      },
+    });
+    if (opts.seed) client.setQueryData(STATUS_KEY, opts.seed);
+    function Wrapper({ children }: { children: React.ReactNode }) {
+      return React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(PremiumProvider, null, children),
+      );
+    }
+    return renderHook(() => usePremiumContext(), { wrapper: Wrapper });
+  }
+
+  const failing = (message: string) => async (ctx: Ctx) => {
+    if (isStatus(ctx)) throw new Error(message);
+    return { count: 0 };
+  };
+
+  it("keeps a previously premium tier when a refetch gets 429", async () => {
+    const { result } = renderWithFetch(failing("429: Too many requests"), {
+      seed: premium,
+    });
+    await waitFor(() => expect(result.current.tier).toBe("premium"));
+
+    await act(async () => {
+      await result.current.refreshSubscription();
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.tier).toBe("premium");
+    expect(result.current.isPremium).toBe(true);
+    expect(result.current.features).toEqual(TIER_FEATURES.premium);
+    expect(result.current.isTierUnknown).toBe(false);
+  });
+
+  it("reports the tier as unknown (not free) on a 429 with no prior data", async () => {
+    const { result } = renderWithFetch(failing("429: Too many requests"));
+    await waitFor(() => expect(result.current.isTierUnknown).toBe(true));
+    expect(result.current.isPremiumResolved).toBe(false);
+    expect(result.current.isPremium).toBe(false);
+  });
+
+  it("also treats a 5xx and a network error as unknown", async () => {
+    for (const message of ["500: boom", "Network request failed"]) {
+      const { result, unmount } = renderWithFetch(failing(message));
+      await waitFor(() => expect(result.current.isTierUnknown).toBe(true));
+      unmount();
+    }
+  });
+
+  it("is NOT unknown while the first fetch is still pending", () => {
+    const { result } = renderWithFetch(() => new Promise(() => {}));
+    expect(result.current.isTierUnknown).toBe(false);
+  });
+
+  it("a genuine successful free response is confirmed free, not unknown", async () => {
+    const { result } = renderWithFetch(async (ctx) =>
+      isStatus(ctx)
+        ? ({
+            tier: "free",
+            expiresAt: null,
+            features: TIER_FEATURES.free,
+            isActive: true,
+            streakUnlocks: [],
+          } satisfies SubscriptionStatus)
+        : { count: 0 },
+    );
+    await waitFor(() => expect(result.current.isPremiumResolved).toBe(true));
+    expect(result.current.isTierUnknown).toBe(false);
+    expect(result.current.features).toEqual(TIER_FEATURES.free);
+  });
+
+  it("does not retry a 429 under the app's real retry policy", async () => {
+    const statusCalls = vi.fn();
+    const { result } = renderWithFetch(
+      async (ctx) => {
+        if (isStatus(ctx)) {
+          statusCalls();
+          throw new Error("429: Too many requests");
+        }
+        return { count: 0 };
+      },
+      { retry: queryClient.getDefaultOptions().queries?.retry },
+    );
+    await waitFor(() => expect(result.current.isTierUnknown).toBe(true));
+    // Give any (wrongly scheduled) retry time to fire; retryDelay is 1ms.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(statusCalls).toHaveBeenCalledTimes(1);
   });
 });

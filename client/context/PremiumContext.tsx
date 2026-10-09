@@ -43,6 +43,15 @@ interface PremiumContextType {
    * flip to false prematurely on a query error.
    */
   isPremiumResolved: boolean;
+  /**
+   * True when the subscription status read FAILED (429, other non-2xx, network)
+   * and there is no previously fetched tier to fall back on. The tier is then
+   * unknown, not confirmed free: UI must not render a "Premium feature" lock
+   * from it. Stays false while loading and after any successful response
+   * (including a genuine "free" one), so a confirmed free user still locks.
+   * The server remains the authority on entitlement.
+   */
+  isTierUnknown: boolean;
   isError: boolean;
   error: Error | null;
   dailyScanCount: number;
@@ -124,6 +133,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   // Use this (not isLoading) in mount-once contexts like navigator initialRouteName
   // so a hard error never prematurely "resolves" premium status as free.
   const isPremiumResolved = subscriptionData !== undefined;
+  const isTierUnknown = isSubscriptionError && subscriptionData === undefined;
   const isPremium = tier === "premium" && (subscriptionData?.isActive ?? false);
   const dailyScanCount = scanCountData?.count ?? 0;
   const canScanToday = isPremium || dailyScanCount < features.maxDailyScans;
@@ -178,6 +188,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       isLoading:
         isSubscriptionLoading || isScanCountLoading || isRecipeGenLoading,
       isPremiumResolved,
+      isTierUnknown,
       isError,
       error,
       dailyScanCount,
@@ -202,6 +213,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       isScanCountLoading,
       isRecipeGenLoading,
       isPremiumResolved,
+      isTierUnknown,
       isError,
       error,
       dailyScanCount,

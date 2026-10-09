@@ -283,3 +283,21 @@ describe("TIER_FEATURES configuration", () => {
     expect(TIER_FEATURES.premium.videoRecording).toBe(true);
   });
 });
+
+describe("usePremiumFeature while the tier is unknown", () => {
+  it("does not report a feature as locked when the status read failed", () => {
+    mockUsePremiumContext.mockReturnValue({
+      features: TIER_FEATURES.free,
+      isTierUnknown: true,
+    });
+    expect(usePremiumFeature("recipeGeneration")).toBe(true);
+  });
+
+  it("still locks for a confirmed free tier", () => {
+    mockUsePremiumContext.mockReturnValue({
+      features: TIER_FEATURES.free,
+      isTierUnknown: false,
+    });
+    expect(usePremiumFeature("recipeGeneration")).toBe(false);
+  });
+});

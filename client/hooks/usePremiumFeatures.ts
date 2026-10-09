@@ -10,7 +10,12 @@ import {
  * Check if a specific premium feature is enabled for the current user.
  */
 export function usePremiumFeature(featureKey: PremiumFeatureKey): boolean {
-  const { features } = usePremiumContext();
+  const { features, isTierUnknown } = usePremiumContext();
+
+  // The status read failed (e.g. 429) and we have no tier on record: that is
+  // "unknown", not "free". Don't render a lock for a user we never confirmed as
+  // free; the server still rejects a genuinely unentitled request.
+  if (isTierUnknown) return true;
 
   const value = features[featureKey];
   if (typeof value === "boolean") {

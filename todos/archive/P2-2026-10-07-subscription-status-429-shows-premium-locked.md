@@ -1,9 +1,9 @@
 ---
 title: "A rate-limited subscription status call shows a premium user's features as locked"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-10-09
 assignee:
 labels: [deferred, client, iap]
 github_issue:
@@ -25,9 +25,9 @@ A real user who relaunches the app several times, or a flaky network that trigge
 
 ## Acceptance Criteria
 
-- [ ] A 429 (and any non-2xx or network error) on the subscription status query does not downgrade a user. The client keeps the last known tier (cached or persisted) instead of falling back to free.
-- [ ] The query backs off on 429 instead of retrying immediately into the limit.
-- [ ] Tests: a 429 response with a previously premium cached tier still shows premium features unlocked. A genuinely free response still locks them.
+- [x] A 429 (and any non-2xx or network error) on the subscription status query does not downgrade a user. The client keeps the last known tier (cached or persisted) instead of falling back to free.
+- [x] The query backs off on 429 instead of retrying immediately into the limit.
+- [x] Tests: a 429 response with a previously premium cached tier still shows premium features unlocked. A genuinely free response still locks them.
 
 ## Implementation Notes
 
@@ -54,3 +54,10 @@ A real user who relaunches the app several times, or a flaky network that trigge
 ### 2026-10-07
 
 - Initial creation, from the coach-recipe-offer Task 15 Maestro runs.
+
+### 2026-10-09
+
+- Fixed in the read path only (`PremiumContext.tsx`, `usePremiumFeatures.ts`); no receipt validation, purchase or server code touched.
+- Finding: `/api/subscription/status` is NOT in the persisted query allowlist (`PERSISTED_QUERY_KEYS` = `QUERY_KEYS` in `client/App.tsx`), so a cold launch has no cached tier. Per the scope ruling no persister/allowlist entry was added: a cold launch after a 429 cannot show premium; it shows an unknown tier (features not locked) until a successful read. In-memory data from an earlier success is already kept by React Query across a failed refetch (now pinned by a test).
+- New `isTierUnknown` (status query errored AND no data). `usePremiumFeature` returns true while unknown, so no "Premium feature" lock is rendered for a user never confirmed free. A successful free response still locks. Server stays the entitlement authority.
+- Backoff: the app's global retry policy already never retries a 4xx (incl. 429); pinned by a test under the real policy. No server limit change.
