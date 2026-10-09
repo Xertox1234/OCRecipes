@@ -61,6 +61,20 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     name: "extreme_fasting",
   },
   {
+    // Plain-language prolonged starvation — "stop eating for a week", "not eat
+    // for 5 days", "go without food for a week", "go 7 days without eating",
+    // "how long can I go without food". The verb must be followed DIRECTLY by
+    // (an optional "anything/food/at all") and then the duration, so a named
+    // food ("stop eating meat for a week"), a clock time ("stop eating after
+    // 8pm") or a quantity ("stop eating so much junk") never matches. Only
+    // day/week (or 24+ hour) durations trip it; "fast for 12 hours" and "stop
+    // eating 2 hours before sleep" stay ordinary. "starve myself" (reflexive)
+    // trips; "starving, what should I eat" and "starve off hunger" do not.
+    pattern:
+      /(?:(?:\b(?:stop|quit|skip|avoid|cease|not)|n['\u2019]t)\s+eat(?:ing)?\s+(?:(?:anything|any\s+food|food|at\s+all|entirely|completely|altogether)\s+)*for\s+(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\b|\bgo(?:ing)?\s+(?:for\s+)?(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\s+without\s+(?:eating|food)\b|\bgo(?:ing)?\s+without\s+(?:eating|food)\s+for\s+(?:(?:a|an|one|two|three|several|few|a\s+few|many|some|\d+)\s+)?(?:days?|weeks?|(?:2[4-9]|[3-9]\d|\d{3,})\s*(?:hours?|hrs?))\b|\bstarv(?:e|ing)\s+(?:myself|yourself|himself|herself|themselves|ourselves)\b|\bhow\s+long\s+(?:can|could|would)\s+(?:i|you|a\s+person|someone|one)\s+(?:go|survive|last)\s+without\s+(?:eating|food)\b)/i,
+    name: "prolonged_starvation",
+  },
+  {
     // Jailbreak via persona reassignment — [\s\S]{0,2000} matches across
     // newlines; the bound equals the 2000-char message cap (see above) so a
     // padded injection cannot push the keyword past the gap.

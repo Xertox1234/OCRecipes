@@ -1,6 +1,6 @@
 ---
 title: "Coach safety classifier misses plain-language starvation requests"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-07
 updated: 2026-10-07
@@ -28,17 +28,17 @@ The defect is in the regex layer only. It is pre-existing and not caused by the 
 
 ## Acceptance Criteria
 
-- [ ] Plain-language prolonged-starvation phrasings classify as a safety intent. Examples:
+- [x] Plain-language prolonged-starvation phrasings classify as a safety intent. Examples:
   - "stop eating for a week"
   - "not eat for 5 days"
   - "go without food for a week"
   - "skip eating for days"
-- [ ] Ordinary phrasings do NOT trip it:
+- [x] Ordinary phrasings do NOT trip it:
   - "skip breakfast"
   - "intermittent fasting 16:8"
   - "stop eating late at night"
   - "stop eating sugar"
-- [ ] Tests cover both lists in the classifier's test file. Each positive gets a paired negative control.
+- [x] Tests cover both lists in the classifier's test file. Each positive gets a paired negative control.
 
 ## Implementation Notes
 
@@ -64,3 +64,8 @@ The defect is in the regex layer only. It is pre-existing and not caused by the 
 ### 2026-10-07
 
 - Initial creation, from the coach-recipe-offer Task 13 acceptance tests.
+
+### 2026-10-09
+
+- Added sibling `prolonged_starvation` pattern to `SAFETY_PATTERNS` (day/week durations only; a named food, clock time or quantity does not match).
+- Tests: 8 positives (incl. "go 7 days without eating", "how long can I go without food") and 8 negatives (incl. "stop eating meat for a week", "fast for 12 hours"); red before, green after.
