@@ -26,6 +26,9 @@ module.exports = defineConfig([
       "docs/audits/**",
       "docs/superpowers/**",
       "docs/research/**",
+      // Railway IaC, evaluated by the Railway CLI. tsc's `**` glob skips dot-dirs, so
+      // the type-aware block would hit the same "not found by the project service" error.
+      ".railway/**",
     ],
   },
   {
