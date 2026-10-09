@@ -346,6 +346,26 @@ export function useSendMessage(
   // Refs for stale-closure-safe access inside streaming callbacks
   const isStreamingRef = useRef(false);
   const streamingContentRef = useRef("");
+  // The current (or last) stream's recipe and finder block, written alongside
+  // their state. With streamingContentRef they form getStreamSnapshot below.
+  // Reset only when the next send starts, never at the stream's end.
+  const streamingRecipeRef = useRef<StreamingRecipe | null>(null);
+  const streamingFinderRef = useRef<FinderBlock | null>(null);
+
+  /**
+   * What the current (or last) stream delivered, read synchronously. The
+   * pending-bubble bridge reads it when streaming stops: on the onload-only
+   * delivery path the content arrives and is cleared in one React batch, so
+   * no render ever sees it in the streaming state.
+   */
+  const getStreamSnapshot = useCallback(
+    () => ({
+      content: streamingContentRef.current,
+      recipe: streamingRecipeRef.current,
+      finder: streamingFinderRef.current,
+    }),
+    [],
+  );
   // The in-flight XHR, exposed so a caller (e.g. a screen's unmount cleanup)
   // can abort it from outside sendMessage.
   const xhrRef = useRef<XMLHttpRequest | null>(null);
@@ -402,6 +422,8 @@ export function useSendMessage(
       isStreamingRef.current = true;
       const epoch = ++sendEpochRef.current;
       streamingContentRef.current = "";
+      streamingRecipeRef.current = null;
+      streamingFinderRef.current = null;
       setIsStreaming(true);
       setStreamingContent("");
       setStreamingRecipe(null);
@@ -455,7 +477,6 @@ export function useSendMessage(
         let pendingFlush = false;
         let sseErrorReceived = false;
         let sseBuffer = "";
-        let yieldForRender = false;
 
         const processLine = (line: string) => {
           if (!line.startsWith("data: ")) return;
@@ -468,30 +489,44 @@ export function useSendMessage(
             if (data.finder) {
               // An old or malformed block is dropped, never rendered.
               const parsed = finderBlockSchema.safeParse(data.finder);
-              if (parsed.success) setStreamingFinder(parsed.data);
+              if (parsed.success) {
+                streamingFinderRef.current = parsed.data;
+                setStreamingFinder(parsed.data);
+              }
             }
             if (data.recipe) {
+              streamingRecipeRef.current = data.recipe;
               setStreamingRecipe(data.recipe);
               if (data.allergenWarning) {
                 setAllergenWarning(data.allergenWarning);
               }
             }
             if (data.imageUrl) {
-              setStreamingRecipe((prev) =>
-                prev ? { ...prev, imageUrl: data.imageUrl } : null,
-              );
+              const prev = streamingRecipeRef.current;
+              streamingRecipeRef.current = prev
+                ? { ...prev, imageUrl: data.imageUrl }
+                : null;
+              setStreamingRecipe(streamingRecipeRef.current);
             }
             if (data.imageUnavailable) {
-              setStreamingRecipe((prev) =>
-                prev ? { ...prev, imageUrl: null } : null,
-              );
+              const prev = streamingRecipeRef.current;
+              streamingRecipeRef.current = prev
+                ? { ...prev, imageUrl: null }
+                : null;
+              setStreamingRecipe(streamingRecipeRef.current);
             }
             if (data.content) {
               streamingContentRef.current += data.content;
               if (!pendingFlush) {
                 pendingFlush = true;
                 setTimeout(() => {
-                  if (isStreamingRef.current) {
+                  // Per stream: after an abort and a new send, this timer
+                  // belongs to the old stream and must not publish into the
+                  // new one.
+                  if (
+                    epoch === sendEpochRef.current &&
+                    isStreamingRef.current
+                  ) {
                     setStreamingContent(streamingContentRef.current);
                   }
                   pendingFlush = false;
@@ -501,14 +536,13 @@ export function useSendMessage(
             if (data.done) {
               receivedDone = true;
               // End-of-stream flush: `done` can arrive before the 16 ms timer
-              // above fires (e.g. a {finder, content} offer event), and the
-              // stream state is cleared right after — publish the pending
-              // content now so the pending-bubble bridge can capture it.
+              // above fires (e.g. a {finder, content} offer event) — publish
+              // the pending content now so the live footer shows it. The
+              // pending-bubble bridge does not depend on that render: when
+              // the whole body lands in onload, this flush and the `finally`
+              // clear share one batch, so the bridge reads getStreamSnapshot.
               if (isStreamingRef.current) {
                 setStreamingContent(streamingContentRef.current);
-                // Only when the timer had not published it yet; see the
-                // yield after the stream promise below.
-                if (pendingFlush) yieldForRender = true;
               }
               void queryClient.invalidateQueries({
                 queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
@@ -623,12 +657,6 @@ export function useSendMessage(
           xhr.send(requestBody);
         });
 
-        // On the onload-only path the done-flush, this continuation and the
-        // `finally` clear would otherwise land in one React batch, with the
-        // clear winning and no render ever seeing the content. Yield one
-        // macrotask so that render happens while isStreaming is still true.
-        if (yieldForRender) await new Promise((r) => setTimeout(r, 0));
-
         // Stream ended — check if it completed normally
         if (aborted) {
           // The XHR was intentionally aborted (e.g. RecipeChatScreen
@@ -710,6 +738,7 @@ export function useSendMessage(
   return {
     sendMessage,
     abortStream,
+    getStreamSnapshot,
     streamingContent,
     streamingRecipe,
     allergenWarning,

@@ -26,10 +26,12 @@ import {
   avoidingAccessibilityLabel,
   buildAdjustAction,
   clampServings,
+  generateLabel,
   notedText,
   servingsAfterAccessibilityAction,
   timeLabel,
 } from "./recipe-offer-utils";
+import { useCardArrivalAnnouncement } from "./useCardArrivalAnnouncement";
 
 const SPICE_LEVELS = Object.keys(SPICE_LABELS) as SpiceLevel[];
 
@@ -37,6 +39,8 @@ export interface RecipeAdjustProps {
   block: RecipeAdjustBlock;
   /** Only the latest finder message's controls are live (spec §4). */
   isActive: boolean;
+  /** False in RecipeChef's pending bubble; see RecipeResultsListProps. */
+  announceArrival?: boolean;
   /** `label` is the visible user bubble and the request `content`. */
   onAction: (action: FinderAction, label: string) => void;
   /**
@@ -50,6 +54,7 @@ export interface RecipeAdjustProps {
 export const RecipeAdjust = React.memo(function RecipeAdjust({
   block,
   isActive,
+  announceArrival = true,
   onAction,
   choicesStore,
 }: RecipeAdjustProps) {
@@ -84,6 +89,11 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
   };
 
   const title = block.flow.dish ?? block.flow.query.q;
+  useCardArrivalAnnouncement(
+    `adjust:${flowId}`,
+    `Adjust ${title}, then Generate`,
+    { enabled: announceArrival, isActive },
+  );
   const noted = notedText(block.noted);
   const canDecrease = isActive && servings > MIN_SERVINGS;
   const canIncrease = isActive && servings < MAX_SERVINGS;
@@ -98,10 +108,8 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
 
   const handleGenerate = () => {
     if (!isActive) return;
-    onAction(
-      buildAdjustAction(block, { servings, spice, time, answers }),
-      "Generate",
-    );
+    const action = buildAdjustAction(block, { servings, spice, time, answers });
+    onAction(action, generateLabel(action));
   };
 
   const handleCancel = () => {
@@ -110,6 +118,11 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
   };
 
   const labelStyle = [styles.rowLabel, { color: theme.textSecondary }];
+  // A radiogroup below carries this same name. Android reads the labelled
+  // group node, so the visible text would be a second read there; iOS Fabric
+  // drops the group's label, so the text stays readable on iOS
+  // (`importantForAccessibility` is Android-only).
+  const groupLabelA11y = { importantForAccessibility: "no" } as const;
 
   return (
     <View
@@ -176,7 +189,9 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
       </View>
 
       <View style={styles.group}>
-        <ThemedText style={labelStyle}>Spice</ThemedText>
+        <ThemedText style={labelStyle} {...groupLabelA11y}>
+          Spice
+        </ThemedText>
         <View
           style={styles.chips}
           accessibilityRole="radiogroup"
@@ -197,7 +212,9 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
       </View>
 
       <View style={styles.group}>
-        <ThemedText style={labelStyle}>Time</ThemedText>
+        <ThemedText style={labelStyle} {...groupLabelA11y}>
+          Time
+        </ThemedText>
         <View
           style={styles.chips}
           accessibilityRole="radiogroup"
@@ -256,7 +273,9 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
           accessibilityRole="radiogroup"
           accessibilityLabel={q.question}
         >
-          <ThemedText style={styles.question}>{q.question}</ThemedText>
+          <ThemedText style={styles.question} {...groupLabelA11y}>
+            {q.question}
+          </ThemedText>
           <View style={styles.chips}>
             {q.options.map((option) => (
               <Chip
@@ -325,6 +344,10 @@ function StepperButton({
   onPress: () => void;
 }) {
   const { theme } = useTheme();
+  // The stepper around these is one adjustable node whose increment and
+  // decrement actions do the same job. iOS already hides an accessible
+  // parent's children; on Android an actionable child stays its own TalkBack
+  // stop, so the buttons leave the tree there too. Taps still work.
   return (
     <PressableScale
       onPress={onPress}
@@ -333,6 +356,8 @@ function StepperButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !enabled }}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
       style={[
         styles.stepperButton,
         { borderColor: theme.link },

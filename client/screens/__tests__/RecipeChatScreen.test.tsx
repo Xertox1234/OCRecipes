@@ -27,7 +27,18 @@ const {
   mockFavouriteIds,
   mockChatMessagesData,
   mockSendMessageState,
+  mockStreamSnapshot,
 } = vi.hoisted(() => ({
+  // What useSendMessage's getStreamSnapshot() returns: the real hook keeps
+  // the last stream's content/recipe/finder until the next send. Empty by
+  // default, so the bridge falls back to what renders captured.
+  mockStreamSnapshot: {
+    value: { content: "", recipe: null, finder: null } as {
+      content: string;
+      recipe: unknown;
+      finder: unknown;
+    },
+  },
   mockGoBack: vi.fn(),
   mockCanGoBack: vi.fn(),
   mockNavigate: vi.fn(),
@@ -124,6 +135,7 @@ vi.mock("@/hooks/useChat", () => ({
   useSendMessage: () => ({
     sendMessage: mockSendMessage,
     abortStream: mockAbortStream,
+    getStreamSnapshot: () => mockStreamSnapshot.value,
     ...mockSendMessageState.value,
   }),
   useSaveRecipeFromChat: () => ({
@@ -147,6 +159,7 @@ beforeEach(() => {
   mockCanGoBack.mockReturnValue(true);
   mockRouteParams.value = undefined;
   mockChatMessagesData.value = [];
+  mockStreamSnapshot.value = { content: "", recipe: null, finder: null };
   mockSendMessageState.value = {
     streamingContent: "",
     streamingRecipe: null,
@@ -1028,6 +1041,51 @@ describe("RecipeChatScreen — recipe finder", () => {
     };
     rerender(<RecipeChatScreen />);
     expect(screen.getByText("Want me to make spaghetti?")).toBeDefined();
+  });
+
+  // The onload-only delivery path: the offer arrives and is cleared in one
+  // batch, so no render ever carries it while streaming. The bridge must
+  // read the hook's snapshot at the stream end instead.
+  it("the pending bubble shows an offer that no streaming render ever carried", () => {
+    const userMessage: ChatMessage = {
+      id: 1,
+      conversationId: 11,
+      role: "user",
+      content: "spaghetti",
+      metadata: null,
+      createdAt: new Date().toISOString(),
+    };
+    mockChatMessagesData.value = [userMessage];
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      isStreaming: true,
+    };
+    rerender(<RecipeChatScreen />);
+    mockStreamSnapshot.value = {
+      content: 'Want me to make spaghetti?\n\nReply "yes", "search", or "no".',
+      recipe: null,
+      finder: {
+        type: "recipe_offer",
+        flow: {
+          flowId: FLOW_NEW,
+          stage: "offer",
+          request: "spaghetti",
+          query: { q: "spaghetti" },
+          round: 0,
+          shownIds: [],
+          dish: "Spaghetti",
+          details: { ingredients: [], fromConversation: false },
+        },
+      },
+    };
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      isStreaming: false,
+    };
+    rerender(<RecipeChatScreen />);
+    expect(screen.getByText("Want me to make spaghetti?")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Yes" })).toBeDefined();
   });
 
   it("buttons are inactive while a reply is streaming", () => {

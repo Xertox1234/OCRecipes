@@ -1,11 +1,13 @@
 import {
   finderActionSchema,
+  OFFER_REPLY_HINT,
   type RecipeAdjustBlock,
 } from "@shared/schemas/recipe-finder";
 import {
   avoidingAccessibilityLabel,
   buildAdjustAction,
   clampServings,
+  generateLabel,
   notedText,
   offerDisplayText,
   servingsAfterAccessibilityAction,
@@ -122,6 +124,15 @@ describe("offerDisplayText", () => {
     ).toBe(OFFER);
   });
 
+  it("drops the shared hint constant the server appends", () => {
+    expect(offerDisplayText(`${OFFER}\n\n${OFFER_REPLY_HINT}\n`)).toBe(OFFER);
+  });
+
+  it("keeps the hint when it is not at the end", () => {
+    const content = `${OFFER_REPLY_HINT} Or just ask me anything.`;
+    expect(offerDisplayText(content)).toBe(content);
+  });
+
   it("keeps Coach lead text and the offer copy as written", () => {
     const content = `Great choice for a crowd!\n\n${OFFER}`;
     expect(offerDisplayText(content)).toBe(content);
@@ -164,5 +175,31 @@ describe("servingsAfterAccessibilityAction", () => {
     expect(servingsAfterAccessibilityAction(20, "increment")).toBe(20);
     expect(servingsAfterAccessibilityAction(1, "decrement")).toBe(1);
     expect(servingsAfterAccessibilityAction(8, "activate")).toBe(8);
+  });
+});
+
+describe("generateLabel", () => {
+  it("summarises the settings the Generate action sends", () => {
+    const action = buildAdjustAction(block, {
+      servings: 4,
+      spice: "mild",
+      time: "quick",
+      answers: {},
+    });
+    expect(generateLabel(action)).toBe(
+      "Generate: 4 servings · mild · under 30 minutes",
+    );
+  });
+
+  it("uses the clamped servings and the singular for one", () => {
+    const action = buildAdjustAction(block, {
+      servings: 0,
+      spice: "hot",
+      time: "leisurely",
+      answers: {},
+    });
+    expect(generateLabel(action)).toBe(
+      "Generate: 1 serving · hot · 1+ hours, no rush",
+    );
   });
 });

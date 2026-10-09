@@ -276,6 +276,7 @@ export default function RecipeChatScreen() {
   const {
     sendMessage,
     abortStream,
+    getStreamSnapshot,
     streamingContent,
     streamingRecipe,
     streamingFinder,
@@ -313,6 +314,16 @@ export default function RecipeChatScreen() {
     }),
     [strippedStreamingContent, streamingRecipe, streamingFinder],
   );
+  // The same shape, read from the hook's own record when the stream stops —
+  // an offer delivered only in onload never renders in the streaming state.
+  const readFinalPendingValue = useCallback(() => {
+    const snapshot = getStreamSnapshot();
+    return {
+      content: stripStreamingRecipeJson(snapshot.content),
+      recipe: snapshot.recipe,
+      finder: snapshot.finder,
+    };
+  }, [getStreamSnapshot]);
   const pendingAssistantMessage = usePendingAssistantBridge<{
     content: string;
     recipe: StreamingRecipe | null;
@@ -325,6 +336,7 @@ export default function RecipeChatScreen() {
     // gate would skip that tick and keep an earlier fragment.
     hasStreamingValue:
       !!streamingContent || !!streamingRecipe || !!streamingFinder,
+    readFinalValue: readFinalPendingValue,
     isPresent: hasPendingRecipeReply,
     hasError: !!streamError || !!requestError,
     assistantMessageCount,

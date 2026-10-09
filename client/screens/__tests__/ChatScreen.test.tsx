@@ -25,10 +25,21 @@ const {
   mockRouteParams,
   mockUseChatMessages,
   mockSendMessageState,
+  mockStreamSnapshot,
   mockToastError,
   mockToastSuccess,
   mockToastInfo,
 } = vi.hoisted(() => ({
+  // What useSendMessage's getStreamSnapshot() returns: the real hook keeps
+  // the last stream's content until the next send. Empty by default, so the
+  // bridge falls back to what renders captured.
+  mockStreamSnapshot: {
+    value: { content: "", recipe: null, finder: null } as {
+      content: string;
+      recipe: null;
+      finder: null;
+    },
+  },
   mockGoBack: vi.fn(),
   mockPopTo: vi.fn(),
   mockCanGoBack: vi.fn(() => false),
@@ -93,6 +104,7 @@ vi.mock("@/hooks/useChat", () => ({
     mockUseSendMessage(...args);
     return {
       sendMessage: mockSendMessage,
+      getStreamSnapshot: () => mockStreamSnapshot.value,
       ...mockSendMessageState.value,
     };
   },
@@ -128,6 +140,7 @@ beforeEach(() => {
   mockSendMessage.mockResolvedValue(undefined);
   mockAcknowledge.mockResolvedValue(undefined);
   mockUseChatMessages.mockReturnValue({ data: [], isLoading: false });
+  mockStreamSnapshot.value = { content: "", recipe: null, finder: null };
   mockSendMessageState.value = {
     streamingContent: "",
     isStreaming: false,
@@ -553,6 +566,33 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       data: [seedUserMessage],
       isLoading: false,
     });
+  });
+
+  // The onload-only delivery path: the reply arrives and is cleared in one
+  // batch, so no streaming render carries it. The bridge reads the hook's
+  // snapshot at the stream end instead.
+  it("shows a reply that no streaming render ever carried as the pending bubble", () => {
+    const { rerender } = renderComponent(<ChatScreen />);
+    mockSendMessageState.value = {
+      streamingContent: "",
+      isStreaming: true,
+      streamError: null,
+      requestError: null,
+    };
+    rerender(<ChatScreen />);
+    mockStreamSnapshot.value = {
+      content: "Try Greek yogurt with berries.",
+      recipe: null,
+      finder: null,
+    };
+    mockSendMessageState.value = {
+      streamingContent: "",
+      isStreaming: false,
+      streamError: null,
+      requestError: null,
+    };
+    rerender(<ChatScreen />);
+    expect(screen.getByText("Try Greek yogurt with berries.")).toBeDefined();
   });
 
   it("shows the streamed reply as a pending bubble once streaming ends, then clears it once the real message is fetched", () => {

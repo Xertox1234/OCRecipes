@@ -625,17 +625,18 @@ export default function RecipeBrowserScreen() {
 
   // Gate the "Online" (Spoonacular) source behind premium. When a free user
   // selects it, surface the upgrade prompt and keep the source unchanged so
-  // the filter state stays honest. Premium users proceed normally.
+  // the filter state stays honest. Premium users proceed normally. No haptic
+  // here: every sheet control that calls this has already ticked (Chip on a
+  // selectable press, the sliders on release).
   const handleFiltersChange = useCallback(
     (next: SearchFilters) => {
       if (shouldGatePremiumSource(next.source, isPremium)) {
-        haptics.selection();
         setShowUpgradeModal(true);
         return;
       }
       setFilters((prev) => ({ ...prev, advanced: next }));
     },
-    [isPremium, haptics],
+    [isPremium],
   );
 
   const handleToggleCuisine = useCallback((cuisine: string) => {

@@ -55,12 +55,6 @@ export interface SkillLevelOption {
   description: string;
 }
 
-export interface CookingTimeOption {
-  id: string;
-  name: string;
-  description: string;
-}
-
 export interface FoodDislikeOption {
   id: string;
   name: string;

@@ -2,10 +2,11 @@
 // §3.2: every finder message's `content` must stand on its own — an app
 // build without the finder component shows exactly this text, and the typed
 // "generate" / "none of these" guard is how it keeps going.
-import type {
-  FinderBlock,
-  FinderItem,
-  RecipeResultsBlock,
+import {
+  OFFER_REPLY_HINT,
+  type FinderBlock,
+  type FinderItem,
+  type RecipeResultsBlock,
 } from "@shared/schemas/recipe-finder";
 import { COOKING_TIMES } from "@shared/constants/cooking-times";
 
@@ -46,7 +47,7 @@ export function finderFallbackText(block: FinderBlock): string {
       return `A few quick questions:\n${lines.join("\n")}\n\nReply with your answers, or "generate" to create a recipe now.`;
     }
     case "recipe_offer":
-      return `${OFFER_TEXT}\n\nReply "yes", "search", or "no".`;
+      return `${OFFER_TEXT}\n\n${OFFER_REPLY_HINT}`;
     case "recipe_adjust": {
       const dish = block.flow.dish;
       const servings = block.prefill.servings;
