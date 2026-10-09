@@ -35,6 +35,7 @@ import {
   getConfidenceLabel,
 } from "@/lib/confidence";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { listStaggerMaxIndex } from "@/constants/animations";
 import { RecipeGenerationModal } from "@/components/RecipeGenerationModal";
 import { usePhotoAnalysis } from "@/hooks/usePhotoAnalysis";
 import { FoodCategory } from "@shared/constants/preparation";
@@ -112,7 +113,11 @@ function FoodItemCard({
   return (
     <Animated.View
       entering={
-        reducedMotion ? undefined : FadeInUp.delay(index * 100).duration(400)
+        reducedMotion
+          ? undefined
+          : FadeInUp.delay(Math.min(index, listStaggerMaxIndex) * 100).duration(
+              400,
+            )
       }
     >
       <Card
@@ -585,7 +590,12 @@ export default function PhotoAnalysisScreen() {
                   entering={
                     reducedMotion
                       ? undefined
-                      : FadeInUp.delay(foods.length * 100 + 100).duration(400)
+                      : // Capped like the items, so it follows the last
+                        // card even on a photo with many foods.
+                        FadeInUp.delay(
+                          Math.min(foods.length, listStaggerMaxIndex) * 100 +
+                            100,
+                        ).duration(400)
                   }
                 >
                   <Card

@@ -5,12 +5,15 @@ import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import Animated from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { PressableScale } from "@/components/PressableScale";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { listEntrance } from "@/constants/animations";
 import { useToast } from "@/context/ToastContext";
 import { useCookbooks, useDeleteCookbook } from "@/hooks/useCookbooks";
 import { resolveImageUrl } from "@/lib/query-client";
@@ -31,6 +34,7 @@ export default function CookbookListScreen() {
   const tabBarHeight = useSafeTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
   const toast = useToast();
   const { data: cookbooks, isLoading, isError, refetch } = useCookbooks();
   const { mutate: deleteCookbook } = useDeleteCookbook();
@@ -95,86 +99,89 @@ export default function CookbookListScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: CookbookWithCount }) => {
+    ({ item, index }: { item: CookbookWithCount; index: number }) => {
       // Disk-backed dev storage returns a RELATIVE path
       // (`/api/cookbook-covers/…`) that no image loader can fetch — R2 returns
       // an absolute CDN URL. `resolveImageUrl` normalizes both.
       const coverUri = resolveImageUrl(item.coverImageUrl);
       return (
-        <Pressable
-          onPress={() => {
-            haptics.selection();
-            navigation.navigate("CookbookDetail", { cookbookId: item.id });
-          }}
-          style={({ pressed }) => [
-            styles.listItem,
-            { backgroundColor: withOpacity(theme.text, 0.04) },
-            pressed && { opacity: 0.7 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.name}, ${item.recipeCount} recipes`}
-        >
-          {/* Cover thumbnail at the same 3:4 book proportion the create screen
+        <Animated.View entering={listEntrance(index, reducedMotion)}>
+          <Pressable
+            onPress={() => {
+              haptics.selection();
+              navigation.navigate("CookbookDetail", { cookbookId: item.id });
+            }}
+            style={({ pressed }) => [
+              styles.listItem,
+              { backgroundColor: withOpacity(theme.text, 0.04) },
+              pressed && { opacity: 0.7 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.name}, ${item.recipeCount} recipes`}
+          >
+            {/* Cover thumbnail at the same 3:4 book proportion the create screen
             uses. The slot renders even without a cover so rows stay aligned
             in a mixed list — and so the empty state reads as "this can have
             a cover" rather than as a missing element. */}
-          {coverUri ? (
-            <Image
-              source={{ uri: coverUri }}
-              style={styles.cover}
-              contentFit="cover"
-              accessible={false}
-            />
-          ) : (
-            <View
-              style={[
-                styles.cover,
-                styles.coverEmpty,
-                {
-                  backgroundColor: withOpacity(theme.text, 0.06),
-                  borderColor: withOpacity(theme.link, 0.25),
-                },
-              ]}
-            >
-              <Feather
-                name="book"
-                size={14}
-                color={withOpacity(theme.text, 0.35)}
+            {coverUri ? (
+              <Image
+                source={{ uri: coverUri }}
+                style={styles.cover}
+                contentFit="cover"
                 accessible={false}
               />
+            ) : (
+              <View
+                style={[
+                  styles.cover,
+                  styles.coverEmpty,
+                  {
+                    backgroundColor: withOpacity(theme.text, 0.06),
+                    borderColor: withOpacity(theme.link, 0.25),
+                  },
+                ]}
+              >
+                <Feather
+                  name="book"
+                  size={14}
+                  color={withOpacity(theme.text, 0.35)}
+                  accessible={false}
+                />
+              </View>
+            )}
+            <View style={styles.listItemContent}>
+              <ThemedText style={styles.listItemTitle} numberOfLines={1}>
+                {item.name}
+              </ThemedText>
+              <ThemedText
+                style={[styles.listItemMeta, { color: theme.textSecondary }]}
+              >
+                {item.recipeCount}{" "}
+                {item.recipeCount === 1 ? "recipe" : "recipes"}
+                {item.description ? ` · ${item.description}` : ""}
+              </ThemedText>
             </View>
-          )}
-          <View style={styles.listItemContent}>
-            <ThemedText style={styles.listItemTitle} numberOfLines={1}>
-              {item.name}
-            </ThemedText>
-            <ThemedText
-              style={[styles.listItemMeta, { color: theme.textSecondary }]}
-            >
-              {item.recipeCount} {item.recipeCount === 1 ? "recipe" : "recipes"}
-              {item.description ? ` · ${item.description}` : ""}
-            </ThemedText>
-          </View>
-          <View style={styles.listItemActions}>
-            <Pressable
-              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-              onPress={() => handleDelete(item.id, item.name)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Delete ${item.name}`}
-            >
-              <Feather name="trash-2" size={16} color={theme.textSecondary} />
-            </Pressable>
-            <Feather
-              name="chevron-right"
-              size={18}
-              color={theme.textSecondary}
-            />
-          </View>
-        </Pressable>
+            <View style={styles.listItemActions}>
+              <Pressable
+                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                onPress={() => handleDelete(item.id, item.name)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${item.name}`}
+              >
+                <Feather name="trash-2" size={16} color={theme.textSecondary} />
+              </Pressable>
+              <Feather
+                name="chevron-right"
+                size={18}
+                color={theme.textSecondary}
+              />
+            </View>
+          </Pressable>
+        </Animated.View>
       );
     },
-    [theme, haptics, navigation, handleDelete],
+    [theme, haptics, navigation, handleDelete, reducedMotion],
   );
 
   if (isLoading) {
