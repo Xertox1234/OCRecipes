@@ -18,16 +18,27 @@ const STARVE_QTY =
   "(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen|twenty|thirty|several|few|a\\s+few|many|some|multiple|(?:a\\s+)?couple(?:\\s+of)?|(?:the|a)\\s+(?:whole|full|entire)|an\\s+entire|\\d+)";
 const STARVE_DURATION =
   "(?:days?|weeks?|months?|(?:2[4-9]|[3-9]\\d|\\d{3,})\\s*(?:hours?|hrs?))";
-// "for (qty) duration": the quantity is optional ("for days").
-const FOR_DURATION = `for\\s+(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}`;
+// An optional hedge before the quantity: "more than a week", "at least 3 days".
+const STARVE_HEDGE =
+  "(?:(?:more\\s+than|over|at\\s+least|about|around|almost|nearly)\\s+)?";
+// "for (hedge) (qty) duration": the quantity is optional ("for days").
+const FOR_DURATION = `for\\s+${STARVE_HEDGE}(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}`;
+// A negating verb. The contraction is tied to its auxiliary ("don't", "dont",
+// "can't", "wont"), so a word that merely ends in "nt" ("consistent eating",
+// "plant eating") is not read as a negation.
+const STARVE_NEGATION =
+  "\\b(?:stop|quit|skip|avoid|cease|not|cannot|(?:do|does|did|wo|ca|could|would|should|must|have|has|had)n['\\u2019]?t)";
+const GO = "\\b(?:go|going|goes|went|gone)";
 const PROLONGED_STARVATION = new RegExp(
   [
-    // stop/skip/not/don't (or "dont") eat(ing) [anything] for <duration>
-    `(?:\\b(?:stop|quit|skip|avoid|cease|not)|n['\\u2019]?t)\\s+eat(?:ing)?\\s+(?:(?:anything|any\\s+food|food|at\\s+all|entirely|completely|altogether)\\s+)*${FOR_DURATION}\\b`,
-    // go (for) <duration> without eating/food
-    `\\bgo(?:ing)?\\s+(?:for\\s+)?(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}\\s+without\\s+(?:eating|food)\\b`,
-    // go without eating/food for <duration>
-    `\\bgo(?:ing)?\\s+without\\s+(?:eating|food)\\s+${FOR_DURATION}\\b`,
+    // stop/skip/not/don't (or "dont")/haven't eat(ing/en) [anything] for <duration>
+    `${STARVE_NEGATION}\\s+eat(?:ing|en)?\\s+(?:(?:anything|any\\s+food|food|at\\s+all|entirely|completely|altogether)\\s+)*${FOR_DURATION}\\b`,
+    // eat nothing for <duration>
+    `\\beat(?:ing)?\\s+nothing\\s+${FOR_DURATION}\\b`,
+    // go/went/gone (for) <duration> without eating/food
+    `${GO}\\s+(?:for\\s+)?${STARVE_HEDGE}(?:${STARVE_QTY}\\s+)?${STARVE_DURATION}\\s+without\\s+(?:eating|food)\\b`,
+    // go/went/gone without eating/food for <duration>
+    `${GO}\\s+without\\s+(?:eating|food)\\s+${FOR_DURATION}\\b`,
     // starve/starved/starving + reflexive
     `\\bstarv(?:e|ed|ing)\\s+(?:myself|yourself|himself|herself|themselves|ourselves)\\b`,
     `\\bhow\\s+long\\s+(?:can|could|would)\\s+(?:i|you|a\\s+person|someone|one)\\s+(?:go|survive|last)\\s+without\\s+(?:eating|food)\\b`,

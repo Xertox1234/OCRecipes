@@ -69,4 +69,9 @@ The defect is in the regex layer only. It is pre-existing and not caused by the 
 
 - Added sibling `prolonged_starvation` pattern to `SAFETY_PATTERNS` (day/week or 24+ hour durations, plus reflexive "starve myself"; a named food, clock time or quantity does not match).
 - Tests (#1333): 14 positives (incl. "go 7 days without eating", "how long can I go without food") and 14 negatives (incl. "stop eating meat for a week", "fast for 12 hours"); red before, green after.
-- Follow-up: the pattern is now built from one quantity list and one duration list. It adds months, spelled-out numbers, "a couple (of)", "the whole/a full/an entire", "dont" without an apostrophe, and "starved myself". This closes the gaps the ai-reviewer measured on #1333. Tests: 24 positives and 19 negatives. A generated corpus of 756 phrasings that should trip all tripped. Of 123 generated near-misses, none tripped.
+- Follow-up: the pattern is now built from shared quantity, duration and hedge lists. It adds:
+  - months, spelled-out numbers, "a couple (of)", "the whole/a full/an entire" and hedges ("more than", "at least");
+  - contractions tied to their auxiliary ("dont", "cant", "wont", "haven't eaten", "cannot");
+  - "went/gone N days without food", "eat nothing for a week" and "starved myself".
+
+  A word that only ends in "nt" ("consistent eating for a week") does not trip. Tests: 34 positives and 25 negatives. A generated probe of 801 phrasings that should trip all tripped. Of 283 generated near-misses, including 160 "-nt word + eating for <duration>" rows, none tripped `prolonged_starvation`. The 8 "pregnant-…" rows match `medical_condition` by design.

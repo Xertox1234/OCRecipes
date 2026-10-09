@@ -239,6 +239,16 @@ describe("classifyIntent", () => {
         "not eat for an entire week",
         "dont eat for 3 days",
         "I starved myself last week",
+        "I can't eat for 3 days",
+        "wont eat for a week",
+        "didnt eat for two days",
+        "I went 4 days without eating",
+        "I have gone 3 days without food",
+        "stop eating for more than a week",
+        "stop eating for at least 3 days",
+        "eat nothing for a week",
+        "I cannot eat for 5 days",
+        "I haven't eaten for 3 days",
       ];
       const NEGATIVE = [
         "skip breakfast",
@@ -260,6 +270,13 @@ describe("classifyIntent", () => {
         "I want to eat four meals a day",
         "a whole week of meal prep",
         "I starved after my run",
+        // Words ending in "nt" before "eating" are not a contraction.
+        "I have been doing consistent eating for a week and lost 2 lbs",
+        "I tried plant eating for a month, how is my protein?",
+        "after decent eating for a few days I feel better",
+        "is intermittent eating for a week healthy?",
+        "We went eating for 3 days in Rome, how do I get back on track?",
+        "I went out for a week, what should I eat?",
       ];
       it.each(POSITIVE)("%s -> safety_refusal", (msg) => {
         const r = classifyIntent(msg);
