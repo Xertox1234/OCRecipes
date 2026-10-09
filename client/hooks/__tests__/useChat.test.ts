@@ -786,23 +786,16 @@ describe("useSendMessage", () => {
       }
     });
 
-    it("a finder event's content is rendered while streaming when the whole body arrives only in onload", async () => {
+    // On the onload-only path the done-flush and the `finally` clear land in
+    // one React batch, so no render need ever see the content while
+    // streaming. The pending-bubble bridge reads this snapshot at the stream
+    // end instead, so it does not depend on such a render happening.
+    it("a finder event's content and block are in the stream snapshot when the whole body arrives only in onload", async () => {
       vi.useFakeTimers();
       try {
         const { wrapper } = createQueryWrapper();
         mockTokenStorage.get.mockResolvedValue("t");
-        const seen: { streaming: boolean; content: string }[] = [];
-        const { result } = renderHook(
-          () => {
-            const r = useSendMessage(42);
-            seen.push({
-              streaming: r.isStreaming,
-              content: r.streamingContent,
-            });
-            return r;
-          },
-          { wrapper },
-        );
+        const { result } = renderHook(() => useSendMessage(42), { wrapper });
         let p!: Promise<void>;
         await act(async () => {
           p = result.current.sendMessage("spaghetti");
@@ -814,16 +807,74 @@ describe("useSendMessage", () => {
             `data: ${JSON.stringify({ finder: block, content: "Want a recipe?" })}\n` +
             'data: {"done":true}\n';
           xhrInstance.onload?.(new ProgressEvent("load"));
-        });
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(5);
           await p;
         });
-        // The bridge only captures what a render sees while isStreaming.
-        expect(
-          seen.some((r) => r.streaming && r.content === "Want a recipe?"),
-        ).toBe(true);
+        expect(result.current.isStreaming).toBe(false);
         expect(result.current.streamingContent).toBe("");
+        expect(result.current.streamingFinder).toBeNull();
+        expect(result.current.getStreamSnapshot()).toEqual({
+          content: "Want a recipe?",
+          recipe: null,
+          finder: block,
+        });
+
+        // The next send starts from an empty snapshot.
+        await act(async () => {
+          void result.current.sendMessage("again");
+          await Promise.resolve();
+        });
+        expect(result.current.getStreamSnapshot()).toEqual({
+          content: "",
+          recipe: null,
+          finder: null,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("an aborted stream's pending publish timer does not publish into the next stream", async () => {
+      vi.useFakeTimers();
+      try {
+        const { wrapper } = createQueryWrapper();
+        mockTokenStorage.get.mockResolvedValue("t");
+        const { result } = renderHook(() => useSendMessage(42), { wrapper });
+        await act(async () => {
+          void result.current.sendMessage("first");
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        // Stream A's content arms its 16 ms publish timer.
+        await act(async () => {
+          xhrInstance.responseText = 'data: {"content":"Old reply"}\n';
+          xhrInstance.onprogress?.(new ProgressEvent("progress"));
+        });
+        act(() => {
+          result.current.abortStream();
+        });
+        await act(async () => {
+          void result.current.sendMessage("second");
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        // Stream B's first content, 10 ms in: its own timer fires at 26 ms.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10);
+          xhrInstance.responseText = 'data: {"content":"New reply"}\n';
+          xhrInstance.onprogress?.(new ProgressEvent("progress"));
+        });
+        // A's timer (16 ms) fires now. It belongs to an aborted stream and
+        // must not publish anything into B.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(7);
+        });
+        expect(result.current.isStreaming).toBe(true);
+        expect(result.current.streamingContent).toBe("");
+        // B's own timer still publishes B's content.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10);
+        });
+        expect(result.current.streamingContent).toBe("New reply");
       } finally {
         vi.useRealTimers();
       }

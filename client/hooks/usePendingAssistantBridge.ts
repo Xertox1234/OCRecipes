@@ -21,6 +21,15 @@ export interface UsePendingAssistantBridgeOptions<T> {
    */
   hasStreamingValue: boolean;
   /**
+   * Reads the stream's final value at the moment streaming stops, from the
+   * stream hook's own record (e.g. useSendMessage's getStreamSnapshot).
+   * Preferred over the render-captured value: a reply that arrives and is
+   * cleared in one React batch (the onload-only delivery path) is never seen
+   * by a render while `isStreaming` is true. Falls back to the captured value
+   * when what it returns isn't `isPresent`.
+   */
+  readFinalValue?: () => T;
+  /**
    * Whether a captured value is worth surfacing as a pending bubble once the
    * stream ends. Defaults to truthiness. Needed when the capture gate and
    * the displayed value differ (e.g. raw content gates capture but the
@@ -59,6 +68,7 @@ export function usePendingAssistantBridge<T>({
   isStreaming,
   streamingValue,
   hasStreamingValue,
+  readFinalValue,
   hasError,
   assistantMessageCount,
   announce,
@@ -77,16 +87,17 @@ export function usePendingAssistantBridge<T>({
       if (announce.always) {
         AccessibilityInfo.announceForAccessibility(announce.message);
       }
+      const finalValue = readFinalValue?.();
+      const value =
+        finalValue !== undefined && isPresent(finalValue)
+          ? finalValue
+          : lastValueRef.current;
       // Bridge the stream-end → message-refetch gap, but only for responses
       // that will actually persist. On stream/request error the server keeps
       // no message, so a pending bubble would never clear.
-      if (
-        lastValueRef.current !== null &&
-        isPresent(lastValueRef.current) &&
-        !hasError
-      ) {
+      if (value !== null && isPresent(value) && !hasError) {
         pendingBaselineAssistantCountRef.current = assistantMessageCount;
-        setPending(lastValueRef.current);
+        setPending(value);
         if (!announce.always) {
           AccessibilityInfo.announceForAccessibility(announce.message);
         }
@@ -98,6 +109,7 @@ export function usePendingAssistantBridge<T>({
     isStreaming,
     streamingValue,
     hasStreamingValue,
+    readFinalValue,
     hasError,
     assistantMessageCount,
     announce.message,

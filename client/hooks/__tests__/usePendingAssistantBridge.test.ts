@@ -230,6 +230,74 @@ describe("usePendingAssistantBridge", () => {
     expect(result.current).toBeNull();
   });
 
+  describe("readFinalValue", () => {
+    it("surfaces the final value read at stream end when no render saw it while streaming", () => {
+      let final = "";
+      const readFinalValue = () => final;
+      const { result, rerender } = renderHook(
+        (props: UsePendingAssistantBridgeOptions<string>) =>
+          usePendingAssistantBridge(props),
+        {
+          initialProps: makeProps({
+            isStreaming: true,
+            streamingValue: "",
+            hasStreamingValue: false,
+            readFinalValue,
+          }),
+        },
+      );
+      // The whole reply arrived and was cleared in one batch: the stream
+      // state never carried it, only the hook's own record did.
+      final = "Want a recipe?";
+      rerender(
+        makeProps({
+          isStreaming: false,
+          streamingValue: "",
+          hasStreamingValue: false,
+          readFinalValue,
+        }),
+      );
+      expect(result.current).toBe("Want a recipe?");
+    });
+
+    it("prefers the final value over an earlier rendered fragment", () => {
+      const readFinalValue = () => "Hello there";
+      const { result, rerender } = renderHook(
+        (props: UsePendingAssistantBridgeOptions<string>) =>
+          usePendingAssistantBridge(props),
+        {
+          initialProps: makeProps({
+            isStreaming: true,
+            streamingValue: "Hel",
+            hasStreamingValue: true,
+            readFinalValue,
+          }),
+        },
+      );
+      rerender(makeProps({ streamingValue: "", readFinalValue }));
+      expect(result.current).toBe("Hello there");
+    });
+
+    it("still never surfaces it when the stream ended in error", () => {
+      const readFinalValue = () => "partial reply";
+      const { result, rerender } = renderHook(
+        (props: UsePendingAssistantBridgeOptions<string>) =>
+          usePendingAssistantBridge(props),
+        {
+          initialProps: makeProps({
+            isStreaming: true,
+            streamingValue: "",
+            readFinalValue,
+          }),
+        },
+      );
+      rerender(
+        makeProps({ streamingValue: "", hasError: true, readFinalValue }),
+      );
+      expect(result.current).toBeNull();
+    });
+  });
+
   it("supports an object payload — captures the latest full snapshot across independent fields", () => {
     type Snapshot = { content: string; recipe: { title: string } | null };
     const { result, rerender } = renderHook(

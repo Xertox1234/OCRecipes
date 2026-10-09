@@ -286,11 +286,18 @@ export default function ChatScreen() {
   const { data: messages, isLoading } = useChatMessages(validConversationId);
   const {
     sendMessage,
+    getStreamSnapshot,
     streamingContent,
     isStreaming,
     streamError,
     requestError,
   } = useSendMessage(validConversationId, { notifyWhenAway: true });
+  // A reply delivered only in onload never renders in the streaming state;
+  // the bridge reads the hook's own record when the stream stops instead.
+  const readFinalStreamContent = useCallback(
+    () => getStreamSnapshot().content,
+    [getStreamSnapshot],
+  );
   // Report which conversation is on screen so a reply that finishes while the
   // user is elsewhere can be flagged unread (Coach tab dot + toast). FOCUS is
   // the signal, not unmount: a bottom-tab screen stays MOUNTED when its tab
@@ -324,6 +331,7 @@ export default function ChatScreen() {
     isStreaming,
     streamingValue: streamingContent,
     hasStreamingValue: !!streamingContent,
+    readFinalValue: readFinalStreamContent,
     hasError: !!streamError || !!requestError,
     assistantMessageCount: (messages || []).filter(
       (m) => m.role === "assistant",
