@@ -837,20 +837,6 @@ tester.run(
   },
 );
 
-// ─── Specifier resolution, enumerated ──────────────────────────────────────
-//
-// Four separate defects in this rule's history were all one mistake: a check
-// that CORRELATED with "does this ParamList live in a navigator module" instead
-// of testing it. Each was fixed by sampling — someone thought of one bad input,
-// added one case. The fix for the third contained the fourth.
-//
-// This table exists to stop sampling. It enumerates the specifier/filename
-// space in one place — alias and relative forms, absolute and repo-relative
-// filenames, and every spoof shape found so far — so that a future change to
-// `resolveSpecifier`/`toRepoRelative` has to satisfy the whole space at once
-// rather than the one example its author happened to picture.
-//
-// Add a row here before changing either function. A row is cheaper than a round.
 tester.run(
   "no-direct-chat-completions",
   plugin.rules["no-direct-chat-completions"],
@@ -892,6 +878,20 @@ tester.run(
   },
 );
 
+// ─── Specifier resolution, enumerated ──────────────────────────────────────
+//
+// Four separate defects in this rule's history were all one mistake: a check
+// that CORRELATED with "does this ParamList live in a navigator module" instead
+// of testing it. Each was fixed by sampling — someone thought of one bad input,
+// added one case. The fix for the third contained the fourth.
+//
+// This table exists to stop sampling. It enumerates the specifier/filename
+// space in one place — alias and relative forms, absolute and repo-relative
+// filenames, and every spoof shape found so far — so that a future change to
+// `resolveSpecifier`/`toRepoRelative` has to satisfy the whole space at once
+// rather than the one example its author happened to picture.
+//
+// Add a row here before changing either function. A row is cheaper than a round.
 describe("no-shadowed-route-paramlist — specifier resolution", () => {
   const linter = new Linter();
 

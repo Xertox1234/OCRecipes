@@ -64,6 +64,7 @@ export interface AiChatDeps {
     info(obj: object, msg: string): void;
     warn(obj: object, msg: string): void;
   };
+  now?: () => number;
 }
 
 export interface AiChat {
@@ -79,8 +80,15 @@ export interface AiChat {
   ): Promise<ChatCompletion>;
 }
 
-type FallbackReason = AiFailureKind | "no-key" | "circuit-open";
+type FallbackReason = AiFailureKind | "circuit-open";
 
+/** A misconfigured row fails every request; report it once per window. */
+const CONFIG_REPORT_INTERVAL_MS = 10 * 60_000;
+
+function answeredModel(res: unknown): string | null {
+  const m = (res as { model?: unknown }).model;
+  return typeof m === "string" ? m : null;
+}
 /** OpenRouter adds `provider` and `usage.cost` to the OpenAI response shape. */
 function answeredProvider(res: unknown): string | null {
   const p = (res as { provider?: unknown }).provider;
@@ -95,6 +103,17 @@ function isAbort(err: unknown, options?: AiChatOptions): boolean {
   return (
     options?.signal?.aborted === true || err instanceof OpenAI.APIUserAbortError
   );
+}
+
+/** Close the source; a failing close must not mask the error that got us here. */
+async function closeQuietly(
+  iterator: AsyncIterator<ChatCompletionChunk>,
+): Promise<void> {
+  try {
+    await iterator.return?.();
+  } catch {
+    // Nothing actionable: the stream is already being abandoned.
+  }
 }
 
 function isErrorChunk(chunk: unknown): boolean {
@@ -142,12 +161,15 @@ async function* wrapStream(
     }
     summary.completed = true;
   } finally {
-    if (!summary.completed) await iterator.return?.();
+    if (!summary.completed) await closeQuietly(iterator);
     onEnd(summary);
   }
 }
 
 export function createAiChat(deps: AiChatDeps): AiChat {
+  const now = deps.now ?? Date.now;
+  const configReportedAt = new Map<AiFeature, number>();
+
   async function run(
     feature: AiFeature,
     params: AiChatParams | AiChatStreamParams,
@@ -174,7 +196,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       });
     };
 
-    const callFallback = async (reason: FallbackReason) => {
+    const callFallback = async (reason: FallbackReason, err?: unknown) => {
       deps.log.warn(
         {
           feature,
@@ -182,6 +204,15 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           requestedModel,
           fallbackModel: row.fallback,
           fallbackReason: reason,
+          ...(err !== undefined && {
+            error: {
+              status: err instanceof OpenAI.APIError ? err.status : undefined,
+              message: (err instanceof Error ? err.message : String(err)).slice(
+                0,
+                300,
+              ),
+            },
+          }),
         },
         "ai call using fallback",
       );
@@ -190,7 +221,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         options,
       );
       record(
-        streaming ? row.fallback : (res as ChatCompletion).model,
+        streaming ? row.fallback : answeredModel(res),
         "openai-direct",
         true,
       );
@@ -223,11 +254,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     }
 
     const body = {
-      ...adaptParams(
-        params as unknown as Record<string, unknown>,
-        row.adapt,
-        override?.set,
-      ),
+      ...adaptParams(params, row.adapt, override?.set),
       model: requestedModel,
       provider: { zdr: true, only: [host] },
     };
@@ -238,21 +265,21 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       }
       const res = await deps.openrouter.chat.completions.create(body, options);
       deps.breaker.recordSuccess();
-      const completion = res as ChatCompletion;
+      const model = answeredModel(res);
       const provider = answeredProvider(res);
-      record(completion.model, provider, false);
+      record(model, provider, false);
       deps.log.info(
         {
           feature,
           provider: "openrouter",
           requestedModel,
-          answeredModel: completion.model,
+          answeredModel: model,
           answeredProvider: provider,
           cost: usageCost(res),
         },
         "ai call",
       );
-      return completion;
+      return res as ChatCompletion;
     } catch (err) {
       if (isAbort(err, options)) throw err;
       const kind = classifyAiFailure(err);
@@ -266,13 +293,21 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           "ai-client",
         );
       } else if (kind === "config") {
-        const status = err instanceof OpenAI.APIError ? err.status : undefined;
-        deps.report(
-          new Error(
-            `AI config error: ${feature} (${String(status)}): ${message}`,
-          ),
-          "ai-client",
-        );
+        // Throttled per feature; the fallback warn log below still records
+        // every failure.
+        const t = now();
+        const last = configReportedAt.get(feature);
+        if (last === undefined || t - last >= CONFIG_REPORT_INTERVAL_MS) {
+          configReportedAt.set(feature, t);
+          const status =
+            err instanceof OpenAI.APIError ? err.status : undefined;
+          deps.report(
+            new Error(
+              `AI config error: ${feature} (${String(status)}): ${message}`,
+            ),
+            "ai-client",
+          );
+        }
       }
       if (!fallbackAllowed) {
         // Eval context: say WHY the call failed before the caller's catch eats it.
@@ -290,7 +325,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         });
         throw err;
       }
-      return callFallback(kind);
+      return callFallback(kind, err);
     }
   }
 
@@ -314,7 +349,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     // "the caller has received something" once we return (spec §3.5).
     const first = await iterator.next();
     if (!first.done && isErrorChunk(first.value)) {
-      await iterator.return?.();
+      await closeQuietly(iterator);
       throw new InStreamError(first.value);
     }
     deps.breaker.recordSuccess();
@@ -332,6 +367,8 @@ export function createAiChat(deps: AiChatDeps): AiChat {
 
 function defaultDeps(): AiChatDeps {
   const key = process.env.OPENROUTER_API_KEY?.trim() || undefined;
+  // `as unknown` is required (TS2352): the SDK's overloaded create() takes typed
+  // params, AiChatClient takes the adapted Record body.
   return {
     openrouter: key
       ? (new OpenAI({
