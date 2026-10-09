@@ -58,10 +58,10 @@ import {
 } from "./recipe-finder";
 import {
   runCoachFinderTurn,
+  savedBlocks,
   withLead,
   type CoachFinderTurnEntry,
 } from "./recipe-finder/coach-turn";
-import { finderBlockFromMetadata } from "./recipe-finder/entry";
 import { buildOfferBlock, decideOfferToolCall } from "./recipe-finder/offer";
 import { OFFER_TEXT, finderFallbackText } from "./recipe-finder/fallback-text";
 
@@ -564,20 +564,6 @@ async function persistCoachReply(
 }
 
 const NO_DISH_TEXT = "Which dish did you have in mind?";
-
-/**
- * On a turnKey hit nothing new was saved, so a freshly minted flowId would
- * differ from the stored card's and its taps would be stale: swap in the
- * stored finder block. With no stored finder block, today's blocks stand.
- */
-function savedBlocks(
-  existing: ChatMessage | undefined,
-  blocks: CoachBlock[],
-  fresh: CoachBlock,
-): CoachBlock[] {
-  const stored = existing ? finderBlockFromMetadata(existing.metadata) : null;
-  return stored ? blocks.map((b) => (b === fresh ? stored : b)) : blocks;
-}
 
 /**
  * Delivers an `offer_recipe` terminal tool call (spec §4.2, H4). Every reply

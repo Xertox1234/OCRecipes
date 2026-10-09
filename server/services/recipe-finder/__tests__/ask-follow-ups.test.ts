@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { askDishFollowUps } from "../ask-follow-ups";
 import { aiChat } from "../../../lib/ai-client";
-import {
-  sanitizeContextField,
-  sanitizeUserInput,
-} from "../../../lib/ai-safety";
+import { sanitizeContextField } from "../../../lib/ai-safety";
 import { createMockChatCompletion } from "../../../__tests__/factories";
 
 vi.mock("../../../lib/ai-client", () => ({ aiChat: vi.fn() }));
@@ -119,11 +116,10 @@ describe("askDishFollowUps", () => {
     ]);
   });
 
-  it("puts the dish, transcript and ingredients through the sanitisers", async () => {
+  it("puts the dish, transcript and ingredients through the sanitiser", async () => {
     vi.mocked(sanitizeContextField).mockImplementation(
       (t: string) => `ctx(${t})`,
     );
-    vi.mocked(sanitizeUserInput).mockImplementation((t: string) => `usr(${t})`);
     try {
       mockCreate.mockResolvedValue(
         createMockChatCompletion(JSON.stringify({ questions: [] })),
@@ -133,18 +129,17 @@ describe("askDishFollowUps", () => {
         { role: "assistant", content: "Sure thing" },
       ]);
       expect(sanitizeContextField).toHaveBeenCalledWith("Meatballs", 80);
-      expect(sanitizeUserInput).toHaveBeenCalledWith("make meatballs");
+      expect(sanitizeContextField).toHaveBeenCalledWith("make meatballs", 300);
       expect(sanitizeContextField).toHaveBeenCalledWith("Sure thing", 300);
       expect(sanitizeContextField).toHaveBeenCalledWith("beef", 60);
-      // The prompt carries the sanitisers' OUTPUT, not the raw text.
+      // The prompt carries the sanitiser's OUTPUT, not the raw text.
       const prompt = mockCreate.mock.calls[0][1].messages[1].content;
       expect(prompt).toContain("Dish: ctx(Meatballs)");
-      expect(prompt).toContain("User: usr(make meatballs)");
+      expect(prompt).toContain("User: ctx(make meatballs)");
       expect(prompt).toContain("Assistant: ctx(Sure thing)");
       expect(prompt).toContain("Ingredients mentioned: ctx(beef)");
     } finally {
       vi.mocked(sanitizeContextField).mockImplementation((t: string) => t);
-      vi.mocked(sanitizeUserInput).mockImplementation((t: string) => t);
     }
   });
 

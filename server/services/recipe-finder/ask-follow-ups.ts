@@ -2,7 +2,6 @@
 import { aiChat } from "../../lib/ai-client";
 import { OPENAI_TIMEOUT_FAST_MS } from "../../lib/openai";
 import {
-  sanitizeUserInput,
   sanitizeContextField,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../../lib/ai-safety";
@@ -30,10 +29,10 @@ export async function askDishFollowUps(
   try {
     const convo = transcript
       .slice(-6)
-      .map((m) =>
-        m.role === "user"
-          ? `User: ${sanitizeUserInput(m.content).slice(0, 300)}`
-          : `Assistant: ${sanitizeContextField(m.content, 300)}`,
+      // sanitizeContextField also strips zero-width/bidi chars (user text too).
+      .map(
+        (m) =>
+          `${m.role === "user" ? "User" : "Assistant"}: ${sanitizeContextField(m.content, 300)}`,
       )
       .join("\n");
     const detailLines = [

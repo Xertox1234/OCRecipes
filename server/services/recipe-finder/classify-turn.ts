@@ -2,7 +2,6 @@
 import { aiChat } from "../../lib/ai-client";
 import { z } from "zod";
 import {
-  sanitizeUserInput,
   sanitizeContextField,
   validateAiResponse,
   SYSTEM_PROMPT_BOUNDARY,
@@ -72,7 +71,7 @@ Return JSON: {"class": "new_request" | "refine_current" | "other"}
 
 ${SYSTEM_PROMPT_BOUNDARY}`,
           },
-          { role: "user", content: sanitizeUserInput(message) },
+          { role: "user", content: sanitizeContextField(message, 2000) },
         ],
       },
       { timeout: CLASSIFY_TURN_TIMEOUT_MS },

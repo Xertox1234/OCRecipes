@@ -2459,6 +2459,36 @@ describe("handleCoachChat — recipe offer (Coach Pro, RECIPE_OFFER_ENABLED on)"
     expect(storage.deleteChatMessage).not.toHaveBeenCalled();
   });
 
+  it("a turnKey dedup hit on repeat = yes yields the STORED adjust card's flowId", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({ id: 1, role: "user", content: "chili" }),
+      assistantWith(offerBlock),
+      userRow("yes, the chili"),
+    ]);
+    const stored: FinderBlock = {
+      ...adjustBlock,
+      flow: {
+        ...adjustBlock.flow,
+        flowId: "55555555-5555-4555-8555-555555555555",
+      },
+    };
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(
+      createMockChatMessage({
+        role: "assistant",
+        turnKey: TURN,
+        metadata: { blocks: [stored] },
+      }),
+    );
+    toolOnly({ dish: "chili", from_conversation: true });
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({ content: "yes, the chili", finder, turnKey: TURN }),
+      ),
+    );
+    expect(assistantWrites()).toHaveLength(0);
+    expect(events.at(-1)).toEqual({ type: "blocks", blocks: [stored] });
+  });
+
   it("repeat = yes keeps streamed pre-tool text as the adjust message's lead line", async () => {
     vi.mocked(storage.getChatMessages).mockResolvedValue([
       createMockChatMessage({ id: 1, role: "user", content: "chili" }),
