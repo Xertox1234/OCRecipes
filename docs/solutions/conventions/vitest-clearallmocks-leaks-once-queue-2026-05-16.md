@@ -7,6 +7,7 @@ severity: medium
 tags: [testing, typescript]
 applies_to: [server/**/__tests__/*.test.ts]
 created: '2026-05-16'
+last_updated: '2026-10-09'
 ---
 
 ## Rule
@@ -104,10 +105,29 @@ beforeEach(() => {
 });
 ```
 
+## Also seen: `retry: 2` hid it (#1336, 2026-10-09)
+
+`server/services/recipe-finder/__tests__/find-community.test.ts` had one test that queued two
+mocked search pages and used only one. The leftover page leaked into the next test, so 5 tests
+failed **on every run, even with the file run alone**. They never showed in CI or locally,
+because `vitest.config.mts` retries each failure twice (`retry: 2`): the first attempt
+failed, consumed the leaked page, and the retry passed on a clean queue. A deterministic order
+bug looked like a green suite.
+
+- **Run `--retry=0` when you touch a test file that queues `mock*Once` values,** and whenever a
+  failure is reported as "flaky". `NODE_ENV=test npx vitest run --retry=0 <paths>` is cheap. A
+  failure on every run with retries off is a bug, not a flake.
+- A sweep with retries off over the 9 suites the coach recipe offer touched (3 runs, 858 tests)
+  found no other failure of this kind. That bounds this one area, not the repo.
+
+The fix there was to reset that mock before each test, the same shape as the Rule above.
+
 ## Related Files
 
 - `server/services/__tests__/notification-scheduler.test.ts` — paged
   reminder loops; uses `vi.resetAllMocks()` + cron mock re-seed.
+- `server/services/recipe-finder/__tests__/find-community.test.ts` — the leak that `retry: 2` hid
+  (#1336)
 - `server/services/notification-scheduler.ts` — `forEachUserPaged` cursor
   loop that breaks early when a page is shorter than `PAGE_SIZE`.
 

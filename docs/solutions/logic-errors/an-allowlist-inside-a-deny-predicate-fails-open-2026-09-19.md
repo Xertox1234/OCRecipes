@@ -2,11 +2,12 @@
 title: "An allowlist inside a deny predicate fails open — a narrowed deny predicate is a regression until measured against the broad one in both directions"
 track: bug
 category: logic-errors
-tags: [harness, hooks, security, testing, safety-gate, bash]
+tags: [harness, hooks, security, testing, ai-prompting, architecture, safety-gate, bash, regex]
 module: shared
-applies_to: [".claude/hooks/**/*.sh", ".claude/hooks/lib/*.sh"]
+applies_to: [".claude/hooks/**/*.sh", ".claude/hooks/lib/*.sh", "server/services/coach-intent-classifier.ts"]
 symptoms: ["a deny gate that used to block a command spelling now allows it, with green CI and every count pin reconciled", "the new predicate is more specific and better commented than the one it replaced, and the PR fixes a real over-denial", "review keeps finding one more spelling the pattern misses, and each fix's own comment declares the class closed", "an argument that the pattern is exhaustive cites a grammar (RFC, CLI help) rather than the exact string the code consumes"]
 created: 2026-09-19
+last_updated: 2026-10-09
 severity: critical
 ---
 
@@ -109,6 +110,35 @@ errored; a control that cannot fail correctly proves nothing.)
   change lands in and whether that file has a corpus behind it; a hand-written suite protects only
   the spellings someone thought of.
 
+## Also seen: the Coach safety router (#1339, 2026-10-09)
+
+The same failure happened outside the harness, in `server/services/coach-intent-classifier.ts`.
+`SAFETY_PATTERNS` routes a message to `safety_refusal`, so it is deny-shaped. Widening #1333's
+`prolonged_starvation` regex in place went through four review rounds, and each round found a new
+phrasing that main refused and the branch passed:
+
+1. `n['’]?t` (to accept "dont") matched every word ending in "nt", so "consistent eating for a
+   week" was refused. That is the safe direction, but it is wrong.
+2. Tying the contraction to an auxiliary list dropped `isn't` / `wasn't` / `shan't`. Under-refusal.
+3. An allowlist of connecting words after "without eating" treated every other word as a food,
+   so "go a week without eating to lose weight" passed. Under-refusal.
+4. Swapping that for a denylist of food words caught prepositions too: "without eating after my
+   surgery" and "out of guilt" passed. Under-refusal.
+
+Rounds 3 and 4 are this doc's lesson exactly. **Any veto over an open vocabulary is an allowlist
+in disguise**: whatever the list does not name, it lets through.
+
+**A fix shape this doc did not have: widen with a sibling entry.** When the predicate is one entry
+in a first-match OR-list (`SAFETY_PATTERNS`, a hook's ordered checks), leave the shipped entry
+byte-for-byte unchanged and put the widening in a NEW entry after it, with the same verdict. An OR
+can only add matches, so "never refuse less than main" holds by construction, not by sampling.
+#1339 did this. A 1630-row generated corpus run against main showed 0 rows main refuses passing on
+head, and three later review passes agreed. The cost is that over-refusals main already has stay
+put ("can I go a week without eating meat"). For a safety router that is the right trade.
+
+Prevention, added: before the second review round on a deny-shaped change, ask whether the change
+can be expressed as an added entry. If it can, do that instead of editing the shipped one.
+
 ## Related Files
 
 - `.claude/hooks/merge-review-guard.sh` — the endpoint check, now main's substring test, with all
@@ -117,6 +147,8 @@ errored; a control that cannot fail correctly proves nothing.)
 - `.claude/hooks/test-merge-review-guard.sh` — blocks `3a-quinquies` / `3a-sexies`: 18 deny rows,
   4 allow controls, 1 pinned over-denial; the quoting axis is generated there, not sampled
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_words_deep`, the rendering the predicate actually reads
+- `server/services/coach-intent-classifier.ts` — `SAFETY_PATTERNS`: #1333's entry, then the additive
+  `PROLONGED_STARVATION` sibling (#1339) with the reasons in its comment
 - `.claude/hooks/repro-outward-cli-corpus.sh` — pins `guard-outward-cli.sh` only (`HOOK=`), which
   is why the sibling's regression was invisible to CI
 
