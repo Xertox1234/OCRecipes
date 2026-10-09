@@ -1,5 +1,5 @@
-// Railway Infrastructure as Code for the OCRecipes API service. It replaces
-// railway.json, which Railway stops reading on 2026-12-01.
+// Railway Infrastructure as Code for the OCRecipes API service. It replaced
+// railway.json (applied 2026-10-09).
 //
 // Railway does NOT read this file during deploys. It takes effect only when
 // someone runs `railway config apply`; see .railway/README.md before running it.
@@ -18,7 +18,7 @@ export default defineRailway(() => {
       branch: "main",
       checkSuites: false,
     }),
-    // Mirrors railway.json one-for-one.
+    // Mirrors the former railway.json.
     build: {
       builder: "RAILPACK",
       buildCommand: "npm run server:build",
@@ -27,10 +27,11 @@ export default defineRailway(() => {
       startCommand: "npm run server:prod",
       healthcheckPath: "/api/health",
       healthcheckTimeout: 30,
-      restartPolicyType: "ON_FAILURE",
+      // No restartPolicyType: ON_FAILURE is Railway's default, which Railway
+      // stores as null, so declaring it plans as drift on every run.
       restartPolicyMaxRetries: 5,
     },
-    // Live placement (railway.json's numReplicas: 1, in us-west2).
+    // Live placement: one replica in us-west2.
     replicas: { "us-west2": 1 },
     domains: [{ domain: "api.ocrecipes.com", port: 8080 }],
     // Values stay on Railway; listing the names keeps an apply from treating

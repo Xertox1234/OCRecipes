@@ -284,7 +284,7 @@ function startServer() {
   // could pressure the connection pool. The limiter bounds the per-IP request
   // rate. The cap is deliberately high (600/min ≈ 10/s) to stay well clear of
   // legitimate bursts: Railway's deploy healthcheck polls this path repeatedly
-  // within its 30s timeout (railway.json healthcheckPath) and those probes
+  // within its 30s timeout (.railway/railway.ts healthcheckPath) and those probes
   // collapse into one IP bucket, so a high ceiling guarantees a deploy can never
   // 429-fail here — while a flood is still capped to a bounded rate. Defined
   // inline (not via the _rate-limiters.ts createRateLimiter factory) so CodeQL's
