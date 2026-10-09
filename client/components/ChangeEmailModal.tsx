@@ -10,12 +10,14 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import {
   Spacing,
   BorderRadius,
@@ -56,11 +58,14 @@ export function ChangeEmailModal({
   currentEmail,
 }: ChangeEmailModalProps) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const [newEmail, setNewEmail] = useState("");
   const [confirmEmail, setConfirmEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped on each validation reject (not server errors) to shake the error.
+  const [shakeKey, setShakeKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset every time the modal opens so a re-open after a failed attempt starts
@@ -85,20 +90,25 @@ export function ChangeEmailModal({
     // Concurrent-submission guard: state updates may lag rapid taps, so don't
     // rely on `disabled` alone.
     if (isSubmitting) return;
+    const rejectInput = (message: string) => {
+      setError(message);
+      setShakeKey((k) => k + 1);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+    };
     const trimmedEmail = newEmail.trim();
     if (!EMAIL_RE.test(trimmedEmail)) {
-      setError("Enter a valid email address");
+      rejectInput("Enter a valid email address");
       return;
     }
     // Confirm-email guard against a typo: a mistyped new address is mutated
     // immediately and (verification ON) can lock the user out at next login.
     // Compare normalized (trim + lowercase) since the server lowercases anyway.
     if (trimmedEmail.toLowerCase() !== confirmEmail.trim().toLowerCase()) {
-      setError("Email addresses do not match");
+      rejectInput("Email addresses do not match");
       return;
     }
     if (!password) {
-      setError("Password is required");
+      rejectInput("Password is required");
       return;
     }
     setError(null);
@@ -119,10 +129,12 @@ export function ChangeEmailModal({
           : /^429:/.test(message)
             ? "Too many attempts. Please wait a while and try again."
             : "Could not change your email. Please try again.";
+      // A server error: Error haptic, no shake (the input wasn't rejected).
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       setError(friendly);
       setIsSubmitting(false);
     }
-  }, [newEmail, confirmEmail, password, onConfirm, isSubmitting]);
+  }, [newEmail, confirmEmail, password, onConfirm, isSubmitting, haptics]);
 
   const handleCancel = useCallback(() => {
     if (isSubmitting) return;
@@ -285,7 +297,7 @@ export function ChangeEmailModal({
                 testID="change-email-password-input"
               />
 
-              <InlineError message={error} />
+              <InlineError message={error} shakeKey={shakeKey} />
 
               <View style={styles.buttonRow}>
                 <Button

@@ -63,21 +63,27 @@ the `placeholder` while resting. The label scale uses the `transformOrigin: "lef
 prop (supported on RN 0.81/Fabric). If you're writing `onFocus` state or a border
 interpolation in a screen file, stop — extend the shared component instead.
 
-## Missing pattern (not yet implemented): error shake
+## Shipped shake pattern (extend, don't re-implement)
 
-Validation reject only (not server errors), paired with the error haptic:
+Validation reject only (not server errors), paired with the error haptic. `InlineError`
+takes a `shakeKey` counter; bump it in the reject branch, next to the haptic:
 
 ```tsx
-shakeX.value = withSequence(
-  withTiming(-6, { duration: 50 }),
-  withTiming(6, { duration: 50 }),
-  withTiming(-3, { duration: 50 }),
-  withTiming(0, { duration: 50 }),
-); // skip entirely under reducedMotion — InlineError still shows
+const [shakeKey, setShakeKey] = useState(0);
+// in the validation-reject branch:
+setError(message);
+setShakeKey((k) => k + 1);
+haptics.notification(Haptics.NotificationFeedbackType.Error);
+// render:
+<InlineError message={error} shakeKey={shakeKey} />;
 ```
 
-(One-shot sequence steps like these may inline their durations — the named-token rule
-targets reusable configs.)
+A counter, not the message: `setError("")` + `setError(sameMessage)` batches to no change,
+so a message-keyed shake would never repeat. Mounting and message-only changes never
+shake; reduced motion skips it (the error still shows). The sequence lives in
+`client/hooks/useShake.ts` — reuse it for anything else that shakes, and call `shake()`
+from an effect, never the event handler (a shared-value write before the view's first
+commit is lost).
 
 ## Common mistakes
 

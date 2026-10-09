@@ -10,7 +10,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import LoginScreen from "../LoginScreen";
+import * as Haptics from "expo-haptics";
 import { ApiError } from "@/lib/api-error";
+
+const { withSequenceSpy } = vi.hoisted(() => ({
+  withSequenceSpy: vi.fn((...vals: number[]) => vals[vals.length - 1]),
+}));
+
+// The InlineError shake runs one withSequence per validation reject.
+vi.mock("react-native-reanimated", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, default: actual.default, withSequence: withSequenceSpy };
+});
 
 const {
   mockLogin,
@@ -364,5 +375,48 @@ describe("LoginScreen — sign in by email and password reset entry", () => {
       "Password updated. Sign in with your new password.",
     );
     expect(mockSetParams).toHaveBeenCalledWith({ passwordReset: undefined });
+  });
+});
+
+// A validation reject shakes the error (paired with the Error haptic it
+// already fires); a server error shows copy and buzzes but does not shake.
+describe("LoginScreen — shake on validation reject", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("the same validation reject twice shakes twice", () => {
+    renderComponent(<LoginScreen />);
+    const signIn = screen.getByRole("button", { name: "Sign In" });
+
+    fireEvent.click(signIn);
+    fireEvent.click(signIn);
+
+    expect(screen.getByText("Please fill in all fields")).toBeTruthy();
+    expect(withSequenceSpy).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
+    expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  it("a server error buzzes but does not shake", async () => {
+    mockLogin.mockRejectedValue(new Error("401: invalid_credentials"));
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "wrongpass" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    expect(
+      await screen.findByText(
+        "Incorrect username or password. Please try again.",
+      ),
+    ).toBeTruthy();
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });

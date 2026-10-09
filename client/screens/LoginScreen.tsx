@@ -55,6 +55,8 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  // Bumped on each validation reject (not server errors) to shake the error.
+  const [shakeKey, setShakeKey] = useState(0);
   // Field-attributed error for the email input only (sets its aria-invalid).
   // Set on submit, mirroring `error`'s lifecycle — never validated live as the
   // user types. Stays null in login mode (no email field shown).
@@ -108,6 +110,7 @@ export default function LoginScreen() {
     const validationError = validateAuthForm(formInput);
     if (validationError) {
       setError(validationError);
+      setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -342,7 +345,7 @@ export default function LoginScreen() {
             </View>
           ) : null}
 
-          <InlineError message={error} />
+          <InlineError message={error} shakeKey={shakeKey} />
 
           <Button
             onPress={handleSubmit}

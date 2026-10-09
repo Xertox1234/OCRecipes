@@ -35,6 +35,8 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
   const haptics = useHaptics();
   const [email, setEmail] = useState(route.params?.email ?? "");
   const [error, setError] = useState("");
+  // Bumped on each validation reject (not server errors) to shake the error.
+  const [shakeKey, setShakeKey] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const onSend = async () => {
@@ -42,6 +44,7 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
     setError("");
     if (!isValidResetEmail(email)) {
       setError("Please enter a valid email address.");
+      setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -108,7 +111,7 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
             error={!!error}
             errorMessage={error || undefined}
           />
-          <InlineError message={error} />
+          <InlineError message={error} shakeKey={shakeKey} />
           <Button
             onPress={onSend}
             loading={busy}
