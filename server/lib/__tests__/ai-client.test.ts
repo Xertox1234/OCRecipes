@@ -177,6 +177,134 @@ describe("aiChat (non-streaming)", () => {
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
 
+  // One row per isAbort arm: each row trips exactly one of them.
+  it.each([
+    ["APIUserAbortError, no signal", new OpenAI.APIUserAbortError(), false],
+    [
+      "aborted signal, APIConnectionError",
+      new OpenAI.APIConnectionError({ message: "socket closed" }),
+      true,
+    ],
+  ] as const)(
+    "abort (%s) → re-thrown; no breaker, report or fallback",
+    async (_label, err, abortSignal) => {
+      const controller = new AbortController();
+      if (abortSignal) controller.abort();
+      vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+        err,
+      );
+      const spy = vi.spyOn(deps.breaker, "recordFailure");
+      const aiChat = createAiChat(deps);
+      await expect(
+        aiChat("coach-notebook-extract", params, {
+          signal: abortSignal ? controller.signal : undefined,
+        }),
+      ).rejects.toBe(err);
+      expect(spy).not.toHaveBeenCalled();
+      expect(deps.report).not.toHaveBeenCalled();
+      expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it("the fallback warn log carries the original OpenRouter error", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503, "upstream unavailable"),
+    );
+    vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue(
+      completion("gpt-4o-mini"),
+    );
+    const aiChat = createAiChat(deps);
+    await aiChat("coach-notebook-extract", params);
+    expect(deps.log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fallbackReason: "transport",
+        error: {
+          status: 503,
+          message: expect.stringContaining("upstream unavailable"),
+        },
+      }),
+      expect.any(String),
+    );
+  });
+
+  it("a non-string model in the response is recorded and logged as null", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue({
+      ...completion("x"),
+      model: undefined,
+    });
+    const aiChat = createAiChat(deps);
+    const c: AiCallContext = { overrides: {}, fallback: "on", calls: [] };
+    await withAiCallContext(c, () => aiChat("coach-notebook-extract", params));
+    expect(c.calls[0].answeredModel).toBeNull();
+    expect(deps.log.info).toHaveBeenCalledWith(
+      expect.objectContaining({ answeredModel: null }),
+      expect.any(String),
+    );
+  });
+
+  it("a non-string model from the fallback is recorded as null", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue({
+      ...completion("x"),
+      model: 42,
+    });
+    const aiChat = createAiChat(deps);
+    const c: AiCallContext = { overrides: {}, fallback: "on", calls: [] };
+    await withAiCallContext(c, () => aiChat("coach-notebook-extract", params));
+    expect(c.calls[0]).toMatchObject({ answeredModel: null, fellBack: true });
+  });
+
+  describe("config-error reports are throttled per feature", () => {
+    let clock: number;
+    beforeEach(() => {
+      clock = 0;
+      deps = makeDeps({ now: () => clock });
+      vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+        apiError(400, "unknown model"),
+      );
+      vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue(
+        completion("gpt-4o-mini"),
+      );
+    });
+
+    it("same feature inside the window → one report; every failure still falls back and warns", async () => {
+      const aiChat = createAiChat(deps);
+      await aiChat("coach-notebook-extract", params);
+      clock = 9 * 60_000;
+      await aiChat("coach-notebook-extract", params);
+      expect(deps.report).toHaveBeenCalledTimes(1);
+      expect(deps.fallback.chat.completions.create).toHaveBeenCalledTimes(2);
+      expect(deps.log.warn).toHaveBeenCalledTimes(2);
+    });
+
+    it("same feature after the window → reported again", async () => {
+      const aiChat = createAiChat(deps);
+      await aiChat("coach-notebook-extract", params);
+      clock = 10 * 60_000;
+      await aiChat("coach-notebook-extract", params);
+      expect(deps.report).toHaveBeenCalledTimes(2);
+    });
+
+    it("a different feature inside the window → still reported", async () => {
+      const aiChat = createAiChat(deps);
+      await aiChat("coach-notebook-extract", params);
+      await aiChat("food-nlp-parse", params);
+      expect(deps.report).toHaveBeenCalledTimes(2);
+    });
+
+    it("the balance alert is not throttled", async () => {
+      vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+        apiError(402),
+      );
+      const aiChat = createAiChat(deps);
+      await aiChat("coach-notebook-extract", params);
+      await aiChat("coach-notebook-extract", params);
+      expect(deps.report).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("an open breaker skips OpenRouter entirely", async () => {
     for (let i = 0; i < 5; i++) deps.breaker.recordFailure();
     vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue(
@@ -404,7 +532,7 @@ describe("aiChat inside a call context", () => {
     vi.unstubAllEnvs();
   });
 
-  it("no context → no overrides applied and nothing recorded", async () => {
+  it("no context → row model used", async () => {
     const deps = makeDeps();
     vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
       completion("openai/gpt-4o-mini"),
@@ -437,7 +565,10 @@ const chunk = (
   ...extra,
 });
 
-function fakeStream(items: (object | Error)[]) {
+function fakeStream(
+  items: (object | Error)[],
+  opts: { returnRejects?: boolean } = {},
+) {
   const returned = { value: false };
   const iterable = {
     [Symbol.asyncIterator]() {
@@ -451,6 +582,7 @@ function fakeStream(items: (object | Error)[]) {
         },
         async return() {
           returned.value = true;
+          if (opts.returnRejects) throw new Error("return() failed");
           return { done: true, value: undefined };
         },
       };
@@ -590,6 +722,125 @@ describe("aiChat (streaming)", () => {
       aiChat("coach-chat", sparams, { signal: controller.signal }),
     ).rejects.toBeInstanceOf(OpenAI.APIUserAbortError);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+  });
+
+  // One row per isAbort arm, as in the non-streaming block.
+  it.each([
+    ["APIUserAbortError, no signal", new OpenAI.APIUserAbortError(), false],
+    [
+      "aborted signal, APIConnectionError",
+      new OpenAI.APIConnectionError({ message: "socket closed" }),
+      true,
+    ],
+  ] as const)(
+    "abort while peeking (%s) → re-thrown; no breaker, report or fallback",
+    async (_label, err, abortSignal) => {
+      const deps = makeDeps();
+      const controller = new AbortController();
+      const { iterable } = fakeStream([err]);
+      vi.mocked(deps.openrouter!.chat.completions.create).mockImplementation(
+        async () => {
+          if (abortSignal) controller.abort();
+          return iterable;
+        },
+      );
+      const spy = vi.spyOn(deps.breaker, "recordFailure");
+      const aiChat = createAiChat(deps);
+      await expect(
+        aiChat("coach-chat", sparams, {
+          signal: abortSignal ? controller.signal : undefined,
+        }),
+      ).rejects.toBe(err);
+      expect(spy).not.toHaveBeenCalled();
+      expect(deps.report).not.toHaveBeenCalled();
+      expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it("an empty stream counts as success and yields nothing", async () => {
+    const deps = makeDeps();
+    for (let i = 0; i < 3; i++) deps.breaker.recordFailure();
+    const recordSuccess = vi.spyOn(deps.breaker, "recordSuccess");
+    const { iterable } = fakeStream([]);
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    expect(await collect(await aiChat("coach-chat", sparams))).toBe("");
+    expect(recordSuccess).toHaveBeenCalledTimes(1);
+    expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+    expect(deps.log.info).toHaveBeenCalledWith(
+      expect.objectContaining({ feature: "coach-chat", completed: true }),
+      expect.any(String),
+    );
+  });
+
+  it("a rejecting return() does not mask a mid-stream error, and the stream is still logged", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream([chunk("a"), new Error("mid-stream")], {
+      returnRejects: true,
+    });
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    await expect(collect(await aiChat("coach-chat", sparams))).rejects.toThrow(
+      "mid-stream",
+    );
+    expect(deps.log.info).toHaveBeenCalledWith(
+      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.any(String),
+    );
+  });
+
+  it("a rejecting return() on early consumer exit does not throw into the consumer", async () => {
+    const deps = makeDeps();
+    const { iterable, returned } = fakeStream([chunk("a"), chunk("b")], {
+      returnRejects: true,
+    });
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const aiChat = createAiChat(deps);
+    for await (const _c of await aiChat("coach-chat", sparams)) break;
+    expect(returned.value).toBe(true);
+    expect(deps.log.info).toHaveBeenCalledWith(
+      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.any(String),
+    );
+  });
+
+  it("a rejecting return() while peeking does not mask the in-stream error", async () => {
+    const deps = makeDeps();
+    const { iterable } = fakeStream(
+      [
+        {
+          ...chunk(""),
+          error: { code: "server_error" },
+          choices: [
+            { index: 0, delta: { content: "" }, finish_reason: "error" },
+          ],
+        },
+      ],
+      { returnRejects: true },
+    );
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      iterable,
+    );
+    const fb = fakeStream([chunk("ok")]);
+    vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue(
+      fb.iterable,
+    );
+    const aiChat = createAiChat(deps);
+    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+    expect(deps.log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          message: "OpenRouter in-stream error",
+        }),
+      }),
+      expect.any(String),
+    );
   });
 
   it("early consumer exit closes the source stream and logs completed:false", async () => {

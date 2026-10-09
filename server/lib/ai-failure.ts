@@ -48,7 +48,15 @@ export function countsTowardBreaker(kind: AiFailureKind): boolean {
   return kind === "transport" || kind === "balance";
 }
 
-/** In-memory, per process (spec §3.4) — fine for one Railway service. */
+/**
+ * In-memory, per process (spec §3.4) — fine for one Railway service.
+ *
+ * There is no single-trial (half-open) gate: once the cooldown lapses every
+ * concurrent call goes to OpenRouter, and any one failure re-opens it. Any
+ * failure recorded while open — a straggler that started before it opened,
+ * or a fallback-off eval call (those skip `isOpen()` but still record) —
+ * restarts the cooldown.
+ */
 export class CircuitBreaker {
   private failures: number[] = [];
   private openedAt: number | null = null;
