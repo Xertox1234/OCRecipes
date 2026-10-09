@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
+import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -323,8 +324,9 @@ export default function NotebookEntryScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View role="radiogroup" style={styles.typeRow}>
               {notebookEntryTypes.map((t) => (
-                <Pressable
+                <SelectableTile
                   key={t}
+                  shape="chip"
                   onPress={() => setType(t)}
                   style={[
                     styles.typeChip,
@@ -346,7 +348,7 @@ export default function NotebookEntryScreen() {
                   >
                     {TYPE_LABELS[t] ?? t}
                   </Text>
-                </Pressable>
+                </SelectableTile>
               ))}
             </View>
           </ScrollView>

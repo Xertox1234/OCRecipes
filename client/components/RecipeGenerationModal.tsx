@@ -17,6 +17,7 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -117,15 +118,11 @@ export function RecipeGenerationModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- generateMutation.mutate is stable in TQ v5; including the full object causes unnecessary re-creation
   }, [haptics, generateMutation.mutate]);
 
-  const toggleDiet = useCallback(
-    (diet: string) => {
-      haptics.selection();
-      setSelectedDiets((prev) =>
-        prev.includes(diet) ? prev.filter((d) => d !== diet) : [...prev, diet],
-      );
-    },
-    [haptics],
-  );
+  const toggleDiet = useCallback((diet: string) => {
+    setSelectedDiets((prev) =>
+      prev.includes(diet) ? prev.filter((d) => d !== diet) : [...prev, diet],
+    );
+  }, []);
 
   const handleClose = useCallback(() => {
     if (!generateMutation.isPending) {
@@ -236,12 +233,10 @@ export function RecipeGenerationModal({
               accessibilityLabel="Servings"
             >
               {SERVING_OPTIONS.map((option) => (
-                <Pressable
+                <SelectableTile
                   key={option}
-                  onPress={() => {
-                    haptics.selection();
-                    setServings(option);
-                  }}
+                  shape="chip"
+                  onPress={() => setServings(option)}
                   disabled={isGenerating}
                   style={[
                     styles.optionChip,
@@ -270,7 +265,7 @@ export function RecipeGenerationModal({
                   >
                     {option}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               ))}
             </View>
           </View>
@@ -286,12 +281,10 @@ export function RecipeGenerationModal({
               accessibilityLabel="Max cooking time"
             >
               {TIME_OPTIONS.map((option) => (
-                <Pressable
+                <SelectableTile
                   key={option.label}
-                  onPress={() => {
-                    haptics.selection();
-                    setTimeConstraint(option.value);
-                  }}
+                  shape="chip"
+                  onPress={() => setTimeConstraint(option.value)}
                   disabled={isGenerating}
                   style={[
                     styles.optionChip,
@@ -327,7 +320,7 @@ export function RecipeGenerationModal({
                   >
                     {option.label}
                   </ThemedText>
-                </Pressable>
+                </SelectableTile>
               ))}
             </View>
           </View>
@@ -341,8 +334,9 @@ export function RecipeGenerationModal({
               {DIET_OPTIONS.map((diet) => {
                 const isSelected = selectedDiets.includes(diet);
                 return (
-                  <Pressable
+                  <SelectableTile
                     key={diet}
+                    shape="chip"
                     onPress={() => toggleDiet(diet)}
                     disabled={isGenerating}
                     style={[
@@ -377,7 +371,7 @@ export function RecipeGenerationModal({
                     >
                       {diet}
                     </ThemedText>
-                  </Pressable>
+                  </SelectableTile>
                 );
               })}
             </View>

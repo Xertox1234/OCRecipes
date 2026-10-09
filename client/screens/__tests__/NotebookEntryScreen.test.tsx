@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
+import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
 import { renderComponent } from "../../../test/utils/render-component";
 import NotebookEntryScreen from "../NotebookEntryScreen";
 
@@ -272,5 +274,27 @@ describe("NotebookEntryScreen — safe back navigation", () => {
       index: 0,
       routes: [{ name: "Main", params: { screen: "CoachTab" } }],
     });
+  });
+});
+
+// The entry-type pills are SelectableTiles: picking a type ticks
+// `selection()` once (the real useHaptics → expo-haptics mock).
+describe("NotebookEntryScreen — one selection tick per type pick", () => {
+  it("every entry-type pill ticks once", () => {
+    setupEntries([]);
+    renderComponent(<NotebookEntryScreen />);
+    const pills = screen.getAllByRole("radio");
+    // Denominator: one pill per notebook entry type.
+    expect(pills).toHaveLength(notebookEntryTypes.length);
+
+    for (const [i, pill] of pills.entries()) {
+      vi.mocked(Haptics.selectionAsync).mockClear();
+      fireEvent.click(pill);
+      expect(
+        vi.mocked(Haptics.selectionAsync).mock.calls.length,
+        `pill ${i}`,
+      ).toBe(1);
+    }
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
   });
 });

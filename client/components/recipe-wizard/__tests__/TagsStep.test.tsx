@@ -118,11 +118,21 @@ describe("TagsStep — render", () => {
     });
   });
 
-  it("triggers haptic feedback via the centralized useHaptics hook when a chip is pressed", () => {
+  // Picking a tag is a selection: every chip ticks `selection()` once (via
+  // useHaptics — never expo-haptics directly) and never the impact buzz.
+  it("every diet tag chip ticks one selection haptic and no impact", () => {
     renderComponent(<TagsStep tags={makeTags()} setTags={vi.fn()} />);
-    fireEvent.click(screen.getByLabelText("Vegan"));
-    expect(mockImpact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
-    expect(Haptics.impactAsync).not.toHaveBeenCalled();
+    const chips = screen.getAllByRole("checkbox");
+    // Denominator: one chip per diet tag option.
+    expect(chips).toHaveLength(DIET_TAG_OPTIONS.length);
+
+    for (const [i, chip] of chips.entries()) {
+      mockSelection.mockClear();
+      fireEvent.click(chip);
+      expect(mockSelection, `chip ${i}`).toHaveBeenCalledTimes(1);
+    }
+    expect(mockImpact).not.toHaveBeenCalled();
+    expect(Haptics.selectionAsync).not.toHaveBeenCalled();
   });
 
   it("calls setTags with the tag removed when an active chip is pressed again", () => {
