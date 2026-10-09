@@ -26,6 +26,7 @@ import {
   avoidingAccessibilityLabel,
   buildAdjustAction,
   clampServings,
+  generateLabel,
   notedText,
   servingsAfterAccessibilityAction,
   timeLabel,
@@ -98,10 +99,8 @@ export const RecipeAdjust = React.memo(function RecipeAdjust({
 
   const handleGenerate = () => {
     if (!isActive) return;
-    onAction(
-      buildAdjustAction(block, { servings, spice, time, answers }),
-      "Generate",
-    );
+    const action = buildAdjustAction(block, { servings, spice, time, answers });
+    onAction(action, generateLabel(action));
   };
 
   const handleCancel = () => {

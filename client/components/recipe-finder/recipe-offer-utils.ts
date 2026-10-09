@@ -68,6 +68,22 @@ export function buildAdjustAction(
 }
 
 /**
+ * The Generate tap's user bubble (also the request `content`), built from the
+ * action's own clamped settings so it matches what was sent:
+ * "Generate: 4 servings · mild · under 30 minutes".
+ */
+export function generateLabel(action: FinderAction): string {
+  const settings = action.settings;
+  if (!settings) return "Generate";
+  const { servings, spice, time } = settings;
+  return [
+    `Generate: ${servings} serving${servings === 1 ? "" : "s"}`,
+    SPICE_LABELS[spice].toLowerCase(),
+    timeLabel(time).toLowerCase(),
+  ].join(" · ");
+}
+
+/**
  * The offer copy the server wrote, minus the old-client reply hint.
  * RecipeChef's offer text is the old-client fallback, which ends with
  * OFFER_REPLY_HINT; the buttons replace that hint, so it isn't shown above

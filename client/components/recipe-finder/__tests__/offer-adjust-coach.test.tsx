@@ -148,7 +148,7 @@ describe("Coach — offer + adjust", () => {
     expect(chat.startStream).toHaveBeenCalledTimes(1);
     const [convId, label, opts] = chat.startStream.mock.calls[0];
     expect(convId).toBe(1);
-    expect(label).toBe("Generate");
+    expect(label).toBe("Generate: 8 servings · hot · 30-60 minutes");
     expect(opts.finderAction).toEqual({
       type: "adjust_generate",
       flowId: FLOW,

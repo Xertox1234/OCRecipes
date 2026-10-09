@@ -139,7 +139,7 @@ describe("RecipeAdjust — actions", () => {
       answers: [{ question: "Beef, pork, or a mix?", answer: "Mix" }],
     });
     expect(finderActionSchema.safeParse(action).success).toBe(true);
-    expect(label).toBe("Generate");
+    expect(label).toBe("Generate: 9 servings · medium · under 30 minutes");
   });
 
   it("tapping a picked follow-up again clears it", () => {

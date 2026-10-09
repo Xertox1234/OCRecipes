@@ -7,6 +7,7 @@ import {
   avoidingAccessibilityLabel,
   buildAdjustAction,
   clampServings,
+  generateLabel,
   notedText,
   offerDisplayText,
   servingsAfterAccessibilityAction,
@@ -174,5 +175,31 @@ describe("servingsAfterAccessibilityAction", () => {
     expect(servingsAfterAccessibilityAction(20, "increment")).toBe(20);
     expect(servingsAfterAccessibilityAction(1, "decrement")).toBe(1);
     expect(servingsAfterAccessibilityAction(8, "activate")).toBe(8);
+  });
+});
+
+describe("generateLabel", () => {
+  it("summarises the settings the Generate action sends", () => {
+    const action = buildAdjustAction(block, {
+      servings: 4,
+      spice: "mild",
+      time: "quick",
+      answers: {},
+    });
+    expect(generateLabel(action)).toBe(
+      "Generate: 4 servings · mild · under 30 minutes",
+    );
+  });
+
+  it("uses the clamped servings and the singular for one", () => {
+    const action = buildAdjustAction(block, {
+      servings: 0,
+      spice: "hot",
+      time: "leisurely",
+      answers: {},
+    });
+    expect(generateLabel(action)).toBe(
+      "Generate: 1 serving · hot · 1+ hours, no rush",
+    );
   });
 });

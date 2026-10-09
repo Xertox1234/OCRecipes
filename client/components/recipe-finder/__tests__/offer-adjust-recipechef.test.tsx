@@ -165,7 +165,7 @@ describe("RecipeChef — offer + adjust", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     expect(chat.sendMessage).toHaveBeenCalledTimes(1);
     const [label, , convId, opts] = chat.sendMessage.mock.calls[0];
-    expect(label).toBe("Generate");
+    expect(label).toBe("Generate: 8 servings · mild · 30-60 minutes");
     expect(convId).toBe(11);
     expect(opts.finderAction).toEqual({
       type: "adjust_generate",
