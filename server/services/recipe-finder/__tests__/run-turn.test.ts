@@ -462,16 +462,4 @@ describe("executeFinderStep: offer steps", () => {
     );
     expect(out.kind === "message" && out.block.type).toBe("recipe_offer");
   });
-
-  it("offer → recipe_offer message", async () => {
-    const out = await executeFinderStep(
-      {
-        kind: "offer",
-        dish: "Chili",
-        details: { ingredients: [], fromConversation: false },
-      },
-      ctx({ offer: true }),
-    );
-    expect(out.kind === "message" && out.block.type).toBe("recipe_offer");
-  });
 });

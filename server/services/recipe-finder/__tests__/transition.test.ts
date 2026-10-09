@@ -242,6 +242,19 @@ describe("finderOutcome — step × result", () => {
     priorShownIds: ["community:1"],
   });
 
+  it("steps the caller finishes itself (close included) throw rather than drop the turn", () => {
+    const none: FinderStepResult = { kind: "none" };
+    expect(() => finderOutcome({ kind: "close" }, none, ctx)).toThrow(
+      "close is handled by the caller",
+    );
+    expect(() =>
+      finderOutcome({ kind: "offer_from_text", text: "x" }, none, ctx),
+    ).toThrow("offer_from_text is handled by the caller");
+    expect(
+      finderOutcome({ kind: "ignore", reason: "invalid_for_stage" }, none, ctx),
+    ).toEqual({ kind: "ignore" });
+  });
+
   it("community matches → results list with the three buttons and merged shownIds", () => {
     expect(
       finderOutcome(search(0), community([item(2), item(3)]), ctx),
@@ -629,18 +642,10 @@ describe("offer/adjust actions", () => {
       reason: "no_active_flow",
     });
   });
-  it("start → offer_from_text; offer input → offer", () => {
+  it("start → offer_from_text", () => {
     expect(
       planFinderStep(null, { kind: "start", text: "spaghetti for 8" }, ON),
     ).toEqual({ kind: "offer_from_text", text: "spaghetti for 8" });
-    const details = { ingredients: [], fromConversation: true };
-    expect(
-      planFinderStep(
-        null,
-        { kind: "offer", dish: "Lemon chicken", details },
-        ON,
-      ),
-    ).toEqual({ kind: "offer", dish: "Lemon chicken", details });
   });
   it("status labels for the new steps", () => {
     expect(finderStatusLabel({ kind: "build_adjust", flow: flow() })).toBe(

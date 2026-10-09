@@ -5,6 +5,7 @@
 // yields only conversational text — the card arrives on the post-`done`
 // refetch, so the route's CoachChatEvent ternary needs no new arm.
 import type { ChatMessage } from "@shared/schema";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { CoachChatEvent } from "../coach-pro-chat";
 import { storage } from "../../storage";
 import { fireAndForget } from "../../lib/fire-and-forget";
@@ -38,6 +39,15 @@ export interface CoachFinderTurnParams {
   userMessageId: number;
   entry: CoachFinderTurnEntry;
   features: FinderFeatures;
+  /** Coach's pre-tool text (offer tool path); leads the saved reply. */
+  leadText?: string;
+  /** Blocks parsed out of that pre-tool text; they precede the finder block. */
+  leadBlocks?: CoachBlock[];
+}
+
+/** Prepends Coach's streamed pre-tool text to a saved reply. */
+export function withLead(leadText: string | undefined, text: string): string {
+  return leadText ? `${leadText}\n\n${text}` : text;
 }
 
 const LIMIT_TEXT =
@@ -132,9 +142,12 @@ export async function* runCoachFinderTurn(
       return;
     }
     if (turn.kind === "message") {
-      await persistAssistant(p, turn.content, { blocks: [turn.block] });
+      const blocks: CoachBlock[] = [...(p.leadBlocks ?? []), turn.block];
+      await persistAssistant(p, withLead(p.leadText, turn.content), {
+        blocks,
+      });
       maybeAutoTitle(p);
-      yield { type: "blocks", blocks: [turn.block] };
+      yield { type: "blocks", blocks };
       return;
     }
     // Offer flag only: "No problem." closes the flow with NO metadata, so it

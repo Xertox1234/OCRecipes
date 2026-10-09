@@ -58,8 +58,10 @@ import {
 } from "./recipe-finder";
 import {
   runCoachFinderTurn,
+  withLead,
   type CoachFinderTurnEntry,
 } from "./recipe-finder/coach-turn";
+import { finderBlockFromMetadata } from "./recipe-finder/entry";
 import { buildOfferBlock, decideOfferToolCall } from "./recipe-finder/offer";
 import { OFFER_TEXT, finderFallbackText } from "./recipe-finder/fallback-text";
 
@@ -519,14 +521,17 @@ interface CoachTierConfig {
   extractNotebook: boolean;
 }
 
-/** Persists the assistant reply once per turnKey (SSE retries replay turns). */
+/**
+ * Persists the assistant reply once per turnKey (SSE retries replay turns).
+ * Returns the already-saved row on a turnKey hit, else undefined.
+ */
 async function persistCoachReply(
   conversationId: number,
   userId: string,
   turnKey: string | undefined,
   text: string,
   metadata: Record<string, unknown> | null,
-): Promise<void> {
+): Promise<ChatMessage | undefined> {
   if (turnKey) {
     const existing = await storage.getChatMessageByTurnKey(
       conversationId,
@@ -537,7 +542,7 @@ async function persistCoachReply(
         { turnKey },
         "assistant message already persisted, skipping duplicate write",
       );
-      return;
+      return existing;
     }
     await storage.createChatMessage(
       conversationId,
@@ -561,11 +566,27 @@ async function persistCoachReply(
 const NO_DISH_TEXT = "Which dish did you have in mind?";
 
 /**
+ * On a turnKey hit nothing new was saved, so a freshly minted flowId would
+ * differ from the stored card's and its taps would be stale: swap in the
+ * stored finder block. With no stored finder block, today's blocks stand.
+ */
+function savedBlocks(
+  existing: ChatMessage | undefined,
+  blocks: CoachBlock[],
+  fresh: CoachBlock,
+): CoachBlock[] {
+  const stored = existing ? finderBlockFromMetadata(existing.metadata) : null;
+  return stored ? blocks.map((b) => (b === fresh ? stored : b)) : blocks;
+}
+
+/**
  * Delivers an `offer_recipe` terminal tool call (spec §4.2, H4). Every reply
  * is SAVED (with the turnKey) BEFORE it is yielded: the route stops iterating
  * at a yield once the client leaves, and its H6 settle keeps the user row only
- * if it finds the saved turnKey row. Returns false only for invalid args after
- * streamed text — that text stands and the caller's normal save path runs.
+ * if it finds the saved turnKey row. Any streamed pre-tool text (and its
+ * blocks) leads the saved offer, re-posted card or adjust card. Returns false
+ * only for invalid args after streamed text — that text stands and the
+ * caller's normal save path runs.
  */
 async function* deliverOfferToolCall(a: {
   params: CoachChatParams;
@@ -581,8 +602,6 @@ async function* deliverOfferToolCall(a: {
   const { conversationId, userId, content, turnKey } = a.params;
   const save = (text: string, metadata: Record<string, unknown> | null) =>
     persistCoachReply(conversationId, userId, turnKey, text, metadata);
-  const withLead = (text: string) =>
-    a.leadText ? `${a.leadText}\n\n${text}` : text;
 
   const decision = decideOfferToolCall(
     a.rawArgs,
@@ -598,7 +617,8 @@ async function* deliverOfferToolCall(a: {
     }
     case "adjust": {
       // Repeat = yes: the same dish while the offer is open is a "Yes" tap.
-      // The typed user row (route-inserted, finder.userMessageId) carries it.
+      // The typed user row (route-inserted, finder.userMessageId) carries it;
+      // the finder turn saves the lead ahead of the adjust card.
       yield* runCoachFinderTurn({
         conversationId,
         userId,
@@ -615,6 +635,8 @@ async function* deliverOfferToolCall(a: {
           offer: true,
         },
         features: a.finder.features,
+        leadText: a.leadText,
+        leadBlocks: a.leadBlocks,
       });
       return true;
     }
@@ -626,9 +648,12 @@ async function* deliverOfferToolCall(a: {
         flow: { ...decision.block.flow, flowId: randomUUID() },
       };
       const blocks: CoachBlock[] = [...a.leadBlocks, block];
-      await save(withLead(finderFallbackText(block)), { blocks });
+      const existing = await save(
+        withLead(a.leadText, finderFallbackText(block)),
+        { blocks },
+      );
       a.maybeAutoTitle();
-      yield { type: "blocks", blocks };
+      yield { type: "blocks", blocks: savedBlocks(existing, blocks, block) };
       return true;
     }
     case "offer": {
@@ -638,9 +663,9 @@ async function* deliverOfferToolCall(a: {
         randomUUID(),
       );
       const blocks: CoachBlock[] = [...a.leadBlocks, block];
-      await save(withLead(OFFER_TEXT), { blocks });
+      const existing = await save(withLead(a.leadText, OFFER_TEXT), { blocks });
       a.maybeAutoTitle();
-      yield { type: "blocks", blocks };
+      yield { type: "blocks", blocks: savedBlocks(existing, blocks, block) };
       return true;
     }
   }
