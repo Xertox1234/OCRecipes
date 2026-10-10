@@ -48,8 +48,7 @@ const StreamingBubble = memo(function StreamingBubble({
       ) : null}
       {/* The saved reply takes over from these in place, so their exit
           animations (the quick replies' fade) would leave a fading second
-          row. A tapped quick reply still fades: this skips only the exits
-          of a wholesale removal. */}
+          row. skipExiting skips them only when this wrapper itself goes. */}
       <LayoutAnimationConfig skipExiting>
         {streamBlocks.map((block, i) => (
           <BlockRenderer

@@ -13,6 +13,7 @@ import {
   Pressable,
   AccessibilityInfo,
   Text,
+  type ScrollView,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -104,6 +105,15 @@ interface CoachChatProps {
 type ChatListItem =
   | { type: "message"; id: string; message: ChatMessage }
   | { type: "optimistic"; id: string; content: string };
+
+/** FlatList's native scroll ref is typed as a View or a ScrollView. */
+function isScrollView(ref: unknown): ref is ScrollView {
+  return (
+    typeof ref === "object" &&
+    ref !== null &&
+    typeof (ref as { scrollToEnd?: unknown }).scrollToEnd === "function"
+  );
+}
 
 export default function CoachChat({
   conversationId,
@@ -1135,8 +1145,14 @@ export default function CoachChat({
     [showHistoryError, refetchMessages, theme.link],
   );
 
+  // The native ScrollView's scrollToEnd, not the FlatList's: the FlatList
+  // works the end out from cached cell and footer sizes, and a commit that
+  // grows the last cell while dropping the footer (a reply's live blocks
+  // handing over to the saved copy) lands here before they catch up, so the
+  // list stopped short with Regenerate hidden under the input bar.
   const handleContentSizeChange = useCallback(() => {
-    listRef.current?.scrollToEnd({ animated: false });
+    const scrollView = listRef.current?.getNativeScrollRef();
+    if (isScrollView(scrollView)) scrollView.scrollToEnd({ animated: false });
   }, []);
 
   useEffect(() => {
