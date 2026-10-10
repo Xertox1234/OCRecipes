@@ -1,6 +1,6 @@
 ---
 title: "Guard against leaving the 'save recovery codes' step of two-step setup"
-status: backlog
+status: done
 priority: low
 created: 2026-10-10
 updated: 2026-10-10
@@ -21,9 +21,9 @@ Deferred from MFA part 1 (owner device test, 2026-10-10; noted in `todos/archive
 
 ## Acceptance Criteria
 
-- [ ] While `step === "save-codes"`, leaving the screen (back gesture, header back, Android hardware back) asks for confirmation first or is blocked until the codes are saved/copied.
-- [ ] Leaving the other steps behaves as it does today.
-- [ ] Tests for the step → guard decision (pure function in `TwoStepSetupScreen-utils.ts`).
+- [x] While `step === "save-codes"`, leaving the screen (back gesture, header back, Android hardware back) asks for confirmation first or is blocked until the codes are saved/copied.
+- [x] Leaving the other steps behaves as it does today.
+- [x] Tests for the step → guard decision (pure function in `TwoStepSetupScreen-utils.ts`).
 
 ## Implementation Notes
 
@@ -41,3 +41,4 @@ Deferred from MFA part 1 (owner device test, 2026-10-10; noted in `todos/archive
 ### 2026-10-10
 
 - Initial creation (deferred from MFA part 1).
+- Done: `shouldGuardLeave` in `TwoStepSetupScreen-utils.ts` + `usePreventRemove` with a Stay/Leave alert on the screen; utils and screen tests.

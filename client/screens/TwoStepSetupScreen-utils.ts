@@ -1,4 +1,9 @@
 export type TwoStepSetupMode = "setup" | "new_phone" | "disable" | "new_codes";
+export type TwoStepSetupStep =
+  | "confirm"
+  | "add-key"
+  | "enter-code"
+  | "save-codes";
 
 /** "ABCDEFGH…" → "ABCD EFGH …" so the key can be typed into an app by hand. */
 export function formatSetupKey(b32: string): string {
@@ -13,6 +18,17 @@ export function recoveryCodesText(codes: string[]): string {
 /** Done stays disabled until the person confirms they saved the codes. */
 export function canFinishSaveCodes(acknowledged: boolean): boolean {
   return acknowledged;
+}
+
+/**
+ * Leaving while recovery codes are on screen and not yet saved loses them —
+ * they are never shown again — so that one state asks first.
+ */
+export function shouldGuardLeave(
+  step: TwoStepSetupStep,
+  acknowledged: boolean,
+): boolean {
+  return step === "save-codes" && !acknowledged;
 }
 
 export function setupTitle(mode: TwoStepSetupMode): string {
