@@ -121,6 +121,11 @@ export function SecondFactorField({
         onPress={toggleMode}
         disabled={busy}
         accessibilityRole="button"
+        accessibilityLabel={
+          mode === "code"
+            ? "Use a recovery code instead"
+            : "Use the code from your app instead"
+        }
         // minHeight, not hitSlop: the parent clips hitSlop at its bottom edge.
         style={styles.toggle}
       >
