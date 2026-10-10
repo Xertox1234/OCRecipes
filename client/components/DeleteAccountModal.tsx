@@ -16,13 +16,19 @@ import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
+import { SecondFactorField } from "@/components/SecondFactorField";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import type { DeleteAccountProof } from "@/hooks/useAuth";
 import { ApiError } from "@/lib/api-error";
 import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
 import { deleteProofMode } from "@/screens/SignInMethodsScreen-utils";
-import type { SignInMethods } from "@shared/types/auth";
+import type { SecondFactorInput, SignInMethods } from "@shared/types/auth";
+import {
+  isSecondFactorRequired,
+  isTwoStepCheckError,
+  secondFactorErrorMessage,
+} from "@/lib/second-factor-utils";
 import {
   Spacing,
   BorderRadius,
@@ -34,7 +40,12 @@ interface DeleteAccountModalProps {
   visible: boolean;
   onClose: () => void;
   /** Resolves false when nothing was deleted (provider sheet cancelled). */
-  onConfirm: (proof: DeleteAccountProof) => Promise<boolean>;
+  onConfirm: (
+    proof: DeleteAccountProof,
+    secondFactor?: SecondFactorInput,
+  ) => Promise<boolean>;
+  /** Two-step verification is on: a password proof also needs the code. */
+  askCode?: boolean;
   /**
    * How the account signs in; undefined while loading (nothing can be
    * confirmed yet). Without a password it confirms with Apple instead.
@@ -60,6 +71,7 @@ export function DeleteAccountModal({
   showSubscriptionWarning = false,
   signInMethods,
   loadError = false,
+  askCode = false,
 }: DeleteAccountModalProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -79,6 +91,8 @@ export function DeleteAccountModal({
   const [error, setError] = useState<string | null>(null);
   const [shakeKey, setShakeKey] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [needsCode, setNeedsCode] = useState(askCode);
+  const [factor, setFactor] = useState<SecondFactorInput | null>(null);
 
   // Reset state every time the modal opens so re-opening after a wrong-password
   // attempt starts clean.
@@ -88,13 +102,15 @@ export function DeleteAccountModal({
       setShowPassword(false);
       setError(null);
       setIsDeleting(false);
+      setNeedsCode(askCode);
+      setFactor(null);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(
           "Delete account confirmation. Confirm it's you to continue.",
         );
       }
     }
-  }, [visible]);
+  }, [visible, askCode]);
 
   const handleConfirm = useCallback(async () => {
     // Concurrent-submission guard: state updates may lag behind rapid taps,
@@ -121,8 +137,12 @@ export function DeleteAccountModal({
       return;
     }
     if (mode.kind !== "password") return;
-    if (!password) {
-      setError("Password is required");
+    if (!password || (needsCode && !factor)) {
+      setError(
+        password
+          ? "Enter the code from your authenticator app"
+          : "Password is required",
+      );
       setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
@@ -130,9 +150,24 @@ export function DeleteAccountModal({
     setError(null);
     setIsDeleting(true);
     try {
-      await onConfirm({ password });
+      if (needsCode && factor) await onConfirm({ password }, factor);
+      else await onConfirm({ password });
       // onConfirm is responsible for any post-deletion navigation/state change.
     } catch (err) {
+      if (isSecondFactorRequired(err)) {
+        // Right password on a 2FA account: keep it, ask for the code too.
+        setNeedsCode(true);
+        setError("Enter the code from your authenticator app.");
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        setIsDeleting(false);
+        return;
+      }
+      if (isTwoStepCheckError(err)) {
+        setError(secondFactorErrorMessage(err).message);
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        setIsDeleting(false);
+        return;
+      }
       const message =
         err instanceof Error
           ? err.message
@@ -145,7 +180,16 @@ export function DeleteAccountModal({
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setIsDeleting(false);
     }
-  }, [password, onConfirm, isDeleting, mode, providerName, haptics]);
+  }, [
+    password,
+    onConfirm,
+    isDeleting,
+    mode,
+    providerName,
+    haptics,
+    needsCode,
+    factor,
+  ]);
 
   // Nothing to confirm with while loading, or with no usable method.
   const confirmDisabled =
@@ -286,6 +330,13 @@ export function DeleteAccountModal({
                     errorMessage={error ?? undefined}
                     testID="delete-account-password-input"
                   />
+                  {needsCode ? (
+                    <SecondFactorField
+                      onChange={setFactor}
+                      busy={isDeleting}
+                      autoFocus={!askCode}
+                    />
+                  ) : null}
                 </>
               ) : (
                 <ThemedText

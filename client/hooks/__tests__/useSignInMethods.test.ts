@@ -27,6 +27,17 @@ describe("useSignInMethods", () => {
     expect(mockApiRequest).toHaveBeenCalledWith("GET", "/api/auth/me");
   });
 
+  it("reports whether two-step verification is on (false until loaded or when absent)", async () => {
+    mockApiRequest.mockResolvedValue({
+      json: () =>
+        Promise.resolve({ id: "u1", signInMethods: methods, mfaEnabled: true }),
+    });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSignInMethods(), { wrapper });
+    expect(result.current.mfaEnabled).toBe(false);
+    await waitFor(() => expect(result.current.mfaEnabled).toBe(true));
+  });
+
   it("setMethods updates the cache without a refetch", async () => {
     mockApiRequest.mockResolvedValue({
       json: () => Promise.resolve({ id: "u1", signInMethods: methods }),

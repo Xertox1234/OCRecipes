@@ -512,40 +512,45 @@ export function useAuth() {
    * An account without a password confirms with a fresh provider sign-in
    * instead; resolves false (nothing deleted) when that sheet is cancelled.
    */
-  const deleteAccount = useCallback(async (proof: DeleteAccountProof) => {
-    // Surface server-side errors (wrong password, network, etc.) to the caller
-    // — the account is still intact and the user can retry.
-    if ("password" in proof) {
-      await apiRequest("DELETE", "/api/auth/account", {
-        password: proof.password,
-      });
-    } else {
-      const { nonce, nonceHash } = await fetchNonce("reauth");
-      const token = await getProviderToken(proof.provider, nonceHash);
-      if (!token) return false;
-      await apiRequest("DELETE", "/api/auth/account", {
-        provider: proof.provider,
-        nonce,
-        idToken: token.idToken,
-      });
-    }
+  const deleteAccount = useCallback(
+    async (proof: DeleteAccountProof, secondFactor?: SecondFactorInput) => {
+      // Surface server-side errors (wrong password, network, etc.) to the caller
+      // — the account is still intact and the user can retry. On a 2FA account a
+      // password alone answers SECOND_FACTOR_REQUIRED; a provider proof never does.
+      if ("password" in proof) {
+        await apiRequest("DELETE", "/api/auth/account", {
+          password: proof.password,
+          ...(secondFactor ? { secondFactor } : {}),
+        });
+      } else {
+        const { nonce, nonceHash } = await fetchNonce("reauth");
+        const token = await getProviderToken(proof.provider, nonceHash);
+        if (!token) return false;
+        await apiRequest("DELETE", "/api/auth/account", {
+          provider: proof.provider,
+          nonce,
+          idToken: token.idToken,
+        });
+      }
 
-    // Server confirmed deletion. Any local-cleanup failures past this point
-    // must NOT propagate — the account no longer exists, so retrying would
-    // just hit a 401. Best-effort clear, then always flip auth state to false.
-    try {
-      await tokenStorage.clear();
-    } catch {}
-    try {
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-    } catch {}
-    // A queued write would otherwise resurrect the "erased" account's data under
-    // the new user, authenticated as them — so the durable sweep is mandatory on
-    // the right-to-erasure path too.
-    await clearDurableLocalState();
-    setState({ user: null, isLoading: false, isAuthenticated: false });
-    return true;
-  }, []);
+      // Server confirmed deletion. Any local-cleanup failures past this point
+      // must NOT propagate — the account no longer exists, so retrying would
+      // just hit a 401. Best-effort clear, then always flip auth state to false.
+      try {
+        await tokenStorage.clear();
+      } catch {}
+      try {
+        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      } catch {}
+      // A queued write would otherwise resurrect the "erased" account's data under
+      // the new user, authenticated as them — so the durable sweep is mandatory on
+      // the right-to-erasure path too.
+      await clearDurableLocalState();
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+      return true;
+    },
+    [],
+  );
 
   /**
    * Add a Google/Apple sign-in to the signed-in account. The server wants the
@@ -557,7 +562,12 @@ export function useAuth() {
     async (
       provider: SocialProvider,
       password: string,
-    ): Promise<SignInMethods | null> => {
+      secondFactor?: SecondFactorInput,
+    ): Promise<{
+      signInMethods: SignInMethods;
+      /** A spent recovery code's replacement — show it once. */
+      replacementRecoveryCode?: string;
+    } | null> => {
       const { nonce, nonceHash } = await fetchNonce("link");
       const token = await getProviderToken(provider, nonceHash);
       if (!token) return null;
@@ -568,10 +578,12 @@ export function useAuth() {
         // Apple: exchanged server-side for the refresh token that account
         // deletion revokes.
         authorizationCode: token.authorizationCode,
-        proof: { password },
+        proof: { password, ...(secondFactor ? { secondFactor } : {}) },
       });
-      return ((await res.json()) as { signInMethods: SignInMethods })
-        .signInMethods;
+      return (await res.json()) as {
+        signInMethods: SignInMethods;
+        replacementRecoveryCode?: string;
+      };
     },
     [],
   );
@@ -615,24 +627,38 @@ export function useAuth() {
     async (
       newEmail: string,
       password: string,
+      secondFactor?: SecondFactorInput,
     ): Promise<
-      { status: "updated"; user: User } | { status: "verification_pending" }
+      (
+        | { status: "updated"; user: User }
+        | { status: "verification_pending" }
+      ) & { replacementRecoveryCode?: string }
     > => {
       const response = await apiRequest("POST", "/api/auth/change-email", {
         newEmail,
         password,
+        ...(secondFactor ? { secondFactor } : {}),
       });
-      const data = await response.json();
+      const raw = await response.json();
+      // A spent recovery code's replacement rides along; it is not user data.
+      const { replacementRecoveryCode, ...data } = (raw ?? {}) as Record<
+        string,
+        unknown
+      > & { replacementRecoveryCode?: string };
+      const replacement = replacementRecoveryCode
+        ? { replacementRecoveryCode }
+        : {};
       // Gate OFF echoes the updated user (has an `id`); gate ON returns the
       // neutral pending status with no user object. `data` is the parsed JSON
       // (Response.json → any), matching how updateUser consumes it uncast.
-      if (data && typeof data === "object" && "id" in data) {
-        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
-        setState((prev) => ({ ...prev, user: data }));
-        return { status: "updated", user: data };
+      if ("id" in data) {
+        const user = data as unknown as User;
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+        setState((prev) => ({ ...prev, user }));
+        return { status: "updated", user, ...replacement };
       }
       await checkAuth();
-      return { status: "verification_pending" };
+      return { status: "verification_pending", ...replacement };
     },
     [checkAuth],
   );

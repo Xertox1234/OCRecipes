@@ -145,3 +145,108 @@ describe("DeleteAccountModal — shake on validation reject", () => {
     expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("DeleteAccountModal — two-step verification", () => {
+  const pwMethods = { password: true, google: null, apple: null };
+  const deleteBtn = () =>
+    screen.getByRole("button", { name: "Delete account" });
+
+  it("asks for the code up front with a password proof and sends it", async () => {
+    onConfirm.mockResolvedValue(true);
+    renderComponent(
+      <DeleteAccountModal
+        visible
+        askCode
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+        signInMethods={pwMethods}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+    fireEvent.change(screen.getByLabelText("6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(deleteBtn());
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(
+        { password: "pw-1" },
+        { code: "123456" },
+      ),
+    );
+  });
+
+  it("a SECOND_FACTOR_REQUIRED answer reveals the code field and keeps the password", async () => {
+    onConfirm
+      .mockRejectedValueOnce(
+        new ApiError(
+          `403: ${JSON.stringify({ code: "SECOND_FACTOR_REQUIRED", error: "x" })}`,
+          "SECOND_FACTOR_REQUIRED",
+          403,
+        ),
+      )
+      .mockResolvedValueOnce(true);
+    renderModal(pwMethods);
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+    fireEvent.click(deleteBtn());
+    await screen.findByLabelText("6-digit code");
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
+      "pw-1",
+    );
+    fireEvent.change(screen.getByLabelText("6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(deleteBtn());
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenLastCalledWith(
+        { password: "pw-1" },
+        { code: "123456" },
+      ),
+    );
+  });
+
+  it("a wrong code shows the generic two-step message, not the raw response", async () => {
+    onConfirm.mockRejectedValue(
+      new ApiError(
+        `401: ${JSON.stringify({ code: "INVALID_SECOND_FACTOR", error: "That code didn't work. After several wrong codes, codes pause for 15 minutes." })}`,
+        "INVALID_SECOND_FACTOR",
+        401,
+      ),
+    );
+    renderComponent(
+      <DeleteAccountModal
+        visible
+        askCode
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+        signInMethods={pwMethods}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+    fireEvent.change(screen.getByLabelText("6-digit code"), {
+      target: { value: "000000" },
+    });
+    fireEvent.click(deleteBtn());
+    await screen.findByText(
+      "That code didn't work. After several wrong codes, codes pause for 15 minutes.",
+    );
+  });
+
+  it("a Google/Apple proof never shows the code field", () => {
+    renderComponent(
+      <DeleteAccountModal
+        visible
+        askCode
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+        signInMethods={{ password: false, google: null, apple: relay }}
+      />,
+    );
+    expect(screen.queryByLabelText("6-digit code")).toBeNull();
+  });
+});

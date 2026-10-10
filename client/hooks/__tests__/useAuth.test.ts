@@ -592,6 +592,81 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(true);
     });
 
+    it("connectProvider sends the code inside the password proof and returns a replacement", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-c", nonceHash: "hash-c" });
+      mockGetProviderToken.mockResolvedValue({ idToken: "id-c" });
+      const methods = { password: true, google: null, apple: null };
+      jsonOnce({
+        signInMethods: methods,
+        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.connectProvider("google", "pw-1", {
+          recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ",
+        });
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/identities",
+        expect.objectContaining({
+          proof: {
+            password: "pw-1",
+            secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+          },
+        }),
+      );
+      expect(out).toEqual({
+        signInMethods: methods,
+        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      });
+    });
+
+    it("changeEmail sends the code and returns a spent recovery code's replacement", async () => {
+      const { result } = await ready();
+      jsonOnce({
+        id: "u1",
+        username: "testuser",
+        email: "new@x.com",
+        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      });
+      let out: { replacementRecoveryCode?: string } | undefined;
+      await act(async () => {
+        out = await result.current.changeEmail("new@x.com", "pw-1", {
+          code: "123456",
+        });
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/change-email",
+        {
+          newEmail: "new@x.com",
+          password: "pw-1",
+          secondFactor: { code: "123456" },
+        },
+      );
+      expect(out?.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+      // The replacement is not part of the cached user.
+      expect(mockAsyncStorage["@ocrecipes_auth"]).not.toContain("AAAA");
+    });
+
+    it("deleteAccount sends the code with a password proof only", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockResolvedValue({ json: () => Promise.resolve({}) });
+      await act(async () => {
+        await result.current.deleteAccount(
+          { password: "pw-1" },
+          { code: "123456" },
+        );
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "DELETE",
+        "/api/auth/account",
+        { password: "pw-1", secondFactor: { code: "123456" } },
+      );
+    });
+
     it("signing out keeps the trusted-phone key (trust survives sign-out)", async () => {
       const { result } = await ready();
       mockApiRequest.mockResolvedValue({ json: () => Promise.resolve({}) });
@@ -1439,7 +1514,7 @@ describe("useAuth", () => {
           proof: { password: "pw-1" },
         },
       );
-      expect(out).toEqual(methods);
+      expect(out).toEqual({ signInMethods: methods });
     });
 
     it("connectProvider: a cancelled sheet posts nothing and returns null", async () => {

@@ -28,6 +28,21 @@ export function isSecondFactorRequired(err: unknown): boolean {
   return err instanceof ApiError && err.code === "SECOND_FACTOR_REQUIRED";
 }
 
+const TWO_STEP_CHECK_CODES = new Set([
+  "INVALID_SECOND_FACTOR",
+  "MFA_UNAVAILABLE",
+  "RATE_LIMITED",
+]);
+
+/** A failure about the code itself — show secondFactorErrorMessage's copy. */
+export function isTwoStepCheckError(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.code !== undefined &&
+    TWO_STEP_CHECK_CODES.has(err.code)
+  );
+}
+
 /**
  * Once a recovery code is spent, the server returns its replacement even when
  * the request then fails — read it so the person can still save it.

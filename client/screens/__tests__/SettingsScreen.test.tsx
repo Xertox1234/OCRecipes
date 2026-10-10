@@ -18,7 +18,9 @@ const {
   me,
   changeEmailModal,
   deleteModal,
+  mockChangeEmail,
 } = vi.hoisted(() => ({
+  mockChangeEmail: vi.fn(),
   mockConfirm: vi.fn<(options: ConfirmOptions) => void>(),
   mockLogout: vi.fn(),
   mockDeleteAccount: vi.fn(),
@@ -27,14 +29,27 @@ const {
   me: {
     methods: undefined as unknown,
     isError: false,
+    mfaEnabled: false,
   },
-  changeEmailModal: { visible: false },
+  changeEmailModal: {
+    visible: false,
+    props: null as null | {
+      visible: boolean;
+      askCode?: boolean;
+      onConfirm: (
+        email: string,
+        password: string,
+        secondFactor?: unknown,
+      ) => Promise<unknown>;
+    },
+  },
   deleteModal: {
     props: null as null | {
       visible: boolean;
       signInMethods: unknown;
       loadError?: boolean;
-      onConfirm: (proof: unknown) => Promise<boolean>;
+      askCode?: boolean;
+      onConfirm: (proof: unknown, secondFactor?: unknown) => Promise<boolean>;
     },
   },
 }));
@@ -42,6 +57,7 @@ const {
 vi.mock("@/hooks/useSignInMethods", () => ({
   useSignInMethods: () => ({
     methods: me.methods,
+    mfaEnabled: me.mfaEnabled,
     isError: me.isError,
     refetch: mockRefetch,
     setMethods: vi.fn(),
@@ -89,7 +105,7 @@ vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
     logout: mockLogout,
     deleteAccount: mockDeleteAccount,
-    changeEmail: vi.fn(),
+    changeEmail: mockChangeEmail,
     updateUser: vi.fn().mockResolvedValue(undefined),
     user: { id: 1, username: "testuser", measurementUnit: "metric" },
   }),
@@ -124,8 +140,9 @@ vi.mock("@/components/DeleteAccountModal", () => ({
   },
 }));
 vi.mock("@/components/ChangeEmailModal", () => ({
-  ChangeEmailModal: (props: { visible: boolean }) => {
+  ChangeEmailModal: (props: NonNullable<typeof changeEmailModal.props>) => {
     changeEmailModal.visible = props.visible;
+    changeEmailModal.props = props;
     return null;
   },
 }));
@@ -318,5 +335,57 @@ describe("SettingsScreen sign-in methods failed to load", () => {
     await waitFor(() => expect(deleteModal.props?.visible).toBe(true));
     expect(mockRefetch).toHaveBeenCalled();
     expect(deleteModal.props?.loadError).toBe(true);
+  });
+});
+
+describe("SettingsScreen — two-step verification on password proofs", () => {
+  beforeEach(() => {
+    me.mfaEnabled = true;
+    me.methods = { password: true, google: null, apple: null };
+  });
+  afterEach(() => {
+    me.mfaEnabled = false;
+  });
+
+  it("asks both modals for the code up front when two-step is on", () => {
+    renderComponent(<SettingsScreen />);
+    expect(changeEmailModal.props?.askCode).toBe(true);
+    expect(deleteModal.props?.askCode).toBe(true);
+  });
+
+  it("delete forwards the code to deleteAccount", async () => {
+    mockDeleteAccount.mockResolvedValue(true);
+    renderComponent(<SettingsScreen />);
+    await act(async () => {
+      await deleteModal.props?.onConfirm(
+        { password: "pw" },
+        { code: "123456" },
+      );
+    });
+    expect(mockDeleteAccount).toHaveBeenCalledWith(
+      { password: "pw" },
+      { code: "123456" },
+    );
+  });
+
+  it("a spent recovery code on change email keeps the modal open until it is saved", async () => {
+    mockChangeEmail.mockResolvedValue({
+      status: "verification_pending",
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+    });
+    renderComponent(<SettingsScreen />);
+    let out: unknown;
+    await act(async () => {
+      out = await changeEmailModal.props?.onConfirm("n@x.com", "pw", {
+        recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ",
+      });
+    });
+    expect(mockChangeEmail).toHaveBeenCalledWith("n@x.com", "pw", {
+      recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ",
+    });
+    expect(out).toMatchObject({
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      finish: expect.any(Function),
+    });
   });
 });

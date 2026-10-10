@@ -34,13 +34,19 @@ interface AuthContextType {
   logout: () => Promise<void>;
   expireSession: () => Promise<void>;
   /** False when the confirming provider sheet was cancelled (nothing deleted). */
-  deleteAccount: (proof: DeleteAccountProof) => Promise<boolean>;
+  deleteAccount: (
+    proof: DeleteAccountProof,
+    secondFactor?: SecondFactorInput,
+  ) => Promise<boolean>;
   updateUser: (updates: Partial<User>) => Promise<User | undefined>;
   changeEmail: (
     newEmail: string,
     password: string,
+    secondFactor?: SecondFactorInput,
   ) => Promise<
-    { status: "updated"; user: User } | { status: "verification_pending" }
+    ({ status: "updated"; user: User } | { status: "verification_pending" }) & {
+      replacementRecoveryCode?: string;
+    }
   >;
   checkAuth: () => Promise<void>;
   signInWithProvider: (
@@ -60,7 +66,11 @@ interface AuthContextType {
   connectProvider: (
     provider: SocialProvider,
     password: string,
-  ) => Promise<SignInMethods | null>;
+    secondFactor?: SecondFactorInput,
+  ) => Promise<{
+    signInMethods: SignInMethods;
+    replacementRecoveryCode?: string;
+  } | null>;
   disconnectProvider: (provider: SocialProvider) => Promise<SignInMethods>;
 }
 

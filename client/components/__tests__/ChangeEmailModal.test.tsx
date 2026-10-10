@@ -4,6 +4,7 @@ import { screen, fireEvent } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
 import { ChangeEmailModal } from "../ChangeEmailModal";
+import { ApiError } from "@/lib/api-error";
 
 const { withSequenceSpy } = vi.hoisted(() => ({
   withSequenceSpy: vi.fn((...vals: number[]) => vals[vals.length - 1]),
@@ -14,6 +15,9 @@ vi.mock("react-native-reanimated", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, default: actual.default, withSequence: withSequenceSpy };
 });
+
+// The replacement-code card copies with expo-clipboard (native module).
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 
 function renderModal(onConfirm = vi.fn()) {
   renderComponent(
@@ -81,5 +85,132 @@ describe("ChangeEmailModal — reject feedback", () => {
       Haptics.NotificationFeedbackType.Error,
     );
     expect(withSequenceSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChangeEmailModal — two-step verification", () => {
+  const fill = () => {
+    type("New email address", "new@x.com");
+    type("Confirm new email address", "new@x.com");
+    type("Current password", "pw-1");
+  };
+  const codeError = (code: string, extra: object = {}) =>
+    new ApiError(
+      `403: ${JSON.stringify({ code, error: "x", ...extra })}`,
+      code,
+      403,
+    );
+
+  it("asks for the code up front when two-step is on, and sends it", async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    renderComponent(
+      <ChangeEmailModal
+        visible
+        askCode
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    fill();
+    type("6-digit code", "123456");
+    submit();
+    await vi.waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith("new@x.com", "pw-1", {
+        code: "123456",
+      }),
+    );
+  });
+
+  it("a SECOND_FACTOR_REQUIRED answer reveals the code field and keeps the password", async () => {
+    const onConfirm = vi
+      .fn()
+      .mockRejectedValueOnce(codeError("SECOND_FACTOR_REQUIRED"))
+      .mockResolvedValueOnce(undefined);
+    renderModal(onConfirm);
+    fill();
+    submit();
+    await screen.findByLabelText("6-digit code");
+    expect(
+      (screen.getByLabelText("Current password") as HTMLInputElement).value,
+    ).toBe("pw-1");
+    type("6-digit code", "123456");
+    submit();
+    await vi.waitFor(() =>
+      expect(onConfirm).toHaveBeenLastCalledWith("new@x.com", "pw-1", {
+        code: "123456",
+      }),
+    );
+  });
+
+  it("a wrong code shows the server's message", async () => {
+    const onConfirm = vi.fn().mockRejectedValue(
+      codeError("INVALID_SECOND_FACTOR", {
+        error:
+          "That code didn't work. After several wrong codes, codes pause for 15 minutes.",
+      }),
+    );
+    renderComponent(
+      <ChangeEmailModal
+        visible
+        askCode
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    fill();
+    type("6-digit code", "000000");
+    submit();
+    await screen.findByText(
+      "That code didn't work. After several wrong codes, codes pause for 15 minutes.",
+    );
+  });
+
+  it("a spent recovery code's replacement is shown before finishing", async () => {
+    const finish = vi.fn();
+    const onConfirm = vi.fn().mockResolvedValue({
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      finish,
+    });
+    renderComponent(
+      <ChangeEmailModal
+        visible
+        askCode
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    fill();
+    fireEvent.click(screen.getByText("Use a recovery code instead"));
+    type("Recovery code", "WXYZ-WXYZ-WXYZ-WXYZ");
+    submit();
+    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
+    expect(finish).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("I've saved it"));
+    expect(finish).toHaveBeenCalled();
+  });
+
+  it("a failure that spent a recovery code still shows its replacement", async () => {
+    const onConfirm = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError(
+          `409: ${JSON.stringify({ code: "CONFLICT", error: "Email already registered", replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD" })}`,
+          "CONFLICT",
+          409,
+        ),
+      );
+    renderComponent(
+      <ChangeEmailModal
+        visible
+        askCode
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    fill();
+    fireEvent.click(screen.getByText("Use a recovery code instead"));
+    type("Recovery code", "WXYZ-WXYZ-WXYZ-WXYZ");
+    submit();
+    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
   });
 });

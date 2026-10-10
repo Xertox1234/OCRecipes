@@ -30,6 +30,7 @@ import { useToast } from "@/context/ToastContext";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { useSignInMethods } from "@/hooks/useSignInMethods";
 import type { DeleteAccountProof } from "@/hooks/useAuth";
+import type { SecondFactorInput } from "@shared/types/auth";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -88,6 +89,7 @@ export default function SettingsScreen() {
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const {
     methods: signInMethods,
+    mfaEnabled,
     isError: signInMethodsError,
     refetch: refetchSignInMethods,
   } = useSignInMethods();
@@ -105,11 +107,13 @@ export default function SettingsScreen() {
   }, [isOpen, navigation]);
 
   const handleDeleteAccount = useCallback(
-    async (proof: DeleteAccountProof) => {
+    async (proof: DeleteAccountProof, secondFactor?: SecondFactorInput) => {
       // deleteAccount throws on failure (e.g. wrong password). Let the modal
       // surface the error and keep itself open — only close on success.
       // false = the Apple sheet was cancelled: nothing deleted, stay open.
-      const deleted = await deleteAccount(proof);
+      const deleted = secondFactor
+        ? await deleteAccount(proof, secondFactor)
+        : await deleteAccount(proof);
       if (deleted) setShowDeleteAccountModal(false);
       return deleted;
       // No explicit navigation needed: the root navigator gate switches to
@@ -119,17 +123,31 @@ export default function SettingsScreen() {
   );
 
   const handleChangeEmail = useCallback(
-    async (newEmail: string, password: string) => {
+    async (
+      newEmail: string,
+      password: string,
+      secondFactor?: SecondFactorInput,
+    ) => {
       // changeEmail throws on wrong password / duplicate / rate-limit — let the
       // modal surface it and stay open. Only close + confirm on success.
-      const result = await changeEmail(newEmail, password);
-      setShowChangeEmailModal(false);
-      Alert.alert(
-        "Email Updated",
-        result.status === "verification_pending"
-          ? "Almost done — check your new inbox for a verification link to confirm the change."
-          : "Your email address has been updated.",
-      );
+      const result = await changeEmail(newEmail, password, secondFactor);
+      const finish = () => {
+        setShowChangeEmailModal(false);
+        Alert.alert(
+          "Email Updated",
+          result.status === "verification_pending"
+            ? "Almost done — check your new inbox for a verification link to confirm the change."
+            : "Your email address has been updated.",
+        );
+      };
+      // A spent recovery code: the modal shows its replacement, then finishes.
+      if (result.replacementRecoveryCode) {
+        return {
+          replacementRecoveryCode: result.replacementRecoveryCode,
+          finish,
+        };
+      }
+      finish();
     },
     [changeEmail],
   );
@@ -558,6 +576,7 @@ export default function SettingsScreen() {
         showSubscriptionWarning={isPremium}
         signInMethods={signInMethods}
         loadError={signInMethodsError}
+        askCode={mfaEnabled}
       />
 
       <ChangeEmailModal
@@ -565,6 +584,7 @@ export default function SettingsScreen() {
         onClose={() => setShowChangeEmailModal(false)}
         onConfirm={handleChangeEmail}
         currentEmail={user?.email}
+        askCode={mfaEnabled}
       />
 
       <ConfirmationModal />

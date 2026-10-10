@@ -5,6 +5,7 @@ import {
   isSecondFactorRequired,
   secondFactorErrorMessage,
   replacementFromError,
+  isTwoStepCheckError,
 } from "../second-factor-utils";
 
 /** The shape throwIfResNotOk produces: `${status}: ${body}`. */
@@ -101,5 +102,21 @@ describe("replacementFromError", () => {
       replacementFromError(new ApiError("500: <html>", undefined, 500)),
     ).toBeUndefined();
     expect(replacementFromError(new Error("x"))).toBeUndefined();
+  });
+});
+
+describe("isTwoStepCheckError", () => {
+  it("matches the answers about the code itself, not other failures", () => {
+    for (const code of [
+      "INVALID_SECOND_FACTOR",
+      "MFA_UNAVAILABLE",
+      "RATE_LIMITED",
+    ]) {
+      expect(isTwoStepCheckError(apiError(401, { code }))).toBe(true);
+    }
+    expect(isTwoStepCheckError(apiError(401, { code: "UNAUTHORIZED" }))).toBe(
+      false,
+    );
+    expect(isTwoStepCheckError(new Error("x"))).toBe(false);
   });
 });

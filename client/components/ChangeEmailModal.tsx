@@ -16,6 +16,15 @@ import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
+import { SecondFactorField } from "@/components/SecondFactorField";
+import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
+import type { SecondFactorInput } from "@shared/types/auth";
+import {
+  isSecondFactorRequired,
+  isTwoStepCheckError,
+  replacementFromError,
+  secondFactorErrorMessage,
+} from "@/lib/second-factor-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -33,9 +42,24 @@ interface ChangeEmailModalProps {
    * shows the outcome message); rejects on wrong password / duplicate / rate
    * limit so this modal can surface the error and stay open.
    */
-  onConfirm: (newEmail: string, password: string) => Promise<void>;
+  onConfirm: (
+    newEmail: string,
+    password: string,
+    secondFactor?: SecondFactorInput,
+  ) => Promise<void | ChangeEmailNeedsSave>;
+  /** Two-step verification is on: ask for the code with the password. */
+  askCode?: boolean;
   /** The user's current email, shown for context. */
   currentEmail?: string;
+}
+
+/**
+ * The change went through but used up a recovery code: show its replacement
+ * first, then `finish` (close + confirm) once the person has saved it.
+ */
+export interface ChangeEmailNeedsSave {
+  replacementRecoveryCode: string;
+  finish: () => void;
 }
 
 // Client mirror of the server's `z.string().email()` — immediate feedback so a
@@ -56,6 +80,7 @@ export function ChangeEmailModal({
   onClose,
   onConfirm,
   currentEmail,
+  askCode = false,
 }: ChangeEmailModalProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -67,6 +92,13 @@ export function ChangeEmailModal({
   // Bumped on each validation reject (not server errors) to shake the error.
   const [shakeKey, setShakeKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [needsCode, setNeedsCode] = useState(askCode);
+  const [factor, setFactor] = useState<SecondFactorInput | null>(null);
+  // A spent recovery code's replacement; `finish` is set when the change itself succeeded.
+  const [replacement, setReplacement] = useState<{
+    code: string;
+    finish?: () => void;
+  } | null>(null);
 
   // Reset every time the modal opens so a re-open after a failed attempt starts
   // clean.
@@ -78,13 +110,16 @@ export function ChangeEmailModal({
       setShowPassword(false);
       setError(null);
       setIsSubmitting(false);
+      setNeedsCode(askCode);
+      setFactor(null);
+      setReplacement(null);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(
           "Change email. Enter your new email and current password.",
         );
       }
     }
-  }, [visible]);
+  }, [visible, askCode]);
 
   const handleConfirm = useCallback(async () => {
     // Concurrent-submission guard: state updates may lag rapid taps, so don't
@@ -111,12 +146,42 @@ export function ChangeEmailModal({
       rejectInput("Password is required");
       return;
     }
+    if (needsCode && !factor) {
+      rejectInput("Enter the code from your authenticator app");
+      return;
+    }
     setError(null);
     setIsSubmitting(true);
     try {
-      await onConfirm(trimmedEmail, password);
-      // onConfirm closes the modal + surfaces the outcome on success.
+      const result = await onConfirm(
+        trimmedEmail,
+        password,
+        needsCode && factor ? factor : undefined,
+      );
+      // onConfirm closes the modal + surfaces the outcome on success, unless a
+      // spent recovery code's replacement must be saved first.
+      if (result) {
+        setReplacement({
+          code: result.replacementRecoveryCode,
+          finish: result.finish,
+        });
+        setIsSubmitting(false);
+      }
     } catch (err) {
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      setIsSubmitting(false);
+      const spent = replacementFromError(err);
+      if (spent) setReplacement({ code: spent });
+      if (isSecondFactorRequired(err)) {
+        // Right password on a 2FA account: keep it, ask for the code too.
+        setNeedsCode(true);
+        setError("Enter the code from your authenticator app.");
+        return;
+      }
+      if (isTwoStepCheckError(err)) {
+        setError(secondFactorErrorMessage(err).message);
+        return;
+      }
       const message =
         err instanceof Error
           ? err.message
@@ -129,12 +194,19 @@ export function ChangeEmailModal({
           : /^429:/.test(message)
             ? "Too many attempts. Please wait a while and try again."
             : "Could not change your email. Please try again.";
-      // A server error: Error haptic, no shake (the input wasn't rejected).
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      // A server error: Error haptic (above), no shake (the input wasn't rejected).
       setError(friendly);
-      setIsSubmitting(false);
     }
-  }, [newEmail, confirmEmail, password, onConfirm, isSubmitting, haptics]);
+  }, [
+    newEmail,
+    confirmEmail,
+    password,
+    onConfirm,
+    isSubmitting,
+    haptics,
+    needsCode,
+    factor,
+  ]);
 
   const handleCancel = useCallback(() => {
     if (isSubmitting) return;
@@ -296,6 +368,24 @@ export function ChangeEmailModal({
                 errorMessage={error ?? undefined}
                 testID="change-email-password-input"
               />
+
+              {needsCode ? (
+                <SecondFactorField
+                  onChange={setFactor}
+                  busy={isSubmitting}
+                  autoFocus={!askCode}
+                />
+              ) : null}
+
+              {replacement ? (
+                <ReplacementCodeCard
+                  code={replacement.code}
+                  onDone={() => {
+                    if (replacement.finish) replacement.finish();
+                    else setReplacement(null);
+                  }}
+                />
+              ) : null}
 
               <InlineError message={error} shakeKey={shakeKey} />
 

@@ -6,7 +6,6 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useToast } from "@/context/ToastContext";
 import { BorderRadius, Spacing } from "@/constants/theme";
 
 interface ReplacementCodeCardProps {
@@ -28,7 +27,6 @@ export function ReplacementCodeCard({
 }: ReplacementCodeCardProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const toast = useToast();
 
   useEffect(() => {
     AccessibilityInfo.announceForAccessibility(
@@ -39,7 +37,7 @@ export function ReplacementCodeCard({
   const copy = async () => {
     await Clipboard.setStringAsync(code);
     haptics.notification(Haptics.NotificationFeedbackType.Success);
-    toast.success("Copied");
+    AccessibilityInfo.announceForAccessibility("Recovery code copied");
   };
 
   return (
