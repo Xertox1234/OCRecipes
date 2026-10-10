@@ -333,6 +333,14 @@ export function DeleteAccountModal({
                     testID="delete-account-password-input"
                   />
                   {needsCode ? (
+                    <ThemedText
+                      type="small"
+                      style={[styles.label, { color: theme.textSecondary }]}
+                    >
+                      Two-step verification code
+                    </ThemedText>
+                  ) : null}
+                  {needsCode ? (
                     <SecondFactorField
                       onChange={setFactor}
                       busy={isDeleting}
