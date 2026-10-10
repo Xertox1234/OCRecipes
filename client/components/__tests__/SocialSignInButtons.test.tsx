@@ -51,13 +51,82 @@ describe("SocialSignInButtons", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("renders nothing on Android (no Apple there; Google not in this build)", () => {
+  it("renders only Continue with Google on Android when Google is configured", () => {
     setOS("android");
     mockConfig.google = true;
+    renderComponent(
+      <SocialSignInButtons onResult={vi.fn()} onError={vi.fn()} />,
+    );
+    expect(screen.getByLabelText("Continue with Google")).toBeDefined();
+    expect(screen.queryByLabelText("Continue with Apple")).toBeNull();
+  });
+
+  it("renders nothing on Android when Google is not configured", () => {
+    setOS("android");
+    mockConfig.google = false;
     const { container } = renderComponent(
       <SocialSignInButtons onResult={vi.fn()} onError={vi.fn()} />,
     );
     expect(container.textContent).toBe("");
+  });
+
+  it("renders Apple then Google on iOS when both are configured", () => {
+    mockConfig.google = true;
+    renderComponent(
+      <SocialSignInButtons onResult={vi.fn()} onError={vi.fn()} />,
+    );
+    const apple = screen.getByLabelText("Continue with Apple");
+    const google = screen.getByLabelText("Continue with Google");
+    expect(
+      apple.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("signs in with google when the Google button is pressed", async () => {
+    mockConfig.google = true;
+    mockSignInWithProvider.mockResolvedValue(null);
+    renderComponent(
+      <SocialSignInButtons onResult={vi.fn()} onError={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByLabelText("Continue with Google"));
+    await waitFor(() =>
+      expect(mockSignInWithProvider).toHaveBeenCalledWith("google"),
+    );
+  });
+
+  it("ignores a second tap while Google sign-in is in flight", () => {
+    mockConfig.google = true;
+    let resolve: (v: null) => void = () => {};
+    mockSignInWithProvider.mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    renderComponent(
+      <SocialSignInButtons onResult={vi.fn()} onError={vi.fn()} />,
+    );
+    const btn = screen.getByLabelText("Continue with Google");
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(mockSignInWithProvider).toHaveBeenCalledTimes(1);
+    resolve(null);
+  });
+
+  it("shows the generic message when Google fails", async () => {
+    mockConfig.google = true;
+    const onError = vi.fn();
+    mockSignInWithProvider.mockRejectedValueOnce(
+      Object.assign(new Error("x"), { code: "NO_ACCOUNT" }),
+    );
+    renderComponent(
+      <SocialSignInButtons onResult={vi.fn()} onError={onError} />,
+    );
+    fireEvent.click(screen.getByLabelText("Continue with Google"));
+    await waitFor(() =>
+      expect(onError).toHaveBeenCalledWith(
+        "Sign-in didn't work. Please try again.",
+      ),
+    );
   });
 
   it("hands a non-signed-in result to onResult", async () => {
