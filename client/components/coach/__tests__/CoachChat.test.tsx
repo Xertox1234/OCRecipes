@@ -631,6 +631,50 @@ describe("CoachChat — a finished turn stays on screen until it is saved", () =
     expect(screen.queryByLabelText("Regenerate response")).toBeNull();
   });
 
+  // A new conversation's first fetch lands mid-reply, after the server has
+  // saved the question: the saved row replaces the live copy, not joins it.
+  it("shows the question once when its saved row arrives mid-reply", () => {
+    const chat = () => (
+      <CoachChat
+        conversationId={1}
+        onCreateConversation={vi.fn().mockResolvedValue(1)}
+        isCoachPro={false}
+        warmUpHook={warmUpHook}
+      />
+    );
+    const { rerender } = renderComponent(chat());
+    send("Hello coach");
+
+    messagesState.data = [
+      { id: 6, role: "user", content: "Hello coach", createdAt: "" },
+    ];
+    act(() => rerender(chat()));
+
+    expect(screen.queryAllByText("Hello coach")).toHaveLength(1);
+  });
+
+  // Regenerate deletes the question too and resends it as a new turn, so the
+  // cached copy must go with the reply or the question shows twice.
+  it("drops both rows of the turn Regenerate resends", async () => {
+    const turn = [
+      { id: 4, role: "user", content: "Earlier", createdAt: "" },
+      { id: 5, role: "assistant", content: "Earlier reply", createdAt: "" },
+    ];
+    messagesState.data = turn;
+    const setDataSpy = vi.spyOn(QueryClient.prototype, "setQueryData");
+    renderCoachChat();
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Regenerate response"));
+    });
+
+    const updater = setDataSpy.mock.calls[0]?.[1] as (
+      old: unknown[] | undefined,
+    ) => unknown[];
+    expect(updater(turn)).toEqual([]);
+    setDataSpy.mockRestore();
+  });
+
   it("never clears a question sent while the last one was saving", async () => {
     renderCoachChat();
     send("Hello coach");

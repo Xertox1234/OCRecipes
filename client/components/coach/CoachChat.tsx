@@ -191,12 +191,18 @@ export default function CoachChat({
   // True while the footer blocks' entrance is still playing.
   const [streamBlocksEntering, setStreamBlocksEntering] = useState(false);
   const lastAssistantIdRef = useRef<number | null>(null);
+  // Newest saved row id, read at send time (see `optimisticAfter`).
+  const lastSavedIdRef = useRef<number | null>(null);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
     null,
   );
+  // The newest saved row when the question was sent. A user row newer than
+  // it is the question's saved copy (a new conversation's first fetch lands
+  // mid-reply), so the optimistic copy steps aside instead of doubling it.
+  const [optimisticAfter, setOptimisticAfter] = useState<number | null>(null);
   // A finished turn stays on screen (question + streamed text) until the
   // refetch brings in a reply newer than `after`; dropping both on `done`
   // showed the pre-turn conversation for that round trip.
@@ -466,7 +472,11 @@ export default function CoachChat({
       id: `message-${message.id}`,
       message,
     }));
-    if (optimisticMessage && !turnSaved) {
+    const last = messages?.[messages.length - 1];
+    const questionSaved =
+      last?.role === "user" &&
+      (optimisticAfter === null || last.id > optimisticAfter);
+    if (optimisticMessage && !turnSaved && !questionSaved) {
       items.push({
         type: "optimistic",
         id: "optimistic",
@@ -474,7 +484,7 @@ export default function CoachChat({
       });
     }
     return items;
-  }, [messages, optimisticMessage, turnSaved]);
+  }, [messages, optimisticMessage, optimisticAfter, turnSaved]);
 
   // Validate blocks once per messages change, not on every render tick
   const messageBlocks = useMemo(() => {
@@ -516,6 +526,10 @@ export default function CoachChat({
   useEffect(() => {
     lastAssistantIdRef.current = lastAssistantMessageId;
   }, [lastAssistantMessageId]);
+
+  useEffect(() => {
+    lastSavedIdRef.current = messages?.[messages.length - 1]?.id ?? null;
+  }, [messages]);
 
   // The server saves a reply's blocks into its message metadata, so once
   // the refetched message renders them the footer copy would be a second
@@ -580,6 +594,7 @@ export default function CoachChat({
       setInputText("");
       turnEpochRef.current += 1;
       setPendingSave(null);
+      setOptimisticAfter(lastSavedIdRef.current);
       setOptimisticMessage(content);
       setStreamBlocks([]);
       setStreamingError(null);
@@ -638,9 +653,13 @@ export default function CoachChat({
 
     const msgQueryKey = [`/api/chat/conversations/${conversationId}/messages`];
     const snapshot = queryClient.getQueryData<ChatMessage[]>(msgQueryKey);
+    // Both rows go: the question is resent as a new turn, and a cached copy
+    // left here would show it twice while the reply regenerates.
     queryClient.setQueryData<ChatMessage[]>(
       msgQueryKey,
-      (old) => old?.filter((m) => m.id !== lastMsg.id) ?? [],
+      (old) =>
+        old?.filter((m) => m.id !== lastMsg.id && m.id !== lastUserMsg.id) ??
+        [],
     );
 
     try {
@@ -904,6 +923,7 @@ export default function CoachChat({
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       turnEpochRef.current += 1;
       setPendingSave(null);
+      setOptimisticAfter(lastSavedIdRef.current);
       setOptimisticMessage(label);
       setStreamBlocks([]);
       setStreamingError(null);
