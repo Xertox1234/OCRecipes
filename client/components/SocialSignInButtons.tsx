@@ -3,6 +3,7 @@ import { Platform, StyleSheet, View } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Haptics from "expo-haptics";
 
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { ThemedText } from "@/components/ThemedText";
 import { useAuthContext } from "@/context/AuthContext";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -27,9 +28,10 @@ interface Props {
 }
 
 /**
- * "Continue with Apple" (Google joins once its SDK ships) above the password
- * form, followed by an "or" divider. Renders nothing when no provider is both
- * configured on the server and available on this platform.
+ * "Continue with Apple" then "Continue with Google" (Apple first, equal size —
+ * App Store guideline 4.8) above the password form, followed by an "or"
+ * divider. Renders nothing when no provider is both configured on the server
+ * and available on this platform.
  */
 export function SocialSignInButtons({
   onResult,
@@ -101,6 +103,11 @@ export function SocialSignInButtons({
             style={styles.appleButton}
             onPress={() => run("apple")}
           />
+        </View>
+      )}
+      {providers.includes("google") && (
+        <View style={busy ? styles.busy : undefined}>
+          <GoogleSignInButton isDark={isDark} onPress={() => run("google")} />
         </View>
       )}
       <View style={styles.divider} accessible={false}>

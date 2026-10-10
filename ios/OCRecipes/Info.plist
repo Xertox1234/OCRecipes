@@ -37,6 +37,12 @@
           <string>exp+ocrecipes</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>com.googleusercontent.apps.302305066915-i735f5tb3i1udb23fduorkuludvgp8cr</string>
+        </array>
+      </dict>
     </array>
     <key>CFBundleVersion</key>
     <string>1</string>
