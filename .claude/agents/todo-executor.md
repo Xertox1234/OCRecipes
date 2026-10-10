@@ -649,7 +649,10 @@ Todo: `todos/<filename>.md` (archived in this commit)
 
    b. **Dispatch ONE `code-reviewer`** (with `run_in_background: false` — see Step 5b) using the dispatch prompt from `docs/AI_WORKFLOW.md` →
    Review Policy, with `$CHANGED` verbatim as the changed-file list and
-   `git -C "$WORKTREE" diff <base>...HEAD -- <those files>` as the diff command. One reviewer
+   `git -C "<worktree path>" diff origin/<base branch from your spawn prompt>...HEAD -- <those files>`
+   as the diff command, with both values written out literally: the reviewer cannot expand your
+   shell variables, and `$BASE` from Step 6 does not survive into this step's shell (the three-dot
+   form finds the merge-base itself, so no recompute is needed). One reviewer
    is enough: the gate sets its match on **any single** record with a clean or advisory verdict
    and a matching digest and never filters `agent_type`. Do not dispatch the roster here — Step 6
    already carried the domain lenses. (`advisory` is the verdict a WARNING/SUGGESTION-only review
