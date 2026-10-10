@@ -192,6 +192,26 @@ function createAnimatedComponent(
   return Wrapper;
 }
 
+/** Renders its children; exposes the skip flags so tests can assert them. */
+export const LayoutAnimationConfig = ({
+  children,
+  skipEntering,
+  skipExiting,
+}: {
+  children?: React.ReactNode;
+  skipEntering?: boolean;
+  skipExiting?: boolean;
+}) =>
+  React.createElement(
+    "div",
+    {
+      "data-testid": "layout-animation-config",
+      "data-skip-entering": String(!!skipEntering),
+      "data-skip-exiting": String(!!skipExiting),
+    },
+    children,
+  );
+
 /** Animated namespace */
 const AnimatedView = React.forwardRef<unknown, Record<string, unknown>>(
   ({ children, ...rest }, ref) =>
