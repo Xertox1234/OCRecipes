@@ -405,8 +405,8 @@ describe("POST /api/auth/social", () => {
   });
 
   it("a linked Apple user stopped at a 403 gate never has a token revoked", async () => {
-    // Revoking can end the whole Apple authorization of a real account.
-    vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
+    // Revoking can end the whole Apple authorization of a real account. The
+    // 403 here is EMAIL_NOT_VERIFIED (D1: no second-factor gate on this path).
     vi.mocked(verifyAppleIdToken).mockResolvedValue({
       ...gmailClaims,
       provider: "apple",
@@ -422,7 +422,7 @@ describe("POST /api/auth/social", () => {
     );
     vi.mocked(exchangeAppleCode).mockResolvedValue("fresh-refresh");
     vi.mocked(storage.getUserForAuth).mockResolvedValue(
-      createMockUser({ id: "u1", emailVerified: true }),
+      createMockUser({ id: "u1", emailVerified: false }),
     );
     const res = await request(app()).post("/api/auth/social").send({
       provider: "apple",
@@ -505,8 +505,7 @@ describe("POST /api/auth/social", () => {
     expect(input.appleRefreshTokenEnc).not.toContain("refresh-1");
   });
 
-  it("SECOND_FACTOR_REQUIRED: 403, no token, nothing inserted", async () => {
-    vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
+  it("D1: an already-linked Google sign-in on an MFA account goes straight in", async () => {
     vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
     vi.mocked(storage.findIdentity).mockResolvedValue(
       createMockUserIdentity({
@@ -515,13 +514,32 @@ describe("POST /api/auth/social", () => {
         provider: "google",
       }),
     );
-    vi.mocked(storage.getUserForAuth).mockResolvedValue(
-      createMockUser({ id: "u1", emailVerified: true }),
+    const user = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: new Date(),
+    });
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    const res = await request(app()).post("/api/auth/social").send(body);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("signed_in");
+    expect(typeof res.body.token).toBe("string");
+  });
+
+  it("an MFA account is never auto-linked by email (link_required instead)", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
+      createMockUser({
+        id: "u1",
+        email: "me@gmail.com",
+        emailVerified: true,
+        mfaEnabledAt: new Date(),
+      }),
     );
     const res = await request(app()).post("/api/auth/social").send(body);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
-    expect(res.body.token).toBeUndefined();
+    expect(res.body.status).toBe("link_required");
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
   });
 });
 

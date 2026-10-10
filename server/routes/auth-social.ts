@@ -49,6 +49,7 @@ import {
 } from "../lib/social-identity/token-crypto";
 import { reportError } from "../lib/error-reporter";
 import { signInGate, secondFactor } from "../lib/social-identity/sign-in-gates";
+import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { suggestUsername } from "../lib/social-identity/suggest-username";
 import type {
   ProviderClaims,
@@ -567,6 +568,14 @@ export function register(app: Express): void {
               ErrorCode.UNAUTHORIZED,
             );
           }
+          // A password alone never attaches a provider to an MFA account.
+          if (secondFactor.requiresSecondFactor(target)) {
+            throw new HttpFailure(
+              403,
+              ErrorCode.SECOND_FACTOR_REQUIRED,
+              "Second factor required",
+            );
+          }
         } else {
           pending = await storage.getPendingSignIn(body.ticket, "link");
           if (!pending?.targetUserId) throw expired;
@@ -602,7 +611,6 @@ export function register(app: Express): void {
           emailWillBeVerified: markEmailVerified,
           verificationOn: emailVerificationEnabled(),
         });
-        // Gate BEFORE inserting: a password alone never attaches a provider to an MFA account.
         if (!gate.ok)
           throw new HttpFailure(gate.status, gate.code, gate.message);
 
@@ -660,6 +668,16 @@ export function register(app: Express): void {
             ErrorCode.UNAUTHORIZED,
           );
         }
+        // Spec D2: a password proof on an MFA account also needs the code (a
+        // Google/Apple proof never does). Checked BEFORE the new provider's
+        // nonce is spent, so the retry with the code reuses the same token.
+        const gate = await secondFactorForPasswordProof(
+          me,
+          "password" in body.proof,
+          "password" in body.proof ? body.proof.secondFactor : undefined,
+        );
+        if (!gate.ok)
+          return sendError(res, gate.status, gate.message, gate.code);
         const claims = await verifyProviderToken(
           body.provider,
           body.idToken,
@@ -715,7 +733,12 @@ export function register(app: Express): void {
           }
           throw err;
         }
-        res.json({ signInMethods: await storage.getSignInMethods(req.userId) });
+        res.json({
+          signInMethods: await storage.getSignInMethods(req.userId),
+          ...(gate.replacementRecoveryCode
+            ? { replacementRecoveryCode: gate.replacementRecoveryCode }
+            : {}),
+        });
       } catch (error) {
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "connect provider");

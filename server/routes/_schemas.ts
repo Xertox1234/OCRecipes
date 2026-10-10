@@ -68,8 +68,17 @@ export const registerSchema = z.object({
 // sign-in method): the current password, OR a fresh Google/Apple token for an
 // identity ALREADY linked to this account (social-only accounts have no
 // password). The provider branch needs a `reauth` nonce bound to the caller.
+/** An authenticator code or a recovery code (two-step verification). */
+export const secondFactorSchema = z.union([
+  z.object({ code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code") }),
+  z.object({ recoveryCode: z.string().min(1).max(40) }),
+]);
+
 export const reauthProofSchema = z.union([
-  z.object({ password: z.string().min(1, "Password is required") }),
+  z.object({
+    password: z.string().min(1, "Password is required"),
+    secondFactor: secondFactorSchema.optional(),
+  }),
   z.object({
     provider: z.enum(["google", "apple"]),
     idToken: z.string().min(1).max(8192),
@@ -173,6 +182,7 @@ export const changeEmailSchema = z.object({
     .email("Please enter a valid email address")
     .max(254),
   password: z.string().min(1, "Password is required").max(200),
+  secondFactor: secondFactorSchema.optional(),
 });
 
 // Profile update validation schema

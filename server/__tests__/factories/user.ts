@@ -22,6 +22,7 @@ const userDefaults: User = {
   onboardingCompleted: false,
   measurementUnit: "metric",
   tokenVersion: 0,
+  mfaEnabledAt: null,
   resetCodeHash: null,
   resetCodeExpiresAt: null,
   resetCodeAttempts: 0,
