@@ -1,5 +1,9 @@
 import React, { createContext, useContext, ReactNode } from "react";
-import { useAuth, type DeleteAccountProof } from "@/hooks/useAuth";
+import {
+  useAuth,
+  type DeleteAccountProof,
+  type TwoStepSecret,
+} from "@/hooks/useAuth";
 import type {
   MfaVerifyResult,
   SecondFactorInput,
@@ -23,6 +27,21 @@ interface AuthContextType {
     trustDevice: boolean,
   ) => Promise<MfaVerifyResult>;
   finishSignIn: (user: User, token: string) => Promise<void>;
+  startTwoStepSetup: (password: string) => Promise<TwoStepSecret>;
+  startNewPhone: (
+    password: string,
+    secondFactor: SecondFactorInput,
+  ) => Promise<TwoStepSecret & { replacementRecoveryCode?: string }>;
+  confirmTwoStep: (code: string) => Promise<{ recoveryCodes?: string[] }>;
+  disableTwoStep: (
+    password: string,
+    secondFactor: SecondFactorInput,
+  ) => Promise<void>;
+  replaceRecoveryCodes: (
+    password: string,
+    secondFactor: SecondFactorInput,
+  ) => Promise<string[]>;
+  forgetTrustedPhones: () => Promise<void>;
   register: (
     username: string,
     password: string,

@@ -13,6 +13,7 @@ import type {
   MfaVerifyResult,
   SecondFactorInput,
   SessionResult,
+  SignedInResult,
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
@@ -109,6 +110,12 @@ async function clearDurableLocalState(): Promise<boolean> {
     ok = false;
   }
   return ok;
+}
+
+/** A new authenticator secret, shown once (setup or new phone). */
+export interface TwoStepSecret {
+  secret: string;
+  otpauthUrl: string;
 }
 
 export type DeleteAccountProof =
@@ -663,8 +670,89 @@ export function useAuth() {
     [checkAuth],
   );
 
+  // ── Two-step verification management (Profile → Sign-in methods) ────────
+  const startTwoStepSetup = useCallback(
+    async (password: string): Promise<TwoStepSecret> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/totp/setup", {
+        password,
+      });
+      return (await res.json()) as TwoStepSecret;
+    },
+    [],
+  );
+
+  const startNewPhone = useCallback(
+    async (
+      password: string,
+      secondFactor: SecondFactorInput,
+    ): Promise<TwoStepSecret & { replacementRecoveryCode?: string }> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/totp/reset", {
+        password,
+        secondFactor,
+      });
+      return (await res.json()) as TwoStepSecret & {
+        replacementRecoveryCode?: string;
+      };
+    },
+    [],
+  );
+
+  /** Finish setup or a new phone. Other devices were signed out; keep this one. */
+  const confirmTwoStep = useCallback(
+    async (code: string): Promise<{ recoveryCodes?: string[] }> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/totp/confirm", {
+        code,
+      });
+      const data = (await res.json()) as SignedInResult & {
+        recoveryCodes?: string[];
+      };
+      await establishSession(data.user, data.token);
+      return data.recoveryCodes ? { recoveryCodes: data.recoveryCodes } : {};
+    },
+    [establishSession],
+  );
+
+  /** Turn two-step off. Every device was signed out; keep this one. */
+  const disableTwoStep = useCallback(
+    async (password: string, secondFactor: SecondFactorInput) => {
+      const res = await apiRequest("POST", "/api/auth/mfa/disable", {
+        password,
+        secondFactor,
+      });
+      const data = (await res.json()) as SignedInResult;
+      await establishSession(data.user, data.token);
+    },
+    [establishSession],
+  );
+
+  const replaceRecoveryCodes = useCallback(
+    async (
+      password: string,
+      secondFactor: SecondFactorInput,
+    ): Promise<string[]> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/recovery-codes", {
+        password,
+        secondFactor,
+      });
+      return ((await res.json()) as { recoveryCodes: string[] }).recoveryCodes;
+    },
+    [],
+  );
+
+  /** Every trusted phone asks for the code again — this one included. */
+  const forgetTrustedPhones = useCallback(async () => {
+    await apiRequest("DELETE", "/api/auth/mfa/trusted-devices");
+    await trustKeyStorage.clear();
+  }, []);
+
   return {
     ...state,
+    startTwoStepSetup,
+    startNewPhone,
+    confirmTwoStep,
+    disableTwoStep,
+    replaceRecoveryCodes,
+    forgetTrustedPhones,
     login,
     verifySecondFactor,
     finishSignIn: establishSession,

@@ -1,7 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
@@ -45,8 +53,13 @@ const platform =
 export default function SignInMethodsScreen() {
   const { theme } = useTheme();
   const toast = useToast();
-  const { user, connectProvider, disconnectProvider, logout } =
-    useAuthContext();
+  const {
+    user,
+    connectProvider,
+    disconnectProvider,
+    logout,
+    forgetTrustedPhones,
+  } = useAuthContext();
   const { methods, mfaEnabled, isError, refetch, setMethods } =
     useSignInMethods();
   const config = useSocialConfig();
@@ -56,7 +69,8 @@ export default function SignInMethodsScreen() {
     apple: NATIVE_PROVIDERS.apple && config.apple,
     google: NATIVE_PROVIDERS.google && config.google,
   };
-  const navigation = useNavigation();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
   const [connecting, setConnecting] = useState<SocialProvider | null>(null);
@@ -182,6 +196,27 @@ export default function SignInMethodsScreen() {
     });
   };
 
+  const askForgetPhones = () => {
+    confirm({
+      title: "Forget trusted phones?",
+      message:
+        "Every phone, this one included, will ask for a code the next time you sign in with your password.",
+      confirmLabel: "Forget",
+      onConfirm: () => {
+        void forgetPhones();
+      },
+    });
+  };
+
+  const forgetPhones = async () => {
+    try {
+      await forgetTrustedPhones();
+      toast.success("Trusted phones forgotten");
+    } catch {
+      toast.error("Couldn't forget trusted phones. Please try again.");
+    }
+  };
+
   const askPasswordReset = () => {
     const email = user?.email ? ` to ${user.email}` : "";
     confirm({
@@ -290,6 +325,106 @@ export default function SignInMethodsScreen() {
             );
           })}
         </Card>
+
+        <ThemedText
+          type="small"
+          accessibilityRole="header"
+          style={[styles.sectionHeader, { color: theme.textSecondary }]}
+        >
+          SECURITY
+        </ThemedText>
+        <Card elevation={1} style={styles.card}>
+          <View style={styles.row}>
+            <Feather
+              name="shield"
+              size={20}
+              color={theme.textSecondary}
+              accessible={false}
+            />
+            <View style={styles.rowText}>
+              <ThemedText>Two-step verification</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                {mfaEnabled
+                  ? "On"
+                  : methods.password
+                    ? "Off"
+                    : "Set a password to turn on two-step verification"}
+              </ThemedText>
+            </View>
+            {!mfaEnabled && methods.password ? (
+              <Button
+                variant="outline"
+                onPress={() =>
+                  navigation.navigate("TwoStepSetup", { mode: "setup" })
+                }
+                accessibilityLabel="Turn on two-step verification"
+              >
+                Turn on
+              </Button>
+            ) : null}
+          </View>
+          {mfaEnabled
+            ? (
+                [
+                  ["Set up on a new phone", "smartphone", "new_phone"],
+                  ["New recovery codes", "key", "new_codes"],
+                  ["Turn off two-step verification", "shield-off", "disable"],
+                ] as const
+              ).map(([text, icon, mode]) => (
+                <View key={mode}>
+                  <View
+                    style={[styles.divider, { backgroundColor: theme.border }]}
+                  />
+                  <Pressable
+                    onPress={() =>
+                      navigation.navigate("TwoStepSetup", { mode })
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={text}
+                    style={styles.row}
+                  >
+                    <Feather
+                      name={icon}
+                      size={20}
+                      color={theme.textSecondary}
+                      accessible={false}
+                    />
+                    <ThemedText style={styles.rowText}>{text}</ThemedText>
+                    <Feather
+                      name="chevron-right"
+                      size={20}
+                      color={theme.textSecondary}
+                      accessible={false}
+                    />
+                  </Pressable>
+                </View>
+              ))
+            : null}
+          {mfaEnabled ? (
+            <View>
+              <View
+                style={[styles.divider, { backgroundColor: theme.border }]}
+              />
+              <Pressable
+                onPress={askForgetPhones}
+                accessibilityRole="button"
+                accessibilityLabel="Forget trusted phones"
+                accessibilityHint="Every phone will ask for a code at the next password sign-in"
+                style={styles.row}
+              >
+                <Feather
+                  name="x-circle"
+                  size={20}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
+                <ThemedText style={styles.rowText}>
+                  Forget trusted phones
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : null}
+        </Card>
       </ScreenScrollView>
 
       <PasswordConfirmModal
@@ -332,4 +467,9 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   hint: { paddingBottom: Spacing.md },
   divider: { height: 1 },
+  sectionHeader: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.xl,
+    letterSpacing: 0.5,
+  },
 });

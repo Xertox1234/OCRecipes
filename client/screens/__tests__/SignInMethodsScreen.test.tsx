@@ -20,6 +20,8 @@ const h = vi.hoisted(() => ({
   confirm: vi.fn<(o: ConfirmOptions) => void>(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  navigate: vi.fn(),
+  forgetTrustedPhones: vi.fn(),
   config: { apple: true, google: false },
 }));
 
@@ -42,13 +44,14 @@ vi.mock("@/context/AuthContext", () => ({
     connectProvider: h.connectProvider,
     disconnectProvider: h.disconnectProvider,
     logout: h.logout,
+    forgetTrustedPhones: h.forgetTrustedPhones,
   }),
 }));
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: h.toastSuccess, error: h.toastError }),
 }));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({ setOptions: vi.fn(), navigate: h.navigate }),
 }));
 vi.mock("@/components/ConfirmationModal", () => ({
   useConfirmationModal: () => ({
@@ -280,5 +283,62 @@ describe("SignInMethodsScreen — connecting on a 2FA account", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await screen.findByText("AAAA-BBBB-CCCC-DDDD");
+  });
+});
+
+describe("SignInMethodsScreen — Security (two-step verification)", () => {
+  it("off, with a password: offers to turn it on", () => {
+    h.methods = { password: true, google: null, apple: null };
+    renderComponent(<SignInMethodsScreen />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Turn on two-step verification" }),
+    );
+    expect(h.navigate).toHaveBeenCalledWith("TwoStepSetup", { mode: "setup" });
+  });
+
+  it("no password: explains why it can't be turned on", () => {
+    h.methods = { password: false, google: null, apple: relay };
+    renderComponent(<SignInMethodsScreen />);
+    expect(
+      screen.getByText("Set a password to turn on two-step verification"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Turn on two-step verification" }),
+    ).toBeNull();
+  });
+
+  it("on: new phone, new codes, turn off and forget trusted phones", () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    renderComponent(<SignInMethodsScreen />);
+    expect(screen.getByText("On")).toBeTruthy();
+    for (const [name, mode] of [
+      ["Set up on a new phone", "new_phone"],
+      ["New recovery codes", "new_codes"],
+      ["Turn off two-step verification", "disable"],
+    ] as const) {
+      fireEvent.click(screen.getByRole("button", { name }));
+      expect(h.navigate).toHaveBeenLastCalledWith("TwoStepSetup", { mode });
+    }
+    expect(
+      screen.getByRole("button", { name: "Forget trusted phones" }),
+    ).toBeTruthy();
+  });
+
+  it("forgetting trusted phones confirms first, then forgets them", async () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    h.forgetTrustedPhones.mockResolvedValue(undefined);
+    renderComponent(<SignInMethodsScreen />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Forget trusted phones" }),
+    );
+    expect(h.forgetTrustedPhones).not.toHaveBeenCalled();
+    const opts = h.confirm.mock.calls.at(-1)?.[0];
+    await act(async () => {
+      await opts?.onConfirm?.();
+    });
+    expect(h.forgetTrustedPhones).toHaveBeenCalled();
+    expect(h.toastSuccess).toHaveBeenCalled();
   });
 });

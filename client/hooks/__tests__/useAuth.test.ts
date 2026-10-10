@@ -667,6 +667,94 @@ describe("useAuth", () => {
       );
     });
 
+    it("startTwoStepSetup posts the password and returns the secret", async () => {
+      const { result } = await ready();
+      jsonOnce({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.startTwoStepSetup("pw-1");
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/setup",
+        { password: "pw-1" },
+      );
+      expect(out).toEqual({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+    });
+
+    it("startNewPhone sends the password and the current factor", async () => {
+      const { result } = await ready();
+      jsonOnce({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+      await act(async () => {
+        await result.current.startNewPhone("pw-1", { code: "123456" });
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/reset",
+        { password: "pw-1", secondFactor: { code: "123456" } },
+      );
+    });
+
+    it("confirmTwoStep keeps the new session (other devices were signed out) and returns the codes", async () => {
+      const { result } = await ready();
+      jsonOnce({
+        status: "signed_in",
+        user,
+        token: "t-new",
+        recoveryCodes: ["A", "B"],
+      });
+      let out: { recoveryCodes?: string[] } | undefined;
+      await act(async () => {
+        out = await result.current.confirmTwoStep("123456");
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/confirm",
+        { code: "123456" },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
+      expect(out?.recoveryCodes).toEqual(["A", "B"]);
+    });
+
+    it("disableTwoStep keeps the new session", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user, token: "t-off" });
+      await act(async () => {
+        await result.current.disableTwoStep("pw-1", { code: "123456" });
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/disable",
+        { password: "pw-1", secondFactor: { code: "123456" } },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-off");
+    });
+
+    it("replaceRecoveryCodes returns the new codes", async () => {
+      const { result } = await ready();
+      jsonOnce({ recoveryCodes: ["X", "Y"] });
+      let out: string[] | undefined;
+      await act(async () => {
+        out = await result.current.replaceRecoveryCodes("pw-1", {
+          code: "123456",
+        });
+      });
+      expect(out).toEqual(["X", "Y"]);
+    });
+
+    it("forgetTrustedPhones asks the server, then forgets this phone's key", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockResolvedValueOnce({});
+      await act(async () => {
+        await result.current.forgetTrustedPhones();
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "DELETE",
+        "/api/auth/mfa/trusted-devices",
+      );
+      expect(mockTrustKeyStorage.clear).toHaveBeenCalled();
+    });
+
     it("signing out keeps the trusted-phone key (trust survives sign-out)", async () => {
       const { result } = await ready();
       mockApiRequest.mockResolvedValue({ json: () => Promise.resolve({}) });
