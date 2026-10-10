@@ -46,6 +46,8 @@ export default defineRailway(() => {
       EMAIL_FROM: preserve(),
       EMAIL_VERIFY_BASE_URL: preserve(),
       EXPO_PUBLIC_DOMAIN: preserve(),
+      GOOGLE_OAUTH_APP_CLIENT_IDS: preserve(),
+      GOOGLE_OAUTH_WEB_CLIENT_ID: preserve(),
       IDENTITY_TOKEN_ENC_KEY: preserve(),
       JWT_SECRET: preserve(),
       NODE_ENV: preserve(),
