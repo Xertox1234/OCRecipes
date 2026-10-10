@@ -100,7 +100,10 @@ describe("declare-worktree.sh", () => {
 
   it("coexists: declaring a second worktree adds a second entry", () => {
     const wtB = join(repo, "wt-b");
-    execFileSync("git", ["worktree", "add", "-q", wtB], { cwd: repo });
+    execFileSync("git", ["worktree", "add", "-q", wtB], {
+      cwd: repo,
+      env: { ...process.env, ...GIT_ENV_UNSET },
+    });
     run([worktree]);
     run([wtB]);
     expect(readdirSync(REG_DIR).sort()).toEqual(
@@ -110,7 +113,10 @@ describe("declare-worktree.sh", () => {
 
   it("--remove deletes only that entry", () => {
     const wtB = join(repo, "wt-b");
-    execFileSync("git", ["worktree", "add", "-q", wtB], { cwd: repo });
+    execFileSync("git", ["worktree", "add", "-q", wtB], {
+      cwd: repo,
+      env: { ...process.env, ...GIT_ENV_UNSET },
+    });
     run([worktree]);
     run([wtB]);
     const r = run(["--remove", worktree]);
