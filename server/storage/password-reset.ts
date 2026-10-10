@@ -1,4 +1,4 @@
-import { users } from "@shared/schema";
+import { mfaTrustedDevices, users } from "@shared/schema";
 import {
   RESET_CODE_TTL_MINUTES,
   RESET_CODE_MAX_ATTEMPTS,
@@ -107,16 +107,24 @@ export async function completePasswordReset(
   matchedHash: string,
   newPasswordHash: string,
 ): Promise<boolean> {
-  const [row] = await db
-    .update(users)
-    .set({
-      password: newPasswordHash,
-      tokenVersion: sql`${users.tokenVersion} + 1`,
-      emailVerified: true,
-      pendingEmail: null,
-      ...CLEARED_RESET_CODE,
-    })
-    .where(and(eq(users.id, userId), eq(users.resetCodeHash, matchedHash)))
-    .returning({ id: users.id });
-  return Boolean(row);
+  // The tokenVersion bump kills open MFA challenges; trusted phones are
+  // deleted in the same transaction (spec D7). MFA itself stays on.
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(users)
+      .set({
+        password: newPasswordHash,
+        tokenVersion: sql`${users.tokenVersion} + 1`,
+        emailVerified: true,
+        pendingEmail: null,
+        ...CLEARED_RESET_CODE,
+      })
+      .where(and(eq(users.id, userId), eq(users.resetCodeHash, matchedHash)))
+      .returning({ id: users.id });
+    if (!row) return false;
+    await tx
+      .delete(mfaTrustedDevices)
+      .where(eq(mfaTrustedDevices.userId, userId));
+    return true;
+  });
 }

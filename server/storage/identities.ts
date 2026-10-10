@@ -175,12 +175,24 @@ export async function completeLinkFromTicket(
   ticket: string,
   opts: { markEmailVerified: boolean },
 ): Promise<UserIdentity | undefined> {
+  return completeLinkByTicketHash(sha256Hex(ticket), opts);
+}
+
+/**
+ * completeLinkFromTicket by the ticket's hash — an MFA link challenge stores
+ * only the hash and completes the link after the code passes. Keeps the
+ * kind = 'link' and unexpired guards, so a dead ticket fails closed.
+ */
+export async function completeLinkByTicketHash(
+  ticketHash: string,
+  opts: { markEmailVerified: boolean },
+): Promise<UserIdentity | undefined> {
   return db.transaction(async (tx) => {
     const [t] = await tx
       .delete(pendingSocialSignIns)
       .where(
         and(
-          eq(pendingSocialSignIns.ticketHash, sha256Hex(ticket)),
+          eq(pendingSocialSignIns.ticketHash, ticketHash),
           eq(pendingSocialSignIns.kind, "link"),
           gt(pendingSocialSignIns.expiresAt, sql`now()`),
         ),
