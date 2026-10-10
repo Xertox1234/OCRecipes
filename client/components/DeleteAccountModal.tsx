@@ -149,8 +149,10 @@ export function DeleteAccountModal({
     }
     setError(null);
     setIsDeleting(true);
+    // Outside the try: React Compiler can't lower a conditional inside one.
+    const proof = needsCode ? factor : null;
     try {
-      if (needsCode && factor) await onConfirm({ password }, factor);
+      if (proof) await onConfirm({ password }, proof);
       else await onConfirm({ password });
       // onConfirm is responsible for any post-deletion navigation/state change.
     } catch (err) {

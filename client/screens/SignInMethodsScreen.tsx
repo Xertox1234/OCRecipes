@@ -139,10 +139,14 @@ export default function SignInMethodsScreen() {
     if (!connecting || busy) return;
     setBusy(true);
     setConnectError(null);
+    const provider = connecting;
     try {
-      const next = secondFactor
-        ? await connectProvider(connecting, password, secondFactor)
-        : await connectProvider(connecting, password);
+      let next;
+      if (secondFactor) {
+        next = await connectProvider(provider, password, secondFactor);
+      } else {
+        next = await connectProvider(provider, password);
+      }
       setBusy(false);
       // null = the Apple sheet was cancelled: keep the prompt open to retry.
       if (next) {
@@ -155,7 +159,7 @@ export default function SignInMethodsScreen() {
           });
           return;
         }
-        finishConnect(connecting);
+        finishConnect(provider);
       }
     } catch (err) {
       setBusy(false);

@@ -152,12 +152,10 @@ export function ChangeEmailModal({
     }
     setError(null);
     setIsSubmitting(true);
+    // Outside the try: React Compiler can't lower a conditional inside one.
+    const proof = needsCode && factor ? factor : undefined;
     try {
-      const result = await onConfirm(
-        trimmedEmail,
-        password,
-        needsCode && factor ? factor : undefined,
-      );
+      const result = await onConfirm(trimmedEmail, password, proof);
       // onConfirm closes the modal + surfaces the outcome on success, unless a
       // spent recovery code's replacement must be saved first.
       if (result) {

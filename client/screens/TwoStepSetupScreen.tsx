@@ -111,19 +111,23 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
       if (mode === "setup") {
         setSecret(await auth.startTwoStepSetup(password));
         setStep("add-key");
-      } else if (mode === "new_phone" && factor) {
-        const next = await auth.startNewPhone(password, factor);
-        setSecret({ secret: next.secret, otpauthUrl: next.otpauthUrl });
-        if (next.replacementRecoveryCode)
-          setReplacement(next.replacementRecoveryCode);
-        setStep("add-key");
-      } else if (mode === "disable" && factor) {
-        await auth.disableTwoStep(password, factor);
-        finish("Two-step verification is off");
-        return;
-      } else if (mode === "new_codes" && factor) {
-        setCodes(await auth.replaceRecoveryCodes(password, factor));
-        setStep("save-codes");
+      } else if (factor) {
+        // No `&&`/ternaries in here: React Compiler can't lower them in a try.
+        if (mode === "new_phone") {
+          const next = await auth.startNewPhone(password, factor);
+          setSecret({ secret: next.secret, otpauthUrl: next.otpauthUrl });
+          if (next.replacementRecoveryCode) {
+            setReplacement(next.replacementRecoveryCode);
+          }
+          setStep("add-key");
+        } else if (mode === "disable") {
+          await auth.disableTwoStep(password, factor);
+          finish("Two-step verification is off");
+          return;
+        } else {
+          setCodes(await auth.replaceRecoveryCodes(password, factor));
+          setStep("save-codes");
+        }
       }
       setBusy(false);
     } catch (err) {

@@ -58,12 +58,10 @@ export default function TwoStepCodeScreen({ route, navigation }: Props) {
     if (busy) return;
     setBusy(true);
     setError("");
+    // Outside the try: React Compiler can't lower a conditional inside one.
+    const trustDevice = showTrustSwitch(purpose) && trust;
     try {
-      const result = await verifySecondFactor(
-        challenge,
-        input,
-        showTrustSwitch(purpose) && trust,
-      );
+      const result = await verifySecondFactor(challenge, input, trustDevice);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       const next = afterVerify(result);
       if (next.kind === "save_code") {
