@@ -38,6 +38,12 @@ describe("native sign-in config", () => {
     expect(lock).toMatch(/^ {2}- ExpoAppleAuthentication /m);
   });
 
+  it("installs our Google sign-in pod and Google's SDK", () => {
+    const lock = fs.readFileSync("ios/Podfile.lock", "utf8");
+    expect(lock).toMatch(/^ {2}- OCRGoogleSignIn /m);
+    expect(lock).toMatch(/^ {2}- GoogleSignIn \(/m);
+  });
+
   it("ships the Google client IDs", () => {
     expect(GOOGLE_WEB_CLIENT_ID).toMatch(
       /^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/,
