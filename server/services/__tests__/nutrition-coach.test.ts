@@ -1252,11 +1252,11 @@ describe("Pro tier prompt differentiation", () => {
   });
 
   it("renders the tool-confirm instruction only for the tool-bearing Pro tier", async () => {
-    // The free tier has no tools attached — describing confirm/cancel
-    // machinery it will never see burns tokens and confuses the model.
+    // The free tier has no tools attached — describing proposal machinery
+    // it will never see burns tokens and confuses the model.
     const messages = [{ role: "user" as const, content: "Hi" }];
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
-    expect(capturedSystemPrompt()).not.toContain("confirm or cancel");
+    expect(capturedSystemPrompt()).not.toContain("do it themselves");
 
     vi.mocked(aiChat).mockClear();
     const stream = createMockStream([
@@ -1267,7 +1267,10 @@ describe("Pro tier prompt differentiation", () => {
     await collectStream(
       generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
     );
-    expect(capturedSystemPrompt()).toContain("confirm or cancel");
+    // Nothing in the chat confirms a proposal, so the rule must not promise
+    // the user a confirm step.
+    expect(capturedSystemPrompt()).toContain("do it themselves");
+    expect(capturedSystemPrompt()).not.toContain("confirm or cancel");
   });
 });
 
