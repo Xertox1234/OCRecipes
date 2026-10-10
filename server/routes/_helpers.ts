@@ -215,9 +215,16 @@ export function handleRouteError(
   res: Response,
   error: unknown,
   context: string,
+  extra?: Record<string, unknown>,
 ): void {
   if (error instanceof ZodError) {
-    sendError(res, 400, formatZodError(error), ErrorCode.VALIDATION_ERROR);
+    sendError(
+      res,
+      400,
+      formatZodError(error),
+      ErrorCode.VALIDATION_ERROR,
+      extra,
+    );
     return;
   }
   logger.error({ err: toError(error) }, `${context} error`);
@@ -225,5 +232,5 @@ export function handleRouteError(
   // never calls next(err), so Sentry's Express error handler never sees
   // these — report here instead (no-op without SENTRY_DSN / outside prod).
   reportError(error, context);
-  sendError(res, 500, `Failed to ${context}`, ErrorCode.INTERNAL_ERROR);
+  sendError(res, 500, `Failed to ${context}`, ErrorCode.INTERNAL_ERROR, extra);
 }

@@ -1713,6 +1713,40 @@ describe("Auth Routes", () => {
         expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
       });
 
+      it("a recovery code then an email collision → 409 that still carries its replacement", async () => {
+        const user = await mfaUser();
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+        mockVerifySecondFactor.mockResolvedValue({
+          ok: true,
+          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+        });
+        vi.mocked(storage.updateUserEmail).mockRejectedValue(
+          Object.assign(new Error("dup"), { code: "23505" }),
+        );
+        const res = await send({
+          password: "correctpassword",
+          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+        });
+        expect(res.status).toBe(409);
+        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+      });
+
+      it("a recovery code then an unexpected error → 500 that still carries its replacement", async () => {
+        const user = await mfaUser();
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+        mockVerifySecondFactor.mockResolvedValue({
+          ok: true,
+          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+        });
+        vi.mocked(storage.updateUserEmail).mockRejectedValue(new Error("db"));
+        const res = await send({
+          password: "correctpassword",
+          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+        });
+        expect(res.status).toBe(500);
+        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+      });
+
       it("a recovery code on the verification-pending path also carries its replacement", async () => {
         vi.mocked(emailVerificationEnabled).mockReturnValue(true);
         const user = await mfaUser();

@@ -110,9 +110,7 @@ async function requireFactor(
 
 /** Stage a fresh secret (first setup or new phone) and hand it to the app once. */
 async function stageSecret(user: User) {
-  if (!mfaConfigured()) {
-    throw new Reply(503, ErrorCode.MFA_UNAVAILABLE, MFA_UNAVAILABLE_MESSAGE);
-  }
+  requireConfigured();
   const secret = newTotpSecret();
   await storage.startTotpEnrollment(user.id, encryptMfaSecret(secret));
   return { secret, otpauthUrl: otpauthUrl(secret, user.username) };
@@ -130,12 +128,21 @@ function parse<S extends z.ZodTypeAny>(schema: S, body: unknown): z.infer<S> {
   return parsed.data;
 }
 
-function answer(res: Response, error: unknown, label: string) {
-  if (error instanceof Reply)
-    return sendError(res, error.status, error.message, error.code);
-  if (error instanceof HttpFailure)
-    return sendError(res, error.status, error.message, error.code);
-  handleRouteError(res, error, label);
+function answer(
+  res: Response,
+  error: unknown,
+  label: string,
+  extra?: Record<string, unknown>,
+) {
+  if (error instanceof Reply || error instanceof HttpFailure)
+    return sendError(res, error.status, error.message, error.code, extra);
+  handleRouteError(res, error, label, extra);
+}
+
+function requireConfigured(): void {
+  if (!mfaConfigured()) {
+    throw new Reply(503, ErrorCode.MFA_UNAVAILABLE, MFA_UNAVAILABLE_MESSAGE);
+  }
 }
 
 export function register(app: Express): void {
@@ -303,15 +310,19 @@ export function register(app: Express): void {
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const body = parse(mfaPasswordAndFactorSchema, req.body);
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
-        const replacement = await requireFactor(user, body.secondFactor);
+        // Before the factor: a missing key must not spend a recovery code.
+        requireConfigured();
+        replacement = await requireFactor(user, body.secondFactor);
         res.json({ ...(await stageSecret(user)), ...replacement });
       } catch (error) {
-        answer(res, error, "start new-phone setup");
+        // Once a recovery code is spent, every answer carries its replacement.
+        answer(res, error, "start new-phone setup", replacement);
       }
     },
   );
