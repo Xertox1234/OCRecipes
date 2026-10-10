@@ -64,6 +64,9 @@ import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
+import { startMfaChallenge } from "../lib/mfa/challenge";
+import { hashTrustKey } from "../lib/mfa/mfa-secrets";
+import { secondFactor } from "../lib/social-identity/sign-in-gates";
 import { serializeUser } from "./_serialize-user";
 import { reauthenticate, revokeAppleIdentities } from "./auth-social";
 
@@ -360,6 +363,22 @@ export function register(app: Express): void {
             "Email not verified",
             ErrorCode.EMAIL_NOT_VERIFIED,
           );
+        }
+
+        // Two-step verification: a correct password on an MFA account earns a
+        // challenge, not a session — unless this phone is trusted for THIS
+        // user (keys are per user; expired or forgotten keys never match).
+        if (
+          secondFactor.requiresSecondFactor(user) &&
+          !(
+            validated.trustKey &&
+            (await storage.isTrustedDevice(
+              user.id,
+              hashTrustKey(validated.trustKey),
+            ))
+          )
+        ) {
+          return res.json(await startMfaChallenge({ user, purpose: "login" }));
         }
 
         const token = generateToken(

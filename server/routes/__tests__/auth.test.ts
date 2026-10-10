@@ -76,6 +76,8 @@ vi.mock("../../storage", () => ({
     findIdentity: vi.fn(),
     listIdentities: vi.fn().mockResolvedValue([]),
     consumeNonce: vi.fn(),
+    isTrustedDevice: vi.fn(),
+    createMfaChallenge: vi.fn(),
   },
 }));
 
@@ -1528,6 +1530,73 @@ describe("Auth Routes", () => {
       mockVerifySecondFactor.mockReset();
       vi.mocked(storage.updateUserEmail).mockReset();
       vi.mocked(storage.deleteUser).mockReset();
+    });
+
+    describe("POST /api/auth/login", () => {
+      const login = (body: object = {}) =>
+        request(app)
+          .post("/api/auth/login")
+          .send({ username: "testuser", password: "correctpassword", ...body });
+
+      beforeEach(async () => {
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          await mfaUser(),
+        );
+        vi.mocked(storage.createMfaChallenge).mockReset();
+        vi.mocked(storage.createMfaChallenge).mockResolvedValue(undefined);
+        vi.mocked(storage.isTrustedDevice).mockReset();
+      });
+
+      it("MFA, no trust key → 200 mfa_required with a challenge and NO token", async () => {
+        const res = await login();
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({
+          status: "mfa_required",
+          challenge: expect.any(String),
+        });
+        expect(storage.createMfaChallenge).toHaveBeenCalledTimes(1);
+        const authMod = await import("../../middleware/auth");
+        expect(authMod.generateToken).not.toHaveBeenCalled();
+      });
+
+      it("MFA + a trusted phone's key → a normal token, no challenge", async () => {
+        vi.mocked(storage.isTrustedDevice).mockResolvedValue(true);
+        const trustKey = "k".repeat(43);
+        const res = await login({ trustKey });
+        expect(res.status).toBe(200);
+        expect(res.body.token).toBe("mock-jwt-token");
+        expect(storage.createMfaChallenge).not.toHaveBeenCalled();
+        const { hashTrustKey } = await import("../../lib/mfa/mfa-secrets");
+        expect(storage.isTrustedDevice).toHaveBeenCalledWith(
+          "1",
+          hashTrustKey(trustKey),
+        );
+      });
+
+      it("MFA + a key that is not trusted for THIS user (expired, forgotten, someone else's) → challenge", async () => {
+        vi.mocked(storage.isTrustedDevice).mockResolvedValue(false);
+        const res = await login({ trustKey: "k".repeat(43) });
+        expect(res.body.status).toBe("mfa_required");
+        expect(res.body.token).toBeUndefined();
+      });
+
+      it("wrong password on an MFA account → 401 and no challenge", async () => {
+        const res = await login({ password: "wrongpassword" });
+        expect(res.status).toBe(401);
+        expect(storage.createMfaChallenge).not.toHaveBeenCalled();
+      });
+
+      it("no MFA → the unchanged token response, no challenge", async () => {
+        const bcrypt = await import("bcrypt");
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({
+            password: await bcrypt.hash("correctpassword", 10),
+          }),
+        );
+        const res = await login();
+        expect(res.body.token).toBe("mock-jwt-token");
+        expect(storage.createMfaChallenge).not.toHaveBeenCalled();
+      });
     });
 
     describe("POST /api/auth/change-email", () => {

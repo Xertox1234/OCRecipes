@@ -50,6 +50,7 @@ import {
 import { reportError } from "../lib/error-reporter";
 import { signInGate, secondFactor } from "../lib/social-identity/sign-in-gates";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
+import { startMfaChallenge } from "../lib/mfa/challenge";
 import { suggestUsername } from "../lib/social-identity/suggest-username";
 import type {
   ProviderClaims,
@@ -568,14 +569,6 @@ export function register(app: Express): void {
               ErrorCode.UNAUTHORIZED,
             );
           }
-          // A password alone never attaches a provider to an MFA account.
-          if (secondFactor.requiresSecondFactor(target)) {
-            throw new HttpFailure(
-              403,
-              ErrorCode.SECOND_FACTOR_REQUIRED,
-              "Second factor required",
-            );
-          }
         } else {
           pending = await storage.getPendingSignIn(body.ticket, "link");
           if (!pending?.targetUserId) throw expired;
@@ -613,6 +606,23 @@ export function register(app: Express): void {
         });
         if (!gate.ok)
           throw new HttpFailure(gate.status, gate.code, gate.message);
+
+        // A password alone never attaches a provider to an MFA account: stop
+        // at a challenge that completes the link after the code (spec §3.3).
+        // An already-linked provider as proof needs no code (D1).
+        if ("password" in body && secondFactor.requiresSecondFactor(target)) {
+          return res.json(
+            await startMfaChallenge({
+              user: target,
+              purpose: "link",
+              link: {
+                ticket: body.ticket,
+                markEmailVerified,
+                notAfter: pending.expiresAt,
+              },
+            }),
+          );
+        }
 
         let identity;
         try {

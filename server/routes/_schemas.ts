@@ -25,6 +25,8 @@ export const nullableNumericStringField = z
 export const loginSchema = z.object({
   username: z.string().trim().min(1, "Username is required").max(254),
   password: z.string().min(1, "Password is required").max(200),
+  /** "Trust this phone" key from a previous two-step sign-in (spec D5). */
+  trustKey: z.string().min(20).max(100).optional(),
 });
 
 // The one server-side password rule — register AND reset. The client keeps a
