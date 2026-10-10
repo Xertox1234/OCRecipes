@@ -88,3 +88,7 @@ This also bears on the owner's lockout (`P1-2026-09-26-no-password-reset-or-acco
   - Owner: Apple Sign in key (.p8) → Railway `APPLE_TEAM_ID`, `APPLE_SIGN_IN_KEY_ID`, `APPLE_SIGN_IN_PRIVATE_KEY`, `IDENTITY_TOKEN_ENC_KEY`; confirm Sign in with Apple is enabled on App ID `com.williamtower.ocrecipes` (the bundle the iOS project builds) and Railway `APPLE_BUNDLE_ID` matches; register ocrecipes.com for Apple's Private Email Relay.
   - Owner: runtime 1.4.0 build + device smoke test (Apple sign-up, connect, disconnect, Apple-only delete; Apple sheet over an open modal).
   - Google: Cloud OAuth clients (Web/iOS/Android) + Universal Sign In license and registry token, then the Google button (client work not started).
+
+### 2026-10-09
+
+- Owner declined the paid Universal Sign In licence. Google half now uses an in-repo Expo module over Google's official SDKs: `docs/superpowers/specs/2026-10-09-google-sign-in-native-module-design.md`. No licence or registry token needed; Cloud OAuth clients (spec §6) still required. Build iOS + Android together; Android device test deferred.
