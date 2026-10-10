@@ -28,8 +28,10 @@ const {
   speechState,
   mockToastError,
   a11y,
+  streamState,
 } = vi.hoisted(() => ({
   a11y: { reducedMotion: false, screenReaderEnabled: false },
+  streamState: { content: "" },
   coachStreamRef: {
     onError: null as ((message: string, code?: string) => void) | null,
     onDone: null as ((fullText: string, blocks?: unknown[]) => void) | null,
@@ -50,7 +52,7 @@ vi.mock("@/hooks/useCoachStream", () => ({
     return {
       startStream: vi.fn(),
       abortStream: vi.fn(),
-      streamingContent: "",
+      streamingContent: streamState.content,
       statusText: "",
       isStreaming: false,
     };
@@ -522,6 +524,167 @@ describe("CoachChat — send haptic", () => {
 
     expect(onMessageSent).toHaveBeenCalledOnce();
     expect(mockImpact).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * When a stream finished, the question and the streamed text went at once,
+ * a refetch before the saved rows replaced them, so for that round trip the
+ * list showed the conversation as it was before the turn.
+ */
+describe("CoachChat — a finished turn stays on screen until it is saved", () => {
+  let invalidateSpy: ReturnType<typeof vi.spyOn>;
+  let finishRefetch: () => void = () => {};
+  beforeEach(() => {
+    vi.clearAllMocks();
+    messagesState.data = [];
+    invalidateSpy = vi
+      .spyOn(QueryClient.prototype, "invalidateQueries")
+      .mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRefetch = resolve;
+          }),
+      );
+  });
+  afterEach(() => {
+    invalidateSpy.mockRestore();
+    messagesState.data = [];
+    streamState.content = "";
+  });
+
+  function send(text: string) {
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
+    fireEvent.click(screen.getByLabelText("Send message"));
+  }
+
+  it("keeps the question and the reply until the refetch lands", async () => {
+    renderCoachChat();
+    send("Hello coach");
+    streamState.content = "Here you go";
+    act(() => coachStreamRef.onDone?.("Here you go"));
+
+    expect(screen.queryAllByText("Hello coach")).toHaveLength(1);
+    expect(screen.queryAllByText("Here you go")).toHaveLength(1);
+
+    messagesState.data = [
+      { id: 6, role: "user", content: "Hello coach", createdAt: "" },
+      { id: 7, role: "assistant", content: "Here you go", createdAt: "" },
+    ];
+    await act(async () => finishRefetch());
+
+    expect(screen.queryAllByText("Hello coach")).toHaveLength(1);
+    expect(screen.queryAllByText("Here you go")).toHaveLength(1);
+  });
+
+  // The saved rows replace the live ones in the same commit: never both.
+  // Counted inside Profiler's onRender, which runs once per commit after the
+  // DOM is updated, because the final state alone hides an in-between frame.
+  it("never shows the turn twice when the saved rows arrive", () => {
+    let mostShown = 0;
+    const countEachCommit = () => {
+      mostShown = Math.max(
+        mostShown,
+        screen.queryAllByText("Hello coach").length,
+        screen.queryAllByText("Here you go").length,
+      );
+    };
+    const chat = () => (
+      <React.Profiler id="chat" onRender={countEachCommit}>
+        <CoachChat
+          conversationId={1}
+          onCreateConversation={vi.fn().mockResolvedValue(1)}
+          isCoachPro={false}
+          warmUpHook={warmUpHook}
+        />
+      </React.Profiler>
+    );
+    const { rerender } = renderComponent(chat());
+    send("Hello coach");
+    streamState.content = "Here you go";
+    act(() => coachStreamRef.onDone?.("Here you go"));
+
+    messagesState.data = [
+      { id: 6, role: "user", content: "Hello coach", createdAt: "" },
+      { id: 7, role: "assistant", content: "Here you go", createdAt: "" },
+    ];
+    act(() => rerender(chat()));
+
+    expect(mostShown).toBe(1);
+    expect(screen.queryAllByText("Hello coach")).toHaveLength(1);
+    expect(screen.queryAllByText("Here you go")).toHaveLength(1);
+  });
+
+  // Until the new reply is saved, the cached list still ends with the
+  // previous one, which must not grow a Regenerate link meanwhile.
+  it("offers no Regenerate on the previous reply while the turn saves", () => {
+    messagesState.data = [
+      { id: 4, role: "user", content: "Earlier", createdAt: "" },
+      { id: 5, role: "assistant", content: "Earlier reply", createdAt: "" },
+    ];
+    renderCoachChat();
+    expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+
+    send("Hello coach");
+    act(() => coachStreamRef.onDone?.("Here you go"));
+
+    expect(screen.queryByLabelText("Regenerate response")).toBeNull();
+  });
+
+  // A new conversation's first fetch lands mid-reply, after the server has
+  // saved the question: the saved row replaces the live copy, not joins it.
+  it("shows the question once when its saved row arrives mid-reply", () => {
+    const chat = () => (
+      <CoachChat
+        conversationId={1}
+        onCreateConversation={vi.fn().mockResolvedValue(1)}
+        isCoachPro={false}
+        warmUpHook={warmUpHook}
+      />
+    );
+    const { rerender } = renderComponent(chat());
+    send("Hello coach");
+
+    messagesState.data = [
+      { id: 6, role: "user", content: "Hello coach", createdAt: "" },
+    ];
+    act(() => rerender(chat()));
+
+    expect(screen.queryAllByText("Hello coach")).toHaveLength(1);
+  });
+
+  // Regenerate deletes the question too and resends it as a new turn, so the
+  // cached copy must go with the reply or the question shows twice.
+  it("drops both rows of the turn Regenerate resends", async () => {
+    const turn = [
+      { id: 4, role: "user", content: "Earlier", createdAt: "" },
+      { id: 5, role: "assistant", content: "Earlier reply", createdAt: "" },
+    ];
+    messagesState.data = turn;
+    const setDataSpy = vi.spyOn(QueryClient.prototype, "setQueryData");
+    renderCoachChat();
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Regenerate response"));
+    });
+
+    const updater = setDataSpy.mock.calls[0]?.[1] as (
+      old: unknown[] | undefined,
+    ) => unknown[];
+    expect(updater(turn)).toEqual([]);
+    setDataSpy.mockRestore();
+  });
+
+  it("never clears a question sent while the last one was saving", async () => {
+    renderCoachChat();
+    send("Hello coach");
+    act(() => coachStreamRef.onDone?.("Here you go"));
+    const finishFirst = finishRefetch;
+    send("Second question");
+
+    await act(async () => finishFirst());
+
+    expect(screen.queryAllByText("Second question")).toHaveLength(1);
   });
 });
 

@@ -191,12 +191,26 @@ export default function CoachChat({
   // True while the footer blocks' entrance is still playing.
   const [streamBlocksEntering, setStreamBlocksEntering] = useState(false);
   const lastAssistantIdRef = useRef<number | null>(null);
+  // Newest saved row id, read at send time (see `optimisticAfter`).
+  const lastSavedIdRef = useRef<number | null>(null);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
     null,
   );
+  // The newest saved row when the question was sent. A user row newer than
+  // it is the question's saved copy (a new conversation's first fetch lands
+  // mid-reply), so the optimistic copy steps aside instead of doubling it.
+  const [optimisticAfter, setOptimisticAfter] = useState<number | null>(null);
+  // A finished turn stays on screen (question + streamed text) until the
+  // refetch brings in a reply newer than `after`; dropping both on `done`
+  // showed the pre-turn conversation for that round trip.
+  const [pendingSave, setPendingSave] = useState<{
+    after: number | null;
+  } | null>(null);
+  // Bumped on every send, so a late refetch cannot clear a newer question.
+  const turnEpochRef = useRef(0);
   const [planTarget, setPlanTarget] = useState<{
     recipeId: number;
     recipeTitle: string;
@@ -335,7 +349,6 @@ export default function CoachChat({
     isStreaming,
   } = useCoachStream({
     onDone: (_fullText, blocks) => {
-      setOptimisticMessage(null);
       // Finder blocks render from the refetched message (with the right
       // active state); keeping them in the footer too would show two lists.
       const liveBlocks = (blocks ?? []).filter(
@@ -346,13 +359,26 @@ export default function CoachChat({
         setStreamBlocks(liveBlocks);
         setStreamBlocksEntering(true);
       }
-      if (activeConvIdRef.current !== null) {
-        void queryClient.invalidateQueries({
-          queryKey: [
-            `/api/chat/conversations/${activeConvIdRef.current}/messages`,
-          ],
-        });
+      const convId = activeConvIdRef.current;
+      if (convId === null) {
+        setOptimisticMessage(null);
+        return;
       }
+      const after = lastAssistantIdRef.current;
+      const epoch = turnEpochRef.current;
+      setPendingSave({ after });
+      const queryKey = [`/api/chat/conversations/${convId}/messages`];
+      void queryClient.invalidateQueries({ queryKey }).finally(() => {
+        if (turnEpochRef.current !== epoch) return;
+        // A saved reply is handed over by `turnSaved` in the render that
+        // shows it. Nothing saved (refund, failed refetch): clear now.
+        const rows = queryClient.getQueryData<ChatMessage[]>(queryKey);
+        const last = rows?.[rows.length - 1];
+        if (last?.role !== "assistant" || last.id === after) {
+          setPendingSave(null);
+          setOptimisticMessage(null);
+        }
+      });
     },
     onError: (_message, code) => {
       // Branch on the machine-readable code, not a `message.startsWith("429")`
@@ -422,13 +448,35 @@ export default function CoachChat({
   // populated thread with an error screen.
   const showHistoryError = isHistoryError && (messages?.length ?? 0) === 0;
 
+  const lastAssistantMessageId = useMemo(() => {
+    if (!messages || messages.length === 0) return null;
+    const last = messages[messages.length - 1];
+    return last.role === "assistant" ? last.id : null;
+  }, [messages]);
+
+  const turnSaved =
+    pendingSave !== null &&
+    lastAssistantMessageId !== null &&
+    lastAssistantMessageId !== pendingSave.after;
+  const showLiveReply = isStreaming || (pendingSave !== null && !turnSaved);
+
+  useEffect(() => {
+    if (!turnSaved) return;
+    setPendingSave(null);
+    setOptimisticMessage(null);
+  }, [turnSaved]);
+
   const chatItems = useMemo<ChatListItem[]>(() => {
     const items: ChatListItem[] = (messages ?? []).map((message) => ({
       type: "message",
       id: `message-${message.id}`,
       message,
     }));
-    if (optimisticMessage) {
+    const last = messages?.[messages.length - 1];
+    const questionSaved =
+      last?.role === "user" &&
+      (optimisticAfter === null || last.id > optimisticAfter);
+    if (optimisticMessage && !turnSaved && !questionSaved) {
       items.push({
         type: "optimistic",
         id: "optimistic",
@@ -436,7 +484,7 @@ export default function CoachChat({
       });
     }
     return items;
-  }, [messages, optimisticMessage]);
+  }, [messages, optimisticMessage, optimisticAfter, turnSaved]);
 
   // Validate blocks once per messages change, not on every render tick
   const messageBlocks = useMemo(() => {
@@ -475,15 +523,13 @@ export default function CoachChat({
     return map;
   }, [messages]);
 
-  const lastAssistantMessageId = useMemo(() => {
-    if (!messages || messages.length === 0) return null;
-    const last = messages[messages.length - 1];
-    return last.role === "assistant" ? last.id : null;
-  }, [messages]);
-
   useEffect(() => {
     lastAssistantIdRef.current = lastAssistantMessageId;
   }, [lastAssistantMessageId]);
+
+  useEffect(() => {
+    lastSavedIdRef.current = messages?.[messages.length - 1]?.id ?? null;
+  }, [messages]);
 
   // The server saves a reply's blocks into its message metadata, so once
   // the refetched message renders them the footer copy would be a second
@@ -546,6 +592,9 @@ export default function CoachChat({
         haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       }
       setInputText("");
+      turnEpochRef.current += 1;
+      setPendingSave(null);
+      setOptimisticAfter(lastSavedIdRef.current);
       setOptimisticMessage(content);
       setStreamBlocks([]);
       setStreamingError(null);
@@ -596,7 +645,7 @@ export default function CoachChat({
   );
 
   const handleRetry = useCallback(async () => {
-    if (!messages || messages.length < 2 || isStreaming) return;
+    if (!messages || messages.length < 2 || showLiveReply) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role !== "assistant") return;
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
@@ -604,9 +653,13 @@ export default function CoachChat({
 
     const msgQueryKey = [`/api/chat/conversations/${conversationId}/messages`];
     const snapshot = queryClient.getQueryData<ChatMessage[]>(msgQueryKey);
+    // Both rows go: the question is resent as a new turn, and a cached copy
+    // left here would show it twice while the reply regenerates.
     queryClient.setQueryData<ChatMessage[]>(
       msgQueryKey,
-      (old) => old?.filter((m) => m.id !== lastMsg.id) ?? [],
+      (old) =>
+        old?.filter((m) => m.id !== lastMsg.id && m.id !== lastUserMsg.id) ??
+        [],
     );
 
     try {
@@ -621,7 +674,7 @@ export default function CoachChat({
     void handleSend(lastUserMsg.content);
   }, [
     messages,
-    isStreaming,
+    showLiveReply,
     conversationId,
     deleteChatMessage,
     queryClient,
@@ -868,6 +921,9 @@ export default function CoachChat({
       if (isStreaming || !conversationId) return;
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      turnEpochRef.current += 1;
+      setPendingSave(null);
+      setOptimisticAfter(lastSavedIdRef.current);
       setOptimisticMessage(label);
       setStreamBlocks([]);
       setStreamingError(null);
@@ -964,7 +1020,7 @@ export default function CoachChat({
         // tap would come back as a community search for that label. The
         // finder message's own buttons are the next step.
         const isRetryTarget =
-          !isStreaming &&
+          !showLiveReply &&
           isAssistant &&
           !hasFinderBlock &&
           !isHeld &&
@@ -1006,7 +1062,7 @@ export default function CoachChat({
                         )
                       : undefined
                   }
-                  isActive={!isStreaming && msg.id === lastAssistantMessageId}
+                  isActive={!showLiveReply && msg.id === lastAssistantMessageId}
                   lockedFinderButtons={finderLocks}
                   onFinderAction={handleFinderAction}
                   onLockedFinderButton={openUpgrade}
@@ -1068,7 +1124,7 @@ export default function CoachChat({
       handleCommitmentAccept,
       handleQuickReply,
       handleRetry,
-      isStreaming,
+      showLiveReply,
       isSpeaking,
       speakingMessageId,
       ttsSpeak,
@@ -1091,11 +1147,11 @@ export default function CoachChat({
 
   const streamingFooter = useMemo(
     () =>
-      isStreaming || streamBlocks.length > 0 ? (
+      showLiveReply || streamBlocks.length > 0 ? (
         <StreamingBubble
           streamingContent={streamingContent}
           statusText={statusText}
-          isStreaming={isStreaming}
+          isStreaming={showLiveReply}
           streamBlocks={streamBlocks}
           onBlockAction={handleBlockAction}
           onQuickReply={handleQuickReply}
@@ -1106,7 +1162,7 @@ export default function CoachChat({
         />
       ) : null,
     [
-      isStreaming,
+      showLiveReply,
       streamingContent,
       statusText,
       streamBlocks,
