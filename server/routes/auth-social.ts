@@ -69,7 +69,7 @@ const socialLinkAccountLimiter = createSocialLinkAccountLimiter(
     (await storage.getPendingSignIn(ticket, "link"))?.targetUserId ?? null,
 );
 
-class HttpFailure extends Error {
+export class HttpFailure extends Error {
   constructor(
     readonly status: number,
     readonly code: string,

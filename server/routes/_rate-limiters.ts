@@ -198,6 +198,16 @@ export const reauthLimiter = createRateLimiter({
   message: "Too many attempts, please try again later",
 });
 
+/**
+ * Two-step code guesses per IP (verify + setup confirm). Per-challenge (5) and
+ * per-account (lock every 10th failure) caps live in the database.
+ */
+export const mfaVerifyLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: "Too many attempts, please try again later",
+});
+
 export const accountDeletionLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 5,

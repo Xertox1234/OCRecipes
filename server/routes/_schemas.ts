@@ -187,6 +187,13 @@ export const changeEmailSchema = z.object({
   secondFactor: secondFactorSchema.optional(),
 });
 
+// ── Two-step verification ──────────────────────────────────────────────────
+export const mfaVerifySchema = z.object({
+  challenge: z.string().min(20).max(100),
+  secondFactor: secondFactorSchema,
+  trustDevice: z.boolean().optional(),
+});
+
 // Profile update validation schema
 export const profileUpdateSchema = z.object({
   displayName: z.string().max(100).optional(),
