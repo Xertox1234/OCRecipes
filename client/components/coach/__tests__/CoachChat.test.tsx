@@ -418,7 +418,9 @@ describe("CoachChat — a finished reply's blocks", () => {
       const { rerender } = renderCoachChat();
       act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
       deliverSavedReply(rerender);
-      act(() => vi.advanceTimersByTime(streamBlockEntranceHoldMs));
+      act(() => {
+        vi.advanceTimersByTime(streamBlockEntranceHoldMs);
+      });
 
       expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
       expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
