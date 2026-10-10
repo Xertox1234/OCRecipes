@@ -92,3 +92,5 @@ This also bears on the owner's lockout (`P1-2026-09-26-no-password-reset-or-acco
 ### 2026-10-09
 
 - Owner declined the paid Universal Sign In licence. Google half now uses an in-repo Expo module over Google's official SDKs: `docs/superpowers/specs/2026-10-09-google-sign-in-native-module-design.md`. No licence or registry token needed; Cloud OAuth clients (spec §6) still required. Build iOS + Android together; Android device test deferred.
+- Module + "Continue with Google" button built on `feat/google-sign-in` (runtime **1.5.0** — reaches the owner only through native build 8, never by OTA to 1.4.0). iOS verified end to end in the simulator with the owner's Google account (local server: nonce → `/api/auth/social` 200 → complete-sign-up 201). Android code written; Gradle build not yet run locally (disk full).
+- Owner steps left: merge timing (runtime 1.5.0), Android build + device test, the device checklist in the PR body after build 8, and **publish the Google OAuth app** (home page, privacy URL, `ocrecipes.com` authorised domain) before App Review or external TestFlight testers.
