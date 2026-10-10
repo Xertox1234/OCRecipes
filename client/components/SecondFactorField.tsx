@@ -121,6 +121,11 @@ export function SecondFactorField({
         onPress={toggleMode}
         disabled={busy}
         accessibilityRole="button"
+        accessibilityLabel={
+          mode === "code"
+            ? "Use a recovery code instead"
+            : "Use the code from your app instead"
+        }
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <ThemedText type="small" style={{ color: theme.link }}>

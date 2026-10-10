@@ -163,6 +163,7 @@ export default function TwoStepCodeScreen({ route, navigation }: Props) {
               onPress={() => navigation.popToTop()}
               disabled={busy}
               accessibilityRole="button"
+              accessibilityLabel="Start again"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={styles.restart}
             >
