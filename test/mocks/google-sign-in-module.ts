@@ -3,4 +3,4 @@
 // per-file vi.mock of the same path overrides it.
 import { vi } from "vitest";
 
-export const signIn = vi.fn(async () => null);
+export const signIn = vi.fn(() => Promise.resolve(null));
