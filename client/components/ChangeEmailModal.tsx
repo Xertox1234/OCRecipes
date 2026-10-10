@@ -207,9 +207,11 @@ export function ChangeEmailModal({
   ]);
 
   const handleCancel = useCallback(() => {
-    if (isSubmitting) return;
+    // A replacement recovery code is on screen: "I've saved it" is the only
+    // way out, or the one-time code (and the change's confirmation) is lost.
+    if (isSubmitting || replacement) return;
     onClose();
-  }, [isSubmitting, onClose]);
+  }, [isSubmitting, onClose, replacement]);
 
   return (
     <Modal
@@ -395,29 +397,31 @@ export function ChangeEmailModal({
 
               <InlineError message={error} shakeKey={shakeKey} />
 
-              <View style={styles.buttonRow}>
-                <Button
-                  onPress={handleCancel}
-                  variant="secondary"
-                  disabled={isSubmitting}
-                  style={styles.flexButton}
-                  accessibilityLabel="Cancel"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onPress={handleConfirm}
-                  loading={isSubmitting}
-                  loadingText="Updating..."
-                  disabled={isSubmitting}
-                  style={styles.flexButton}
-                  accessibilityLabel={
-                    isSubmitting ? "Updating email" : "Update email"
-                  }
-                >
-                  Update email
-                </Button>
-              </View>
+              {replacement ? null : (
+                <View style={styles.buttonRow}>
+                  <Button
+                    onPress={handleCancel}
+                    variant="secondary"
+                    disabled={isSubmitting}
+                    style={styles.flexButton}
+                    accessibilityLabel="Cancel"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onPress={handleConfirm}
+                    loading={isSubmitting}
+                    loadingText="Updating..."
+                    disabled={isSubmitting}
+                    style={styles.flexButton}
+                    accessibilityLabel={
+                      isSubmitting ? "Updating email" : "Update email"
+                    }
+                  >
+                    Update email
+                  </Button>
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
