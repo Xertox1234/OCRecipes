@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { getProviderToken, NATIVE_PROVIDERS } from "../social-sign-in";
+import {
+  getProviderToken,
+  isGoogleAvailable,
+  NATIVE_PROVIDERS,
+} from "../social-sign-in";
+import { socialSignInErrorMessage } from "../social-auth-utils";
+import {
+  GOOGLE_IOS_CLIENT_ID,
+  GOOGLE_WEB_CLIENT_ID,
+} from "@/constants/google-oauth";
 
 const { mockSignInAsync } = vi.hoisted(() => ({ mockSignInAsync: vi.fn() }));
 vi.mock("expo-apple-authentication", () => ({
@@ -8,8 +17,21 @@ vi.mock("expo-apple-authentication", () => ({
   AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
 }));
 
+const { mockGoogleSignIn, mockReportError } = vi.hoisted(() => ({
+  mockGoogleSignIn: vi.fn(),
+  mockReportError: vi.fn(),
+}));
+vi.mock("../../../modules/google-sign-in", () => ({
+  signIn: (...args: unknown[]) => mockGoogleSignIn(...args),
+}));
+vi.mock("../reporter", () => ({
+  reportError: (...args: unknown[]) => mockReportError(...args),
+}));
+
 beforeEach(() => {
   mockSignInAsync.mockReset();
+  mockGoogleSignIn.mockReset();
+  mockReportError.mockReset();
 });
 
 describe("getProviderToken (apple)", () => {
@@ -51,13 +73,59 @@ describe("getProviderToken (apple)", () => {
   });
 });
 
-describe("Google (not shipped yet — owner ruling 2026-10-05)", () => {
-  it("is not a native provider in this build", () => {
-    expect(NATIVE_PROVIDERS).toEqual({ apple: true, google: false });
+describe("getProviderToken (google)", () => {
+  it("passes the nonce HASH verbatim and both client IDs", async () => {
+    mockGoogleSignIn.mockResolvedValue({
+      idToken: "g-tok",
+      email: "a@gmail.com",
+    });
+    await expect(getProviderToken("google", "hash-9")).resolves.toEqual({
+      idToken: "g-tok",
+    });
+    expect(mockGoogleSignIn).toHaveBeenCalledWith({
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      iosClientId: GOOGLE_IOS_CLIENT_ID,
+      nonce: "hash-9",
+    });
   });
-  it("getProviderToken refuses google", async () => {
-    await expect(getProviderToken("google", "h")).rejects.toThrow(
-      /not available/i,
+
+  it("returns null when the person cancels, and reports nothing", async () => {
+    mockGoogleSignIn.mockResolvedValue(null);
+    await expect(getProviderToken("google", "h")).resolves.toBeNull();
+    expect(mockReportError).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure with its code and rethrows it", async () => {
+    const err = Object.assign(new Error("no acct"), { code: "NO_ACCOUNT" });
+    mockGoogleSignIn.mockRejectedValue(err);
+    await expect(getProviderToken("google", "h")).rejects.toBe(err);
+    expect(mockReportError).toHaveBeenCalledWith(
+      err,
+      "google-sign-in:NO_ACCOUNT",
     );
+  });
+
+  it("shows the generic sign-in message for a native failure", () => {
+    const err = Object.assign(new Error("x"), { code: "PLAY_SERVICES" });
+    expect(socialSignInErrorMessage(err)).toBe(
+      "Sign-in didn't work. Please try again.",
+    );
+  });
+});
+
+describe("isGoogleAvailable", () => {
+  it.each([
+    ["ios", "web", "ios", true],
+    ["ios", "web", "", false],
+    ["ios", "", "ios", false],
+    ["android", "web", "", true],
+    ["android", "", "", false],
+    ["web", "web", "ios", false],
+  ])("%s web=%j ios=%j → %s", (os, web, ios, expected) => {
+    expect(isGoogleAvailable(os, web, ios)).toBe(expected);
+  });
+
+  it("is on in this build (iOS test platform, both IDs committed)", () => {
+    expect(NATIVE_PROVIDERS).toEqual({ apple: true, google: true });
   });
 });
