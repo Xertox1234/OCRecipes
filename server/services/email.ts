@@ -269,6 +269,78 @@ export async function sendPasswordChangedNotice(
     logger.error({ resendError: error }, "password-changed notice failed");
 }
 
+export type TwoFactorNoticeKind =
+  | "enabled"
+  | "disabled"
+  | "new_phone"
+  | "recovery_code_used"
+  | "recovery_codes_replaced"
+  | "locked";
+
+const TWO_FACTOR_NOTICES: Record<
+  TwoFactorNoticeKind,
+  { subject: string; first: (user: string) => string }
+> = {
+  enabled: {
+    subject: "Two-step verification is on",
+    first: (u) =>
+      `Two-step verification was turned on for your OCRecipes account <strong>${u}</strong>, and other devices were signed out.`,
+  },
+  disabled: {
+    subject: "Two-step verification is off",
+    first: (u) =>
+      `Two-step verification was turned off for <strong>${u}</strong>, and every device was signed out.`,
+  },
+  new_phone: {
+    subject: "Two-step verification moved to a new phone",
+    first: (u) =>
+      `Your authenticator app for <strong>${u}</strong> was replaced, trusted phones were forgotten and other devices were signed out.`,
+  },
+  recovery_code_used: {
+    subject: "A recovery code was used",
+    first: (u) =>
+      `One of your recovery codes for <strong>${u}</strong> was just used.`,
+  },
+  recovery_codes_replaced: {
+    subject: "New recovery codes",
+    first: (u) =>
+      `New recovery codes were created for <strong>${u}</strong>; the old ones no longer work.`,
+  },
+  locked: {
+    subject: "Several wrong two-step codes",
+    first: (u) =>
+      `Several wrong two-step verification codes were entered for <strong>${u}</strong>. If this wasn't you, change your password.`,
+  },
+};
+
+/** Account-security notice for a two-step verification change. */
+export async function sendTwoFactorNotice(
+  to: string,
+  username: string,
+  kind: TwoFactorNoticeKind,
+): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "account-security")) {
+    logger.warn(
+      { to, kind },
+      "two-step notice throttled (account-security cap)",
+    );
+    return;
+  }
+  const notice = TWO_FACTOR_NOTICES[kind];
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: notice.subject,
+    html: `<p>${notice.first(escapeHtml(username))}</p>
+<p>If this was you, there's nothing else to do.</p>
+<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
+  });
+  if (error)
+    logger.error({ resendError: error, kind }, "two-step notice failed");
+}
+
 /** Test-only internals — never import from production code. */
 export const _testInternals = {
   recipientSends,

@@ -302,6 +302,31 @@ describe("email service", () => {
       expect(arg.html).not.toContain("ocrecipes.app");
     });
 
+    it.each([
+      ["enabled", "Two-step verification is on"],
+      ["disabled", "Two-step verification is off"],
+      ["new_phone", "Two-step verification moved to a new phone"],
+      ["recovery_code_used", "A recovery code was used"],
+      ["recovery_codes_replaced", "New recovery codes"],
+      ["locked", "Several wrong two-step codes"],
+    ] as const)(
+      "two-step notice %s has its subject, the escaped username and support",
+      async (kind, subject) => {
+        vi.stubEnv("RESEND_API_KEY", "re_test");
+        const { sendTwoFactorNotice } = await import("../email");
+        await sendTwoFactorNotice("r@x.com", "<b>alice</b>", kind);
+        const arg = mockSend.mock.calls[0][0];
+        expect(arg.to).toBe("r@x.com");
+        expect(arg.subject).toBe(subject);
+        expect(arg.html).toContain("&lt;b&gt;alice&lt;/b&gt;");
+        expect(arg.html).not.toContain("<b>alice</b>");
+        expect(arg.html).toContain(
+          "If this was you, there's nothing else to do.",
+        );
+        expect(arg.html).toContain("mailto:support@ocrecipes.com");
+      },
+    );
+
     it("still sends a reset code and a notice after the general bucket is exhausted", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const {
