@@ -36,7 +36,6 @@ describe("connectPromptMode", () => {
 describe("connectErrorOutcome", () => {
   it.each([
     ["UNAUTHORIZED", 401, /incorrect password/i],
-    ["SECOND_FACTOR_REQUIRED", 403, /two-step/i],
     ["RATE_LIMITED", 429, /too many/i],
   ])("%s → inline copy", (code, status, re) => {
     const out = connectErrorOutcome(

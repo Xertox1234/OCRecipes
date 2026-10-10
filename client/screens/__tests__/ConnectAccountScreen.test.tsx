@@ -48,10 +48,14 @@ function renderScreen() {
   const route = {
     params: { ticket: "t-1", methods: ["password"], email: "a@b.com" },
   } as unknown as Props["route"];
-  const navigation = { navigate: vi.fn() } as unknown as Props["navigation"];
-  return renderComponent(
+  const navigation = {
+    navigate: vi.fn(),
+    replace: vi.fn(),
+  } as unknown as Props["navigation"];
+  renderComponent(
     <ConnectAccountScreen route={route} navigation={navigation} />,
   );
+  return navigation;
 }
 
 // A validation reject shakes the error and buzzes; a server error buzzes
@@ -87,5 +91,27 @@ describe("ConnectAccountScreen — shake on validation reject", () => {
       expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1),
     );
     expect(withSequenceSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("ConnectAccountScreen — two-step verification", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("a right password on a 2FA account replaces this screen with the code screen", async () => {
+    mockLinkWithPassword.mockResolvedValue({
+      status: "mfa_required",
+      challenge: "c-link",
+    });
+    const navigation = renderScreen();
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "right-pass1" },
+    });
+    fireEvent.click(screen.getByText("Connect and sign in"));
+    await waitFor(() =>
+      expect(navigation.replace).toHaveBeenCalledWith("TwoStepCode", {
+        challenge: "c-link",
+        purpose: "link",
+      }),
+    );
   });
 });

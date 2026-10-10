@@ -31,7 +31,27 @@ export interface ApiError {
     | "TOKEN_INVALID"
     | "TOKEN_REVOKED"
     | "NO_TOKEN"
-    | "EMAIL_NOT_VERIFIED";
+    | "EMAIL_NOT_VERIFIED"
+    | "MFA_CHALLENGE_EXPIRED"
+    | "INVALID_SECOND_FACTOR"
+    | "MFA_UNAVAILABLE"
+    | "SECOND_FACTOR_REQUIRED";
+}
+
+// ── Two-step verification ───────────────────────────────────────────────────
+/** An authenticator-app code, or one of the saved recovery codes. */
+export type SecondFactorInput = { code: string } | { recoveryCode: string };
+/** A correct password on a 2FA account: answer the challenge with a code. */
+export type MfaChallengeResult = { status: "mfa_required"; challenge: string };
+export type SignedInResult = { status: "signed_in"; user: User; token: string };
+/** POST /api/auth/login and the password branch of /api/auth/social/link. */
+export type SessionResult = SignedInResult | MfaChallengeResult;
+/** POST /api/auth/mfa/verify. */
+export interface MfaVerifyResult extends SignedInResult {
+  /** "Trust this phone" key — stored in the Keychain, sent on later sign-ins. */
+  trustKey?: string;
+  /** A recovery code was spent: show this new one once so it can be saved. */
+  replacementRecoveryCode?: string;
 }
 
 // ── Sign in with Google / Apple ─────────────────────────────────────────────

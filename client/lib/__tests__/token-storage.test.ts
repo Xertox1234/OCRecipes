@@ -328,3 +328,42 @@ describe("tokenStorage.invalidateCache", () => {
     expect(await tokenStorage.get()).toBe("second-token");
   });
 });
+
+describe("trustKeyStorage — 'trust this phone' (two-step verification)", () => {
+  async function load() {
+    vi.resetModules();
+    return import("@/lib/token-storage");
+  }
+
+  it("stores the key under its own Keychain entry with the same options", async () => {
+    const { trustKeyStorage } = await load();
+    await trustKeyStorage.set("trust-key-1");
+    expect(secureMock.setItemAsync).toHaveBeenCalledWith(
+      "ocrecipes_mfa_trust",
+      "trust-key-1",
+      SECURE_OPTIONS,
+    );
+    expect(await trustKeyStorage.get()).toBe("trust-key-1");
+  });
+
+  it("signing out (tokenStorage.clear) leaves the trusted-phone key in place", async () => {
+    const { trustKeyStorage, tokenStorage } = await load();
+    await trustKeyStorage.set("trust-key-1");
+    await tokenStorage.set("session");
+    await tokenStorage.clear();
+    expect(await trustKeyStorage.get()).toBe("trust-key-1");
+  });
+
+  it("clear() forgets it", async () => {
+    const { trustKeyStorage } = await load();
+    await trustKeyStorage.set("trust-key-1");
+    await trustKeyStorage.clear();
+    expect(await trustKeyStorage.get()).toBeNull();
+  });
+
+  it("a Keychain read failure answers null instead of throwing", async () => {
+    const { trustKeyStorage } = await load();
+    secureMock.getItemAsync.mockRejectedValueOnce(new Error("locked"));
+    expect(await trustKeyStorage.get()).toBeNull();
+  });
+});

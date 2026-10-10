@@ -8,8 +8,11 @@ import {
   notifySessionExpired,
   whenQueryCacheRestored,
 } from "@/lib/query-client";
-import { tokenStorage } from "@/lib/token-storage";
+import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
 import type {
+  MfaVerifyResult,
+  SecondFactorInput,
+  SessionResult,
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
@@ -295,17 +298,51 @@ export function useAuth() {
     registerPushToken().catch(() => {});
   }, []);
 
+  /**
+   * Password sign-in. On a 2FA account the server answers with a challenge
+   * instead of a session (unless this phone is trusted): the caller routes to
+   * the code screen, and nothing is stored until the code passes.
+   */
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (username: string, password: string): Promise<SessionResult> => {
+      const trustKey = await trustKeyStorage.get();
       const response = await apiRequest("POST", "/api/auth/login", {
         username,
         password,
+        ...(trustKey ? { trustKey } : {}),
       });
-      const { user, token } = await response.json();
+      const data = (await response.json()) as
+        | { status: "mfa_required"; challenge: string }
+        | { user: User; token: string };
+      if ("status" in data && data.status === "mfa_required") return data;
+      const { user, token } = data as { user: User; token: string };
       await establishSession(user, token);
-      return user;
+      return { status: "signed_in", user, token };
     },
     [establishSession],
+  );
+
+  /**
+   * Answer a two-step challenge. Keeps a returned "trust this phone" key but
+   * does NOT sign in: the screen first shows a replacement recovery code (if a
+   * recovery code was spent), then calls finishSignIn.
+   */
+  const verifySecondFactor = useCallback(
+    async (
+      challenge: string,
+      proof: SecondFactorInput,
+      trustDevice: boolean,
+    ): Promise<MfaVerifyResult> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/verify", {
+        challenge,
+        secondFactor: proof,
+        trustDevice,
+      });
+      const result = (await res.json()) as MfaVerifyResult;
+      if (result.trustKey) await trustKeyStorage.set(result.trustKey);
+      return result;
+    },
+    [],
   );
 
   // ── Sign in with Apple (Google later) ──────────────────────────────────
@@ -345,14 +382,18 @@ export function useAuth() {
     [establishSession],
   );
 
+  /** The Connect prompt's password proof; a 2FA account answers with a challenge. */
   const linkWithPassword = useCallback(
-    async (ticket: string, password: string) => {
+    async (ticket: string, password: string): Promise<SessionResult> => {
       const res = await apiRequest("POST", "/api/auth/social/link", {
         ticket,
         password,
       });
-      const { user, token } = await res.json();
-      await establishSession(user, token);
+      const result = (await res.json()) as SessionResult;
+      if (result.status === "signed_in") {
+        await establishSession(result.user, result.token);
+      }
+      return result;
     },
     [establishSession],
   );
@@ -599,6 +640,8 @@ export function useAuth() {
   return {
     ...state,
     login,
+    verifySecondFactor,
+    finishSignIn: establishSession,
     register,
     logout,
     expireSession,

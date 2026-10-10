@@ -62,11 +62,6 @@ export function connectErrorOutcome(
 ): ScreenErrorOutcome {
   const { code, status } = codeOf(err);
   if (code === "INVALID_SIGN_IN_TICKET") return CONNECT_RESTART;
-  if (code === "SECOND_FACTOR_REQUIRED") {
-    return inline(
-      "This account uses two-step sign-in. Sign in with your password first, then connect from Settings.",
-    );
-  }
   if (code === "RATE_LIMITED" || status === 429) {
     return inline(
       "Too many attempts. Please wait a few minutes and try again.",

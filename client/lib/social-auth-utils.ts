@@ -39,8 +39,6 @@ export function socialSignInErrorMessage(error: unknown): string {
       return "We need a verified email address from your account. Please try again and share your email, or sign up with a password.";
     case "EMAIL_NOT_VERIFIED":
       return "Please verify your email address first — check your inbox for the link.";
-    case "SECOND_FACTOR_REQUIRED":
-      return "This account uses two-step sign-in. Please sign in with your password.";
     case "RATE_LIMITED":
       return "Too many attempts. Please wait a few minutes and try again.";
     default:

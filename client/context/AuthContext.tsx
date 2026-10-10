@@ -1,6 +1,9 @@
 import React, { createContext, useContext, ReactNode } from "react";
 import { useAuth, type DeleteAccountProof } from "@/hooks/useAuth";
 import type {
+  MfaVerifyResult,
+  SecondFactorInput,
+  SessionResult,
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
@@ -11,7 +14,15 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<User>;
+  /** On a 2FA account: `mfa_required` with a challenge, and nothing stored. */
+  login: (username: string, password: string) => Promise<SessionResult>;
+  /** Answers a challenge; keeps a trust key but does not sign in (see finishSignIn). */
+  verifySecondFactor: (
+    challenge: string,
+    proof: SecondFactorInput,
+    trustDevice: boolean,
+  ) => Promise<MfaVerifyResult>;
+  finishSignIn: (user: User, token: string) => Promise<void>;
   register: (
     username: string,
     password: string,
@@ -40,7 +51,10 @@ interface AuthContextType {
     username: string,
     ageConfirmed: boolean,
   ) => Promise<void>;
-  linkWithPassword: (ticket: string, password: string) => Promise<void>;
+  linkWithPassword: (
+    ticket: string,
+    password: string,
+  ) => Promise<SessionResult>;
   linkWithProvider: (ticket: string, provider: SocialProvider) => Promise<void>;
   /** Null when the provider sheet was cancelled. */
   connectProvider: (

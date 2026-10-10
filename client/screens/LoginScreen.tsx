@@ -118,7 +118,15 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       if (mode === "login") {
-        await login(username.trim(), password);
+        const result = await login(username.trim(), password);
+        if (result.status === "mfa_required") {
+          // Right password on a 2FA account (and this phone isn't trusted).
+          navigation.navigate("TwoStepCode", {
+            challenge: result.challenge,
+            purpose: "login",
+          });
+          return;
+        }
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       } else {
         const result = await register(
