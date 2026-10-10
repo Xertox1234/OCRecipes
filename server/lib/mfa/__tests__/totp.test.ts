@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  base32Encode, base32Decode, hotp, timeStep, matchTotp, otpauthUrl,
+  base32Encode,
+  base32Decode,
+  hotp,
+  timeStep,
+  matchTotp,
+  otpauthUrl,
 } from "../totp";
 
 const RFC_SECRET = Buffer.from("12345678901234567890", "ascii");
@@ -12,7 +17,9 @@ describe("base32", () => {
   it("round-trips arbitrary bytes, case- and space-insensitive on decode", () => {
     const buf = Buffer.from([0, 1, 2, 250, 251, 252, 253, 254, 255, 7]);
     const enc = base32Encode(buf);
-    expect(base32Decode(enc.toLowerCase().replace(/(.{4})/g, "$1 "))).toEqual(buf);
+    expect(base32Decode(enc.toLowerCase().replace(/(.{4})/g, "$1 "))).toEqual(
+      buf,
+    );
   });
 });
 
@@ -33,8 +40,12 @@ describe("matchTotp", () => {
   const step = timeStep(now);
   it("accepts the current step and one either side, returning the matched step", () => {
     expect(matchTotp(RFC_SECRET, hotp(RFC_SECRET, step), now)).toBe(step);
-    expect(matchTotp(RFC_SECRET, hotp(RFC_SECRET, step - 1), now)).toBe(step - 1);
-    expect(matchTotp(RFC_SECRET, hotp(RFC_SECRET, step + 1), now)).toBe(step + 1);
+    expect(matchTotp(RFC_SECRET, hotp(RFC_SECRET, step - 1), now)).toBe(
+      step - 1,
+    );
+    expect(matchTotp(RFC_SECRET, hotp(RFC_SECRET, step + 1), now)).toBe(
+      step + 1,
+    );
   });
   it("rejects two steps away, wrong length, and non-digits", () => {
     expect(matchTotp(RFC_SECRET, hotp(RFC_SECRET, step - 2), now)).toBeNull();
