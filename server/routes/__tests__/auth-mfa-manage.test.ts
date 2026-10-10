@@ -243,6 +243,30 @@ describe("POST /api/auth/mfa/totp/reset (new phone)", () => {
     expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
   });
 
+  it("no MFA_SECRET_ENC_KEY → 503 BEFORE the factor is checked (a recovery code is not spent)", async () => {
+    delete process.env.MFA_SECRET_ENC_KEY;
+    const res = await post("totp/reset", {
+      password: "right-pass1",
+      secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+    });
+    expect(res.status).toBe(503);
+    expect(mockVerifySecondFactor).not.toHaveBeenCalled();
+  });
+
+  it("a recovery code then a failed write → 500 that still carries its replacement", async () => {
+    mockVerifySecondFactor.mockResolvedValue({
+      ok: true,
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+    });
+    vi.mocked(storage.startTotpEnrollment).mockRejectedValue(new Error("db"));
+    const res = await post("totp/reset", {
+      password: "right-pass1",
+      secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+  });
+
   it("wrong factor → 401 INVALID_SECOND_FACTOR, no secret", async () => {
     mockVerifySecondFactor.mockResolvedValue({ ok: false, reason: "invalid" });
     const res = await post("totp/reset", {

@@ -621,6 +621,8 @@ export function register(app: Express): void {
     requireAuth,
     changeEmailLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      // Once a recovery code is spent, every answer carries its replacement.
+      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const parsed = changeEmailSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -658,9 +660,11 @@ export function register(app: Express): void {
         );
         if (!gate.ok)
           return sendError(res, gate.status, gate.message, gate.code);
-        const replacement = gate.replacementRecoveryCode
-          ? { replacementRecoveryCode: gate.replacementRecoveryCode }
-          : {};
+        if (gate.replacementRecoveryCode) {
+          replacement = {
+            replacementRecoveryCode: gate.replacementRecoveryCode,
+          };
+        }
 
         // Unchanged address (case-insensitive): no-op. Skips the write so the
         // current verified state is never reset and the row never self-collides
@@ -680,7 +684,13 @@ export function register(app: Express): void {
           // collision, if any, surfaces only at commit (applyEmailVerification).
           const staged = await storage.stagePendingEmail(req.userId, newEmail);
           if (!staged) {
-            return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+            return sendError(
+              res,
+              404,
+              "User not found",
+              ErrorCode.NOT_FOUND,
+              replacement,
+            );
           }
           // Anti-enum send policy, mirroring register's deliberate posture:
           // ALWAYS do the lookup (so the awaited work is equalized) and ALWAYS
@@ -721,17 +731,24 @@ export function register(app: Express): void {
               409,
               "Email already registered",
               ErrorCode.CONFLICT,
+              replacement,
             );
           }
           throw err;
         }
         if (!updated) {
-          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+          return sendError(
+            res,
+            404,
+            "User not found",
+            ErrorCode.NOT_FOUND,
+            replacement,
+          );
         }
         // No verification email is sent when the gate is off.
         return res.json({ ...serializeUser(updated), ...replacement });
       } catch (error) {
-        handleRouteError(res, error, "change email");
+        handleRouteError(res, error, "change email", replacement);
       }
     },
   );
