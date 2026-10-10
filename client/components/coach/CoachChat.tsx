@@ -13,6 +13,7 @@ import {
   Pressable,
   AccessibilityInfo,
   Text,
+  type ScrollView,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -58,6 +59,8 @@ import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem, useMealPlanItems } from "@/hooks/useMealPlan";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { streamBlockEntranceHoldMs } from "@/constants/animations";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 import {
   useAddFavouriteRecipe,
@@ -103,6 +106,15 @@ type ChatListItem =
   | { type: "message"; id: string; message: ChatMessage }
   | { type: "optimistic"; id: string; content: string };
 
+/** FlatList's native scroll ref is typed as a View or a ScrollView. */
+function isScrollView(ref: unknown): ref is ScrollView {
+  return (
+    typeof ref === "object" &&
+    ref !== null &&
+    typeof (ref as { scrollToEnd?: unknown }).scrollToEnd === "function"
+  );
+}
+
 export default function CoachChat({
   conversationId,
   onCreateConversation,
@@ -123,6 +135,7 @@ export default function CoachChat({
   const queryClient = useQueryClient();
   const toast = useToast();
   const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
   // Destructure rather than depend on the mutation objects themselves —
   // useMutation returns a new object identity every render, which would
   // make every useCallback below that depends on it re-create every render.
@@ -172,7 +185,11 @@ export default function CoachChat({
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
   // The latest assistant message id when the footer took the finished
   // reply's blocks. A newer saved message carrying blocks replaces them.
-  const streamBlocksBaselineRef = useRef<number | null>(null);
+  const [streamBlocksBaseline, setStreamBlocksBaseline] = useState<
+    number | null
+  >(null);
+  // True while the footer blocks' entrance is still playing.
+  const [streamBlocksEntering, setStreamBlocksEntering] = useState(false);
   const lastAssistantIdRef = useRef<number | null>(null);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
@@ -325,8 +342,9 @@ export default function CoachChat({
         (b) => !isFinderBlockType(b.type),
       );
       if (liveBlocks.length > 0) {
-        streamBlocksBaselineRef.current = lastAssistantIdRef.current;
+        setStreamBlocksBaseline(lastAssistantIdRef.current);
         setStreamBlocks(liveBlocks);
+        setStreamBlocksEntering(true);
       }
       if (activeConvIdRef.current !== null) {
         void queryClient.invalidateQueries({
@@ -469,17 +487,32 @@ export default function CoachChat({
 
   // The server saves a reply's blocks into its message metadata, so once
   // the refetched message renders them the footer copy would be a second
-  // set (two rows of quick replies, two cards) until the next send.
+  // set (two rows of quick replies, two cards) until the next send. Until
+  // the footer copy goes, that saved reply holds back its own copy.
+  const heldReplyId =
+    streamBlocks.length > 0 &&
+    lastAssistantMessageId !== null &&
+    lastAssistantMessageId !== streamBlocksBaseline &&
+    messageBlocks.has(lastAssistantMessageId)
+      ? lastAssistantMessageId
+      : null;
+
+  // A fast refetch used to swap in the saved copy, which never animates,
+  // before the footer copy's entrance played, so the blocks just appeared.
   useEffect(() => {
-    if (
-      streamBlocks.length > 0 &&
-      lastAssistantMessageId !== null &&
-      lastAssistantMessageId !== streamBlocksBaselineRef.current &&
-      messageBlocks.has(lastAssistantMessageId)
-    ) {
+    if (!streamBlocksEntering) return;
+    const timer = setTimeout(
+      () => setStreamBlocksEntering(false),
+      streamBlockEntranceHoldMs,
+    );
+    return () => clearTimeout(timer);
+  }, [streamBlocksEntering, streamBlocks]);
+
+  useEffect(() => {
+    if (heldReplyId !== null && (reducedMotion || !streamBlocksEntering)) {
       setStreamBlocks([]);
     }
-  }, [streamBlocks.length, lastAssistantMessageId, messageBlocks]);
+  }, [heldReplyId, reducedMotion, streamBlocksEntering]);
 
   // Show interim transcript in input field while listening
   useEffect(() => {
@@ -916,10 +949,16 @@ export default function CoachChat({
       if (item.type === "message") {
         const msg = item.message;
         const isAssistant = msg.role === "assistant";
-        const blocksForMsg = messageBlocks.get(msg.id);
+        const savedBlocks = messageBlocks.get(msg.id);
         // A finder message's text is the old-client fallback; the block replaces it.
         const hasFinderBlock =
-          blocksForMsg?.some((b) => isFinderBlockType(b.type)) ?? false;
+          savedBlocks?.some((b) => isFinderBlockType(b.type)) ?? false;
+        // The footer still shows this reply's other blocks (finder blocks
+        // never go there), so the saved copy and Regenerate wait.
+        const isHeld = msg.id === heldReplyId;
+        const blocksForMsg = isHeld
+          ? savedBlocks?.filter((b) => isFinderBlockType(b.type))
+          : savedBlocks;
         // No Regenerate under a finder message: handleRetry re-sends the
         // last user text without its finderAction, so a "Search Spoonacular"
         // tap would come back as a community search for that label. The
@@ -928,6 +967,7 @@ export default function CoachChat({
           !isStreaming &&
           isAssistant &&
           !hasFinderBlock &&
+          !isHeld &&
           msg.id === lastAssistantMessageId;
         const generated = generatedRecipes.get(msg.id);
         const savedRecipeId =
@@ -1034,6 +1074,7 @@ export default function CoachChat({
       ttsSpeak,
       lastAssistantMessageId,
       messageBlocks,
+      heldReplyId,
       theme.textSecondary,
       finderLocks,
       handleFinderAction,
@@ -1104,8 +1145,14 @@ export default function CoachChat({
     [showHistoryError, refetchMessages, theme.link],
   );
 
+  // The native ScrollView's scrollToEnd, not the FlatList's: the FlatList
+  // works the end out from cached cell and footer sizes, and a commit that
+  // grows the last cell while dropping the footer (a reply's live blocks
+  // handing over to the saved copy) lands here before they catch up, so the
+  // list stopped short with Regenerate hidden under the input bar.
   const handleContentSizeChange = useCallback(() => {
-    listRef.current?.scrollToEnd({ animated: false });
+    const scrollView = listRef.current?.getNativeScrollRef();
+    if (isScrollView(scrollView)) scrollView.scrollToEnd({ animated: false });
   }, []);
 
   useEffect(() => {

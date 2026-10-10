@@ -16,6 +16,7 @@ import * as RN from "react-native";
 import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
+import { streamBlockEntranceHoldMs } from "@/constants/animations";
 
 // Mutable container for the onError callback CoachChat passes to useCoachStream,
 // so the test can trigger a 429 limit error after render. vi.hoisted is required
@@ -26,7 +27,9 @@ const {
   mockImpact,
   speechState,
   mockToastError,
+  a11y,
 } = vi.hoisted(() => ({
+  a11y: { reducedMotion: false, screenReaderEnabled: false },
   coachStreamRef: {
     onError: null as ((message: string, code?: string) => void) | null,
     onDone: null as ((fullText: string, blocks?: unknown[]) => void) | null,
@@ -123,6 +126,10 @@ vi.mock("@/hooks/useMealPlan", () => ({
 
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: vi.fn(), error: mockToastError, info: vi.fn() }),
+}));
+
+vi.mock("@/hooks/useAccessibility", () => ({
+  useAccessibility: () => a11y,
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -357,6 +364,88 @@ describe("CoachChat — a finished reply's blocks", () => {
     );
 
     expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
+  });
+
+  /** The refetch lands: the reply is saved with `blocks` in its metadata. */
+  function deliverSavedReply(
+    rerender: (ui: React.ReactElement) => void,
+    blocks: unknown[] | null = [quickReplies],
+  ) {
+    messagesState.data = [
+      {
+        id: 7,
+        role: "assistant",
+        content: "Here you go",
+        metadata: blocks ? { blocks } : null,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    act(() =>
+      rerender(
+        <CoachChat
+          conversationId={1}
+          onCreateConversation={vi.fn().mockResolvedValue(1)}
+          isCoachPro={false}
+          warmUpHook={warmUpHook}
+        />,
+      ),
+    );
+  }
+
+  describe("hand-over from the live copy to the saved one", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      a11y.reducedMotion = false;
+    });
+
+    // A fast refetch used to swap in the saved copy (which never animates)
+    // before the live copy's entrance played, so the chips just appeared.
+    // The saved reply holds back its blocks and Regenerate until the
+    // entrance has had time to finish.
+    it("keeps the live chips while their entrance plays", () => {
+      const { rerender } = renderCoachChat();
+      act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
+      deliverSavedReply(rerender);
+
+      expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
+      expect(screen.queryByLabelText("Regenerate response")).toBeNull();
+    });
+
+    it("swaps to the saved copy once the entrance is done", () => {
+      const { rerender } = renderCoachChat();
+      act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
+      deliverSavedReply(rerender);
+      act(() => {
+        vi.advanceTimersByTime(streamBlockEntranceHoldMs);
+      });
+
+      expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
+      expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+    });
+
+    // No entrance plays under Reduce Motion, so nothing is held.
+    it("swaps at once under Reduce Motion", () => {
+      a11y.reducedMotion = true;
+      const { rerender } = renderCoachChat();
+      act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
+      deliverSavedReply(rerender);
+
+      expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
+      expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+    });
+
+    // A saved reply with no blocks never takes over the footer copy, so
+    // holding it would hide Regenerate until the next send.
+    it("never holds back a saved reply that has no blocks", () => {
+      const { rerender } = renderCoachChat();
+      act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
+      deliverSavedReply(rerender, null);
+
+      expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+    });
   });
 
   // An earlier reply that already carried blocks must not clear the new
