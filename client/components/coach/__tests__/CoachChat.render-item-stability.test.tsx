@@ -16,7 +16,7 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
 
@@ -73,13 +73,20 @@ const stable = vi.hoisted(() => ({
   // useMemo (deps: [messages]) — which IS in renderItem's own deps — on
   // every keystroke, for a reason unrelated to this test.
   messages: [] as unknown[],
+  // The FlatList's own scrollToEnd and its native ScrollView's.
+  listScrollToEnd: vi.fn(),
+  nativeScrollToEnd: vi.fn(),
 }));
 
 vi.mock("react-native", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-native")>();
   const FlatList = React.forwardRef<unknown, Record<string, unknown>>(
-    (props, _ref) => {
+    (props, ref) => {
       capturedFlatListProps.value = props;
+      React.useImperativeHandle(ref, () => ({
+        scrollToEnd: stable.listScrollToEnd,
+        getNativeScrollRef: () => ({ scrollToEnd: stable.nativeScrollToEnd }),
+      }));
       return null;
     },
   );
@@ -220,5 +227,28 @@ describe("CoachChat — renderItem identity stability across keystrokes (H3)", (
 
     const thirdRenderItem = thirdProps?.renderItem;
     expect(thirdRenderItem).toBe(firstRenderItem);
+  });
+});
+
+// Shares this file's FlatList intercept. VirtualizedList.scrollToEnd works
+// the end out from cached cell and footer sizes; a commit that grows the last
+// cell and drops the footer at once (a reply's live blocks handing over to
+// the saved copy) fires onContentSizeChange before those caches catch up, so
+// the list stopped short with Regenerate hidden under the input bar.
+describe("CoachChat — keeps the list at the bottom as content grows", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedFlatListProps.value = null;
+  });
+
+  it("scrolls the native ScrollView to its real end", () => {
+    renderCoachChat();
+    const onContentSizeChange = capturedFlatListProps.value
+      ?.onContentSizeChange as (w: number, h: number) => void;
+
+    act(() => onContentSizeChange(390, 1200));
+
+    expect(stable.nativeScrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(stable.listScrollToEnd).not.toHaveBeenCalled();
   });
 });

@@ -134,6 +134,11 @@ export const chatBubbleEntrySpring = {
   stiffness: 150,
 } as const;
 
+/** How long a finished Coach reply's live blocks stay on screen before the
+ *  saved copy takes over — long enough for the `chatBubbleEntrySpring`
+ *  entrance to settle (~450ms at damping 18 / stiffness 150). */
+export const streamBlockEntranceHoldMs = 500;
+
 /** Spring parameters for the chat send button popping in as typing starts
  *  (builder API). */
 export const sendButtonEntrySpring = {

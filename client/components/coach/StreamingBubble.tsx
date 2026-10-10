@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import { View } from "react-native";
+import { LayoutAnimationConfig } from "react-native-reanimated";
 import { ChatBubble } from "@/components/ChatBubble";
 import BlockRenderer from "@/components/coach/blocks";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
@@ -45,16 +46,21 @@ const StreamingBubble = memo(function StreamingBubble({
           animateEntry
         />
       ) : null}
-      {streamBlocks.map((block, i) => (
-        <BlockRenderer
-          key={`stream-block-${i}`}
-          block={block}
-          onAction={onBlockAction}
-          onQuickReply={onQuickReply}
-          onCommitmentAccept={onCommitmentAccept}
-          animateEntry
-        />
-      ))}
+      {/* The saved reply takes over from these in place, so their exit
+          animations (the quick replies' fade) would leave a fading second
+          row. skipExiting skips them only when this wrapper itself goes. */}
+      <LayoutAnimationConfig skipExiting>
+        {streamBlocks.map((block, i) => (
+          <BlockRenderer
+            key={`stream-block-${i}`}
+            block={block}
+            onAction={onBlockAction}
+            onQuickReply={onQuickReply}
+            onCommitmentAccept={onCommitmentAccept}
+            animateEntry
+          />
+        ))}
+      </LayoutAnimationConfig>
       {isStreaming && !streamingContent && statusText ? (
         <CoachStatusRow statusText={statusText} />
       ) : null}
