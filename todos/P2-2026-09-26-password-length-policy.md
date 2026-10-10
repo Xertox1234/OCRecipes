@@ -86,7 +86,7 @@ That makes this a genuine trade-off for the user, not a mechanical fix:
 ## Dependencies
 
 - Pairs with `P1-2026-09-26-no-password-reset-or-account-recovery.md`.
-- The 8-character path depends on `P2-2026-09-26-add-second-factor-authentication.md`; the 15-character path does not. Removing the letter-and-digit rule and adding breached-password screening do not depend on it.
+- The 8-character path depends on MFA part 1 (TOTP + recovery codes), which is live (2026-10-10; archived `todos/archive/P2-2026-09-26-add-second-factor-authentication.md`); passkeys (`P2-2026-10-10-passkeys-second-factor.md`) are optional for it. The 15-character path does not depend on MFA. Removing the letter-and-digit rule and adding breached-password screening do not depend on it.
 
 ## Risks
 
