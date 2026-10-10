@@ -3,7 +3,7 @@ title: "Add a second authentication factor — enables the 8-character password 
 status: backlog
 priority: medium
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-10-10
 assignee:
 labels: [security, api, react-native]
 github_issue:
@@ -56,7 +56,7 @@ Candidate factors, strongest and simplest first:
 
 ## Split (2026-10-10)
 
-- **Part 1 — TOTP + recovery codes + trusted phones:** spec `docs/superpowers/specs/2026-10-10-totp-second-factor-design.md`. OTA-shippable.
+- **Part 1 — TOTP + recovery codes + trusted phones:** spec `docs/superpowers/specs/2026-10-10-totp-second-factor-design.md`. OTA-shippable. **MERGED 2026-10-10** (#1355 server, #1356, #1357 app, #1358, codify #1359). Live once the app OTA ships and `MFA_SETUP_ENABLED=true` is set.
 - **Part 2 — passkeys:** own spec later; native build.
 - **Part 3 — 8-character password path:** in `P2-2026-09-26-password-length-policy.md`; depends on part 1.
 
@@ -85,3 +85,5 @@ Candidate factors, strongest and simplest first:
 ### 2026-10-10
 
 - Part 1 (TOTP + recovery codes + trusted phones) implemented per `docs/superpowers/specs/2026-10-10-totp-second-factor-design.md` and plan `docs/superpowers/plans/2026-10-10-totp-second-factor.md`, in two PRs (server, then client). Still open: part 2 passkeys, part 3 the 8-character path. Keep this todo open.
+- Part 1 merged as #1355–#1359 (with review follow-ups). The owner applied migration 0018 to production and set `MFA_SECRET_ENC_KEY` on Railway first. The production server answers the new `/api/auth/mfa/verify` route.
+- Still open for part 1: a preview OTA and an owner device test, then a production OTA, then `MFA_SETUP_ENABLED=true` (owner yes). Deferred: a leave-screen guard on the "save recovery codes" step.
