@@ -630,7 +630,7 @@ export default function CoachChat({
   );
 
   const handleRetry = useCallback(async () => {
-    if (!messages || messages.length < 2 || isStreaming) return;
+    if (!messages || messages.length < 2 || showLiveReply) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role !== "assistant") return;
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
@@ -655,7 +655,7 @@ export default function CoachChat({
     void handleSend(lastUserMsg.content);
   }, [
     messages,
-    isStreaming,
+    showLiveReply,
     conversationId,
     deleteChatMessage,
     queryClient,
@@ -1000,7 +1000,7 @@ export default function CoachChat({
         // tap would come back as a community search for that label. The
         // finder message's own buttons are the next step.
         const isRetryTarget =
-          !isStreaming &&
+          !showLiveReply &&
           isAssistant &&
           !hasFinderBlock &&
           !isHeld &&
@@ -1042,7 +1042,7 @@ export default function CoachChat({
                         )
                       : undefined
                   }
-                  isActive={!isStreaming && msg.id === lastAssistantMessageId}
+                  isActive={!showLiveReply && msg.id === lastAssistantMessageId}
                   lockedFinderButtons={finderLocks}
                   onFinderAction={handleFinderAction}
                   onLockedFinderButton={openUpgrade}
@@ -1104,7 +1104,7 @@ export default function CoachChat({
       handleCommitmentAccept,
       handleQuickReply,
       handleRetry,
-      isStreaming,
+      showLiveReply,
       isSpeaking,
       speakingMessageId,
       ttsSpeak,

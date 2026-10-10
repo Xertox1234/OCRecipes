@@ -615,6 +615,22 @@ describe("CoachChat — a finished turn stays on screen until it is saved", () =
     expect(screen.queryAllByText("Here you go")).toHaveLength(1);
   });
 
+  // Until the new reply is saved, the cached list still ends with the
+  // previous one, which must not grow a Regenerate link meanwhile.
+  it("offers no Regenerate on the previous reply while the turn saves", () => {
+    messagesState.data = [
+      { id: 4, role: "user", content: "Earlier", createdAt: "" },
+      { id: 5, role: "assistant", content: "Earlier reply", createdAt: "" },
+    ];
+    renderCoachChat();
+    expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+
+    send("Hello coach");
+    act(() => coachStreamRef.onDone?.("Here you go"));
+
+    expect(screen.queryByLabelText("Regenerate response")).toBeNull();
+  });
+
   it("never clears a question sent while the last one was saving", async () => {
     renderCoachChat();
     send("Hello coach");
