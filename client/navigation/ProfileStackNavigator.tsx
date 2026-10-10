@@ -4,6 +4,8 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import ProfileScreen from "@/screens/ProfileScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
 import SignInMethodsScreen from "@/screens/SignInMethodsScreen";
+import TwoStepSetupScreen from "@/screens/TwoStepSetupScreen";
+import type { TwoStepSetupMode } from "@/screens/TwoStepSetupScreen-utils";
 import SavedItemsScreen from "@/screens/SavedItemsScreen";
 import HistoryScreen from "@/screens/HistoryScreen";
 import ItemDetailScreen from "@/screens/ItemDetailScreen";
@@ -43,6 +45,8 @@ export type ProfileStackParamList = LibraryRoutes & {
   Profile: undefined;
   Settings: undefined;
   SignInMethods: undefined;
+  /** Two-step verification: turn on, new phone, turn off, new recovery codes. */
+  TwoStepSetup: { mode: TwoStepSetupMode };
   SavedItems: undefined;
   ScanHistory: { showAll?: boolean } | undefined;
   ItemDetail: { itemId: number };
@@ -81,6 +85,17 @@ export default function ProfileStackNavigator() {
           title: "Sign-in methods",
           headerTitle: () => (
             <HeaderTitle title="Sign-in methods" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="TwoStepSetup"
+        component={TwoStepSetupScreen}
+        options={{
+          // Static title (a function headerTitle alone leaks the route name).
+          title: "Two-step verification",
+          headerTitle: () => (
+            <HeaderTitle title="Two-step verification" showIcon={false} />
           ),
         }}
       />

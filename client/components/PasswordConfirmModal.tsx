@@ -12,6 +12,9 @@ import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
+import { SecondFactorField } from "@/components/SecondFactorField";
+import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
+import type { SecondFactorInput } from "@shared/types/auth";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, Spacing } from "@/constants/theme";
 
@@ -24,7 +27,14 @@ interface PasswordConfirmModalProps {
   /** Static copy from the caller, or null. */
   error: string | null;
   onCancel: () => void;
-  onSubmit: (password: string) => void;
+  /** `secondFactor` is set only when `askCode` is on. */
+  onSubmit: (password: string, secondFactor?: SecondFactorInput) => void;
+  /** Two-step verification: ask for the code together with the password. */
+  askCode?: boolean;
+  /** A spent recovery code's replacement to show before anything else. */
+  replacementCode?: string | null;
+  /** "I've saved it" on the replacement card. */
+  onReplacementSaved?: () => void;
 }
 
 /**
@@ -40,16 +50,21 @@ export function PasswordConfirmModal({
   error,
   onCancel,
   onSubmit,
+  askCode = false,
+  replacementCode = null,
+  onReplacementSaved,
 }: PasswordConfirmModalProps) {
   const { theme } = useTheme();
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [factor, setFactor] = useState<SecondFactorInput | null>(null);
 
   // Start clean every time it opens.
   useEffect(() => {
     if (visible) {
       setPassword("");
       setShowPassword(false);
+      setFactor(null);
     }
   }, [visible]);
 
@@ -95,43 +110,64 @@ export function PasswordConfirmModal({
             >
               {message}
             </ThemedText>
-            <TextInput
-              leftIcon="lock"
-              rightIcon={showPassword ? "eye-off" : "eye"}
-              rightIconAccessibilityLabel={
-                showPassword ? "Hide password" : "Show password"
-              }
-              onRightIconPress={() => setShowPassword((s) => !s)}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              autoComplete="current-password"
-              textContentType="password"
-              editable={!busy}
-              accessibilityLabel="Password"
-              error={!!error}
-            />
-            <InlineError message={error} />
-            <View style={styles.buttons}>
-              <Button
-                variant="secondary"
-                onPress={cancel}
-                disabled={busy}
-                style={styles.flex}
-              >
-                Cancel
-              </Button>
-              <Button
-                onPress={() => onSubmit(password)}
-                disabled={!password}
-                loading={busy}
-                style={styles.flex}
-              >
-                Continue
-              </Button>
-            </View>
+            {replacementCode ? (
+              <ReplacementCodeCard
+                code={replacementCode}
+                onDone={() => onReplacementSaved?.()}
+              />
+            ) : null}
+            {replacementCode ? null : (
+              <>
+                <TextInput
+                  leftIcon="lock"
+                  rightIcon={showPassword ? "eye-off" : "eye"}
+                  rightIconAccessibilityLabel={
+                    showPassword ? "Hide password" : "Show password"
+                  }
+                  onRightIconPress={() => setShowPassword((s) => !s)}
+                  placeholder="Password"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoComplete="current-password"
+                  textContentType="password"
+                  editable={!busy}
+                  accessibilityLabel="Password"
+                  error={!!error}
+                />
+                {askCode ? (
+                  <SecondFactorField
+                    onChange={setFactor}
+                    busy={busy}
+                    autoFocus={false}
+                  />
+                ) : null}
+                <InlineError message={error} />
+                <View style={styles.buttons}>
+                  <Button
+                    variant="secondary"
+                    onPress={cancel}
+                    disabled={busy}
+                    style={styles.flex}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onPress={() =>
+                      askCode && factor
+                        ? onSubmit(password, factor)
+                        : onSubmit(password)
+                    }
+                    disabled={!password || (askCode && !factor)}
+                    loading={busy}
+                    style={styles.flex}
+                  >
+                    Continue
+                  </Button>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>

@@ -7,6 +7,8 @@ const ME_KEY = ["/api/auth/me"] as const;
 
 interface MeResponse {
   signInMethods?: SignInMethods;
+  /** Two-step verification is on (password proofs need the code too). */
+  mfaEnabled?: boolean;
 }
 
 /**
@@ -17,6 +19,8 @@ interface MeResponse {
  */
 export function useSignInMethods(): {
   methods: SignInMethods | undefined;
+  /** Two-step verification is on; false while loading. */
+  mfaEnabled: boolean;
   /** The load failed (after retries); `methods` stays undefined. */
   isError: boolean;
   refetch: () => void;
@@ -42,6 +46,7 @@ export function useSignInMethods(): {
   );
   return {
     methods: data?.signInMethods,
+    mfaEnabled: data?.mfaEnabled === true,
     isError,
     refetch: () => {
       void refetch();

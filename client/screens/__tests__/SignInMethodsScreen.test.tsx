@@ -10,6 +10,7 @@ import SignInMethodsScreen from "../SignInMethodsScreen";
 
 const h = vi.hoisted(() => ({
   methods: undefined as SignInMethods | undefined,
+  mfaEnabled: false,
   isError: false,
   refetch: vi.fn(),
   setMethods: vi.fn(),
@@ -19,6 +20,8 @@ const h = vi.hoisted(() => ({
   confirm: vi.fn<(o: ConfirmOptions) => void>(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  navigate: vi.fn(),
+  forgetTrustedPhones: vi.fn(),
   config: { apple: true, google: false },
 }));
 
@@ -29,6 +32,7 @@ vi.mock("@/hooks/useSocialConfig", () => ({
 vi.mock("@/hooks/useSignInMethods", () => ({
   useSignInMethods: () => ({
     methods: h.methods,
+    mfaEnabled: h.mfaEnabled,
     isError: h.isError,
     refetch: h.refetch,
     setMethods: h.setMethods,
@@ -40,13 +44,14 @@ vi.mock("@/context/AuthContext", () => ({
     connectProvider: h.connectProvider,
     disconnectProvider: h.disconnectProvider,
     logout: h.logout,
+    forgetTrustedPhones: h.forgetTrustedPhones,
   }),
 }));
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: h.toastSuccess, error: h.toastError }),
 }));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({ setOptions: vi.fn(), navigate: h.navigate }),
 }));
 vi.mock("@/components/ConfirmationModal", () => ({
   useConfirmationModal: () => ({
@@ -57,11 +62,15 @@ vi.mock("@/components/ConfirmationModal", () => ({
   }),
 }));
 
+// The replacement-code card copies with expo-clipboard (native module).
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+
 const relay = { email: "x@privaterelay.appleid.com", isPrivateRelay: true };
 
 beforeEach(() => {
   vi.clearAllMocks();
   h.methods = undefined;
+  h.mfaEnabled = false;
   h.isError = false;
   h.config = { apple: true, google: false };
 });
@@ -93,7 +102,7 @@ describe("SignInMethodsScreen", () => {
   it("connect asks for the password, then saves the new methods", async () => {
     h.methods = { password: true, google: null, apple: null };
     const next = { password: true, google: null, apple: relay };
-    h.connectProvider.mockResolvedValue(next);
+    h.connectProvider.mockResolvedValue({ signInMethods: next });
     renderComponent(<SignInMethodsScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Connect Apple" }));
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -191,5 +200,145 @@ describe("SignInMethodsScreen", () => {
     expect(opts.message).toMatch(/Forgot password\?/);
     act(() => opts.onConfirm());
     expect(h.logout).toHaveBeenCalled();
+  });
+});
+
+describe("SignInMethodsScreen — connecting on a 2FA account", () => {
+  const openPrompt = () => {
+    fireEvent.click(screen.getByRole("button", { name: "Connect Apple" }));
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+  };
+
+  it("asks for the code with the password and sends both", async () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    const next = { password: true, google: null, apple: relay };
+    h.connectProvider.mockResolvedValue({ signInMethods: next });
+    renderComponent(<SignInMethodsScreen />);
+    openPrompt();
+    fireEvent.change(screen.getByLabelText("6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(h.setMethods).toHaveBeenCalledWith(next));
+    expect(h.connectProvider).toHaveBeenCalledWith("apple", "pw-1", {
+      code: "123456",
+    });
+  });
+
+  it("a SECOND_FACTOR_REQUIRED answer reveals the code field", async () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.connectProvider.mockRejectedValue(
+      new ApiError(
+        `403: ${JSON.stringify({ code: "SECOND_FACTOR_REQUIRED", error: "x" })}`,
+        "SECOND_FACTOR_REQUIRED",
+        403,
+      ),
+    );
+    renderComponent(<SignInMethodsScreen />);
+    openPrompt();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByLabelText("6-digit code")).toBeTruthy();
+  });
+
+  it("a spent recovery code's replacement is shown before the prompt closes", async () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    const next = { password: true, google: null, apple: relay };
+    h.connectProvider.mockResolvedValue({
+      signInMethods: next,
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+    });
+    renderComponent(<SignInMethodsScreen />);
+    openPrompt();
+    fireEvent.click(screen.getByText("Use a recovery code instead"));
+    fireEvent.change(screen.getByLabelText("Recovery code"), {
+      target: { value: "WXYZ-WXYZ-WXYZ-WXYZ" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
+    expect(h.setMethods).toHaveBeenCalledWith(next);
+    expect(h.toastSuccess).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("I've saved it"));
+    await waitFor(() => expect(h.toastSuccess).toHaveBeenCalled());
+  });
+
+  it("a failed connect that spent a recovery code still shows its replacement", async () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    h.connectProvider.mockRejectedValue(
+      new ApiError(
+        `409: ${JSON.stringify({ code: "IDENTITY_IN_USE", error: "x", replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD" })}`,
+        "IDENTITY_IN_USE",
+        409,
+      ),
+    );
+    renderComponent(<SignInMethodsScreen />);
+    openPrompt();
+    fireEvent.click(screen.getByText("Use a recovery code instead"));
+    fireEvent.change(screen.getByLabelText("Recovery code"), {
+      target: { value: "WXYZ-WXYZ-WXYZ-WXYZ" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
+  });
+});
+
+describe("SignInMethodsScreen — Security (two-step verification)", () => {
+  it("off, with a password: offers to turn it on", () => {
+    h.methods = { password: true, google: null, apple: null };
+    renderComponent(<SignInMethodsScreen />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Turn on two-step verification" }),
+    );
+    expect(h.navigate).toHaveBeenCalledWith("TwoStepSetup", { mode: "setup" });
+  });
+
+  it("no password: explains why it can't be turned on", () => {
+    h.methods = { password: false, google: null, apple: relay };
+    renderComponent(<SignInMethodsScreen />);
+    expect(
+      screen.getByText("Set a password to turn on two-step verification"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Turn on two-step verification" }),
+    ).toBeNull();
+  });
+
+  it("on: new phone, new codes, turn off and forget trusted phones", () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    renderComponent(<SignInMethodsScreen />);
+    expect(screen.getByText("On")).toBeTruthy();
+    for (const [name, mode] of [
+      ["Set up on a new phone", "new_phone"],
+      ["New recovery codes", "new_codes"],
+      ["Turn off two-step verification", "disable"],
+    ] as const) {
+      fireEvent.click(screen.getByRole("button", { name }));
+      expect(h.navigate).toHaveBeenLastCalledWith("TwoStepSetup", { mode });
+    }
+    expect(
+      screen.getByRole("button", { name: "Forget trusted phones" }),
+    ).toBeTruthy();
+  });
+
+  it("forgetting trusted phones confirms first, then forgets them", async () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    h.forgetTrustedPhones.mockResolvedValue(undefined);
+    renderComponent(<SignInMethodsScreen />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Forget trusted phones" }),
+    );
+    expect(h.forgetTrustedPhones).not.toHaveBeenCalled();
+    const opts = h.confirm.mock.calls.at(-1)?.[0];
+    act(() => {
+      opts?.onConfirm();
+    });
+    expect(h.forgetTrustedPhones).toHaveBeenCalled();
+    await waitFor(() => expect(h.toastSuccess).toHaveBeenCalled());
   });
 });

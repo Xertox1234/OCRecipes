@@ -8,8 +8,12 @@ import {
   notifySessionExpired,
   whenQueryCacheRestored,
 } from "@/lib/query-client";
-import { tokenStorage } from "@/lib/token-storage";
+import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
 import type {
+  MfaVerifyResult,
+  SecondFactorInput,
+  SessionResult,
+  SignedInResult,
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
@@ -106,6 +110,12 @@ async function clearDurableLocalState(): Promise<boolean> {
     ok = false;
   }
   return ok;
+}
+
+/** A new authenticator secret, shown once (setup or new phone). */
+export interface TwoStepSecret {
+  secret: string;
+  otpauthUrl: string;
 }
 
 export type DeleteAccountProof =
@@ -295,17 +305,51 @@ export function useAuth() {
     registerPushToken().catch(() => {});
   }, []);
 
+  /**
+   * Password sign-in. On a 2FA account the server answers with a challenge
+   * instead of a session (unless this phone is trusted): the caller routes to
+   * the code screen, and nothing is stored until the code passes.
+   */
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (username: string, password: string): Promise<SessionResult> => {
+      const trustKey = await trustKeyStorage.get();
       const response = await apiRequest("POST", "/api/auth/login", {
         username,
         password,
+        ...(trustKey ? { trustKey } : {}),
       });
-      const { user, token } = await response.json();
+      const data = (await response.json()) as
+        | { status: "mfa_required"; challenge: string }
+        | { user: User; token: string };
+      if ("status" in data && data.status === "mfa_required") return data;
+      const { user, token } = data as { user: User; token: string };
       await establishSession(user, token);
-      return user;
+      return { status: "signed_in", user, token };
     },
     [establishSession],
+  );
+
+  /**
+   * Answer a two-step challenge. Keeps a returned "trust this phone" key but
+   * does NOT sign in: the screen first shows a replacement recovery code (if a
+   * recovery code was spent), then calls finishSignIn.
+   */
+  const verifySecondFactor = useCallback(
+    async (
+      challenge: string,
+      proof: SecondFactorInput,
+      trustDevice: boolean,
+    ): Promise<MfaVerifyResult> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/verify", {
+        challenge,
+        secondFactor: proof,
+        trustDevice,
+      });
+      const result = (await res.json()) as MfaVerifyResult;
+      if (result.trustKey) await trustKeyStorage.set(result.trustKey);
+      return result;
+    },
+    [],
   );
 
   // ── Sign in with Apple (Google later) ──────────────────────────────────
@@ -345,14 +389,18 @@ export function useAuth() {
     [establishSession],
   );
 
+  /** The Connect prompt's password proof; a 2FA account answers with a challenge. */
   const linkWithPassword = useCallback(
-    async (ticket: string, password: string) => {
+    async (ticket: string, password: string): Promise<SessionResult> => {
       const res = await apiRequest("POST", "/api/auth/social/link", {
         ticket,
         password,
       });
-      const { user, token } = await res.json();
-      await establishSession(user, token);
+      const result = (await res.json()) as SessionResult;
+      if (result.status === "signed_in") {
+        await establishSession(result.user, result.token);
+      }
+      return result;
     },
     [establishSession],
   );
@@ -471,40 +519,45 @@ export function useAuth() {
    * An account without a password confirms with a fresh provider sign-in
    * instead; resolves false (nothing deleted) when that sheet is cancelled.
    */
-  const deleteAccount = useCallback(async (proof: DeleteAccountProof) => {
-    // Surface server-side errors (wrong password, network, etc.) to the caller
-    // — the account is still intact and the user can retry.
-    if ("password" in proof) {
-      await apiRequest("DELETE", "/api/auth/account", {
-        password: proof.password,
-      });
-    } else {
-      const { nonce, nonceHash } = await fetchNonce("reauth");
-      const token = await getProviderToken(proof.provider, nonceHash);
-      if (!token) return false;
-      await apiRequest("DELETE", "/api/auth/account", {
-        provider: proof.provider,
-        nonce,
-        idToken: token.idToken,
-      });
-    }
+  const deleteAccount = useCallback(
+    async (proof: DeleteAccountProof, secondFactor?: SecondFactorInput) => {
+      // Surface server-side errors (wrong password, network, etc.) to the caller
+      // — the account is still intact and the user can retry. On a 2FA account a
+      // password alone answers SECOND_FACTOR_REQUIRED; a provider proof never does.
+      if ("password" in proof) {
+        await apiRequest("DELETE", "/api/auth/account", {
+          password: proof.password,
+          ...(secondFactor ? { secondFactor } : {}),
+        });
+      } else {
+        const { nonce, nonceHash } = await fetchNonce("reauth");
+        const token = await getProviderToken(proof.provider, nonceHash);
+        if (!token) return false;
+        await apiRequest("DELETE", "/api/auth/account", {
+          provider: proof.provider,
+          nonce,
+          idToken: token.idToken,
+        });
+      }
 
-    // Server confirmed deletion. Any local-cleanup failures past this point
-    // must NOT propagate — the account no longer exists, so retrying would
-    // just hit a 401. Best-effort clear, then always flip auth state to false.
-    try {
-      await tokenStorage.clear();
-    } catch {}
-    try {
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-    } catch {}
-    // A queued write would otherwise resurrect the "erased" account's data under
-    // the new user, authenticated as them — so the durable sweep is mandatory on
-    // the right-to-erasure path too.
-    await clearDurableLocalState();
-    setState({ user: null, isLoading: false, isAuthenticated: false });
-    return true;
-  }, []);
+      // Server confirmed deletion. Any local-cleanup failures past this point
+      // must NOT propagate — the account no longer exists, so retrying would
+      // just hit a 401. Best-effort clear, then always flip auth state to false.
+      try {
+        await tokenStorage.clear();
+      } catch {}
+      try {
+        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      } catch {}
+      // A queued write would otherwise resurrect the "erased" account's data under
+      // the new user, authenticated as them — so the durable sweep is mandatory on
+      // the right-to-erasure path too.
+      await clearDurableLocalState();
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+      return true;
+    },
+    [],
+  );
 
   /**
    * Add a Google/Apple sign-in to the signed-in account. The server wants the
@@ -516,7 +569,12 @@ export function useAuth() {
     async (
       provider: SocialProvider,
       password: string,
-    ): Promise<SignInMethods | null> => {
+      secondFactor?: SecondFactorInput,
+    ): Promise<{
+      signInMethods: SignInMethods;
+      /** A spent recovery code's replacement — show it once. */
+      replacementRecoveryCode?: string;
+    } | null> => {
       const { nonce, nonceHash } = await fetchNonce("link");
       const token = await getProviderToken(provider, nonceHash);
       if (!token) return null;
@@ -527,10 +585,12 @@ export function useAuth() {
         // Apple: exchanged server-side for the refresh token that account
         // deletion revokes.
         authorizationCode: token.authorizationCode,
-        proof: { password },
+        proof: { password, ...(secondFactor ? { secondFactor } : {}) },
       });
-      return ((await res.json()) as { signInMethods: SignInMethods })
-        .signInMethods;
+      return (await res.json()) as {
+        signInMethods: SignInMethods;
+        replacementRecoveryCode?: string;
+      };
     },
     [],
   );
@@ -574,31 +634,128 @@ export function useAuth() {
     async (
       newEmail: string,
       password: string,
+      secondFactor?: SecondFactorInput,
     ): Promise<
-      { status: "updated"; user: User } | { status: "verification_pending" }
+      (
+        | { status: "updated"; user: User }
+        | { status: "verification_pending" }
+      ) & { replacementRecoveryCode?: string }
     > => {
       const response = await apiRequest("POST", "/api/auth/change-email", {
         newEmail,
         password,
+        ...(secondFactor ? { secondFactor } : {}),
       });
-      const data = await response.json();
+      const raw = await response.json();
+      // A spent recovery code's replacement rides along; it is not user data.
+      const { replacementRecoveryCode, ...data } = (raw ?? {}) as Record<
+        string,
+        unknown
+      > & { replacementRecoveryCode?: string };
+      const replacement = replacementRecoveryCode
+        ? { replacementRecoveryCode }
+        : {};
       // Gate OFF echoes the updated user (has an `id`); gate ON returns the
       // neutral pending status with no user object. `data` is the parsed JSON
       // (Response.json → any), matching how updateUser consumes it uncast.
-      if (data && typeof data === "object" && "id" in data) {
-        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
-        setState((prev) => ({ ...prev, user: data }));
-        return { status: "updated", user: data };
+      if ("id" in data) {
+        const user = data as unknown as User;
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+        setState((prev) => ({ ...prev, user }));
+        return { status: "updated", user, ...replacement };
       }
       await checkAuth();
-      return { status: "verification_pending" };
+      return { status: "verification_pending", ...replacement };
     },
     [checkAuth],
   );
 
+  // ── Two-step verification management (Profile → Sign-in methods) ────────
+  const startTwoStepSetup = useCallback(
+    async (password: string): Promise<TwoStepSecret> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/totp/setup", {
+        password,
+      });
+      return (await res.json()) as TwoStepSecret;
+    },
+    [],
+  );
+
+  const startNewPhone = useCallback(
+    async (
+      password: string,
+      secondFactor: SecondFactorInput,
+    ): Promise<TwoStepSecret & { replacementRecoveryCode?: string }> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/totp/reset", {
+        password,
+        secondFactor,
+      });
+      return (await res.json()) as TwoStepSecret & {
+        replacementRecoveryCode?: string;
+      };
+    },
+    [],
+  );
+
+  /** Finish setup or a new phone. Other devices were signed out; keep this one. */
+  const confirmTwoStep = useCallback(
+    async (code: string): Promise<{ recoveryCodes?: string[] }> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/totp/confirm", {
+        code,
+      });
+      const data = (await res.json()) as SignedInResult & {
+        recoveryCodes?: string[];
+      };
+      await establishSession(data.user, data.token);
+      return data.recoveryCodes ? { recoveryCodes: data.recoveryCodes } : {};
+    },
+    [establishSession],
+  );
+
+  /** Turn two-step off. Every device was signed out; keep this one. */
+  const disableTwoStep = useCallback(
+    async (password: string, secondFactor: SecondFactorInput) => {
+      const res = await apiRequest("POST", "/api/auth/mfa/disable", {
+        password,
+        secondFactor,
+      });
+      const data = (await res.json()) as SignedInResult;
+      await establishSession(data.user, data.token);
+    },
+    [establishSession],
+  );
+
+  const replaceRecoveryCodes = useCallback(
+    async (
+      password: string,
+      secondFactor: SecondFactorInput,
+    ): Promise<string[]> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/recovery-codes", {
+        password,
+        secondFactor,
+      });
+      return ((await res.json()) as { recoveryCodes: string[] }).recoveryCodes;
+    },
+    [],
+  );
+
+  /** Every trusted phone asks for the code again — this one included. */
+  const forgetTrustedPhones = useCallback(async () => {
+    await apiRequest("DELETE", "/api/auth/mfa/trusted-devices");
+    await trustKeyStorage.clear();
+  }, []);
+
   return {
     ...state,
+    startTwoStepSetup,
+    startNewPhone,
+    confirmTwoStep,
+    disableTwoStep,
+    replaceRecoveryCodes,
+    forgetTrustedPhones,
     login,
+    verifySecondFactor,
+    finishSignIn: establishSession,
     register,
     logout,
     expireSession,

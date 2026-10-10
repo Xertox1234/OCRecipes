@@ -4,6 +4,7 @@ import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { AUTH_STORAGE_KEY } from "@/lib/durable-owner";
+import type { User } from "@shared/types/auth";
 
 import { useAuth } from "../useAuth";
 
@@ -63,8 +64,17 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
+const { mockTrustKeyStorage } = vi.hoisted(() => ({
+  mockTrustKeyStorage: {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue(undefined),
+    clear: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 vi.mock("@/lib/token-storage", () => ({
   tokenStorage: mockTokenStorage,
+  trustKeyStorage: mockTrustKeyStorage,
 }));
 
 vi.mock("@/lib/query-client", () => ({
@@ -500,6 +510,269 @@ describe("useAuth", () => {
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(fakeUser),
       );
+    });
+  });
+
+  describe("two-step verification", () => {
+    async function ready() {
+      mockTokenStorage.get.mockResolvedValue(null);
+      const hook = renderHook(() => useAuth());
+      await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+      return hook;
+    }
+    const jsonOnce = (body: unknown) =>
+      mockApiRequest.mockResolvedValueOnce({
+        json: () => Promise.resolve(body),
+      });
+
+    const user: User = { id: "u1", username: "testuser" };
+    beforeEach(() => {
+      mockTrustKeyStorage.get.mockResolvedValue(null);
+    });
+
+    it("login returns the challenge and does NOT sign in", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "mfa_required", challenge: "c-1" });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.login("testuser", "password123");
+      });
+      expect(out).toEqual({ status: "mfa_required", challenge: "c-1" });
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("login sends this phone's trust key when it has one", async () => {
+      const { result } = await ready();
+      mockTrustKeyStorage.get.mockResolvedValue("trust-1");
+      jsonOnce({ user: fakeUser, token: "t" });
+      await act(async () => {
+        await result.current.login("testuser", "password123");
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith("POST", "/api/auth/login", {
+        username: "testuser",
+        password: "password123",
+        trustKey: "trust-1",
+      });
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("verifySecondFactor posts the proof, keeps a returned trust key, and does not sign in by itself", async () => {
+      const { result } = await ready();
+      jsonOnce({
+        status: "signed_in",
+        user,
+        token: "t2",
+        trustKey: "trust-2",
+      });
+      let out: { token: string } | undefined;
+      await act(async () => {
+        out = await result.current.verifySecondFactor(
+          "c-1",
+          { code: "123456" },
+          true,
+        );
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/verify",
+        {
+          challenge: "c-1",
+          secondFactor: { code: "123456" },
+          trustDevice: true,
+        },
+      );
+      expect(mockTrustKeyStorage.set).toHaveBeenCalledWith("trust-2");
+      expect(out?.token).toBe("t2");
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      await act(async () => {
+        await result.current.finishSignIn(user, "t2");
+      });
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t2");
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("connectProvider sends the code inside the password proof and returns a replacement", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-c", nonceHash: "hash-c" });
+      mockGetProviderToken.mockResolvedValue({ idToken: "id-c" });
+      const methods = { password: true, google: null, apple: null };
+      jsonOnce({
+        signInMethods: methods,
+        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.connectProvider("google", "pw-1", {
+          recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ",
+        });
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/identities",
+        expect.objectContaining({
+          proof: {
+            password: "pw-1",
+            secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+          },
+        }),
+      );
+      expect(out).toEqual({
+        signInMethods: methods,
+        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      });
+    });
+
+    it("changeEmail sends the code and returns a spent recovery code's replacement", async () => {
+      const { result } = await ready();
+      jsonOnce({
+        id: "u1",
+        username: "testuser",
+        email: "new@x.com",
+        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      });
+      let out: { replacementRecoveryCode?: string } | undefined;
+      await act(async () => {
+        out = await result.current.changeEmail("new@x.com", "pw-1", {
+          code: "123456",
+        });
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/change-email",
+        {
+          newEmail: "new@x.com",
+          password: "pw-1",
+          secondFactor: { code: "123456" },
+        },
+      );
+      expect(out?.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+      // The replacement is not part of the cached user.
+      expect(mockAsyncStorage["@ocrecipes_auth"]).not.toContain("AAAA");
+    });
+
+    it("deleteAccount sends the code with a password proof only", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockResolvedValue({ json: () => Promise.resolve({}) });
+      await act(async () => {
+        await result.current.deleteAccount(
+          { password: "pw-1" },
+          { code: "123456" },
+        );
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "DELETE",
+        "/api/auth/account",
+        { password: "pw-1", secondFactor: { code: "123456" } },
+      );
+    });
+
+    it("startTwoStepSetup posts the password and returns the secret", async () => {
+      const { result } = await ready();
+      jsonOnce({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.startTwoStepSetup("pw-1");
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/setup",
+        { password: "pw-1" },
+      );
+      expect(out).toEqual({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+    });
+
+    it("startNewPhone sends the password and the current factor", async () => {
+      const { result } = await ready();
+      jsonOnce({ secret: "ABCD", otpauthUrl: "otpauth://x" });
+      await act(async () => {
+        await result.current.startNewPhone("pw-1", { code: "123456" });
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/reset",
+        { password: "pw-1", secondFactor: { code: "123456" } },
+      );
+    });
+
+    it("confirmTwoStep keeps the new session (other devices were signed out) and returns the codes", async () => {
+      const { result } = await ready();
+      jsonOnce({
+        status: "signed_in",
+        user,
+        token: "t-new",
+        recoveryCodes: ["A", "B"],
+      });
+      let out: { recoveryCodes?: string[] } | undefined;
+      await act(async () => {
+        out = await result.current.confirmTwoStep("123456");
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/totp/confirm",
+        { code: "123456" },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
+      expect(out?.recoveryCodes).toEqual(["A", "B"]);
+    });
+
+    it("disableTwoStep keeps the new session", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user, token: "t-off" });
+      await act(async () => {
+        await result.current.disableTwoStep("pw-1", { code: "123456" });
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/disable",
+        { password: "pw-1", secondFactor: { code: "123456" } },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-off");
+    });
+
+    it("replaceRecoveryCodes returns the new codes", async () => {
+      const { result } = await ready();
+      jsonOnce({ recoveryCodes: ["X", "Y"] });
+      let out: string[] | undefined;
+      await act(async () => {
+        out = await result.current.replaceRecoveryCodes("pw-1", {
+          code: "123456",
+        });
+      });
+      expect(out).toEqual(["X", "Y"]);
+    });
+
+    it("forgetTrustedPhones asks the server, then forgets this phone's key", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockResolvedValueOnce({});
+      await act(async () => {
+        await result.current.forgetTrustedPhones();
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "DELETE",
+        "/api/auth/mfa/trusted-devices",
+      );
+      expect(mockTrustKeyStorage.clear).toHaveBeenCalled();
+    });
+
+    it("signing out keeps the trusted-phone key (trust survives sign-out)", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockResolvedValue({ json: () => Promise.resolve({}) });
+      await act(async () => {
+        await result.current.logout();
+      });
+      expect(mockTrustKeyStorage.clear).not.toHaveBeenCalled();
+    });
+
+    it("linkWithPassword on a 2FA account returns the challenge without signing in", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "mfa_required", challenge: "c-link" });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.linkWithPassword("t2", "pw-123456");
+      });
+      expect(out).toEqual({ status: "mfa_required", challenge: "c-link" });
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
     });
   });
 
@@ -1329,7 +1602,7 @@ describe("useAuth", () => {
           proof: { password: "pw-1" },
         },
       );
-      expect(out).toEqual(methods);
+      expect(out).toEqual({ signInMethods: methods });
     });
 
     it("connectProvider: a cancelled sheet posts nothing and returns null", async () => {

@@ -74,7 +74,16 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
     }
     setBusy(true);
     try {
-      await linkWithPassword(ticket, password);
+      const result = await linkWithPassword(ticket, password);
+      if (result.status === "mfa_required") {
+        // A 2FA account: the code finishes the connection (spec §3.3).
+        setBusy(false);
+        navigation.replace("TwoStepCode", {
+          challenge: result.challenge,
+          purpose: "link",
+        });
+        return;
+      }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
       fail(err, "password");

@@ -167,3 +167,37 @@ export const tokenStorage = {
     cachedToken = null;
   },
 };
+
+// "Trust this phone" key from a two-step sign-in (90 days). Its own Keychain
+// entry: signing out, session expiry and tokenStorage.clear() never touch it
+// (spec D5 — trust survives sign-out); only "Forget trusted phones" clears it.
+// It skips the authenticator code, never the password.
+const TRUST_KEY = "ocrecipes_mfa_trust";
+
+export const trustKeyStorage = {
+  async get(): Promise<string | null> {
+    try {
+      return await SecureStore.getItemAsync(TRUST_KEY, SECURE_OPTIONS);
+    } catch (error) {
+      logger.error("Failed to read the trusted-phone key:", error);
+      return null;
+    }
+  },
+
+  async set(key: string): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(TRUST_KEY, key, SECURE_OPTIONS);
+    } catch (error) {
+      // Only costs a code on the next sign-in; never fail the sign-in itself.
+      logger.error("Failed to save the trusted-phone key:", error);
+    }
+  },
+
+  async clear(): Promise<void> {
+    try {
+      await SecureStore.deleteItemAsync(TRUST_KEY, SECURE_OPTIONS);
+    } catch (error) {
+      logger.error("Failed to clear the trusted-phone key:", error);
+    }
+  },
+};

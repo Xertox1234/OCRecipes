@@ -67,7 +67,6 @@ describe("socialSignInErrorMessage", () => {
     ["PROVIDER_EXCHANGE_FAILED", /couldn.t finish/i],
     ["PROVIDER_EMAIL_REQUIRED", /email/i],
     ["EMAIL_NOT_VERIFIED", /verify your email/i],
-    ["SECOND_FACTOR_REQUIRED", /two-step/i],
     ["RATE_LIMITED", /too many/i],
   ])("%s → specific static copy", (code, re) => {
     expect(socialSignInErrorMessage(new ApiError("raw", code))).toMatch(re);

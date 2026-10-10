@@ -14,6 +14,7 @@ import ForgotPasswordScreen from "@/screens/ForgotPasswordScreen";
 import ChooseUsernameScreen from "@/screens/ChooseUsernameScreen";
 import ConnectAccountScreen from "@/screens/ConnectAccountScreen";
 import ResetPasswordScreen from "@/screens/ResetPasswordScreen";
+import TwoStepCodeScreen from "@/screens/TwoStepCodeScreen";
 import ScanScreen from "@/screens/ScanScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
 import PhotoIntentScreen from "@/screens/PhotoIntentScreen";
@@ -72,6 +73,8 @@ export type RootStackParamList = {
     email: string;
   };
   ResetPassword: { email: string };
+  /** A correct password on a 2FA account: enter the code (sign-in or Connect prompt). */
+  TwoStepCode: { challenge: string; purpose: "login" | "link" };
   VerifyEmail:
     | {
         token?: string;
@@ -282,6 +285,11 @@ export default function RootStackNavigator() {
             name="ResetPassword"
             component={ResetPasswordScreen}
             options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="TwoStepCode"
+            component={TwoStepCodeScreen}
+            options={{ headerShown: false, title: "Two-step verification" }}
           />
         </>
       ) : needsOnboarding ? (

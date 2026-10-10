@@ -420,3 +420,25 @@ describe("LoginScreen — shake on validation reject", () => {
     expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("LoginScreen — two-step verification", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("a password sign-in that needs a code opens the code screen with the challenge", async () => {
+    mockLogin.mockResolvedValue({ status: "mfa_required", challenge: "c-9" });
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "demo123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("TwoStepCode", {
+        challenge: "c-9",
+        purpose: "login",
+      }),
+    );
+  });
+});
