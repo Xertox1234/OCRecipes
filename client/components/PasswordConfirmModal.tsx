@@ -69,7 +69,8 @@ export function PasswordConfirmModal({
   }, [visible]);
 
   const cancel = () => {
-    if (!busy) onCancel();
+    // With a replacement recovery code showing, only "I've saved it" closes.
+    if (!busy && !replacementCode) onCancel();
   };
 
   return (
@@ -87,6 +88,7 @@ export function PasswordConfirmModal({
           // hardcoded — modal backdrops use a fixed dim regardless of theme
           style={[styles.backdrop, { backgroundColor: "rgba(0,0,0,0.55)" }]}
           onPress={cancel}
+          testID="password-confirm-backdrop"
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         />

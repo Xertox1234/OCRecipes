@@ -28,6 +28,7 @@ import { ApiError } from "@/lib/api-error";
 import {
   isTwoStepCheckError,
   normalizeCodeInput,
+  replacementFromError,
   secondFactorErrorMessage,
 } from "@/lib/second-factor-utils";
 import { BorderRadius, Spacing } from "@/constants/theme";
@@ -91,6 +92,9 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const fail = (err: unknown) => {
     setBusy(false);
     haptics.notification(Haptics.NotificationFeedbackType.Error);
+    // A recovery code spent on a request that then failed: show its replacement.
+    const spent = replacementFromError(err);
+    if (spent) setReplacement(spent);
     setError(messageFor(err));
   };
 

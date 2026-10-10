@@ -176,3 +176,21 @@ describe("TwoStepSetupScreen — managing it", () => {
     await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
   });
 });
+
+describe("TwoStepSetupScreen — a spent recovery code is never lost", () => {
+  it("a new-phone request that fails after spending a recovery code still shows its replacement", async () => {
+    h.startNewPhone.mockRejectedValue(
+      new ApiError(
+        `500: ${JSON.stringify({ error: "x", code: "INTERNAL_ERROR", replacementRecoveryCode: "NEW2-AAAA-BBBB-CCCC" })}`,
+        "INTERNAL_ERROR",
+        500,
+      ),
+    );
+    renderScreen("new_phone");
+    type("Password", "pw-1");
+    fireEvent.click(screen.getByText("Use a recovery code instead"));
+    type("Recovery code", "WXYZ-WXYZ-WXYZ-WXYZ");
+    press("Continue");
+    expect(await screen.findByText("NEW2-AAAA-BBBB-CCCC")).toBeTruthy();
+  });
+});

@@ -126,7 +126,8 @@ export function SecondFactorField({
             ? "Use a recovery code instead"
             : "Use the code from your app instead"
         }
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        // minHeight, not hitSlop: the parent clips hitSlop at its bottom edge.
+        style={styles.toggle}
       >
         <ThemedText type="small" style={{ color: theme.link }}>
           {mode === "code"
@@ -140,4 +141,5 @@ export function SecondFactorField({
 
 const styles = StyleSheet.create({
   container: { gap: Spacing.md },
+  toggle: { minHeight: 44, justifyContent: "center", alignSelf: "flex-start" },
 });

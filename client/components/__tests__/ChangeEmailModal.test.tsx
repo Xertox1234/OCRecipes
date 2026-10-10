@@ -214,3 +214,35 @@ describe("ChangeEmailModal — two-step verification", () => {
     await screen.findByText("AAAA-BBBB-CCCC-DDDD");
   });
 });
+
+describe("ChangeEmailModal — the replacement card is the only way out", () => {
+  it("after a successful change, Cancel and Update email are gone and closing is ignored", async () => {
+    const finish = vi.fn();
+    const onClose = vi.fn();
+    const onConfirm = vi.fn().mockResolvedValue({
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      finish,
+    });
+    renderComponent(
+      <ChangeEmailModal
+        visible
+        askCode
+        onClose={onClose}
+        onConfirm={onConfirm}
+      />,
+    );
+    type("New email address", "new@x.com");
+    type("Confirm new email address", "new@x.com");
+    type("Current password", "pw-1");
+    fireEvent.click(screen.getByText("Use a recovery code instead"));
+    type("Recovery code", "WXYZ-WXYZ-WXYZ-WXYZ");
+    submit();
+    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Update email" })).toBeNull();
+    fireEvent.click(screen.getByLabelText("Close change email dialog"));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("I've saved it"));
+    expect(finish).toHaveBeenCalled();
+  });
+});
