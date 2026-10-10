@@ -335,10 +335,10 @@ describe("SignInMethodsScreen — Security (two-step verification)", () => {
     );
     expect(h.forgetTrustedPhones).not.toHaveBeenCalled();
     const opts = h.confirm.mock.calls.at(-1)?.[0];
-    await act(async () => {
-      await opts?.onConfirm?.();
+    act(() => {
+      opts?.onConfirm();
     });
     expect(h.forgetTrustedPhones).toHaveBeenCalled();
-    expect(h.toastSuccess).toHaveBeenCalled();
+    await waitFor(() => expect(h.toastSuccess).toHaveBeenCalled());
   });
 });
