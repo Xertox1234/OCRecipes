@@ -166,8 +166,10 @@ const getSubstitutionsSchema = z.object({
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Maximum number of tool calls the coach may make in a single response turn. */
-export const MAX_TOOL_CALLS_PER_RESPONSE = 5;
+/** Maximum number of tool calls the coach may make in a single response turn.
+ *  A week's review alone takes 7 (get_daily_log_details reads one day), so the
+ *  budget leaves room for a few more around it. */
+export const MAX_TOOL_CALLS_PER_RESPONSE = 10;
 const MAX_MEAL_PLAN_RANGE_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -313,7 +315,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "log_food_item",
         description:
-          "Propose adding a food item to the daily nutrition log. Returns a proposal — the user must confirm before the item is saved. Use when the user says they ate something and wants it tracked.",
+          "Propose adding a food item to the daily nutrition log. Nothing is saved — the user logs it themselves. Use when the user says they ate something and wants it tracked.",
         parameters: {
           type: "object",
           properties: {
@@ -395,7 +397,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "add_to_meal_plan",
         description:
-          "Propose scheduling a food item or recipe on the user's meal plan. Call this when the user agrees to a suggested meal or asks to schedule, plan, or save a meal for a specific day or week. Returns a proposal — the user must confirm before it is saved.",
+          "Propose scheduling a food item or recipe on the user's meal plan. Call this when the user agrees to a suggested meal or asks to schedule, plan, or save a meal for a specific day or week. Nothing is saved — the user adds it themselves.",
         parameters: {
           type: "object",
           properties: {
@@ -424,7 +426,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "add_to_grocery_list",
         description:
-          "Propose creating a grocery list with one or more items. Call this when the user wants to buy ingredients for a discussed meal or asks for a shopping list. Returns a proposal — the user must confirm before items are saved.",
+          "Propose creating a grocery list with one or more items. Call this when the user wants to buy ingredients for a discussed meal or asks for a shopping list. Nothing is saved — the user adds the items themselves.",
         parameters: {
           type: "object",
           properties: {
@@ -603,7 +605,8 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("log_food_item", parsed.error.message);
       }
-      // Return proposal — client renders as action card for user confirmation
+      // Nothing in the client reads this proposal, so the message must not
+      // send the user to a button; it tells the model where they can log it.
       return {
         proposal: true,
         action: {
@@ -621,7 +624,7 @@ export async function executeToolCall(
         fat: parsed.data.fat ?? 0,
         servingSize: parsed.data.servingSize,
         message:
-          "I've prepared this to log. Please confirm by tapping 'Log it' below.",
+          "This item has not been logged. Tell the user they can log it with Quick Log on the Home screen.",
       };
     }
 
@@ -680,7 +683,7 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("add_to_meal_plan", parsed.error.message);
       }
-      // Return proposal — client renders as meal plan card for user confirmation
+      // Nothing in the client reads this proposal (see log_food_item).
       return {
         proposal: true,
         action: {
@@ -698,7 +701,8 @@ export async function executeToolCall(
         plannedDate: parsed.data.plannedDate ?? civilDateString(new Date(), tz),
         mealType: parsed.data.mealType ?? "lunch",
         notes: parsed.data.notes,
-        message: "I've prepared this meal plan addition. Please confirm below.",
+        message:
+          "This meal has not been added. Tell the user they can add it from the Plan tab.",
       };
     }
 
@@ -707,7 +711,7 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("add_to_grocery_list", parsed.error.message);
       }
-      // Return proposal — client renders for user confirmation
+      // Nothing in the client reads this proposal (see log_food_item).
       return {
         proposal: true,
         action: {
@@ -721,7 +725,7 @@ export async function executeToolCall(
           category: i.category ?? null,
         })),
         message:
-          "Here are the items I'd add to your grocery list. Please confirm below.",
+          "These items have not been added. Tell the user they can add them to a grocery list from the Plan tab.",
       };
     }
 

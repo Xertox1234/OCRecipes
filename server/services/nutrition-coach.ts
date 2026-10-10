@@ -323,7 +323,7 @@ export function buildSystemPrompt(
           // Tool-confirm rule lives here because only the Pro generator
           // attaches tools — the free tier must not read about machinery
           // it will never see.
-          "When a tool call proposes an action (log food, add to meal plan, add to grocery list), tell the user what you are suggesting and that they can confirm or cancel. Do not say the action has been completed.",
+          "When a tool call proposes an action (log food, add to meal plan, add to grocery list), nothing is saved: tell the user what you suggest and where they can do it themselves, as the tool result says. Do not say the action has been completed, and do not point them to a button that is not in your reply.",
         ]
       : []),
     "Be conversational, supportive, and evidence-based. Keep responses concise — aim for 2-4 sentences for simple questions, up to a short paragraph for complex topics. Use bullet points when listing foods or suggestions. Never write more than 150 words unless the user asks for detail.",

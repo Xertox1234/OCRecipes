@@ -408,9 +408,37 @@ describe("Coach Tools Service", () => {
     );
   });
 
-  it("exports MAX_TOOL_CALLS_PER_RESPONSE as 5", () => {
-    expect(MAX_TOOL_CALLS_PER_RESPONSE).toBe(5);
+  it("lets one reply look up a whole week", () => {
+    // get_daily_log_details takes one date, so "how am I doing this week?"
+    // costs 7 calls; a live run also fetched today and the meal plan first.
+    expect(MAX_TOOL_CALLS_PER_RESPONSE).toBeGreaterThanOrEqual(9);
   });
+
+  // Nothing in the client turns a proposal into a card, so a message that
+  // tells the model to send the user to a button points them at nothing.
+  it.each([
+    [
+      "log_food_item",
+      { name: "Greek yogurt", calories: 180 },
+      /Quick Log on the Home screen/,
+    ],
+    [
+      "add_to_meal_plan",
+      { plannedDate: "2026-04-29", mealType: "dinner" },
+      /Plan tab/,
+    ],
+    ["add_to_grocery_list", { items: [{ name: "oats" }] }, /Plan tab/],
+  ])(
+    "%s says nothing is saved and where the user can do it",
+    async (tool, args, where) => {
+      const result = (await executeToolCall(tool, args, "user-1")) as {
+        message: string;
+      };
+      expect(result.message).not.toMatch(/tap|below|confirm/i);
+      expect(result.message).toMatch(/not (been )?(saved|added|logged)/i);
+      expect(result.message).toMatch(where);
+    },
+  );
 
   describe("structured error returns", () => {
     it("returns INVALID_ARGS error for empty lookup_nutrition query", async () => {
