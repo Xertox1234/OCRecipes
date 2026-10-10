@@ -62,7 +62,7 @@ Candidate factors, strongest and simplest first:
 
 ## Scope Contract
 
-- **Files in scope:** `server/routes/auth.ts`, `server/middleware/auth.ts` (MFA state only, with explicit security review), `server/storage/users.ts`, `shared/schema.ts` (MFA secret, recovery codes, enrollment state), `client/screens/LoginScreen.tsx`, a new MFA challenge screen and an enrollment screen, and tests.
+- **Files in scope:** `shared/constants/mfa.ts`, `server/lib/mfa/**`, `shared/schema.ts`, `migrations/0018_mfa_totp.sql`, `server/storage/mfa.ts`, `server/storage/index.ts`, `server/storage/identities.ts`, `server/storage/password-reset.ts`, `server/lib/social-identity/sign-in-gates.ts`, `server/routes/auth.ts`, `server/routes/auth-social.ts`, `server/routes/auth-mfa.ts`, `server/routes.ts`, `server/routes/_schemas.ts`, `server/routes/_rate-limiters.ts`, `shared/constants/error-codes.ts`, `server/services/email.ts`, `test/integration/auth-routes.itest.ts`, `scripts/mfa-reset.ts`, `docs/runbooks/mfa-manual-reset.md`, `.env.example`, `shared/types/auth.ts`, `client/hooks/useAuth.ts`, `client/context/AuthContext.tsx`, `client/lib/token-storage.ts`, `client/lib/second-factor-utils.ts`, `client/components/SecondFactorField.tsx`, `client/screens/TwoStepCodeScreen.tsx` (+ `-utils.ts`), `client/screens/TwoStepSetupScreen.tsx` (+ `-utils.ts`), `client/screens/LoginScreen.tsx`, `client/screens/ConnectAccountScreen.tsx` (+ `-utils.ts`), `client/lib/social-auth-utils.ts`, `client/components/DeleteAccountModal.tsx`, `client/components/ChangeEmailModal.tsx`, `client/screens/SignInMethodsScreen.tsx`, `client/navigation/RootStackNavigator.tsx`, `client/navigation/ProfileStackNavigator.tsx`, and their tests.
 
 ## Risks
 
@@ -81,3 +81,7 @@ Candidate factors, strongest and simplest first:
 - Filed after the user chose "8 characters with a second or even third factor" over the 15-character password-only minimum. The NIST factor rules above were checked against the published SP 800-63B-4.
 - 2026-09-26: the user chose TOTP **and** passkeys as factors, and required the second factor after Google/Apple sign-in too. Whether MFA is mandatory for all accounts is still open.
 - 2026-09-26 (later): MFA is optional. The user chose "15 characters, or 8 with a second factor", so the mandatory-vs-opt-in question is settled.
+
+### 2026-10-10
+
+- Part 1 (TOTP + recovery codes + trusted phones) implemented per `docs/superpowers/specs/2026-10-10-totp-second-factor-design.md` and plan `docs/superpowers/plans/2026-10-10-totp-second-factor.md`, in two PRs (server, then client). Still open: part 2 passkeys, part 3 the 8-character path. Keep this todo open.
