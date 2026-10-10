@@ -283,6 +283,8 @@ When auditing a route file or service, check every item:
 - [ ] `checkAiConfigured()` before AI calls
 - [ ] A credential reset/change (password reset, future MFA/account recovery) cancels EVERY outstanding identity-changing credential, not only sessions: `tokenVersion + 1` + `invalidateTokenVersionCache` revokes access tokens, but stateless tokens that never carried `tokenVersion` survive — e.g. the 24 h change-email JWT, which only checks the staged `pending_email`. The commit must also clear that row state (`pending_email = NULL`) in the same UPDATE, or an attacker who staged their address commits it after the owner resets. (Ref: `docs/solutions/conventions/password-reset-must-cancel-stateless-identity-credentials-2026-10-03.md`)
 
+- [ ] Two-step verification: a signed-in route that takes a PASSWORD as proof calls `secondFactorForPasswordProof` after the password check and before any write (a Google/Apple proof never needs it). Any endpoint that consumes a single-use credential (recovery code) returns its replacement on EVERY response after the consume point — errors and 500s included — and checks cheap preconditions before consuming. (Ref: `docs/solutions/conventions/password-proof-needs-second-factor-after-the-password-check-2026-10-10.md`, `docs/solutions/logic-errors/spent-single-use-credential-replacement-lost-on-error-paths-2026-10-10.md`)
+
 ### Input Validation
 
 - [ ] Request body validated with Zod schema
