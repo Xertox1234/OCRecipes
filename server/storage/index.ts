@@ -11,6 +11,7 @@
 import * as users from "./users";
 import * as passwordReset from "./password-reset";
 import * as identities from "./identities";
+import * as mfa from "./mfa";
 import * as accountImages from "./account-images";
 import * as nutrition from "./nutrition";
 import * as mealPlans from "./meal-plans";
@@ -79,6 +80,7 @@ export const storage = {
   getPendingSignIn: identities.getPendingSignIn,
   reservePendingLinkAttempt: identities.reservePendingLinkAttempt,
   completeLinkFromTicket: identities.completeLinkFromTicket,
+  completeLinkByTicketHash: identities.completeLinkByTicketHash,
   createUserWithIdentity: identities.createUserWithIdentity,
   findIdentity: identities.findIdentity,
   listIdentities: identities.listIdentities,
@@ -87,6 +89,23 @@ export const storage = {
   setAppleRefreshToken: identities.setAppleRefreshToken,
   touchIdentity: identities.touchIdentity,
   getSignInMethods: identities.getSignInMethods,
+  // Second factor
+  startTotpEnrollment: mfa.startTotpEnrollment,
+  getPendingTotpSecret: mfa.getPendingTotpSecret,
+  confirmTotpEnrollment: mfa.confirmTotpEnrollment,
+  confirmNewPhone: mfa.confirmNewPhone,
+  getActiveTotp: mfa.getActiveTotp,
+  acceptTotpStep: mfa.acceptTotpStep,
+  recordMfaFailure: mfa.recordMfaFailure,
+  consumeRecoveryCode: mfa.consumeRecoveryCode,
+  replaceRecoveryCodes: mfa.replaceRecoveryCodes,
+  disableMfa: mfa.disableMfa,
+  createMfaChallenge: mfa.createMfaChallenge,
+  reserveMfaChallengeAttempt: mfa.reserveMfaChallengeAttempt,
+  consumeMfaChallenge: mfa.consumeMfaChallenge,
+  trustDevice: mfa.trustDevice,
+  isTrustedDevice: mfa.isTrustedDevice,
+  forgetTrustedDevices: mfa.forgetTrustedDevices,
   collectUserImageUrls: accountImages.collectUserImageUrls,
   filterUnreferencedImageUrls: accountImages.filterUnreferencedImageUrls,
   createUser: users.createUser,

@@ -28,6 +28,7 @@ vi.mock("../../db", () => ({
 
 const users_ = await import("../users");
 const reset = await import("../password-reset");
+const mfa = await import("../mfa");
 
 const RESET_KEYS = [
   "resetCodeHash",
@@ -291,6 +292,22 @@ describe("password reset storage", () => {
         await reset.completePasswordReset(social.id, hash, "first-hash"),
       ).toBe(true);
       expect((await row(social.id)).password).toBe("first-hash");
+    });
+
+    it("a completed reset deletes the user's trusted phones; a failed one does not", async () => {
+      await mfa.trustDevice(testUser.id, "k1");
+      expect(
+        await reset.completePasswordReset(
+          testUser.id,
+          "wrong-hash",
+          "new-hash",
+        ),
+      ).toBe(false);
+      expect(await mfa.isTrustedDevice(testUser.id, "k1")).toBe(true);
+      expect(
+        await reset.completePasswordReset(testUser.id, matched(), "new-hash"),
+      ).toBe(true);
+      expect(await mfa.isTrustedDevice(testUser.id, "k1")).toBe(false);
     });
 
     it("is single-use (second completion fails)", async () => {

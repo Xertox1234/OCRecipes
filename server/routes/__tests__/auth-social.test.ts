@@ -15,7 +15,6 @@ import {
   revokeAppleToken,
 } from "../../lib/social-identity/apple-tokens";
 import { encryptToken } from "../../lib/social-identity/token-crypto";
-import { secondFactor } from "../../lib/social-identity/sign-in-gates";
 import { emailVerificationEnabled } from "../../lib/email-config";
 import {
   createMockUser,
@@ -39,6 +38,7 @@ vi.mock("../../storage", () => ({
     getPendingSignIn: vi.fn(),
     reservePendingLinkAttempt: vi.fn(),
     completeLinkFromTicket: vi.fn(),
+    createMfaChallenge: vi.fn(),
     createUserWithIdentity: vi.fn(),
     getUserByEmailForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
@@ -405,8 +405,8 @@ describe("POST /api/auth/social", () => {
   });
 
   it("a linked Apple user stopped at a 403 gate never has a token revoked", async () => {
-    // Revoking can end the whole Apple authorization of a real account.
-    vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
+    // Revoking can end the whole Apple authorization of a real account. The
+    // 403 here is EMAIL_NOT_VERIFIED (D1: no second-factor gate on this path).
     vi.mocked(verifyAppleIdToken).mockResolvedValue({
       ...gmailClaims,
       provider: "apple",
@@ -422,7 +422,7 @@ describe("POST /api/auth/social", () => {
     );
     vi.mocked(exchangeAppleCode).mockResolvedValue("fresh-refresh");
     vi.mocked(storage.getUserForAuth).mockResolvedValue(
-      createMockUser({ id: "u1", emailVerified: true }),
+      createMockUser({ id: "u1", emailVerified: false }),
     );
     const res = await request(app()).post("/api/auth/social").send({
       provider: "apple",
@@ -505,8 +505,7 @@ describe("POST /api/auth/social", () => {
     expect(input.appleRefreshTokenEnc).not.toContain("refresh-1");
   });
 
-  it("SECOND_FACTOR_REQUIRED: 403, no token, nothing inserted", async () => {
-    vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
+  it("D1: an already-linked Google sign-in on an MFA account goes straight in", async () => {
     vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
     vi.mocked(storage.findIdentity).mockResolvedValue(
       createMockUserIdentity({
@@ -515,13 +514,32 @@ describe("POST /api/auth/social", () => {
         provider: "google",
       }),
     );
-    vi.mocked(storage.getUserForAuth).mockResolvedValue(
-      createMockUser({ id: "u1", emailVerified: true }),
+    const user = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: new Date(),
+    });
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    const res = await request(app()).post("/api/auth/social").send(body);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("signed_in");
+    expect(typeof res.body.token).toBe("string");
+  });
+
+  it("an MFA account is never auto-linked by email (link_required instead)", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
+      createMockUser({
+        id: "u1",
+        email: "me@gmail.com",
+        emailVerified: true,
+        mfaEnabledAt: new Date(),
+      }),
     );
     const res = await request(app()).post("/api/auth/social").send(body);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
-    expect(res.body.token).toBeUndefined();
+    expect(res.body.status).toBe("link_required");
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
   });
 });
 
@@ -628,21 +646,65 @@ describe("POST /api/auth/social/link", () => {
     });
   });
 
-  it("MFA account: right password → 403 and NO identity row", async () => {
-    vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
+  it("MFA account: right password → 200 mfa_required, nothing linked, no session", async () => {
     vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
+    vi.mocked(storage.createMfaChallenge).mockResolvedValue(undefined);
     vi.mocked(storage.getUserForAuth).mockResolvedValue(
       createMockUser({
         id: "u1",
         emailVerified: true,
+        tokenVersion: 3,
+        mfaEnabledAt: new Date(),
         password: await bcrypt.hash("right-pass1", 4),
       }),
     );
     const res = await request(app())
       .post("/api/auth/social/link")
       .send({ ticket: "t", password: "right-pass1" });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      status: "mfa_required",
+      challenge: expect.any(String),
+    });
     expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
+    expect(storage.getUser).not.toHaveBeenCalled(); // issueSession never ran
+    const row = vi.mocked(storage.createMfaChallenge).mock.calls[0][0];
+    expect(row).toMatchObject({
+      userId: "u1",
+      tokenVersion: 3,
+      purpose: "link",
+      linkMarkEmailVerified: false,
+      notAfter: ticketRow.expiresAt,
+    });
+    const { sha256Hex } = await import("../../lib/social-identity/nonce");
+    expect(row.linkTicketHash).toBe(sha256Hex("t"));
+  });
+
+  it("MFA account: an already-linked provider as proof links with no challenge (D1)", async () => {
+    vi.mocked(storage.getPendingSignIn).mockResolvedValue(ticketRow);
+    vi.mocked(verifyAppleIdToken).mockResolvedValue({
+      ...gmailClaims,
+      provider: "apple",
+      sub: "a-1",
+    });
+    vi.mocked(storage.findIdentity).mockResolvedValue(
+      createMockUserIdentity({ id: "x", userId: "u1", provider: "apple" }),
+    );
+    const user = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: new Date(),
+    });
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    vi.mocked(storage.completeLinkFromTicket).mockResolvedValue(
+      createMockUserIdentity({ id: "i9" }),
+    );
+    const res = await request(app())
+      .post("/api/auth/social/link")
+      .send({ ticket: "t", provider: "apple", idToken: "i", nonce: "n" });
+    expect(res.body.status).toBe("signed_in");
+    expect(storage.createMfaChallenge).not.toHaveBeenCalled();
   });
 
   it("provider proof must be an identity already linked to the target", async () => {

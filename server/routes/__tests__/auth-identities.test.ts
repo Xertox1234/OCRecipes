@@ -46,6 +46,13 @@ vi.mock("../../storage", () => ({
   },
 }));
 vi.mock("express-rate-limit");
+// The password-proof gate runs for real; only the code check is stubbed.
+const { mockVerifySecondFactor } = vi.hoisted(() => ({
+  mockVerifySecondFactor: vi.fn(),
+}));
+vi.mock("../../lib/mfa/verify-second-factor", () => ({
+  verifySecondFactor: mockVerifySecondFactor,
+}));
 vi.mock("../../lib/social-identity/verify", async (orig) => ({
   ...(await orig<typeof import("../../lib/social-identity/verify")>()),
   verifyGoogleIdToken: vi.fn(),
@@ -157,6 +164,123 @@ describe("POST /api/auth/identities", () => {
       .send(body);
     expect(res.status).toBe(401);
     expect(storage.insertIdentity).not.toHaveBeenCalled();
+  });
+
+  describe("on an account with two-step verification (spec D2)", () => {
+    beforeEach(() => {
+      mockVerifySecondFactor.mockReset();
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(
+        createMockUser({
+          id: "u1",
+          tokenVersion: 0,
+          password: passwordHash,
+          mfaEnabledAt: new Date(),
+        }),
+      );
+      vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+      vi.mocked(storage.getSignInMethods).mockResolvedValue({
+        password: true,
+        google: { email: "me@gmail.com" },
+        apple: null,
+      });
+    });
+
+    it("right password, no code → 403 SECOND_FACTOR_REQUIRED; the nonce is NOT spent", async () => {
+      const res = await request(app())
+        .post("/api/auth/identities")
+        .set(auth)
+        .send(body);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
+      expect(storage.insertIdentity).not.toHaveBeenCalled();
+      // The retry with the code reuses the same provider token + nonce.
+      expect(storage.consumeNonce).not.toHaveBeenCalled();
+    });
+
+    it("wrong password → 401, never a 403", async () => {
+      const res = await request(app())
+        .post("/api/auth/identities")
+        .set(auth)
+        .send({ ...body, proof: { password: "wrong-pass1" } });
+      expect(res.status).toBe(401);
+      expect(mockVerifySecondFactor).not.toHaveBeenCalled();
+    });
+
+    it("wrong code → 401 INVALID_SECOND_FACTOR, nothing connected", async () => {
+      mockVerifySecondFactor.mockResolvedValue({
+        ok: false,
+        reason: "invalid",
+      });
+      const res = await request(app())
+        .post("/api/auth/identities")
+        .set(auth)
+        .send({
+          ...body,
+          proof: { ...proof, secondFactor: { code: "000000" } },
+        });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
+      expect(storage.insertIdentity).not.toHaveBeenCalled();
+    });
+
+    it("right code → connected", async () => {
+      mockVerifySecondFactor.mockResolvedValue({ ok: true });
+      const res = await request(app())
+        .post("/api/auth/identities")
+        .set(auth)
+        .send({
+          ...body,
+          proof: { ...proof, secondFactor: { code: "123456" } },
+        });
+      expect(res.status).toBe(200);
+      expect(storage.insertIdentity).toHaveBeenCalled();
+      expect(res.body.replacementRecoveryCode).toBeUndefined();
+    });
+
+    it("a recovery code → connected, and the response carries its replacement", async () => {
+      mockVerifySecondFactor.mockResolvedValue({
+        ok: true,
+        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+      });
+      const res = await request(app())
+        .post("/api/auth/identities")
+        .set(auth)
+        .send({
+          ...body,
+          proof: {
+            ...proof,
+            secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+          },
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+    });
+
+    it("a Google/Apple proof needs no code (D1)", async () => {
+      vi.mocked(verifyAppleIdToken).mockResolvedValue({
+        ...gmailClaims,
+        provider: "apple",
+        sub: "a-1",
+      });
+      vi.mocked(storage.findIdentity).mockImplementation(async (provider) =>
+        provider === "apple"
+          ? createMockUserIdentity({
+              userId: "u1",
+              provider: "apple",
+              providerSubject: "a-1",
+            })
+          : undefined,
+      );
+      const res = await request(app())
+        .post("/api/auth/identities")
+        .set(auth)
+        .send({
+          ...body,
+          proof: { provider: "apple", idToken: "a-tok", nonce: "r" },
+        });
+      expect(res.status).toBe(200);
+      expect(mockVerifySecondFactor).not.toHaveBeenCalled();
+    });
   });
 
   it("accepts a fresh token of an ALREADY-linked provider as proof (reauth nonce bound to the caller)", async () => {

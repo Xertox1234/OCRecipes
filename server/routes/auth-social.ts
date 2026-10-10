@@ -49,6 +49,8 @@ import {
 } from "../lib/social-identity/token-crypto";
 import { reportError } from "../lib/error-reporter";
 import { signInGate, secondFactor } from "../lib/social-identity/sign-in-gates";
+import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
+import { startMfaChallenge } from "../lib/mfa/challenge";
 import { suggestUsername } from "../lib/social-identity/suggest-username";
 import type {
   ProviderClaims,
@@ -67,7 +69,7 @@ const socialLinkAccountLimiter = createSocialLinkAccountLimiter(
     (await storage.getPendingSignIn(ticket, "link"))?.targetUserId ?? null,
 );
 
-class HttpFailure extends Error {
+export class HttpFailure extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
@@ -602,9 +604,25 @@ export function register(app: Express): void {
           emailWillBeVerified: markEmailVerified,
           verificationOn: emailVerificationEnabled(),
         });
-        // Gate BEFORE inserting: a password alone never attaches a provider to an MFA account.
         if (!gate.ok)
           throw new HttpFailure(gate.status, gate.code, gate.message);
+
+        // A password alone never attaches a provider to an MFA account: stop
+        // at a challenge that completes the link after the code (spec §3.3).
+        // An already-linked provider as proof needs no code (D1).
+        if ("password" in body && secondFactor.requiresSecondFactor(target)) {
+          return res.json(
+            await startMfaChallenge({
+              user: target,
+              purpose: "link",
+              link: {
+                ticket: body.ticket,
+                markEmailVerified,
+                notAfter: pending.expiresAt,
+              },
+            }),
+          );
+        }
 
         let identity;
         try {
@@ -660,6 +678,16 @@ export function register(app: Express): void {
             ErrorCode.UNAUTHORIZED,
           );
         }
+        // Spec D2: a password proof on an MFA account also needs the code (a
+        // Google/Apple proof never does). Checked BEFORE the new provider's
+        // nonce is spent, so the retry with the code reuses the same token.
+        const gate = await secondFactorForPasswordProof(
+          me,
+          "password" in body.proof,
+          "password" in body.proof ? body.proof.secondFactor : undefined,
+        );
+        if (!gate.ok)
+          return sendError(res, gate.status, gate.message, gate.code);
         const claims = await verifyProviderToken(
           body.provider,
           body.idToken,
@@ -715,7 +743,12 @@ export function register(app: Express): void {
           }
           throw err;
         }
-        res.json({ signInMethods: await storage.getSignInMethods(req.userId) });
+        res.json({
+          signInMethods: await storage.getSignInMethods(req.userId),
+          ...(gate.replacementRecoveryCode
+            ? { replacementRecoveryCode: gate.replacementRecoveryCode }
+            : {}),
+        });
       } catch (error) {
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "connect provider");

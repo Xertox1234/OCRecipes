@@ -297,6 +297,10 @@ describe("every protected route is registered behind requireAuth (static guard)"
       "connect prompt — ticket plus password or provider proof",
     ],
     [
+      "POST /api/auth/mfa/verify",
+      "two-step sign-in — single-use challenge in body (never a JWT)",
+    ],
+    [
       "POST /webhooks/apple/notifications",
       "Apple store webhook — JWS-verified",
     ],

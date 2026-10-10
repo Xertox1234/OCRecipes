@@ -92,6 +92,13 @@ vi.mock("express-rate-limit");
 // resolves against the mocks registered above, mirroring
 // server/storage/__tests__/users.test.ts's `await import(...)` pattern.
 const { register: registerAuth } = await import("../../server/routes/auth");
+const { register: registerAuthMfa } = await import(
+  "../../server/routes/auth-mfa"
+);
+const { base32Decode, hotp, timeStep } = await import(
+  "../../server/lib/mfa/totp"
+);
+const { hashResetCode } = await import("../../server/lib/password-reset-code");
 const { generateToken } = await import("../../server/middleware/auth");
 const { storage } = await import("../../server/storage");
 
@@ -99,6 +106,7 @@ function buildApp(): Express {
   const app = express();
   app.use(express.json());
   registerAuth(app);
+  registerAuthMfa(app);
   return app;
 }
 
@@ -244,6 +252,150 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
 
       expect(res.status).toBe(401);
       expect(res.body.code).toBe("TOKEN_REVOKED");
+    });
+  });
+
+  describe("two-step verification — one account's whole journey", () => {
+    // Each step is the positive control for the next: they share one
+    // transaction (rolled back afterwards), so they run as one ordered test.
+    it("setup, challenge, trust, replay, recovery, inline proof, reset, revocation", async () => {
+      vi.stubEnv("MFA_SECRET_ENC_KEY", Buffer.alloc(32, 7).toString("base64"));
+      vi.stubEnv("MFA_SETUP_ENABLED", "true");
+      const app = buildApp();
+      const creds = uniqueCredentials();
+      const reg = await request(app).post("/api/auth/register").send(creds);
+      expect(reg.status).toBe(201);
+      const t0: string = reg.body.token;
+      const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
+      const login = (extra: object = {}) =>
+        request(app)
+          .post("/api/auth/login")
+          .send({
+            username: creds.username,
+            password: creds.password,
+            ...extra,
+          });
+
+      // 1. Setup + confirm → 10 recovery codes and a fresh token.
+      const setup = await request(app)
+        .post("/api/auth/mfa/totp/setup")
+        .set(bearer(t0))
+        .send({ password: creds.password });
+      expect(setup.status).toBe(200);
+      const secret = base32Decode(setup.body.secret);
+      const codeAt = (offset: number) =>
+        hotp(secret, timeStep(Date.now()) + offset);
+      const confirm = await request(app)
+        .post("/api/auth/mfa/totp/confirm")
+        .set(bearer(t0))
+        .send({ code: codeAt(0) });
+      expect(confirm.status).toBe(200);
+      expect(confirm.body.recoveryCodes).toHaveLength(10);
+      const recovery: string[] = confirm.body.recoveryCodes;
+
+      // 2. Password sign-in now stops at a challenge — 200, and NO token.
+      const challenged = await login();
+      expect(challenged.status).toBe(200);
+      expect(challenged.body.status).toBe("mfa_required");
+      expect(challenged.body).not.toHaveProperty("token");
+      const challenge: string = challenged.body.challenge;
+
+      // 3. The REAL requireAuth refuses the challenge as a session.
+      const asSession = await request(app)
+        .get("/api/auth/me")
+        .set(bearer(challenge));
+      expect(asSession.status).toBe(401);
+
+      // 4. The code (a fresh step) + "trust this phone" → token + trust key.
+      const step4Code = codeAt(1);
+      const verified = await request(app)
+        .post("/api/auth/mfa/verify")
+        .send({
+          challenge,
+          secondFactor: { code: step4Code },
+          trustDevice: true,
+        });
+      expect(verified.status).toBe(200);
+      expect(typeof verified.body.token).toBe("string");
+      const trustKey: string = verified.body.trustKey;
+      expect(trustKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      const me = await request(app)
+        .get("/api/auth/me")
+        .set(bearer(verified.body.token));
+      expect(me.status).toBe(200);
+      expect(me.body.mfaEnabled).toBe(true);
+
+      // 5. Sign out; the trusted phone still skips the code (D5).
+      const out = await request(app)
+        .post("/api/auth/logout")
+        .set(bearer(verified.body.token));
+      expect(out.status).toBe(200);
+      const trusted = await login({ trustKey });
+      expect(trusted.status).toBe(200);
+      expect(typeof trusted.body.token).toBe("string");
+      expect(trusted.body.status).toBeUndefined();
+
+      // 6. Replay of step 4's code fails; a recovery code works once.
+      const c2 = (await login()).body.challenge as string;
+      const replay = await request(app)
+        .post("/api/auth/mfa/verify")
+        .send({ challenge: c2, secondFactor: { code: step4Code } });
+      expect(replay.status).toBe(401);
+      expect(replay.body.code).toBe("INVALID_SECOND_FACTOR");
+      const viaRecovery = await request(app)
+        .post("/api/auth/mfa/verify")
+        .send({ challenge: c2, secondFactor: { recoveryCode: recovery[0] } });
+      expect(viaRecovery.status).toBe(200);
+      expect(viaRecovery.body.replacementRecoveryCode).toMatch(
+        /^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/,
+      );
+      const t3: string = viaRecovery.body.token;
+      const c3 = (await login()).body.challenge as string;
+      const reused = await request(app)
+        .post("/api/auth/mfa/verify")
+        .send({ challenge: c3, secondFactor: { recoveryCode: recovery[0] } });
+      expect(reused.status).toBe(401);
+
+      // 7. A password proof inside the app also needs the code.
+      const changeEmail = await request(app)
+        .post("/api/auth/change-email")
+        .set(bearer(t3))
+        .send({ newEmail: "moved@test.invalid", password: creds.password });
+      expect(changeEmail.status).toBe(403);
+      expect(changeEmail.body.code).toBe("SECOND_FACTOR_REQUIRED");
+
+      // 8. A password reset forgets the trusted phone and kills open challenges.
+      const openBeforeReset = (await login()).body.challenge as string;
+      const [row] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, creds.username));
+      await storage.issuePasswordResetCode(
+        row.id,
+        hashResetCode(row.id, "123456"),
+      );
+      const reset = await request(app).post("/api/auth/reset-password").send({
+        email: creds.email,
+        code: "123456",
+        newPassword: "a brand new passphrase 7",
+      });
+      expect(reset.status).toBe(200);
+      creds.password = "a brand new passphrase 7";
+      const afterReset = await login({ trustKey });
+      expect(afterReset.body.status).toBe("mfa_required");
+      const dead = await request(app)
+        .post("/api/auth/mfa/verify")
+        .send({
+          challenge: openBeforeReset,
+          secondFactor: { recoveryCode: recovery[1] },
+        });
+      expect(dead.status).toBe(401);
+      expect(dead.body.code).toBe("MFA_CHALLENGE_EXPIRED");
+
+      // 9. The token minted before setup was revoked by confirm.
+      const old = await request(app).get("/api/auth/me").set(bearer(t0));
+      expect(old.status).toBe(401);
+      expect(old.body.code).toBe("TOKEN_REVOKED");
     });
   });
 });

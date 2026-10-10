@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import * as gates from "../sign-in-gates";
 
 describe("signInGate", () => {
@@ -27,14 +27,24 @@ describe("signInGate", () => {
       ),
     ).toEqual({ ok: true });
   });
-  it("blocks with SECOND_FACTOR_REQUIRED when the account needs one", () => {
-    vi.spyOn(gates.secondFactor, "requiresSecondFactor").mockReturnValue(true);
+  it("D1: a Google/Apple sign-in on an MFA account goes straight in", () => {
+    const mfaUser = { ...user, mfaEnabledAt: new Date() };
     expect(
-      gates.signInGate(user, {
+      gates.signInGate(mfaUser, {
         emailWillBeVerified: false,
         verificationOn: true,
       }),
-    ).toMatchObject({ ok: false, status: 403, code: "SECOND_FACTOR_REQUIRED" });
-    vi.restoreAllMocks();
+    ).toEqual({ ok: true });
+  });
+});
+
+describe("secondFactor.requiresSecondFactor", () => {
+  it("is true exactly when two-step verification is on", () => {
+    expect(
+      gates.secondFactor.requiresSecondFactor({ mfaEnabledAt: new Date() }),
+    ).toBe(true);
+    expect(
+      gates.secondFactor.requiresSecondFactor({ mfaEnabledAt: null }),
+    ).toBe(false);
   });
 });

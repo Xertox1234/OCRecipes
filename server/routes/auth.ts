@@ -63,17 +63,27 @@ import {
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
+import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
+import { startMfaChallenge } from "../lib/mfa/challenge";
+import { hashTrustKey } from "../lib/mfa/mfa-secrets";
+import { secondFactor } from "../lib/social-identity/sign-in-gates";
 import { serializeUser } from "./_serialize-user";
 import { reauthenticate, revokeAppleIdentities } from "./auth-social";
 
 export { serializeUser };
 
-function sendVerificationPending(res: Response): void {
+function sendVerificationPending(
+  res: Response,
+  extra: { replacementRecoveryCode?: string } = {},
+): void {
   // Content-free neutral response — identical for new / existing-unverified /
   // existing-verified signups so the registrant cannot enumerate emails.
+  // `extra` only ever carries a spent recovery code's replacement, which the
+  // caller already proved (password + second factor) is theirs.
   res.status(200).json({
     status: "verification_pending",
     message: "Check your inbox to verify your email.",
+    ...extra,
   });
 }
 
@@ -355,6 +365,22 @@ export function register(app: Express): void {
           );
         }
 
+        // Two-step verification: a correct password on an MFA account earns a
+        // challenge, not a session — unless this phone is trusted for THIS
+        // user (keys are per user; expired or forgotten keys never match).
+        if (
+          secondFactor.requiresSecondFactor(user) &&
+          !(
+            validated.trustKey &&
+            (await storage.isTrustedDevice(
+              user.id,
+              hashTrustKey(validated.trustKey),
+            ))
+          )
+        ) {
+          return res.json(await startMfaChallenge({ user, purpose: "login" }));
+        }
+
         const token = generateToken(
           user.id.toString(),
           user.tokenVersion,
@@ -606,7 +632,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        const { newEmail, password } = parsed.data;
+        const { newEmail, password, secondFactor } = parsed.data;
         const verificationOn = emailVerificationEnabled();
 
         // Re-authenticate with the current password (getUserForAuth returns the
@@ -624,6 +650,17 @@ export function register(app: Express): void {
             ErrorCode.UNAUTHORIZED,
           );
         }
+        // Spec D2: on an MFA account the password alone is not enough.
+        const gate = await secondFactorForPasswordProof(
+          user,
+          true,
+          secondFactor,
+        );
+        if (!gate.ok)
+          return sendError(res, gate.status, gate.message, gate.code);
+        const replacement = gate.replacementRecoveryCode
+          ? { replacementRecoveryCode: gate.replacementRecoveryCode }
+          : {};
 
         // Unchanged address (case-insensitive): no-op. Skips the write so the
         // current verified state is never reset and the row never self-collides
@@ -631,8 +668,8 @@ export function register(app: Express): void {
         // lowercase defensively in case a legacy row was not normalized.)
         if (newEmail === user.email.toLowerCase()) {
           return verificationOn
-            ? sendVerificationPending(res)
-            : res.json(serializeUser(user));
+            ? sendVerificationPending(res, replacement)
+            : res.json({ ...serializeUser(user), ...replacement });
         }
 
         if (verificationOn) {
@@ -665,7 +702,7 @@ export function register(app: Express): void {
               ),
             );
           }
-          return sendVerificationPending(res);
+          return sendVerificationPending(res, replacement);
         }
 
         // Fail-open (gate OFF): no verify round-trip exists to commit a staged
@@ -692,7 +729,7 @@ export function register(app: Express): void {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
         // No verification email is sent when the gate is off.
-        return res.json(serializeUser(updated));
+        return res.json({ ...serializeUser(updated), ...replacement });
       } catch (error) {
         handleRouteError(res, error, "change email");
       }
@@ -739,6 +776,7 @@ export function register(app: Express): void {
         res.json({
           ...serializeUser(user),
           signInMethods: await storage.getSignInMethods(user.id),
+          mfaEnabled: user.mfaEnabledAt !== null,
         });
       } catch (error) {
         handleRouteError(res, error, "fetch current user");
@@ -807,6 +845,16 @@ export function register(app: Express): void {
             ErrorCode.UNAUTHORIZED,
           );
         }
+        // Spec D2: a password proof on an MFA account also needs the code; a
+        // Google/Apple proof never does (D1). The account is about to go, so a
+        // spent recovery code's replacement is not returned.
+        const gate = await secondFactorForPasswordProof(
+          user,
+          "password" in validated,
+          "password" in validated ? validated.secondFactor : undefined,
+        );
+        if (!gate.ok)
+          return sendError(res, gate.status, gate.message, gate.code);
 
         // Revoke Apple tokens BEFORE the delete cascades the identity rows
         // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
