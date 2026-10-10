@@ -188,6 +188,16 @@ export const changeEmailSchema = z.object({
 });
 
 // ── Two-step verification ──────────────────────────────────────────────────
+export const mfaPasswordSchema = z.object({
+  password: z.string().min(1, "Password is required").max(200),
+});
+export const mfaPasswordAndFactorSchema = mfaPasswordSchema.extend({
+  secondFactor: secondFactorSchema,
+});
+export const mfaConfirmSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
+});
+
 export const mfaVerifySchema = z.object({
   challenge: z.string().min(20).max(100),
   secondFactor: secondFactorSchema,

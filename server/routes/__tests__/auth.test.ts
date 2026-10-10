@@ -1532,6 +1532,42 @@ describe("Auth Routes", () => {
       vi.mocked(storage.deleteUser).mockReset();
     });
 
+    describe("GET /api/auth/me", () => {
+      it("reports mfaEnabled and never a secret, pending secret or the raw timestamp", async () => {
+        vi.mocked(storage.getUser).mockResolvedValue({
+          ...createMockUser({ mfaEnabledAt: new Date() }),
+          // A row that somehow carried MFA secrets must still not leak them.
+          totpSecretEnc: "v1:secret",
+          pendingSecretEnc: "v1:pending",
+        } as unknown as Awaited<ReturnType<typeof storage.getUser>>);
+        vi.mocked(storage.getSignInMethods).mockResolvedValue({
+          password: true,
+          google: null,
+          apple: null,
+        });
+        const res = await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", "Bearer mock-token");
+        expect(res.status).toBe(200);
+        expect(res.body.mfaEnabled).toBe(true);
+        expect(res.body).not.toHaveProperty("mfaEnabledAt");
+        expect(JSON.stringify(res.body)).not.toContain("v1:");
+      });
+
+      it("mfaEnabled is false when two-step verification is off", async () => {
+        vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
+        vi.mocked(storage.getSignInMethods).mockResolvedValue({
+          password: true,
+          google: null,
+          apple: null,
+        });
+        const res = await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", "Bearer mock-token");
+        expect(res.body.mfaEnabled).toBe(false);
+      });
+    });
+
     describe("POST /api/auth/login", () => {
       const login = (body: object = {}) =>
         request(app)

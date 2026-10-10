@@ -28,11 +28,12 @@ describe("signInGate", () => {
     ).toEqual({ ok: true });
   });
   it("D1: a Google/Apple sign-in on an MFA account goes straight in", () => {
+    const mfaUser = { ...user, mfaEnabledAt: new Date() };
     expect(
-      gates.signInGate(
-        { ...user, mfaEnabledAt: new Date() },
-        { emailWillBeVerified: false, verificationOn: true },
-      ),
+      gates.signInGate(mfaUser, {
+        emailWillBeVerified: false,
+        verificationOn: true,
+      }),
     ).toEqual({ ok: true });
   });
 });

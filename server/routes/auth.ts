@@ -776,6 +776,7 @@ export function register(app: Express): void {
         res.json({
           ...serializeUser(user),
           signInMethods: await storage.getSignInMethods(user.id),
+          mfaEnabled: user.mfaEnabledAt !== null,
         });
       } catch (error) {
         handleRouteError(res, error, "fetch current user");
