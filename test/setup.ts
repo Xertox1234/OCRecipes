@@ -6,6 +6,7 @@ import {
   notificationAsync,
   selectionAsync,
 } from "./mocks/expo-haptics";
+import { signIn as googleSignIn } from "./mocks/google-sign-in-module";
 import { useReducedMotion } from "./mocks/react-native-reanimated";
 
 // node:module must NOT be a static import here: under a shell-exported
@@ -84,4 +85,12 @@ beforeEach(() => {
   notificationAsync.mockReset();
   selectionAsync.mockReset();
   useReducedMotion.mockReset();
+  googleSignIn.mockReset();
 });
+
+// modules/google-sign-in calls requireNativeModule at import (throws under
+// Node). Reached via @/lib/social-sign-in <- useAuth <- AuthContext.
+vi.mock(
+  "../modules/google-sign-in",
+  () => import("./mocks/google-sign-in-module"),
+);

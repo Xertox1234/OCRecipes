@@ -1,9 +1,9 @@
 ---
 title: "Add Sign in with Google and Sign in with Apple — essential login options (and Apple's guideline 4.8 requires Apple alongside Google)"
-status: in-progress
+status: done
 priority: high
 created: 2026-09-26
-updated: 2026-10-05
+updated: 2026-10-10
 assignee:
 labels: [security, api, react-native]
 github_issue:
@@ -92,3 +92,11 @@ This also bears on the owner's lockout (`P1-2026-09-26-no-password-reset-or-acco
 ### 2026-10-09
 
 - Owner declined the paid Universal Sign In licence. Google half now uses an in-repo Expo module over Google's official SDKs: `docs/superpowers/specs/2026-10-09-google-sign-in-native-module-design.md`. No licence or registry token needed; Cloud OAuth clients (spec §6) still required. Build iOS + Android together; Android device test deferred.
+- Module + "Continue with Google" button built on `feat/google-sign-in` (runtime **1.5.0** — reaches the owner only through native build 8, never by OTA to 1.4.0). iOS verified end to end in the simulator with the owner's Google account (local server: nonce → `/api/auth/social` 200 → complete-sign-up 201). Android code written; Gradle build not yet run locally (disk full).
+- Owner steps left: merge timing (runtime 1.5.0), Android build + device test, the device checklist in the PR body after build 8, and **publish the Google OAuth app** (home page, privacy URL, `ocrecipes.com` authorised domain) before App Review or external TestFlight testers.
+
+### 2026-10-10
+
+- **Done — closed and archived.** Google half merged as #1351 (squash `903c8e48`), with the Railway variables in #1349 (`928fbdad`). Build 8 (runtime 1.5.0) started on EAS with auto-submit to TestFlight.
+- The MFA criterion ("a provider sign-in on an MFA account stops at the challenge") cannot be tested until MFA exists; it is carried by `todos/P2-2026-09-26-add-second-factor-authentication.md` (decided 2026-09-26, with its own test criterion).
+- Remaining owner checks (build 8 device checklist, publishing the Google OAuth app, Android device test, the misconfigured-build error path) moved to `todos/P2-2026-10-10-google-sign-in-owner-checks.md`.
