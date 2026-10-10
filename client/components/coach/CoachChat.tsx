@@ -197,6 +197,14 @@ export default function CoachChat({
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
     null,
   );
+  // A finished turn stays on screen (question + streamed text) until the
+  // refetch brings in a reply newer than `after`; dropping both on `done`
+  // showed the pre-turn conversation for that round trip.
+  const [pendingSave, setPendingSave] = useState<{
+    after: number | null;
+  } | null>(null);
+  // Bumped on every send, so a late refetch cannot clear a newer question.
+  const turnEpochRef = useRef(0);
   const [planTarget, setPlanTarget] = useState<{
     recipeId: number;
     recipeTitle: string;
@@ -335,7 +343,6 @@ export default function CoachChat({
     isStreaming,
   } = useCoachStream({
     onDone: (_fullText, blocks) => {
-      setOptimisticMessage(null);
       // Finder blocks render from the refetched message (with the right
       // active state); keeping them in the footer too would show two lists.
       const liveBlocks = (blocks ?? []).filter(
@@ -346,13 +353,26 @@ export default function CoachChat({
         setStreamBlocks(liveBlocks);
         setStreamBlocksEntering(true);
       }
-      if (activeConvIdRef.current !== null) {
-        void queryClient.invalidateQueries({
-          queryKey: [
-            `/api/chat/conversations/${activeConvIdRef.current}/messages`,
-          ],
-        });
+      const convId = activeConvIdRef.current;
+      if (convId === null) {
+        setOptimisticMessage(null);
+        return;
       }
+      const after = lastAssistantIdRef.current;
+      const epoch = turnEpochRef.current;
+      setPendingSave({ after });
+      const queryKey = [`/api/chat/conversations/${convId}/messages`];
+      void queryClient.invalidateQueries({ queryKey }).finally(() => {
+        if (turnEpochRef.current !== epoch) return;
+        // A saved reply is handed over by `turnSaved` in the render that
+        // shows it. Nothing saved (refund, failed refetch): clear now.
+        const rows = queryClient.getQueryData<ChatMessage[]>(queryKey);
+        const last = rows?.[rows.length - 1];
+        if (last?.role !== "assistant" || last.id === after) {
+          setPendingSave(null);
+          setOptimisticMessage(null);
+        }
+      });
     },
     onError: (_message, code) => {
       // Branch on the machine-readable code, not a `message.startsWith("429")`
@@ -422,13 +442,31 @@ export default function CoachChat({
   // populated thread with an error screen.
   const showHistoryError = isHistoryError && (messages?.length ?? 0) === 0;
 
+  const lastAssistantMessageId = useMemo(() => {
+    if (!messages || messages.length === 0) return null;
+    const last = messages[messages.length - 1];
+    return last.role === "assistant" ? last.id : null;
+  }, [messages]);
+
+  const turnSaved =
+    pendingSave !== null &&
+    lastAssistantMessageId !== null &&
+    lastAssistantMessageId !== pendingSave.after;
+  const showLiveReply = isStreaming || (pendingSave !== null && !turnSaved);
+
+  useEffect(() => {
+    if (!turnSaved) return;
+    setPendingSave(null);
+    setOptimisticMessage(null);
+  }, [turnSaved]);
+
   const chatItems = useMemo<ChatListItem[]>(() => {
     const items: ChatListItem[] = (messages ?? []).map((message) => ({
       type: "message",
       id: `message-${message.id}`,
       message,
     }));
-    if (optimisticMessage) {
+    if (optimisticMessage && !turnSaved) {
       items.push({
         type: "optimistic",
         id: "optimistic",
@@ -436,7 +474,7 @@ export default function CoachChat({
       });
     }
     return items;
-  }, [messages, optimisticMessage]);
+  }, [messages, optimisticMessage, turnSaved]);
 
   // Validate blocks once per messages change, not on every render tick
   const messageBlocks = useMemo(() => {
@@ -473,12 +511,6 @@ export default function CoachChat({
       }
     }
     return map;
-  }, [messages]);
-
-  const lastAssistantMessageId = useMemo(() => {
-    if (!messages || messages.length === 0) return null;
-    const last = messages[messages.length - 1];
-    return last.role === "assistant" ? last.id : null;
   }, [messages]);
 
   useEffect(() => {
@@ -546,6 +578,8 @@ export default function CoachChat({
         haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       }
       setInputText("");
+      turnEpochRef.current += 1;
+      setPendingSave(null);
       setOptimisticMessage(content);
       setStreamBlocks([]);
       setStreamingError(null);
@@ -868,6 +902,8 @@ export default function CoachChat({
       if (isStreaming || !conversationId) return;
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      turnEpochRef.current += 1;
+      setPendingSave(null);
       setOptimisticMessage(label);
       setStreamBlocks([]);
       setStreamingError(null);
@@ -1091,11 +1127,11 @@ export default function CoachChat({
 
   const streamingFooter = useMemo(
     () =>
-      isStreaming || streamBlocks.length > 0 ? (
+      showLiveReply || streamBlocks.length > 0 ? (
         <StreamingBubble
           streamingContent={streamingContent}
           statusText={statusText}
-          isStreaming={isStreaming}
+          isStreaming={showLiveReply}
           streamBlocks={streamBlocks}
           onBlockAction={handleBlockAction}
           onQuickReply={handleQuickReply}
@@ -1106,7 +1142,7 @@ export default function CoachChat({
         />
       ) : null,
     [
-      isStreaming,
+      showLiveReply,
       streamingContent,
       statusText,
       streamBlocks,
