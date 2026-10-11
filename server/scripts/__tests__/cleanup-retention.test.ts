@@ -192,14 +192,16 @@ describe("runRetentionCleanup", () => {
     _resetRunningStateForTests();
   });
 
-  it("purges chat_conversations, scanned_items, and daily_logs in order", async () => {
+  it("purges chat_conversations, scanned_items, and daily_logs in order, then dead upgrade passes", async () => {
     // 1 call for the active-user union + 3 calls for the three domains (each
-    // returns rowCount < BATCH_SIZE so the loop exits after one batch).
+    // returns rowCount < BATCH_SIZE so the loop exits after one batch) + 1
+    // for the dead upgrade passes (one unbatched DELETE).
     const { db, execute } = makeFakeDb([
       { rows: [] },
       { rowCount: 5 },
       { rowCount: 7 },
       { rowCount: 11 },
+      { rowCount: 2 },
     ]);
     const results = await runRetentionCleanup(
       db,
@@ -210,13 +212,15 @@ describe("runRetentionCleanup", () => {
       "chat_conversations",
       "daily_logs",
       "scanned_items",
+      "password_upgrade_passes",
     ]);
     expect(results[0].rowsDeleted).toBe(5);
     expect(results[1].rowsDeleted).toBe(7);
     expect(results[2].rowsDeleted).toBe(11);
+    expect(results[3].rowsDeleted).toBe(2);
 
-    // Active-user query + 3 single-batch deletes.
-    expect(execute).toHaveBeenCalledTimes(4);
+    // Active-user query + 3 single-batch deletes + the pass sweep.
+    expect(execute).toHaveBeenCalledTimes(5);
   });
 
   it("loops until a batch returns fewer rows than BATCH_SIZE", async () => {
@@ -235,7 +239,8 @@ describe("runRetentionCleanup", () => {
       new Date("2026-05-11T00:00:00Z"),
     );
     expect(results[0].rowsDeleted).toBe(2250);
-    expect(execute).toHaveBeenCalledTimes(6);
+    // ...plus the one unbatched dead-upgrade-pass DELETE.
+    expect(execute).toHaveBeenCalledTimes(7);
   });
 
   it("preserves rows within the retention window", async () => {
