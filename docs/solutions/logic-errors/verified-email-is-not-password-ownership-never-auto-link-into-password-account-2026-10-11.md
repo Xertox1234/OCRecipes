@@ -43,7 +43,7 @@ Tests: each `decideLink` condition has a case that fails only on that condition 
 
 - `server/lib/social-identity/linking-policy.ts` — `decideLink`
 - `server/routes/auth-social.ts` — the `auto_link` and `link_required` branches
-- `server/routes/auth.ts` — re-register branch sends a Forgot-password notice, not a verify link (M4); remaining verify paths: `todos/P2-2026-10-11-auth-reregister-verifies-squatter-account.md`. Its send budget: [attacker-triggered-mail-sharing-the-recovery-budget-starves-recovery](attacker-triggered-mail-sharing-the-recovery-budget-starves-recovery-2026-10-11.md)
+- `server/routes/auth.ts` — re-register branch sends a Forgot-password notice, not a verify link (M4); the remaining verify links now need a button press and name the account: [emailed-link-that-acts-on-get-is-clicked-by-mail-scanners](emailed-link-that-acts-on-get-is-clicked-by-mail-scanners-2026-10-11.md). Its send budget: [attacker-triggered-mail-sharing-the-recovery-budget-starves-recovery](attacker-triggered-mail-sharing-the-recovery-budget-starves-recovery-2026-10-11.md)
 
 ## See Also
 
