@@ -8,9 +8,11 @@ import type {
   MfaVerifyResult,
   SecondFactorInput,
   SessionResult,
+  SignedInResult,
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
+  UpgradeRequiredResult,
   User,
 } from "@shared/types/auth";
 
@@ -18,7 +20,10 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  /** On a 2FA account: `mfa_required` with a challenge, and nothing stored. */
+  /**
+   * On a 2FA account: `mfa_required` with a challenge, and nothing stored.
+   * A password under 15 without two-step: `upgrade_required` with a pass.
+   */
   login: (username: string, password: string) => Promise<SessionResult>;
   /** Answers a challenge; keeps a trust key but does not sign in (see finishSignIn). */
   verifySecondFactor: (
@@ -43,13 +48,25 @@ interface AuthContextType {
     secondFactor: SecondFactorInput,
   ) => Promise<string[]>;
   forgetTrustedPhones: () => Promise<void>;
+  /** A short password's pass (spec §6): stage an authenticator secret. */
+  upgradeStartTwoStep: (pass: string) => Promise<TwoStepSecret>;
+  /** Returns the session WITHOUT signing in — save the codes, then finishSignIn. */
+  upgradeConfirmTwoStep: (
+    pass: string,
+    code: string,
+  ) => Promise<{ session: SignedInResult; recoveryCodes: string[] }>;
+  /** Sets a 15+ password on the pass and signs in. */
+  upgradeSetPassword: (pass: string, newPassword: string) => Promise<void>;
   register: (
     username: string,
     password: string,
     email: string,
     ageConfirmed: boolean,
+    twoStep?: boolean,
   ) => Promise<
-    { status: "authenticated"; user: User } | { status: "verification_pending" }
+    | { status: "authenticated"; user: User }
+    | { status: "verification_pending" }
+    | UpgradeRequiredResult
   >;
   logout: () => Promise<void>;
   expireSession: () => Promise<void>;

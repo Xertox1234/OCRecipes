@@ -10,6 +10,7 @@ import {
 } from "@/lib/query-client";
 import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
 import type {
+  MfaChallengeResult,
   MfaVerifyResult,
   SecondFactorInput,
   SessionResult,
@@ -17,8 +18,10 @@ import type {
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
+  UpgradeRequiredResult,
   User,
 } from "@shared/types/auth";
+import { upgradeRequest } from "@/lib/upgrade-pass-request";
 import { getProviderToken } from "@/lib/social-sign-in";
 import { registerPushToken } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
@@ -308,7 +311,9 @@ export function useAuth() {
   /**
    * Password sign-in. On a 2FA account the server answers with a challenge
    * instead of a session (unless this phone is trusted): the caller routes to
-   * the code screen, and nothing is stored until the code passes.
+   * the code screen, and nothing is stored until the code passes. A password
+   * under 15 on an account without two-step answers with an upgrade pass
+   * (password policy spec §5.2): the caller routes to PasswordUpgrade.
    */
   const login = useCallback(
     async (username: string, password: string): Promise<SessionResult> => {
@@ -319,9 +324,10 @@ export function useAuth() {
         ...(trustKey ? { trustKey } : {}),
       });
       const data = (await response.json()) as
-        | { status: "mfa_required"; challenge: string }
+        | MfaChallengeResult
+        | UpgradeRequiredResult
         | { user: User; token: string };
-      if ("status" in data && data.status === "mfa_required") return data;
+      if ("status" in data) return data;
       const { user, token } = data as { user: User; token: string };
       await establishSession(user, token);
       return { status: "signed_in", user, token };
@@ -428,9 +434,12 @@ export function useAuth() {
       password: string,
       email: string,
       ageConfirmed: boolean,
+      // The "Use two-step verification" switch (spec P4): 8+ instead of 15+.
+      twoStep = false,
     ): Promise<
       | { status: "authenticated"; user: User }
       | { status: "verification_pending" }
+      | UpgradeRequiredResult
     > => {
       const response = await apiRequest("POST", "/api/auth/register", {
         username,
@@ -439,8 +448,14 @@ export function useAuth() {
         // COPPA 13+ age attestation — caller forwards user's actual checkbox
         // state; server enforces with `z.literal(true)` (zero trust on client).
         ageConfirmed,
+        ...(twoStep ? { twoStep: true } : {}),
       });
       const data = await response.json();
+      // Verification OFF with the switch on and a password under 15: no
+      // session yet — the caller routes to PasswordUpgrade (spec §5.1).
+      if (data.status === "upgrade_required") {
+        return data as UpgradeRequiredResult;
+      }
       // Verification OFF (fail-open) → server returns a token → auto-login,
       // preserving the pre-feature behavior.
       if (data.token) {
@@ -752,6 +767,51 @@ export function useAuth() {
     await trustKeyStorage.clear();
   }, []);
 
+  // ── A short password's upgrade pass (password policy spec §6) ─────────
+  // Every call rides the pass, never the stored Bearer token.
+
+  const upgradeStartTwoStep = useCallback(
+    async (pass: string): Promise<TwoStepSecret> => {
+      const res = await upgradeRequest("/api/auth/upgrade/totp/setup", pass);
+      return (await res.json()) as TwoStepSecret;
+    },
+    [],
+  );
+
+  /**
+   * Returns the session WITHOUT signing in: signing in swaps the whole
+   * navigator, which would unmount the screen before the recovery codes are
+   * saved. The screen calls finishSignIn once they are.
+   */
+  const upgradeConfirmTwoStep = useCallback(
+    async (
+      pass: string,
+      code: string,
+    ): Promise<{ session: SignedInResult; recoveryCodes: string[] }> => {
+      const res = await upgradeRequest(
+        "/api/auth/upgrade/totp/confirm",
+        pass,
+        { code },
+      );
+      const { recoveryCodes, ...session } = (await res.json()) as SignedInResult & {
+        recoveryCodes: string[];
+      };
+      return { session, recoveryCodes };
+    },
+    [],
+  );
+
+  const upgradeSetPassword = useCallback(
+    async (pass: string, newPassword: string) => {
+      const res = await upgradeRequest("/api/auth/upgrade/password", pass, {
+        newPassword,
+      });
+      const { user, token } = (await res.json()) as SignedInResult;
+      await establishSession(user, token);
+    },
+    [establishSession],
+  );
+
   return {
     ...state,
     startTwoStepSetup,
@@ -760,6 +820,9 @@ export function useAuth() {
     disableTwoStep,
     replaceRecoveryCodes,
     forgetTrustedPhones,
+    upgradeStartTwoStep,
+    upgradeConfirmTwoStep,
+    upgradeSetPassword,
     login,
     verifySecondFactor,
     finishSignIn: establishSession,
