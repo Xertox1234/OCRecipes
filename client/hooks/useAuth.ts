@@ -27,6 +27,7 @@ import {
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
 import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
+import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 
 interface AuthState {
@@ -87,6 +88,9 @@ async function clearDurableLocalState(): Promise<boolean> {
     // path. Non-throwing; a failed wipe feeds `ok` so the durable-owner marker is
     // not advanced past this user (the next auth resolution retries).
     if (!(await clearRecentSearches())) ok = false;
+    // OS-scheduled coach reminders carry this user's journal text and outlive
+    // the session in the OS; cancel them and drop their global id map.
+    if (!(await clearScheduledCoachReminders())) ok = false;
     // Gate on the persisted-cache restore: a teardown that races a cold-start
     // restore could otherwise clear() the cache before the restore rehydrates the
     // prior user's data into memory, re-exposing it under the next user. Resolves

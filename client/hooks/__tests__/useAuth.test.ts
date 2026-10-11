@@ -20,6 +20,7 @@ const {
   mockNotifySessionExpired,
   mockClearOfflineQueue,
   mockClearHomeActionsState,
+  mockClearScheduledCoachReminders,
   mockWhenQueryCacheRestored,
 } = vi.hoisted(() => {
   const mockAsyncStorage: Record<string, string> = {};
@@ -42,6 +43,7 @@ const {
     // to falsy and the marker would never advance.
     mockClearOfflineQueue: vi.fn().mockResolvedValue(true),
     mockClearHomeActionsState: vi.fn().mockResolvedValue(true),
+    mockClearScheduledCoachReminders: vi.fn().mockResolvedValue(true),
     // Default: the persisted-cache restore gate is already settled, so the sweep
     // proceeds immediately. Individual tests override with a deferred promise to
     // assert the sweep waits for restoration before clearing.
@@ -97,6 +99,10 @@ vi.mock("@/lib/offline-queue", () => ({
 
 vi.mock("@/lib/home-actions-storage", () => ({
   clearHomeActionsState: () => mockClearHomeActionsState(),
+}));
+
+vi.mock("@/hooks/useNotebookNotifications", () => ({
+  clearScheduledCoachReminders: () => mockClearScheduledCoachReminders(),
 }));
 
 const { mockGetProviderToken } = vi.hoisted(() => ({
@@ -1056,6 +1062,9 @@ describe("useAuth", () => {
       // path only: clearHomeActionsState runs solely via the shared
       // clearDurableLocalState chokepoint, so one path proves wiring for all five.
       expect(mockClearHomeActionsState).toHaveBeenCalled();
+      // ...and the OS-scheduled coach reminders (journal text) plus their global
+      // id map (auth audit M2) — same chokepoint, so one path proves all five.
+      expect(mockClearScheduledCoachReminders).toHaveBeenCalled();
       // ...and the persisted query cache (regression guard: this exact call was
       // previously unasserted, the gap that let the checkAuth 4th-path leak ship).
       expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
