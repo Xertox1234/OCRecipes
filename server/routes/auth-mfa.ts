@@ -119,10 +119,30 @@ async function requireFactor(
 }
 
 /** Stage a fresh secret (first setup or new phone) and hand it to the app once. */
+// Stages only if the account is still in the state the caller checked (setup:
+// MFA off, new phone: MFA on) — a race with a confirm answers 409 (audit L13).
 async function stageSecret(user: User) {
   requireConfigured();
   const secret = newTotpSecret();
-  await storage.startTotpEnrollment(user.id, encryptMfaSecret(secret));
+  const mfaEnabled = user.mfaEnabledAt !== null;
+  const staged = await storage.startTotpEnrollment(
+    user.id,
+    encryptMfaSecret(secret),
+    { mfaEnabled },
+  );
+  if (!staged) {
+    throw mfaEnabled
+      ? new Reply(
+          409,
+          ErrorCode.MFA_NOT_ENABLED,
+          "Two-step verification is off.",
+        )
+      : new Reply(
+          409,
+          ErrorCode.MFA_ALREADY_ENABLED,
+          "Two-step verification is already on.",
+        );
+  }
   return { secret, otpauthUrl: otpauthUrl(secret, user.username) };
 }
 

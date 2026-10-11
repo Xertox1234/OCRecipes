@@ -44,19 +44,39 @@ const notLocked = or(
   lte(userMfa.lockedUntil, sql`now()`),
 );
 
-/** Stage a candidate secret (first setup, or a new phone). The active secret is untouched. */
+/**
+ * Stage a candidate secret (first setup, or a new phone). The active secret is
+ * untouched. Stages only while the account is still in the MFA state the
+ * caller checked (`mfaEnabled`: false = setup, true = new phone) — the user
+ * row is locked, so a setup racing the owner's confirm can no longer leave a
+ * pending secret on an MFA-on account that a bare session could then confirm
+ * as a "new phone" (audit L13). Returns false when the state has changed.
+ * Lock order is users → user_mfa (as confirmNewPhone); a rare race with
+ * confirmTotpEnrollment's opposite order is a Postgres deadlock abort — one
+ * request errors and is retried, nothing is staged wrongly.
+ */
 export async function startTotpEnrollment(
   userId: string,
   pendingSecretEnc: string,
-): Promise<void> {
+  expected: { mfaEnabled: boolean },
+): Promise<boolean> {
   const expires = sql`now() + (${MFA_ENROLL_TTL_MINUTES} * interval '1 minute')`;
-  await db
-    .insert(userMfa)
-    .values({ userId, pendingSecretEnc, pendingExpiresAt: expires })
-    .onConflictDoUpdate({
-      target: userMfa.userId,
-      set: { pendingSecretEnc, pendingExpiresAt: expires },
-    });
+  return db.transaction(async (tx) => {
+    const [u] = await tx
+      .select({ mfaEnabledAt: users.mfaEnabledAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update");
+    if (!u || (u.mfaEnabledAt !== null) !== expected.mfaEnabled) return false;
+    await tx
+      .insert(userMfa)
+      .values({ userId, pendingSecretEnc, pendingExpiresAt: expires })
+      .onConflictDoUpdate({
+        target: userMfa.userId,
+        set: { pendingSecretEnc, pendingExpiresAt: expires },
+      });
+    return true;
+  });
 }
 
 export async function getPendingTotpSecret(

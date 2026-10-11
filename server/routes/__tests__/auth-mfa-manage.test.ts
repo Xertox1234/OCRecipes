@@ -98,6 +98,7 @@ beforeEach(async () => {
   });
   vi.mocked(sendTwoFactorNotice).mockResolvedValue(undefined);
   vi.mocked(sendPasswordChangedNotice).mockResolvedValue(undefined);
+  vi.mocked(storage.startTotpEnrollment).mockResolvedValue(true);
   saved = {
     MFA_SECRET_ENC_KEY: process.env.MFA_SECRET_ENC_KEY,
     MFA_SETUP_ENABLED: process.env.MFA_SETUP_ENABLED,
@@ -116,6 +117,16 @@ afterEach(() => {
 });
 
 describe("POST /api/auth/mfa/totp/setup", () => {
+  // Auth audit 2026-10-10 L13: setup stages for an MFA-OFF account only.
+  it("stages as setup (MFA off); a confirm that won the race → 409", async () => {
+    vi.mocked(storage.startTotpEnrollment).mockResolvedValue(false);
+    const res = await post("totp/setup", { password: "right-pass1" });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("MFA_ALREADY_ENABLED");
+    expect(vi.mocked(storage.startTotpEnrollment).mock.calls[0][2]).toEqual({
+      mfaEnabled: false,
+    });
+  });
   it("right password → a secret and an authenticator link; only the encrypted secret is stored", async () => {
     const res = await post("totp/setup", { password: "right-pass1" });
     expect(res.status).toBe(200);
