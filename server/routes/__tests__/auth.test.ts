@@ -31,6 +31,7 @@ import { emailVerificationEnabled } from "../../lib/email-config";
 import {
   sendVerificationEmail,
   sendSignupAttemptNotice,
+  sendFinishSignupNotice,
 } from "../../services/email";
 import { signVerificationToken } from "../../lib/verification-token";
 import { isBreached } from "../../lib/pwned-password";
@@ -114,6 +115,7 @@ vi.mock("../../lib/email-config", () => ({
 vi.mock("../../services/email", () => ({
   sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
   sendSignupAttemptNotice: vi.fn().mockResolvedValue(undefined),
+  sendFinishSignupNotice: vi.fn().mockResolvedValue(undefined),
 }));
 
 // The password-proof gate runs for real; only the code check is stubbed.
@@ -653,7 +655,11 @@ describe("Auth Routes", () => {
       expect(sendVerificationEmail).toHaveBeenCalled();
     });
 
-    it("existing UNVERIFIED email → identical neutral 200, resend (not notice), no createUser", async () => {
+    // Auth audit 2026-10-10 M4: a re-sent verify link would verify whoever
+    // registered the address first (possibly a squatter holding its own
+    // password). The inbox owner is sent to Forgot password instead, which
+    // replaces the password AND verifies — no verify link, no token.
+    it("existing UNVERIFIED email → identical neutral 200, finish-by-password notice (never a verify link), no createUser", async () => {
       vi.mocked(emailVerificationEnabled).mockReturnValue(true);
       vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
       vi.mocked(storage.getUserByEmail).mockResolvedValue(
@@ -670,7 +676,8 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe("verification_pending");
       expect(storage.createUser).not.toHaveBeenCalled();
-      expect(sendVerificationEmail).toHaveBeenCalled();
+      expect(sendVerificationEmail).not.toHaveBeenCalled();
+      expect(sendFinishSignupNotice).toHaveBeenCalledWith("dup@x.com");
       expect(sendSignupAttemptNotice).not.toHaveBeenCalled();
     });
 

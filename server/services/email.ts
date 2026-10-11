@@ -198,6 +198,35 @@ export async function sendVerificationEmail(
   if (error) logger.error({ resendError: error }, "verification email failed");
 }
 
+/**
+ * Someone signed up with an address that already has an UNFINISHED (unverified)
+ * account. A verify link here would verify whoever registered it first —
+ * possibly a squatter holding their own password — so the inbox owner is sent
+ * to Forgot password, which replaces the password AND verifies (auth audit
+ * 2026-10-10 M4). No link, no code, no username: nothing to act on blindly.
+ */
+export async function sendFinishSignupNotice(to: string): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "account-security")) {
+    logger.warn(
+      { to },
+      "finish-signup notice throttled (account-security cap)",
+    );
+    return;
+  }
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: "Finish setting up your OCRecipes account",
+    html: `<p>Someone — probably you — tried to sign up for OCRecipes with this email address. It already belongs to an account that was never finished.</p>
+<p>To finish it, open OCRecipes, tap <strong>Forgot password</strong> on the sign-in screen, and enter this email address. You'll get a code to choose your password, and the account will be confirmed.</p>
+<p>If this wasn't you, you can ignore this email — nothing changes.</p>`,
+  });
+  if (error)
+    logger.error({ resendError: error }, "finish-signup notice failed");
+}
+
 export async function sendSignupAttemptNotice(
   to: string,
   username: string,

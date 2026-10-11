@@ -24,6 +24,7 @@ import {
   sendSignupAttemptNotice,
   sendPasswordResetCode,
   sendPasswordChangedNotice,
+  sendFinishSignupNotice,
 } from "../services/email";
 import {
   generateResetCode,
@@ -257,13 +258,12 @@ export function register(app: Express): void {
           // Verification ON: anti-enumeration. Same neutral response either way;
           // NEVER create an account and NEVER touch the existing password.
           if (!existingEmail.emailVerified) {
-            // Unverified retry → help them finish, don't alarm them.
+            // Unverified retry → point the inbox owner at Forgot password. NOT
+            // a verify link: that would verify whoever registered first, maybe
+            // a squatter holding their own password (auth audit M4).
             fireAndForget(
-              "resend-verification-on-reregister",
-              sendVerificationEmail(
-                email,
-                signVerificationToken(existingEmail.id, email),
-              ),
+              "finish-signup-notice-on-reregister",
+              sendFinishSignupNotice(email),
             );
           } else {
             fireAndForget(

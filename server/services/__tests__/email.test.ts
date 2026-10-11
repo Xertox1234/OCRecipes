@@ -291,6 +291,16 @@ describe("email service", () => {
       expect(arg.html).toContain("15 minutes");
     });
 
+    it("finish-signup notice points to Forgot password and carries no link or code (audit M4)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendFinishSignupNotice } = await import("../email");
+      await sendFinishSignupNotice("r@x.com");
+      const arg = mockSend.mock.calls[0][0];
+      expect(arg.to).toBe("r@x.com");
+      expect(arg.html).toContain("Forgot password");
+      expect(arg.html).not.toMatch(/verify-email|href=/);
+    });
+
     it("password-changed notice names connected Google/Apple sign-ins (audit M1)", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const { sendPasswordChangedNotice } = await import("../email");
