@@ -49,7 +49,11 @@ export type ProfileStackParamList = LibraryRoutes & {
   SignInMethods: undefined;
   /** Two-step verification: turn on, new phone, turn off, new recovery codes. */
   TwoStepSetup: { mode: TwoStepSetupMode };
-  ChangePassword: { hasPassword: boolean; providers: SocialProvider[] };
+  ChangePassword: {
+    hasPassword: boolean;
+    providers: SocialProvider[];
+    mfaEnabled: boolean;
+  };
   SavedItems: undefined;
   ScanHistory: { showAll?: boolean } | undefined;
   ItemDetail: { itemId: number };

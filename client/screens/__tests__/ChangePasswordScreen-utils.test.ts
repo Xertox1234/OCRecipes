@@ -64,14 +64,33 @@ describe("changePasswordErrorMessage", () => {
 });
 
 describe("codeRequestErrorMessage", () => {
-  it("429 → the daily-limit message", () => {
+  // Review: two different 429s. The daily cap says "tomorrow"; the hourly
+  // burst limiter must not — show whichever the server sent.
+  it("the daily cap's 429 shows its own message", () => {
+    const daily =
+      "You've requested too many codes today. Try again tomorrow, or use Google/Apple.";
     expect(
       codeRequestErrorMessage(
-        apiErr(429, { error: "x", code: "RATE_LIMITED" }),
+        apiErr(429, { error: daily, code: "RATE_LIMITED" }),
       ),
-    ).toBe(
-      "You've requested too many codes today. Try again tomorrow, or use Google/Apple.",
-    );
+    ).toBe(daily);
+  });
+  it("the hourly limiter's 429 shows its own message, never 'tomorrow'", () => {
+    expect(
+      codeRequestErrorMessage(
+        apiErr(429, {
+          error: "Too many code requests. Please wait.",
+          code: "RATE_LIMITED",
+        }),
+      ),
+    ).toBe("Too many code requests. Please wait.");
+  });
+  it("a 429 with no readable body → a time-neutral message", () => {
+    expect(
+      codeRequestErrorMessage(
+        new ApiError("429: not json", "RATE_LIMITED", 429),
+      ),
+    ).toBe("Too many code requests. Please wait a while and try again.");
   });
   it("anything else → the generic message", () => {
     expect(codeRequestErrorMessage(new Error("x"))).toBe(

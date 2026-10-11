@@ -15,6 +15,7 @@ import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
 import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
+import { ApiError } from "@/lib/api-error";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
 import type { ChangePasswordProof } from "@/hooks/useAuth";
@@ -38,6 +39,17 @@ import { Spacing } from "@/constants/theme";
 type Props = NativeStackScreenProps<ProfileStackParamList, "ChangePassword">;
 type Mode = "current" | "forgot" | "code";
 type SaveResult = { done: boolean; replacementRecoveryCode?: string };
+type ErrorField = "current" | "code" | "new";
+
+/** Which input an error belongs to, so that field is marked invalid. */
+function fieldFor(err: unknown): ErrorField | null {
+  const code = err instanceof ApiError ? err.code : undefined;
+  if (code === "UNAUTHORIZED") return "current";
+  if (code === "INVALID_RESET_CODE") return "code";
+  if (code === "PASSWORD_TOO_SHORT" || code === "PASSWORD_BREACHED")
+    return "new";
+  return null;
+}
 
 /**
  * Change (or set) the password while signed in — change-password spec §3.
@@ -46,20 +58,29 @@ type SaveResult = { done: boolean; replacementRecoveryCode?: string };
  * the first and last. A stranger who knows only the email can't block it.
  */
 export default function ChangePasswordScreen({ route, navigation }: Props) {
-  const { hasPassword, providers } = route.params;
+  const { hasPassword, providers, mfaEnabled } = route.params;
   const { theme } = useTheme();
   const { changePassword, requestPasswordChangeCode } = useAuthContext();
   const [mode, setMode] = useState<Mode>(hasPassword ? "current" : "forgot");
   const [current, setCurrent] = useState("");
   const [emailCode, setEmailCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [needsFactor, setNeedsFactor] = useState(false);
+  // Two-step on: ask for the code with the first submit (the server would
+  // otherwise refuse it — and an emailed-code guess would be spent finding out).
+  const [needsFactor, setNeedsFactor] = useState(mfaEnabled);
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorField, setErrorField] = useState<ErrorField | null>(null);
   const [busy, setBusy] = useState(false);
   // A ref, not state: a second tap in the same frame must see it.
   const busyRef = useRef(false);
-  const [replacement, setReplacement] = useState<string | null>(null);
+  // A spent recovery code's replacement. `changed` = the password change
+  // itself went through (then "I've saved it" leaves); after a refusal the
+  // card sits above the form with its error, and the person tries again.
+  const [replacement, setReplacement] = useState<{
+    code: string;
+    changed: boolean;
+  } | null>(null);
 
   const proofFor = (provider?: SocialProvider): ChangePasswordProof => {
     if (provider) return { provider };
@@ -70,11 +91,12 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   // Outside the try (React Compiler: no conditionals inside a try).
   const handleSaveError = (err: unknown) => {
     const spent = replacementFromError(err);
-    if (spent) setReplacement(spent);
+    if (spent) setReplacement({ code: spent, changed: false });
     if (isSecondFactorRequired(err)) {
       setNeedsFactor(true);
       return;
     }
+    setErrorField(fieldFor(err));
     setError(
       isTwoStepCheckError(err)
         ? secondFactorErrorMessage(err).message
@@ -84,7 +106,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const finishSave = (out: SaveResult) => {
     if (!out.done) return; // the Google/Apple sheet was cancelled
     if (out.replacementRecoveryCode)
-      setReplacement(out.replacementRecoveryCode);
+      setReplacement({ code: out.replacementRecoveryCode, changed: true });
     else navigation.goBack();
   };
 
@@ -93,6 +115,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     busyRef.current = true;
     setBusy(true);
     setError(null);
+    setErrorField(null);
     const proof = proofFor(provider);
     const secondFactor = needsFactor && factor ? factor : undefined;
     let out: SaveResult | null = null;
@@ -125,14 +148,15 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     else setMode("code");
   };
 
-  if (replacement) {
+  if (replacement && replacement.changed) {
     return (
       <ScreenScrollView
         style={{ backgroundColor: theme.backgroundRoot }}
         contentContainerStyle={styles.content}
+        headerInsetExtra={Spacing.lg}
       >
         <ReplacementCodeCard
-          code={replacement}
+          code={replacement.code}
           onDone={() => navigation.goBack()}
         />
       </ScreenScrollView>
@@ -142,9 +166,18 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScreenScrollView contentContainerStyle={styles.content}>
+      <ScreenScrollView
+        contentContainerStyle={styles.content}
+        headerInsetExtra={Spacing.lg}
+      >
+        {replacement ? (
+          <ReplacementCodeCard
+            code={replacement.code}
+            onDone={() => setReplacement(null)}
+          />
+        ) : null}
         {mode === "current" ? (
           <View style={styles.group}>
             <TextInput
@@ -152,6 +185,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               placeholder="Current password"
               value={current}
               onChangeText={setCurrent}
+              error={errorField === "current"}
               secureTextEntry
               autoCapitalize="none"
               autoComplete="current-password"
@@ -176,6 +210,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               placeholder="6-digit code"
               value={emailCode}
               onChangeText={(t) => setEmailCode(normalizeCodeInput(t))}
+              error={errorField === "code"}
               keyboardType="number-pad"
               autoComplete="one-time-code"
             />
@@ -197,6 +232,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           placeholder="New password"
           value={newPassword}
           onChangeText={setNewPassword}
+          error={errorField === "new"}
           secureTextEntry
           autoCapitalize="none"
           autoComplete="new-password"
@@ -205,8 +241,12 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           {passwordMessage("too_short", needsFactor ? "mfa" : "single_factor")}
         </ThemedText>
 
-        {needsFactor ? (
-          <SecondFactorField onChange={setFactor} busy={busy} />
+        {needsFactor && mode !== "forgot" ? (
+          <SecondFactorField
+            onChange={setFactor}
+            busy={busy}
+            autoFocus={false}
+          />
         ) : null}
         {error ? <InlineError message={error} /> : null}
 

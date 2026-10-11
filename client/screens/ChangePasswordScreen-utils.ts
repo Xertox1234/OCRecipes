@@ -44,9 +44,16 @@ export function changePasswordErrorMessage(err: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-/** Plain-words message for a failed "Email me a code". */
+/**
+ * Plain-words message for a failed "Email me a code". Two limits answer 429
+ * — the daily cap ("…tomorrow") and the hourly burst limiter ("…wait") — so
+ * show the one the server sent rather than assume the daily one.
+ */
 export function codeRequestErrorMessage(err: unknown): string {
-  if (err instanceof ApiError && err.status === 429)
-    return "You've requested too many codes today. Try again tomorrow, or use Google/Apple.";
-  return "Couldn't send the code. Please try again.";
+  if (!(err instanceof ApiError) || err.status !== 429)
+    return "Couldn't send the code. Please try again.";
+  const message = errorBody(err)?.error;
+  return typeof message === "string"
+    ? message
+    : "Too many code requests. Please wait a while and try again.";
 }

@@ -18,10 +18,12 @@ vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 const navigation = { goBack: vi.fn() };
 const NEW = "a-long-new-passphrase-1";
 
-function renderScreen(params: {
+function renderScreen(p: {
   hasPassword: boolean;
   providers: SocialProvider[];
+  mfaEnabled?: boolean;
 }) {
+  const params = { mfaEnabled: false, ...p };
   // The screen only reads route.params and navigation.goBack.
   const props = {
     route: { key: "ChangePassword", name: "ChangePassword", params },
@@ -109,7 +111,15 @@ describe("ChangePasswordScreen", () => {
 
   it("the daily code limit shows the plain message and stays on the options", async () => {
     auth.requestPasswordChangeCode.mockRejectedValueOnce(
-      new ApiError('429: {"code":"RATE_LIMITED"}', "RATE_LIMITED", 429),
+      new ApiError(
+        `429: ${JSON.stringify({
+          error:
+            "You've requested too many codes today. Try again tomorrow, or use Google/Apple.",
+          code: "RATE_LIMITED",
+        })}`,
+        "RATE_LIMITED",
+        429,
+      ),
     );
     renderScreen({ hasPassword: false, providers: [] });
     await act(async () => tap("Email me a code"));
@@ -189,5 +199,80 @@ describe("ChangePasswordScreen", () => {
     await act(async () => tap("Save new password"));
     expect(screen.getByText("r-1")).toBeTruthy();
     expect(navigation.goBack).not.toHaveBeenCalled();
+  });
+
+  // Review (security): a spent recovery code then a refused change must not
+  // look like success — the new code shows, AND the error and form stay.
+  it("a refused change after a spent recovery code keeps the error and the form", async () => {
+    auth.changePassword.mockRejectedValueOnce(
+      new ApiError(
+        '400: {"error":"Too short for this account.","code":"PASSWORD_TOO_SHORT","replacementRecoveryCode":"r-9"}',
+        "PASSWORD_TOO_SHORT",
+        400,
+      ),
+    );
+    renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
+    type("Current password", "old-pass");
+    type("New password", "short");
+    await act(async () => tap("Save new password"));
+    expect(screen.getByText("r-9")).toBeTruthy();
+    expect(screen.getByText("Too short for this account.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Save new password" }),
+    ).toBeTruthy();
+    expect(navigation.goBack).not.toHaveBeenCalled();
+  });
+
+  // Review (code): a two-step account knows its rule (8) up front and is
+  // asked for the authenticator code with the first submit.
+  it("two-step on: the 8-character hint and the code field from the start", () => {
+    renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(screen.getByLabelText("6-digit code")).toBeTruthy();
+  });
+
+  it("two-step on: Google/Apple needs no authenticator code field", () => {
+    renderScreen({
+      hasPassword: false,
+      providers: ["google"],
+      mfaEnabled: true,
+    });
+    expect(screen.queryByLabelText("6-digit code")).toBeNull();
+  });
+
+  // Review (mobile): the field an error belongs to is marked invalid.
+  it.each([
+    ["UNAUTHORIZED", 401, "Current password"],
+    ["PASSWORD_TOO_SHORT", 400, "New password"],
+  ])("%s marks %s invalid", async (code, status, label) => {
+    auth.changePassword.mockRejectedValueOnce(
+      new ApiError(`${status}: {"error":"x","code":"${code}"}`, code, status),
+    );
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "old-pass");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(screen.getByLabelText(label).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+  });
+
+  it("a wrong emailed code marks the code field invalid", async () => {
+    auth.requestPasswordChangeCode.mockResolvedValue(undefined);
+    auth.changePassword.mockRejectedValueOnce(
+      new ApiError(
+        '400: {"error":"x","code":"INVALID_RESET_CODE"}',
+        "INVALID_RESET_CODE",
+        400,
+      ),
+    );
+    renderScreen({ hasPassword: false, providers: [] });
+    await act(async () => tap("Email me a code"));
+    type("Code from the email", "000000");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(
+      screen.getByLabelText("Code from the email").getAttribute("aria-invalid"),
+    ).toBe("true");
   });
 });

@@ -196,21 +196,38 @@ describe("SignInMethodsScreen", () => {
     h.methods = { password: false, google: null, apple: relay };
     renderComponent(<SignInMethodsScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Set up a password" }));
+    // The test runtime is iOS with both SDKs; device filtering is pinned in
+    // SignInMethodsScreen-utils (reauthProviders).
     expect(h.navigate).toHaveBeenCalledWith("ChangePassword", {
       hasPassword: false,
       providers: ["apple"],
+      mfaEnabled: false,
     });
     expect(h.confirm).not.toHaveBeenCalled();
     expect(h.logout).not.toHaveBeenCalled();
+  });
+
+  it("passes two-step on to Change password (8-character rule, code up front)", () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    renderComponent(<SignInMethodsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    expect(h.navigate).toHaveBeenCalledWith(
+      "ChangePassword",
+      expect.objectContaining({ mfaEnabled: true }),
+    );
   });
 
   it("the password row's Change opens Change password with the account's shape", () => {
     h.methods = { password: true, google: null, apple: relay };
     renderComponent(<SignInMethodsScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    // The test runtime is iOS with both SDKs; device filtering is pinned in
+    // SignInMethodsScreen-utils (reauthProviders).
     expect(h.navigate).toHaveBeenCalledWith("ChangePassword", {
       hasPassword: true,
       providers: ["apple"],
+      mfaEnabled: false,
     });
     expect(h.logout).not.toHaveBeenCalled();
   });
