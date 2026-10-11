@@ -1,0 +1,70 @@
+import { and, eq, gt, isNotNull, lt, sql } from "drizzle-orm";
+import { db } from "../db";
+import { passwordChangeCodes } from "@shared/schema";
+import {
+  CHANGE_CODE_DAILY_ISSUE_CAP,
+  CHANGE_CODE_MAX_ATTEMPTS,
+  CHANGE_CODE_TTL_MINUTES,
+} from "@shared/constants/password-change";
+
+/**
+ * Store a new change-password code (replacing any live one, guesses back to
+ * 0) IF the account is under CHANGE_CODE_DAILY_ISSUE_CAP codes in its fixed
+ * 24 h window. One atomic upsert; expiry on the DB clock. Only a signed-in
+ * session reaches this (change-password spec §4.1), so a stranger can't use
+ * the cap up. Returns false at the cap (nothing stored).
+ */
+export async function issuePasswordChangeCode(
+  userId: string,
+  codeHash: string,
+): Promise<boolean> {
+  const windowExpired = sql`${passwordChangeCodes.windowStart} <= now() - interval '24 hours'`;
+  const expiresAt = sql`now() + (${CHANGE_CODE_TTL_MINUTES} * interval '1 minute')`;
+  const [row] = await db
+    .insert(passwordChangeCodes)
+    .values({
+      userId,
+      codeHash,
+      expiresAt,
+      attempts: 0,
+      issueCount: 1,
+      windowStart: sql`now()`,
+    })
+    .onConflictDoUpdate({
+      target: passwordChangeCodes.userId,
+      set: {
+        codeHash,
+        expiresAt,
+        attempts: 0,
+        issueCount: sql`CASE WHEN ${windowExpired} THEN 1 ELSE ${passwordChangeCodes.issueCount} + 1 END`,
+        windowStart: sql`CASE WHEN ${windowExpired} THEN now() ELSE ${passwordChangeCodes.windowStart} END`,
+      },
+      setWhere: sql`${windowExpired} OR ${passwordChangeCodes.issueCount} < ${CHANGE_CODE_DAILY_ISSUE_CAP}`,
+    })
+    .returning({ userId: passwordChangeCodes.userId });
+  return Boolean(row);
+}
+
+/**
+ * Use up one guess against the live code, atomically (concurrent guesses
+ * serialize on the row, so attempts never pass the cap). Returns the stored
+ * hash to compare against, or undefined when there is no live, unexpired,
+ * under-cap code.
+ */
+export async function reservePasswordChangeAttempt(
+  userId: string,
+): Promise<string | undefined> {
+  const [row] = await db
+    .update(passwordChangeCodes)
+    .set({ attempts: sql`${passwordChangeCodes.attempts} + 1` })
+    .where(
+      and(
+        eq(passwordChangeCodes.userId, userId),
+        isNotNull(passwordChangeCodes.codeHash),
+        gt(passwordChangeCodes.expiresAt, sql`now()`),
+        lt(passwordChangeCodes.attempts, CHANGE_CODE_MAX_ATTEMPTS),
+      ),
+    )
+    .returning({ codeHash: passwordChangeCodes.codeHash });
+  return row?.codeHash ?? undefined;
+}

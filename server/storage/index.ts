@@ -10,6 +10,7 @@
 
 import * as users from "./users";
 import * as passwordReset from "./password-reset";
+import * as passwordChange from "./password-change";
 import * as identities from "./identities";
 import * as mfa from "./mfa";
 import * as upgradePasses from "./upgrade-passes";
@@ -74,6 +75,8 @@ export const storage = {
   issuePasswordResetCode: passwordReset.issuePasswordResetCode,
   reservePasswordResetAttempt: passwordReset.reservePasswordResetAttempt,
   completePasswordReset: passwordReset.completePasswordReset,
+  issuePasswordChangeCode: passwordChange.issuePasswordChangeCode,
+  reservePasswordChangeAttempt: passwordChange.reservePasswordChangeAttempt,
   // Google / Apple identities
   issueNonce: identities.issueNonce,
   consumeNonce: identities.consumeNonce,
