@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Share, Platform } from "react-native";
 import { apiRequest, type MutationErrorMeta } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
+import { recipeStatsKey } from "@/hooks/useRecipeCommunity";
 import type { ResolvedFavouriteRecipe } from "@shared/schema";
 
 const FAVOURITES_KEY = ["/api/favourite-recipes"];
@@ -118,9 +119,14 @@ export function useToggleFavouriteRecipe(meta?: MutationErrorMeta) {
         );
       }
     },
-    onSettled: () => {
+    onSettled: (_data, _error, { recipeId, recipeType }) => {
       void queryClient.invalidateQueries({ queryKey: FAVOURITES_IDS_KEY });
       void queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
+      if (recipeType === "community") {
+        void queryClient.invalidateQueries({
+          queryKey: recipeStatsKey(recipeId),
+        });
+      }
     },
     meta,
   });

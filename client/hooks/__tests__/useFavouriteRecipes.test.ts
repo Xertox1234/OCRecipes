@@ -313,6 +313,48 @@ describe("useFavouriteRecipes", () => {
         "Upgrade to premium for unlimited favourites.",
       );
     });
+
+    it("invalidates the recipe's community stats for a community recipe", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      mockApiRequest.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ favourited: true }),
+      });
+      const spy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useToggleFavouriteRecipe(), {
+        wrapper,
+      });
+      await act(async () => {
+        await result.current.mutateAsync({
+          recipeId: 7,
+          recipeType: "community",
+        });
+      });
+      expect(spy).toHaveBeenCalledWith({
+        queryKey: ["/api/recipes/7/stats"],
+      });
+    });
+
+    it("does not touch community stats for a meal-plan recipe", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      mockApiRequest.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ favourited: true }),
+      });
+      const spy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useToggleFavouriteRecipe(), {
+        wrapper,
+      });
+      await act(async () => {
+        await result.current.mutateAsync({
+          recipeId: 7,
+          recipeType: "mealPlan",
+        });
+      });
+      expect(spy).not.toHaveBeenCalledWith({
+        queryKey: ["/api/recipes/7/stats"],
+      });
+    });
   });
 
   describe("useShareRecipe", () => {
