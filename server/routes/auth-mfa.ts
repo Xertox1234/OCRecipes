@@ -274,7 +274,7 @@ export function register(app: Express): void {
 
         let session;
         try {
-          session = await issueSession(user.id);
+          session = await issueSession(user.id, row.tokenVersion);
         } catch (err) {
           if (err instanceof HttpFailure)
             return fail(err.status, err.code, err.message);

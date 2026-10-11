@@ -143,10 +143,27 @@ export async function appleRefreshTokenFor(
   }
 }
 
-export async function issueSession(userId: string) {
+/**
+ * `expectedTokenVersion` (an MFA challenge's version): refuse to mint if a
+ * reset or sign-out-everywhere bumped it since — checked on the same read the
+ * token is minted from, so the session can never outlive that bump (audit L12).
+ */
+export async function issueSession(
+  userId: string,
+  expectedTokenVersion?: number,
+) {
   const user = await storage.getUser(userId);
   if (!user)
     throw new HttpFailure(401, ErrorCode.UNAUTHORIZED, "User not found");
+  if (
+    expectedTokenVersion !== undefined &&
+    user.tokenVersion !== expectedTokenVersion
+  )
+    throw new HttpFailure(
+      401,
+      ErrorCode.MFA_CHALLENGE_EXPIRED,
+      "This sign-in expired. Please start again.",
+    );
   return {
     status: "signed_in" as const,
     user: serializeUser(user),
@@ -526,7 +543,7 @@ export function register(app: Express): void {
           return sendError(
             res,
             400,
-            "This sign-in has expired. Please start again.",
+            "This sign-in expired. Please start again.",
             ErrorCode.INVALID_SIGN_IN_TICKET,
           );
         res.status(201).json(await issueSession(user.id));
@@ -555,7 +572,7 @@ export function register(app: Express): void {
         const expired = new HttpFailure(
           400,
           ErrorCode.INVALID_SIGN_IN_TICKET,
-          "This sign-in has expired. Please start again.",
+          "This sign-in expired. Please start again.",
         );
 
         let pending;

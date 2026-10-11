@@ -137,6 +137,22 @@ describe("POST /api/auth/mfa/verify", () => {
     expect(mockVerifySecondFactor).not.toHaveBeenCalled();
   });
 
+  // Auth audit 2026-10-10 L12: a reset landing between the challenge's version
+  // check and minting must not yield a session that survives that reset.
+  it("a reset between the version check and minting → 401, no token, replacement kept", async () => {
+    mockVerifySecondFactor.mockResolvedValue({
+      ok: true,
+      replacementRecoveryCode: "NEW-CODE",
+    });
+    vi.mocked(storage.getUser).mockResolvedValue({ ...USER, tokenVersion: 5 });
+    const res = await verify();
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
+    expect(res.body.token).toBeUndefined();
+    expect(res.body.replacementRecoveryCode).toBe("NEW-CODE");
+    expect(generateToken).not.toHaveBeenCalled();
+  });
+
   it("a deleted user → 401 MFA_CHALLENGE_EXPIRED", async () => {
     vi.mocked(storage.getUserForAuth).mockResolvedValue(undefined);
     const res = await verify();
