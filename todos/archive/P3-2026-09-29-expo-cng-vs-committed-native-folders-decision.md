@@ -3,10 +3,10 @@
 ---
 
 title: "Decide: drop the committed android/ios native folders for CNG, or accept the config-sync gap"
-status: backlog
+status: done
 priority: low
 created: 2026-09-29
-updated: 2026-09-29
+updated: 2026-10-11
 assignee:
 labels: [deferred, harness, architecture]
 github_issue:
@@ -61,12 +61,12 @@ Two paths, each with real tradeoffs:
 
 ## Acceptance Criteria
 
-- [ ] The user makes and records an explicit decision: adopt CNG (drop `android/`/`ios/`) or keep
+- [x] The user makes and records an explicit decision: adopt CNG (drop `android/`/`ios/`) or keep
       the bare workflow (accept the config-sync gap).
-- [ ] If CNG is chosen: a follow-up todo is created scoping the migration (verify all native
+- [x] If CNG is chosen: a follow-up todo is created scoping the migration (verify all native
       customizations are captured in config plugins, run `expo prebuild --clean`, rebuild via EAS,
       re-test on a device) — this todo itself does not perform the migration.
-- [ ] If the bare workflow is kept: record the reasoning, and decide whether to silence the
+- [x] (N/A — CNG chosen) If the bare workflow is kept: record the reasoning, and decide whether to silence the
       expo-doctor check (there is no documented `expo.install.exclude`-equivalent for this
       specific check — a plain acceptance/no-op may be the only option) or leave it failing as a
       known, permanent finding.
@@ -105,3 +105,15 @@ Two paths, each with real tradeoffs:
 
 - Split out from `todos/archive/P3-2026-09-26-expo-doctor-dependency-hygiene.md` item 4, per that
   todo's orchestrator instructions (item 4 is the user's decision, not an executor call).
+
+### 2026-09-30
+
+- Owner deferred: keep the committed folders for now. A prebuild probe found 5 hand fixes a
+  switch would have to port first (listed in the follow-up todo).
+
+### 2026-10-11
+
+- **Decision (owner): adopt CNG** — `app.json` + config plugins become the source of truth and the
+  committed `android/`/`ios/` folders will be dropped. Reverses the 2026-09-30 deferral.
+- Migration scoped in `todos/P2-2026-10-11-migrate-to-expo-cng.md` (8 known hand fixes to port,
+  owner-run native build + device test). This todo performs no migration; archived as decided.
