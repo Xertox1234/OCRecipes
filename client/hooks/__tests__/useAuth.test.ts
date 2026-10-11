@@ -542,6 +542,120 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(false);
     });
 
+    // ── A short password's upgrade pass (password policy spec §6) ──────────
+    const upgradeRequired = {
+      status: "upgrade_required",
+      pass: "pass-1",
+      canUseTwoStep: true,
+    };
+    const passInit = {
+      headers: { Authorization: "UpgradePass pass-1" },
+    };
+
+    it("login returns upgrade_required and does NOT sign in", async () => {
+      const { result } = await ready();
+      jsonOnce(upgradeRequired);
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.login("testuser", "short-pass");
+      });
+      expect(out).toEqual(upgradeRequired);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("upgradeStartTwoStep posts on the pass, never a Bearer token", async () => {
+      const { result } = await ready();
+      jsonOnce({ secret: "S", otpauthUrl: "otpauth://x" });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.upgradeStartTwoStep("pass-1");
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/upgrade/totp/setup",
+        {},
+        passInit,
+        null,
+      );
+      expect(out).toEqual({ secret: "S", otpauthUrl: "otpauth://x" });
+    });
+
+    it("upgradeConfirmTwoStep returns the session and codes WITHOUT signing in (codes are saved first)", async () => {
+      const { result } = await ready();
+      jsonOnce({
+        status: "signed_in",
+        user,
+        token: "t-new",
+        recoveryCodes: ["A", "B"],
+      });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.upgradeConfirmTwoStep("pass-1", "123456");
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/upgrade/totp/confirm",
+        { code: "123456" },
+        passInit,
+        null,
+      );
+      expect(out).toEqual({
+        session: { status: "signed_in", user, token: "t-new" },
+        recoveryCodes: ["A", "B"],
+      });
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("upgradeSetPassword posts on the pass and signs in", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user, token: "t-new" });
+      await act(async () => {
+        await result.current.upgradeSetPassword(
+          "pass-1",
+          "a much longer password",
+        );
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/upgrade/password",
+        { newPassword: "a much longer password" },
+        passInit,
+        null,
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("register with the switch on sends twoStep and returns upgrade_required without signing in", async () => {
+      const { result } = await ready();
+      jsonOnce(upgradeRequired);
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.register(
+          "newuser",
+          "ten-chars!",
+          "new@example.com",
+          true,
+          true,
+        );
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/register",
+        {
+          username: "newuser",
+          password: "ten-chars!",
+          email: "new@example.com",
+          ageConfirmed: true,
+          twoStep: true,
+        },
+      );
+      expect(out).toEqual(upgradeRequired);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+
     it("login sends this phone's trust key when it has one", async () => {
       const { result } = await ready();
       mockTrustKeyStorage.get.mockResolvedValue("trust-1");

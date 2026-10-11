@@ -142,7 +142,7 @@ ADMIN_USER_IDS=1,2
 #### Email Verification (Resend)
 
 Email verification is OFF unless `RESEND_API_KEY` is set (fail-open). When unset,
-login/register behave exactly as before — dev, `demo/demo123`, and prod-before-DNS
+login/register behave exactly as before — dev (including the `demo` account), and prod-before-DNS
 are never locked out. Secrets — no `EXPO_PUBLIC_` prefix:
 
 ```bash

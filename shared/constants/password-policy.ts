@@ -9,7 +9,10 @@ export const PASSWORD_MIN_WITH_MFA = 8;
 export const PASSWORD_MAX = 128;
 
 export type PasswordProblem = "too_short" | "too_long";
-/** signup = PR 1 sign-up (15 only); mfa = two-step on; single_factor = two-step off. */
+/**
+ * signup = sign-up with the two-step switch off (names the switch);
+ * mfa = two-step on, or the sign-up switch on; single_factor = two-step off.
+ */
 export type PasswordContext = "signup" | "mfa" | "single_factor";
 
 export function passwordLength(pw: string): number {
@@ -31,7 +34,10 @@ export function passwordMessage(
   context: PasswordContext,
 ): string {
   if (problem === "too_long") return `Use at most ${PASSWORD_MAX} characters.`;
-  return context === "mfa"
-    ? `Use at least ${PASSWORD_MIN_WITH_MFA} characters.`
-    : `Use at least ${PASSWORD_MIN_SINGLE_FACTOR} characters.`;
+  if (context === "mfa")
+    return `Use at least ${PASSWORD_MIN_WITH_MFA} characters.`;
+  if (context === "signup") {
+    return `Use at least ${PASSWORD_MIN_SINGLE_FACTOR} characters, or turn on two-step verification to use ${PASSWORD_MIN_WITH_MFA}.`;
+  }
+  return `Use at least ${PASSWORD_MIN_SINGLE_FACTOR} characters.`;
 }

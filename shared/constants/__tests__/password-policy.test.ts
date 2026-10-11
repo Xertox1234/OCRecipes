@@ -43,7 +43,7 @@ describe("newPasswordProblem", () => {
 describe("passwordMessage", () => {
   it("one sentence per context", () => {
     expect(passwordMessage("too_short", "signup")).toBe(
-      "Use at least 15 characters.",
+      "Use at least 15 characters, or turn on two-step verification to use 8.",
     );
     expect(passwordMessage("too_short", "single_factor")).toBe(
       "Use at least 15 characters.",

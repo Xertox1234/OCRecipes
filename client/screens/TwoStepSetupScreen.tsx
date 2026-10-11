@@ -1,16 +1,6 @@
 import React, { useState } from "react";
-import {
-  AccessibilityInfo,
-  Alert,
-  Linking,
-  Pressable,
-  Share,
-  StyleSheet,
-  View,
-} from "react-native";
-import * as Clipboard from "expo-clipboard";
+import { AccessibilityInfo, Alert, StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
-import { Feather } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -22,6 +12,10 @@ import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
 import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
+import {
+  TotpEnrollmentSteps,
+  type TotpEnrollmentStart,
+} from "@/components/TotpEnrollmentSteps";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -29,11 +23,10 @@ import { useToast } from "@/context/ToastContext";
 import { ApiError } from "@/lib/api-error";
 import {
   isTwoStepCheckError,
-  normalizeCodeInput,
   replacementFromError,
   secondFactorErrorMessage,
 } from "@/lib/second-factor-utils";
-import { BorderRadius, Spacing } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import {
   PASSWORD_MAX,
@@ -44,14 +37,7 @@ import {
   BREACHED_PASSWORD_MESSAGE,
   validateNewPassword,
 } from "./LoginScreen-utils";
-import {
-  canFinishSaveCodes,
-  formatSetupKey,
-  recoveryCodesText,
-  setupTitle,
-  shouldGuardLeave,
-  type TwoStepSetupStep,
-} from "./TwoStepSetupScreen-utils";
+import { finishMessage, setupTitle } from "./TwoStepSetupScreen-utils";
 
 type Props = NativeStackScreenProps<ProfileStackParamList, "TwoStepSetup">;
 
@@ -96,16 +82,12 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const auth = useAuthContext();
   const needsFactor = mode !== "setup";
 
-  const [step, setStep] = useState<TwoStepSetupStep>("confirm");
   const [password, setPassword] = useState("");
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
-  const [secret, setSecret] = useState<{
-    secret: string;
-    otpauthUrl: string;
-  } | null>(null);
-  const [code, setCode] = useState("");
-  const [codes, setCodes] = useState<string[]>([]);
-  const [saved, setSaved] = useState(false);
+  // Set once the password (+ factor) step passes: the shared setup steps take over.
+  const [start, setStart] = useState<TotpEnrollmentStart | null>(null);
+  // Recovery codes on screen and not yet saved (reported by the setup steps).
+  const [guard, setGuard] = useState(false);
   const [replacement, setReplacement] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -118,7 +100,7 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
 
   // Swipe-back, header back or Android back while the codes are unsaved.
   // Done is only enabled once they're ticked as saved, so its goBack() passes.
-  usePreventRemove(shouldGuardLeave(step, saved), ({ data }) => {
+  usePreventRemove(guard, ({ data }) => {
     Alert.alert(
       "Leave without saving your codes?",
       "They won't be shown again. If you lose this phone without them, you'll have to contact support to get back in.",
@@ -172,24 +154,28 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
     setError("");
     try {
       if (mode === "setup") {
-        setSecret(await auth.startTwoStepSetup(password));
-        setStep("add-key");
+        const secret = await auth.startTwoStepSetup(password);
+        setStart({ kind: "secret", secret });
       } else if (factor) {
         // No `&&`/ternaries in here: React Compiler can't lower them in a try.
         if (mode === "new_phone") {
           const next = await auth.startNewPhone(password, factor);
-          setSecret({ secret: next.secret, otpauthUrl: next.otpauthUrl });
           if (next.replacementRecoveryCode) {
             setReplacement(next.replacementRecoveryCode);
           }
-          setStep("add-key");
+          setStart({
+            kind: "secret",
+            secret: { secret: next.secret, otpauthUrl: next.otpauthUrl },
+          });
         } else if (mode === "disable") {
           await auth.disableTwoStep(password, factor, upgrade);
           finish("Two-step verification is off");
           return;
         } else {
-          setCodes(await auth.replaceRecoveryCodes(password, factor));
-          setStep("save-codes");
+          const codes = await auth.replaceRecoveryCodes(password, factor);
+          // Straight onto the save step: guarded from the first render.
+          setGuard(true);
+          setStart({ kind: "codes", codes });
         }
       }
       setBusy(false);
@@ -198,47 +184,8 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
     }
   };
 
-  const openAuthenticator = async () => {
-    if (!secret) return;
-    setError("");
-    try {
-      await Linking.openURL(secret.otpauthUrl);
-    } catch {
-      setError("No authenticator app opened — copy the key instead.");
-    }
-  };
-
-  const copy = async (text: string, what: string) => {
-    await Clipboard.setStringAsync(text);
-    haptics.notification(Haptics.NotificationFeedbackType.Success);
-    AccessibilityInfo.announceForAccessibility(`${what} copied`);
-  };
-
-  const onConfirmCode = async () => {
-    if (busy || code.length !== 6) return;
-    setBusy(true);
-    setError("");
-    try {
-      const result = await auth.confirmTwoStep(code);
-      setBusy(false);
-      if (result.recoveryCodes) {
-        setCodes(result.recoveryCodes);
-        setStep("save-codes");
-        return;
-      }
-      finish("Two-step verification moved to this phone");
-    } catch (err) {
-      if (err instanceof ApiError && err.code === "INVALID_SECOND_FACTOR") {
-        setBusy(false);
-        haptics.notification(Haptics.NotificationFeedbackType.Error);
-        setError(
-          "That code didn't work. Check the time on your phone and try again.",
-        );
-        return;
-      }
-      fail(err);
-    }
-  };
+  const confirmCode = async (code: string) =>
+    (await auth.confirmTwoStep(code)).recoveryCodes;
 
   return (
     <ScreenScrollView contentContainerStyle={styles.content}>
@@ -253,7 +200,7 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
         />
       ) : null}
 
-      {step === "confirm" ? (
+      {!start ? (
         <View style={styles.section}>
           <ThemedText type="body" style={{ color: theme.textSecondary }}>
             {needsFactor
@@ -326,150 +273,14 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      {step === "add-key" && secret ? (
-        <View style={styles.section}>
-          <ThemedText type="body" style={{ color: theme.textSecondary }}>
-            Add OCRecipes to an authenticator app such as Google Authenticator,
-            Microsoft Authenticator or 1Password.
-          </ThemedText>
-          <Button onPress={() => void openAuthenticator()}>
-            Add to authenticator app
-          </Button>
-          <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            Or enter this key in the app:
-          </ThemedText>
-          <View
-            style={[
-              styles.keyBox,
-              {
-                borderColor: theme.border,
-                backgroundColor: theme.backgroundSecondary,
-              },
-            ]}
-          >
-            <ThemedText type="h4" selectable style={styles.key}>
-              {formatSetupKey(secret.secret)}
-            </ThemedText>
-          </View>
-          <Button
-            variant="outline"
-            onPress={() => void copy(secret.secret, "Key")}
-          >
-            Copy key
-          </Button>
-          <InlineError message={error} />
-          <Button
-            onPress={() => {
-              setError("");
-              setStep("enter-code");
-            }}
-          >
-            Next
-          </Button>
-        </View>
-      ) : null}
-
-      {step === "enter-code" ? (
-        <View style={styles.section}>
-          <ThemedText type="body" style={{ color: theme.textSecondary }}>
-            Enter the 6-digit code the app shows for OCRecipes.
-          </ThemedText>
-          <TextInput
-            leftIcon="shield"
-            placeholder="6-digit code"
-            value={code}
-            onChangeText={(v) => setCode(normalizeCodeInput(v))}
-            keyboardType="number-pad"
-            textContentType="oneTimeCode"
-            autoComplete="one-time-code"
-            maxLength={8}
-            autoFocus
-            editable={!busy}
-            accessibilityLabel="6-digit code"
-          />
-          <InlineError message={error} />
-          <Button
-            onPress={() => void onConfirmCode()}
-            disabled={code.length !== 6}
-            loading={busy}
-          >
-            Confirm
-          </Button>
-        </View>
-      ) : null}
-
-      {step === "save-codes" ? (
-        <View style={styles.section}>
-          <ThemedText type="body" style={{ color: theme.textSecondary }}>
-            Save these recovery codes somewhere other than this phone. Each
-            works once if you lose the phone. They won&apos;t be shown again.
-          </ThemedText>
-          <View
-            style={[
-              styles.keyBox,
-              {
-                borderColor: theme.border,
-                backgroundColor: theme.backgroundSecondary,
-              },
-            ]}
-          >
-            {codes.map((c) => (
-              <ThemedText key={c} type="body" selectable style={styles.code}>
-                {c}
-              </ThemedText>
-            ))}
-          </View>
-          <View style={styles.row}>
-            <Button
-              variant="outline"
-              style={styles.flex}
-              onPress={() =>
-                void copy(recoveryCodesText(codes), "Recovery codes")
-              }
-            >
-              Copy all
-            </Button>
-            <Button
-              variant="outline"
-              style={styles.flex}
-              onPress={() =>
-                void Share.share({ message: recoveryCodesText(codes) })
-              }
-            >
-              Share
-            </Button>
-          </View>
-          <Pressable
-            onPress={() => {
-              haptics.selection();
-              setSaved((v) => !v);
-            }}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: saved }}
-            accessibilityLabel="I've saved these"
-            style={styles.checkRow}
-          >
-            <Feather
-              name={saved ? "check-square" : "square"}
-              size={22}
-              color={saved ? theme.link : theme.textSecondary}
-              accessible={false}
-            />
-            <ThemedText type="body">I&apos;ve saved these</ThemedText>
-          </Pressable>
-          <Button
-            onPress={() =>
-              finish(
-                mode === "setup"
-                  ? "Two-step verification is on"
-                  : "New recovery codes saved",
-              )
-            }
-            disabled={!canFinishSaveCodes(saved)}
-          >
-            Done
-          </Button>
-        </View>
+      {start ? (
+        <TotpEnrollmentSteps
+          start={start}
+          confirm={confirmCode}
+          messageFor={messageFor}
+          onGuardChange={setGuard}
+          onDone={(issued) => finish(finishMessage(mode, issued))}
+        />
       ) : null}
     </ScreenScrollView>
   );
@@ -478,20 +289,4 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   content: { padding: Spacing.lg, gap: Spacing.xl },
   section: { gap: Spacing.md },
-  keyBox: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.lg,
-    gap: Spacing.xs,
-  },
-  key: { letterSpacing: 1, textAlign: "center" },
-  code: { fontVariant: ["tabular-nums"], textAlign: "center" },
-  row: { flexDirection: "row", gap: Spacing.md },
-  flex: { flex: 1 },
-  checkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    minHeight: 44,
-  },
 });

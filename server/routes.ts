@@ -5,6 +5,7 @@ import { logger } from "./lib/logger";
 import { register as registerAuth } from "./routes/auth";
 import { register as registerAuthSocial } from "./routes/auth-social";
 import { register as registerAuthMfa } from "./routes/auth-mfa";
+import { register as registerAuthUpgrade } from "./routes/auth-upgrade";
 import { register as registerProfile } from "./routes/profile";
 import { register as registerNutrition } from "./routes/nutrition";
 import { register as registerPhotos } from "./routes/photos";
@@ -67,6 +68,7 @@ export function registerRoutes(app: Express): Server {
   registerAuth(app);
   registerAuthSocial(app);
   registerAuthMfa(app);
+  registerAuthUpgrade(app);
   registerProfile(app);
   registerNutrition(app);
   registerPhotos(app);

@@ -32,7 +32,7 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
 - Xcode workspace: `ios/OCRecipes.xcworkspace` · build scheme: `OCRecipes`
 - Bundle id: `com.williamtower.ocrecipes`
 - Deep-link URL scheme: `ocrecipes://` (distinct from the Xcode build scheme)
-- Test account for auth-gated screens: `demo` / `demo123`
+- Test account for auth-gated screens: `demo` / `demo-password-2026` (15+ since password policy part 2 — a shorter one stops at the upgrade screen)
 
 ## Prerequisites
 
@@ -139,7 +139,7 @@ before calling them.
 - **No deep link:** call `mcp__XcodeBuildMCP__snapshot_ui` to read the current screen's
   elementRefs, then `mcp__XcodeBuildMCP__tap` through to the target screen.
 - **If it lands on the login screen** (JWT not persisted across relaunch): log in with `demo`
-  / `demo123` (snapshot_ui → tap the username/password fields → type → submit), then re-run
+  / `demo-password-2026` (snapshot_ui → tap the username/password fields → type → submit), then re-run
   the deep link. (Needs the UI-automation tools from Prerequisites.)
 - **System modal overlay:** a SpringBoard alert (e.g. an Apple-ID re-verify prompt) can sit on
   top of the app. While present, `snapshot_ui` returns only the modal's elements — the app is

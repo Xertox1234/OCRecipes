@@ -3,9 +3,20 @@ import {
   formatSetupKey,
   recoveryCodesText,
   canFinishSaveCodes,
+  finishMessage,
   setupTitle,
   shouldGuardLeave,
 } from "../TwoStepSetupScreen-utils";
+
+describe("finishMessage", () => {
+  it.each([
+    ["setup", true, "Two-step verification is on"],
+    ["new_codes", true, "New recovery codes saved"],
+    ["new_phone", false, "Two-step verification moved to this phone"],
+  ] as const)("%s, codes issued %s → %s", (mode, issued, message) => {
+    expect(finishMessage(mode, issued)).toBe(message);
+  });
+});
 
 describe("formatSetupKey", () => {
   it("groups the base32 key in fours for typing by hand", () => {
