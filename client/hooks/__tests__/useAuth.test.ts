@@ -7,6 +7,7 @@ import { AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 import type { User } from "@shared/types/auth";
 
 import { useAuth } from "../useAuth";
+import { unregisterPushToken } from "@/lib/push-token-registration";
 
 // Create mock storage and functions that survive vi.mock hoisting
 const {
@@ -87,6 +88,7 @@ vi.mock("@/lib/query-client", () => ({
 
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
+  unregisterPushToken: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/offline-queue", () => ({
@@ -1029,6 +1031,18 @@ describe("useAuth", () => {
         {},
       );
       expect(mockTokenStorage.clear).toHaveBeenCalled();
+      // Unregisters this device's push token while the session token is still
+      // valid (auth audit H2) — otherwise the previous user's reminders keep
+      // reaching a signed-out phone. It must run BEFORE the logout POST, which
+      // revokes the token the DELETE needs.
+      const unregister = vi.mocked(unregisterPushToken);
+      expect(unregister).toHaveBeenCalledTimes(1);
+      const logoutCall = mockApiRequest.mock.calls.findIndex(
+        (c) => c[1] === "/api/auth/logout",
+      );
+      expect(unregister.mock.invocationCallOrder[0]).toBeLessThan(
+        mockApiRequest.mock.invocationCallOrder[logoutCall],
+      );
       // Clears the TanStack Query cache so a subsequent sign-in can't read the
       // previous session's stale data (cross-session privacy).
       expect(mockQueryClient.clear).toHaveBeenCalled();

@@ -20,7 +20,10 @@ import type {
   User,
 } from "@shared/types/auth";
 import { getProviderToken } from "@/lib/social-sign-in";
-import { registerPushToken } from "@/lib/push-token-registration";
+import {
+  registerPushToken,
+  unregisterPushToken,
+} from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
 import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
@@ -466,6 +469,9 @@ export function useAuth() {
     // Edge: if the token already expired, this POST 401s with a TOKEN_* code →
     // the global interceptor fires the session-expiry toast. Accepted by design
     // — the user is logging out anyway, so "session expired" then Login is benign.
+    // Unregister this device's push token first: the logout POST revokes the
+    // session token the DELETE needs (unregisterPushToken never throws).
+    await unregisterPushToken();
     try {
       await apiRequest("POST", "/api/auth/logout", {});
     } catch {}
