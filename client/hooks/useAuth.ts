@@ -788,14 +788,13 @@ export function useAuth() {
       pass: string,
       code: string,
     ): Promise<{ session: SignedInResult; recoveryCodes: string[] }> => {
-      const res = await upgradeRequest(
-        "/api/auth/upgrade/totp/confirm",
-        pass,
-        { code },
-      );
-      const { recoveryCodes, ...session } = (await res.json()) as SignedInResult & {
-        recoveryCodes: string[];
-      };
+      const res = await upgradeRequest("/api/auth/upgrade/totp/confirm", pass, {
+        code,
+      });
+      const { recoveryCodes, ...session } =
+        (await res.json()) as SignedInResult & {
+          recoveryCodes: string[];
+        };
       return { session, recoveryCodes };
     },
     [],
