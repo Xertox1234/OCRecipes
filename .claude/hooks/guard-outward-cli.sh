@@ -4613,7 +4613,14 @@ GH_API_OCCURRENCES=$(( ${_gh_api_n_wide:-0} > ${_gh_api_n_sepsafe:-0} ? ${_gh_ap
 # more than one occurrence, unread. Between the 2026-09-22 freeze and this change that refusal
 # fired 72 times in 38 sessions, and 65 of those commands held nothing but reads (two CI-status
 # reads, a protection read beside a check-run read). Now every clause the cut finds runs the
-# same checks a lone call gets. Two things keep the old refusal's safety:
+# same checks a lone call gets -- so a multi-call command is now exactly as safe as its calls
+# are one at a time, and no safer. Where a LONE call slips past those checks, the same call no
+# longer gets cover from a second one. Measured (PR #1385 security review): inside a quoted
+# command substitution, a call whose method comes from backticks, a nested `$(`, or a split
+# verb with an unreadable method -- `echo "$(gh api r -X \`echo POST\`)"` -- allows on main as
+# a lone call; `echo "$(gh api repos/o/r) $(gh api r -X \`echo POST\`)"` used to deny only
+# through the group refusal and now allows too. No new route; recorded in
+# docs/harness-residuals.md. Two things keep the old refusal's safety where it WAS separation:
 #   - COVERAGE: in every rendering, the cut must find at least as many clauses as EITHER count
 #     grammar finds occurrences. Fewer means two calls merged into one match or a call has no
 #     clause of its own, so the occurrences cannot be told apart -- that still denies, with the

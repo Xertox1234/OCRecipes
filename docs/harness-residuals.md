@@ -118,3 +118,13 @@ tree. Not root-caused. Suspected mechanism: lint-staged's own stash/restore runs
 stash stack that every worktree shares, while other sessions had live entries on it (one was
 `wip-quicklogdrawer-red-check-…`). The next commit on that branch corrected the file. Reopen if a
 commit is again seen recording content different from the staged tree.
+
+`guard-outward-cli.sh` `gh api` inside a quoted command substitution, found 2026-10-11 (PR #1385
+security review, no todo filed): a lone call whose method comes from backticks, a nested `$(`,
+or a split verb with an unreadable method -- e.g. ``echo "$(gh api r -X `echo POST`)"`` --
+allows; the cut clause loses the marker the unreadable-method check keys on. Before #1385 a
+SECOND `gh api` in the same command hid this behind the group refusal; #1385 checks each call
+on its own, so 16 two-call rows of a 2380-row generated probe (all in the
+`echo "$(<read>) $(<mutation>)"` shape) moved DENY -> ALLOW. No new route: each is beaten by
+the single-call spelling main already allowed. Fix shapes if reopened: keep the marker in the
+cut clause, or keep the group refusal when an occurrence sits inside a command substitution.
