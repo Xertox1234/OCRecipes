@@ -1,6 +1,6 @@
 ---
 title: "Email change should notify the previous address"
-status: backlog
+status: done
 priority: low
 created: 2026-10-11
 updated: 2026-10-11
@@ -23,8 +23,8 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 
 ## Acceptance Criteria
 
-- [ ] A security-bucket notice goes to the previous address when the change is staged and when it commits
-- [ ] Email + route tests cover both sends and HTML escaping
+- [x] A security-bucket notice goes to the previous address when the change is staged and when it commits
+- [x] Email + route tests cover both sends and HTML escaping
 
 ## Implementation Notes
 
@@ -51,3 +51,5 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 ### 2026-10-11
 
 - Initial creation (deferred from the auth security audit)
+
+- Fixed: sendEmailChangeNotice (account-security bucket; staging is 5/h per user, so it cannot drain the cap). "requested" goes to the current address on every staged change (free or taken target alike); "changed" goes to the previous address on commit. applyEmailVerification Branch 2 now reads the replaced address under a row lock in one transaction and returns it as previousEmail. Storage, email and route tests (both verify entry points).

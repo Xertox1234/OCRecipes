@@ -407,6 +407,8 @@ describe("users storage", () => {
       expect(result!.emailVerified).toBe(true);
       // Current-email branch leaves the address itself unchanged.
       expect(result!.email).toBe(testUser.email);
+      // Nothing moved, so there is no previous address to tell.
+      expect(result!.previousEmail).toBeUndefined();
     });
 
     it("commits a staged pending email: swaps it into email, sets verified, clears pending", async () => {
@@ -426,6 +428,9 @@ describe("users storage", () => {
       expect(result!.email).toBe("new@example.com");
       expect(result!.emailVerified).toBe(true);
       expect(result!.pendingEmail).toBeNull();
+      // The address it replaced, read under the same row lock — the route
+      // tells it the account moved (auth audit L4).
+      expect(result!.previousEmail).toBe(testUser.email);
 
       const after = await getUser(testUser.id);
       expect(after!.email).toBe("new@example.com");
@@ -478,6 +483,8 @@ describe("users storage", () => {
       expect(result).toBeDefined();
       expect(result!.email).toBe("new@example.com");
       expect(result!.emailVerified).toBe(true);
+      // The second apply moved nothing — no second notice.
+      expect(result!.previousEmail).toBeUndefined();
     });
 
     it("returns undefined for a non-existent user id", async () => {

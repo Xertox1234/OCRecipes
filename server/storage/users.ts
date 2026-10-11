@@ -308,12 +308,14 @@ export async function stagePendingEmail(
  * `emailVerified` / `email` / `pendingEmail` are intentionally NOT in
  * UpdatableUserFields — verification is a dedicated, single-purpose mutation,
  * not a client-settable profile field. Returns the updated SafeUser, or
- * undefined if no user matches either branch.
+ * undefined if no user matches either branch. A Branch 2 commit also returns
+ * `previousEmail` — the address it replaced — so the caller can tell it the
+ * account moved (auth audit 2026-10-10 L4); Branch 1 moves nothing and omits it.
  */
 export async function applyEmailVerification(
   id: string,
   tokenEmail: string,
-): Promise<SafeUser | undefined> {
+): Promise<(SafeUser & { previousEmail?: string }) | undefined> {
   // Branch 1: the token matches the current address — verify it in place.
   const [verified] = await db
     .update(users)
@@ -334,26 +336,39 @@ export async function applyEmailVerification(
   // re-evaluates against the locked row, sees pending NULL, updates 0 rows).
   // The only residual anomaly is a benign, self-healing false-negative (a racing
   // verifier gets undefined → neutral fail; a retry lands on Branch 1 and
-  // succeeds) — do NOT "fix" it with a transaction, there is no corruption.
-  const [committed] = await db
-    .update(users)
-    .set({
-      email: sql`${users.pendingEmail}`,
-      emailVerified: true,
-      pendingEmail: null,
-      // Committing a change moves the verified address: kill any reset code
-      // issued to the previous one (spec §3). Branch 1 (same address) keeps it.
-      ...CLEARED_RESET_CODE,
-    })
-    .where(
-      and(
-        eq(users.id, id),
-        isNotNull(users.pendingEmail),
-        sql`lower(${users.pendingEmail}) = lower(${tokenEmail})`,
-      ),
-    )
-    .returning(safeUserColumns);
-  return committed || undefined;
+  // succeeds) — do NOT "fix" it with a transaction across the two branches,
+  // there is no corruption. The transaction below wraps Branch 2 ALONE: it
+  // reads the address being replaced under a row lock, so the previousEmail it
+  // returns is the one this UPDATE overwrote, never one a racing commit moved.
+  return db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, id))
+      .for("update");
+    if (!before) return undefined;
+    const [committed] = await tx
+      .update(users)
+      .set({
+        email: sql`${users.pendingEmail}`,
+        emailVerified: true,
+        pendingEmail: null,
+        // Committing a change moves the verified address: kill any reset code
+        // issued to the previous one (spec §3). Branch 1 (same address) keeps it.
+        ...CLEARED_RESET_CODE,
+      })
+      .where(
+        and(
+          eq(users.id, id),
+          isNotNull(users.pendingEmail),
+          sql`lower(${users.pendingEmail}) = lower(${tokenEmail})`,
+        ),
+      )
+      .returning(safeUserColumns);
+    return committed
+      ? { ...committed, previousEmail: before.email }
+      : undefined;
+  });
 }
 
 /**
