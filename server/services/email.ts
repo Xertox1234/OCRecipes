@@ -105,8 +105,8 @@ const EMAIL_FROM =
 // In-service per-recipient throttle. The signup-attempt notice has no endpoint
 // of its own, so the per-IP register limiter cannot cap how many emails a
 // victim's inbox receives. This sliding window is THE per-recipient cap for
-// outbound mail, regardless of entry point, in two buckets. "general" (signup
-// notice + verification) is the original shared 5/hour cap. "account-security"
+// outbound mail, regardless of entry point, in two buckets. "general" (signup +
+// finish-signup notices, verification) is the original shared 5/hour cap. "account-security"
 // (reset code + password-changed notice) is separate: register is limited per
 // IP only, so anyone who knows an address could otherwise drain the shared
 // bucket with signup notices and silently swallow a reset code or the security
@@ -208,11 +208,11 @@ export async function sendVerificationEmail(
 export async function sendFinishSignupNotice(to: string): Promise<void> {
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
-  if (!canSendTo(to, "account-security")) {
-    logger.warn(
-      { to },
-      "finish-signup notice throttled (account-security cap)",
-    );
+  // The general bucket, like the signup-attempt notice: register is limited
+  // per IP only, so spending the account-security bucket here would let anyone
+  // starve the very reset code this notice points to.
+  if (!canSendTo(to)) {
+    logger.warn({ to }, "finish-signup notice throttled (per-recipient cap)");
     return;
   }
   const error = await sendWithRetry(resend, {

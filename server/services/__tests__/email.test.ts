@@ -291,6 +291,20 @@ describe("email service", () => {
       expect(arg.html).toContain("15 minutes");
     });
 
+    // M4 review: register is limited per IP only, so a register-triggered
+    // notice must never spend the account-security bucket the reset code
+    // needs — else re-registering a victim's address starves their recovery.
+    it("finish-signup notices never starve the reset code (general bucket)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendFinishSignupNotice, sendPasswordResetCode } = await import(
+        "../email"
+      );
+      for (let i = 0; i < 10; i++) await sendFinishSignupNotice("v@x.com");
+      mockSend.mockClear();
+      await sendPasswordResetCode("v@x.com", "123456");
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
     it("finish-signup notice points to Forgot password and carries no link or code (audit M4)", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const { sendFinishSignupNotice } = await import("../email");
