@@ -320,6 +320,39 @@ describe("Auth Middleware", () => {
       await callAuth(makeReq(`Bearer ${token}`), makeRes()).promise;
       expect(mockGetUser).toHaveBeenCalledTimes(2); // cache cleared → re-read
     });
+
+    it("does not re-cache a version read before an invalidate that landed mid-read", async () => {
+      const userId = nextUserId();
+      const token = generateToken(userId, 0, true);
+
+      // The first request's DB read is still in flight when a password reset
+      // bumps the version and invalidates the cache.
+      let finishRead!: (row: DbUser) => void;
+      mockGetUser.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+      );
+      const inFlight = callAuth(makeReq(`Bearer ${token}`), makeRes());
+      invalidateTokenVersionCache(userId);
+      finishRead(userRow(userId, 0)); // the row as it was before the reset
+      await inFlight.promise;
+
+      // The old token must be checked against the database again, not
+      // against the pre-reset version the in-flight read would have cached.
+      mockGetUser.mockResolvedValue(userRow(userId, 1));
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq(`Bearer ${token}`), res);
+      await promise;
+
+      expect(mockGetUser).toHaveBeenCalledTimes(2);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Token has been revoked",
+        code: "TOKEN_REVOKED",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
   });
 
   describe("requireAuth — records app activity for retention", () => {

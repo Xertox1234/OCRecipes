@@ -109,8 +109,17 @@ function recordAppActivity(userId: string): void {
   );
 }
 
+// Bumped by every invalidate. A cache miss notes it before its DB read and
+// caches the result only if it is unchanged after: an invalidate that lands
+// mid-read (reset, sign-out everywhere, delete) means the row it read may be
+// the pre-revoke one, and caching it would let the old token pass for the TTL.
+// Process-wide, not per user — invalidates are rare, a skipped fill only costs
+// one extra read, and the counter needs no eviction.
+let invalidationCount = 0;
+
 /** Call on logout to immediately invalidate cached tokenVersion */
 export function invalidateTokenVersionCache(userId: string): void {
+  invalidationCount++;
   tokenVersionCache.delete(userId);
 }
 
@@ -156,13 +165,16 @@ export async function requireAuth(
       }
     } else {
       // Cache miss — query DB
+      const invalidationsBeforeRead = invalidationCount;
       const user = await storage.getUser(payload.sub);
       if (!user) {
         sendError(res, 401, "User not found", "TOKEN_INVALID");
         return;
       }
 
-      setCachedTokenVersion(payload.sub, user.tokenVersion);
+      if (invalidationCount === invalidationsBeforeRead) {
+        setCachedTokenVersion(payload.sub, user.tokenVersion);
+      }
 
       if (payload.tokenVersion !== user.tokenVersion) {
         sendError(res, 401, "Token has been revoked", "TOKEN_REVOKED");
