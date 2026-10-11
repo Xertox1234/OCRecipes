@@ -272,7 +272,16 @@ export async function replaceRecoveryCodes(
 }
 
 /** Turn MFA off: every MFA row goes, and every session ends. */
-export async function disableMfa(userId: string): Promise<number | undefined> {
+/**
+ * Turn two-step off. With `newPasswordHash` (a password under 15 must be
+ * replaced in the same step, spec §5.4) the password changes in the same
+ * transaction, and a staged email change is dropped: its link is a JWT that
+ * tokenVersion cannot cancel.
+ */
+export async function disableMfa(
+  userId: string,
+  opts: { newPasswordHash?: string } = {},
+): Promise<number | undefined> {
   return db.transaction(async (tx) => {
     await Promise.all([
       tx.delete(userMfa).where(eq(userMfa.userId, userId)),
@@ -285,6 +294,9 @@ export async function disableMfa(userId: string): Promise<number | undefined> {
       .set({
         mfaEnabledAt: null,
         tokenVersion: sql`${users.tokenVersion} + 1`,
+        ...(opts.newPasswordHash
+          ? { password: opts.newPasswordHash, pendingEmail: null }
+          : {}),
       })
       .where(eq(users.id, userId))
       .returning({ tokenVersion: users.tokenVersion });
