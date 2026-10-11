@@ -58,10 +58,7 @@ export async function getRecipeCommunityStats(
       .select({ id: recipeTries.id })
       .from(recipeTries)
       .where(
-        and(
-          eq(recipeTries.recipeId, recipeId),
-          eq(recipeTries.userId, userId),
-        ),
+        and(eq(recipeTries.recipeId, recipeId), eq(recipeTries.userId, userId)),
       )
       .limit(1),
     db
