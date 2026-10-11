@@ -19,7 +19,6 @@ import {
   passwordLength,
 } from "@shared/constants/password-policy";
 import { checkNewPassword } from "./_password-rules";
-import { base32Decode, matchTotp, otpauthUrl } from "../lib/mfa/totp";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { handleRouteError, formatZodError } from "./_helpers";
@@ -33,18 +32,21 @@ import {
 } from "./_schemas";
 import { isUniqueViolation } from "../lib/db-errors";
 import {
-  decryptMfaSecret,
-  encryptMfaSecret,
   generateRecoveryCodes,
   hashChallengeToken,
   hashRecoveryCode,
   hashTrustKey,
   mfaConfigured,
-  newTotpSecret,
   newTrustKey,
   normalizeRecoveryCode,
 } from "../lib/mfa/mfa-secrets";
 import { verifySecondFactor } from "../lib/mfa/verify-second-factor";
+import {
+  checkPendingTotpCode,
+  confirmFirstEnrollment,
+  stageTotpSecret,
+  TotpUnavailableError,
+} from "../services/mfa-totp";
 import { INVALID_SECOND_FACTOR_MESSAGE } from "../lib/mfa/password-proof-gate";
 import { HttpFailure, issueSession } from "./auth-social";
 
@@ -118,14 +120,6 @@ async function requireFactor(
   );
 }
 
-/** Stage a fresh secret (first setup or new phone) and hand it to the app once. */
-async function stageSecret(user: User) {
-  requireConfigured();
-  const secret = newTotpSecret();
-  await storage.startTotpEnrollment(user.id, encryptMfaSecret(secret));
-  return { secret, otpauthUrl: otpauthUrl(secret, user.username) };
-}
-
 function parse<S extends z.ZodTypeAny>(schema: S, body: unknown): z.infer<S> {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -144,6 +138,14 @@ function answer(
   label: string,
   extra?: Record<string, unknown>,
 ) {
+  if (error instanceof TotpUnavailableError)
+    return sendError(
+      res,
+      503,
+      MFA_UNAVAILABLE_MESSAGE,
+      ErrorCode.MFA_UNAVAILABLE,
+      extra,
+    );
   if (error instanceof Reply || error instanceof HttpFailure)
     return sendError(res, error.status, error.message, error.code, extra);
   handleRouteError(res, error, label, extra);
@@ -307,7 +309,7 @@ export function register(app: Express): void {
             "Two-step verification is already on.",
           );
         }
-        res.json(await stageSecret(user));
+        res.json(await stageTotpSecret(user));
       } catch (error) {
         answer(res, error, "start two-step setup");
       }
@@ -329,7 +331,7 @@ export function register(app: Express): void {
         // Before the factor: a missing key must not spend a recovery code.
         requireConfigured();
         replacement = await requireFactor(user, body.secondFactor);
-        res.json({ ...(await stageSecret(user)), ...replacement });
+        res.json({ ...(await stageTotpSecret(user)), ...replacement });
       } catch (error) {
         // Once a recovery code is spent, every answer carries its replacement.
         answer(res, error, "start new-phone setup", replacement);
@@ -352,41 +354,32 @@ export function register(app: Express): void {
           ErrorCode.INVALID_SECOND_FACTOR,
           INVALID_SECOND_FACTOR_MESSAGE,
         );
-        const pendingEnc = await storage.getPendingTotpSecret(user.id);
-        if (!pendingEnc) throw wrong;
-        let secret: Buffer;
-        try {
-          secret = base32Decode(decryptMfaSecret(pendingEnc));
-        } catch {
-          throw new Reply(
-            503,
-            ErrorCode.MFA_UNAVAILABLE,
-            MFA_UNAVAILABLE_MESSAGE,
-          );
+        const check = await checkPendingTotpCode(user.id, code);
+        if (!check.ok) {
+          if (check.reason === "unavailable") {
+            throw new Reply(
+              503,
+              ErrorCode.MFA_UNAVAILABLE,
+              MFA_UNAVAILABLE_MESSAGE,
+            );
+          }
+          throw wrong;
         }
-        const step = matchTotp(secret, code, Date.now());
-        if (step === null) throw wrong;
 
         let recoveryCodes: string[] | undefined;
         if (user.mfaEnabledAt === null) {
-          recoveryCodes = generateRecoveryCodes();
-          const version = await storage.confirmTotpEnrollment(user.id, {
-            acceptedStep: step,
-            recoveryHashes: recoveryCodes.map((c) =>
-              hashRecoveryCode(user.id, normalizeRecoveryCode(c)!),
-            ),
-          });
-          if (version === undefined) {
+          // Sends the "enabled" notice itself.
+          recoveryCodes = await confirmFirstEnrollment(user, check.step);
+          if (!recoveryCodes) {
             throw new Reply(
               409,
               ErrorCode.MFA_ALREADY_ENABLED,
               "Two-step verification is already on.",
             );
           }
-          notice(user, "enabled");
         } else {
           const version = await storage.confirmNewPhone(user.id, {
-            acceptedStep: step,
+            acceptedStep: check.step,
           });
           if (version === undefined) {
             throw new Reply(
