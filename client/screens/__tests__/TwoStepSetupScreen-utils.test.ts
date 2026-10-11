@@ -4,6 +4,7 @@ import {
   recoveryCodesText,
   canFinishSaveCodes,
   setupTitle,
+  shouldGuardLeave,
 } from "../TwoStepSetupScreen-utils";
 
 describe("formatSetupKey", () => {
@@ -28,6 +29,23 @@ describe("canFinishSaveCodes", () => {
     expect(canFinishSaveCodes(false)).toBe(false);
     expect(canFinishSaveCodes(true)).toBe(true);
   });
+});
+
+describe("shouldGuardLeave", () => {
+  it("guards leaving while unsaved recovery codes are on screen", () => {
+    expect(shouldGuardLeave("save-codes", false)).toBe(true);
+  });
+
+  it("lets the person leave once they say they saved the codes", () => {
+    expect(shouldGuardLeave("save-codes", true)).toBe(false);
+  });
+
+  it.each(["confirm", "add-key", "enter-code"] as const)(
+    "never guards the %s step",
+    (step) => {
+      expect(shouldGuardLeave(step, false)).toBe(false);
+    },
+  );
 });
 
 describe("setupTitle", () => {

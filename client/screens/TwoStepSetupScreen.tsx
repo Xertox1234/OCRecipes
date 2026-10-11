@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   AccessibilityInfo,
+  Alert,
   Linking,
   Pressable,
   Share,
@@ -11,6 +12,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { Feather } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
+import { usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SecondFactorInput } from "@shared/types/auth";
 import { ScreenScrollView } from "@/components/ScreenScrollView";
@@ -38,10 +40,11 @@ import {
   formatSetupKey,
   recoveryCodesText,
   setupTitle,
+  shouldGuardLeave,
+  type TwoStepSetupStep,
 } from "./TwoStepSetupScreen-utils";
 
 type Props = NativeStackScreenProps<ProfileStackParamList, "TwoStepSetup">;
-type Step = "confirm" | "add-key" | "enter-code" | "save-codes";
 
 const ME_KEY = ["/api/auth/me"] as const;
 
@@ -75,7 +78,7 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const auth = useAuthContext();
   const needsFactor = mode !== "setup";
 
-  const [step, setStep] = useState<Step>("confirm");
+  const [step, setStep] = useState<TwoStepSetupStep>("confirm");
   const [password, setPassword] = useState("");
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
   const [secret, setSecret] = useState<{
@@ -88,6 +91,23 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const [replacement, setReplacement] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Swipe-back, header back or Android back while the codes are unsaved.
+  // Done is only enabled once they're ticked as saved, so its goBack() passes.
+  usePreventRemove(shouldGuardLeave(step, saved), ({ data }) => {
+    Alert.alert(
+      "Leave without saving your codes?",
+      "They won't be shown again. If you lose this phone without them, you'll have to contact support to get back in.",
+      [
+        { text: "Stay", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: () => navigation.dispatch(data.action),
+        },
+      ],
+    );
+  });
 
   const fail = (err: unknown) => {
     setBusy(false);
