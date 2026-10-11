@@ -26,6 +26,7 @@ import { RecipeDetailSkeleton } from "@/components/recipe-detail";
 import { InlineError } from "@/components/InlineError";
 import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { RecipeTriedBar, TRIED_BAR_HEIGHT } from "@/components/RecipeTriedBar";
 import type { IngredientItem } from "@/components/recipe-detail";
 import {
   formatTimeDisplay,
@@ -42,6 +43,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { useToast } from "@/context/ToastContext";
 import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
+import { useRecipeCommunityStats } from "@/hooks/useRecipeCommunity";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 import {
   useAddFavouriteRecipe,
@@ -121,6 +123,16 @@ export default function FeaturedRecipeDetailScreen() {
     queryKey: [`/api/recipes/${recipeId}`],
     enabled: resolvedRecipeType === "community" && recipeId > 0,
   });
+
+  // "I tried it" bar: public community recipes only. Shares the stats cache
+  // entry with RecipeCommunityStats. isSuccess (not data) so a 404 refetch —
+  // recipe made private — hides the bar instead of freezing stale counts.
+  const communityStats = useRecipeCommunityStats(
+    recipeId,
+    resolvedRecipeType === "community",
+  );
+  const showTriedBar =
+    resolvedRecipeType === "community" && communityStats.isSuccess;
 
   // --- Meal plan recipe fetch ---
   const {
@@ -540,7 +552,8 @@ export default function FeaturedRecipeDetailScreen() {
           contentPaddingBottom={
             insets.bottom +
             Spacing.xl +
-            (resolvedRecipeType === "catalog" ? SAVE_BAR_HEIGHT : 0)
+            (resolvedRecipeType === "catalog" ? SAVE_BAR_HEIGHT : 0) +
+            (showTriedBar ? TRIED_BAR_HEIGHT : 0)
           }
           remixedFromId={normalized.remixedFromId}
           remixedFromTitle={normalized.remixedFromTitle}
@@ -623,6 +636,9 @@ export default function FeaturedRecipeDetailScreen() {
             </Pressable>
           </View>
         </View>
+      ) : null}
+      {showTriedBar && normalized ? (
+        <RecipeTriedBar recipeId={recipeId} bottomInset={insets.bottom} />
       ) : null}
       <UpgradeModal
         visible={showUpgrade}
