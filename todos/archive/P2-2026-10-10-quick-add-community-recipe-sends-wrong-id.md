@@ -1,6 +1,6 @@
 ---
 title: "Quick Add search: tapping a community recipe adds it to the plan by its community ID"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-10
 updated: 2026-10-10
@@ -56,3 +56,9 @@ Severity: medium. Wrong data written to the user's own plan (silent) or a broken
 ### 2026-10-10
 
 - Initial creation (found during the recipe-stats spec review).
+
+### 2026-10-11
+
+- Done via option (a): community rows in Quick Add dismiss the sheet and open FeaturedRecipeDetail (label "View X", chevron icon). Option (b) infeasible: /api/recipes/browse community rows omit instructions, so a copy could not pass the server quality gate without an extra fetch.
+- popularityMealPlans is NOT incremented by this change.
+- Out of contract: client/screens/meal-plan/MealPlanHomeScreen.tsx (needed for AC 2: the sheet has no navigation; the screen owns the navigate callback).
