@@ -1,6 +1,6 @@
 ---
 title: "Document two accepted auth risks: indefinite reset lockout and a sign-up timing sliver"
-status: backlog
+status: done
 priority: low
 created: 2026-10-11
 updated: 2026-10-11
@@ -23,9 +23,9 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 
 ## Acceptance Criteria
 
-- [ ] The password-reset spec / runbook states the lockout is indefinite while the attacker keeps going (victim still sees the code emails)
-- [ ] A one-line accepted-risk note for the sign-up timing difference sits beside the anti-enumeration comment in `server/routes/auth.ts`
-- [ ] Optional follow-up decision recorded: whether a reset started from a signed-in session or a verified social sign-in may bypass the cap
+- [x] The password-reset spec / runbook states the lockout is indefinite while the attacker keeps going (victim still sees the code emails)
+- [x] A one-line accepted-risk note for the sign-up timing difference sits beside the anti-enumeration comment in `server/routes/auth.ts`
+- [x] Optional follow-up decision recorded: whether a reset started from a signed-in session or a verified social sign-in may bypass the cap
 
 ## Implementation Notes
 
@@ -51,3 +51,5 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 ### 2026-10-11
 
 - Initial creation (deferred from the auth security audit)
+
+- Done: new tracked runbook docs/runbooks/password-reset-lockout.md (the window is FIXED from the first code, not rolling as this todo said; indefinite lockout while the attacker re-exhausts each window, how support tells the cases apart, what helps). The local-only spec (docs/superpowers/specs/2026-10-03-password-reset-design.md, gitignored) §8 corrected in the main checkout to match. L6 accepted-residual comment beside the register anti-enumeration branch. Cap-bypass decision recorded as OPEN for the owner in the runbook (not built; no signed-in password route exists).

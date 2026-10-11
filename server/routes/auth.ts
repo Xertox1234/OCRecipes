@@ -274,6 +274,9 @@ export function register(app: Express): void {
           }
           // Verification ON: anti-enumeration. Same neutral response either way;
           // NEVER create an account and NEVER touch the existing password.
+          // Accepted residual (auth audit 2026-10-10 L6): the new-email branch
+          // below awaits createUser (~1-5 ms) that this branch doesn't —
+          // swamped by HIBP-lookup jitter and capped by registerLimiter.
           if (!existingEmail.emailVerified) {
             // Unverified retry → point the inbox owner at Forgot password. NOT
             // a verify link: that would verify whoever registered first, maybe
