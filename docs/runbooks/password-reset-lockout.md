@@ -6,10 +6,10 @@ What to do when a person says Forgot password never sends them a code, or every 
 
 Email reset has two limits stored in the database, so a deploy doesn't reset them:
 
-- **6 codes per account per rolling 24 hours.** The 7th request in that window stores nothing and sends nothing. The app still shows "we've sent a code", because a different answer would reveal which emails have accounts.
+- **6 codes per account per 24-hour window.** The window is fixed: it starts at the first code and restarts 24 hours later. The 7th request in a window stores nothing and sends nothing. The app still shows "we've sent a code", because a different answer would reveal which emails have accounts.
 - **5 wrong guesses per code.** After that the code is dead, and the person has to ask for a new one.
 
-Anyone who knows the address can use up both limits. About 6 requests a day stays under the per-email limit of 3 an hour, and rotating IPs gets past the per-IP limit. Because the window is rolling, someone who keeps doing this can keep the account locked out of email reset **for as long as they keep going**, not just for 24 hours. This is an accepted risk (auth audit 2026-10-10 L5). The limits are what make guessing a 6-digit code impractical: at most 30 guesses a day against a million codes.
+Anyone who knows the address can use up both limits. About 6 requests a day stays under the per-email limit of 3 an hour, and rotating IPs gets past the per-IP limit. The window restarts, but they can use it up again each time it does, so someone who keeps doing this can keep the account locked out of email reset **for as long as they keep going**, not just for 24 hours. This is an accepted risk (auth audit 2026-10-10 L5). The limits are what make guessing a 6-digit code impractical: 30 guesses per window against a million codes (up to about 55 in a 24-hour span that crosses a window edge, which can fit 11 codes).
 
 The lockout is visible. The person receives every code email, including the ones they didn't ask for.
 
