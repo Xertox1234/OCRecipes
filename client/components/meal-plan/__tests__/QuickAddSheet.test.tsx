@@ -40,7 +40,9 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
     data: {
       personal: [{ id: 5, title: "Oats", caloriesPerServing: null }],
       frequent: [],
-      community: [],
+      // Same numeric id (5) as the personal row above, on purpose: a community
+      // id and a meal-plan id are different id spaces that can collide.
+      community: [{ id: 5, title: "Chili" }],
     },
     isLoading: false,
     isError: false,
@@ -60,6 +62,7 @@ describe("QuickAddSheet", () => {
     onDismiss: vi.fn(),
     onNavigateCreate: vi.fn(),
     onOpenImportSheet: vi.fn(),
+    onOpenCommunityRecipe: vi.fn(),
   };
 
   it("renders the header with meal label", () => {
@@ -123,6 +126,50 @@ describe("QuickAddSheet", () => {
       });
       expect(mockToastSuccess).not.toHaveBeenCalled();
       expect(defaultProps.onDismiss).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("community rows", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("never adds a community row by its community id, even when it collides with an owned meal-plan recipe id; it opens the detail instead", async () => {
+      mockAddItem.mockResolvedValue({ id: 1 });
+      renderComponent(<QuickAddSheetContent {...defaultProps} />);
+
+      // Community rows only show while searching.
+      fireEvent.change(screen.getByLabelText("Search recipes"), {
+        target: { value: "chili" },
+      });
+
+      fireEvent.click(await screen.findByLabelText("View Chili"));
+
+      expect(mockAddItem).not.toHaveBeenCalled();
+      expect(
+        defaultProps.onOpenCommunityRecipe,
+      ).toHaveBeenCalledExactlyOnceWith(5);
+      expect(defaultProps.onDismiss).toHaveBeenCalledOnce();
+      expect(mockToastSuccess).not.toHaveBeenCalled();
+    });
+
+    it("still adds the colliding personal row by its meal-plan id", async () => {
+      mockAddItem.mockResolvedValue({ id: 1 });
+      renderComponent(<QuickAddSheetContent {...defaultProps} />);
+
+      fireEvent.change(screen.getByLabelText("Search recipes"), {
+        target: { value: "o" },
+      });
+      fireEvent.click(await screen.findByLabelText("Add Oats to breakfast"));
+
+      await waitFor(() => {
+        expect(mockAddItem).toHaveBeenCalledWith({
+          recipeId: 5,
+          plannedDate: "2025-06-01",
+          mealType: "breakfast",
+        });
+      });
+      expect(defaultProps.onOpenCommunityRecipe).not.toHaveBeenCalled();
     });
   });
 });

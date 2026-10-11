@@ -33,6 +33,10 @@ import {
   MEAL_LABELS,
   type MealType,
 } from "@/screens/meal-plan/meal-plan-utils";
+import {
+  resolveQuickAddAction,
+  quickAddRowAccessibilityLabel,
+} from "@/components/meal-plan/quick-add-utils";
 
 export const QUICK_ADD_SNAP_POINTS = ["70%"];
 
@@ -42,6 +46,8 @@ interface QuickAddSheetContentProps {
   onDismiss: () => void;
   onNavigateCreate: (mealType: MealType, plannedDate: string) => void;
   onOpenImportSheet: (mealType: MealType, plannedDate: string) => void;
+  /** Community rows open the recipe detail; their id is NOT a meal-plan recipe id. */
+  onOpenCommunityRecipe: (communityRecipeId: number) => void;
 }
 
 export interface QuickAddSheetContentHandle {
@@ -62,6 +68,7 @@ function QuickAddSheetContentInner(
     onDismiss,
     onNavigateCreate,
     onOpenImportSheet,
+    onOpenCommunityRecipe,
   }: QuickAddSheetContentProps,
   forwardedRef: React.Ref<QuickAddSheetContentHandle>,
 ) {
@@ -147,11 +154,19 @@ function QuickAddSheetContentInner(
   const handleAdd = useCallback(
     async (recipe: RecipeRow) => {
       if (!mealType || isAdding.current) return;
+      const action = resolveQuickAddAction(recipe);
+      if (action.kind === "view-community") {
+        // A community id is not a meal-plan recipe id — never add it directly.
+        haptics.impact(ImpactFeedbackStyle.Light);
+        onDismiss();
+        onOpenCommunityRecipe(action.communityRecipeId);
+        return;
+      }
       isAdding.current = true;
       haptics.impact(ImpactFeedbackStyle.Light);
       try {
         await addItemMutation.mutateAsync({
-          recipeId: recipe.id,
+          recipeId: action.recipeId,
           plannedDate,
           mealType,
         });
@@ -164,7 +179,15 @@ function QuickAddSheetContentInner(
         isAdding.current = false;
       }
     },
-    [mealType, plannedDate, haptics, toast, addItemMutation, onDismiss],
+    [
+      mealType,
+      plannedDate,
+      haptics,
+      toast,
+      addItemMutation,
+      onDismiss,
+      onOpenCommunityRecipe,
+    ],
   );
 
   const handleCreateRecipe = useCallback(() => {
@@ -192,7 +215,11 @@ function QuickAddSheetContentInner(
             { backgroundColor: withOpacity(theme.text, 0.03) },
           ]}
           accessibilityRole="button"
-          accessibilityLabel={`Add ${item.title}${cal ? `, ${cal}` : ""} to ${mealType}`}
+          accessibilityLabel={quickAddRowAccessibilityLabel(
+            item,
+            cal,
+            mealType,
+          )}
         >
           <View style={styles.resultContent}>
             <ThemedText style={styles.resultTitle} numberOfLines={1}>
@@ -206,7 +233,12 @@ function QuickAddSheetContentInner(
               </ThemedText>
             )}
           </View>
-          <Feather name="plus-circle" size={20} color={theme.link} />
+          <Feather
+            name={item.source === "community" ? "chevron-right" : "plus-circle"}
+            size={20}
+            color={theme.link}
+            accessible={false}
+          />
         </Pressable>
       );
     },
