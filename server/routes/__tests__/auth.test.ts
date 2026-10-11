@@ -199,13 +199,16 @@ describe("Auth Routes", () => {
 
   describe("POST /api/auth/register", () => {
     describe("password policy (spec §2, P2)", () => {
-      const send = (password: string) =>
-        request(app).post("/api/auth/register").send({
-          username: "policyuser",
-          password,
-          email: "policy@example.com",
-          ageConfirmed: true,
-        });
+      const send = (password: string, extra: object = {}) =>
+        request(app)
+          .post("/api/auth/register")
+          .send({
+            username: "policyuser",
+            password,
+            email: "policy@example.com",
+            ageConfirmed: true,
+            ...extra,
+          });
 
       beforeEach(() => {
         vi.mocked(storage.getUserByUsername).mockReset();
@@ -217,12 +220,77 @@ describe("Auth Routes", () => {
         vi.mocked(isBreached).mockResolvedValue(false);
       });
 
-      it("14 characters → 400 PASSWORD_TOO_SHORT, no account", async () => {
+      it("14 characters → 400 PASSWORD_TOO_SHORT naming the switch, no account", async () => {
         const res = await send("a".repeat(14));
         expect(res.status).toBe(400);
         expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
-        expect(res.body.error).toBe("Use at least 15 characters.");
+        expect(res.body.error).toBe(
+          "Use at least 15 characters, or turn on two-step verification to use 8.",
+        );
         expect(storage.createUser).not.toHaveBeenCalled();
+      });
+
+      describe("the two-step switch (spec P4)", () => {
+        beforeEach(() => {
+          vi.mocked(storage.createUpgradePass).mockReset();
+          vi.mocked(storage.createUpgradePass).mockResolvedValue(undefined);
+        });
+
+        it("switch on: 10 characters are accepted", async () => {
+          vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+          const res = await send("a".repeat(10), { twoStep: true });
+          expect(res.status).toBe(200);
+          expect(res.body.status).toBe("verification_pending");
+          expect(storage.createUser).toHaveBeenCalledTimes(1);
+        });
+
+        it("switch on: 7 characters → 400 at the schema's 8 floor, no account", async () => {
+          // Under 8 never reaches the route's state-dependent check: the
+          // schema floor answers first (as it has since part 1).
+          const res = await send("a".repeat(7), { twoStep: true });
+          expect(res.status).toBe(400);
+          expect(res.body.code).toBe("VALIDATION_ERROR");
+          expect(res.body.error).toContain("Use at least 8 characters.");
+          expect(storage.createUser).not.toHaveBeenCalled();
+        });
+
+        it("switch on: 8 characters is the floor that passes", async () => {
+          const res = await send("a".repeat(8), { twoStep: true });
+          expect(res.status).toBe(201);
+          expect(storage.createUser).toHaveBeenCalledTimes(1);
+        });
+
+        it("switch off (explicit false) keeps the 15 minimum", async () => {
+          const res = await send("a".repeat(10), { twoStep: false });
+          expect(res.status).toBe(400);
+          expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
+        });
+
+        it("verification OFF, switch on, 10 characters → 201 upgrade_required with a pass, NO token", async () => {
+          const res = await send("a".repeat(10), { twoStep: true });
+          expect(res.status).toBe(201);
+          expect(res.body).toEqual({
+            status: "upgrade_required",
+            pass: expect.any(String),
+            canUseTwoStep: true,
+          });
+          expect(storage.createUpgradePass).toHaveBeenCalledTimes(1);
+          const authMod = await import("../../middleware/auth");
+          expect(authMod.generateToken).not.toHaveBeenCalled();
+        });
+
+        it("verification OFF, switch on, 15+ characters → a token as before", async () => {
+          const res = await send(GOOD_PASSWORD, { twoStep: true });
+          expect(res.status).toBe(201);
+          expect(res.body.token).toBe("mock-jwt-token");
+          expect(storage.createUpgradePass).not.toHaveBeenCalled();
+        });
+
+        it("twoStep must be a boolean", async () => {
+          const res = await send(GOOD_PASSWORD, { twoStep: "yes" });
+          expect(res.status).toBe(400);
+          expect(res.body.code).toBe("VALIDATION_ERROR");
+        });
       });
 
       it("15 letters, no digit → account created (no composition rule)", async () => {

@@ -87,6 +87,9 @@ export const registerSchema = z.object({
       message: "You must confirm you are 13 years of age or older",
     }),
   }),
+  // The "Use two-step verification" switch (password policy spec P4): sets
+  // the minimum only (8 on, 15 off) and is never stored.
+  twoStep: z.boolean().optional().default(false),
 });
 
 // Re-auth proof for sensitive account actions (delete account, connect a new

@@ -113,7 +113,9 @@ describe("validateAuthForm", () => {
         password: "a".repeat(14),
         confirmPassword: "a".repeat(14),
       }),
-    ).toBe("Use at least 15 characters.");
+    ).toBe(
+      "Use at least 15 characters, or turn on two-step verification to use 8.",
+    );
   });
 
   it("has no composition rule: 15 letters only is fine", () => {
@@ -227,7 +229,9 @@ describe("getAuthErrorMessage", () => {
         new ApiError("400: short", "PASSWORD_TOO_SHORT"),
         "register",
       ),
-    ).toBe("Use at least 15 characters.");
+    ).toBe(
+      "Use at least 15 characters, or turn on two-step verification to use 8.",
+    );
   });
 
   it("register: a breached password gets the breach sentence", () => {
@@ -266,7 +270,7 @@ describe("validateNewPassword (the shared password policy)", () => {
 
   it("enforces length, then match, in that order", () => {
     expect(validateNewPassword("a".repeat(14), "a".repeat(14), signup)).toBe(
-      "Use at least 15 characters.",
+      "Use at least 15 characters, or turn on two-step verification to use 8.",
     );
     expect(validateNewPassword("a".repeat(129), "a".repeat(129), signup)).toBe(
       "Use at most 128 characters.",
