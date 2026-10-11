@@ -252,12 +252,13 @@ describe("POST /api/auth/social", () => {
     expect(res.body.code).toBe("PROVIDER_EMAIL_REQUIRED");
   });
 
-  it("auto-links a gmail address onto a verified account", async () => {
+  it("auto-links a gmail address onto a verified password-less account", async () => {
     vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
     const user = createMockUser({
       id: "u1",
       email: "me@gmail.com",
       emailVerified: true,
+      password: null,
     });
     vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(user);
     vi.mocked(storage.getUser).mockResolvedValue(user);
@@ -270,6 +271,19 @@ describe("POST /api/auth/social", () => {
         providerSubject: "g-1",
       }),
     );
+  });
+
+  it("link_required (never auto-link) onto a verified account that has a password", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
+      createMockUser({ id: "u1", email: "me@gmail.com", emailVerified: true }),
+    );
+    const res = await request(app()).post("/api/auth/social").send(body);
+    expect(res.body).toMatchObject({
+      status: "link_required",
+      methods: ["password"],
+    });
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
   });
 
   it("link_required for a non-gmail Google address, without inserting", async () => {
