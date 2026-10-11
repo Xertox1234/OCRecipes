@@ -440,8 +440,11 @@ export function register(app: Express): void {
             PASSWORD_MIN_SINGLE_FACTOR,
             "single_factor",
           );
+          // Answered here rather than thrown: the rejection is derived from
+          // the new password, and a thrown value can reach the error logger.
           if (rejected) {
-            throw new Reply(rejected.status, rejected.code, rejected.message);
+            sendError(res, rejected.status, rejected.message, rejected.code);
+            return;
           }
           newPasswordHash = await hashPassword(body.newPassword);
         }
