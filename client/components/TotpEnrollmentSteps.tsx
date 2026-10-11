@@ -42,7 +42,7 @@ interface TotpEnrollmentStepsProps {
   messageFor: (err: unknown) => string;
   /** Codes saved (issued = true), or none were issued (a new phone). */
   onDone: (issued: boolean) => void;
-  /** The leave guard (#1364): true while recovery codes are on screen unsaved. */
+  /** The leave guard (PR 1364): true while recovery codes are on screen unsaved. */
   onGuardChange: (guard: boolean) => void;
 }
 
