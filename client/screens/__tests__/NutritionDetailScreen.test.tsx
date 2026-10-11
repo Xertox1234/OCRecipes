@@ -1807,7 +1807,7 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * Counting `[aria-live]` across the WHOLE tree is what pins both halves at
    * once: exactly one, and it is the error's.
    */
-  it("routes error through InlineError — one assertive live region, none on the notices", () => {
+  it("routes error through InlineError — one assertive live region, none on the notices", async () => {
     const announce = vi
       .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
       .mockImplementation(() => {});
@@ -1818,6 +1818,8 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
         correctionNotice: CORRECTION_BODY,
         isPer100g: true,
       });
+      // InlineError's announcement goes out a tick later (announceTogether).
+      await act(() => new Promise((r) => setTimeout(r, 0)));
 
       // CHARACTERIZATION, not an endorsement. This fixture is the residual the
       // `labelReadNotice` gate does NOT close: the label notice is suppressed,
@@ -1891,7 +1893,7 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * defense-in-depth coverage of a fixture the hook itself can no longer
    * produce, not a live gap.
    */
-  it("suppresses the label notice while an error is showing", () => {
+  it("suppresses the label notice while an error is showing", async () => {
     const announce = vi
       .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
       .mockImplementation(() => {});
@@ -1900,6 +1902,8 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
         error: ERROR_BODY,
         labelReadNotice: LABEL_BODY,
       });
+      // InlineError's announcement goes out a tick later (announceTogether).
+      await act(() => new Promise((r) => setTimeout(r, 0)));
 
       expect(getByText(ERROR_BODY)).toBeTruthy();
       expect(queryByText(LABEL_BODY)).toBeNull();

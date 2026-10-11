@@ -3,6 +3,7 @@ import { AccessibilityInfo, StyleSheet, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
+import { announceTogether } from "@/lib/announce-together";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -29,8 +30,10 @@ export function ReplacementCodeCard({
   const haptics = useHaptics();
 
   useEffect(() => {
-    AccessibilityInfo.announceForAccessibility(
+    // Leads any error mounted in the same render (one announcement, code first).
+    announceTogether(
       `Your recovery code was used. Here's a new one: ${code}. Save it now.`,
+      { first: true },
     );
   }, [code]);
 
