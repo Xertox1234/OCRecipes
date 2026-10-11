@@ -56,4 +56,4 @@ anyone runs it in prod: apply it twice to a scratch DB, then `pg_dump --schema-o
 the tables and `diff` against a `db:push`-created dev DB (identical, or a later
 `db:push` sees drift). The owner applies it to prod BEFORE the merge.
 Confirm it with the prod `to_regclass` check output before merging — see
-`docs/solutions/best-practices/prod-migration-precondition-needs-a-query-not-an-answer-2026-10-11.md`.
+`docs/solutions/best-practices/prod-migration-merge-needs-a-query-2026-10-11.md`.
