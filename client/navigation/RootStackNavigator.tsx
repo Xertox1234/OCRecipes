@@ -22,6 +22,7 @@ import PhotoAnalysisScreen from "@/screens/PhotoAnalysisScreen";
 import GoalSetupScreen from "@/screens/GoalSetupScreen";
 import EditDietaryProfileScreen from "@/screens/EditDietaryProfileScreen";
 import FeaturedRecipeDetailScreen from "@/screens/FeaturedRecipeDetailScreen";
+import RecipeVariantsScreen from "@/screens/RecipeVariantsScreen";
 import QuickLogScreen from "@/screens/QuickLogScreen";
 import DailyNutritionDetailScreen from "@/screens/DailyNutritionDetailScreen";
 import MenuScanResultScreen from "@/screens/MenuScanResultScreen";
@@ -170,6 +171,8 @@ export type RootStackParamList = {
     /** Deep link query param — alias for recipeType */
     type?: "community" | "mealPlan";
   };
+  /** Public community remixes of a recipe (from the recipe's Community section). */
+  RecipeVariants: { recipeId: number; title: string };
   QuickLog: undefined;
   DailyNutritionDetail: undefined;
   MenuScanResult: {
@@ -386,6 +389,14 @@ export default function RootStackNavigator() {
               animation: reducedMotion ? "none" : "slide_from_bottom",
               gestureEnabled: true,
               fullScreenGestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="RecipeVariants"
+            component={RecipeVariantsScreen}
+            options={{
+              headerTitle: "Community variants",
+              presentation: "modal",
             }}
           />
           <Stack.Screen

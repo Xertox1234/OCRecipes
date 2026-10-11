@@ -95,6 +95,10 @@ const ALLOWLIST = new Set([
   "getMealPlanRecipeWithIngredients",
   // Canonical recipe operations - admin-only or public read; no user-private data exposed
   "incrementRecipePopularity", // server-side only; recipeId is not user-scoped
+  // Public-recipe probes/readers — recipeId is a PUBLIC community recipe
+  // (routes gate on isPublicCommunityRecipe first); returns no per-user data.
+  "isPublicCommunityRecipe",
+  "getRecipeVariants",
   "markCanonical", // admin-only; used by promotion pipeline server-side
   "markEnriched", // admin-only; used by enrichment pipeline server-side
   "getEligibleForPromotion", // admin-only promotion pipeline; no user-private data

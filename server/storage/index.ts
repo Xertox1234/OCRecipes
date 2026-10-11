@@ -39,6 +39,7 @@ import * as remindersStorage from "./reminders";
 import * as notificationSendsStorage from "./notification-sends";
 import * as canonicalRecipesStorage from "./canonical-recipes";
 import * as tastePicksStorage from "./taste-picks";
+import * as recipeTriesStorage from "./recipe-tries";
 import * as exportStorage from "./export";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
@@ -396,6 +397,11 @@ export const storage = {
   getTastePicks: tastePicksStorage.getTastePicks,
   setTastePicks: tastePicksStorage.setTastePicks,
   getTastePickCandidates: tastePicksStorage.getTastePickCandidates,
+  // Recipe "I tried it" + community stats
+  isPublicCommunityRecipe: recipeTriesStorage.isPublicCommunityRecipe,
+  setRecipeTried: recipeTriesStorage.setRecipeTried,
+  getRecipeCommunityStats: recipeTriesStorage.getRecipeCommunityStats,
+  getRecipeVariants: recipeTriesStorage.getRecipeVariants,
 
   // Data export (CCPA/PIPEDA portability)
   getUserDataExport: exportStorage.getUserDataExport,

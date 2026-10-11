@@ -33,6 +33,7 @@ import { register as registerCooking } from "./routes/cooking";
 import { register as registerAllergenCheck } from "./routes/allergen-check";
 import { register as registerCookbooks } from "./routes/cookbooks";
 import { register as registerFavouriteRecipes } from "./routes/favourite-recipes";
+import { register as registerRecipeCommunity } from "./routes/recipe-community";
 import { register as registerVerification } from "./routes/verification";
 import { register as registerBatchScan } from "./routes/batch-scan";
 import { register as registerBeverages } from "./routes/beverages";
@@ -97,6 +98,7 @@ export function registerRoutes(app: Express): Server {
   registerAllergenCheck(app);
   registerCookbooks(app);
   registerFavouriteRecipes(app);
+  registerRecipeCommunity(app);
   registerVerification(app);
   registerBatchScan(app);
   registerBeverages(app);

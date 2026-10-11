@@ -811,6 +811,7 @@ export const favouriteRecipes = pgTable(
   (table) => [
     unique().on(table.userId, table.recipeId, table.recipeType),
     index("favourite_recipes_user_id_idx").on(table.userId),
+    index("favourite_recipes_recipe_idx").on(table.recipeId, table.recipeType),
   ],
 );
 
@@ -926,6 +927,7 @@ export const communityRecipes = pgTable(
       table.description.op("gin_trgm_ops"),
     ),
     index("community_recipes_author_idx").on(table.authorId),
+    index("community_recipes_remixed_from_idx").on(table.remixedFromId),
     index("community_recipes_diet_tags_gin_idx").using("gin", table.dietTags),
     index("community_recipes_meal_types_gin_idx").using("gin", table.mealTypes),
     index("community_recipes_is_public_created_at_idx").on(
@@ -943,6 +945,35 @@ export const communityRecipes = pgTable(
     index("community_recipes_popularity_score_idx").on(table.popularityScore),
   ],
 );
+
+// "I tried it" — one row per user per public community recipe. Counts are
+// computed from these rows on read; createdAt supports time-windowed
+// rankings later (a createdAt-led index is added with that feature).
+export const recipeTries = pgTable(
+  "recipe_tries",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    recipeId: integer("recipe_id")
+      .references(() => communityRecipes.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    unique("recipe_tries_user_recipe_uniq").on(table.userId, table.recipeId),
+    index("recipe_tries_recipe_created_idx").on(
+      table.recipeId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export type RecipeTry = typeof recipeTries.$inferSelect;
+export type InsertRecipeTry = typeof recipeTries.$inferInsert;
 
 // Recipe generation log - tracks daily generation limits
 export const recipeGenerationLog = pgTable(
