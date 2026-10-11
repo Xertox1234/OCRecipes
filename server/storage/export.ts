@@ -30,6 +30,7 @@ import {
   favouriteScannedItems,
   favouriteRecipes,
   tastePicks,
+  recipeTries,
   coachNotebook,
   menuScans,
   receiptScans,
@@ -100,6 +101,7 @@ export interface UserDataExport {
     recipes: Record<string, unknown>[];
   };
   tastePicks: Record<string, unknown>[];
+  recipeTries: Record<string, unknown>[];
   coachNotebook: Record<string, unknown>[];
   menuScans: Record<string, unknown>[];
   receiptScans: Record<string, unknown>[];
@@ -150,6 +152,7 @@ export async function getUserDataExport(
     favouriteScannedRows,
     favouriteRecipeRows,
     tastePickRows,
+    recipeTryRows,
     coachNotebookRows,
     menuScanRows,
     receiptScanRows,
@@ -241,6 +244,13 @@ export async function getUserDataExport(
       .from(favouriteRecipes)
       .where(eq(favouriteRecipes.userId, userId)),
     db.select().from(tastePicks).where(eq(tastePicks.userId, userId)),
+    db
+      .select({
+        recipeId: recipeTries.recipeId,
+        createdAt: recipeTries.createdAt,
+      })
+      .from(recipeTries)
+      .where(eq(recipeTries.userId, userId)),
     db.select().from(coachNotebook).where(eq(coachNotebook.userId, userId)),
     db.select().from(menuScans).where(eq(menuScans.userId, userId)),
     db.select().from(receiptScans).where(eq(receiptScans.userId, userId)),
@@ -346,6 +356,7 @@ export async function getUserDataExport(
       recipes: favouriteRecipeRows,
     },
     tastePicks: tastePickRows,
+    recipeTries: recipeTryRows,
     coachNotebook: coachNotebookRows,
     menuScans: menuScanRows,
     receiptScans: receiptScanRows,

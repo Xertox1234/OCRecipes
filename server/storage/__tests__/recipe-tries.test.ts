@@ -213,4 +213,20 @@ describe("recipe-tries storage", () => {
       expect(await getRecipeVariants(r.id, 1)).toHaveLength(1);
     });
   });
+
+  describe("data export", () => {
+    it("includes the user's tries (recipeId + createdAt only)", async () => {
+      const { getUserDataExport } = await import("../export");
+      const r = await createCommunityRecipe();
+      await setRecipeTried(viewer.id, r.id, true);
+      await setRecipeTried(author.id, r.id, true);
+
+      const data = await getUserDataExport(viewer.id);
+      expect(data.recipeTries).toHaveLength(1);
+      expect(data.recipeTries[0]).toEqual({
+        recipeId: r.id,
+        createdAt: expect.any(Date),
+      });
+    });
+  });
 });
