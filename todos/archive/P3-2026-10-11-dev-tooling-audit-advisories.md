@@ -1,6 +1,6 @@
 ---
 title: "Dev-tooling npm advisories (compression, shell-quote, braces, image-size, node-forge, source-map-js, sprintf-js, uuid, ws — Expo/RN chain)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-11
 updated: 2026-10-11
@@ -25,8 +25,8 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 
 ## Acceptance Criteria
 
-- [ ] Each advisory is either bumped (lockfile-only where in range) or recorded as accepted with its reachability
-- [ ] `npm audit --omit=dev` re-run and the remaining list noted in the PR
+- [x] Each advisory is either bumped (lockfile-only where in range) or recorded as accepted with its reachability
+- [x] `npm audit --omit=dev` re-run and the remaining list noted in the PR
 
 ## Implementation Notes
 
@@ -52,3 +52,11 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 
 - Initial creation (deferred from the auth security audit)
 - Upgrade-pass audit S1: seven new root advisories added to scope (braces, image-size, node-forge, source-map-js, sprintf-js, uuid, ws)
+- Done: lockfile-only bumps cleared compression 1.8.1→1.8.2, shell-quote 1.10.0→1.12.0 (the critical), source-map-js 1.2.1→1.2.2, ws 6.2.3→6.2.6 / 7.5.10–11→7.5.13 / 8.21.0→8.22.0. `npm audit --omit=dev`: 51 (1 critical / 33 high / 17 moderate) → 47 (0 / 30 / 17).
+- Accepted, with reachability (no `server/`, `shared/`, `client/` or `scripts/` import of any of them):
+  - braces (high): no fixed release; reached via micromatch in Metro/Expo CLI globbing of our own repo paths.
+  - image-size (high): fix is 2.0.3, but metro pins `^1.0.2` and 1.2.1 is the newest 1.x; metro reads only our own bundled image assets at build time.
+  - node-forge (high): only the `expo-updates` CLI code-signing commands; app.json configures no code signing.
+  - sprintf-js (moderate): via argparse in istanbul config loading (test tooling).
+  - uuid (moderate): via `xcode` (prebuild) and `@expo/ngrok`; only the `buf`-argument path is affected.
+  - The remaining 42 entries are the parents of these five (expo, react-native, expo-updates, @sentry/react-native …); their "fix" is a semver-major downgrade npm proposes, not a real fix. They clear at the next Expo SDK upgrade.
