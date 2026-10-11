@@ -243,10 +243,16 @@ function sweepAbandonedTickets(): void {
 }
 
 export function register(app: Express): void {
-  app.get("/api/auth/social/config", (_req: Request, res: Response) => {
-    const cfg = getSocialConfig();
-    res.json({ google: cfg.google !== null, apple: cfg.apple !== null });
-  });
+  // Public and cheap (env read), but every route carries a limiter; the
+  // general limit, not socialAuthLimiter, so login-screen loads never trip it.
+  app.get(
+    "/api/auth/social/config",
+    crudRateLimit,
+    (_req: Request, res: Response) => {
+      const cfg = getSocialConfig();
+      res.json({ google: cfg.google !== null, apple: cfg.apple !== null });
+    },
+  );
 
   // sign_in/link are public; reauth requires a session. A link nonce issued
   // to a signed-in caller is bound to them (POST /api/auth/identities).
