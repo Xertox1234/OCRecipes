@@ -63,7 +63,7 @@ Stage the new value in a **nullable, UNCONSTRAINED** column. Enforce uniqueness
   staging column and never becomes the login-gating address unless its link is
   clicked — not a behavioral guard that can be bypassed.
 - **Idempotent + self-healing.** Branch ordering makes a post-commit token
-  re-match branch 1 harmlessly (mail-scanner prefetch then real click). The two
+  re-match branch 1 harmlessly (a second click on the same link). The two
   UPDATEs need **no transaction**: they are mutually-exclusive predicates and
   each is atomic, so under READ COMMITTED concurrent commits cannot both win
   (the loser sees the staged column NULLed and updates 0 rows). The only

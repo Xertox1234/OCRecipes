@@ -8,10 +8,13 @@
  * no deployed web frontend. Inline CSS only — no external assets — so it renders
  * identically regardless of network/CDN state.
  *
- * SECURITY: interpolates ZERO request input. Only static copy and fixed,
- * state-keyed `ocrecipes://` deep links are rendered, so the attacker-controllable
- * `?token=` query string is never reflected into the HTML (no reflected-XSS surface).
+ * SECURITY: `renderVerifyEmailPage` interpolates ZERO request input — only
+ * static copy and fixed, state-keyed `ocrecipes://` deep links. The one exception
+ * is `renderVerifyEmailConfirmPage`, which must carry the token into its form: it
+ * accepts only the JWT charset (base64url segments) and HTML-escapes it anyway.
  */
+import { escapeHtml } from "./html-escape";
+
 export type VerifyEmailState = "success" | "invalid" | "error";
 
 const COPY: Record<
@@ -60,14 +63,61 @@ const CTA_HREF: Record<VerifyEmailState, string> = {
 
 export function renderVerifyEmailPage(state: VerifyEmailState): string {
   const c = COPY[state];
-  const accent = ACCENT[state];
-  const ctaHref = CTA_HREF[state];
+  return page({
+    title: c.title,
+    heading: c.heading,
+    body: c.body,
+    icon: c.icon,
+    accent: ACCENT[state],
+    action: `<a class="btn" href="${CTA_HREF[state]}">Open OCRecipes</a>`,
+  });
+}
+
+// Three base64url segments — the only shape signVerificationToken produces.
+// Capped well above a real token (~300 chars) so nothing unbounded is echoed.
+const VERIFY_TOKEN_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const MAX_VERIFY_TOKEN_LENGTH = 4096;
+
+/**
+ * The page GET /verify-email shows for a valid link: verifying takes a button
+ * press (a POST), so a mail scanner opening the link verifies nothing — the
+ * link may be one a squatter's sign-up sent to the victim (auth audit M4). No
+ * script, no auto-submit: a real click is the point.
+ */
+export function renderVerifyEmailConfirmPage(token: string): string {
+  if (
+    token.length > MAX_VERIFY_TOKEN_LENGTH ||
+    !VERIFY_TOKEN_SHAPE.test(token)
+  ) {
+    throw new Error("refusing to render a malformed verification token");
+  }
+  return page({
+    title: "Confirm your email",
+    heading: "Confirm your email",
+    body: "Tap the button to confirm this email address for your OCRecipes account. If you didn't create an account, close this page.",
+    icon: "@",
+    accent: "#2563eb",
+    action: `<form method="post" action="/verify-email">
+      <input type="hidden" name="token" value="${escapeHtml(token)}" />
+      <button class="btn" type="submit">Confirm my email</button>
+    </form>`,
+  });
+}
+
+function page(p: {
+  title: string;
+  heading: string;
+  body: string;
+  icon: string;
+  accent: string;
+  action: string;
+}): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${c.title} · OCRecipes</title>
+<title>${p.title} · OCRecipes</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -78,19 +128,20 @@ export function renderVerifyEmailPage(state: VerifyEmailState): string {
   .card { background:#fff; border-radius:20px; padding:40px 28px; max-width:380px; width:100%;
     text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.08); }
   .icon { width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    margin:0 auto 20px; font-size:32px; font-weight:700; color:#fff; background:${accent}; }
+    margin:0 auto 20px; font-size:32px; font-weight:700; color:#fff; background:${p.accent}; }
   h1 { font-size:22px; margin:0 0 10px; }
   p { font-size:15px; line-height:1.5; margin:0 0 28px; opacity:.85; }
-  .btn { display:inline-block; background:${accent}; color:#fff; text-decoration:none;
-    font-weight:600; font-size:16px; padding:14px 28px; border-radius:12px; }
+  form { margin:0; }
+  .btn { display:inline-block; background:${p.accent}; color:#fff; text-decoration:none; border:0;
+    font:inherit; font-weight:600; font-size:16px; padding:14px 28px; border-radius:12px; cursor:pointer; }
 </style>
 </head>
 <body>
   <main class="card">
-    <div class="icon" aria-hidden="true">${c.icon}</div>
-    <h1>${c.heading}</h1>
-    <p>${c.body}</p>
-    <a class="btn" href="${ctaHref}">Open OCRecipes</a>
+    <div class="icon" aria-hidden="true">${p.icon}</div>
+    <h1>${p.heading}</h1>
+    <p>${p.body}</p>
+    ${p.action}
   </main>
 </body>
 </html>`;

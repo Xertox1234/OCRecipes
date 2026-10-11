@@ -33,7 +33,10 @@ import {
   DUMMY_RESET_USER_ID,
   DUMMY_RESET_HASH,
 } from "../lib/password-reset-code";
-import { renderVerifyEmailPage } from "../lib/verify-email-page";
+import {
+  renderVerifyEmailConfirmPage,
+  renderVerifyEmailPage,
+} from "../lib/verify-email-page";
 import { createServiceLogger, toError } from "../lib/logger";
 import {
   registerLimiter,
@@ -326,7 +329,11 @@ export function register(app: Express): void {
         if (verificationOn) {
           fireAndForget(
             "send-verification-email",
-            sendVerificationEmail(email, signVerificationToken(user.id, email)),
+            sendVerificationEmail(
+              email,
+              signVerificationToken(user.id, email),
+              user.username,
+            ),
           );
           return sendVerificationPending(res);
         }
@@ -487,13 +494,15 @@ export function register(app: Express): void {
   // as `${EMAIL_VERIFY_BASE_URL}/verify-email?token=…`). A server-rendered HTML
   // page works in ANY mail client / browser with no app install, AASA
   // universal-link, or deployed web frontend — see lib/verify-email-page.ts.
-  // Reuses applyVerificationToken so it can never drift from the POST API above.
-  // Safe to verify on GET (no confirm step): the token is a stateless JWT and
-  // applyEmailVerification is idempotent, so a mail scanner pre-fetching the
-  // link merely verifies (or commits) the address early — the intended outcome
-  // anyway (a committed change then re-matches the current-email branch).
   //
-  // SECURITY INVARIANT — this route MUST stay OUTSIDE the `/api` prefix. The
+  // GET never verifies: it checks the token's signature (no DB) and renders a
+  // confirm button that POSTs it back. A verify link can reach an inbox its
+  // owner never asked for — a squatter's sign-up or resend sends one — so a
+  // mail scanner pre-fetching it must not confirm the squatter's account (auth
+  // audit 2026-10-10 M4). The POST reuses applyVerificationToken so it can
+  // never drift from the JSON API above.
+  //
+  // SECURITY INVARIANT — both routes MUST stay OUTSIDE the `/api` prefix. The
   // token rides in the query string, and pino-http's `autoLogging.ignore`
   // (server/index.ts) skips every URL that doesn't start with `/api`, so the
   // live 24h token never lands in access logs. Moving this under `/api/...`
@@ -501,8 +510,34 @@ export function register(app: Express): void {
   app.get(
     "/verify-email",
     verifyEmailLimiter,
-    async (req: Request, res: Response) => {
+    (req: Request, res: Response) => {
       const token = typeof req.query.token === "string" ? req.query.token : "";
+      try {
+        if (!token || !verifyVerificationToken(token)) {
+          res.status(400).type("html").send(renderVerifyEmailPage("invalid"));
+          return;
+        }
+        res.status(200).type("html").send(renderVerifyEmailConfirmPage(token));
+      } catch (error) {
+        // HTML, not handleRouteError's JSON envelope: a browser is reading it.
+        logger.error({ err: toError(error) }, "verify-email landing failed");
+        res.status(500).type("html").send(renderVerifyEmailPage("error"));
+      }
+    },
+  );
+
+  app.post(
+    "/verify-email",
+    verifyEmailLimiter,
+    async (req: Request, res: Response) => {
+      const body: unknown = req.body;
+      const token =
+        typeof body === "object" &&
+        body !== null &&
+        "token" in body &&
+        typeof body.token === "string"
+          ? body.token
+          : "";
       try {
         const ok = token.length > 0 && (await applyVerificationToken(token));
         res
@@ -513,7 +548,7 @@ export function register(app: Express): void {
         // Deliberate deviation from the handleRouteError rule: this route serves
         // browser-facing HTML, not a JSON API — a JSON error envelope would be
         // unreadable to the user. Render an HTML error page (500) instead.
-        logger.error({ err: toError(error) }, "verify-email landing failed");
+        logger.error({ err: toError(error) }, "verify-email confirm failed");
         res.status(500).type("html").send(renderVerifyEmailPage("error"));
       }
     },
@@ -539,11 +574,19 @@ export function register(app: Express): void {
         // still-unverified account; the per-recipient throttle in email.ts caps
         // abuse. The lookup + return cost is identical whether or not the account
         // exists, so response timing is not an oracle either.
+        // Keeps the verify link (owner ruling 2026-10-11) even though anyone
+        // can aim this at an address: the email names the account and the link
+        // only verifies on a button press, so a squatter's account is visible
+        // and a mail scanner can't confirm it (auth audit M4).
         const user = await storage.getUserByEmail(email);
         if (user && !user.emailVerified) {
           fireAndForget(
             "resend-verification",
-            sendVerificationEmail(email, signVerificationToken(user.id, email)),
+            sendVerificationEmail(
+              email,
+              signVerificationToken(user.id, email),
+              user.username,
+            ),
           );
         }
         res.status(200).json({
@@ -792,6 +835,7 @@ export function register(app: Express): void {
               sendVerificationEmail(
                 newEmail,
                 signVerificationToken(staged.id, newEmail),
+                staged.username,
               ),
             );
           }

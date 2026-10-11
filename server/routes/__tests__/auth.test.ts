@@ -155,6 +155,8 @@ vi.mock("../../lib/image-store", () => ({
 function createApp() {
   const app = express();
   app.use(express.json());
+  // Mirrors server/index.ts — the browser confirm page POSTs a form.
+  app.use(express.urlencoded({ extended: false }));
   register(app);
   return app;
 }
@@ -639,7 +641,7 @@ describe("Auth Routes", () => {
       vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
       vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
       vi.mocked(storage.createUser).mockResolvedValue(
-        createMockUser({ id: "new1", email: "new@x.com" }),
+        createMockUser({ id: "new1", email: "new@x.com", username: "newbie" }),
       );
 
       const res = await request(app).post("/api/auth/register").send({
@@ -652,7 +654,12 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.token).toBeUndefined();
       expect(res.body.status).toBe("verification_pending");
-      expect(sendVerificationEmail).toHaveBeenCalled();
+      // The email names the account so a victim can spot a squatter's sign-up.
+      expect(sendVerificationEmail).toHaveBeenCalledWith(
+        "new@x.com",
+        expect.any(String),
+        "newbie",
+      );
     });
 
     // Auth audit 2026-10-10 M4: a re-sent verify link would verify whoever
@@ -1085,14 +1092,55 @@ describe("Auth Routes", () => {
     });
   });
 
+  // Auth audit 2026-10-10 M4: GET only renders a confirm button, so a mail
+  // scanner opening the link can't verify a squatter's account — the POST does.
   describe("GET /verify-email (browser landing)", () => {
+    it("renders a confirm form for a valid token WITHOUT verifying", async () => {
+      const token = signVerificationToken("u1", "a@b.com");
+
+      const res = await request(app).get("/verify-email").query({ token });
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+      expect(res.text).toContain('<form method="post" action="/verify-email">');
+      expect(res.text).toContain(`value="${token}"`);
+      expect(storage.applyEmailVerification).not.toHaveBeenCalled();
+    });
+
+    it("renders a 400 HTML page for a garbage token, reflecting nothing", async () => {
+      const res = await request(app)
+        .get("/verify-email")
+        .query({ token: '"><script>x</script>' });
+
+      expect(res.status).toBe(400);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+      expect(res.text).toMatch(/expired|invalid/i);
+      expect(res.text).not.toContain("<script>x");
+      expect(res.text).not.toContain("<form");
+      expect(storage.applyEmailVerification).not.toHaveBeenCalled();
+    });
+
+    it("renders a 400 HTML page when the token query param is missing", async () => {
+      const res = await request(app).get("/verify-email");
+
+      expect(res.status).toBe(400);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+      expect(res.text).toMatch(/expired|invalid/i);
+      expect(storage.applyEmailVerification).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /verify-email (confirm button)", () => {
     it("verifies a valid token and renders an HTML success page", async () => {
       vi.mocked(storage.applyEmailVerification).mockResolvedValue(
         createMockUser({ emailVerified: true }),
       );
       const token = signVerificationToken("u1", "a@b.com");
 
-      const res = await request(app).get("/verify-email").query({ token });
+      const res = await request(app)
+        .post("/verify-email")
+        .type("form")
+        .send({ token });
 
       expect(res.status).toBe(200);
       expect(res.headers["content-type"]).toMatch(/text\/html/);
@@ -1105,8 +1153,9 @@ describe("Auth Routes", () => {
 
     it("renders a 400 HTML page for a garbage token without touching storage", async () => {
       const res = await request(app)
-        .get("/verify-email")
-        .query({ token: "not-a-jwt" });
+        .post("/verify-email")
+        .type("form")
+        .send({ token: "not-a-jwt" });
 
       expect(res.status).toBe(400);
       expect(res.headers["content-type"]).toMatch(/text\/html/);
@@ -1114,12 +1163,14 @@ describe("Auth Routes", () => {
       expect(storage.applyEmailVerification).not.toHaveBeenCalled();
     });
 
-    it("renders a 400 HTML page when the token query param is missing", async () => {
-      const res = await request(app).get("/verify-email");
+    it("renders a 400 HTML page when the token field is missing", async () => {
+      const res = await request(app)
+        .post("/verify-email")
+        .type("form")
+        .send({});
 
       expect(res.status).toBe(400);
       expect(res.headers["content-type"]).toMatch(/text\/html/);
-      expect(res.text).toMatch(/expired|invalid/i);
       expect(storage.applyEmailVerification).not.toHaveBeenCalled();
     });
 
@@ -1129,7 +1180,10 @@ describe("Auth Routes", () => {
       );
       const token = signVerificationToken("u1", "a@b.com");
 
-      const res = await request(app).get("/verify-email").query({ token });
+      const res = await request(app)
+        .post("/verify-email")
+        .type("form")
+        .send({ token });
 
       expect(res.status).toBe(500);
       expect(res.headers["content-type"]).toMatch(/text\/html/);
@@ -1139,7 +1193,7 @@ describe("Auth Routes", () => {
   describe("POST /api/auth/resend-verification", () => {
     it("always neutral 200; sends only when account exists + unverified", async () => {
       vi.mocked(storage.getUserByEmail).mockResolvedValue(
-        createMockUser({ id: "u9", emailVerified: false }),
+        createMockUser({ id: "u9", emailVerified: false, username: "nine" }),
       );
 
       const res = await request(app)
@@ -1147,7 +1201,13 @@ describe("Auth Routes", () => {
         .send({ email: "u9@x.com" });
 
       expect(res.status).toBe(200);
-      expect(sendVerificationEmail).toHaveBeenCalled();
+      // Owner ruling 2026-10-11: resend keeps the verify link (legit users who
+      // lost the first email), but it names the account like every verify email.
+      expect(sendVerificationEmail).toHaveBeenCalledWith(
+        "u9@x.com",
+        expect.any(String),
+        "nine",
+      );
     });
 
     it("neutral 200 even when the email has no account (no oracle)", async () => {
@@ -1228,6 +1288,7 @@ describe("Auth Routes", () => {
         expect(sendVerificationEmail).toHaveBeenCalledWith(
           "new@example.com",
           expect.any(String),
+          "testuser",
         );
       });
 

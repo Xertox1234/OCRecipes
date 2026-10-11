@@ -173,9 +173,15 @@ function client(): Resend | null {
   return (_resend ??= new Resend(key));
 }
 
+/**
+ * Names the account (`username`): the link can reach an inbox whose owner never
+ * signed up — a squatter's sign-up or resend sends it — so the recipient must be
+ * able to tell the account isn't theirs (auth audit 2026-10-10 M4).
+ */
 export async function sendVerificationEmail(
   to: string,
   token: string,
+  username: string,
 ): Promise<void> {
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
@@ -188,9 +194,9 @@ export async function sendVerificationEmail(
     from: EMAIL_FROM,
     to,
     subject: "Verify your email for OCRecipes",
-    html: `<p>Welcome to OCRecipes! Confirm your email to finish setting up your account.</p>
+    html: `<p>Welcome to OCRecipes! Confirm this email address for the account <strong>${escapeHtml(username)}</strong> to finish setting it up.</p>
 <p><a href="${url}">Verify my email</a></p>
-<p>This link expires in 24 hours. If you didn't create an account, you can ignore this email.</p>`,
+<p>This link expires in 24 hours. If you didn't create this account, ignore this email and don't open the link — the account stays unconfirmed.</p>`,
   });
   // Log the Resend ErrorResponse fields directly ({name, message, statusCode}).
   // It is NOT a JS Error, so `toError(error)` would flatten it to the useless
