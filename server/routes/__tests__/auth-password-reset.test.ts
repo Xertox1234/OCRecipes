@@ -290,9 +290,9 @@ describe("POST /api/auth/reset-password", () => {
         newPassword: "another-long-passphrase",
       });
       expect(retry.status).toBe(200);
-      expect(
-        vi.mocked(storage.completePasswordReset).mock.calls[0][2],
-      ).toMatch(/^pv2\$/);
+      expect(vi.mocked(storage.completePasswordReset).mock.calls[0][2]).toMatch(
+        /^pv2\$/,
+      );
     });
   });
 

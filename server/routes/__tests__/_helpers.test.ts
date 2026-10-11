@@ -288,12 +288,16 @@ describe("Route Helpers", () => {
     // points, up to 256 units of emoji) must still sign in.
     it("accepts a password of 512 UTF-16 units and rejects 513", () => {
       expect(
-        loginSchema.safeParse({ username: "testuser", password: "a".repeat(512) })
-          .success,
+        loginSchema.safeParse({
+          username: "testuser",
+          password: "a".repeat(512),
+        }).success,
       ).toBe(true);
       expect(
-        loginSchema.safeParse({ username: "testuser", password: "a".repeat(513) })
-          .success,
+        loginSchema.safeParse({
+          username: "testuser",
+          password: "a".repeat(513),
+        }).success,
       ).toBe(false);
     });
 

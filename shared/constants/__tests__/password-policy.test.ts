@@ -13,8 +13,8 @@ describe("passwordLength", () => {
     expect(passwordLength("😀")).toBe(1);
   });
   it("normalizes to NFC first, so decomposed and composed é are equal", () => {
-    const composed = "é";
-    const decomposed = "é";
+    const composed = "\u00e9";
+    const decomposed = "e\u0301";
     expect(decomposed.length).toBe(2);
     expect(passwordLength(composed)).toBe(1);
     expect(passwordLength(decomposed)).toBe(1);

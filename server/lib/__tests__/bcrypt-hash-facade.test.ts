@@ -33,8 +33,7 @@ describe("bcrypt.hash is only called through the facade", () => {
     ).toBe(true);
     const offenders = files.filter(
       (f) =>
-        !ALLOWED.has(f) &&
-        /\bbcrypt\.hash\s*\(/.test(readFileSync(f, "utf8")),
+        !ALLOWED.has(f) && /\bbcrypt\.hash\s*\(/.test(readFileSync(f, "utf8")),
     );
     expect(offenders).toEqual([]);
   });

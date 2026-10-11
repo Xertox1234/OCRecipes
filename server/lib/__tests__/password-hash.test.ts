@@ -24,17 +24,17 @@ describe("hashPassword / passwordMatches", () => {
   });
 
   it("a multibyte character straddling byte 72 still round-trips", async () => {
-    const pw = "a".repeat(71) + "é" + "tail";
+    const pw = "a".repeat(71) + "\u00e9" + "tail";
     const h = await hashPassword(pw);
     expect(await passwordMatches(pw, h)).toBe(true);
-    expect(await passwordMatches("a".repeat(71) + "é" + "tall", h)).toBe(
+    expect(await passwordMatches("a".repeat(71) + "\u00e9" + "tall", h)).toBe(
       false,
     );
   });
 
   it("decomposed and composed é verify as the same password", async () => {
-    const h = await hashPassword("café au lait please");
-    expect(await passwordMatches("café au lait please", h)).toBe(true);
+    const h = await hashPassword("caf\u00e9 au lait please");
+    expect(await passwordMatches("cafe\u0301 au lait please", h)).toBe(true);
   });
 
   it("legacy bcrypt hashes still verify", async () => {

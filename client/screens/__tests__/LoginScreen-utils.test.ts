@@ -274,7 +274,9 @@ describe("validateNewPassword (the shared password policy)", () => {
     expect(validateNewPassword("a".repeat(15), "b".repeat(15), signup)).toBe(
       "Passwords do not match",
     );
-    expect(validateNewPassword("a".repeat(15), "a".repeat(15), signup)).toBeNull();
+    expect(
+      validateNewPassword("a".repeat(15), "a".repeat(15), signup),
+    ).toBeNull();
   });
 
   it("the floor accepts 8 and refuses 7", () => {
