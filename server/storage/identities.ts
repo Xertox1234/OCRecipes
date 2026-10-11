@@ -9,7 +9,7 @@ import {
   type UserIdentity,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, count, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { randomToken, sha256Hex } from "../lib/social-identity/nonce";
 import { isReservedUsername, ReservedUsernameError } from "./users";
 
@@ -299,20 +299,41 @@ export async function insertIdentity(
   return row;
 }
 
+/**
+ * Remove one provider — refused (undefined) when it is the account's last way
+ * to sign in (no password, no other provider). The check runs under a lock on
+ * the user row so two concurrent disconnects can't each see the other's row
+ * still present and leave the account with none (auth audit 2026-10-10 L16).
+ */
 export async function deleteIdentity(
   userId: string,
   provider: ProviderName,
 ): Promise<UserIdentity | undefined> {
-  const [row] = await db
-    .delete(userIdentities)
-    .where(
-      and(
-        eq(userIdentities.userId, userId),
-        eq(userIdentities.provider, provider),
-      ),
-    )
-    .returning();
-  return row;
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({ password: users.password })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update");
+    if (!user) return undefined;
+    if (user.password === null) {
+      const [{ n }] = await tx
+        .select({ n: count() })
+        .from(userIdentities)
+        .where(eq(userIdentities.userId, userId));
+      if (n <= 1) return undefined;
+    }
+    const [row] = await tx
+      .delete(userIdentities)
+      .where(
+        and(
+          eq(userIdentities.userId, userId),
+          eq(userIdentities.provider, provider),
+        ),
+      )
+      .returning();
+    return row;
+  });
 }
 
 export async function setAppleRefreshToken(

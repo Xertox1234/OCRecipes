@@ -831,7 +831,16 @@ export function register(app: Express): void {
             ),
           );
         }
-        await storage.deleteIdentity(req.userId, provider.data);
+        // The storage delete re-checks "not the last method" under a lock: a
+        // concurrent disconnect that won the race refuses this one (audit L16).
+        if (!(await storage.deleteIdentity(req.userId, provider.data))) {
+          return sendError(
+            res,
+            409,
+            "Set a password with “Forgot password” before disconnecting your only sign-in method.",
+            ErrorCode.LAST_SIGN_IN_METHOD,
+          );
+        }
         res.json({ signInMethods: await storage.getSignInMethods(req.userId) });
       } catch (error) {
         handleRouteError(res, error, "disconnect provider");

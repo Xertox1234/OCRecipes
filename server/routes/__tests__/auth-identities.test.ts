@@ -119,6 +119,9 @@ beforeEach(() => {
   vi.mocked(storage.consumeNonce).mockResolvedValue(true);
   vi.mocked(storage.findIdentity).mockResolvedValue(undefined);
   vi.mocked(storage.listIdentities).mockResolvedValue([]);
+  vi.mocked(storage.deleteIdentity).mockResolvedValue(
+    createMockUserIdentity({ id: "i1", userId: "u1", provider: "apple" }),
+  );
 });
 afterEach(() => {
   for (const k of ENV_KEYS) {
@@ -532,6 +535,20 @@ describe("DELETE /api/auth/identities/:provider", () => {
     const deleteOrder = vi.mocked(storage.deleteIdentity).mock
       .invocationCallOrder[0];
     expect(revokeOrder).toBeLessThan(deleteOrder);
+  });
+
+  it("409 LAST_SIGN_IN_METHOD when a concurrent disconnect won the race (audit L16)", async () => {
+    vi.mocked(storage.getSignInMethods).mockResolvedValue({
+      password: false,
+      google: { email: "a@gmail.com" },
+      apple: { email: null, isPrivateRelay: true },
+    });
+    vi.mocked(storage.deleteIdentity).mockResolvedValue(undefined);
+    const res = await request(app())
+      .delete("/api/auth/identities/google")
+      .set(auth);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("LAST_SIGN_IN_METHOD");
   });
 
   it("404 when not connected", async () => {

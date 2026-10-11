@@ -324,6 +324,43 @@ describe("identities storage", () => {
     ]);
   });
 
+  // Auth audit 2026-10-10 L16: the "not your last sign-in method" rule lives
+  // in the delete itself (under a user-row lock), not only in a prior read.
+  it("deleteIdentity refuses to remove a password-less account's last method", async () => {
+    const tx = getTestTx();
+    const u = await createTestUser(tx);
+    await tx.update(users).set({ password: null }).where(eq(users.id, u.id));
+    await ids.insertIdentity({
+      userId: u.id,
+      provider: "apple",
+      providerSubject: "a",
+    });
+    await ids.insertIdentity({
+      userId: u.id,
+      provider: "google",
+      providerSubject: "g",
+    });
+    expect(await ids.deleteIdentity(u.id, "apple")).toMatchObject({
+      provider: "apple",
+    });
+    expect(await ids.deleteIdentity(u.id, "google")).toBeUndefined();
+    expect((await ids.listIdentities(u.id)).map((i) => i.provider)).toEqual([
+      "google",
+    ]);
+  });
+
+  it("deleteIdentity may remove the last provider when a password remains", async () => {
+    const u = await createTestUser(getTestTx());
+    await ids.insertIdentity({
+      userId: u.id,
+      provider: "apple",
+      providerSubject: "a",
+    });
+    expect(await ids.deleteIdentity(u.id, "apple")).toMatchObject({
+      provider: "apple",
+    });
+  });
+
   it("pending tickets store only the hash", async () => {
     const ticket = await ids.createPendingSignIn({
       ...baseTicket,
