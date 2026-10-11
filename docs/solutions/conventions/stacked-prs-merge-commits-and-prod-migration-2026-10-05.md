@@ -55,3 +55,5 @@ Drizzle's constraint names (`{table}_{column}_{reftable}_{refcol}_fk`). Verify i
 anyone runs it in prod: apply it twice to a scratch DB, then `pg_dump --schema-only -t`
 the tables and `diff` against a `db:push`-created dev DB (identical, or a later
 `db:push` sees drift). The owner applies it to prod BEFORE the merge.
+Confirm it with the prod `to_regclass` check output before merging — see
+`docs/solutions/best-practices/prod-migration-merge-needs-a-query-2026-10-11.md`.
