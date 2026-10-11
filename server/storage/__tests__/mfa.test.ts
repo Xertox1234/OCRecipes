@@ -84,8 +84,20 @@ describe("MFA storage", () => {
 
   it("every 10th failure locks and trips exactly once; the count keeps going", async () => {
     await confirmEnrolled(testUser.id, 100);
+    const unlock = () =>
+      tx.execute(
+        sql`UPDATE user_mfa SET locked_until = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
+      );
     const trips: boolean[] = [];
-    for (let i = 1; i <= 20; i++)
+    for (let i = 1; i <= 10; i++)
+      trips.push((await mfa.recordMfaFailure(testUser.id)).tripped);
+    // Auth audit 2026-10-10 L10: a lock refuses without counting — failures
+    // recorded while locked never advance the count toward the 100 cap.
+    for (let i = 0; i < 5; i++)
+      expect((await mfa.recordMfaFailure(testUser.id)).tripped).toBe(false);
+    expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(10);
+    await unlock();
+    for (let i = 11; i <= 20; i++)
       trips.push((await mfa.recordMfaFailure(testUser.id)).tripped);
     expect(trips.map((t, i) => (t ? i + 1 : 0)).filter(Boolean)).toEqual([
       10, 20,
@@ -98,6 +110,14 @@ describe("MFA storage", () => {
     );
     expect(await mfa.acceptTotpStep(testUser.id, 200)).toBe(true);
     expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(0);
+  });
+
+  it("a concurrent burst stops counting at the lock (cannot race toward the cap)", async () => {
+    await confirmEnrolled(testUser.id, 100);
+    await Promise.all(
+      Array.from({ length: 30 }, () => mfa.recordMfaFailure(testUser.id)),
+    );
+    expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(10);
   });
 
   it("10 concurrent failures trip the lock exactly once", async () => {

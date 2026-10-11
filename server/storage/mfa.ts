@@ -194,8 +194,9 @@ export async function acceptTotpStep(
 /**
  * One failed second-factor check. Every MFA_LOCK_EVERY_FAILURES-th consecutive
  * failure locks for MFA_LOCK_MINUTES; the count never resets on lock, so it can
- * reach MFA_TOTP_FAILURE_CAP (plan deviation 1). `tripped` is true exactly once
- * per lock — the row lock serialises concurrent calls.
+ * reach MFA_TOTP_FAILURE_CAP (plan deviation 1). A failure while locked is not
+ * counted. `tripped` is true exactly once per lock — the row lock serialises
+ * concurrent calls, and each re-evaluates the lock after the previous commit.
  */
 export async function recordMfaFailure(
   userId: string,
@@ -209,7 +210,9 @@ export async function recordMfaFailure(
         THEN now() + (${MFA_LOCK_MINUTES} * interval '1 minute')
         ELSE ${userMfa.lockedUntil} END`,
     })
-    .where(eq(userMfa.userId, userId))
+    // A lock refuses without counting (audit L10): a concurrent burst of wrong
+    // guesses can no longer race failed_attempts past the cap during a lock.
+    .where(and(eq(userMfa.userId, userId), notLocked))
     .returning({ failedAttempts: userMfa.failedAttempts });
   if (!row) return { failedAttempts: 0, tripped: false };
   return {
