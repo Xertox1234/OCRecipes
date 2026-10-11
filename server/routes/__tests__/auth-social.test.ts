@@ -894,6 +894,91 @@ describe("POST /api/auth/social/link", () => {
   });
 });
 
+// Auth audit 2026-10-11 L3 (as L12): a session is minted only under the
+// tokenVersion of the row the route checked — a reset or sign-out-everywhere
+// landing mid-request (getUser reads a moved version) wins.
+describe("a version bump mid-request → no session (audit L3)", () => {
+  const socialBody = { provider: "google", idToken: "t", nonce: "n" };
+  const moved = (u: ReturnType<typeof createMockUser>) =>
+    vi
+      .mocked(storage.getUser)
+      .mockResolvedValue({ ...u, tokenVersion: u.tokenVersion + 1 });
+
+  function expectRefused(res: request.Response) {
+    expect(res.status).toBe(401);
+    expect(res.body.token).toBeUndefined();
+  }
+
+  it("an already-linked identity's sign-in", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.findIdentity).mockResolvedValue(
+      createMockUserIdentity({ id: "i1", userId: "u1", provider: "google" }),
+    );
+    const user = createMockUser({ id: "u1", emailVerified: true });
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    moved(user);
+    expectRefused(
+      await request(app()).post("/api/auth/social").send(socialBody),
+    );
+  });
+
+  it("an auto-link onto a password-less account", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    const user = createMockUser({
+      id: "u1",
+      email: "me@gmail.com",
+      emailVerified: true,
+      password: null,
+    });
+    vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(user);
+    moved(user);
+    expectRefused(
+      await request(app()).post("/api/auth/social").send(socialBody),
+    );
+  });
+
+  it("completing a social sign-up", async () => {
+    const user = createMockUser({ id: "u2", emailVerified: true });
+    vi.mocked(storage.createUserWithIdentity).mockResolvedValue(user);
+    moved(user);
+    expectRefused(
+      await request(app())
+        .post("/api/auth/social/complete-sign-up")
+        .send({ ticket: "t", username: "new_name", ageConfirmed: true }),
+    );
+  });
+
+  it("completing a link with the password", async () => {
+    const user = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: null,
+      password: await bcrypt.hash("right-long-pass-1", 4),
+    });
+    vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(
+      createMockPendingSocialSignIn({
+        kind: "link",
+        provider: "google",
+        providerSubject: "g-1",
+        email: "me@yahoo.com",
+        providerAuthoritative: false,
+        targetUserId: "u1",
+        attempts: 1,
+      }),
+    );
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.completeLinkFromTicket).mockResolvedValue(
+      createMockUserIdentity({ id: "i9" }),
+    );
+    moved(user);
+    expectRefused(
+      await request(app())
+        .post("/api/auth/social/link")
+        .send({ ticket: "t", password: "right-long-pass-1" }),
+    );
+  });
+});
+
 describe("POST /api/auth/social/nonce", () => {
   it("issues a public sign_in nonce", async () => {
     vi.mocked(storage.issueNonce).mockResolvedValue({

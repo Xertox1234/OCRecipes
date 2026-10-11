@@ -457,7 +457,8 @@ export function register(app: Express): void {
             unstored = null;
           }
           if (linked) await storage.touchIdentity(linked.id, user.id);
-          return res.json(await issueSession(user.id));
+          // Under the version of the row the gate checked (auth audit L3).
+          return res.json(await issueSession(user.id, user.tokenVersion));
         }
 
         if (decision.kind === "auto_link") {
@@ -487,7 +488,7 @@ export function register(app: Express): void {
               );
             throw err;
           }
-          return res.json(await issueSession(user.id));
+          return res.json(await issueSession(user.id, user.tokenVersion));
         }
 
         const ticket = await storage.createPendingSignIn({
@@ -583,7 +584,7 @@ export function register(app: Express): void {
             "This sign-in expired. Please start again.",
             ErrorCode.INVALID_SIGN_IN_TICKET,
           );
-        res.status(201).json(await issueSession(user.id));
+        res.status(201).json(await issueSession(user.id, user.tokenVersion));
       } catch (error) {
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "complete social sign-up");
@@ -707,7 +708,7 @@ export function register(app: Express): void {
           throw err;
         }
         if (!identity) throw expired;
-        res.json(await issueSession(target.id));
+        res.json(await issueSession(target.id, target.tokenVersion));
       } catch (error) {
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "link provider");
