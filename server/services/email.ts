@@ -4,6 +4,7 @@ import { emailVerificationEnabled } from "../lib/email-config";
 import { createServiceLogger } from "../lib/logger";
 import { escapeHtml } from "../lib/html-escape";
 import { RESET_CODE_TTL_MINUTES } from "@shared/constants/password-reset";
+import { CHANGE_CODE_TTL_MINUTES } from "@shared/constants/password-change";
 
 const logger = createServiceLogger("email");
 
@@ -277,6 +278,39 @@ export async function sendPasswordResetCode(
   });
   // Log only the Resend error — the payload (which holds the code) never.
   if (error) logger.error({ resendError: error }, "reset code email failed");
+}
+
+/**
+ * The code for a signed-in password change (change-password spec §4.1). Only
+ * a signed-in session can trigger it, so the account-security bucket is safe
+ * (attacker-triggered mail must not share it; this is not attacker-triggered).
+ */
+export async function sendPasswordChangeCode(
+  to: string,
+  code: string,
+): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "account-security")) {
+    // Never log the code — only the recipient.
+    logger.warn(
+      { to },
+      "change-password code throttled (account-security cap)",
+    );
+    return;
+  }
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: "Your OCRecipes code to change your password",
+    html: `<p>Use this code in the app to change your OCRecipes password:</p>
+<p style="font-size:28px;font-weight:bold;letter-spacing:6px">${escapeHtml(code)}</p>
+<p>It expires in ${CHANGE_CODE_TTL_MINUTES} minutes. If you requested more than one code, use the one in the most recent email.</p>
+<p>If you didn't ask for this, someone may be signed in to your account. Don't share the code, and contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>.</p>`,
+  });
+  // Log only the Resend error — the payload (which holds the code) never.
+  if (error)
+    logger.error({ resendError: error }, "change-password code email failed");
 }
 
 const PROVIDER_LABELS = { google: "Google", apple: "Apple" } as const;
