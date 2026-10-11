@@ -1936,4 +1936,139 @@ describe("useAuth", () => {
       expect(mockTokenStorage.clear).not.toHaveBeenCalled();
     });
   });
+
+  describe("change password (signed in)", () => {
+    async function ready() {
+      mockTokenStorage.get.mockResolvedValue(null);
+      const hook = renderHook(() => useAuth());
+      await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+      return hook;
+    }
+    const jsonOnce = (body: unknown) =>
+      mockApiRequest.mockResolvedValueOnce({
+        json: () => Promise.resolve(body),
+      });
+    const user: User = { id: "u1", username: "testuser" };
+    const NEW = "a-long-new-passphrase-1";
+
+    it("current password: posts the proof with its second factor, stores the new session", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user, token: "t-new" });
+      let out: { done: boolean; replacementRecoveryCode?: string } | undefined;
+      await act(async () => {
+        out = await result.current.changePassword({ password: "old" }, NEW, {
+          code: "123456",
+        });
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/change-password",
+        {
+          proof: { password: "old", secondFactor: { code: "123456" } },
+          newPassword: NEW,
+        },
+      );
+      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
+      expect(out).toEqual({ done: true, replacementRecoveryCode: undefined });
+    });
+
+    it("emailed code: posts { emailCode } with no second factor", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user, token: "t-new" });
+      await act(async () => {
+        await result.current.changePassword({ emailCode: "654321" }, NEW);
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/change-password",
+        { proof: { emailCode: "654321" }, newPassword: NEW },
+      );
+    });
+
+    it("Google: a reauth nonce, the provider token, no second factor", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "n1", nonceHash: "h1" });
+      mockGetProviderToken.mockResolvedValueOnce({ idToken: "id-1" });
+      jsonOnce({ status: "signed_in", user, token: "t-new" });
+      await act(async () => {
+        await result.current.changePassword({ provider: "google" }, NEW);
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/social/nonce",
+        { purpose: "reauth" },
+      );
+      expect(mockGetProviderToken).toHaveBeenCalledWith("google", "h1");
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/change-password",
+        {
+          proof: { provider: "google", nonce: "n1", idToken: "id-1" },
+          newPassword: NEW,
+        },
+      );
+    });
+
+    it("Google sheet cancelled → { done: false } and no change request", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "n1", nonceHash: "h1" });
+      mockGetProviderToken.mockResolvedValueOnce(null);
+      let out: { done: boolean } | undefined;
+      await act(async () => {
+        out = await result.current.changePassword({ provider: "google" }, NEW);
+      });
+      expect(out).toEqual({ done: false });
+      expect(mockApiRequest).not.toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/change-password",
+        expect.anything(),
+      );
+    });
+
+    // Review Focus 5 (auth audit L7 rule).
+    it("someone else signed in while it was in flight → the late reply does NOT sign in", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockImplementationOnce(async () => {
+        mockTokenStorage.get.mockResolvedValue("t-other");
+        return {
+          json: () =>
+            Promise.resolve({ status: "signed_in", user, token: "t-new" }),
+        };
+      });
+      await act(async () => {
+        await result.current.changePassword({ password: "old" }, NEW);
+      });
+      expect(mockTokenStorage.set).not.toHaveBeenCalledWith("t-new");
+    });
+
+    it("returns a spent recovery code's replacement", async () => {
+      const { result } = await ready();
+      jsonOnce({
+        status: "signed_in",
+        user,
+        token: "t-new",
+        replacementRecoveryCode: "r-1",
+      });
+      let out: { done: boolean; replacementRecoveryCode?: string } | undefined;
+      await act(async () => {
+        out = await result.current.changePassword({ password: "old" }, NEW, {
+          recoveryCode: "old-r",
+        });
+      });
+      expect(out?.replacementRecoveryCode).toBe("r-1");
+    });
+
+    it("requestPasswordChangeCode posts to the code route", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "code_sent" });
+      await act(async () => {
+        await result.current.requestPasswordChangeCode();
+      });
+      expect(mockApiRequest).toHaveBeenLastCalledWith(
+        "POST",
+        "/api/auth/change-password/code",
+        {},
+      );
+    });
+  });
 });

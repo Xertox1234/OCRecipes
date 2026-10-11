@@ -133,6 +133,11 @@ export type DeleteAccountProof =
   | { password: string }
   | { provider: SocialProvider };
 
+export type ChangePasswordProof =
+  | { password: string }
+  | { provider: SocialProvider }
+  | { emailCode: string };
+
 /**
  * apiRequest sends the stored bearer when there is one, so a signed-in caller
  * gets a nonce bound to its account (the server rejects public nonces for it).
@@ -837,6 +842,54 @@ export function useAuth() {
     [establishSession],
   );
 
+  /** Email a code for a signed-in password change ("I forgot it"). */
+  const requestPasswordChangeCode = useCallback(async () => {
+    await apiRequest("POST", "/api/auth/change-password/code", {});
+  }, []);
+
+  /**
+   * Set a new password while signed in (change-password spec §5). The server
+   * signs every other device out and answers with a session for this phone;
+   * it is stored only if no one else signed in here meanwhile (auth audit L7).
+   * Resolves done:false only when the Google/Apple sheet was cancelled.
+   */
+  const changePassword = useCallback(
+    async (
+      proof: ChangePasswordProof,
+      newPassword: string,
+      secondFactor?: SecondFactorInput,
+    ): Promise<{ done: boolean; replacementRecoveryCode?: string }> => {
+      const before = await tokenStorage.get();
+      let body: object;
+      if ("provider" in proof) {
+        const { nonce, nonceHash } = await fetchNonce("reauth");
+        const token = await getProviderToken(proof.provider, nonceHash);
+        if (!token) return { done: false };
+        body = {
+          proof: { provider: proof.provider, nonce, idToken: token.idToken },
+          newPassword,
+        };
+      } else {
+        const withFactor = secondFactor ? { ...proof, secondFactor } : proof;
+        body = { proof: withFactor, newPassword };
+      }
+      const res = await apiRequest("POST", "/api/auth/change-password", body);
+      const data = (await res.json()) as SignedInResult & {
+        replacementRecoveryCode?: string;
+      };
+      // A late reply never replaces a newer sign-in on this phone; the
+      // password change itself stands.
+      if ((await tokenStorage.get()) === before) {
+        await establishSession(data.user, data.token);
+      }
+      return {
+        done: true,
+        replacementRecoveryCode: data.replacementRecoveryCode,
+      };
+    },
+    [establishSession],
+  );
+
   return {
     ...state,
     startTwoStepSetup,
@@ -848,6 +901,8 @@ export function useAuth() {
     upgradeStartTwoStep,
     upgradeConfirmTwoStep,
     upgradeSetPassword,
+    requestPasswordChangeCode,
+    changePassword,
     login,
     verifySecondFactor,
     finishSignIn: establishSession,
