@@ -32,7 +32,7 @@
  */
 import "dotenv/config";
 import { aiChat } from "../lib/ai-client";
-import bcrypt from "bcrypt";
+import { hashPassword } from "../lib/password-hash";
 import crypto from "node:crypto";
 import pLimit from "p-limit";
 import { db, pool } from "../db";
@@ -256,7 +256,7 @@ async function ensureDemoUser(): Promise<string> {
       process.env.SEED_DEMO_PASSWORD,
       () => crypto.randomBytes(12).toString("hex"), // 24 hex chars
     );
-  const hashedPassword = await bcrypt.hash(plaintextPassword, 12);
+  const hashedPassword = await hashPassword(plaintextPassword);
   const [user] = await db
     .insert(users)
     .values({
