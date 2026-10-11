@@ -386,6 +386,45 @@ describe("email service", () => {
       },
     );
 
+    // Auth audit 2026-10-10 L4: moving the email moves account recovery, so
+    // the previous address hears about it — when staged and when committed.
+    it.each([
+      ["requested", "Your OCRecipes email is being changed", "was asked"],
+      ["changed", "Your OCRecipes email was changed", "was changed"],
+    ] as const)(
+      "email-change notice %s goes to the old address with the escaped username and new address",
+      async (kind, subject, verb) => {
+        vi.stubEnv("RESEND_API_KEY", "re_test");
+        const { sendEmailChangeNotice } = await import("../email");
+        await sendEmailChangeNotice(
+          "old@x.com",
+          "<b>alice</b>",
+          "<i>new</i>@x.com",
+          kind,
+        );
+        const arg = mockSend.mock.calls[0][0];
+        expect(arg.to).toBe("old@x.com");
+        expect(arg.subject).toBe(subject);
+        expect(arg.html).toContain(verb);
+        expect(arg.html).toContain("&lt;b&gt;alice&lt;/b&gt;");
+        expect(arg.html).toContain("&lt;i&gt;new&lt;/i&gt;@x.com");
+        expect(arg.html).not.toMatch(/<b>alice|<i>new/);
+        expect(arg.html).toContain("mailto:support@ocrecipes.com");
+      },
+    );
+
+    it("email-change notice uses the account-security bucket (sent after general is exhausted)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendSignupAttemptNotice, sendEmailChangeNotice } = await import(
+        "../email"
+      );
+      for (let i = 0; i < 6; i++)
+        await sendSignupAttemptNotice("old@x.com", "victim");
+      mockSend.mockClear();
+      await sendEmailChangeNotice("old@x.com", "alice", "n@x.com", "changed");
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
     it("still sends a reset code and a notice after the general bucket is exhausted", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const {

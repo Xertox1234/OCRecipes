@@ -30,6 +30,7 @@ import { createMockUser } from "../../__tests__/factories";
 import { emailVerificationEnabled } from "../../lib/email-config";
 import {
   sendVerificationEmail,
+  sendEmailChangeNotice,
   sendSignupAttemptNotice,
   sendFinishSignupNotice,
 } from "../../services/email";
@@ -116,6 +117,7 @@ vi.mock("../../services/email", () => ({
   sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
   sendSignupAttemptNotice: vi.fn().mockResolvedValue(undefined),
   sendFinishSignupNotice: vi.fn().mockResolvedValue(undefined),
+  sendEmailChangeNotice: vi.fn().mockResolvedValue(undefined),
 }));
 
 // The password-proof gate runs for real; only the code check is stubbed.
@@ -1064,6 +1066,28 @@ describe("Auth Routes", () => {
         "u1",
         "a@b.com",
       );
+      // Nothing moved (no previousEmail) → no change notice.
+      expect(sendEmailChangeNotice).not.toHaveBeenCalled();
+    });
+
+    it("a verify that commits a staged change tells the previous address (audit L4)", async () => {
+      vi.mocked(storage.applyEmailVerification).mockResolvedValue({
+        ...createMockUser({ email: "new@example.com", emailVerified: true }),
+        previousEmail: "old@example.com",
+      });
+      const token = signVerificationToken("u1", "new@example.com");
+
+      const res = await request(app)
+        .post("/api/auth/verify-email")
+        .send({ token });
+
+      expect(res.status).toBe(200);
+      expect(sendEmailChangeNotice).toHaveBeenCalledWith(
+        "old@example.com",
+        "testuser",
+        "new@example.com",
+        "changed",
+      );
     });
 
     it("rejects a garbage token with 400", async () => {
@@ -1148,6 +1172,27 @@ describe("Auth Routes", () => {
       expect(storage.applyEmailVerification).toHaveBeenCalledWith(
         "u1",
         "a@b.com",
+      );
+    });
+
+    it("a confirm-button commit tells the previous address too (audit L4)", async () => {
+      vi.mocked(storage.applyEmailVerification).mockResolvedValue({
+        ...createMockUser({ email: "new@example.com", emailVerified: true }),
+        previousEmail: "old@example.com",
+      });
+      const token = signVerificationToken("u1", "new@example.com");
+
+      const res = await request(app)
+        .post("/verify-email")
+        .type("form")
+        .send({ token });
+
+      expect(res.status).toBe(200);
+      expect(sendEmailChangeNotice).toHaveBeenCalledWith(
+        "old@example.com",
+        "testuser",
+        "new@example.com",
+        "changed",
       );
     });
 
@@ -1290,6 +1335,13 @@ describe("Auth Routes", () => {
           expect.any(String),
           "testuser",
         );
+        // The CURRENT address hears that a change was asked for (audit L4).
+        expect(sendEmailChangeNotice).toHaveBeenCalledWith(
+          "current@example.com",
+          "testuser",
+          "new@example.com",
+          "requested",
+        );
       });
 
       it("rejects a wrong password with 401 and does NOT stage anything", async () => {
@@ -1343,6 +1395,14 @@ describe("Auth Routes", () => {
         // The one observable difference is recipient-side, not caller-side: the
         // already-registered third party is NOT emailed a verification link.
         expect(sendVerificationEmail).not.toHaveBeenCalled();
+        // The caller's own current address is told either way — uniform, and
+        // it reaches only the account's owner (audit L4).
+        expect(sendEmailChangeNotice).toHaveBeenCalledWith(
+          "current@example.com",
+          "testuser",
+          "taken@example.com",
+          "requested",
+        );
       });
 
       it("same-as-current email is a neutral no-op (never stages, never sends)", async () => {
@@ -1364,6 +1424,7 @@ describe("Auth Routes", () => {
         expect(storage.stagePendingEmail).not.toHaveBeenCalled();
         expect(storage.updateUserEmail).not.toHaveBeenCalled();
         expect(sendVerificationEmail).not.toHaveBeenCalled();
+        expect(sendEmailChangeNotice).not.toHaveBeenCalled();
       });
 
       it("returns 404 when the user vanishes between auth and staging (stagePendingEmail → undefined)", async () => {

@@ -25,6 +25,7 @@ import {
   sendPasswordResetCode,
   sendPasswordChangedNotice,
   sendFinishSignupNotice,
+  sendEmailChangeNotice,
 } from "../services/email";
 import {
   generateResetCode,
@@ -151,6 +152,19 @@ async function applyVerificationToken(token: string): Promise<boolean> {
       payload.sub,
       payload.email,
     );
+    // A committed change moved account recovery: tell the address it left
+    // (auth audit 2026-10-10 L4). A same-address verify has no previousEmail.
+    if (user?.previousEmail) {
+      fireAndForget(
+        "email-changed-notice",
+        sendEmailChangeNotice(
+          user.previousEmail,
+          user.username,
+          user.email,
+          "changed",
+        ),
+      );
+    }
     return Boolean(user);
   } catch (err) {
     // Committing a staged change swaps the address into the unique `email`
@@ -839,6 +853,18 @@ export function register(app: Express): void {
               ),
             );
           }
+          // The current address hears a change was asked for, free or taken
+          // target alike — it reaches only this account's owner, so it leaks
+          // nothing to the caller (auth audit 2026-10-10 L4).
+          fireAndForget(
+            "email-change-requested-notice",
+            sendEmailChangeNotice(
+              user.email,
+              user.username,
+              newEmail,
+              "requested",
+            ),
+          );
           return sendVerificationPending(res, replacement);
         }
 

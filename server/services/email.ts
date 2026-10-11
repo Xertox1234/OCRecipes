@@ -404,6 +404,54 @@ export async function sendTwoFactorNotice(
     logger.error({ resendError: error, kind }, "two-step notice failed");
 }
 
+const EMAIL_CHANGE_NOTICES = {
+  requested: {
+    subject: "Your OCRecipes email is being changed",
+    first: (u: string, to: string) =>
+      `A change of the email for <strong>${u}</strong> to <strong>${to}</strong> was asked for. It takes effect when the link sent to the new address is opened.`,
+  },
+  changed: {
+    subject: "Your OCRecipes email was changed",
+    first: (u: string, to: string) =>
+      `The email for <strong>${u}</strong> was changed to <strong>${to}</strong>. Password reset codes now go there, not here.`,
+  },
+} as const;
+
+/**
+ * Account-security notice to the PREVIOUS address (auth audit 2026-10-10 L4):
+ * moving the email moves account recovery, so the old inbox hears when a
+ * change is staged and when it commits. Only a signed-in session that
+ * re-proved the password (and second factor) can trigger either, so the
+ * account-security bucket is safe here; staging is capped at 5/h per user.
+ */
+export async function sendEmailChangeNotice(
+  to: string,
+  username: string,
+  newEmail: string,
+  kind: keyof typeof EMAIL_CHANGE_NOTICES,
+): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "account-security")) {
+    logger.warn(
+      { to, kind },
+      "email-change notice throttled (account-security cap)",
+    );
+    return;
+  }
+  const notice = EMAIL_CHANGE_NOTICES[kind];
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: notice.subject,
+    html: `<p>${notice.first(escapeHtml(username), escapeHtml(newEmail))}</p>
+<p>If this was you, there's nothing else to do.</p>
+<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
+  });
+  if (error)
+    logger.error({ resendError: error, kind }, "email-change notice failed");
+}
+
 /** Test-only internals — never import from production code. */
 export const _testInternals = {
   recipientSends,
