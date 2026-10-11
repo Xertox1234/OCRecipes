@@ -64,6 +64,8 @@ describe("isAuthoritative", () => {
   });
 });
 
+// Every link_required case below except the password-account ones uses a
+// password-LESS account, so each test fails only on the condition it names.
 describe("decideLink", () => {
   it("already linked → sign_in, even if an MFA account owns the email", () => {
     expect(
@@ -113,16 +115,16 @@ describe("decideLink", () => {
       decideLink({
         claims: g(),
         linkedUserId: null,
-        emailAccount: acct({ hasSecondFactor: true }),
+        emailAccount: acct({ hasSecondFactor: true, methods: ["apple"] }),
       }),
-    ).toEqual({ kind: "link_required", userId: "u1", methods: ["password"] });
+    ).toEqual({ kind: "link_required", userId: "u1", methods: ["apple"] });
   });
   it("non-authoritative google address → link_required", () => {
     expect(
       decideLink({
         claims: g({ email: "me@yahoo.com" }),
         linkedUserId: null,
-        emailAccount: acct({ email: "me@yahoo.com" }),
+        emailAccount: acct({ email: "me@yahoo.com", methods: ["apple"] }),
       }).kind,
     ).toBe("link_required");
   });
@@ -131,7 +133,16 @@ describe("decideLink", () => {
       decideLink({
         claims: g(),
         linkedUserId: null,
-        emailAccount: acct({ emailVerified: false }),
+        emailAccount: acct({ emailVerified: false, methods: ["apple"] }),
+      }).kind,
+    ).toBe("link_required");
+  });
+  it("a different address on the account → link_required", () => {
+    expect(
+      decideLink({
+        claims: g(),
+        linkedUserId: null,
+        emailAccount: acct({ email: "other@gmail.com", methods: ["apple"] }),
       }).kind,
     ).toBe("link_required");
   });
@@ -141,7 +152,7 @@ describe("decideLink", () => {
       decideLink({
         claims: a({ email: relay, isPrivateRelay: true }),
         linkedUserId: null,
-        emailAccount: acct({ email: relay }),
+        emailAccount: acct({ email: relay, methods: ["google"] }),
       }).kind,
     ).toBe("link_required");
   });
