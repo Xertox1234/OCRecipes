@@ -1153,6 +1153,16 @@ export default function MealPlanHomeScreen() {
     [navigation],
   );
 
+  const handleOpenCommunityRecipe = useCallback(
+    (communityRecipeId: number) => {
+      navigation.navigate("FeaturedRecipeDetail", {
+        recipeId: communityRecipeId,
+        recipeType: "community",
+      });
+    },
+    [navigation],
+  );
+
   const handleOpenImportSheet = useCallback(
     (mt: MealType) => {
       InteractionManager.runAfterInteractions(() =>
@@ -1382,6 +1392,7 @@ export default function MealPlanHomeScreen() {
         onDismiss={handleQuickAddDismiss}
         onNavigateCreate={handleNavigateCreate}
         onOpenImportSheet={handleOpenImportSheet}
+        onOpenCommunityRecipe={handleOpenCommunityRecipe}
       />
     ),
     [
@@ -1390,6 +1401,7 @@ export default function MealPlanHomeScreen() {
       handleQuickAddDismiss,
       handleNavigateCreate,
       handleOpenImportSheet,
+      handleOpenCommunityRecipe,
     ],
   );
 
