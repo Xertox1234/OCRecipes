@@ -12,6 +12,7 @@ import * as users from "./users";
 import * as passwordReset from "./password-reset";
 import * as identities from "./identities";
 import * as mfa from "./mfa";
+import * as upgradePasses from "./upgrade-passes";
 import * as accountImages from "./account-images";
 import * as nutrition from "./nutrition";
 import * as mealPlans from "./meal-plans";
@@ -110,6 +111,11 @@ export const storage = {
   trustDevice: mfa.trustDevice,
   isTrustedDevice: mfa.isTrustedDevice,
   forgetTrustedDevices: mfa.forgetTrustedDevices,
+  // A short password's upgrade pass (password policy spec §6)
+  createUpgradePass: upgradePasses.createUpgradePass,
+  getLiveUpgradePass: upgradePasses.getLiveUpgradePass,
+  reserveUpgradePassAttempt: upgradePasses.reserveUpgradePassAttempt,
+  completePasswordUpgrade: upgradePasses.completePasswordUpgrade,
   collectUserImageUrls: accountImages.collectUserImageUrls,
   filterUnreferencedImageUrls: accountImages.filterUnreferencedImageUrls,
   createUser: users.createUser,

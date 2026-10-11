@@ -87,6 +87,9 @@ export const registerSchema = z.object({
       message: "You must confirm you are 13 years of age or older",
     }),
   }),
+  // The "Use two-step verification" switch (password policy spec P4): sets
+  // the minimum only (8 on, 15 off) and is never stored.
+  twoStep: z.boolean().optional().default(false),
 });
 
 // Re-auth proof for sensitive account actions (delete account, connect a new
@@ -230,6 +233,10 @@ export const mfaPasswordAndFactorSchema = mfaPasswordSchema.extend({
 // same step (spec §5.4); the route enforces the 15.
 export const mfaDisableSchema = mfaPasswordAndFactorSchema.extend({
   newPassword: newPasswordSchema.optional(),
+});
+/** "Choose a longer password" on a short password's pass; the 15 is checked in the route. */
+export const upgradePasswordSchema = z.object({
+  newPassword: newPasswordSchema,
 });
 export const mfaConfirmSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),

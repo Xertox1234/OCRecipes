@@ -291,6 +291,7 @@ function connectedSignInsParagraph(connected: readonly string[]): string {
 
 export type TwoFactorNoticeKind =
   | "enabled"
+  | "enabled_at_sign_in"
   | "disabled"
   | "new_phone"
   | "recovery_code_used"
@@ -305,6 +306,13 @@ const TWO_FACTOR_NOTICES: Record<
     subject: "Two-step verification is on",
     first: (u) =>
       `Two-step verification was turned on for your OCRecipes account <strong>${u}</strong>, and other devices were signed out.`,
+  },
+  // Turned on from a short password's sign-in pass (password policy spec §6).
+  // An email reset leaves two-step on, so recovery is support, not a reset.
+  enabled_at_sign_in: {
+    subject: "Two-step verification is on",
+    first: (u) =>
+      `Two-step verification was turned on for <strong>${u}</strong> while signing in, and other devices were signed out. Resetting your password by email won't turn it off, so if this wasn't you, contact support rather than resetting.`,
   },
   disabled: {
     subject: "Two-step verification is off",

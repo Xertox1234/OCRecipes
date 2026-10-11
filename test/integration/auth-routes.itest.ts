@@ -65,7 +65,7 @@ import request from "supertest";
 import { eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { users } from "@shared/schema";
+import { users, mfaRecoveryCodes } from "@shared/schema";
 
 import {
   setupTestTransaction,
@@ -100,6 +100,10 @@ const { register: registerAuth } = await import("../../server/routes/auth");
 const { register: registerAuthMfa } = await import(
   "../../server/routes/auth-mfa"
 );
+const { register: registerAuthUpgrade } = await import(
+  "../../server/routes/auth-upgrade"
+);
+const { hashPassword } = await import("../../server/lib/password-hash");
 const { base32Decode, hotp, timeStep } = await import(
   "../../server/lib/mfa/totp"
 );
@@ -112,6 +116,7 @@ function buildApp(): Express {
   app.use(express.json());
   registerAuth(app);
   registerAuthMfa(app);
+  registerAuthUpgrade(app);
   return app;
 }
 
@@ -402,5 +407,131 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
       expect(old.status).toBe(401);
       expect(old.body.code).toBe("TOKEN_REVOKED");
     });
+  });
+});
+
+describe("password upgrade pass (password policy spec §6) — real requireAuth, real DB", () => {
+  const SHORT = "short-pass-12"; // 12: under 15, at least 8
+  const LONGER = "a much longer password 2026";
+
+  /** A no-two-step account with a 12-character password, made directly:
+   *  sign-up itself refuses under 15 with the switch off. (Verification is
+   *  off in this suite — RESEND_API_KEY is stubbed empty — so no flag.) */
+  async function shortUser() {
+    const user = await createTestUser(tx, {
+      password: await hashPassword(SHORT),
+    });
+    return { username: user.username, id: user.id };
+  }
+
+  const signIn = (username: string, password = SHORT) =>
+    request(buildApp()).post("/api/auth/login").send({ username, password });
+
+  it("short password → a pass, useless as a session; a longer password signs in and kills the pass", async () => {
+    const { username } = await shortUser();
+    const login = await signIn(username);
+    expect(login.status).toBe(200);
+    expect(login.body.status).toBe("upgrade_required");
+    expect(login.body.canUseTwoStep).toBe(true);
+    expect(login.body.token).toBeUndefined();
+    const pass: string = login.body.pass;
+
+    // The pass is not a session, under either scheme name.
+    const asBearer = await request(buildApp())
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${pass}`);
+    expect(asBearer.status).toBe(401);
+    const asPass = await request(buildApp())
+      .get("/api/auth/me")
+      .set("Authorization", `UpgradePass ${pass}`);
+    expect(asPass.status).toBe(401);
+
+    const tooShort = await request(buildApp())
+      .post("/api/auth/upgrade/password")
+      .set("Authorization", `UpgradePass ${pass}`)
+      .send({ newPassword: "fourteen-chars" });
+    expect(tooShort.status).toBe(400);
+    expect(tooShort.body.code).toBe("PASSWORD_TOO_SHORT");
+
+    const done = await request(buildApp())
+      .post("/api/auth/upgrade/password")
+      .set("Authorization", `UpgradePass ${pass}`)
+      .send({ newPassword: LONGER });
+    expect(done.status).toBe(200);
+    const me = await request(buildApp())
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${done.body.token}`);
+    expect(me.status).toBe(200);
+
+    // Single use.
+    const again = await request(buildApp())
+      .post("/api/auth/upgrade/password")
+      .set("Authorization", `UpgradePass ${pass}`)
+      .send({ newPassword: "yet another longer password 2026" });
+    expect(again.status).toBe(401);
+    expect(again.body.code).toBe("UPGRADE_PASS_EXPIRED");
+
+    // The new password now signs in on its own.
+    const after = await signIn(username, LONGER);
+    expect(after.status).toBe(200);
+    expect(typeof after.body.token).toBe("string");
+  });
+
+  it("a real JWT is refused by every upgrade route", async () => {
+    const creds = uniqueCredentials();
+    const reg = await request(buildApp())
+      .post("/api/auth/register")
+      .send(creds);
+    expect(reg.status).toBe(201);
+    for (const path of ["totp/setup", "totp/confirm", "password"]) {
+      const r = await request(buildApp())
+        .post(`/api/auth/upgrade/${path}`)
+        .set("Authorization", `Bearer ${reg.body.token}`)
+        .send({ code: "123456", newPassword: LONGER });
+      expect({ path, status: r.status, code: r.body.code }).toEqual({
+        path,
+        status: 401,
+        code: "UPGRADE_PASS_EXPIRED",
+      });
+    }
+  });
+
+  it("two confirms with the same right code: exactly one session and one set of 10 codes", async () => {
+    vi.stubEnv("MFA_SECRET_ENC_KEY", Buffer.alloc(32, 7).toString("base64"));
+    vi.stubEnv("MFA_SETUP_ENABLED", "true");
+    const { username, id } = await shortUser();
+    const { pass } = (await signIn(username)).body as { pass: string };
+    const setup = await request(buildApp())
+      .post("/api/auth/upgrade/totp/setup")
+      .set("Authorization", `UpgradePass ${pass}`);
+    expect(setup.status).toBe(200);
+    const code = hotp(base32Decode(setup.body.secret), timeStep(Date.now()));
+    const confirm = () =>
+      request(buildApp())
+        .post("/api/auth/upgrade/totp/confirm")
+        .set("Authorization", `UpgradePass ${pass}`)
+        .send({ code });
+
+    // Over this suite's single test transaction (one connection) the two
+    // requests serialise; this pins that the guards admit exactly one
+    // winner, not true parallelism. The loser's status depends on where the
+    // handlers interleave: 401 (pass consumed / guard refused) or 400 (the
+    // winner already promoted the pending secret). Never a second 200.
+    const results = await Promise.all([confirm(), confirm()]);
+    const statuses = results.map((r) => r.status);
+    expect(statuses.filter((s) => s === 200)).toHaveLength(1);
+    expect([400, 401]).toContain(statuses.find((s) => s !== 200));
+    const winner = results.find((r) => r.status === 200)!;
+    expect(winner.body.recoveryCodes).toHaveLength(10);
+    expect(typeof winner.body.token).toBe("string");
+    const rows = await tx
+      .select()
+      .from(mfaRecoveryCodes)
+      .where(eq(mfaRecoveryCodes.userId, id));
+    expect(rows).toHaveLength(10);
+
+    // Two-step is on now: the same short password earns a challenge.
+    const next = await signIn(username);
+    expect(next.body.status).toBe("mfa_required");
   });
 });

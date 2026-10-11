@@ -233,6 +233,18 @@ export const mfaVerifyLimiter = createRateLimiter({
   message: "Too many attempts, please try again later",
 });
 
+/**
+ * Short-password upgrade routes (password policy spec §6). Pre-auth, so
+ * IP-keyed: mounted BEFORE requireUpgradePass, and keyByUser:false so it never
+ * keys on the req.userId the pass sets. The per-pass cap (10) is in the DB.
+ */
+export const upgradePassLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: "Too many attempts, please try again later",
+  keyByUser: false,
+});
+
 // Password-gated like reauthLimiter, so user-keyed (the default; requireAuth
 // runs first): an IP key let a stolen session guess the password across IPs,
 // and on a two-step account a 403 confirms it without deleting (audit L1).

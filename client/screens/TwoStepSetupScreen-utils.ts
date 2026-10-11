@@ -31,6 +31,17 @@ export function shouldGuardLeave(
   return step === "save-codes" && !acknowledged;
 }
 
+/** The toast once the setup steps finish; codes are issued on setup and new codes. */
+export function finishMessage(
+  mode: TwoStepSetupMode,
+  codesIssued: boolean,
+): string {
+  if (!codesIssued) return "Two-step verification moved to this phone";
+  return mode === "setup"
+    ? "Two-step verification is on"
+    : "New recovery codes saved";
+}
+
 export function setupTitle(mode: TwoStepSetupMode): string {
   switch (mode) {
     case "setup":

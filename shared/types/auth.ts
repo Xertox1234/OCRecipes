@@ -44,8 +44,21 @@ export type SecondFactorInput = { code: string } | { recoveryCode: string };
 /** A correct password on a 2FA account: answer the challenge with a code. */
 export type MfaChallengeResult = { status: "mfa_required"; challenge: string };
 export type SignedInResult = { status: "signed_in"; user: User; token: string };
+/**
+ * A correct password under 15 on an account without two-step (password
+ * policy spec §5.2): a short-lived pass, no session. The pass lives only in
+ * memory and is sent as `Authorization: UpgradePass <pass>`.
+ */
+export type UpgradeRequiredResult = {
+  status: "upgrade_required";
+  pass: string;
+  canUseTwoStep: boolean;
+};
 /** POST /api/auth/login and the password branch of /api/auth/social/link. */
-export type SessionResult = SignedInResult | MfaChallengeResult;
+export type SessionResult =
+  | SignedInResult
+  | MfaChallengeResult
+  | UpgradeRequiredResult;
 /** POST /api/auth/mfa/verify. */
 export interface MfaVerifyResult extends SignedInResult {
   /** "Trust this phone" key — stored in the Keychain, sent on later sign-ins. */

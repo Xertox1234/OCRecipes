@@ -51,6 +51,7 @@ import { reportError } from "../lib/error-reporter";
 import { signInGate, secondFactor } from "../lib/social-identity/sign-in-gates";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { startMfaChallenge } from "../lib/mfa/challenge";
+import { needsPasswordUpgrade, startUpgradePass } from "../lib/upgrade-pass";
 import { suggestUsername } from "../lib/social-identity/suggest-username";
 import type {
   ProviderClaims,
@@ -681,6 +682,14 @@ export function register(app: Express): void {
               },
             }),
           );
+        }
+
+        // A short password on an account without two-step earns only the
+        // pass and links nothing (password policy spec §5.2, P3): a linked
+        // provider signs in with no second factor, so linking first would let
+        // whoever guessed the short password walk around the gate.
+        if ("password" in body && needsPasswordUpgrade(target, body.password)) {
+          return res.json(await startUpgradePass(target, body.password));
         }
 
         let identity;

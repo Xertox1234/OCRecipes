@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, View, Pressable, Image, Dimensions } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  Image,
+  Dimensions,
+  Platform,
+  Switch,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
@@ -21,6 +29,8 @@ import {
   validateAuthForm,
   validateAuthFormFields,
   getAuthErrorMessage,
+  registerPasswordHint,
+  registerPasswordRules,
 } from "./LoginScreen-utils";
 import {
   useNavigation,
@@ -31,14 +41,9 @@ import { useToast } from "@/context/ToastContext";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ApiError } from "@/lib/api-error";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
-import {
-  PASSWORD_MAX,
-  PASSWORD_MIN_SINGLE_FACTOR,
-} from "@shared/constants/password-policy";
 
-// iOS strong-password suggestions honour these, so a suggested password
-// always passes sign-up (spec §2).
-const REGISTER_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_SINGLE_FACTOR}; maxlength: ${PASSWORD_MAX};`;
+const TWO_STEP_SWITCH_LABEL =
+  "Use two-step verification (lets you use 8+ characters)";
 
 const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
 
@@ -71,6 +76,9 @@ export default function LoginScreen() {
   const [emailError, setEmailError] = useState<string | null>(null);
   // COPPA 13+ age attestation — gated by checkbox; server enforces ageConfirmed:true
   const [ageConfirmed, setAgeConfirmed] = useState(false);
+  // Sign-up's "Use two-step verification" switch (spec P4): minimum 8, not
+  // 15. Not stored; sign-in sends a switch-on account under 15 to setup.
+  const [twoStep, setTwoStep] = useState(false);
 
   const passwordReset = route.params?.passwordReset === true;
   useEffect(() => {
@@ -110,6 +118,7 @@ export default function LoginScreen() {
       confirmPassword,
       ageConfirmed,
       email,
+      twoStep,
     };
     // Attribute the email-specific failure to the email input (aria-invalid),
     // while the form-level banner still shows the first failing rule overall.
@@ -135,6 +144,15 @@ export default function LoginScreen() {
           });
           return;
         }
+        if (result.status === "upgrade_required") {
+          // Right password, but under 15 with no two-step (spec §5.2).
+          navigation.navigate("PasswordUpgrade", {
+            pass: result.pass,
+            canUseTwoStep: result.canUseTwoStep,
+            purpose: "login",
+          });
+          return;
+        }
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       } else {
         const result = await register(
@@ -142,7 +160,17 @@ export default function LoginScreen() {
           password,
           email.trim(),
           ageConfirmed,
+          twoStep,
         );
+        if (result.status === "upgrade_required") {
+          // Verification off, switch on, under 15: finish two-step first.
+          navigation.navigate("PasswordUpgrade", {
+            pass: result.pass,
+            canUseTwoStep: result.canUseTwoStep,
+            purpose: "login",
+          });
+          return;
+        }
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         if (result.status === "verification_pending") {
           // Account created but email not verified → route to the verify screen
@@ -161,7 +189,7 @@ export default function LoginScreen() {
         navigation.navigate("VerifyEmail", {});
         return;
       }
-      setError(getAuthErrorMessage(err, mode));
+      setError(getAuthErrorMessage(err, mode, { twoStep }));
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsLoading(false);
@@ -174,6 +202,7 @@ export default function LoginScreen() {
     setEmailError(null);
     setConfirmPassword("");
     setAgeConfirmed(false);
+    setTwoStep(false);
   };
 
   const isSubmitDisabled = mode === "register" && !ageConfirmed;
@@ -303,16 +332,22 @@ export default function LoginScreen() {
             textContentType={mode === "register" ? "newPassword" : "password"}
             autoComplete={mode === "register" ? "new-password" : undefined}
             passwordRules={
-              mode === "register" ? REGISTER_PASSWORD_RULES : undefined
+              mode === "register" ? registerPasswordRules(twoStep) : undefined
             }
             testID="input-password"
             accessibilityLabel="Password"
             accessibilityHint={
               mode === "register"
-                ? `At least ${PASSWORD_MIN_SINGLE_FACTOR} characters`
+                ? registerPasswordHint(twoStep)
                 : "Enter your password"
             }
           />
+
+          {mode === "register" ? (
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              {registerPasswordHint(twoStep)}
+            </ThemedText>
+          ) : null}
 
           {mode === "login" ? (
             <Pressable
@@ -342,11 +377,36 @@ export default function LoginScreen() {
               autoCapitalize="none"
               textContentType="newPassword"
               autoComplete="new-password"
-              passwordRules={REGISTER_PASSWORD_RULES}
+              passwordRules={registerPasswordRules(twoStep)}
               testID="input-confirm-password"
               accessibilityLabel="Confirm password"
               accessibilityHint="Re-enter your password to confirm"
             />
+          ) : null}
+
+          {mode === "register" ? (
+            <View style={styles.switchRow}>
+              <ThemedText type="body" style={styles.switchLabel}>
+                {TWO_STEP_SWITCH_LABEL}
+              </ThemedText>
+              <Switch
+                value={twoStep}
+                onValueChange={(v) => {
+                  haptics.selection();
+                  setTwoStep(v);
+                }}
+                accessibilityLabel={TWO_STEP_SWITCH_LABEL}
+                accessibilityHint="You'll set up an authenticator app the first time you sign in"
+                trackColor={{
+                  false: withOpacity(theme.textSecondary, 0.3),
+                  true: theme.link,
+                }}
+                thumbColor={
+                  Platform.OS === "android" ? theme.buttonText : undefined
+                }
+                testID="switch-two-step"
+              />
+            </View>
           ) : null}
 
           {mode === "register" ? (
@@ -467,6 +527,13 @@ const styles = StyleSheet.create({
   ageGate: {
     gap: Spacing.xs,
   },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    minHeight: 44,
+  },
+  switchLabel: { flex: 1 },
   ageCheckboxRow: {
     flexDirection: "row",
     alignItems: "center",
