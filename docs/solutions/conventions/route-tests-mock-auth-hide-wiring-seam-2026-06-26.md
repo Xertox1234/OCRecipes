@@ -6,6 +6,7 @@ module: server
 tags: [testing, auth, middleware, wiring-seam, route-registration, guard-test, requireAuth, integration-test]
 applies_to: [server/routes/**/*.ts, server/routes/__tests__/*.ts]
 created: '2026-06-26'
+last_updated: 2026-10-10
 ---
 
 # Route tests that mock the auth middleware leave the route↔requireAuth wiring seam untested
@@ -41,6 +42,19 @@ The runtime test proves *composition*; the static guard provides *comprehensive,
 - The file deliberately does **not** `vi.mock("../../middleware/auth")` — it runs the real module, mocking only `storage` and `express-rate-limit`.
 - The static scan documents its load-bearing assumptions in-file (`app.METHOD` only, literal-string paths, inline-arrow handlers) and adds an allowlist stale-entry test plus a route-count floor so it can't pass vacuously.
 - Fail-closed was demonstrated for both layers: removing `requireAuth` from `/api/carousel` (in the matrix) failed exactly its smoke cases; removing it from `/api/recipes/featured` (*not* in the matrix) failed *only* the static guard.
+
+### The inline-arrow assumption is load-bearing: a bare handler call lets a route slip past
+
+The static scan reads forward from each `app.METHOD(` line and stops at the first line containing `=>` or `async (`, which it takes to be the handler body. If the handler is a bare call such as `setTriedHandler(true)`, no line contains either token. The window then runs on into the **next** registration, finds that route's `requireAuth`, and passes the unprotected one.
+
+Measured in PR #1365 (2026-10-10), with `PUT` and `DELETE /api/recipes/:id/tried` both using `setTriedHandler(...)`:
+- With `requireAuth` removed from the PUT only, the static guard stayed green.
+- Only the runtime `401` rows failed (2 of 36).
+- After rewriting the handlers as inline arrows (`(req, res) => setTried(req, res, true)`), the same removal also failed the static guard (3 of 36).
+
+A dynamic `app[tried ? "put" : "delete"](...)` is worse: the `app\.(get|…)\(` regex never matches it, so the route isn't scanned at all.
+
+**Rule:** register every route as a literal `app.METHOD("/path", …middleware, (req, res) => …)`, with an inline arrow as the last argument. Share logic by calling a helper *inside* the arrow, never by passing a factory's return value. After adding a route, prove the guard covers it: remove its `requireAuth` and watch the static test fail, not only the runtime rows.
 
 ## Exceptions
 
