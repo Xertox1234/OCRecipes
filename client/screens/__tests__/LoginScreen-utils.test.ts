@@ -6,8 +6,57 @@ import {
   validateAuthFormFields,
   getAuthErrorMessage,
   validateNewPassword,
+  registerPasswordHint,
+  registerPasswordRules,
   PASSWORD_MISMATCH_MESSAGE,
 } from "../LoginScreen-utils";
+
+describe("the sign-up two-step switch (spec P4)", () => {
+  const register = (password: string, twoStep: boolean) => ({
+    mode: "register" as const,
+    username: "chef_tony",
+    email: "chef@example.com",
+    password,
+    confirmPassword: password,
+    ageConfirmed: true,
+    twoStep,
+  });
+
+  it("switch on: 10 characters pass", () => {
+    expect(validateAuthForm(register("a".repeat(10), true))).toBeNull();
+  });
+
+  it("switch off: 10 characters → the sentence that names the switch", () => {
+    expect(validateAuthForm(register("a".repeat(10), false))).toBe(
+      "Use at least 15 characters, or turn on two-step verification to use 8.",
+    );
+  });
+
+  it("switch on: 7 characters → 'Use at least 8 characters.'", () => {
+    expect(validateAuthForm(register("a".repeat(7), true))).toBe(
+      "Use at least 8 characters.",
+    );
+  });
+
+  it("a server PASSWORD_TOO_SHORT follows the switch", () => {
+    const short = new ApiError("400: x", "PASSWORD_TOO_SHORT", 400);
+    expect(getAuthErrorMessage(short, "register", { twoStep: true })).toBe(
+      "Use at least 8 characters.",
+    );
+    expect(getAuthErrorMessage(short, "register", { twoStep: false })).toBe(
+      "Use at least 15 characters, or turn on two-step verification to use 8.",
+    );
+  });
+
+  it("iOS password rules and the hint track the switch", () => {
+    expect(registerPasswordRules(true)).toBe("minlength: 8; maxlength: 128;");
+    expect(registerPasswordRules(false)).toBe("minlength: 15; maxlength: 128;");
+    expect(registerPasswordHint(true)).toBe("At least 8 characters.");
+    expect(registerPasswordHint(false)).toBe(
+      "At least 15 characters, or 8 with two-step verification.",
+    );
+  });
+});
 
 describe("validateUsername (mirrors registerSchema)", () => {
   it.each([

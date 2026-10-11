@@ -210,15 +210,69 @@ describe("LoginScreen — email field", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
 
     // Verifies email threading AND that ageConfirmed is the live checkbox
-    // value (true), never a hardcoded literal.
+    // value (true), never a hardcoded literal. The two-step switch is off.
     await waitFor(() =>
       expect(mockRegister).toHaveBeenCalledWith(
         "chef_tony",
         "recipe-passphrase-1",
         "chef@example.com",
         true,
+        false,
       ),
     );
+  });
+
+  it("the two-step switch allows 8+ characters and is sent with the sign-up", async () => {
+    mockRegister.mockResolvedValue({ status: "verification_pending" });
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    expect(
+      screen.getByText(
+        "At least 15 characters, or 8 with two-step verification.",
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByLabelText(
+        "Use two-step verification (lets you use 8+ characters)",
+      ),
+    );
+    expect(screen.getByText("At least 8 characters.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "newchef" },
+    });
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "ten-chars!" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "ten-chars!" },
+    });
+    fireEvent.click(
+      screen.getByLabelText("I confirm I am 13 years of age or older"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+    await waitFor(() =>
+      expect(mockRegister).toHaveBeenCalledWith(
+        "newchef",
+        "ten-chars!",
+        "new@example.com",
+        true,
+        true,
+      ),
+    );
+  });
+
+  it("the switch is not shown on sign-in", () => {
+    renderComponent(<LoginScreen />);
+    expect(
+      screen.queryByLabelText(
+        "Use two-step verification (lets you use 8+ characters)",
+      ),
+    ).toBeNull();
   });
 
   it("navigates to VerifyEmail after a verification-pending registration", async () => {
