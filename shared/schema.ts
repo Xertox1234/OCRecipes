@@ -270,6 +270,27 @@ export const socialLinkGuesses = pgTable("social_link_guesses", {
   windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
 });
 
+/**
+ * Code emailed for a signed-in password change (change-password spec §4.2).
+ * Its own table — not the Forgot password columns on users — so a stranger
+ * who knows only the email can neither use up its limit nor overwrite the
+ * code. One row per user; the issue window survives a password change.
+ */
+export const passwordChangeCodes = pgTable("password_change_codes", {
+  userId: varchar("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** HMAC of the live code (hashChangeCode); NULL when none. */
+  codeHash: text("code_hash"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  /** Wrong guesses on the live code. */
+  attempts: integer("attempts").default(0).notNull(),
+  /** Codes issued in the current window. */
+  issueCount: integer("issue_count").default(0).notNull(),
+  /** Start of the fixed 24 h issue window. */
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+});
+
 /** One row per account that has started or finished 2FA setup. Never serialized. */
 export const userMfa = pgTable("user_mfa", {
   userId: varchar("user_id")
