@@ -89,6 +89,7 @@ vi.mock("../../storage", () => ({
     consumeNonce: vi.fn(),
     isTrustedDevice: vi.fn(),
     createMfaChallenge: vi.fn(),
+    createUpgradePass: vi.fn(),
   },
 }));
 
@@ -165,11 +166,22 @@ const GOOD_PASSWORD = "a-long-test-passphrase";
 // into the next test. Computed once — each is a cost-12 bcrypt.
 let pv2Password123: string;
 let pv2Correct: string;
+// The sign-in gate (spec §5.2): under 15 on a no-two-step account → pass.
+const FOURTEEN = "fourteen-chars"; // 14
+const FIFTEEN = "fifteen-chars-1"; // 15
+const SEVEN = "seven-7"; // 7
+let pv2Fourteen: string;
+let pv2Fifteen: string;
+let pv2Seven: string;
 beforeAll(async () => {
-  [pv2Password123, pv2Correct] = await Promise.all([
-    hashPassword("password123"),
-    hashPassword("correctpassword"),
-  ]);
+  [pv2Password123, pv2Correct, pv2Fourteen, pv2Fifteen, pv2Seven] =
+    await Promise.all([
+      hashPassword("password123"),
+      hashPassword("correctpassword"),
+      hashPassword(FOURTEEN),
+      hashPassword(FIFTEEN),
+      hashPassword(SEVEN),
+    ]);
 });
 
 describe("Auth Routes", () => {
@@ -680,7 +692,7 @@ describe("Auth Routes", () => {
 
   describe("POST /api/auth/login", () => {
     it("returns user and token on valid credentials", async () => {
-      const userWithHash = createMockUser({ password: pv2Password123 });
+      const userWithHash = createMockUser({ password: pv2Fifteen });
 
       vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
         userWithHash,
@@ -688,7 +700,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/login").send({
         username: "testuser",
-        password: "password123",
+        password: FIFTEEN,
       });
 
       expect(res.status).toBe(200);
@@ -789,6 +801,96 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(400);
     });
 
+    describe("sign-in gate (spec §5.2)", () => {
+      const signIn = (password: string) =>
+        request(app)
+          .post("/api/auth/login")
+          .send({ username: "testuser", password });
+
+      beforeEach(() => {
+        vi.mocked(storage.createUpgradePass).mockReset();
+        vi.mocked(storage.createUpgradePass).mockResolvedValue(undefined);
+        vi.mocked(storage.createMfaChallenge).mockReset();
+        vi.mocked(storage.createMfaChallenge).mockResolvedValue(undefined);
+      });
+
+      it("no two-step, correct 14-character password → 200 upgrade_required with a pass, NO token", async () => {
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({
+            password: pv2Fourteen,
+            tokenVersion: 4,
+            mfaEnabledAt: null,
+          }),
+        );
+        const res = await signIn(FOURTEEN);
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({
+          status: "upgrade_required",
+          pass: expect.any(String),
+          canUseTwoStep: true,
+        });
+        expect(storage.createUpgradePass).toHaveBeenCalledWith(
+          expect.objectContaining({ tokenVersion: 4, twoStepAllowed: true }),
+        );
+        const authMod = await import("../../middleware/auth");
+        expect(authMod.generateToken).not.toHaveBeenCalled();
+      });
+
+      it("a 7-character password → a pass that can't use two-step", async () => {
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({ password: pv2Seven, mfaEnabledAt: null }),
+        );
+        const res = await signIn(SEVEN);
+        expect(res.status).toBe(200);
+        expect(res.body.canUseTwoStep).toBe(false);
+        expect(res.body.token).toBeUndefined();
+      });
+
+      it("a 15-character password → a session as before (e.g. switch on, but typed 15+)", async () => {
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({ password: pv2Fifteen, mfaEnabledAt: null }),
+        );
+        const res = await signIn(FIFTEEN);
+        expect(res.status).toBe(200);
+        expect(res.body.token).toBe("mock-jwt-token");
+        expect(storage.createUpgradePass).not.toHaveBeenCalled();
+      });
+
+      it("a two-step account with a 14-character password still gets the challenge, never the pass", async () => {
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({ password: pv2Fourteen, mfaEnabledAt: new Date() }),
+        );
+        const res = await signIn(FOURTEEN);
+        expect(res.status).toBe(200);
+        expect(res.body.status).toBe("mfa_required");
+        expect(storage.createUpgradePass).not.toHaveBeenCalled();
+      });
+
+      it("a wrong short password → 401, no pass", async () => {
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({ password: pv2Fourteen, mfaEnabledAt: null }),
+        );
+        const res = await signIn("wrong-password");
+        expect(res.status).toBe(401);
+        expect(storage.createUpgradePass).not.toHaveBeenCalled();
+      });
+
+      it("an unverified email wins over the gate (403 EMAIL_NOT_VERIFIED, no pass)", async () => {
+        vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({
+            password: pv2Fourteen,
+            emailVerified: false,
+            mfaEnabledAt: null,
+          }),
+        );
+        const res = await signIn(FOURTEEN);
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
+        expect(storage.createUpgradePass).not.toHaveBeenCalled();
+      });
+    });
+
     it("blocks login with 403 EMAIL_NOT_VERIFIED when unverified + verification ON", async () => {
       vi.mocked(emailVerificationEnabled).mockReturnValue(true);
       vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
@@ -806,12 +908,12 @@ describe("Auth Routes", () => {
 
     it("allows unverified login when verification OFF (fail-open)", async () => {
       vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
-        createMockUser({ emailVerified: false, password: pv2Password123 }),
+        createMockUser({ emailVerified: false, password: pv2Fifteen }),
       );
 
       const res = await request(app)
         .post("/api/auth/login")
-        .send({ username: "testuser", password: "password123" });
+        .send({ username: "testuser", password: FIFTEEN });
 
       expect(res.status).toBe(200);
       expect(res.body.token).toBe("mock-jwt-token");

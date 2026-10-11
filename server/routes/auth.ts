@@ -71,6 +71,7 @@ import {
 import { checkNewPassword } from "./_password-rules";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { startMfaChallenge } from "../lib/mfa/challenge";
+import { needsPasswordUpgrade, startUpgradePass } from "../lib/upgrade-pass";
 import { hashTrustKey } from "../lib/mfa/mfa-secrets";
 import { secondFactor } from "../lib/social-identity/sign-in-gates";
 import { serializeUser } from "./_serialize-user";
@@ -419,6 +420,14 @@ export function register(app: Express): void {
           )
         ) {
           return res.json(await startMfaChallenge({ user, purpose: "login" }));
+        }
+
+        // A password under 15 can't stand alone on an account without
+        // two-step (password policy spec §5.2): a restricted pass, never a
+        // session. 200, like the challenge, so loginAccountLimiter doesn't
+        // count a correct password as a failure.
+        if (needsPasswordUpgrade(user, validated.password)) {
+          return res.json(await startUpgradePass(user, validated.password));
         }
 
         const token = generateToken(
