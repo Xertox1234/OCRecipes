@@ -33,12 +33,20 @@ export function useRecipeCommunityStats(recipeId: number, enabled: boolean) {
 export function useSetRecipeTried(recipeId: number) {
   const queryClient = useQueryClient();
   const key = recipeStatsKey(recipeId);
+  const mutationKey = ["set-recipe-tried", recipeId];
+  // Another tap on this recipe is still queued or in flight. The settling call
+  // still counts as pending inside its own onError/onSettled, hence `> 1`.
+  const laterTapPending = () => queryClient.isMutating({ mutationKey }) > 1;
   return useMutation<
     { tried: boolean; triedCount: number },
     Error,
     boolean,
     { previous: RecipeCommunityStats | undefined }
   >({
+    mutationKey,
+    // One request at a time per recipe, in tap order, so the server ends on
+    // the last tap. onMutate (the optimistic update) still runs immediately.
+    scope: { id: `set-recipe-tried-${recipeId}` },
     mutationFn: async (tried) => {
       const res = await apiRequest(
         tried ? "PUT" : "DELETE",
@@ -54,11 +62,17 @@ export function useSetRecipeTried(recipeId: number) {
       }
       return { previous };
     },
+    // While a later tap is pending, neither a rollback nor a refetch may
+    // overwrite its optimistic state; the last tap to settle reconciles.
     onError: (_error, _tried, context) => {
-      if (context?.previous) queryClient.setQueryData(key, context.previous);
+      if (context?.previous && !laterTapPending()) {
+        queryClient.setQueryData(key, context.previous);
+      }
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: key });
+      if (!laterTapPending()) {
+        void queryClient.invalidateQueries({ queryKey: key });
+      }
     },
     // The bar shows its own "Couldn't save" toast.
     meta: { silentError: true },
