@@ -77,6 +77,7 @@ export const storage = {
   completePasswordReset: passwordReset.completePasswordReset,
   issuePasswordChangeCode: passwordChange.issuePasswordChangeCode,
   reservePasswordChangeAttempt: passwordChange.reservePasswordChangeAttempt,
+  changePassword: passwordChange.changePassword,
   // Google / Apple identities
   issueNonce: identities.issueNonce,
   consumeNonce: identities.consumeNonce,
