@@ -18,6 +18,7 @@ import { register as registerCarousel } from "../carousel";
 import { register as registerExport } from "../export";
 import { register as registerNotebook } from "../notebook";
 import { register as registerSavedItems } from "../saved-items";
+import { register as registerRecipeCommunity } from "../recipe-community";
 
 // ── Why this file exists ─────────────────────────────────────────────────────
 // Every file under server/routes/__tests__ does `vi.mock("../../middleware/auth")`,
@@ -56,7 +57,7 @@ const nextUserId = () => `wiring-user-${++userCounter}`;
 // mounted via its real register() and hit through the real requireAuth. Add a
 // row when a new protected route group is introduced — the negative assertions
 // fail-close, so a route that drifts out from behind auth is caught here.
-type Method = "get" | "post";
+type Method = "get" | "post" | "put" | "delete";
 const PROTECTED_ROUTES: readonly {
   group: string;
   register: (app: Express) => void;
@@ -86,6 +87,12 @@ const PROTECTED_ROUTES: readonly {
     register: registerFavouriteRecipes,
     method: "get",
     path: "/api/favourite-recipes",
+  },
+  {
+    group: "recipe-community",
+    register: registerRecipeCommunity,
+    method: "get",
+    path: "/api/recipes/1/stats",
   },
   {
     group: "cookbooks",
@@ -131,6 +138,18 @@ const PROTECTED_ROUTES: readonly {
     path: "/api/favourite-recipes/toggle",
   },
   {
+    group: "recipe-community",
+    register: registerRecipeCommunity,
+    method: "put",
+    path: "/api/recipes/1/tried",
+  },
+  {
+    group: "recipe-community",
+    register: registerRecipeCommunity,
+    method: "delete",
+    path: "/api/recipes/1/tried",
+  },
+  {
     group: "cookbooks",
     register: registerCookbooks,
     method: "post",
@@ -149,7 +168,16 @@ function appFor(register: (app: Express) => void): Express {
 // `agent[method]` index) keeps the supertest method call unambiguous for tsc.
 function send(register: (app: Express) => void, method: Method, path: string) {
   const agent = request(appFor(register));
-  return method === "get" ? agent.get(path) : agent.post(path);
+  switch (method) {
+    case "get":
+      return agent.get(path);
+    case "post":
+      return agent.post(path);
+    case "put":
+      return agent.put(path);
+    case "delete":
+      return agent.delete(path);
+  }
 }
 
 describe("auth route wiring (real middleware)", () => {
