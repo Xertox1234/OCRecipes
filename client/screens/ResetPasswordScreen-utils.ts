@@ -8,7 +8,9 @@ import {
   RESET_CODE_LENGTH,
   RESET_RESEND_COOLDOWN_SECONDS,
 } from "@shared/constants/password-reset";
+import { PASSWORD_MIN_WITH_MFA } from "@shared/constants/password-policy";
 import {
+  BREACHED_PASSWORD_MESSAGE,
   PASSWORD_MISMATCH_MESSAGE,
   validateNewPassword,
 } from "./LoginScreen-utils";
@@ -41,11 +43,15 @@ export function validateResetForm(input: {
   if (input.code.length !== RESET_CODE_LENGTH) {
     return { field: "code", message: "Enter the 6-digit code from the email" };
   }
-  const message = validateNewPassword(input.password, input.confirmPassword);
+  // Only the floor: this screen doesn't know whether two-step is on, so the
+  // server applies the account's real minimum (15, or 8 with two-step).
+  const message = validateNewPassword(input.password, input.confirmPassword, {
+    min: PASSWORD_MIN_WITH_MFA,
+    context: "mfa",
+  });
   if (!message) return null;
-  // validateNewPassword checks length and complexity (password field) before
-  // the mismatch (confirm field), so a mismatch message means the password
-  // itself passed.
+  // validateNewPassword checks length (password field) before the mismatch
+  // (confirm field), so a mismatch message means the password itself passed.
   const field: ResetFormField =
     message === PASSWORD_MISMATCH_MESSAGE ? "confirm" : "password";
   return { field, message };
@@ -55,6 +61,10 @@ export function validateResetForm(input: {
 export function getResetErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === "INVALID_RESET_CODE") return INVALID_RESET_CODE_MESSAGE;
+    if (err.code === "PASSWORD_TOO_SHORT") {
+      return "Use at least 15 characters, or 8 if two-step verification is on.";
+    }
+    if (err.code === "PASSWORD_BREACHED") return BREACHED_PASSWORD_MESSAGE;
     if (err.status === 429) {
       return "Too many attempts. Please wait a few minutes and try again.";
     }

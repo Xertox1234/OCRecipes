@@ -15,6 +15,10 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing } from "@/constants/theme";
 import { ApiError } from "@/lib/api-error";
 import { RESET_CODE_LENGTH } from "@shared/constants/password-reset";
+import {
+  PASSWORD_MAX,
+  PASSWORD_MIN_WITH_MFA,
+} from "@shared/constants/password-policy";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
   type ResetFormField,
@@ -37,6 +41,10 @@ type Props = NativeStackScreenProps<RootStackParamList, "ResetPassword">;
  * reveal a code exists). Success signs nobody in: it resets the stack to Login
  * with the email prefilled and a one-time toast (LoginScreen consumes it).
  */
+// The floor only: this screen doesn't know whether two-step is on (the server
+// applies 15 when it is off). iOS suggestions are longer than 15 anyway.
+const RESET_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_WITH_MFA}; maxlength: ${PASSWORD_MAX};`;
+
 export default function ResetPasswordScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
@@ -175,12 +183,13 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             autoCapitalize="none"
             textContentType="newPassword"
             autoComplete="new-password"
+            passwordRules={RESET_PASSWORD_RULES}
             editable={!busy}
             error={errorField === "password"}
             errorMessage={errorField === "password" ? error : undefined}
             testID="input-reset-password"
             accessibilityLabel="New password"
-            accessibilityHint="At least 8 characters, with a letter and a number"
+            accessibilityHint="At least 15 characters, or 8 if two-step verification is on"
           />
           <TextInput
             leftIcon="lock"
@@ -191,6 +200,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             autoCapitalize="none"
             textContentType="newPassword"
             autoComplete="new-password"
+            passwordRules={RESET_PASSWORD_RULES}
             returnKeyType="go"
             onSubmitEditing={onSubmit}
             editable={!busy}

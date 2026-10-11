@@ -114,10 +114,10 @@ describe("LoginScreen — auth-failure error copy (H6)", () => {
       target: { value: "demo" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "secret123" },
+      target: { value: "secret-passphrase-1" },
     });
     fireEvent.change(screen.getByLabelText("Confirm password"), {
-      target: { value: "secret123" },
+      target: { value: "secret-passphrase-1" },
     });
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "demo@example.com" },
@@ -152,10 +152,10 @@ describe("LoginScreen — client-side validation pre-flight", () => {
       target: { value: "william.tower@gmail.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "Recipe123" },
+      target: { value: "recipe-passphrase-1" },
     });
     fireEvent.change(screen.getByLabelText("Confirm password"), {
-      target: { value: "Recipe123" },
+      target: { value: "recipe-passphrase-1" },
     });
     fireEvent.click(
       screen.getByLabelText("I confirm I am 13 years of age or older"),
@@ -199,10 +199,10 @@ describe("LoginScreen — email field", () => {
       target: { value: "chef@example.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "Recipe123" },
+      target: { value: "recipe-passphrase-1" },
     });
     fireEvent.change(screen.getByLabelText("Confirm password"), {
-      target: { value: "Recipe123" },
+      target: { value: "recipe-passphrase-1" },
     });
     fireEvent.click(
       screen.getByLabelText("I confirm I am 13 years of age or older"),
@@ -214,7 +214,7 @@ describe("LoginScreen — email field", () => {
     await waitFor(() =>
       expect(mockRegister).toHaveBeenCalledWith(
         "chef_tony",
-        "Recipe123",
+        "recipe-passphrase-1",
         "chef@example.com",
         true,
       ),
@@ -233,10 +233,10 @@ describe("LoginScreen — email field", () => {
       target: { value: "new@example.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "Recipe123" },
+      target: { value: "recipe-passphrase-1" },
     });
     fireEvent.change(screen.getByLabelText("Confirm password"), {
-      target: { value: "Recipe123" },
+      target: { value: "recipe-passphrase-1" },
     });
     fireEvent.click(
       screen.getByLabelText("I confirm I am 13 years of age or older"),
@@ -268,7 +268,7 @@ describe("LoginScreen — email field", () => {
         target: { value: email },
       });
       fireEvent.change(screen.getByLabelText("Password"), {
-        target: { value: "Recipe123" },
+        target: { value: "recipe-passphrase-1" },
       });
       fireEvent.change(screen.getByLabelText("Confirm password"), {
         target: { value: confirm },
@@ -279,7 +279,7 @@ describe("LoginScreen — email field", () => {
     };
 
     // A non-email failure (mismatched passwords) must NOT mark email invalid.
-    fillExcept("chef@example.com", "Recipe124");
+    fillExcept("chef@example.com", "recipe-passphrase-2");
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
     await screen.findByText("Passwords do not match");
     expect(
@@ -291,7 +291,7 @@ describe("LoginScreen — email field", () => {
 
     // A bad email DOES mark the email input invalid (aria-invalid + merged hint).
     fireEvent.change(screen.getByLabelText("Confirm password"), {
-      target: { value: "Recipe123" },
+      target: { value: "recipe-passphrase-1" },
     });
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "not-an-email" },
@@ -318,7 +318,7 @@ describe("LoginScreen — email field", () => {
       target: { value: "demo" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "Recipe123" },
+      target: { value: "recipe-passphrase-1" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
 

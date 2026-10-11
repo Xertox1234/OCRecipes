@@ -31,6 +31,14 @@ import { useToast } from "@/context/ToastContext";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ApiError } from "@/lib/api-error";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import {
+  PASSWORD_MAX,
+  PASSWORD_MIN_SINGLE_FACTOR,
+} from "@shared/constants/password-policy";
+
+// iOS strong-password suggestions honour these, so a suggested password
+// always passes sign-up (spec §2).
+const REGISTER_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_SINGLE_FACTOR}; maxlength: ${PASSWORD_MAX};`;
 
 const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
 
@@ -292,9 +300,18 @@ export default function LoginScreen() {
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
             autoCapitalize="none"
+            textContentType={mode === "register" ? "newPassword" : "password"}
+            autoComplete={mode === "register" ? "new-password" : undefined}
+            passwordRules={
+              mode === "register" ? REGISTER_PASSWORD_RULES : undefined
+            }
             testID="input-password"
             accessibilityLabel="Password"
-            accessibilityHint="Enter your password"
+            accessibilityHint={
+              mode === "register"
+                ? `At least ${PASSWORD_MIN_SINGLE_FACTOR} characters`
+                : "Enter your password"
+            }
           />
 
           {mode === "login" ? (
@@ -323,6 +340,9 @@ export default function LoginScreen() {
               onChangeText={setConfirmPassword}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
+              textContentType="newPassword"
+              autoComplete="new-password"
+              passwordRules={REGISTER_PASSWORD_RULES}
               testID="input-confirm-password"
               accessibilityLabel="Confirm password"
               accessibilityHint="Re-enter your password to confirm"

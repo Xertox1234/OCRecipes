@@ -28,8 +28,8 @@ describe("validateAuthForm", () => {
     mode: "register" as const,
     username: "chef_tony",
     email: "chef@example.com",
-    password: "Recipe123",
-    confirmPassword: "Recipe123",
+    password: "recipe-passphrase-1",
+    confirmPassword: "recipe-passphrase-1",
     ageConfirmed: true,
   };
 
@@ -106,39 +106,32 @@ describe("validateAuthForm", () => {
     ).toBeNull();
   });
 
-  it("rejects a password shorter than 8 characters", () => {
+  it("rejects a 14-character password with the sign-up minimum", () => {
     expect(
       validateAuthForm({
         ...validRegister,
-        password: "Ab1",
-        confirmPassword: "Ab1",
+        password: "a".repeat(14),
+        confirmPassword: "a".repeat(14),
       }),
-    ).toMatch(/at least 8/i);
+    ).toBe("Use at least 15 characters.");
   });
 
-  it("rejects a password with no digit", () => {
+  it("has no composition rule: 15 letters only is fine", () => {
     expect(
       validateAuthForm({
         ...validRegister,
-        password: "onlyletters",
-        confirmPassword: "onlyletters",
+        password: "abcdefghijklmno",
+        confirmPassword: "abcdefghijklmno",
       }),
-    ).toMatch(/letter and one number|number/i);
-  });
-
-  it("rejects a password with no letter", () => {
-    expect(
-      validateAuthForm({
-        ...validRegister,
-        password: "12345678",
-        confirmPassword: "12345678",
-      }),
-    ).toMatch(/letter/i);
+    ).toBeNull();
   });
 
   it("rejects mismatched passwords", () => {
     expect(
-      validateAuthForm({ ...validRegister, confirmPassword: "Recipe124" }),
+      validateAuthForm({
+        ...validRegister,
+        confirmPassword: "recipe-passphrase-2",
+      }),
     ).toBe("Passwords do not match");
   });
 
@@ -228,6 +221,35 @@ describe("getAuthErrorMessage", () => {
     expect(msg).toBe("Incorrect username or password. Please try again.");
   });
 
+  it("register: a too-short password from the server gets the length sentence", () => {
+    expect(
+      getAuthErrorMessage(
+        new ApiError("400: short", "PASSWORD_TOO_SHORT"),
+        "register",
+      ),
+    ).toBe("Use at least 15 characters.");
+  });
+
+  it("register: a breached password gets the breach sentence", () => {
+    expect(
+      getAuthErrorMessage(
+        new ApiError("400: breached", "PASSWORD_BREACHED"),
+        "register",
+      ),
+    ).toBe(
+      "That password has appeared in a data breach. Choose a different one.",
+    );
+  });
+
+  it("login never shows the password-policy copy (stays generic)", () => {
+    expect(
+      getAuthErrorMessage(
+        new ApiError("400: short", "PASSWORD_TOO_SHORT"),
+        "login",
+      ),
+    ).toBe("Incorrect username or password. Please try again.");
+  });
+
   it("returns generic copy for a plain (non-ApiError) Error", () => {
     expect(
       getAuthErrorMessage(new Error("500: boom from server"), "register"),
@@ -238,23 +260,38 @@ describe("getAuthErrorMessage", () => {
   });
 });
 
-describe("validateNewPassword (mirrors server newPasswordSchema)", () => {
-  it("enforces length, letter+digit, and match, in that order", () => {
-    expect(validateNewPassword("short1", "short1")).toBe(
-      "Password must be at least 8 characters",
+describe("validateNewPassword (the shared password policy)", () => {
+  const signup = { min: 15, context: "signup" as const };
+  const floor = { min: 8, context: "mfa" as const };
+
+  it("enforces length, then match, in that order", () => {
+    expect(validateNewPassword("a".repeat(14), "a".repeat(14), signup)).toBe(
+      "Use at least 15 characters.",
     );
-    expect(validateNewPassword("allletters", "allletters")).toBe(
-      "Password must contain at least one letter and one number",
+    expect(validateNewPassword("a".repeat(129), "a".repeat(129), signup)).toBe(
+      "Use at most 128 characters.",
     );
-    expect(validateNewPassword("abcdefg1", "abcdefg2")).toBe(
+    expect(validateNewPassword("a".repeat(15), "b".repeat(15), signup)).toBe(
       "Passwords do not match",
     );
-    expect(validateNewPassword("abcdefg1", "abcdefg1")).toBeNull();
+    expect(validateNewPassword("a".repeat(15), "a".repeat(15), signup)).toBeNull();
+  });
+
+  it("the floor accepts 8 and refuses 7", () => {
+    expect(validateNewPassword("abcdefgh", "abcdefgh", floor)).toBeNull();
+    expect(validateNewPassword("abcdefg", "abcdefg", floor)).toBe(
+      "Use at least 8 characters.",
+    );
+  });
+
+  it("counts an emoji as one character", () => {
+    const pw = "a".repeat(14) + "😀";
+    expect(validateNewPassword(pw, pw, signup)).toBeNull();
   });
 
   it("returns the exported mismatch constant, so callers can match on it", () => {
     expect(PASSWORD_MISMATCH_MESSAGE).toBe("Passwords do not match");
-    expect(validateNewPassword("abcdefg1", "abcdefg2")).toBe(
+    expect(validateNewPassword("abcdefgh", "abcdefgi", floor)).toBe(
       PASSWORD_MISMATCH_MESSAGE,
     );
   });
