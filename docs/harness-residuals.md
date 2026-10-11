@@ -15,12 +15,14 @@ through, or real work was blocked). Promote it then by moving its archived todo 
 Review findings against `.claude/hooks/**` go to this list (see `docs/AI_WORKFLOW.md` →
 Review Policy → One review pass per PR).
 
-## Still open as todos (not frozen, they cost time on every PR)
+## Kept open at the freeze (both since shipped)
 
 - Corpus latency: SHIPPED in #1016 (sharded + relevance-gated, 7m48s measured on a hook PR; skipped on others).
 
-- `todos/P2-2026-09-20-todo-executor-commits-after-review-…`: forces a confirmation review on
-  every `/todo` PR.
+- Executor committing after its review (every `/todo` PR reached the merge gate unstamped):
+  SHIPPED in #1005 (the executor binds a review record to the PR head) and closed by #1061
+  (accepts an advisory record). Todo archived as
+  `todos/archive/P2-2026-09-20-todo-executor-commits-after-review-…`.
 
 ## Frozen (archived 2026-09-22, full analysis in `todos/archive/<file>`)
 
