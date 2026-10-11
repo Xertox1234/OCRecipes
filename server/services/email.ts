@@ -112,11 +112,16 @@ const EMAIL_FROM =
 // IP only, so anyone who knows an address could otherwise drain the shared
 // bucket with signup notices and silently swallow a reset code or the security
 // notice. The route + DB issuance caps keep this bucket well under 10.
+// "signed-in" (the change-password code) holds mail only a signed-in session
+// can trigger: reset codes are attacker-triggered and a fixed 24 h window lets
+// 12 land in minutes across its edge, so sharing their bucket would let a
+// stranger silence the owner's code (change-password security review).
 const RECIPIENT_WINDOW_MS = 60 * 60 * 1000;
-type SendBucket = "general" | "account-security";
+type SendBucket = "general" | "account-security" | "signed-in";
 const BUCKET_CAPS: Record<SendBucket, number> = {
   general: 5,
   "account-security": 10,
+  "signed-in": 10,
 };
 // Sweep fully-expired keys once the map grows past this many recipients. A
 // recipient touched once and never again (the enumeration case) is otherwise
@@ -282,8 +287,9 @@ export async function sendPasswordResetCode(
 
 /**
  * The code for a signed-in password change (change-password spec §4.1). Only
- * a signed-in session can trigger it, so the account-security bucket is safe
- * (attacker-triggered mail must not share it; this is not attacker-triggered).
+ * a signed-in session can trigger it, so it has the "signed-in" bucket to
+ * itself: the account-security bucket also carries reset codes, which anyone
+ * who knows the address can trigger.
  */
 export async function sendPasswordChangeCode(
   to: string,
@@ -291,12 +297,9 @@ export async function sendPasswordChangeCode(
 ): Promise<void> {
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
-  if (!canSendTo(to, "account-security")) {
+  if (!canSendTo(to, "signed-in")) {
     // Never log the code — only the recipient.
-    logger.warn(
-      { to },
-      "change-password code throttled (account-security cap)",
-    );
+    logger.warn({ to }, "change-password code throttled (signed-in cap)");
     return;
   }
   const error = await sendWithRetry(resend, {

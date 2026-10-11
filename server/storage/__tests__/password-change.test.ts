@@ -133,7 +133,7 @@ describe("password change codes (real DB)", () => {
       expectedTokenVersion: user.tokenVersion,
       newPasswordHash: "pv2$new",
     });
-    expect(v).toBe(user.tokenVersion + 1);
+    expect(v).toEqual({ ok: true, tokenVersion: user.tokenVersion + 1 });
     const [u] = await tx.select().from(users).where(eq(users.id, user.id));
     expect(u.password).toBe("pv2$new");
     expect(u.pendingEmail).toBeNull();
@@ -154,7 +154,7 @@ describe("password change codes (real DB)", () => {
         expectedTokenVersion: user.tokenVersion - 1,
         newPasswordHash: "pv2$new",
       }),
-    ).toBeUndefined();
+    ).toEqual({ ok: false, reason: "version_moved" });
     const [u] = await tx.select().from(users).where(eq(users.id, user.id));
     expect(u.password).toBe(user.password);
     expect(u.pendingEmail).toBe("staged@example.com");
@@ -174,20 +174,41 @@ describe("password change codes (real DB)", () => {
       newPasswordHash: "pv2$a",
       consumeCodeHash: "hash-1",
     });
-    expect(v1).toBe(user.tokenVersion + 1);
+    expect(v1).toEqual({ ok: true, tokenVersion: user.tokenVersion + 1 });
     expect(await pc.reservePasswordChangeAttempt(user.id)).toBeUndefined();
     // A second request racing with the same code, under the NEW version:
     expect(
       await pc.changePassword({
         userId: user.id,
-        expectedTokenVersion: v1!,
+        expectedTokenVersion: user.tokenVersion + 1,
         newPasswordHash: "pv2$b",
         consumeCodeHash: "hash-1",
       }),
-    ).toBeUndefined();
+    ).toEqual({ ok: false, reason: "code_gone" });
     const [u] = await tx.select().from(users).where(eq(users.id, user.id));
     expect(u.password).toBe("pv2$a"); // rolled back, not overwritten
-    expect(u.tokenVersion).toBe(v1);
+    expect(u.tokenVersion).toBe(user.tokenVersion + 1);
+  });
+
+  // Review: a new code requested mid-request replaces the one being spent.
+  // That is "request a new one", not a revoked session — the version is
+  // unchanged and the person must stay signed in.
+  it("a code replaced mid-request → code_gone, nothing written, version unchanged", async () => {
+    const user = await createTestUser(tx);
+    await pc.issuePasswordChangeCode(user.id, "hash-1");
+    await pc.issuePasswordChangeCode(user.id, "hash-2");
+    expect(
+      await pc.changePassword({
+        userId: user.id,
+        expectedTokenVersion: user.tokenVersion,
+        newPasswordHash: "pv2$a",
+        consumeCodeHash: "hash-1",
+      }),
+    ).toEqual({ ok: false, reason: "code_gone" });
+    const [u] = await tx.select().from(users).where(eq(users.id, user.id));
+    expect(u.password).toBe(user.password);
+    expect(u.tokenVersion).toBe(user.tokenVersion);
+    expect(await pc.reservePasswordChangeAttempt(user.id)).toBe("hash-2");
   });
 
   it("the issue window survives a change (the cap persists)", async () => {

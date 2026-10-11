@@ -131,7 +131,10 @@ const SESSION: Awaited<ReturnType<typeof issueSession>> = {
 describe("POST /api/auth/change-password", () => {
   beforeEach(() => {
     vi.mocked(reauthenticate).mockResolvedValue(true);
-    vi.mocked(storage.changePassword).mockResolvedValue(5);
+    vi.mocked(storage.changePassword).mockResolvedValue({
+      ok: true,
+      tokenVersion: 5,
+    });
     vi.mocked(issueSession).mockResolvedValue(SESSION);
   });
 
@@ -290,7 +293,10 @@ describe("POST /api/auth/change-password", () => {
         ok: true,
         replacementRecoveryCode: "new-recovery-1",
       });
-      vi.mocked(storage.changePassword).mockResolvedValue(undefined);
+      vi.mocked(storage.changePassword).mockResolvedValue({
+        ok: false,
+        reason: "version_moved",
+      });
       const res = await post("change-password", {
         proof: {
           password: "current-pass-123",
@@ -339,7 +345,10 @@ describe("POST /api/auth/change-password", () => {
   });
 
   it("a reset or sign-out landed mid-request → 401 TOKEN_REVOKED", async () => {
-    vi.mocked(storage.changePassword).mockResolvedValue(undefined);
+    vi.mocked(storage.changePassword).mockResolvedValue({
+      ok: false,
+      reason: "version_moved",
+    });
     const res = await post("change-password", {
       proof: { password: "current-pass-123" },
       newPassword: LONG,
@@ -350,6 +359,45 @@ describe("POST /api/auth/change-password", () => {
       code: "TOKEN_REVOKED",
     });
     expect(issueSession).not.toHaveBeenCalled();
+  });
+
+  // Review: a newer code replaced this one mid-request. The session was not
+  // revoked, so the answer must not sign the phone out.
+  it("the code was replaced mid-request → 400 INVALID_RESET_CODE, not a sign-out", async () => {
+    vi.mocked(storage.reservePasswordChangeAttempt).mockResolvedValue(
+      hashChangeCode("1", "123456"),
+    );
+    vi.mocked(storage.changePassword).mockResolvedValue({
+      ok: false,
+      reason: "code_gone",
+    });
+    const res = await post("change-password", {
+      proof: { emailCode: "123456" },
+      newPassword: LONG,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "That code didn't work. Request a new one.",
+      code: "INVALID_RESET_CODE",
+    });
+    expect(invalidateTokenVersionCache).not.toHaveBeenCalled();
+    expect(issueSession).not.toHaveBeenCalled();
+  });
+
+  it("a failed sign-in-methods lookup still sends the changed notice", async () => {
+    vi.mocked(storage.listIdentities).mockRejectedValue(new Error("db"));
+    const res = await post("change-password", {
+      proof: { password: "current-pass-123" },
+      newPassword: LONG,
+    });
+    expect(res.status).toBe(200);
+    await vi.waitFor(() =>
+      expect(sendPasswordChangedNotice).toHaveBeenCalledWith(
+        "owner@example.com",
+        user.username,
+        [],
+      ),
+    );
   });
 
   it("the mint is refused (version moved again after commit) → 401 TOKEN_REVOKED", async () => {

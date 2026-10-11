@@ -152,13 +152,24 @@ export function register(app: Express): void {
           );
         }
 
-        const newVersion = await storage.changePassword({
+        const changed = await storage.changePassword({
           userId: user.id,
           expectedTokenVersion: user.tokenVersion,
           newPasswordHash: await hashPassword(newPassword),
           consumeCodeHash,
         });
-        if (newVersion === undefined) {
+        if (!changed.ok && changed.reason === "code_gone") {
+          // Spent or replaced by a newer code mid-request: the session is
+          // fine, so this must not read as a sign-out.
+          return sendError(
+            res,
+            400,
+            "That code didn't work. Request a new one.",
+            ErrorCode.INVALID_RESET_CODE,
+            replacement,
+          );
+        }
+        if (!changed.ok) {
           return sendError(
             res,
             401,
@@ -180,7 +191,7 @@ export function register(app: Express): void {
             );
           })(),
         );
-        const session = await issueSession(user.id, newVersion);
+        const session = await issueSession(user.id, changed.tokenVersion);
         res.json({ ...session, ...replacement });
       } catch (error) {
         if (error instanceof HttpFailure && error.status === 401) {

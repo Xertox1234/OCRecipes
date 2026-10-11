@@ -83,14 +83,20 @@ class CodeAlreadyUsed extends Error {}
  * transaction; a code already spent rolls everything back. emailVerified
  * is NOT touched: a password or Google/Apple proof says nothing about the
  * inbox. The change-code issue window is kept (its cap must persist).
- * Returns the new tokenVersion, or undefined (nothing written).
+ * A refusal writes nothing and says which check failed: `version_moved` (a
+ * reset, sign-out everywhere or delete revoked this session) or `code_gone`
+ * (the code was spent or replaced by a newer one — the session is fine).
  */
+export type ChangePasswordResult =
+  | { ok: true; tokenVersion: number }
+  | { ok: false; reason: "version_moved" | "code_gone" };
+
 export async function changePassword(opts: {
   userId: string;
   expectedTokenVersion: number;
   newPasswordHash: string;
   consumeCodeHash?: string;
-}): Promise<number | undefined> {
+}): Promise<ChangePasswordResult> {
   try {
     return await db.transaction(async (tx) => {
       const [row] = await tx
@@ -108,7 +114,7 @@ export async function changePassword(opts: {
           ),
         )
         .returning({ tokenVersion: users.tokenVersion });
-      if (!row) return undefined;
+      if (!row) return { ok: false, reason: "version_moved" } as const;
       if (opts.consumeCodeHash !== undefined) {
         const [used] = await tx
           .update(passwordChangeCodes)
@@ -125,10 +131,11 @@ export async function changePassword(opts: {
       await tx
         .delete(mfaTrustedDevices)
         .where(eq(mfaTrustedDevices.userId, opts.userId));
-      return row.tokenVersion;
+      return { ok: true, tokenVersion: row.tokenVersion } as const;
     });
   } catch (err) {
-    if (err instanceof CodeAlreadyUsed) return undefined;
+    if (err instanceof CodeAlreadyUsed)
+      return { ok: false, reason: "code_gone" };
     throw err;
   }
 }
