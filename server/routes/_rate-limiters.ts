@@ -224,6 +224,16 @@ export const reauthLimiter = createRateLimiter({
 });
 
 /**
+ * Change-password code requests (change-password spec §4.1): a burst guard
+ * only — the real bound is the durable 5-per-24h cap in password_change_codes.
+ */
+export const changePasswordCodeLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: "Too many code requests. Please wait.",
+});
+
+/**
  * Two-step code guesses per IP (verify + setup confirm). Per-challenge (5) and
  * per-account (lock every 10th failure) caps live in the database.
  */
