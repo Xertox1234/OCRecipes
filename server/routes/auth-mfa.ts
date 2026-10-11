@@ -386,14 +386,15 @@ export function register(app: Express): void {
         let recoveryCodes: string[] | undefined;
         if (user.mfaEnabledAt === null) {
           // Sends the "enabled" notice itself.
-          recoveryCodes = await confirmFirstEnrollment(user, check.step);
-          if (!recoveryCodes) {
+          const enrolled = await confirmFirstEnrollment(user, check.step);
+          if (!enrolled) {
             throw new Reply(
               409,
               ErrorCode.MFA_ALREADY_ENABLED,
               "Two-step verification is already on.",
             );
           }
+          recoveryCodes = enrolled.recoveryCodes;
         } else {
           const version = await storage.confirmNewPhone(user.id, {
             acceptedStep: check.step,

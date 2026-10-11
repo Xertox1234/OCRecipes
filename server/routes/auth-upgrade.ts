@@ -66,7 +66,24 @@ function twoStepClosed(res: Response): boolean {
   return false;
 }
 
-function answer(res: Response, error: unknown, label: string): void {
+function answer(
+  res: Response,
+  error: unknown,
+  label: string,
+  recoveryCodes?: string[],
+): void {
+  // Every HttpFailure here is issueSession refusing (version moved on, or the
+  // user is gone): the pass is spent, so the way back is sign-in.
+  if (error instanceof HttpFailure && error.status === 401) {
+    sendError(
+      res,
+      401,
+      UPGRADE_PASS_EXPIRED_MESSAGE,
+      ErrorCode.UPGRADE_PASS_EXPIRED,
+      recoveryCodes ? { recoveryCodes } : undefined,
+    );
+    return;
+  }
   if (error instanceof TotpUnavailableError) {
     sendError(res, 503, MFA_UNAVAILABLE_MESSAGE, ErrorCode.MFA_UNAVAILABLE);
     return;
@@ -111,6 +128,7 @@ export function register(app: Express): void {
     upgradePassLimiter,
     requireUpgradePass,
     async (req: Request, res: Response) => {
+      let recoveryCodes: string[] | undefined;
       try {
         const parsed = mfaConfirmSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -142,18 +160,21 @@ export function register(app: Express): void {
                 ErrorCode.INVALID_SECOND_FACTOR,
               );
         }
-        const recoveryCodes = await confirmFirstEnrollment(
-          ctx.user,
-          check.step,
-          {
-            upgradePass: { idHash: ctx.idHash, tokenVersion: ctx.tokenVersion },
-          },
-        );
-        if (!recoveryCodes) return expired(res);
+        const enrolled = await confirmFirstEnrollment(ctx.user, check.step, {
+          upgradePass: { idHash: ctx.idHash, tokenVersion: ctx.tokenVersion },
+        });
+        if (!enrolled) return expired(res);
+        recoveryCodes = enrolled.recoveryCodes;
         invalidateTokenVersionCache(ctx.user.id);
-        res.json({ ...(await issueSession(ctx.user.id)), recoveryCodes });
+        // Only under the version the enrolment set: a reset or sign-out-
+        // everywhere since then wins (auth audit L1, as L12). Two-step is on
+        // and the pass spent either way, so the codes ride the refusal too.
+        res.json({
+          ...(await issueSession(ctx.user.id, enrolled.tokenVersion)),
+          recoveryCodes,
+        });
       } catch (error) {
-        answer(res, error, "confirm two-step setup at sign-in");
+        answer(res, error, "confirm two-step setup at sign-in", recoveryCodes);
       }
     },
   );
@@ -203,7 +224,7 @@ export function register(app: Express): void {
           "password-changed-notice",
           sendPasswordChangedNotice(ctx.user.email, ctx.user.username),
         );
-        res.json(await issueSession(ctx.user.id));
+        res.json(await issueSession(ctx.user.id, version));
       } catch (error) {
         answer(res, error, "set a longer password at sign-in");
       }

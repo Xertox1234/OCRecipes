@@ -88,14 +88,16 @@ export async function checkPendingTotpCode(
 /**
  * First setup: promote the pending secret and issue recovery codes. Through a
  * short password's pass, the pass is consumed in the same transaction.
- * Returns the plain codes (shown once), or undefined when the storage guard
- * refused (already on, nothing pending, or the pass was spent / outdated).
+ * Returns the plain codes (shown once) and the tokenVersion the enrolment
+ * bumped to — mint the session only under it (auth audit L1, as L12) — or
+ * undefined when the storage guard refused (already on, nothing pending, or
+ * the pass was spent / outdated).
  */
 export async function confirmFirstEnrollment(
   user: User,
   step: number,
   opts: { upgradePass?: { idHash: string; tokenVersion: number } } = {},
-): Promise<string[] | undefined> {
+): Promise<{ recoveryCodes: string[]; tokenVersion: number } | undefined> {
   const recoveryCodes = generateRecoveryCodes();
   const version = await storage.confirmTotpEnrollment(user.id, {
     acceptedStep: step,
@@ -113,5 +115,5 @@ export async function confirmFirstEnrollment(
       opts.upgradePass ? "enabled_at_sign_in" : "enabled",
     ),
   );
-  return recoveryCodes;
+  return { recoveryCodes, tokenVersion: version };
 }

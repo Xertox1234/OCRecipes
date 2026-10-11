@@ -165,6 +165,10 @@ describe("POST /api/auth/upgrade/totp/confirm", () => {
       createdAt: new Date(),
     });
     vi.mocked(storage.confirmTotpEnrollment).mockResolvedValue(1);
+    // The enrolment bumped tokenVersion 0 → 1; the session reads the bumped row.
+    vi.mocked(storage.getUser).mockResolvedValue(
+      createMockUser({ id: "1", tokenVersion: 1, mfaEnabledAt: new Date() }),
+    );
   });
 
   it("right code → a session and 10 recovery codes; the pass is consumed with the enrolment", async () => {
@@ -215,6 +219,16 @@ describe("POST /api/auth/upgrade/totp/confirm", () => {
     expect(generateToken).not.toHaveBeenCalled();
   });
 
+  it("a reset landed after the enrolment (version moved on) → 401, no session, the recovery codes still ride the answer", async () => {
+    vi.mocked(storage.getUser).mockResolvedValue(
+      createMockUser({ id: "1", tokenVersion: 2, mfaEnabledAt: new Date() }),
+    );
+    const res = await post("totp/confirm", { code: currentCode() });
+    expectExpired(res);
+    expect(res.body.recoveryCodes).toHaveLength(10);
+    expect(generateToken).not.toHaveBeenCalled();
+  });
+
   it("a malformed code → 400 VALIDATION_ERROR, no attempt spent", async () => {
     const res = await post("totp/confirm", { code: "12ab" });
     expect(res.status).toBe(400);
@@ -234,6 +248,10 @@ describe("POST /api/auth/upgrade/totp/confirm", () => {
 describe("POST /api/auth/upgrade/password", () => {
   beforeEach(() => {
     vi.mocked(storage.completePasswordUpgrade).mockResolvedValue(1);
+    // The upgrade bumped tokenVersion 0 → 1; the session reads the bumped row.
+    vi.mocked(storage.getUser).mockResolvedValue(
+      createMockUser({ id: "1", tokenVersion: 1, mfaEnabledAt: null }),
+    );
   });
 
   it("15+ characters → a session; the pv2 hash written with the pass, tokenVersion and user", async () => {
@@ -272,6 +290,14 @@ describe("POST /api/auth/upgrade/password", () => {
     vi.mocked(storage.completePasswordUpgrade).mockResolvedValue(undefined);
     expectExpired(await post("password", { newPassword: LONG }));
     expect(sendPasswordChangedNotice).not.toHaveBeenCalled();
+  });
+
+  it("a reset landed after the upgrade (version moved on) → 401, no session", async () => {
+    vi.mocked(storage.getUser).mockResolvedValue(
+      createMockUser({ id: "1", tokenVersion: 2, mfaEnabledAt: null }),
+    );
+    expectExpired(await post("password", { newPassword: LONG }));
+    expect(generateToken).not.toHaveBeenCalled();
   });
 
   it("no body → 400 VALIDATION_ERROR", async () => {
