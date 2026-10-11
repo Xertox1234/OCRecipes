@@ -33,7 +33,7 @@ describe("ResetPasswordScreen-utils", () => {
       }),
     ).toEqual({
       field: "password",
-      message: "Password must be at least 8 characters",
+      message: "Use at least 8 characters.",
     });
     expect(
       validateResetForm({
@@ -42,6 +42,25 @@ describe("ResetPasswordScreen-utils", () => {
         confirmPassword: "abcdefg1",
       }),
     ).toBeNull();
+  });
+  it("checks only the floor (8, no composition rule): the server applies 15 when two-step is off", () => {
+    expect(
+      validateResetForm({
+        code: "123456",
+        password: "abcdefgh",
+        confirmPassword: "abcdefgh",
+      }),
+    ).toBeNull();
+  });
+  it("maps the server's password-policy codes to plain sentences", () => {
+    expect(
+      getResetErrorMessage(new ApiError("x", "PASSWORD_TOO_SHORT", 400)),
+    ).toBe("Use at least 15 characters, or 8 if two-step verification is on.");
+    expect(
+      getResetErrorMessage(new ApiError("x", "PASSWORD_BREACHED", 400)),
+    ).toBe(
+      "That password has appeared in a data breach. Choose a different one.",
+    );
   });
   it("attributes a mismatch to the confirm field, but a weak password wins", () => {
     expect(

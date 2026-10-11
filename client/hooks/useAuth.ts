@@ -713,11 +713,18 @@ export function useAuth() {
   );
 
   /** Turn two-step off. Every device was signed out; keep this one. */
+  // `newPassword` replaces a password under 15 in the same step (the server
+  // answers PASSWORD_UPGRADE_NEEDED without it); sent only when given.
   const disableTwoStep = useCallback(
-    async (password: string, secondFactor: SecondFactorInput) => {
+    async (
+      password: string,
+      secondFactor: SecondFactorInput,
+      newPassword?: string,
+    ) => {
       const res = await apiRequest("POST", "/api/auth/mfa/disable", {
         password,
         secondFactor,
+        ...(newPassword ? { newPassword } : {}),
       });
       const data = (await res.json()) as SignedInResult;
       await establishSession(data.user, data.token);

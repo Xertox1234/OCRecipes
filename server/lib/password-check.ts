@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import { isLegacyHash, preHash, PASSWORD_HASH_PREFIX } from "./password-hash";
 
 // Fixed cost-12 bcrypt hash compared against on the missing-user login branch
 // (and for a NULL password) so "no such user" / "social-only account" cost the
@@ -20,5 +21,9 @@ export async function passwordMatches(
     await bcrypt.compare(input, DUMMY_PASSWORD_HASH);
     return false;
   }
-  return bcrypt.compare(input, hash);
+  if (isLegacyHash(hash)) return bcrypt.compare(input, hash);
+  return bcrypt.compare(
+    preHash(input),
+    hash.slice(PASSWORD_HASH_PREFIX.length),
+  );
 }

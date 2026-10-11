@@ -7,9 +7,18 @@ import {
   invalidateTokenVersionCache,
   type AuthenticatedRequest,
 } from "../middleware/auth";
-import { sendTwoFactorNotice } from "../services/email";
+import {
+  sendTwoFactorNotice,
+  sendPasswordChangedNotice,
+} from "../services/email";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { passwordMatches } from "../lib/password-check";
+import { hashPassword } from "../lib/password-hash";
+import {
+  PASSWORD_MIN_SINGLE_FACTOR,
+  passwordLength,
+} from "@shared/constants/password-policy";
+import { checkNewPassword } from "./_password-rules";
 import { base32Decode, matchTotp, otpauthUrl } from "../lib/mfa/totp";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -17,6 +26,7 @@ import { handleRouteError, formatZodError } from "./_helpers";
 import { mfaVerifyLimiter, reauthLimiter } from "./_rate-limiters";
 import {
   mfaConfirmSchema,
+  mfaDisableSchema,
   mfaPasswordAndFactorSchema,
   mfaPasswordSchema,
   mfaVerifySchema,
@@ -399,20 +409,55 @@ export function register(app: Express): void {
   );
 
   // Turn off: password + factor. Every session ends; this one gets a new token.
+  // A password under 15 can't stand alone, so it must be replaced in the same
+  // step (spec §5.4).
   app.post(
     "/api/auth/mfa/disable",
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const body = parse(mfaPasswordAndFactorSchema, req.body);
+        const body = parse(mfaDisableSchema, req.body);
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
+        // Before the factor check, so a policy rejection never spends a
+        // recovery code (spec §5.4 as amended by the PR 1 plan).
+        if (
+          !body.newPassword &&
+          passwordLength(body.password) < PASSWORD_MIN_SINGLE_FACTOR
+        ) {
+          throw new Reply(
+            400,
+            ErrorCode.PASSWORD_UPGRADE_NEEDED,
+            "Your password is shorter than 15 characters. Choose a new one of at least 15 to turn off two-step verification.",
+          );
+        }
+        let newPasswordHash: string | undefined;
+        if (body.newPassword) {
+          const rejected = await checkNewPassword(
+            body.newPassword,
+            PASSWORD_MIN_SINGLE_FACTOR,
+            "single_factor",
+          );
+          // Answered here rather than thrown: the rejection is derived from
+          // the new password, and a thrown value can reach the error logger.
+          if (rejected) {
+            sendError(res, rejected.status, rejected.message, rejected.code);
+            return;
+          }
+          newPasswordHash = await hashPassword(body.newPassword);
+        }
         await requireFactor(user, body.secondFactor);
-        await storage.disableMfa(user.id);
+        await storage.disableMfa(user.id, { newPasswordHash });
         invalidateTokenVersionCache(user.id);
         notice(user, "disabled");
+        if (newPasswordHash) {
+          fireAndForget(
+            "password-changed-notice",
+            sendPasswordChangedNotice(user.email, user.username),
+          );
+        }
         res.json(await issueSession(user.id));
       } catch (error) {
         answer(res, error, "turn off two-step verification");

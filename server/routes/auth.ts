@@ -63,6 +63,12 @@ import {
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
+import { hashPassword, isLegacyHash } from "../lib/password-hash";
+import {
+  PASSWORD_MIN_SINGLE_FACTOR,
+  PASSWORD_MIN_WITH_MFA,
+} from "@shared/constants/password-policy";
+import { checkNewPassword } from "./_password-rules";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { startMfaChallenge } from "../lib/mfa/challenge";
 import { hashTrustKey } from "../lib/mfa/mfa-secrets";
@@ -175,7 +181,24 @@ export function register(app: Express): void {
         const { username, password, email } = parsed.data;
         const verificationOn = emailVerificationEnabled();
 
-        // Username uniqueness FIRST — keeps the existing 409. This is the only
+        // Password policy before ANY account lookup, so neither the answer nor
+        // its latency depends on whether the username or email exists.
+        const rejected = await checkNewPassword(
+          password,
+          PASSWORD_MIN_SINGLE_FACTOR,
+          "signup",
+        );
+        if (rejected) {
+          return sendError(
+            res,
+            rejected.status,
+            rejected.message,
+            rejected.code,
+          );
+        }
+
+        // After the password check, username uniqueness comes first among the
+        // account checks — keeps the existing 409. This is the only
         // signup response that is NOT the neutral check-inbox (spec §6a).
         const existingUser = await storage.getUserByUsername(username);
         if (existingUser) {
@@ -214,7 +237,7 @@ export function register(app: Express): void {
         // keeps its fast 409 (not anti-enumerating anyway), hashing only when
         // it actually creates an account.
         const precomputedHash = verificationOn
-          ? await bcrypt.hash(password, 12)
+          ? await hashPassword(password)
           : null;
 
         const existingEmail = await storage.getUserByEmail(email);
@@ -249,7 +272,7 @@ export function register(app: Express): void {
         }
 
         const hashedPassword =
-          precomputedHash ?? (await bcrypt.hash(password, 12));
+          precomputedHash ?? (await hashPassword(password));
         let user;
         try {
           user = await storage.createUser({
@@ -352,6 +375,23 @@ export function register(app: Express): void {
             401,
             "Invalid credentials",
             ErrorCode.UNAUTHORIZED,
+          );
+        }
+
+        // Legacy hash → pv2, best effort. Only when the input is ≤72 bytes: a
+        // legacy compare proves just the first 72, so a longer input may not
+        // be the password the user really types (spec §3).
+        if (
+          user.password !== null &&
+          isLegacyHash(user.password) &&
+          Buffer.byteLength(validated.password, "utf8") <= 72
+        ) {
+          const legacy = user.password;
+          fireAndForget(
+            "rehash-password",
+            hashPassword(validated.password).then((h) =>
+              storage.upgradePasswordHash(user.id, legacy, h),
+            ),
           );
         }
 
@@ -540,8 +580,9 @@ export function register(app: Express): void {
     },
   );
 
-  // Reset password (spec §4.2). Validation first (a weak password never uses
-  // up a code attempt); then ONE atomic UPDATE uses up an attempt for real and
+  // Reset password (spec §4.2). Schema validation first (a password under the
+  // 8-character floor never uses up a code attempt; the account-dependent 15
+  // and the breach check come later and do); then ONE atomic UPDATE uses up an attempt for real and
   // unknown emails alike; the HMAC compare runs on both branches. Every failure
   // is the same 400. Success: one UPDATE commits password + tokenVersion+1 +
   // verified + discards a staged email change + clears the code; then the
@@ -574,7 +615,21 @@ export function register(app: Express): void {
           sendInvalidResetCode(res);
           return;
         }
-        const newHash = await bcrypt.hash(newPassword, 12);
+        // Only after a correct code, so a wrong code never learns anything
+        // about the account. A rejection keeps the code, but this request
+        // has already used one of its RESET_CODE_MAX_ATTEMPTS tries.
+        const rejected = await checkNewPassword(
+          newPassword,
+          reserved.mfaEnabledAt
+            ? PASSWORD_MIN_WITH_MFA
+            : PASSWORD_MIN_SINGLE_FACTOR,
+          reserved.mfaEnabledAt ? "mfa" : "single_factor",
+        );
+        if (rejected) {
+          sendError(res, rejected.status, rejected.message, rejected.code);
+          return;
+        }
+        const newHash = await hashPassword(newPassword);
         const completed = await storage.completePasswordReset(
           reserved.id,
           reserved.resetCodeHash,

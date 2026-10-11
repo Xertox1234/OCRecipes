@@ -63,13 +63,18 @@ export async function issuePasswordResetCode(
  * guesses serialize on the row lock, so attempts can never exceed the cap.
  * Matches the VERIFIED `email` only (never `pending_email`), case-insensitively
  * via the users_email_lower_unique index.
- * Returns the row's id/username/email and stored HMAC, or undefined when there
+ * Returns the row's id/username/email, stored HMAC and two-step state (the
+ * route picks the new password's minimum from it), or undefined when there
  * is no live, unexpired, under-cap code (or no such verified email).
  */
-export async function reservePasswordResetAttempt(
-  email: string,
-): Promise<
-  | { id: string; username: string; email: string; resetCodeHash: string }
+export async function reservePasswordResetAttempt(email: string): Promise<
+  | {
+      id: string;
+      username: string;
+      email: string;
+      resetCodeHash: string;
+      mfaEnabledAt: Date | null;
+    }
   | undefined
 > {
   const [row] = await db
@@ -88,6 +93,7 @@ export async function reservePasswordResetAttempt(
       username: users.username,
       email: users.email,
       resetCodeHash: users.resetCodeHash,
+      mfaEnabledAt: users.mfaEnabledAt,
     });
   if (!row?.resetCodeHash) return undefined;
   return { ...row, resetCodeHash: row.resetCodeHash };

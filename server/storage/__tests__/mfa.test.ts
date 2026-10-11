@@ -203,6 +203,30 @@ describe("MFA storage", () => {
     }
     const [u] = await tx.select().from(users).where(eq(users.id, testUser.id));
     expect(u.mfaEnabledAt).toBeNull();
+    // No new password given → the password and a staged email are untouched.
+    expect(u.password).toBe(testUser.password);
+  });
+
+  it("disableMfa with a new password: changes it and drops a staged email in the same transaction", async () => {
+    await confirmEnrolled(testUser.id, 100);
+    await mfa.trustDevice(testUser.id, "k1");
+    await tx
+      .update(users)
+      .set({ pendingEmail: "staged@example.com" })
+      .where(eq(users.id, testUser.id));
+    const v = await mfa.disableMfa(testUser.id, {
+      newPasswordHash: "pv2$x",
+    });
+    expect(v).toBe(testUser.tokenVersion + 2);
+    const [u] = await tx.select().from(users).where(eq(users.id, testUser.id));
+    expect(u.password).toBe("pv2$x");
+    expect(u.pendingEmail).toBeNull();
+    expect(u.mfaEnabledAt).toBeNull();
+    const trusted = await tx
+      .select()
+      .from(mfaTrustedDevices)
+      .where(eq(mfaTrustedDevices.userId, testUser.id));
+    expect(trusted).toHaveLength(0);
   });
 
   it("challenge: 5 reservations then refused; consume once; concurrent consume: one wins", async () => {

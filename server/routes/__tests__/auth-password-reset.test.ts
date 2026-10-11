@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
-import bcrypt from "bcrypt";
 
 import { storage } from "../../storage";
 import { register } from "../auth";
@@ -11,6 +10,8 @@ import {
   sendPasswordChangedNotice,
 } from "../../services/email";
 import { hashResetCode } from "../../lib/password-reset-code";
+import { passwordMatches } from "../../lib/password-check";
+import { isBreached } from "../../lib/pwned-password";
 import { createMockUser } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
@@ -25,6 +26,11 @@ vi.mock("../../storage", () => ({
 }));
 vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
+
+// Never call api.pwnedpasswords.com from a test.
+vi.mock("../../lib/pwned-password", () => ({
+  isBreached: vi.fn().mockResolvedValue(false),
+}));
 vi.mock("../../lib/email-config", () => ({
   emailVerificationEnabled: () => true,
 }));
@@ -173,14 +179,17 @@ describe("POST /api/auth/reset-password", () => {
   const good = {
     email: "real@example.com",
     code: "123456",
-    newPassword: "newpass99",
+    newPassword: "a-new-long-passphrase",
   };
   const reserved = {
     id,
     username: "realuser",
     email: "real@example.com",
     resetCodeHash: hashResetCode(id, "123456"),
+    mfaEnabledAt: null as Date | null,
   };
+  const post = (body: object) =>
+    request(app).post("/api/auth/reset-password").send(body);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -199,7 +208,8 @@ describe("POST /api/auth/reset-password", () => {
       .calls[0];
     expect(cid).toBe(id);
     expect(chash).toBe(reserved.resetCodeHash);
-    expect(await bcrypt.compare("newpass99", newHash)).toBe(true);
+    expect(newHash).toMatch(/^pv2\$/);
+    expect(await passwordMatches("a-new-long-passphrase", newHash)).toBe(true);
     expect(invalidateTokenVersionCache).toHaveBeenCalledWith(id);
     expect(sendPasswordChangedNotice).toHaveBeenCalledWith(
       "real@example.com",
@@ -233,6 +243,61 @@ describe("POST /api/auth/reset-password", () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("VALIDATION_ERROR");
     expect(storage.reservePasswordResetAttempt).not.toHaveBeenCalled();
+  });
+
+  describe("minimum follows the account's two-step state (spec §4)", () => {
+    const mockReserved = (mfaEnabledAt: Date | null) =>
+      vi
+        .mocked(storage.reservePasswordResetAttempt)
+        .mockResolvedValue({ ...reserved, mfaEnabledAt });
+
+    it("10 chars on a no-two-step account: 400 PASSWORD_TOO_SHORT after a correct code; nothing reset", async () => {
+      mockReserved(null);
+      const res = await post({ ...good, newPassword: "ten-chars!" });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
+      expect(res.body.error).toBe("Use at least 15 characters.");
+      expect(storage.completePasswordReset).not.toHaveBeenCalled();
+      // The code stays, but this rejection came after the attempt was used:
+      // the 15 (and the breach check) need the account, which only the
+      // reserving UPDATE reveals. Only the 8 floor is checked before it.
+      expect(storage.reservePasswordResetAttempt).toHaveBeenCalledTimes(1);
+    });
+
+    it("10 chars on a two-step account: accepted", async () => {
+      mockReserved(new Date());
+      const res = await post({ ...good, newPassword: "ten-chars!" });
+      expect(res.status).toBe(200);
+      expect(storage.completePasswordReset).toHaveBeenCalledTimes(1);
+    });
+
+    it("a wrong code with a short password returns the invalid-code 400, never PASSWORD_TOO_SHORT", async () => {
+      mockReserved(null);
+      const res = await post({
+        ...good,
+        code: "000000",
+        newPassword: "ten-chars!",
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(INVALID);
+    });
+
+    it("breached password: 400 PASSWORD_BREACHED, nothing reset, a good retry then succeeds", async () => {
+      mockReserved(null);
+      vi.mocked(isBreached).mockResolvedValueOnce(true);
+      const bad = await post(good);
+      expect(bad.status).toBe(400);
+      expect(bad.body.code).toBe("PASSWORD_BREACHED");
+      expect(storage.completePasswordReset).not.toHaveBeenCalled();
+      const retry = await post({
+        ...good,
+        newPassword: "another-long-passphrase",
+      });
+      expect(retry.status).toBe(200);
+      expect(vi.mocked(storage.completePasswordReset).mock.calls[0][2]).toMatch(
+        /^pv2\$/,
+      );
+    });
   });
 
   it("normalizes the email before using up an attempt", async () => {

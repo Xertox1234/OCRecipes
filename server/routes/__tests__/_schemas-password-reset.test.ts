@@ -4,6 +4,10 @@ import {
   resetPasswordSchema,
   loginSchema,
   registerSchema,
+  newPasswordSchema,
+  changeEmailSchema,
+  mfaPasswordSchema,
+  socialLinkSchema,
 } from "../_schemas";
 
 describe("password-reset schemas", () => {
@@ -45,7 +49,7 @@ describe("password-reset schemas", () => {
       registerSchema.safeParse({ ...registerBase, password: "abcdefg1" })
         .success,
     ).toBe(true);
-    for (const pw of ["short1", "allletters", "12345678"]) {
+    for (const pw of ["short1", "a".repeat(129)]) {
       expect(
         resetPasswordSchema.safeParse({ ...resetBase, newPassword: pw })
           .success,
@@ -54,6 +58,32 @@ describe("password-reset schemas", () => {
         registerSchema.safeParse({ ...registerBase, password: pw }).success,
       ).toBe(false);
     }
+  });
+  it("newPasswordSchema has no composition rule and counts code points", () => {
+    expect(newPasswordSchema.safeParse("abcdefgh").success).toBe(true); // 8 letters, floor
+    expect(newPasswordSchema.safeParse("12345678").success).toBe(true); // digits only
+    expect(newPasswordSchema.safeParse("abcdefg").success).toBe(false);
+    expect(newPasswordSchema.safeParse("😀".repeat(128)).success).toBe(true); // 256 UTF-16 units
+    expect(newPasswordSchema.safeParse("a".repeat(129)).success).toBe(false);
+  });
+  it("every current-password field accepts the longest valid new password", () => {
+    const longest = "😀".repeat(128); // 128 code points, 256 UTF-16 units
+    expect(newPasswordSchema.safeParse(longest).success).toBe(true);
+    expect(
+      loginSchema.safeParse({ username: "abc", password: longest }).success,
+    ).toBe(true);
+    expect(
+      changeEmailSchema.safeParse({
+        newEmail: "a@b.com",
+        password: longest,
+      }).success,
+    ).toBe(true);
+    expect(mfaPasswordSchema.safeParse({ password: longest }).success).toBe(
+      true,
+    );
+    expect(
+      socialLinkSchema.safeParse({ ticket: "t", password: longest }).success,
+    ).toBe(true);
   });
   it("login: trims and allows an email-length identifier", () => {
     const long = `${"a".repeat(60)}@example.com`;

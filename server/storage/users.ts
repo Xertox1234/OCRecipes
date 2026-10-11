@@ -408,6 +408,24 @@ export async function incrementTokenVersion(
 }
 
 /**
+ * Upgrade a legacy hash to pv2 after a successful legacy sign-in. Compare-and-
+ * swap on the hash that was checked: a reset or password change that committed
+ * in between wins, and the old password is never written back. Spec §3.
+ */
+export async function upgradePasswordHash(
+  userId: string,
+  expectedHash: string,
+  newHash: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(users)
+    .set({ password: newHash })
+    .where(and(eq(users.id, userId), eq(users.password, expectedHash)))
+    .returning({ id: users.id });
+  return rows.length === 1;
+}
+
+/**
  * Record that the user used the app now, for the retention cleanup's "used
  * the app in the last 30 days" check. The once-an-hour guard is in SQL against
  * now(), so writes stay bounded across restarts and multiple instances.

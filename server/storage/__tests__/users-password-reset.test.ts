@@ -179,6 +179,18 @@ describe("password reset storage", () => {
       expect((await row(testUser.id)).resetCodeAttempts).toBe(1);
     });
 
+    it("returns mfaEnabledAt so the route can pick the minimum (spec §4)", async () => {
+      const off = await reset.reservePasswordResetAttempt(testUser.email);
+      expect(off).toHaveProperty("mfaEnabledAt", null);
+      const at = new Date("2026-10-01T00:00:00Z");
+      await tx
+        .update(users)
+        .set({ mfaEnabledAt: at })
+        .where(eq(users.id, testUser.id));
+      const on = await reset.reservePasswordResetAttempt(testUser.email);
+      expect(on?.mfaEnabledAt).toBeInstanceOf(Date);
+    });
+
     it("stops after 5 attempts (6th returns undefined)", async () => {
       for (let i = 0; i < 5; i++) {
         expect(
