@@ -231,6 +231,10 @@ export const mfaPasswordAndFactorSchema = mfaPasswordSchema.extend({
 export const mfaDisableSchema = mfaPasswordAndFactorSchema.extend({
   newPassword: newPasswordSchema.optional(),
 });
+/** "Choose a longer password" on a short password's pass; the 15 is checked in the route. */
+export const upgradePasswordSchema = z.object({
+  newPassword: newPasswordSchema,
+});
 export const mfaConfirmSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
 });
