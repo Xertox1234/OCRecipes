@@ -81,6 +81,7 @@ vi.mock("../../storage", () => ({
     getEffectiveTierForUser: vi.fn(),
     deleteUser: vi.fn(),
     collectUserImageUrls: vi.fn().mockResolvedValue([]),
+    takeAppleTokensOnTicketsTargeting: vi.fn().mockResolvedValue([]),
     filterUnreferencedImageUrls: vi.fn().mockResolvedValue([]),
     applyEmailVerification: vi.fn(),
     getSignInMethods: vi.fn(),

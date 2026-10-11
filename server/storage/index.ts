@@ -87,6 +87,8 @@ export const storage = {
   listIdentities: identities.listIdentities,
   insertIdentity: identities.insertIdentity,
   deleteIdentity: identities.deleteIdentity,
+  takeAppleTokensOnTicketsTargeting:
+    identities.takeAppleTokensOnTicketsTargeting,
   setAppleRefreshToken: identities.setAppleRefreshToken,
   touchIdentity: identities.touchIdentity,
   getSignInMethods: identities.getSignInMethods,

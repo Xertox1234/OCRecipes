@@ -124,6 +124,38 @@ export async function sweepExpiredPendingSignIns(): Promise<string[]> {
   return result.rows.map((r) => r.token);
 }
 
+/**
+ * Delete the link tickets aimed at an account (they would cascade away with
+ * it) and return their Apple tokens that nobody else holds — same filters as
+ * the expiry sweep — so account deletion can revoke them (audit L17).
+ */
+export async function takeAppleTokensOnTicketsTargeting(
+  userId: string,
+): Promise<string[]> {
+  const t = pendingSocialSignIns;
+  const result = await db.execute<{ token: string }>(sql`
+    with taken as (
+      delete from ${t}
+      where ${t.targetUserId} = ${userId}
+      returning ${t.provider} as provider,
+        ${t.providerSubject} as subject,
+        ${t.appleRefreshTokenEnc} as token
+    )
+    select s.token from taken s
+    where s.provider = 'apple' and s.token is not null
+      and not exists (
+        select 1 from ${userIdentities} i
+        where i.provider = s.provider and i.provider_subject = s.subject
+      )
+      and not exists (
+        select 1 from ${t} p
+        where p.provider = s.provider and p.provider_subject = s.subject
+          and p.expires_at > now()
+          and p.target_user_id is distinct from ${userId}
+      )`);
+  return result.rows.map((r) => r.token);
+}
+
 export async function createPendingSignIn(
   input: PendingSignInInput,
 ): Promise<string> {

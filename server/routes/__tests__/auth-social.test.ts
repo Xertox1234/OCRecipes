@@ -341,6 +341,76 @@ describe("POST /api/auth/social", () => {
     expect(storage.createPendingSignIn).not.toHaveBeenCalled();
   });
 
+  // Auth audit 2026-10-10 L17: an Apple refresh token exchanged during a
+  // sign-in that then fails before storing it is revoked (App Store 5.1.1(v)),
+  // unless that Apple ID is linked — revoking ends the app's whole grant.
+  describe("an exchanged Apple token that never gets stored", () => {
+    const appleClaims = {
+      ...gmailClaims,
+      provider: "apple" as const,
+      email: "me@icloud.com",
+    };
+    const send = () =>
+      request(app()).post("/api/auth/social").send({
+        provider: "apple",
+        idToken: "t",
+        nonce: "n",
+        authorizationCode: "c",
+      });
+    beforeEach(() => {
+      vi.mocked(verifyAppleIdToken).mockResolvedValue(appleClaims);
+      vi.mocked(exchangeAppleCode).mockResolvedValue("orphan-refresh");
+      vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
+        createMockUser({
+          id: "u1",
+          email: "me@icloud.com",
+          emailVerified: true,
+          password: null,
+        }),
+      );
+    });
+
+    it("is revoked when the request then fails", async () => {
+      vi.mocked(storage.insertIdentity).mockRejectedValue(new Error("db down"));
+      const res = await send();
+      expect(res.status).toBe(500);
+      await vi.waitFor(() =>
+        expect(revokeAppleToken).toHaveBeenCalledWith(
+          "orphan-refresh",
+          expect.anything(),
+        ),
+      );
+    });
+
+    it("is NOT revoked when that Apple ID turns out to be linked already", async () => {
+      vi.mocked(storage.insertIdentity).mockRejectedValue(
+        Object.assign(new Error("dup"), { code: "23505" }),
+      );
+      vi.mocked(storage.findIdentity)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValue(
+          createMockUserIdentity({ id: "i9", userId: "u2", provider: "apple" }),
+        );
+      const res = await send();
+      expect(res.status).toBe(409);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(revokeAppleToken).not.toHaveBeenCalled();
+    });
+
+    it("is NOT revoked once stored (success)", async () => {
+      vi.mocked(storage.insertIdentity).mockResolvedValue(
+        createMockUserIdentity({ id: "i1", userId: "u1", provider: "apple" }),
+      );
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ id: "u1", emailVerified: true }),
+      );
+      const res = await send();
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(revokeAppleToken).not.toHaveBeenCalled();
+    });
+  });
+
   it("repeat Apple sign-in with a stored token skips the exchange and tolerates no email", async () => {
     vi.mocked(verifyAppleIdToken).mockResolvedValue({
       ...gmailClaims,

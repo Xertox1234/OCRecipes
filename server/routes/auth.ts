@@ -943,6 +943,16 @@ export function register(app: Express): void {
         // Revoke Apple tokens BEFORE the delete cascades the identity rows
         // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
         await revokeAppleIdentities(await storage.listIdentities(req.userId));
+        // ...and the Apple tokens on link tickets aimed at this account, which
+        // the delete would otherwise cascade away unrevoked (audit L17).
+        await revokeAppleIdentities(
+          (await storage.takeAppleTokensOnTicketsTargeting(req.userId)).map(
+            (appleRefreshTokenEnc) => ({
+              provider: "apple",
+              appleRefreshTokenEnc,
+            }),
+          ),
+        );
 
         // Read the account's stored images while its rows still exist; the
         // delete below cascades them away.

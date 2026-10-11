@@ -225,6 +225,34 @@ describe("identities storage", () => {
     });
   });
 
+  // Auth audit 2026-10-10 L17: link tickets aimed at an account cascade away
+  // with it — take their Apple tokens first so they can be revoked.
+  describe("takeAppleTokensOnTicketsTargeting", () => {
+    it("removes the account's link tickets and returns their unlinked Apple tokens", async () => {
+      const target = await createTestUser(getTestTx());
+      const other = await createTestUser(getTestTx());
+      const link = (userId: string, sub: string, token: string) => ({
+        ...baseTicket,
+        kind: "link" as const,
+        provider: "apple" as const,
+        providerSubject: sub,
+        appleRefreshTokenEnc: token,
+        targetUserId: userId,
+      });
+      await ids.createPendingSignIn(link(target.id, "a-1", "v1:mine"));
+      const keep = await ids.createPendingSignIn(
+        link(other.id, "a-2", "v1:theirs"),
+      );
+      expect(await ids.takeAppleTokensOnTicketsTargeting(target.id)).toEqual([
+        "v1:mine",
+      ]);
+      const left = await getTestTx()
+        .select({ h: pendingSocialSignIns.ticketHash })
+        .from(pendingSocialSignIns);
+      expect(left.map((r) => r.h)).toEqual([sha256Hex(keep)]);
+    });
+  });
+
   describe("link tickets", () => {
     it("allows at most 5 reserved attempts", async () => {
       const target = await createTestUser(getTestTx());
