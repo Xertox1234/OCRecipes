@@ -291,6 +291,24 @@ describe("email service", () => {
       expect(arg.html).toContain("15 minutes");
     });
 
+    it("password-changed notice names connected Google/Apple sign-ins (audit M1)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordChangedNotice } = await import("../email");
+      await sendPasswordChangedNotice("r@x.com", "alice", ["google", "apple"]);
+      const html = mockSend.mock.calls[0][0].html as string;
+      expect(html).toContain("still connected");
+      expect(html).toContain("Google and Apple");
+      expect(html).toContain("Sign-in methods");
+    });
+
+    it("password-changed notice says nothing about sign-ins when none are connected", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordChangedNotice } = await import("../email");
+      await sendPasswordChangedNotice("r@x.com", "alice");
+      const html = mockSend.mock.calls[0][0].html as string;
+      expect(html).not.toContain("still connected");
+    });
+
     it("password-changed notice includes the escaped username and support address", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const { sendPasswordChangedNotice } = await import("../email");

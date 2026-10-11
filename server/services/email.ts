@@ -244,9 +244,17 @@ export async function sendPasswordResetCode(
   if (error) logger.error({ resendError: error }, "reset code email failed");
 }
 
+const PROVIDER_LABELS = { google: "Google", apple: "Apple" } as const;
+
+/**
+ * `connected` lists the Google/Apple sign-ins a reset left in place (owner
+ * ruling 2026-10-11, auth audit M1): a reset keeps them, so the notice names
+ * them for the owner to spot one an attacker linked.
+ */
 export async function sendPasswordChangedNotice(
   to: string,
   username: string,
+  connected: readonly string[] = [],
 ): Promise<void> {
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
@@ -263,10 +271,22 @@ export async function sendPasswordChangedNotice(
     subject: "Your OCRecipes password was changed",
     html: `<p>The password for your OCRecipes account <strong>${escapeHtml(username)}</strong> was just changed, and every device was signed out.</p>
 <p>If this was you, there's nothing else to do.</p>
-<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
+${connectedSignInsParagraph(connected)}<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
   });
   if (error)
     logger.error({ resendError: error }, "password-changed notice failed");
+}
+
+function isLabelledProvider(p: string): p is keyof typeof PROVIDER_LABELS {
+  return Object.hasOwn(PROVIDER_LABELS, p);
+}
+
+function connectedSignInsParagraph(connected: readonly string[]): string {
+  const known = connected.filter(isLabelledProvider);
+  if (known.length === 0) return "";
+  const names = known.map((p) => PROVIDER_LABELS[p]).join(" and ");
+  return `<p>${names} sign-in is still connected to this account. If you didn't connect it, remove it in Profile → Sign-in methods.</p>
+`;
 }
 
 export type TwoFactorNoticeKind =

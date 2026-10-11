@@ -640,9 +640,21 @@ export function register(app: Express): void {
           return;
         }
         invalidateTokenVersionCache(reserved.id);
+        // The reset keeps linked Google/Apple sign-ins (owner ruling
+        // 2026-10-11, audit M1); the notice names them so a planted one shows.
         fireAndForget(
           "password-changed-notice",
-          sendPasswordChangedNotice(reserved.email, reserved.username),
+          (async () => {
+            // A failed lookup must not cost the notice itself.
+            const ids = await storage
+              .listIdentities(reserved.id)
+              .catch(() => []);
+            await sendPasswordChangedNotice(
+              reserved.email,
+              reserved.username,
+              ids.map((i) => i.provider),
+            );
+          })(),
         );
         res.status(200).json({ status: "password_reset" });
       } catch (error) {
