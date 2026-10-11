@@ -32,6 +32,7 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     startTotpEnrollment: vi.fn(),
     getPendingTotpSecret: vi.fn(),
+    recordMfaFailure: vi.fn(),
     confirmTotpEnrollment: vi.fn(),
     confirmNewPhone: vi.fn(),
     disableMfa: vi.fn(),
@@ -168,6 +169,10 @@ describe("POST /api/auth/mfa/totp/confirm", () => {
     vi.mocked(storage.getPendingTotpSecret).mockResolvedValue(
       encryptMfaSecret(SECRET),
     );
+    vi.mocked(storage.recordMfaFailure).mockResolvedValue({
+      failedAttempts: 1,
+      tripped: false,
+    });
   });
 
   it("first setup → 10 recovery codes and a session minted AFTER the version bump", async () => {
@@ -216,6 +221,34 @@ describe("POST /api/auth/mfa/totp/confirm", () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
     expect(storage.confirmTotpEnrollment).not.toHaveBeenCalled();
+  });
+
+  // Auth audit 2026-10-10 L9: spec §6 — every path that checks a factor counts
+  // failures toward the lock; confirm used to guess for free.
+  it("a wrong code is counted toward the lock; tripping it sends the lock notice", async () => {
+    const wrong = String((Number(currentCode()) + 1) % 1_000_000).padStart(
+      6,
+      "0",
+    );
+    vi.mocked(storage.recordMfaFailure).mockResolvedValueOnce({
+      failedAttempts: 3,
+      tripped: false,
+    });
+    await post("totp/confirm", { code: wrong });
+    expect(storage.recordMfaFailure).toHaveBeenCalledWith("1");
+    expect(sendTwoFactorNotice).not.toHaveBeenCalled();
+
+    vi.mocked(storage.recordMfaFailure).mockResolvedValueOnce({
+      failedAttempts: 10,
+      tripped: true,
+    });
+    const res = await post("totp/confirm", { code: wrong });
+    expect(res.status).toBe(400);
+    expect(sendTwoFactorNotice).toHaveBeenCalledWith(
+      "testuser@example.com",
+      "testuser",
+      "locked",
+    );
   });
 
   it("no pending (or expired) setup → 400 INVALID_SECOND_FACTOR", async () => {

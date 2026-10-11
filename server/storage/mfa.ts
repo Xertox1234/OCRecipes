@@ -39,6 +39,11 @@ const pendingLive = and(
   gt(userMfa.pendingExpiresAt, sql`now()`),
 );
 
+const notLocked = or(
+  isNull(userMfa.lockedUntil),
+  lte(userMfa.lockedUntil, sql`now()`),
+);
+
 /** Stage a candidate secret (first setup, or a new phone). The active secret is untouched. */
 export async function startTotpEnrollment(
   userId: string,
@@ -60,7 +65,9 @@ export async function getPendingTotpSecret(
   const [row] = await db
     .select({ enc: userMfa.pendingSecretEnc })
     .from(userMfa)
-    .where(and(eq(userMfa.userId, userId), pendingLive));
+    // Unavailable while locked: confirm counts wrong codes toward the same
+    // lock as every other factor check (spec §6, audit L9).
+    .where(and(eq(userMfa.userId, userId), pendingLive, notLocked));
   return row?.enc ?? undefined;
 }
 
@@ -165,11 +172,6 @@ export async function getActiveTotp(
     locked: row.locked,
   };
 }
-
-const notLocked = or(
-  isNull(userMfa.lockedUntil),
-  lte(userMfa.lockedUntil, sql`now()`),
-);
 
 /** Accept a matched TOTP step once (replay guard); refused while locked. Resets failures. */
 export async function acceptTotpStep(

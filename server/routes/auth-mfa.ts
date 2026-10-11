@@ -365,7 +365,13 @@ export function register(app: Express): void {
           );
         }
         const step = matchTotp(secret, code, Date.now());
-        if (step === null) throw wrong;
+        if (step === null) {
+          // Counted toward the same lock as every other factor check (spec §6,
+          // audit L9); a locked account's pending secret reads as absent.
+          const { tripped } = await storage.recordMfaFailure(user.id);
+          if (tripped) notice(user, "locked");
+          throw wrong;
+        }
 
         let recoveryCodes: string[] | undefined;
         if (user.mfaEnabledAt === null) {

@@ -162,6 +162,16 @@ describe("MFA storage", () => {
     expect(u.mfaEnabledAt).not.toBeNull();
   });
 
+  it("a locked account's pending secret is unavailable until the lock ends (audit L9)", async () => {
+    await mfa.startTotpEnrollment(testUser.id, "enc");
+    for (let i = 0; i < 10; i++) await mfa.recordMfaFailure(testUser.id);
+    expect(await mfa.getPendingTotpSecret(testUser.id)).toBeUndefined();
+    await tx.execute(
+      sql`UPDATE user_mfa SET locked_until = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
+    );
+    expect(await mfa.getPendingTotpSecret(testUser.id)).toBe("enc");
+  });
+
   it("an expired pending secret cannot be confirmed", async () => {
     await mfa.startTotpEnrollment(testUser.id, "enc");
     await tx.execute(
