@@ -150,9 +150,11 @@ export const loginAccountLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: Request) => {
-    const username = normalizeUsernameKey(
-      (req.body as { username?: unknown } | undefined)?.username,
+  keyGenerator: async (req: Request) => {
+    const username = await accountKeyFor(
+      normalizeUsernameKey(
+        (req.body as { username?: unknown } | undefined)?.username,
+      ),
     );
     // Prefix prevents cross-bucket collisions with IP-keyed entries when a
     // username happens to look like an IP. Requests with no usable username
@@ -163,6 +165,26 @@ export const loginAccountLimiter = rateLimit({
       : ipKeyGenerator(req);
   },
 });
+
+/**
+ * Sign-in takes a username OR an email, so an email is resolved to its
+ * account's username: both spellings of one account share one bucket (auth
+ * audit 2026-10-10 L2). An unknown email — or a failed lookup — keys on the
+ * email itself. storage is imported lazily, on the email path only, so this
+ * shared module never loads the database for its many other importers.
+ */
+async function accountKeyFor(
+  identifier: string | null,
+): Promise<string | null> {
+  if (!identifier?.includes("@")) return identifier;
+  try {
+    const { storage } = await import("../storage");
+    const user = await storage.getUserByEmailForAuth(identifier);
+    return user ? normalizeUsernameKey(user.username) : identifier;
+  } catch {
+    return identifier;
+  }
+}
 
 export const registerLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,

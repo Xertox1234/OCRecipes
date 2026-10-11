@@ -196,6 +196,28 @@ describe("normalizeUsernameKey", () => {
 });
 
 describe("per-account login throttling (real express-rate-limit)", () => {
+  // Auth audit 2026-10-10 L2: since sign-in accepts a username OR an email,
+  // both spellings of one account must share ONE failed-attempt bucket.
+  it("counts username and email attempts for one account in one bucket", async () => {
+    const user = createMockUser({
+      username: "mixcase_user",
+      email: "mix@example.com",
+      password: correctPasswordHash,
+    });
+    vi.mocked(storage.getUserByUsernameForAuth).mockImplementation(
+      async (name: string) => (name === user.username ? user : undefined),
+    );
+    vi.mocked(storage.getUserByEmailForAuth).mockImplementation(
+      async (email: string) => (email === user.email ? user : undefined),
+    );
+    for (let i = 0; i < LIMIT / 2; i++) {
+      expect((await login("mixcase_user", `10.77.0.${i}`)).status).toBe(401);
+      expect((await login("Mix@Example.com", `10.78.0.${i}`)).status).toBe(401);
+    }
+    const overflow = await login("mix@example.com", "10.79.0.1");
+    expect(overflow.status).toBe(429);
+  });
+
   it("throttles repeated failed logins for one username across rotating source IPs", async () => {
     // Distributed attack: every attempt comes from a different IP, so the
     // IP-keyed loginLimiter never trips — only the username-keyed layer can.
