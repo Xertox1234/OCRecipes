@@ -310,7 +310,7 @@ describe("email service", () => {
     });
 
     // Security review: reset codes are attacker-triggered (anyone who knows the
-    // address) and a fixed 24 h window allows 12 in minutes across its edge.
+    // address) and a fixed 24 h window allows 11 in minutes across its edge.
     // The signed-in change code must not share their per-recipient budget.
     it("change-password code is still sent after reset codes exhaust the account-security bucket", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");

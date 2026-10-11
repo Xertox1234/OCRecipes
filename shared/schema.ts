@@ -283,7 +283,7 @@ export const passwordChangeCodes = pgTable("password_change_codes", {
   /** HMAC of the live code (hashChangeCode); NULL when none. */
   codeHash: text("code_hash"),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
-  /** Wrong guesses on the live code. */
+  /** Guesses (failed + in-flight) against the live code; a right one counts too. */
   attempts: integer("attempts").default(0).notNull(),
   /** Codes issued in the current window. */
   issueCount: integer("issue_count").default(0).notNull(),
