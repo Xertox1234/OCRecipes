@@ -30,6 +30,7 @@ vi.mock("../../storage", () => ({
     issueNonce: vi.fn(),
     consumeNonce: vi.fn(),
     findIdentity: vi.fn(),
+    appleGrantInUse: vi.fn(),
     listIdentities: vi.fn(),
     insertIdentity: vi.fn(),
     setAppleRefreshToken: vi.fn(),
@@ -358,6 +359,7 @@ describe("POST /api/auth/social", () => {
         authorizationCode: "c",
       });
     beforeEach(() => {
+      vi.mocked(storage.appleGrantInUse).mockResolvedValue(false);
       vi.mocked(verifyAppleIdToken).mockResolvedValue(appleClaims);
       vi.mocked(exchangeAppleCode).mockResolvedValue("orphan-refresh");
       vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
@@ -380,17 +382,14 @@ describe("POST /api/auth/social", () => {
           expect.anything(),
         ),
       );
+      expect(storage.appleGrantInUse).toHaveBeenCalledWith(appleClaims.sub);
     });
 
-    it("is NOT revoked when that Apple ID turns out to be linked already", async () => {
+    it("is NOT revoked while that Apple grant is in use (linked, or on a live ticket)", async () => {
       vi.mocked(storage.insertIdentity).mockRejectedValue(
         Object.assign(new Error("dup"), { code: "23505" }),
       );
-      vi.mocked(storage.findIdentity)
-        .mockResolvedValueOnce(undefined)
-        .mockResolvedValue(
-          createMockUserIdentity({ id: "i9", userId: "u2", provider: "apple" }),
-        );
+      vi.mocked(storage.appleGrantInUse).mockResolvedValue(true);
       const res = await send();
       expect(res.status).toBe(409);
       await new Promise((r) => setTimeout(r, 20));

@@ -225,6 +225,40 @@ describe("identities storage", () => {
     });
   });
 
+  // Auth audit 2026-10-10 L17 review: revoking any token ends the app's whole
+  // Apple grant, so a grant is "in use" while a linked identity OR a live
+  // ticket holds that Apple ID — the ticket sweep's own rule.
+  describe("appleGrantInUse", () => {
+    it("is false for an unknown Apple ID", async () => {
+      expect(await ids.appleGrantInUse("a-none")).toBe(false);
+    });
+    it("is true while a live ticket holds it, false once it expires", async () => {
+      const t = await ids.createPendingSignIn({
+        ...baseTicket,
+        kind: "sign_up",
+        provider: "apple",
+        providerSubject: "a-t",
+        appleRefreshTokenEnc: "v1:t",
+        targetUserId: null,
+      });
+      expect(await ids.appleGrantInUse("a-t")).toBe(true);
+      await getTestTx()
+        .update(pendingSocialSignIns)
+        .set({ expiresAt: sql`now() - interval '1 minute'` })
+        .where(eq(pendingSocialSignIns.ticketHash, sha256Hex(t)));
+      expect(await ids.appleGrantInUse("a-t")).toBe(false);
+    });
+    it("is true while a linked identity holds it", async () => {
+      const u = await createTestUser(getTestTx());
+      await ids.insertIdentity({
+        userId: u.id,
+        provider: "apple",
+        providerSubject: "a-l",
+      });
+      expect(await ids.appleGrantInUse("a-l")).toBe(true);
+    });
+  });
+
   // Auth audit 2026-10-10 L17: link tickets aimed at an account cascade away
   // with it — take their Apple tokens first so they can be revoked.
   describe("takeAppleTokensOnTicketsTargeting", () => {

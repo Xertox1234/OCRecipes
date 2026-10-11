@@ -125,6 +125,24 @@ export async function sweepExpiredPendingSignIns(): Promise<string[]> {
 }
 
 /**
+ * Whether an Apple ID's grant is still in use — a linked identity or a live
+ * ticket holds it. Revoking any token ends the app's whole Apple grant, so a
+ * token is only revoked when this is false (the expiry sweep's rule).
+ */
+export async function appleGrantInUse(sub: string): Promise<boolean> {
+  const result = await db.execute<{ inUse: boolean }>(sql`
+    select exists (
+      select 1 from ${userIdentities} i
+      where i.provider = 'apple' and i.provider_subject = ${sub}
+    ) or exists (
+      select 1 from ${pendingSocialSignIns} p
+      where p.provider = 'apple' and p.provider_subject = ${sub}
+        and p.expires_at > now()
+    ) as "inUse"`);
+  return Boolean(result.rows[0]?.inUse);
+}
+
+/**
  * Delete the link tickets aimed at an account (they would cascade away with
  * it) and return their Apple tokens that nobody else holds — same filters as
  * the expiry sweep — so account deletion can revoke them (audit L17).

@@ -551,6 +551,22 @@ describe("DELETE /api/auth/identities/:provider", () => {
     expect(res.body.code).toBe("LAST_SIGN_IN_METHOD");
   });
 
+  it("404 (not a false last-method 409) when a double tap already removed it", async () => {
+    vi.mocked(storage.getSignInMethods)
+      .mockResolvedValueOnce({
+        password: true,
+        google: null,
+        apple: { email: null, isPrivateRelay: true },
+      })
+      .mockResolvedValue({ password: true, google: null, apple: null });
+    vi.mocked(storage.deleteIdentity).mockResolvedValue(undefined);
+    const res = await request(app())
+      .delete("/api/auth/identities/apple")
+      .set(auth);
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("NOT_FOUND");
+  });
+
   it("404 when not connected", async () => {
     vi.mocked(storage.getSignInMethods).mockResolvedValue({
       password: true,

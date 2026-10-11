@@ -243,9 +243,9 @@ export async function revokeAppleIdentities(
 /**
  * An Apple refresh token exchanged during a request that then failed before
  * storing it: revoke it so OCRecipes doesn't linger under "Apps using Apple
- * ID" (App Store 5.1.1(v), audit L17) — but only when no identity holds that
- * Apple ID, since revoking any token ends the app's whole Apple grant (the
- * same rule as the ticket sweep). Fire-and-forget; never throws.
+ * ID" (App Store 5.1.1(v), audit L17) — but only while no linked identity or
+ * live ticket holds that Apple ID, since revoking any token ends the app's
+ * whole Apple grant (the ticket sweep's rule). Fire-and-forget; never throws.
  */
 function revokeUnstoredAppleToken(
   tokenEnc: string | null,
@@ -253,9 +253,9 @@ function revokeUnstoredAppleToken(
 ): void {
   if (!tokenEnc) return;
   void storage
-    .findIdentity("apple", appleSubject)
-    .then((linked) =>
-      linked
+    .appleGrantInUse(appleSubject)
+    .then((inUse) =>
+      inUse
         ? undefined
         : revokeAppleIdentities([
             { provider: "apple", appleRefreshTokenEnc: tokenEnc },
@@ -425,7 +425,9 @@ export function register(app: Express): void {
               appleTokenEnc = null; // logged inside; never blocks a returning user
             }
           }
-          if (appleTokenEnc)
+          // A linked Apple ID's grant is in use by definition — its token is
+          // never revoked, whatever happens next.
+          if (appleTokenEnc && !linked)
             unstored = { tokenEnc: appleTokenEnc, sub: claims.sub };
         }
 
@@ -870,6 +872,10 @@ export function register(app: Express): void {
         // The storage delete re-checks "not the last method" under a lock: a
         // concurrent disconnect that won the race refuses this one (audit L16).
         if (!(await storage.deleteIdentity(req.userId, provider.data))) {
+          // Refused or already gone (a double tap): say which, truthfully.
+          if (!(await storage.getSignInMethods(req.userId))[provider.data]) {
+            return sendError(res, 404, "Not connected", ErrorCode.NOT_FOUND);
+          }
           return sendError(
             res,
             409,
