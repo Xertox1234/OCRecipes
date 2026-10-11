@@ -433,9 +433,9 @@ describe("every protected route is registered behind requireAuth (static guard)"
       "POST /api/auth/upgrade/totp/confirm",
       "POST /api/auth/upgrade/totp/setup",
     ]);
-    expect(
-      upgrade.filter((r) => !r.hasUpgradePass).map((r) => r.key),
-    ).toEqual([]);
+    expect(upgrade.filter((r) => !r.hasUpgradePass).map((r) => r.key)).toEqual(
+      [],
+    );
     expect(
       routes
         .filter(

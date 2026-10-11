@@ -29,10 +29,7 @@ afterEach(() => {
 });
 
 const sentHeaders = () =>
-  (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<
-    string,
-    string
-  >;
+  (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
 
 describe("upgradeRequest", () => {
   it("POSTs with Authorization: UpgradePass <pass>, never the stored Bearer token", async () => {

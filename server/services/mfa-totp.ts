@@ -36,7 +36,8 @@ export async function checkPendingTotpCode(
   userId: string,
   code: string,
 ): Promise<
-  { ok: true; step: number } | { ok: false; reason: "wrong_code" | "unavailable" }
+  | { ok: true; step: number }
+  | { ok: false; reason: "wrong_code" | "unavailable" }
 > {
   const pendingEnc = await storage.getPendingTotpSecret(userId);
   if (!pendingEnc) return { ok: false, reason: "wrong_code" };

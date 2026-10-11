@@ -38,7 +38,12 @@ describe("needsPasswordUpgrade", () => {
     ["no two-step, 14 characters", null, "a".repeat(14), true],
     ["no two-step, 15 characters", null, "a".repeat(15), false],
     ["two-step on, 8 characters", new Date(), "a".repeat(8), false],
-    ["no two-step, 14 emoji (code points, not UTF-16 units)", null, "😀".repeat(14), true],
+    [
+      "no two-step, 14 emoji (code points, not UTF-16 units)",
+      null,
+      "😀".repeat(14),
+      true,
+    ],
     ["no two-step, 15 emoji", null, "😀".repeat(15), false],
   ])("%s → %s", (_label, mfaEnabledAt, pw, want) => {
     expect(needsPasswordUpgrade({ mfaEnabledAt }, pw)).toBe(want);

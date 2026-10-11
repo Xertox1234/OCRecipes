@@ -135,7 +135,9 @@ export function register(app: Express): void {
         const recoveryCodes = await confirmFirstEnrollment(
           ctx.user,
           check.step,
-          { upgradePass: { idHash: ctx.idHash, tokenVersion: ctx.tokenVersion } },
+          {
+            upgradePass: { idHash: ctx.idHash, tokenVersion: ctx.tokenVersion },
+          },
         );
         if (!recoveryCodes) return expired(res);
         invalidateTokenVersionCache(ctx.user.id);
@@ -172,7 +174,12 @@ export function register(app: Express): void {
         // Answered here, never thrown: the rejection derives from the
         // password, and a thrown value can reach the error logger.
         if (rejected) {
-          return sendError(res, rejected.status, rejected.message, rejected.code);
+          return sendError(
+            res,
+            rejected.status,
+            rejected.message,
+            rejected.code,
+          );
         }
         const version = await storage.completePasswordUpgrade({
           idHash: ctx.idHash,
