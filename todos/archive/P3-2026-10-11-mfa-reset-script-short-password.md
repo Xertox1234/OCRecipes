@@ -1,6 +1,6 @@
 ---
 title: "Manual 2FA reset must not leave a short password standing alone"
-status: backlog
+status: done
 priority: low
 created: 2026-10-11
 updated: 2026-10-11
@@ -23,10 +23,10 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 
 ## Acceptance Criteria
 
-- [ ] The script refuses (or requires a forced password reset) when the account's password is shorter than PASSWORD_MIN_SINGLE_FACTOR, with a clear message for the operator
-- [ ] `pending_email` is cleared like the route's disable path
-- [ ] The runbook's After section tells the person to set a 15+ password when that path is taken
-- [ ] Script test covers both branches (dry-run default kept)
+- [x] The script refuses (or requires a forced password reset) when the account's password is shorter than PASSWORD_MIN_SINGLE_FACTOR, with a clear message for the operator
+- [x] `pending_email` is cleared like the route's disable path
+- [x] The runbook's After section tells the person to set a 15+ password when that path is taken
+- [x] Script test covers both branches (dry-run default kept)
 
 ## Implementation Notes
 
@@ -52,3 +52,5 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 ### 2026-10-11
 
 - Initial creation (deferred from the auth security audit)
+
+- Fixed: the script cannot measure the length (pv2$ hash), and since #1370 it does not need to — with two-step off, sign-in gives a password under 15 an upgrade pass (needsPasswordUpgrade), never a session. That is the forced change. The script and runbook now tell the operator and the person to expect it. disableMfa gained clearPendingEmail; the script passes it, so a staged email change is cancelled (the plain route disable still keeps it, by design).

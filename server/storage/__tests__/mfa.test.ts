@@ -279,6 +279,20 @@ describe("MFA storage", () => {
     expect(trusted).toHaveLength(0);
   });
 
+  it("disableMfa with clearPendingEmail (the manual reset): drops a staged email, keeps the password", async () => {
+    await confirmEnrolled(testUser.id, 100);
+    await tx
+      .update(users)
+      .set({ pendingEmail: "staged@example.com" })
+      .where(eq(users.id, testUser.id));
+    const v = await mfa.disableMfa(testUser.id, { clearPendingEmail: true });
+    expect(v).toBe(testUser.tokenVersion + 2);
+    const [u] = await tx.select().from(users).where(eq(users.id, testUser.id));
+    expect(u.pendingEmail).toBeNull();
+    expect(u.password).toBe(testUser.password);
+    expect(u.mfaEnabledAt).toBeNull();
+  });
+
   it("challenge: 5 reservations then refused; consume once; concurrent consume: one wins", async () => {
     await mfa.createMfaChallenge({
       tokenHash: "t",

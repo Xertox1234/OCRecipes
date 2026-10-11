@@ -33,7 +33,8 @@ The owner runs every production command with `!`. Look up the user's id first (b
 npx tsx scripts/mfa-reset.ts --user <id>
 
 # 2. Real run: turns two-step off, deletes the secret, recovery codes, open
-#    challenges and trusted phones, signs every device out, and emails the account.
+#    challenges and trusted phones, cancels any pending email change, signs
+#    every device out, and emails the account.
 npx tsx scripts/mfa-reset.ts --user <id> --commit
 ```
 
@@ -46,5 +47,7 @@ Sessions that were already open can keep working for up to **60 seconds** after 
 Tell the person:
 
 - Sign in with your password. No code will be asked.
+- If your password is shorter than 15 characters, the app will ask you to choose a longer one (or turn two-step back on) before it signs you in. A password that short isn't enough on its own.
+- If you had started changing your email address, that change was cancelled. Start it again once you're signed in.
 - Set up two-step verification again (Profile → Sign-in methods), and save the new recovery codes somewhere other than your phone.
 - You'll get an email saying two-step verification was turned off. That's expected.

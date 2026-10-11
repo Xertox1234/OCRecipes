@@ -335,7 +335,9 @@ export async function replaceRecoveryCodes(
  */
 export async function disableMfa(
   userId: string,
-  opts: { newPasswordHash?: string } = {},
+  // clearPendingEmail: the manual reset (scripts/mfa-reset.ts) is account
+  // recovery, so like every password change it drops a staged email change.
+  opts: { newPasswordHash?: string; clearPendingEmail?: boolean } = {},
 ): Promise<number | undefined> {
   return db.transaction(async (tx) => {
     await Promise.all([
@@ -349,8 +351,9 @@ export async function disableMfa(
       .set({
         mfaEnabledAt: null,
         tokenVersion: sql`${users.tokenVersion} + 1`,
-        ...(opts.newPasswordHash
-          ? { password: opts.newPasswordHash, pendingEmail: null }
+        ...(opts.newPasswordHash ? { password: opts.newPasswordHash } : {}),
+        ...(opts.newPasswordHash || opts.clearPendingEmail
+          ? { pendingEmail: null }
           : {}),
       })
       .where(eq(users.id, userId))
