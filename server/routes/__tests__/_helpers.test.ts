@@ -284,12 +284,17 @@ describe("Route Helpers", () => {
       expect(result.success).toBe(false);
     });
 
-    it("rejects password longer than 200 chars", () => {
-      const result = loginSchema.safeParse({
-        username: "testuser",
-        password: "a".repeat(201),
-      });
-      expect(result.success).toBe(false);
+    // 512 UTF-16 units: the longest password the rule allows (128 code
+    // points, up to 256 units of emoji) must still sign in.
+    it("accepts a password of 512 UTF-16 units and rejects 513", () => {
+      expect(
+        loginSchema.safeParse({ username: "testuser", password: "a".repeat(512) })
+          .success,
+      ).toBe(true);
+      expect(
+        loginSchema.safeParse({ username: "testuser", password: "a".repeat(513) })
+          .success,
+      ).toBe(false);
     });
 
     it("allows single character username (login is lenient)", () => {
