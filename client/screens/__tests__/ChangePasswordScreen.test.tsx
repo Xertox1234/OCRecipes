@@ -334,4 +334,22 @@ describe("ChangePasswordScreen", () => {
       screen.getByLabelText("Code from the email").getAttribute("aria-invalid"),
     ).not.toBe("true");
   });
+
+  // Review (confirmation pass): a code typed on the current-password view is
+  // dropped when the person switches to the emailed code — the field they
+  // see there is empty, so nothing hidden may be sent.
+  it("two-step on: an authenticator code typed before 'I forgot it' is not sent with the emailed code", async () => {
+    auth.requestPasswordChangeCode.mockResolvedValue(undefined);
+    renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
+    type("6-digit code", "111111");
+    tap("I forgot it");
+    await act(async () => tap("Email me a code"));
+    type("Code from the email", "123456");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(auth.changePassword).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Enter the code from your authenticator app."),
+    ).toBeTruthy();
+  });
 });

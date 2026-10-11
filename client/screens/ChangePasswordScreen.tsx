@@ -84,6 +84,13 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     changed: boolean;
   } | null>(null);
 
+  // The authenticator field remounts empty when the mode changes, so drop
+  // the code it held then — never send a code the person can't see.
+  const switchMode = (next: Mode) => {
+    if (next !== mode) setFactor(null);
+    setMode(next);
+  };
+
   const proofFor = (provider?: SocialProvider): ChangePasswordProof => {
     if (provider) return { provider };
     if (mode === "code") return { emailCode };
@@ -157,7 +164,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     busyRef.current = false;
     setBusy(false);
     if (failure !== null) setError(codeRequestErrorMessage(failure));
-    else setMode("code");
+    else switchMode("code");
   };
 
   if (replacement && replacement.changed) {
@@ -205,7 +212,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="I forgot it"
-              onPress={() => setMode("forgot")}
+              onPress={() => switchMode("forgot")}
               style={styles.link}
             >
               <ThemedText type="small" style={{ color: theme.link }}>
