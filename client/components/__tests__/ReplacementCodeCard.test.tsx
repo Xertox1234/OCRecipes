@@ -21,7 +21,9 @@ afterEach(() => {
 describe("ReplacementCodeCard announcement", () => {
   it("alone: announces the new code once", () => {
     renderComponent(<ReplacementCodeCard code="abcd-efgh" onDone={vi.fn()} />);
-    act(() => vi.runAllTimers());
+    act(() => {
+      vi.runAllTimers();
+    });
     expect(announce).toHaveBeenCalledTimes(1);
     expect(announce.mock.calls[0][0]).toContain("abcd-efgh");
   });
@@ -35,7 +37,9 @@ describe("ReplacementCodeCard announcement", () => {
         <ReplacementCodeCard code="abcd-efgh" onDone={vi.fn()} />
       </>,
     );
-    act(() => vi.runAllTimers());
+    act(() => {
+      vi.runAllTimers();
+    });
     expect(announce).toHaveBeenCalledTimes(1);
     const said = String(announce.mock.calls[0][0]);
     expect(said.indexOf("abcd-efgh")).toBeGreaterThanOrEqual(0);
