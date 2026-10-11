@@ -60,6 +60,7 @@ describe("password reset revokes sessions immediately (real requireAuth)", () =>
       username: "rev",
       email: "rev@example.com",
       resetCodeHash: hashResetCode(id, "123456"),
+      mfaEnabledAt: null,
     });
     vi.mocked(storage.completePasswordReset).mockImplementation(async () => {
       tokenVersion += 1; // what the real UPDATE does
@@ -77,7 +78,7 @@ describe("password reset revokes sessions immediately (real requireAuth)", () =>
     const reset = await request(app).post("/api/auth/reset-password").send({
       email: "rev@example.com",
       code: "123456",
-      newPassword: "newpass99",
+      newPassword: "a-new-long-passphrase",
     });
     expect(reset.status).toBe(200);
 

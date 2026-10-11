@@ -64,7 +64,10 @@ import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
 import { hashPassword, isLegacyHash } from "../lib/password-hash";
-import { PASSWORD_MIN_SINGLE_FACTOR } from "@shared/constants/password-policy";
+import {
+  PASSWORD_MIN_SINGLE_FACTOR,
+  PASSWORD_MIN_WITH_MFA,
+} from "@shared/constants/password-policy";
 import { checkNewPassword } from "./_password-rules";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { startMfaChallenge } from "../lib/mfa/challenge";
@@ -611,7 +614,20 @@ export function register(app: Express): void {
           sendInvalidResetCode(res);
           return;
         }
-        const newHash = await bcrypt.hash(newPassword, 12);
+        // Only after a correct code, so a wrong code never learns anything
+        // about the account. A rejection leaves the code live for a retry.
+        const rejected = await checkNewPassword(
+          newPassword,
+          reserved.mfaEnabledAt
+            ? PASSWORD_MIN_WITH_MFA
+            : PASSWORD_MIN_SINGLE_FACTOR,
+          reserved.mfaEnabledAt ? "mfa" : "single_factor",
+        );
+        if (rejected) {
+          sendError(res, rejected.status, rejected.message, rejected.code);
+          return;
+        }
+        const newHash = await hashPassword(newPassword);
         const completed = await storage.completePasswordReset(
           reserved.id,
           reserved.resetCodeHash,
