@@ -123,7 +123,19 @@ beforeAll(async () => {
 const touchedAccountKeys = new Set<string>();
 const touchedIpKeys = new Set<string>();
 
-function login(username: string, ip: string, password = "wrong-password") {
+function login(
+  username: string,
+  ip: string,
+  password = "wrong-password",
+  // An email that belongs to an account is bucketed under that account's
+  // username in production (audit L2) — pass it so the drain resets that key.
+  accountUsername?: string,
+) {
+  if (accountUsername) {
+    touchedAccountKeys.add(
+      `${LOGIN_ACCOUNT_KEY_PREFIX}${normalizeUsernameKey(accountUsername)}`,
+    );
+  }
   // loginAccountLimiter keys failed attempts by normalized username (falling
   // back to the IP key when none is usable); loginLimiter keys by IP. All test
   // IPs are IPv4 in X-Forwarded-For with no RAILWAY_ENVIRONMENT_NAME set, so
@@ -214,7 +226,12 @@ describe("per-account login throttling (real express-rate-limit)", () => {
       expect((await login("mixcase_user", `10.77.0.${i}`)).status).toBe(401);
       expect((await login("Mix@Example.com", `10.78.0.${i}`)).status).toBe(401);
     }
-    const overflow = await login("mix@example.com", "10.79.0.1");
+    const overflow = await login(
+      "mix@example.com",
+      "10.79.0.1",
+      undefined,
+      "mixcase_user",
+    );
     expect(overflow.status).toBe(429);
   });
 

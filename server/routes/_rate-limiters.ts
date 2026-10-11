@@ -129,7 +129,10 @@ export const LOGIN_ACCOUNT_KEY_PREFIX = "login-account:";
  * is still throttled (the IP-keyed loginLimiter above stays in place — the
  * two layers compose). skipSuccessfulRequests un-counts responses < 400, so
  * successful logins never accumulate toward the lockout. The message/shape
- * is byte-identical to loginLimiter's 429 (no account-existence oracle).
+ * is byte-identical to loginLimiter's 429, so it never says whether an
+ * account exists. Accepted trade-off (audit L2): since a username and its
+ * email share one bucket, someone who has already filled an account's bucket
+ * can tell whether a given email belongs to that same account (429 vs 401).
  * Defined inline rather than via createRateLimiter because it needs a
  * body-derived keyGenerator (the documented factory exception). The window
  * is deliberately a short backoff (not a hard lockout) and the threshold is
