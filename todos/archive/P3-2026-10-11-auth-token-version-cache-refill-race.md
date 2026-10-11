@@ -1,6 +1,6 @@
 ---
 title: "Token-version cache can re-cache a pre-revoke version for up to 60 s"
-status: backlog
+status: done
 priority: low
 created: 2026-10-11
 updated: 2026-10-11
@@ -23,8 +23,8 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 
 ## Acceptance Criteria
 
-- [ ] Keep a per-user invalidation epoch (or min version) set by invalidateTokenVersionCache; a cache fill only stores a version ≥ the floor / when no invalidate happened since the read began
-- [ ] Real-module test (server/**tests**/auth.test.ts style, no middleware mock) reproduces the interleave and proves the fix
+- [x] Keep a per-user invalidation epoch (or min version) set by invalidateTokenVersionCache; a cache fill only stores a version ≥ the floor / when no invalidate happened since the read began
+- [x] Real-module test (server/**tests**/auth.test.ts style, no middleware mock) reproduces the interleave and proves the fix
 
 ## Implementation Notes
 
@@ -51,3 +51,5 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 ### 2026-10-11
 
 - Initial creation (deferred from the auth security audit)
+
+- Fixed: a process-wide invalidation counter; a cache fill is kept only when no invalidate landed during its read (real-module test reproduces the interleave). Global, not per-user — no eviction needed, a skipped fill costs one read.
