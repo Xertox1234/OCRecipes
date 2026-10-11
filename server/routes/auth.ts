@@ -913,6 +913,7 @@ export function register(app: Express): void {
     requireAuth,
     accountDeletionLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const validated = deleteAccountSchema.parse(req.body);
 
@@ -930,8 +931,9 @@ export function register(app: Express): void {
           );
         }
         // Spec D2: a password proof on an MFA account also needs the code; a
-        // Google/Apple proof never does (D1). The account is about to go, so a
-        // spent recovery code's replacement is not returned.
+        // Google/Apple proof never does (D1). On success the account goes, so
+        // the replacement is moot — but a failure before the delete leaves it
+        // alive, so the catch hands the replacement back (audit L11).
         const gate = await secondFactorForPasswordProof(
           user,
           "password" in validated,
@@ -939,6 +941,10 @@ export function register(app: Express): void {
         );
         if (!gate.ok)
           return sendError(res, gate.status, gate.message, gate.code);
+        if (gate.replacementRecoveryCode)
+          replacement = {
+            replacementRecoveryCode: gate.replacementRecoveryCode,
+          };
 
         // Revoke Apple tokens BEFORE the delete cascades the identity rows
         // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
@@ -985,7 +991,7 @@ export function register(app: Express): void {
             ),
         );
       } catch (error) {
-        handleRouteError(res, error, "delete account");
+        handleRouteError(res, error, "delete account", replacement);
       }
     },
   );

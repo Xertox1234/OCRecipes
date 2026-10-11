@@ -442,6 +442,9 @@ export function register(app: Express): void {
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      // Once a recovery code is spent, a failure before MFA is off must still
+      // hand back its replacement (audit L11).
+      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const body = parse(mfaDisableSchema, req.body);
         const user = await me(req);
@@ -474,7 +477,7 @@ export function register(app: Express): void {
           }
           newPasswordHash = await hashPassword(body.newPassword);
         }
-        await requireFactor(user, body.secondFactor);
+        replacement = await requireFactor(user, body.secondFactor);
         await storage.disableMfa(user.id, { newPasswordHash });
         invalidateTokenVersionCache(user.id);
         notice(user, "disabled");
@@ -486,7 +489,7 @@ export function register(app: Express): void {
         }
         res.json(await issueSession(user.id));
       } catch (error) {
-        answer(res, error, "turn off two-step verification");
+        answer(res, error, "turn off two-step verification", replacement);
       }
     },
   );
@@ -497,12 +500,15 @@ export function register(app: Express): void {
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      // Once a recovery code is spent, a failed replace leaves the old set in
+      // place minus that code — hand back its replacement (audit L11).
+      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const body = parse(mfaPasswordAndFactorSchema, req.body);
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
-        await requireFactor(user, body.secondFactor);
+        replacement = await requireFactor(user, body.secondFactor);
         const recoveryCodes = generateRecoveryCodes();
         await storage.replaceRecoveryCodes(
           user.id,
@@ -513,7 +519,7 @@ export function register(app: Express): void {
         notice(user, "recovery_codes_replaced");
         res.json({ recoveryCodes });
       } catch (error) {
-        answer(res, error, "replace recovery codes");
+        answer(res, error, "replace recovery codes", replacement);
       }
     },
   );

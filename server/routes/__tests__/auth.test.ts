@@ -1937,6 +1937,23 @@ describe("Auth Routes", () => {
         expect(storage.deleteUser).not.toHaveBeenCalled();
       });
 
+      // Auth audit 2026-10-10 L11: a failure before the account is gone leaves
+      // it alive, so a spent recovery code's replacement must ride the 500.
+      it("a recovery code then a failed delete → 500 that still carries its replacement", async () => {
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(await mfaUser());
+        mockVerifySecondFactor.mockResolvedValue({
+          ok: true,
+          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+        });
+        vi.mocked(storage.deleteUser).mockRejectedValueOnce(new Error("db"));
+        const res = await del({
+          password: "correctpassword",
+          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+        });
+        expect(res.status).toBe(500);
+        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+      });
+
       it("right code → deleted", async () => {
         vi.mocked(storage.getUserForAuth).mockResolvedValue(await mfaUser());
         vi.mocked(storage.deleteUser).mockResolvedValue(true);

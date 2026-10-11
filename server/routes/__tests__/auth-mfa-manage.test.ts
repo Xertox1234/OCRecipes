@@ -366,6 +366,22 @@ describe("POST /api/auth/mfa/disable", () => {
     asUser({ password: longHash, mfaEnabledAt: new Date() });
   });
 
+  // Auth audit 2026-10-10 L11: once a recovery code is spent, a later failure
+  // must still hand back its replacement (the 10-10 spent-credential rule).
+  it("a recovery code then a failed write → 500 that still carries its replacement", async () => {
+    mockVerifySecondFactor.mockResolvedValue({
+      ok: true,
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+    });
+    vi.mocked(storage.disableMfa).mockRejectedValue(new Error("db"));
+    const res = await post("disable", {
+      password: LONG_PASSWORD,
+      secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+  });
+
   it("password + factor → off, sessions end, notice sent, a fresh session returned", async () => {
     vi.mocked(storage.disableMfa).mockResolvedValue(5);
     const res = await post("disable", {
@@ -490,6 +506,21 @@ describe("POST /api/auth/mfa/disable", () => {
 });
 
 describe("POST /api/auth/mfa/recovery-codes", () => {
+  it("a recovery code then a failed replace → 500 that still carries its replacement (audit L11)", async () => {
+    asUser({ mfaEnabledAt: new Date() });
+    mockVerifySecondFactor.mockResolvedValue({
+      ok: true,
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+    });
+    vi.mocked(storage.replaceRecoveryCodes).mockRejectedValue(new Error("db"));
+    const res = await post("recovery-codes", {
+      password: "right-pass1",
+      secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+  });
+
   it("password + factor → 10 new codes, old ones replaced, notice sent", async () => {
     asUser({ mfaEnabledAt: new Date() });
     const res = await post("recovery-codes", {
