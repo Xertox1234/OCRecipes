@@ -38,6 +38,10 @@ const tap = (name: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks keeps queued *Once replies; a test that never sends would
+  // leak its reply into the next one.
+  auth.changePassword.mockReset();
+  auth.requestPasswordChangeCode.mockReset();
 });
 
 describe("ChangePasswordScreen", () => {
@@ -214,6 +218,7 @@ describe("ChangePasswordScreen", () => {
     renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
     type("Current password", "old-pass");
     type("New password", "short");
+    type("6-digit code", "123456");
     await act(async () => tap("Save new password"));
     expect(screen.getByText("r-9")).toBeTruthy();
     expect(screen.getByText("Too short for this account.")).toBeTruthy();
@@ -274,5 +279,59 @@ describe("ChangePasswordScreen", () => {
     expect(
       screen.getByLabelText("Code from the email").getAttribute("aria-invalid"),
     ).toBe("true");
+  });
+
+  // Review (code, 2nd round): an empty authenticator field never sends —
+  // on the emailed-code path that would spend one of the code's 5 guesses.
+  it("two-step on: Save with the authenticator field empty sends nothing and says why", async () => {
+    renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
+    type("Current password", "old-pass");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(auth.changePassword).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Enter the code from your authenticator app."),
+    ).toBeTruthy();
+  });
+
+  it("SECOND_FACTOR_REQUIRED says to enter the authenticator code", async () => {
+    auth.changePassword.mockRejectedValueOnce(
+      new ApiError(
+        '403: {"code":"SECOND_FACTOR_REQUIRED"}',
+        "SECOND_FACTOR_REQUIRED",
+        403,
+      ),
+    );
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "old-pass");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(
+      screen.getByText("Enter the code from your authenticator app."),
+    ).toBeTruthy();
+  });
+
+  // Review (mobile, 2nd round): a new code clears the old code's invalid mark.
+  it("Send a new code clears the code field's invalid mark", async () => {
+    auth.requestPasswordChangeCode.mockResolvedValue(undefined);
+    auth.changePassword.mockRejectedValueOnce(
+      new ApiError(
+        '400: {"error":"x","code":"INVALID_RESET_CODE"}',
+        "INVALID_RESET_CODE",
+        400,
+      ),
+    );
+    renderScreen({ hasPassword: false, providers: [] });
+    await act(async () => tap("Email me a code"));
+    type("Code from the email", "000000");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(
+      screen.getByLabelText("Code from the email").getAttribute("aria-invalid"),
+    ).toBe("true");
+    await act(async () => tap("Send a new code"));
+    expect(
+      screen.getByLabelText("Code from the email").getAttribute("aria-invalid"),
+    ).not.toBe("true");
   });
 });

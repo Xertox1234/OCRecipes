@@ -41,6 +41,8 @@ type Mode = "current" | "forgot" | "code";
 type SaveResult = { done: boolean; replacementRecoveryCode?: string };
 type ErrorField = "current" | "code" | "new";
 
+const ENTER_AUTH_CODE = "Enter the code from your authenticator app.";
+
 /** Which input an error belongs to, so that field is marked invalid. */
 function fieldFor(err: unknown): ErrorField | null {
   const code = err instanceof ApiError ? err.code : undefined;
@@ -94,6 +96,8 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     if (spent) setReplacement({ code: spent, changed: false });
     if (isSecondFactorRequired(err)) {
       setNeedsFactor(true);
+      setErrorField(null);
+      setError(ENTER_AUTH_CODE);
       return;
     }
     setErrorField(fieldFor(err));
@@ -112,6 +116,13 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
 
   const save = async (provider?: SocialProvider) => {
     if (busyRef.current) return;
+    // Never send without the authenticator code once it's asked for: the
+    // server would refuse, and an emailed-code guess would be spent on it.
+    if (!provider && needsFactor && !factor) {
+      setErrorField(null);
+      setError(ENTER_AUTH_CODE);
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     setError(null);
@@ -136,6 +147,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     busyRef.current = true;
     setBusy(true);
     setError(null);
+    setErrorField(null);
     let failure: unknown = null;
     try {
       await requestPasswordChangeCode();
