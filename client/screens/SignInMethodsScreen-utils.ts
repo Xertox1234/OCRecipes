@@ -103,3 +103,22 @@ export function deleteProofMode(
   if (!methods) return { kind: "loading" };
   return connectPromptMode(toMethodList(methods), platform, nativeProviders);
 }
+
+/**
+ * Change password → "I forgot it": the connected Google/Apple sign-ins this
+ * device can open (Apple is iOS-only; Google needs its SDK in this build) —
+ * the same rule as connectPromptMode, so no button ends in a sheet that
+ * can't appear.
+ */
+export function reauthProviders(
+  methods: SignInMethods,
+  platform: Platform,
+  nativeProviders: NativeProviders,
+): SocialProvider[] {
+  return (["apple", "google"] as const).filter(
+    (p) =>
+      methods[p] !== null &&
+      nativeProviders[p] &&
+      (p !== "apple" || platform === "ios"),
+  );
+}

@@ -2,6 +2,7 @@ import React, { createContext, useContext, ReactNode } from "react";
 import {
   useAuth,
   type DeleteAccountProof,
+  type ChangePasswordProof,
   type TwoStepSecret,
 } from "@/hooks/useAuth";
 import type {
@@ -61,6 +62,12 @@ interface AuthContextType {
   ) => Promise<{ session?: SignedInResult; recoveryCodes: string[] }>;
   /** Sets a 15+ password on the pass and signs in. */
   upgradeSetPassword: (pass: string, newPassword: string) => Promise<void>;
+  requestPasswordChangeCode: () => Promise<void>;
+  changePassword: (
+    proof: ChangePasswordProof,
+    newPassword: string,
+    secondFactor?: SecondFactorInput,
+  ) => Promise<{ done: boolean; replacementRecoveryCode?: string }>;
   register: (
     username: string,
     password: string,

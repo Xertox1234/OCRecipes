@@ -9,7 +9,7 @@ export function normalizeCodeInput(raw: string): string {
 }
 
 /** The JSON body of a failed request (throwIfResNotOk: `${status}: ${body}`). */
-function errorBody(err: unknown): Record<string, unknown> | undefined {
+export function errorBody(err: unknown): Record<string, unknown> | undefined {
   if (!(err instanceof ApiError)) return undefined;
   const sep = err.message.indexOf(": ");
   if (sep < 0) return undefined;

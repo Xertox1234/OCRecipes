@@ -35,6 +35,7 @@ import {
   identityErrorMessage,
   methodSubtitle,
   providerRowState,
+  reauthProviders,
 } from "./SignInMethodsScreen-utils";
 
 const PROVIDERS: { provider: SocialProvider; label: string }[] = [
@@ -47,19 +48,14 @@ const platform =
 
 /**
  * Settings → Sign-in methods: the account's password and Google/Apple
- * sign-ins. Connecting needs the password (owner ruling); a password is set
- * up through "Forgot password?", which only exists signed out.
+ * sign-ins. Connecting needs the password (owner ruling); the password row
+ * opens Change password (or Set a password when there is none).
  */
 export default function SignInMethodsScreen() {
   const { theme } = useTheme();
   const toast = useToast();
-  const {
-    user,
-    connectProvider,
-    disconnectProvider,
-    logout,
-    forgetTrustedPhones,
-  } = useAuthContext();
+  const { connectProvider, disconnectProvider, forgetTrustedPhones } =
+    useAuthContext();
   const { methods, mfaEnabled, isError, refetch, setMethods } =
     useSignInMethods();
   const config = useSocialConfig();
@@ -221,18 +217,6 @@ export default function SignInMethodsScreen() {
     }
   };
 
-  const askPasswordReset = () => {
-    const email = user?.email ? ` to ${user.email}` : "";
-    confirm({
-      title: methods.password ? "Change password" : "Set up a password",
-      message: `You'll be signed out. On the sign-in screen, tap "Forgot password?" and we'll email a code${email}.`,
-      confirmLabel: "Sign out",
-      onConfirm: () => {
-        void logout();
-      },
-    });
-  };
-
   return (
     <>
       <ScreenScrollView
@@ -255,7 +239,17 @@ export default function SignInMethodsScreen() {
             </View>
             <Button
               variant="outline"
-              onPress={askPasswordReset}
+              onPress={() =>
+                navigation.navigate("ChangePassword", {
+                  hasPassword: methods.password,
+                  providers: reauthProviders(
+                    methods,
+                    platform,
+                    NATIVE_PROVIDERS,
+                  ),
+                  mfaEnabled,
+                })
+              }
               accessibilityLabel={
                 methods.password ? "Change password" : "Set up a password"
               }

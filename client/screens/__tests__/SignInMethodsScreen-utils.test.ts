@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { SignInMethods } from "@shared/types/auth";
 import { ApiError } from "@/lib/api-error";
 import {
+  reauthProviders,
   methodSubtitle,
   toMethodList,
   providerRowState,
@@ -134,5 +135,37 @@ describe("deleteProofMode", () => {
         APPLE_ONLY,
       ),
     ).toEqual({ kind: "provider", provider: "apple" });
+  });
+});
+
+describe("reauthProviders (Change password → I forgot it)", () => {
+  const relay = { email: "x@privaterelay.appleid.com", isPrivateRelay: true };
+  const gmail = { email: "a@gmail.com" };
+  const both: SignInMethods = { password: true, google: gmail, apple: relay };
+  const allNative = { google: true, apple: true };
+
+  it("iOS with both SDKs: every connected provider", () => {
+    expect(reauthProviders(both, "ios", allNative)).toEqual([
+      "apple",
+      "google",
+    ]);
+  });
+  it("Apple is iOS-only: not offered on Android or web", () => {
+    expect(reauthProviders(both, "android", allNative)).toEqual(["google"]);
+    expect(reauthProviders(both, "web", allNative)).toEqual(["google"]);
+  });
+  it("a provider this build can't open is not offered", () => {
+    expect(
+      reauthProviders(both, "ios", { google: false, apple: true }),
+    ).toEqual(["apple"]);
+  });
+  it("only connected providers", () => {
+    expect(
+      reauthProviders(
+        { password: true, google: null, apple: relay },
+        "ios",
+        allNative,
+      ),
+    ).toEqual(["apple"]);
   });
 });

@@ -114,8 +114,9 @@ const EMAIL_FROM =
 // notice. The route + DB issuance caps keep this bucket well under 10.
 // "signed-in" (the change-password code) holds mail only a signed-in session
 // can trigger: reset codes are attacker-triggered and a fixed 24 h window lets
-// 12 land in minutes across its edge, so sharing their bucket would let a
-// stranger silence the owner's code (change-password security review).
+// 11 land in minutes across its edge (over this bucket's 10), so sharing
+// their bucket would let a stranger silence the owner's code
+// (change-password security review).
 const RECIPIENT_WINDOW_MS = 60 * 60 * 1000;
 type SendBucket = "general" | "account-security" | "signed-in";
 const BUCKET_CAPS: Record<SendBucket, number> = {
