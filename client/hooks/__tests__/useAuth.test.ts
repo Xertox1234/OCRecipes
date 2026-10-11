@@ -1,3 +1,4 @@
+import { ApiError } from "@/lib/api-error";
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { AppState, type AppStateStatus } from "react-native";
@@ -651,6 +652,23 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(false);
     });
 
+    it("upgradeConfirmTwoStep refused after two-step went on → the codes, no session (audit 2026-10-11)", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockRejectedValueOnce(
+        new ApiError(
+          '401: {"error":"x","code":"UPGRADE_PASS_EXPIRED","recoveryCodes":["A","B"]}',
+          "UPGRADE_PASS_EXPIRED",
+          401,
+        ),
+      );
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.upgradeConfirmTwoStep("pass-1", "123456");
+      });
+      expect(out).toEqual({ session: undefined, recoveryCodes: ["A", "B"] });
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+
     it("upgradeSetPassword posts on the pass and signs in", async () => {
       const { result } = await ready();
       jsonOnce({ status: "signed_in", user, token: "t-new" });
@@ -892,6 +910,39 @@ describe("useAuth", () => {
       );
       expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
       expect(out?.recoveryCodes).toEqual(["A", "B"]);
+    });
+
+    it("confirmTwoStep refused after two-step went on (a reset landed) → returns the codes, no session (audit 2026-10-11)", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockRejectedValueOnce(
+        new ApiError(
+          '401: {"error":"x","code":"MFA_CHALLENGE_EXPIRED","recoveryCodes":["A","B"]}',
+          "MFA_CHALLENGE_EXPIRED",
+          401,
+        ),
+      );
+      let out: { recoveryCodes?: string[] } | undefined;
+      await act(async () => {
+        out = await result.current.confirmTwoStep("123456");
+      });
+      expect(out?.recoveryCodes).toEqual(["A", "B"]);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+
+    it("confirmTwoStep refused with no codes → still throws", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockRejectedValueOnce(
+        new ApiError(
+          '400: {"code":"INVALID_SECOND_FACTOR"}',
+          "INVALID_SECOND_FACTOR",
+          400,
+        ),
+      );
+      await act(async () => {
+        await expect(result.current.confirmTwoStep("123456")).rejects.toThrow(
+          ApiError,
+        );
+      });
     });
 
     it("disableTwoStep keeps the new session", async () => {

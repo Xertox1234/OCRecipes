@@ -22,6 +22,7 @@ import type {
   User,
 } from "@shared/types/auth";
 import { upgradeRequest } from "@/lib/upgrade-pass-request";
+import { recoveryCodesOrThrow } from "@/lib/second-factor-utils";
 import { getProviderToken } from "@/lib/social-sign-in";
 import {
   registerPushToken,
@@ -733,7 +734,9 @@ export function useAuth() {
     async (code: string): Promise<{ recoveryCodes?: string[] }> => {
       const res = await apiRequest("POST", "/api/auth/mfa/totp/confirm", {
         code,
-      });
+      }).catch(recoveryCodesOrThrow);
+      // Refused after two-step went on: show the codes; no new session.
+      if (Array.isArray(res)) return { recoveryCodes: res };
       const data = (await res.json()) as SignedInResult & {
         recoveryCodes?: string[];
       };
@@ -803,10 +806,12 @@ export function useAuth() {
     async (
       pass: string,
       code: string,
-    ): Promise<{ session: SignedInResult; recoveryCodes: string[] }> => {
+    ): Promise<{ session?: SignedInResult; recoveryCodes: string[] }> => {
       const res = await upgradeRequest("/api/auth/upgrade/totp/confirm", pass, {
         code,
-      });
+      }).catch(recoveryCodesOrThrow);
+      // Refused after two-step went on: save the codes, then sign in again.
+      if (Array.isArray(res)) return { session: undefined, recoveryCodes: res };
       const { recoveryCodes, ...session } =
         (await res.json()) as SignedInResult & {
           recoveryCodes: string[];

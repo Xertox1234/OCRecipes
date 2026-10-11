@@ -5,6 +5,7 @@ import {
   isSecondFactorRequired,
   secondFactorErrorMessage,
   replacementFromError,
+  recoveryCodesOrThrow,
   isTwoStepCheckError,
 } from "../second-factor-utils";
 
@@ -102,6 +103,32 @@ describe("replacementFromError", () => {
       replacementFromError(new ApiError("500: <html>", undefined, 500)),
     ).toBeUndefined();
     expect(replacementFromError(new Error("x"))).toBeUndefined();
+  });
+});
+
+// Auth audit 2026-10-11 (Phase 6): a refused session mint after two-step was
+// turned on still carries the new codes — they are the account's only ones.
+describe("recoveryCodesOrThrow", () => {
+  it("returns the codes a refused answer carries", () => {
+    expect(
+      recoveryCodesOrThrow(
+        apiError(401, {
+          code: "UPGRADE_PASS_EXPIRED",
+          recoveryCodes: ["A", "B"],
+        }),
+      ),
+    ).toEqual(["A", "B"]);
+  });
+  it("re-throws the same error when there are no codes", () => {
+    for (const err of [
+      apiError(401, { code: "UPGRADE_PASS_EXPIRED" }),
+      apiError(401, { code: "X", recoveryCodes: "A" }),
+      apiError(401, { code: "X", recoveryCodes: [1, 2] }),
+      new ApiError("500: <html>", undefined, 500),
+      new Error("x"),
+    ]) {
+      expect(() => recoveryCodesOrThrow(err)).toThrow(err);
+    }
   });
 });
 
