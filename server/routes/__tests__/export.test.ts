@@ -32,6 +32,7 @@ function buildExport() {
     savedItems: [],
     favourites: { scannedItems: [], recipes: [] },
     tastePicks: [],
+    recipeTries: [],
     coachNotebook: [],
     menuScans: [],
     receiptScans: [],
