@@ -33,6 +33,7 @@ import {
   sendSignupAttemptNotice,
 } from "../../services/email";
 import { signVerificationToken } from "../../lib/verification-token";
+import { isBreached } from "../../lib/pwned-password";
 import {
   mockExpressReq,
   mockExpressRes,
@@ -93,6 +94,11 @@ vi.mock("../../storage", () => ({
 
 vi.mock("../../middleware/auth");
 
+// Never call api.pwnedpasswords.com from a test.
+vi.mock("../../lib/pwned-password", () => ({
+  isBreached: vi.fn().mockResolvedValue(false),
+}));
+
 vi.mock("express-rate-limit");
 
 vi.mock("../../lib/email-config", () => ({
@@ -151,6 +157,9 @@ function createApp() {
 
 const mockUser = createMockUser();
 
+// Sign-up needs 15+ characters (spec §2); no composition rule.
+const GOOD_PASSWORD = "a-long-test-passphrase";
+
 // pv2 fixtures for sign-ins that are NOT about rehashing: a legacy hash on a
 // successful sign-in starts a background rehash (spec §3), which would run
 // into the next test. Computed once — each is a cost-12 bcrypt.
@@ -177,13 +186,71 @@ describe("Auth Routes", () => {
   });
 
   describe("POST /api/auth/register", () => {
+    describe("password policy (spec §2, P2)", () => {
+      const send = (password: string) =>
+        request(app).post("/api/auth/register").send({
+          username: "policyuser",
+          password,
+          email: "policy@example.com",
+          ageConfirmed: true,
+        });
+
+      beforeEach(() => {
+        vi.mocked(storage.getUserByUsername).mockReset();
+        vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+        vi.mocked(storage.createUser).mockReset();
+        vi.mocked(storage.createUser).mockResolvedValue(mockUser);
+        vi.mocked(storage.getUserByEmail).mockClear();
+        vi.mocked(isBreached).mockReset();
+        vi.mocked(isBreached).mockResolvedValue(false);
+      });
+
+      it("14 characters → 400 PASSWORD_TOO_SHORT, no account", async () => {
+        const res = await send("a".repeat(14));
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
+        expect(res.body.error).toBe("Use at least 15 characters.");
+        expect(storage.createUser).not.toHaveBeenCalled();
+      });
+
+      it("15 letters, no digit → account created (no composition rule)", async () => {
+        const res = await send("abcdefghijklmno");
+        expect(res.status).toBe(201);
+        expect(storage.createUser).toHaveBeenCalledTimes(1);
+      });
+
+      it("a breached password → 400 PASSWORD_BREACHED, before any account lookup", async () => {
+        vi.mocked(isBreached).mockResolvedValue(true);
+        const res = await send(GOOD_PASSWORD);
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("PASSWORD_BREACHED");
+        expect(storage.getUserByUsername).not.toHaveBeenCalled();
+        expect(storage.getUserByEmail).not.toHaveBeenCalled();
+        expect(storage.createUser).not.toHaveBeenCalled();
+      });
+
+      it("breach check unavailable → account created (fail open)", async () => {
+        vi.mocked(isBreached).mockResolvedValue("unavailable");
+        const res = await send(GOOD_PASSWORD);
+        expect(res.status).toBe(201);
+        expect(storage.createUser).toHaveBeenCalledTimes(1);
+      });
+
+      it("stores a pv2 hash", async () => {
+        await send(GOOD_PASSWORD);
+        expect(vi.mocked(storage.createUser).mock.calls[0][0].password).toMatch(
+          /^pv2\$/,
+        );
+      });
+    });
+
     it("creates a new user and returns token", async () => {
       vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
       vi.mocked(storage.createUser).mockResolvedValue(mockUser);
 
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "newuser@example.com",
         ageConfirmed: true,
       });
@@ -200,7 +267,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "testuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "newuser@example.com",
         ageConfirmed: true,
       });
@@ -221,7 +288,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "raceuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "raceuser@example.com",
         ageConfirmed: true,
       });
@@ -235,7 +302,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "demo",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "demo-registrant@example.com",
         ageConfirmed: true,
       });
@@ -264,7 +331,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "not_reserved_here",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "dind@example.com",
         ageConfirmed: true,
       });
@@ -290,7 +357,7 @@ describe("Auth Routes", () => {
       const send = (email: string) =>
         request(app).post("/api/auth/register").send({
           username: "DEMO",
-          password: "password123",
+          password: GOOD_PASSWORD,
           email,
           ageConfirmed: true,
         });
@@ -315,7 +382,7 @@ describe("Auth Routes", () => {
       const ctlSend = (email: string) =>
         request(app).post("/api/auth/register").send({
           username: "unreserved_xyz",
-          password: "password123",
+          password: GOOD_PASSWORD,
           email,
           ageConfirmed: true,
         });
@@ -342,7 +409,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "raceuser2",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "race@example.com",
         ageConfirmed: true,
       });
@@ -354,7 +421,7 @@ describe("Auth Routes", () => {
     it("returns 400 for short username", async () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "ab",
-        password: "password123",
+        password: GOOD_PASSWORD,
         ageConfirmed: true,
       });
 
@@ -376,7 +443,7 @@ describe("Auth Routes", () => {
     it("returns 400 for invalid username characters", async () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "bad user!",
-        password: "password123",
+        password: GOOD_PASSWORD,
         ageConfirmed: true,
       });
 
@@ -393,7 +460,7 @@ describe("Auth Routes", () => {
     it("returns 400 when ageConfirmed is missing (COPPA age gate)", async () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
       });
 
       expect(res.status).toBe(400);
@@ -403,7 +470,7 @@ describe("Auth Routes", () => {
     it("returns 400 when ageConfirmed is false (COPPA age gate)", async () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         ageConfirmed: false,
       });
 
@@ -417,7 +484,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "  NewUser@Example.COM ",
         ageConfirmed: true,
       });
@@ -431,7 +498,7 @@ describe("Auth Routes", () => {
     it("returns 400 when ageConfirmed is missing even with a valid email", async () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "newuser@example.com",
       });
 
@@ -442,7 +509,7 @@ describe("Auth Routes", () => {
     it("returns 400 for an invalid email", async () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "not-an-email",
         ageConfirmed: true,
       });
@@ -457,7 +524,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "taken@example.com",
         ageConfirmed: true,
       });
@@ -472,7 +539,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "newuser@example.com",
         ageConfirmed: true,
       });
@@ -494,7 +561,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "newbie",
-        password: "pw12pw12",
+        password: GOOD_PASSWORD,
         email: "new@x.com",
         ageConfirmed: true,
       });
@@ -514,7 +581,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "other",
-        password: "pw12pw12",
+        password: GOOD_PASSWORD,
         email: "dup@x.com",
         ageConfirmed: true,
       });
@@ -540,7 +607,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "timing",
-        password: "pw12pw12",
+        password: GOOD_PASSWORD,
         email: "dup3@x.com",
         ageConfirmed: true,
       });
@@ -560,7 +627,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "other2",
-        password: "pw12pw12",
+        password: GOOD_PASSWORD,
         email: "taken@x.com",
         ageConfirmed: true,
       });
@@ -583,7 +650,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "taken",
-        password: "pw12pw12",
+        password: GOOD_PASSWORD,
         email: "x@x.com",
         ageConfirmed: true,
       });
@@ -601,7 +668,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "newb2",
-        password: "pw12pw12",
+        password: GOOD_PASSWORD,
         email: "n2@x.com",
         ageConfirmed: true,
       });
@@ -1890,7 +1957,7 @@ describe("Auth Routes", () => {
 
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
-        password: "password123",
+        password: GOOD_PASSWORD,
         email: "newuser@example.com",
         ageConfirmed: true,
       });

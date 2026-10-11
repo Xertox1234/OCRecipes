@@ -88,6 +88,11 @@ vi.mock("../../server/db", () => ({
 // the shared in-memory limiter store can't leak a 429 into an unrelated case.
 vi.mock("express-rate-limit");
 
+// Never call api.pwnedpasswords.com from a test.
+vi.mock("../../server/lib/pwned-password", () => ({
+  isBreached: vi.fn().mockResolvedValue(false),
+}));
+
 // Dynamic import so the route module's dependency graph (storage → db)
 // resolves against the mocks registered above, mirroring
 // server/storage/__tests__/users.test.ts's `await import(...)` pattern.
@@ -170,9 +175,9 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
         .where(eq(users.id, res.body.user.id));
       expect(row).toBeDefined();
       expect(row.email).toBe(creds.email.toLowerCase());
-      // Real bcrypt hash, not the storage-test placeholder.
+      // Real pv2 hash ("pv2$" + bcrypt), not the storage-test placeholder.
       expect(row.password).not.toBe("hashed_password_placeholder");
-      expect(row.password?.startsWith("$2")).toBe(true);
+      expect(row.password?.startsWith("pv2$$2")).toBe(true);
     });
   });
 

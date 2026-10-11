@@ -4,6 +4,17 @@
 import { z } from "zod";
 import { insertUserProfileSchema, allergySchema } from "@shared/schema";
 import { measurementUnitSchema } from "@shared/lib/units";
+import {
+  PASSWORD_MAX,
+  PASSWORD_MIN_WITH_MFA,
+  passwordLength,
+} from "@shared/constants/password-policy";
+
+// Raw UTF-16 cap on every password field, new or current. 128 code points can
+// be up to 256 UTF-16 units (emoji), so the cap sits well above that: any
+// password the new-password rule accepts must also be accepted wherever it is
+// proved later (sign-in, re-auth, linking).
+const PASSWORD_INPUT_MAX_UNITS = 512;
 
 /** Zod schema: accepts string or number, coerces to string. Returns undefined if absent. */
 export const numericStringField = z
@@ -24,21 +35,33 @@ export const nullableNumericStringField = z
 // name is kept so installed app versions keep working. 254 = max email length.
 export const loginSchema = z.object({
   username: z.string().trim().min(1, "Username is required").max(254),
-  password: z.string().min(1, "Password is required").max(200),
+  password: z
+    .string()
+    .min(1, "Password is required")
+    .max(PASSWORD_INPUT_MAX_UNITS),
   /** "Trust this phone" key from a previous two-step sign-in (spec D5). */
   trustKey: z.string().min(20).max(100).optional(),
 });
 
-// The one server-side password rule — register AND reset. The client keeps a
-// hand-synced mirror in client/screens/LoginScreen-utils.ts (validateNewPassword).
+// The one server-side new-password rule (register, reset, disable). Checks the
+// FLOOR (8) and the max in code points; the state-dependent 15 is applied in
+// the route, where the account is known (spec §2). No composition rule.
 export const newPasswordSchema = z
   .string()
-  .min(8, "Password must be at least 8 characters")
-  .max(200)
-  .regex(
-    /(?=.*[a-zA-Z])(?=.*\d)/,
-    "Password must contain at least one letter and one number",
-  );
+  .max(PASSWORD_INPUT_MAX_UNITS)
+  .superRefine((pw, ctx) => {
+    const n = passwordLength(pw);
+    if (n < PASSWORD_MIN_WITH_MFA)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Use at least ${PASSWORD_MIN_WITH_MFA} characters.`,
+      });
+    if (n > PASSWORD_MAX)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Use at most ${PASSWORD_MAX} characters.`,
+      });
+  });
 
 // Registration validation schema with username format and password strength
 export const registerSchema = z.object({
@@ -123,7 +146,10 @@ export const completeSocialSignUpSchema = z.object({
 });
 
 export const socialLinkSchema = z.union([
-  z.object({ ticket: ticketField, password: z.string().min(1).max(200) }),
+  z.object({
+    ticket: ticketField,
+    password: z.string().min(1).max(PASSWORD_INPUT_MAX_UNITS),
+  }),
   z.object({
     ticket: ticketField,
     provider: providerEnum,
@@ -183,13 +209,19 @@ export const changeEmailSchema = z.object({
     .toLowerCase()
     .email("Please enter a valid email address")
     .max(254),
-  password: z.string().min(1, "Password is required").max(200),
+  password: z
+    .string()
+    .min(1, "Password is required")
+    .max(PASSWORD_INPUT_MAX_UNITS),
   secondFactor: secondFactorSchema.optional(),
 });
 
 // ── Two-step verification ──────────────────────────────────────────────────
 export const mfaPasswordSchema = z.object({
-  password: z.string().min(1, "Password is required").max(200),
+  password: z
+    .string()
+    .min(1, "Password is required")
+    .max(PASSWORD_INPUT_MAX_UNITS),
 });
 export const mfaPasswordAndFactorSchema = mfaPasswordSchema.extend({
   secondFactor: secondFactorSchema,

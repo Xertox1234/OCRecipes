@@ -41,6 +41,11 @@ vi.mock("../../storage", () => ({
 // the run — the known real-limiter store-pollution flake (todos archive #462).
 vi.mock("express-rate-limit");
 
+// Never call api.pwnedpasswords.com from a test.
+vi.mock("../../lib/pwned-password", () => ({
+  isBreached: vi.fn().mockResolvedValue(false),
+}));
+
 const mockGetUser = vi.mocked(storage.getUser);
 
 type DbUser = NonNullable<Awaited<ReturnType<typeof storage.getUser>>>;

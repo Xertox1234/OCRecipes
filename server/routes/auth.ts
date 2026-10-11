@@ -64,6 +64,8 @@ import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
 import { hashPassword, isLegacyHash } from "../lib/password-hash";
+import { PASSWORD_MIN_SINGLE_FACTOR } from "@shared/constants/password-policy";
+import { checkNewPassword } from "./_password-rules";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { startMfaChallenge } from "../lib/mfa/challenge";
 import { hashTrustKey } from "../lib/mfa/mfa-secrets";
@@ -176,7 +178,24 @@ export function register(app: Express): void {
         const { username, password, email } = parsed.data;
         const verificationOn = emailVerificationEnabled();
 
-        // Username uniqueness FIRST — keeps the existing 409. This is the only
+        // Password policy before ANY account lookup, so neither the answer nor
+        // its latency depends on whether the username or email exists.
+        const rejected = await checkNewPassword(
+          password,
+          PASSWORD_MIN_SINGLE_FACTOR,
+          "signup",
+        );
+        if (rejected) {
+          return sendError(
+            res,
+            rejected.status,
+            rejected.message,
+            rejected.code,
+          );
+        }
+
+        // After the password check, username uniqueness comes first among the
+        // account checks — keeps the existing 409. This is the only
         // signup response that is NOT the neutral check-inbox (spec §6a).
         const existingUser = await storage.getUserByUsername(username);
         if (existingUser) {
@@ -215,7 +234,7 @@ export function register(app: Express): void {
         // keeps its fast 409 (not anti-enumerating anyway), hashing only when
         // it actually creates an account.
         const precomputedHash = verificationOn
-          ? await bcrypt.hash(password, 12)
+          ? await hashPassword(password)
           : null;
 
         const existingEmail = await storage.getUserByEmail(email);
@@ -250,7 +269,7 @@ export function register(app: Express): void {
         }
 
         const hashedPassword =
-          precomputedHash ?? (await bcrypt.hash(password, 12));
+          precomputedHash ?? (await hashPassword(password));
         let user;
         try {
           user = await storage.createUser({

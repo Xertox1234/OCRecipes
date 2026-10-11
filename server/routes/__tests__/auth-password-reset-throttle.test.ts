@@ -30,6 +30,11 @@ vi.mock("../../storage", () => ({
   },
 }));
 vi.mock("../../middleware/auth");
+
+// Never call api.pwnedpasswords.com from a test.
+vi.mock("../../lib/pwned-password", () => ({
+  isBreached: vi.fn().mockResolvedValue(false),
+}));
 vi.mock("../../services/email", () => ({
   sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
   sendSignupAttemptNotice: vi.fn().mockResolvedValue(undefined),
