@@ -38,12 +38,14 @@ describe("resetMfaForUser", () => {
     expect(sendTwoFactorNotice).not.toHaveBeenCalled();
   });
 
-  it("a real run turns MFA off, then emails the account", async () => {
+  it("a real run turns MFA off, drops a staged email change, then emails the account", async () => {
     storage.getUser.mockResolvedValue(
       createMockUser({ id: "u1", mfaEnabledAt: new Date() }),
     );
     expect(await resetMfaForUser("u1", { dryRun: false })).toBe("reset");
-    expect(storage.disableMfa).toHaveBeenCalledWith("u1");
+    expect(storage.disableMfa).toHaveBeenCalledWith("u1", {
+      clearPendingEmail: true,
+    });
     expect(sendTwoFactorNotice).toHaveBeenCalledWith(
       "testuser@example.com",
       "testuser",
@@ -53,6 +55,27 @@ describe("resetMfaForUser", () => {
       sendTwoFactorNotice.mock.invocationCallOrder[0],
     );
   });
+
+  // The stored hash can't show the password's length, so the script can't
+  // refuse on it; the sign-in gate (needsPasswordUpgrade) stops a short one.
+  // Both runs must tell the operator, so the person is told to expect it.
+  it.each([true, false])(
+    "dryRun=%s tells the operator a short password must be replaced at sign-in",
+    async (dryRun) => {
+      storage.getUser.mockResolvedValue(
+        createMockUser({ id: "u1", mfaEnabledAt: new Date() }),
+      );
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        await resetMfaForUser("u1", { dryRun });
+        expect(log.mock.calls.flat().join("\n")).toMatch(
+          /shorter than 15 characters.*choose a longer one/,
+        );
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
 });
 
 describe("parseArgs", () => {
