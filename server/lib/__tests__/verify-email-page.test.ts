@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  renderVerifyEmailConfirmPage,
   renderVerifyEmailPage,
   type VerifyEmailState,
 } from "../verify-email-page";
@@ -22,6 +23,41 @@ describe("renderVerifyEmailPage — success CTA hand-off to Login", () => {
       expect(html).toContain('href="ocrecipes://"');
       expect(html).not.toContain("ocrecipes://login");
     }
+  });
+});
+
+describe("renderVerifyEmailConfirmPage — a button, not a page load, verifies", () => {
+  const TOKEN = "aaa.bbb-_.ccc";
+
+  it("renders a form that POSTs the token to /verify-email", () => {
+    const html = renderVerifyEmailConfirmPage(TOKEN);
+    expect(html).toContain('<form method="post" action="/verify-email">');
+    expect(html).toContain(
+      `<input type="hidden" name="token" value="${TOKEN}" />`,
+    );
+    expect(html).toMatch(/<button[^>]*type="submit"/);
+  });
+
+  it("reflects the token exactly once, and only inside the hidden input", () => {
+    const html = renderVerifyEmailConfirmPage(TOKEN);
+    expect(html.split(TOKEN)).toHaveLength(2);
+  });
+
+  it("never auto-submits — no script on the page", () => {
+    expect(renderVerifyEmailConfirmPage(TOKEN)).not.toMatch(/<script/i);
+  });
+
+  // The route only renders a token jwt.verify accepted, so these shapes can't
+  // reach the renderer today — the renderer guards itself anyway.
+  it.each([
+    ['"><script>alert(1)</script>.a.b'],
+    ["a.b.c<"],
+    ["a.b"],
+    ["a.b.c.d"],
+    [""],
+    ["a".repeat(4097) + ".b.c"],
+  ])("refuses a token outside the JWT charset: %s", (bad) => {
+    expect(() => renderVerifyEmailConfirmPage(bad)).toThrow(/malformed/);
   });
 });
 

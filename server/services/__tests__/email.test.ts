@@ -41,18 +41,30 @@ describe("email service", () => {
   it("is a no-op when RESEND_API_KEY is absent", async () => {
     vi.stubEnv("RESEND_API_KEY", "");
     const { sendVerificationEmail } = await import("../email");
-    await sendVerificationEmail("a@b.com", "tok");
+    await sendVerificationEmail("a@b.com", "tok", "alice");
     expect(mockSend).not.toHaveBeenCalled();
   });
 
   it("sends a verification email when configured", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     const { sendVerificationEmail } = await import("../email");
-    await sendVerificationEmail("a@b.com", "tok123");
+    await sendVerificationEmail("a@b.com", "tok123", "alice");
     expect(mockSend).toHaveBeenCalledTimes(1);
     const arg = mockSend.mock.calls[0][0];
     expect(arg.to).toBe("a@b.com");
     expect(arg.html).toContain("verify-email?token=tok123");
+  });
+
+  // Auth audit 2026-10-10 M4: a squatter's sign-up (or resend) mails the victim
+  // a working link — naming the account lets the victim see it isn't theirs.
+  it("names the account's username, escaped, and says to ignore it if not yours", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    const { sendVerificationEmail } = await import("../email");
+    await sendVerificationEmail("a@b.com", "tok123", "<b>mallory</b>");
+    const arg = mockSend.mock.calls[0][0];
+    expect(arg.html).toContain("&lt;b&gt;mallory&lt;/b&gt;");
+    expect(arg.html).not.toContain("<b>mallory");
+    expect(arg.html).toMatch(/didn.t create this account/i);
   });
 
   it("defaults the sender and the verify link to ocrecipes.com", async () => {
@@ -60,7 +72,7 @@ describe("email service", () => {
     vi.stubEnv("EMAIL_FROM", undefined);
     vi.stubEnv("EMAIL_VERIFY_BASE_URL", undefined);
     const { sendVerificationEmail } = await import("../email");
-    await sendVerificationEmail("a@b.com", "tok123");
+    await sendVerificationEmail("a@b.com", "tok123", "alice");
     const arg = mockSend.mock.calls[0][0];
     expect(arg.from).toBe("OCRecipes <noreply@ocrecipes.com>");
     expect(arg.html).toContain(
@@ -71,7 +83,8 @@ describe("email service", () => {
   it("throttles to at most 5 sends per recipient", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     const { sendVerificationEmail } = await import("../email");
-    for (let i = 0; i < 7; i++) await sendVerificationEmail("c@d.com", "t");
+    for (let i = 0; i < 7; i++)
+      await sendVerificationEmail("c@d.com", "t", "alice");
     expect(mockSend).toHaveBeenCalledTimes(5);
   });
 
@@ -89,14 +102,14 @@ describe("email service", () => {
       // exactly once — the enumeration case the bound must survive.
       const count = RECIPIENT_SWEEP_THRESHOLD + 5;
       for (let i = 0; i < count; i++) {
-        await sendVerificationEmail(`enum-${i}@example.com`, "t");
+        await sendVerificationEmail(`enum-${i}@example.com`, "t", "alice");
       }
       expect(recipientSends.size).toBe(count);
 
       // Advance past the window so every prior entry is fully expired, then make
       // one more send to trigger the size-gated sweep.
       vi.advanceTimersByTime(RECIPIENT_WINDOW_MS + 1);
-      await sendVerificationEmail("fresh@example.com", "t");
+      await sendVerificationEmail("fresh@example.com", "t", "alice");
 
       // All expired keys are evicted; only the single fresh recipient remains.
       expect(recipientSends.size).toBe(1);
@@ -117,18 +130,18 @@ describe("email service", () => {
 
       // An active recipient that has hit the cap.
       for (let i = 0; i < 5; i++) {
-        await sendVerificationEmail("active@example.com", "t");
+        await sendVerificationEmail("active@example.com", "t", "alice");
       }
       // Push the map past the sweep threshold with unrelated recipients so the
       // next call sweeps — the active key is NOT expired and must survive.
       for (let i = 0; i < RECIPIENT_SWEEP_THRESHOLD + 1; i++) {
-        await sendVerificationEmail(`other-${i}@example.com`, "t");
+        await sendVerificationEmail(`other-${i}@example.com`, "t", "alice");
       }
       mockSend.mockClear();
 
       // The active recipient is still capped (no 6th send) even though a sweep
       // ran in between — the cap behavior is unchanged for active recipients.
-      await sendVerificationEmail("active@example.com", "t");
+      await sendVerificationEmail("active@example.com", "t", "alice");
       expect(mockSend).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -147,7 +160,7 @@ describe("email service", () => {
           .mockResolvedValueOnce({ data: { id: "ok" }, error: null });
 
         const { sendVerificationEmail } = await import("../email");
-        const done = sendVerificationEmail("hung@example.com", "t");
+        const done = sendVerificationEmail("hung@example.com", "t", "alice");
 
         // Advance past the 8s per-attempt timeout + the transient backoff so the
         // hung first attempt is abandoned and the retry runs.
@@ -179,7 +192,11 @@ describe("email service", () => {
           })
           .mockResolvedValueOnce({ data: { id: "ok" }, error: null });
 
-        const rateLimited = sendVerificationEmail("rl@example.com", "t");
+        const rateLimited = sendVerificationEmail(
+          "rl@example.com",
+          "t",
+          "alice",
+        );
         // The 429 backoff base is 1000ms. Advancing only 999ms must NOT yet have
         // triggered the retry — distinctly longer than the network path below.
         await vi.advanceTimersByTimeAsync(999);
@@ -195,7 +212,7 @@ describe("email service", () => {
           .mockRejectedValueOnce(new Error("ECONNRESET"))
           .mockResolvedValueOnce({ data: { id: "ok" }, error: null });
 
-        const network = sendVerificationEmail("net@example.com", "t");
+        const network = sendVerificationEmail("net@example.com", "t", "alice");
         // The transient backoff base is 500ms — the retry fires by 500ms, well
         // before the 429 path's 1000ms, proving the two back off distinctly.
         await vi.advanceTimersByTimeAsync(500);
@@ -221,7 +238,7 @@ describe("email service", () => {
         });
 
         const { sendVerificationEmail } = await import("../email");
-        const done = sendVerificationEmail("exhaust@example.com", "t");
+        const done = sendVerificationEmail("exhaust@example.com", "t", "alice");
         // Run all backoffs (1000ms, then 2000ms) to completion.
         await vi.advanceTimersByTimeAsync(5_000);
         await expect(done).resolves.toBeUndefined();
@@ -244,7 +261,7 @@ describe("email service", () => {
       });
 
       const { sendVerificationEmail } = await import("../email");
-      await sendVerificationEmail("bad@example.com", "t");
+      await sendVerificationEmail("bad@example.com", "t", "alice");
 
       // A terminal error is not retried — exactly one send attempt.
       expect(mockSend).toHaveBeenCalledTimes(1);
@@ -264,7 +281,7 @@ describe("email service", () => {
       });
 
       const { sendVerificationEmail } = await import("../email");
-      await sendVerificationEmail("a@b.com", "tok");
+      await sendVerificationEmail("a@b.com", "tok", "alice");
 
       expect(mockLoggerError).toHaveBeenCalledTimes(1);
       const [logObj, msg] = mockLoggerError.mock.calls[0];

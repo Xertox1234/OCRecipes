@@ -1,6 +1,6 @@
 ---
 title: "Attacker-triggered verify emails can still verify a squatter's account (original sign-up email, resend, scanner prefetch)"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-11
 updated: 2026-10-11
@@ -23,10 +23,10 @@ Auth audit 2026-10-10 M4 (`docs/audits/2026-10-10-security.md`, local-only). H1 
 
 ## Acceptance Criteria
 
-- [ ] GET `/verify-email` no longer verifies on a plain page load: it renders a confirm page whose button POSTs (a mail-scanner prefetch can't verify). The page must keep its "reflects no request input" property or carry the token safely (strict JWT-charset validation + HTML escaping) — security review required
-- [ ] The verification email names the account's username and says "if you didn't create this account, ignore this email", so a victim can recognise a squatter's account
-- [ ] Decide `/api/auth/resend-verification` for an unverified account: keep the verify link (legit users) vs switch to the finish-via-Forgot-password notice; record the ruling
-- [ ] Route tests cover each path; anti-enumeration preserved (same neutral responses)
+- [x] GET `/verify-email` no longer verifies on a plain page load: it renders a confirm page whose button POSTs (a mail-scanner prefetch can't verify). The page must keep its "reflects no request input" property or carry the token safely (strict JWT-charset validation + HTML escaping) — security review required
+- [x] The verification email names the account's username and says "if you didn't create this account, ignore this email", so a victim can recognise a squatter's account
+- [x] Decide `/api/auth/resend-verification` for an unverified account: keep the verify link (legit users) vs switch to the finish-via-Forgot-password notice; record the ruling
+- [x] Route tests cover each path; anti-enumeration preserved (same neutral responses)
 
 ## Implementation Notes
 
@@ -54,3 +54,10 @@ Auth audit 2026-10-10 M4 (`docs/audits/2026-10-10-security.md`, local-only). H1 
 
 - Initial creation (deferred from the auth security audit)
 - Narrowed after the re-register path was fixed in the audit PR (owner ruling 2026-10-11)
+
+### 2026-10-11 (done)
+
+- GET `/verify-email` checks the token signature (no DB) and renders a confirm button; new POST `/verify-email` (outside `/api`, `verifyEmailLimiter`) verifies. `renderVerifyEmailConfirmPage` accepts only the 3-segment base64url shape (≤4096) and escapes it; no script.
+- `sendVerificationEmail(to, token, username)` names the account (escaped) and says to ignore it if you didn't create it — register, resend and change-email all pass it.
+- **Owner ruling 2026-10-11: resend-verification keeps the verify link** (legit users who lost the first email); the username + confirm button are the mitigation.
+
