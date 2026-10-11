@@ -1,5 +1,5 @@
-import { ApiError } from "@/lib/api-error";
 // @vitest-environment jsdom
+import { ApiError } from "@/lib/api-error";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
