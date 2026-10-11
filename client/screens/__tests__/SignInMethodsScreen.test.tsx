@@ -192,14 +192,27 @@ describe("SignInMethodsScreen", () => {
     expect(h.disconnectProvider).toHaveBeenCalledWith("apple");
   });
 
-  it("setting up a password signs out via the confirm sheet", async () => {
+  it("setting up a password opens Set a password — no sign-out", () => {
     h.methods = { password: false, google: null, apple: relay };
     renderComponent(<SignInMethodsScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Set up a password" }));
-    const opts = h.confirm.mock.calls[0][0];
-    expect(opts.message).toMatch(/Forgot password\?/);
-    act(() => opts.onConfirm());
-    expect(h.logout).toHaveBeenCalled();
+    expect(h.navigate).toHaveBeenCalledWith("ChangePassword", {
+      hasPassword: false,
+      providers: ["apple"],
+    });
+    expect(h.confirm).not.toHaveBeenCalled();
+    expect(h.logout).not.toHaveBeenCalled();
+  });
+
+  it("the password row's Change opens Change password with the account's shape", () => {
+    h.methods = { password: true, google: null, apple: relay };
+    renderComponent(<SignInMethodsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    expect(h.navigate).toHaveBeenCalledWith("ChangePassword", {
+      hasPassword: true,
+      providers: ["apple"],
+    });
+    expect(h.logout).not.toHaveBeenCalled();
   });
 });
 

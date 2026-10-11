@@ -6,6 +6,8 @@ import SettingsScreen from "@/screens/SettingsScreen";
 import SignInMethodsScreen from "@/screens/SignInMethodsScreen";
 import TwoStepSetupScreen from "@/screens/TwoStepSetupScreen";
 import type { TwoStepSetupMode } from "@/screens/TwoStepSetupScreen-utils";
+import ChangePasswordScreen from "@/screens/ChangePasswordScreen";
+import type { SocialProvider } from "@shared/types/auth";
 import SavedItemsScreen from "@/screens/SavedItemsScreen";
 import HistoryScreen from "@/screens/HistoryScreen";
 import ItemDetailScreen from "@/screens/ItemDetailScreen";
@@ -47,6 +49,7 @@ export type ProfileStackParamList = LibraryRoutes & {
   SignInMethods: undefined;
   /** Two-step verification: turn on, new phone, turn off, new recovery codes. */
   TwoStepSetup: { mode: TwoStepSetupMode };
+  ChangePassword: { hasPassword: boolean; providers: SocialProvider[] };
   SavedItems: undefined;
   ScanHistory: { showAll?: boolean } | undefined;
   ItemDetail: { itemId: number };
@@ -97,6 +100,19 @@ export default function ProfileStackNavigator() {
           headerTitle: () => (
             <HeaderTitle title="Two-step verification" showIcon={false} />
           ),
+        }}
+      />
+      <Stack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={({ route }) => {
+          const title = route.params.hasPassword
+            ? "Change password"
+            : "Set a password";
+          return {
+            title,
+            headerTitle: () => <HeaderTitle title={title} showIcon={false} />,
+          };
         }}
       />
       <Stack.Screen

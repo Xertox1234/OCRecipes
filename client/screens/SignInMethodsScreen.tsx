@@ -53,13 +53,8 @@ const platform =
 export default function SignInMethodsScreen() {
   const { theme } = useTheme();
   const toast = useToast();
-  const {
-    user,
-    connectProvider,
-    disconnectProvider,
-    logout,
-    forgetTrustedPhones,
-  } = useAuthContext();
+  const { connectProvider, disconnectProvider, forgetTrustedPhones } =
+    useAuthContext();
   const { methods, mfaEnabled, isError, refetch, setMethods } =
     useSignInMethods();
   const config = useSocialConfig();
@@ -221,18 +216,6 @@ export default function SignInMethodsScreen() {
     }
   };
 
-  const askPasswordReset = () => {
-    const email = user?.email ? ` to ${user.email}` : "";
-    confirm({
-      title: methods.password ? "Change password" : "Set up a password",
-      message: `You'll be signed out. On the sign-in screen, tap "Forgot password?" and we'll email a code${email}.`,
-      confirmLabel: "Sign out",
-      onConfirm: () => {
-        void logout();
-      },
-    });
-  };
-
   return (
     <>
       <ScreenScrollView
@@ -255,7 +238,14 @@ export default function SignInMethodsScreen() {
             </View>
             <Button
               variant="outline"
-              onPress={askPasswordReset}
+              onPress={() =>
+                navigation.navigate("ChangePassword", {
+                  hasPassword: methods.password,
+                  providers: PROVIDERS.map((p) => p.provider).filter(
+                    (p) => methods[p] !== null,
+                  ),
+                })
+              }
               accessibilityLabel={
                 methods.password ? "Change password" : "Set up a password"
               }
