@@ -258,6 +258,10 @@ describe("POST /api/auth/reset-password", () => {
       expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
       expect(res.body.error).toBe("Use at least 15 characters.");
       expect(storage.completePasswordReset).not.toHaveBeenCalled();
+      // The code stays, but this rejection came after the attempt was used:
+      // the 15 (and the breach check) need the account, which only the
+      // reserving UPDATE reveals. Only the 8 floor is checked before it.
+      expect(storage.reservePasswordResetAttempt).toHaveBeenCalledTimes(1);
     });
 
     it("10 chars on a two-step account: accepted", async () => {

@@ -580,8 +580,9 @@ export function register(app: Express): void {
     },
   );
 
-  // Reset password (spec §4.2). Validation first (a weak password never uses
-  // up a code attempt); then ONE atomic UPDATE uses up an attempt for real and
+  // Reset password (spec §4.2). Schema validation first (a password under the
+  // 8-character floor never uses up a code attempt; the account-dependent 15
+  // and the breach check come later and do); then ONE atomic UPDATE uses up an attempt for real and
   // unknown emails alike; the HMAC compare runs on both branches. Every failure
   // is the same 400. Success: one UPDATE commits password + tokenVersion+1 +
   // verified + discards a staged email change + clears the code; then the
@@ -615,7 +616,8 @@ export function register(app: Express): void {
           return;
         }
         // Only after a correct code, so a wrong code never learns anything
-        // about the account. A rejection leaves the code live for a retry.
+        // about the account. A rejection keeps the code, but this request
+        // has already used one of its RESET_CODE_MAX_ATTEMPTS tries.
         const rejected = await checkNewPassword(
           newPassword,
           reserved.mfaEnabledAt
