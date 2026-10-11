@@ -145,11 +145,85 @@ describe("TwoStepSetupScreen — managing it", () => {
     type("6-digit code", "123456");
     press("Turn off");
     await waitFor(() =>
-      expect(h.disableTwoStep).toHaveBeenCalledWith("pw-1", {
-        code: "123456",
-      }),
+      expect(h.disableTwoStep).toHaveBeenCalledWith(
+        "pw-1",
+        { code: "123456" },
+        undefined, // no new password unless the server asks for one
+      ),
     );
     await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
+  });
+
+  it("turning it off with a short password asks for a new 15+ one and resends", async () => {
+    h.disableTwoStep
+      .mockRejectedValueOnce(
+        new ApiError("400: upgrade", "PASSWORD_UPGRADE_NEEDED", 400),
+      )
+      .mockResolvedValueOnce(undefined);
+    const navigation = renderScreen("disable");
+    type("Password", "short-pass-1");
+    type("6-digit code", "123456");
+    press("Turn off");
+    await screen.findByLabelText("New password");
+    expect(
+      screen.getByText(
+        "Your password is shorter than 15 characters. Choose a new one of at least 15 to turn off two-step verification.",
+      ),
+    ).toBeTruthy();
+    type("New password", "a-long-test-passphrase");
+    type("Confirm new password", "a-long-test-passphrase");
+    press("Turn off");
+    await waitFor(() =>
+      expect(h.disableTwoStep).toHaveBeenLastCalledWith(
+        "short-pass-1",
+        { code: "123456" },
+        "a-long-test-passphrase",
+      ),
+    );
+    await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
+  });
+
+  it("a short or mismatched new password is caught before sending", async () => {
+    h.disableTwoStep.mockRejectedValueOnce(
+      new ApiError("400: upgrade", "PASSWORD_UPGRADE_NEEDED", 400),
+    );
+    renderScreen("disable");
+    type("Password", "short-pass-1");
+    type("6-digit code", "123456");
+    press("Turn off");
+    await screen.findByLabelText("New password");
+
+    type("New password", "still-short-1");
+    type("Confirm new password", "still-short-1");
+    press("Turn off");
+    await screen.findByText("Use at least 15 characters.");
+
+    type("New password", "a-long-test-passphrase");
+    type("Confirm new password", "a-long-test-passphrasf");
+    press("Turn off");
+    await screen.findByText("Passwords do not match");
+    expect(h.disableTwoStep).toHaveBeenCalledTimes(1);
+  });
+
+  it("a breached new password gets the breach sentence", async () => {
+    h.disableTwoStep
+      .mockRejectedValueOnce(
+        new ApiError("400: upgrade", "PASSWORD_UPGRADE_NEEDED", 400),
+      )
+      .mockRejectedValueOnce(
+        new ApiError("400: breached", "PASSWORD_BREACHED", 400),
+      );
+    renderScreen("disable");
+    type("Password", "short-pass-1");
+    type("6-digit code", "123456");
+    press("Turn off");
+    await screen.findByLabelText("New password");
+    type("New password", "a-long-test-passphrase");
+    type("Confirm new password", "a-long-test-passphrase");
+    press("Turn off");
+    await screen.findByText(
+      "That password has appeared in a data breach. Choose a different one.",
+    );
   });
 
   it("new recovery codes go straight to the save step", async () => {

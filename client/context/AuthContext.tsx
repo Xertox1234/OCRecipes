@@ -36,6 +36,7 @@ interface AuthContextType {
   disableTwoStep: (
     password: string,
     secondFactor: SecondFactorInput,
+    newPassword?: string,
   ) => Promise<void>;
   replaceRecoveryCodes: (
     password: string,

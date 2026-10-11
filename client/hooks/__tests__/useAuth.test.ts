@@ -730,6 +730,27 @@ describe("useAuth", () => {
       expect(mockTokenStorage.set).toHaveBeenCalledWith("t-off");
     });
 
+    it("disableTwoStep sends a new password only when given", async () => {
+      const { result } = await ready();
+      jsonOnce({ status: "signed_in", user, token: "t-off" });
+      await act(async () => {
+        await result.current.disableTwoStep(
+          "short-pass-1",
+          { code: "123456" },
+          "a-long-test-passphrase",
+        );
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/mfa/disable",
+        {
+          password: "short-pass-1",
+          secondFactor: { code: "123456" },
+          newPassword: "a-long-test-passphrase",
+        },
+      );
+    });
+
     it("replaceRecoveryCodes returns the new codes", async () => {
       const { result } = await ready();
       jsonOnce({ recoveryCodes: ["X", "Y"] });
