@@ -1,6 +1,6 @@
 ---
 title: "Retention job should purge expired 2FA challenges, trusted phones and pending secrets"
-status: backlog
+status: done
 priority: low
 created: 2026-10-11
 updated: 2026-10-11
@@ -23,8 +23,8 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 
 ## Acceptance Criteria
 
-- [ ] `server/scripts/cleanup-retention.ts` batch-deletes expired `mfa_challenges`, expired `mfa_trusted_devices`, and nulls expired `user_mfa.pending_secret_enc`/`pending_expires_at`
-- [ ] Bounded batches like the existing retention steps; covered by the existing retention test harness
+- [x] `server/scripts/cleanup-retention.ts` batch-deletes expired `mfa_challenges`, expired `mfa_trusted_devices`, and nulls expired `user_mfa.pending_secret_enc`/`pending_expires_at`
+- [x] Bounded batches like the existing retention steps; covered by the existing retention test harness
 
 ## Implementation Notes
 
@@ -50,3 +50,5 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 ### 2026-10-11
 
 - Initial creation (deferred from the auth security audit)
+
+- Fixed: purgeExpiredMfaRows runs after the upgrade-pass sweep. Challenges and trusted phones go through the existing batched purgeDomain (no active-user exemption, 1 day past expiry); a batched UPDATE nulls pending secrets with the expiry re-checked in the outer WHERE, so a setup restarted mid-sweep keeps its fresh secret. Gated by RETENTION_CLEANUP_ENABLED like every step. server/storage/mfa.ts needed no change.
