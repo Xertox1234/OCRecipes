@@ -129,6 +129,31 @@ describe("PasswordUpgradeScreen — turning on two-step", () => {
     expect(h.finishSignIn).toHaveBeenCalledWith(SESSION.user, SESSION.token);
   });
 
+  // Auth audit 2026-10-11: the server refused the session after two-step went
+  // on (a reset landed) — the codes still come back and must be saved first.
+  it("codes but no session → shows the codes, then the way back to sign-in, never signs in", async () => {
+    h.upgradeStartTwoStep.mockResolvedValue(SECRET);
+    h.upgradeConfirmTwoStep.mockResolvedValue({
+      session: undefined,
+      recoveryCodes: CODES,
+    });
+    const navigation = renderScreen();
+    press(TWO_STEP);
+    await screen.findByText("ABCD EFGH IJKL MNOP");
+    press("Next");
+    type("6-digit code", "123456");
+    press("Confirm");
+    await screen.findByText(CODES[0]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "I've saved these" }));
+    press("Done");
+    expect(
+      await screen.findByText("This sign-in expired. Please sign in again."),
+    ).toBeTruthy();
+    press("Back to sign in");
+    expect(navigation.goBack).toHaveBeenCalled();
+    expect(h.finishSignIn).not.toHaveBeenCalled();
+  });
+
   it("setup closed on the server → back to the choice with only the longer password", async () => {
     h.upgradeStartTwoStep.mockRejectedValue(
       new ApiError("403: x", "MFA_SETUP_DISABLED", 403),

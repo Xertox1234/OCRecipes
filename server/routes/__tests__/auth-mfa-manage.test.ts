@@ -209,7 +209,7 @@ describe("POST /api/auth/mfa/totp/confirm", () => {
   });
 
   it("on an account that already has MFA it confirms a NEW PHONE (no new codes)", async () => {
-    asUser({ mfaEnabledAt: new Date() });
+    asUser({ mfaEnabledAt: new Date(), tokenVersion: 2 });
     vi.mocked(storage.confirmNewPhone).mockResolvedValue(2);
     const res = await post("totp/confirm", { code: currentCode() });
     expect(res.status).toBe(200);
@@ -221,6 +221,31 @@ describe("POST /api/auth/mfa/totp/confirm", () => {
       "testuser",
       "new_phone",
     );
+  });
+
+  // Auth audit 2026-10-11 L3 (as L12): the session is minted only under the
+  // version the confirm set — a reset or sign-out-everywhere since then wins.
+  it("first setup, then a version bump before the mint → 401, no session, the codes still ride", async () => {
+    vi.mocked(storage.confirmTotpEnrollment).mockResolvedValue(4);
+    asUser({ tokenVersion: 4 });
+    vi.mocked(storage.getUser).mockResolvedValue(
+      createMockUser({ password: passwordHash, tokenVersion: 5 }),
+    );
+    const res = await post("totp/confirm", { code: currentCode() });
+    expect(res.status).toBe(401);
+    expect(res.body.token).toBeUndefined();
+    expect(res.body.recoveryCodes).toHaveLength(10);
+  });
+
+  it("new phone, then a version bump before the mint → 401, no session", async () => {
+    asUser({ mfaEnabledAt: new Date(), tokenVersion: 2 });
+    vi.mocked(storage.confirmNewPhone).mockResolvedValue(2);
+    vi.mocked(storage.getUser).mockResolvedValue(
+      createMockUser({ password: passwordHash, tokenVersion: 3 }),
+    );
+    const res = await post("totp/confirm", { code: currentCode() });
+    expect(res.status).toBe(401);
+    expect(res.body.token).toBeUndefined();
   });
 
   it("a wrong code → 400 INVALID_SECOND_FACTOR, nothing confirmed", async () => {
@@ -384,6 +409,9 @@ describe("POST /api/auth/mfa/disable", () => {
 
   it("password + factor → off, sessions end, notice sent, a fresh session returned", async () => {
     vi.mocked(storage.disableMfa).mockResolvedValue(5);
+    vi.mocked(storage.getUser).mockResolvedValue(
+      createMockUser({ password: longHash, tokenVersion: 5 }),
+    );
     const res = await post("disable", {
       password: LONG_PASSWORD,
       secondFactor: { code: "123456" },
@@ -400,6 +428,31 @@ describe("POST /api/auth/mfa/disable", () => {
       "testuser",
       "disabled",
     );
+  });
+
+  // Auth audit 2026-10-11 L3 (as L12).
+  it("off, then a version bump before the mint → 401, no session", async () => {
+    vi.mocked(storage.disableMfa).mockResolvedValue(5);
+    vi.mocked(storage.getUser).mockResolvedValue(
+      createMockUser({ password: longHash, tokenVersion: 6 }),
+    );
+    const res = await post("disable", {
+      password: LONG_PASSWORD,
+      secondFactor: { code: "123456" },
+    });
+    expect(res.status).toBe(401);
+    expect(res.body.token).toBeUndefined();
+  });
+
+  it("the account vanished under the write (disableMfa returned nothing) → 404, no session", async () => {
+    vi.mocked(storage.disableMfa).mockResolvedValue(undefined);
+    const res = await post("disable", {
+      password: LONG_PASSWORD,
+      secondFactor: { code: "123456" },
+    });
+    expect(res.status).toBe(404);
+    expect(res.body.token).toBeUndefined();
+    expect(storage.getUser).not.toHaveBeenCalled();
   });
 
   it("no factor → 400 (schema), nothing changed", async () => {
@@ -460,6 +513,9 @@ describe("POST /api/auth/mfa/disable", () => {
 
     it("a 15+ newPassword: turns off and changes the password in one call, then notifies", async () => {
       vi.mocked(storage.disableMfa).mockResolvedValue(6);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ tokenVersion: 6 }),
+      );
       const res = await post("disable", {
         password: SHORT_PASSWORD,
         secondFactor: { code: "123456" },

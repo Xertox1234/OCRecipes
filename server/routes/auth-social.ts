@@ -145,21 +145,20 @@ export async function appleRefreshTokenFor(
 }
 
 /**
- * `expectedTokenVersion` (an MFA challenge's version): refuse to mint if a
- * reset or sign-out-everywhere bumped it since — checked on the same read the
- * token is minted from, so the session can never outlive that bump (audit L12).
+ * `expectedTokenVersion` — the version the caller checked or its own write
+ * set: refuse to mint if a reset or sign-out-everywhere bumped it since —
+ * checked on the same read the token is minted from, so the session can never
+ * outlive that bump (audit L12). Required, so a new mint site can't skip it
+ * (audits L1/L3 found the gap one call site at a time).
  */
 export async function issueSession(
   userId: string,
-  expectedTokenVersion?: number,
+  expectedTokenVersion: number,
 ) {
   const user = await storage.getUser(userId);
   if (!user)
     throw new HttpFailure(401, ErrorCode.UNAUTHORIZED, "User not found");
-  if (
-    expectedTokenVersion !== undefined &&
-    user.tokenVersion !== expectedTokenVersion
-  )
+  if (user.tokenVersion !== expectedTokenVersion)
     throw new HttpFailure(
       401,
       ErrorCode.MFA_CHALLENGE_EXPIRED,
@@ -457,7 +456,8 @@ export function register(app: Express): void {
             unstored = null;
           }
           if (linked) await storage.touchIdentity(linked.id, user.id);
-          return res.json(await issueSession(user.id));
+          // Under the version of the row the gate checked (auth audit L3).
+          return res.json(await issueSession(user.id, user.tokenVersion));
         }
 
         if (decision.kind === "auto_link") {
@@ -487,7 +487,7 @@ export function register(app: Express): void {
               );
             throw err;
           }
-          return res.json(await issueSession(user.id));
+          return res.json(await issueSession(user.id, user.tokenVersion));
         }
 
         const ticket = await storage.createPendingSignIn({
@@ -583,7 +583,7 @@ export function register(app: Express): void {
             "This sign-in expired. Please start again.",
             ErrorCode.INVALID_SIGN_IN_TICKET,
           );
-        res.status(201).json(await issueSession(user.id));
+        res.status(201).json(await issueSession(user.id, user.tokenVersion));
       } catch (error) {
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "complete social sign-up");
@@ -707,7 +707,7 @@ export function register(app: Express): void {
           throw err;
         }
         if (!identity) throw expired;
-        res.json(await issueSession(target.id));
+        res.json(await issueSession(target.id, target.tokenVersion));
       } catch (error) {
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "link provider");

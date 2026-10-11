@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { ApiError } from "@/lib/api-error";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -651,6 +652,23 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(false);
     });
 
+    it("upgradeConfirmTwoStep refused after two-step went on → the codes, no session (audit 2026-10-11)", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockRejectedValueOnce(
+        new ApiError(
+          '401: {"error":"x","code":"UPGRADE_PASS_EXPIRED","recoveryCodes":["A","B"]}',
+          "UPGRADE_PASS_EXPIRED",
+          401,
+        ),
+      );
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.upgradeConfirmTwoStep("pass-1", "123456");
+      });
+      expect(out).toEqual({ session: undefined, recoveryCodes: ["A", "B"] });
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+
     it("upgradeSetPassword posts on the pass and signs in", async () => {
       const { result } = await ready();
       jsonOnce({ status: "signed_in", user, token: "t-new" });
@@ -669,6 +687,27 @@ describe("useAuth", () => {
       );
       expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
       expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("upgradeSetPassword: someone else signed in while it was in flight → the late reply does NOT sign in (auth audit L2)", async () => {
+      const { result } = await ready();
+      mockTokenStorage.get.mockResolvedValue(null);
+      // Account B signs in on this phone while A's request is out.
+      mockApiRequest.mockImplementationOnce(async () => {
+        mockTokenStorage.get.mockResolvedValue("t-other");
+        return {
+          json: () =>
+            Promise.resolve({ status: "signed_in", user, token: "t-new" }),
+        };
+      });
+      await act(async () => {
+        await result.current.upgradeSetPassword(
+          "pass-1",
+          "a much longer password",
+        );
+      });
+      expect(mockTokenStorage.set).not.toHaveBeenCalledWith("t-new");
+      expect(result.current.isAuthenticated).toBe(false);
     });
 
     it("register with the switch on sends twoStep and returns upgrade_required without signing in", async () => {
@@ -871,6 +910,39 @@ describe("useAuth", () => {
       );
       expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
       expect(out?.recoveryCodes).toEqual(["A", "B"]);
+    });
+
+    it("confirmTwoStep refused after two-step went on (a reset landed) → returns the codes, no session (audit 2026-10-11)", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockRejectedValueOnce(
+        new ApiError(
+          '401: {"error":"x","code":"MFA_CHALLENGE_EXPIRED","recoveryCodes":["A","B"]}',
+          "MFA_CHALLENGE_EXPIRED",
+          401,
+        ),
+      );
+      let out: { recoveryCodes?: string[] } | undefined;
+      await act(async () => {
+        out = await result.current.confirmTwoStep("123456");
+      });
+      expect(out?.recoveryCodes).toEqual(["A", "B"]);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+
+    it("confirmTwoStep refused with no codes → still throws", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockRejectedValueOnce(
+        new ApiError(
+          '400: {"code":"INVALID_SECOND_FACTOR"}',
+          "INVALID_SECOND_FACTOR",
+          400,
+        ),
+      );
+      await act(async () => {
+        await expect(result.current.confirmTwoStep("123456")).rejects.toThrow(
+          ApiError,
+        );
+      });
     });
 
     it("disableTwoStep keeps the new session", async () => {

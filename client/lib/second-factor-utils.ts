@@ -52,6 +52,20 @@ export function replacementFromError(err: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * Two-step went on and the server then refused the session (a reset landed
+ * mid-request): the answer still carries the new recovery codes — the
+ * account's only ones — so return them for the save step. Anything else is
+ * re-thrown unchanged.
+ */
+export function recoveryCodesOrThrow(err: unknown): string[] {
+  const codes = errorBody(err)?.recoveryCodes;
+  if (Array.isArray(codes) && codes.every((c) => typeof c === "string")) {
+    return codes as string[];
+  }
+  throw err;
+}
+
 export function secondFactorErrorMessage(err: unknown): {
   message: string;
   restart: boolean;

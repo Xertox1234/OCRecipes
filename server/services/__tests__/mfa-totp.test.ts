@@ -161,10 +161,13 @@ describe("confirmFirstEnrollment", () => {
 
   it("through a pass: 10 codes, only hashes stored, the pass passed through, the sign-in notice", async () => {
     vi.mocked(storage.confirmTotpEnrollment).mockResolvedValue(1);
-    const codes = await confirmFirstEnrollment(user, 5, {
+    const enrolled = await confirmFirstEnrollment(user, 5, {
       upgradePass: { idHash: "h", tokenVersion: 0 },
     });
+    const codes = enrolled?.recoveryCodes;
     expect(codes).toHaveLength(10);
+    // The version the enrolment bumped to, for the session (auth audit L1).
+    expect(enrolled?.tokenVersion).toBe(1);
     const [userId, opts] = vi.mocked(storage.confirmTotpEnrollment).mock
       .calls[0];
     expect(userId).toBe("1");

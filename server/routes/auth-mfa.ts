@@ -363,6 +363,7 @@ export function register(app: Express): void {
     requireAuth,
     mfaVerifyLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      let recoveryCodes: string[] | undefined;
       try {
         const { code } = parse(mfaConfirmSchema, req.body);
         const user = await me(req);
@@ -383,22 +384,24 @@ export function register(app: Express): void {
           throw wrong;
         }
 
-        let recoveryCodes: string[] | undefined;
+        let version: number;
         if (user.mfaEnabledAt === null) {
           // Sends the "enabled" notice itself.
-          recoveryCodes = await confirmFirstEnrollment(user, check.step);
-          if (!recoveryCodes) {
+          const enrolled = await confirmFirstEnrollment(user, check.step);
+          if (!enrolled) {
             throw new Reply(
               409,
               ErrorCode.MFA_ALREADY_ENABLED,
               "Two-step verification is already on.",
             );
           }
+          recoveryCodes = enrolled.recoveryCodes;
+          version = enrolled.tokenVersion;
         } else {
-          const version = await storage.confirmNewPhone(user.id, {
+          const moved = await storage.confirmNewPhone(user.id, {
             acceptedStep: check.step,
           });
-          if (version === undefined) {
+          if (moved === undefined) {
             throw new Reply(
               409,
               ErrorCode.MFA_NOT_ENABLED,
@@ -406,14 +409,23 @@ export function register(app: Express): void {
             );
           }
           notice(user, "new_phone");
+          version = moved;
         }
         invalidateTokenVersionCache(user.id);
+        // Only under the version this confirm set: a reset or sign-out-
+        // everywhere since then wins (auth audit L3, as L12). New codes ride
+        // the refusal too — they are already the account's only codes.
         res.json({
-          ...(await issueSession(user.id)),
+          ...(await issueSession(user.id, version)),
           ...(recoveryCodes ? { recoveryCodes } : {}),
         });
       } catch (error) {
-        answer(res, error, "confirm two-step setup");
+        answer(
+          res,
+          error,
+          "confirm two-step setup",
+          recoveryCodes ? { recoveryCodes } : undefined,
+        );
       }
     },
   );
@@ -462,7 +474,10 @@ export function register(app: Express): void {
           newPasswordHash = await hashPassword(body.newPassword);
         }
         replacement = await requireFactor(user, body.secondFactor);
-        await storage.disableMfa(user.id, { newPasswordHash });
+        const version = await storage.disableMfa(user.id, { newPasswordHash });
+        if (version === undefined) {
+          throw new Reply(404, ErrorCode.NOT_FOUND, "User not found");
+        }
         invalidateTokenVersionCache(user.id);
         notice(user, "disabled");
         if (newPasswordHash) {
@@ -471,7 +486,8 @@ export function register(app: Express): void {
             sendPasswordChangedNotice(user.email, user.username),
           );
         }
-        res.json(await issueSession(user.id));
+        // Only under the version this write set (auth audit L3, as L12).
+        res.json(await issueSession(user.id, version));
       } catch (error) {
         answer(res, error, "turn off two-step verification", replacement);
       }

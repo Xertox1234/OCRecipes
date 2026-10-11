@@ -23,6 +23,7 @@ import { validateNewPassword } from "./LoginScreen-utils";
 import {
   closesTwoStep,
   isPassExpired,
+  PASS_EXPIRED_MESSAGE,
   showTwoStepChoice,
   upgradeMessageFor,
 } from "./PasswordUpgradeScreen-utils";
@@ -107,7 +108,7 @@ export default function PasswordUpgradeScreen({ route, navigation }: Props) {
 
   const confirmCode = async (code: string) => {
     const result = await auth.upgradeConfirmTwoStep(pass, code);
-    setSession(result.session);
+    setSession(result.session ?? null);
     return result.recoveryCodes;
   };
 
@@ -118,8 +119,14 @@ export default function PasswordUpgradeScreen({ route, navigation }: Props) {
     return upgradeMessageFor(err);
   };
 
+  // No session: the server refused it after two-step went on (a reset
+  // landed) — the codes are saved, so the way on is sign-in.
   const onCodesSaved = () => {
     if (session) void auth.finishSignIn(session.user, session.token);
+    else {
+      setError(PASS_EXPIRED_MESSAGE);
+      setExpired(true);
+    }
   };
 
   const onSetPassword = async () => {
