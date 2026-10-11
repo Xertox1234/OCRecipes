@@ -115,6 +115,20 @@ export const reauthProofSchema = z.union([
 ]);
 export type ReauthProof = z.infer<typeof reauthProofSchema>;
 
+// Signed-in password change (change-password spec §4.1). The password and
+// Google/Apple variants are reauthProofSchema's own, unchanged; the emailed
+// code carries the second factor INSIDE the proof, as the password one does.
+export const changePasswordSchema = z.object({
+  proof: z.union([
+    ...reauthProofSchema.options,
+    z.object({
+      emailCode: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
+      secondFactor: secondFactorSchema.optional(),
+    }),
+  ]),
+  newPassword: newPasswordSchema,
+});
+
 export const deleteAccountSchema = reauthProofSchema;
 
 // ── Sign in with Google / Apple ────────────────────────────────────────────

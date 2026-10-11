@@ -297,6 +297,46 @@ describe("email service", () => {
   });
 
   describe("account-security bucket", () => {
+    it("change-password code: the code, its lifetime, and a not-you warning", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordChangeCode } = await import("../email");
+      await sendPasswordChangeCode("r@x.com", "042917");
+      const arg = mockSend.mock.calls[0][0];
+      expect(arg.to).toBe("r@x.com");
+      expect(arg.subject).toBe("Your OCRecipes code to change your password");
+      expect(arg.html).toContain("042917");
+      expect(arg.html).toContain("15 minutes");
+      expect(arg.html).toContain("mailto:support@ocrecipes.com");
+    });
+
+    // Security review: reset codes are attacker-triggered (anyone who knows the
+    // address) and a fixed 24 h window allows 12 in minutes across its edge.
+    // The signed-in change code must not share their per-recipient budget.
+    it("change-password code is still sent after reset codes exhaust the account-security bucket", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordResetCode, sendPasswordChangeCode } = await import(
+        "../email"
+      );
+      for (let i = 0; i < 12; i++)
+        await sendPasswordResetCode("v@x.com", "123456");
+      expect(mockSend).toHaveBeenCalledTimes(10);
+      mockSend.mockClear();
+      await sendPasswordChangeCode("v@x.com", "654321");
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    it("change-password code is not in the general bucket (sent after general is exhausted)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendSignupAttemptNotice, sendPasswordChangeCode } = await import(
+        "../email"
+      );
+      for (let i = 0; i < 6; i++)
+        await sendSignupAttemptNotice("v@x.com", "victim");
+      mockSend.mockClear();
+      await sendPasswordChangeCode("v@x.com", "123456");
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
     it("sends a reset code with the code in the body and a 15-minute note", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const { sendPasswordResetCode } = await import("../email");

@@ -50,3 +50,32 @@ export function resetCodeMatches(
   }
   return crypto.timingSafeEqual(expected, stored);
 }
+
+/**
+ * HMAC for the signed-in change-password code (change-password spec §4.2).
+ * Same key as reset codes, but a distinct `pw-change:` prefix: a change-code
+ * hash never equals a reset-code hash for the same user and digits, so one
+ * kind of code can never be spent as the other.
+ */
+export function hashChangeCode(userId: string, code: string): string {
+  return crypto
+    .createHmac("sha256", HMAC_KEY)
+    .update(`pw-change:${userId}:${code}`)
+    .digest("hex");
+}
+
+/** Constant-time comparison of a submitted change code against the stored HMAC. */
+export function changeCodeMatches(
+  userId: string,
+  code: string,
+  storedHash: string,
+): boolean {
+  const expected = Buffer.from(hashChangeCode(userId, code), "hex");
+  const stored = Buffer.from(storedHash, "hex");
+  if (stored.length !== expected.length) {
+    // Burn the same compare cost, then fail — malformed input is never a match.
+    crypto.timingSafeEqual(expected, expected);
+    return false;
+  }
+  return crypto.timingSafeEqual(expected, stored);
+}

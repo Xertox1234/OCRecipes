@@ -4,6 +4,7 @@ import { emailVerificationEnabled } from "../lib/email-config";
 import { createServiceLogger } from "../lib/logger";
 import { escapeHtml } from "../lib/html-escape";
 import { RESET_CODE_TTL_MINUTES } from "@shared/constants/password-reset";
+import { CHANGE_CODE_TTL_MINUTES } from "@shared/constants/password-change";
 
 const logger = createServiceLogger("email");
 
@@ -111,11 +112,16 @@ const EMAIL_FROM =
 // IP only, so anyone who knows an address could otherwise drain the shared
 // bucket with signup notices and silently swallow a reset code or the security
 // notice. The route + DB issuance caps keep this bucket well under 10.
+// "signed-in" (the change-password code) holds mail only a signed-in session
+// can trigger: reset codes are attacker-triggered and a fixed 24 h window lets
+// 12 land in minutes across its edge, so sharing their bucket would let a
+// stranger silence the owner's code (change-password security review).
 const RECIPIENT_WINDOW_MS = 60 * 60 * 1000;
-type SendBucket = "general" | "account-security";
+type SendBucket = "general" | "account-security" | "signed-in";
 const BUCKET_CAPS: Record<SendBucket, number> = {
   general: 5,
   "account-security": 10,
+  "signed-in": 10,
 };
 // Sweep fully-expired keys once the map grows past this many recipients. A
 // recipient touched once and never again (the enumeration case) is otherwise
@@ -277,6 +283,37 @@ export async function sendPasswordResetCode(
   });
   // Log only the Resend error — the payload (which holds the code) never.
   if (error) logger.error({ resendError: error }, "reset code email failed");
+}
+
+/**
+ * The code for a signed-in password change (change-password spec §4.1). Only
+ * a signed-in session can trigger it, so it has the "signed-in" bucket to
+ * itself: the account-security bucket also carries reset codes, which anyone
+ * who knows the address can trigger.
+ */
+export async function sendPasswordChangeCode(
+  to: string,
+  code: string,
+): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "signed-in")) {
+    // Never log the code — only the recipient.
+    logger.warn({ to }, "change-password code throttled (signed-in cap)");
+    return;
+  }
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: "Your OCRecipes code to change your password",
+    html: `<p>Use this code in the app to change your OCRecipes password:</p>
+<p style="font-size:28px;font-weight:bold;letter-spacing:6px">${escapeHtml(code)}</p>
+<p>It expires in ${CHANGE_CODE_TTL_MINUTES} minutes. If you requested more than one code, use the one in the most recent email.</p>
+<p>If you didn't ask for this, someone may be signed in to your account. Don't share the code, and contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>.</p>`,
+  });
+  // Log only the Resend error — the payload (which holds the code) never.
+  if (error)
+    logger.error({ resendError: error }, "change-password code email failed");
 }
 
 const PROVIDER_LABELS = { google: "Google", apple: "Apple" } as const;

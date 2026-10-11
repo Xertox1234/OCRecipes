@@ -4609,9 +4609,20 @@ esac
 _gh_api_n_wide=$(_out_max_count "$GH_API_RE")
 _gh_api_n_sepsafe=$(_out_max_count "$GH_API_RE_SEPSAFE")
 GH_API_OCCURRENCES=$(( ${_gh_api_n_wide:-0} > ${_gh_api_n_sepsafe:-0} ? ${_gh_api_n_wide:-0} : ${_gh_api_n_sepsafe:-0} ))
-if [ "${GH_API_OCCURRENCES:-0}" -gt 1 ]; then
-  deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
-elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
+# SEVERAL OCCURRENCES ARE CHECKED ONE BY ONE (2026-10-11). This used to deny any command with
+# more than one occurrence, unread. Between the 2026-09-22 freeze and this change that refusal
+# fired 72 times in 38 sessions, and 65 of those commands held nothing but reads (two CI-status
+# reads, a protection read beside a check-run read). Now every clause the cut finds runs the
+# same checks a lone call gets. Two things keep the old refusal's safety:
+#   - COVERAGE: in every rendering, the cut must find at least as many clauses as EITHER count
+#     grammar finds occurrences. Fewer means two calls merged into one match or a call has no
+#     clause of its own, so the occurrences cannot be told apart -- that still denies, with the
+#     old message (the apicollapse-* corpus rows pin it).
+#   - ONE COPY FOR ONE COPY: a vanished/blind clause is dropped only against an equal clause the
+#     earlier rendering holds and has not already used. Matching by text alone let
+#     `gh api r -X ; gh a${U}pi r -X ${M}` drop the second (expansion-derived) clause because the
+#     first left the identical text in the deep rendering.
+if [ "${GH_API_OCCURRENCES:-0}" -ge 1 ]; then
   # Cut from $WORDS_DEEP, keeping the command-position ANCHOR and the
   # `[^;&|]*` clause bound. $WORDS_DEEP is what makes the quoted-flag-value
   # spellings visible WITHOUT resorting to raw $CMD: the quote characters are
@@ -4783,7 +4794,35 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # unequal when both are extended by their own suffixes. A rendering that was
   # previously checked therefore cannot newly collapse into DEEP and vanish.
   _GH_API_CUT="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
-  GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
+  for _gh_api_r in "$WORDS_DEEP" "$WORDS_VANISHED" "$WORDS_VANISHED_BLIND"; do
+    [ -n "$_gh_api_r" ] || continue
+    _gh_api_cut_n=$(printf '%s' "$_gh_api_r" | grep -oiE "$_GH_API_CUT" | wc -l | tr -d '[:space:]')
+    for _gh_api_re in "$GH_API_RE" "$GH_API_RE_SEPSAFE"; do
+      _gh_api_seen=$(printf '%s' "$_gh_api_r" | grep -oiE "$_gh_api_re" | wc -l | tr -d '[:space:]')
+      [ "${_gh_api_cut_n:-0}" -ge "${_gh_api_seen:-0}" ] || \
+        deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    done
+  done
+  # $1 minus $2, line by line: each line of $2 cancels ONE equal line of $1. Pure bash -- the
+  # corpus runs this hook with awk unavailable.
+  _gh_api_minus() {
+    local out="" rest="$2" a b kept found
+    while IFS= read -r a; do
+      [ -n "$a" ] || continue
+      found=no; kept=""
+      while IFS= read -r b; do
+        [ -n "$b" ] || continue
+        if [ "$found" = no ] && [ "$b" = "$a" ]; then found=yes; continue; fi
+        kept="${kept}${b}
+"
+      done <<< "$rest"
+      rest=$kept
+      [ "$found" = yes ] || out="${out}${a}
+"
+    done <<< "$1"
+    printf '%s' "$out"
+  }
+  GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT")
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
   # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED
   # rendering saw a split verb (`gh a${UNSET}pi ...`) that WORDS_DEEP cannot
@@ -4825,20 +4864,19 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # the flag come from one rendering and the `$` from the other, denying on a
   # combination present in neither — the seam-forging hazard scan_renderings
   # documents. deny() exits, so no input can be denied twice.
-  GH_API_CLAUSE_VANISHED=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "$_GH_API_CUT" | head -1)
-  [ "$GH_API_CLAUSE_VANISHED" = "$GH_API_CLAUSE_DEEP" ] && GH_API_CLAUSE_VANISHED=""
+  GH_API_CLAUSE_VANISHED=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "$_GH_API_CUT")
+  GH_API_CLAUSE_VANISHED=$(_gh_api_minus "$GH_API_CLAUSE_VANISHED" "$GH_API_CLAUSE_DEEP")
   # The paren-BLIND vanishing rendering is a third cut for the same reason the
   # vanished one is a second: it is the only rendering that survives a `(` inside
   # a shell comment, where the paren-counting pass returns nothing at all. It is
   # span-derived exactly like the vanished cut, so it carries the same marker.
   # De-duplicated against BOTH earlier cuts so the common case still costs one pass.
-  GH_API_CLAUSE_BLIND=$(printf '%s' "$WORDS_VANISHED_BLIND" | grep -oiE "$_GH_API_CUT" | head -1)
-  { [ "$GH_API_CLAUSE_BLIND" = "$GH_API_CLAUSE_DEEP" ] || \
-    [ "$GH_API_CLAUSE_BLIND" = "$GH_API_CLAUSE_VANISHED" ]; } && GH_API_CLAUSE_BLIND=""
-  # BOTH checks below run once per rendering (the empty entry is skipped, and an
-  # identical vanished cut was blanked just above so the common case still costs
-  # one pass). $GH_API_CLAUSE is the loop variable; nothing after `done` reads
-  # it.
+  GH_API_CLAUSE_BLIND=$(printf '%s' "$WORDS_VANISHED_BLIND" | grep -oiE "$_GH_API_CUT")
+  GH_API_CLAUSE_BLIND=$(_gh_api_minus "$(_gh_api_minus "$GH_API_CLAUSE_BLIND" "$GH_API_CLAUSE_DEEP")" "$GH_API_CLAUSE_VANISHED")
+  # The checks below run once per CLAUSE, every rendering's clauses in turn (a
+  # vanished/blind clause the deep cut already holds was cancelled just above, so
+  # the common case still costs one pass per occurrence). $GH_API_CLAUSE is the
+  # loop variable; nothing after `done` reads it.
   #
   # $_GH_API_SPAN_DERIVED marks the vanished pass, and it is what actually
   # closes C2 — the union alone does NOT. C3's two spellings were "the guard
@@ -4858,13 +4896,17 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # method flag exactly as the `$` test is, so the documented narrowing holds:
   # a split-verb READ (`gh a${UNSET}pi repos/o/r`, `--jq`, `--paginate`, a
   # dynamic route) has no method flag and stays allowed.
-  for _GH_API_WHICH in deep vanished blind; do
-  case "$_GH_API_WHICH" in
-    deep)     GH_API_CLAUSE="$GH_API_CLAUSE_DEEP";     _GH_API_SPAN_DERIVED=no  ;;
-    vanished) GH_API_CLAUSE="$GH_API_CLAUSE_VANISHED"; _GH_API_SPAN_DERIVED=yes ;;
-    blind)    GH_API_CLAUSE="$GH_API_CLAUSE_BLIND";    _GH_API_SPAN_DERIVED=yes ;;
-  esac
-  [ -n "$GH_API_CLAUSE" ] || continue
+  # One line per clause, "no " / "yes " = span-derived. Read with a here-string, not a
+  # pipe, so deny()'s exit leaves THIS shell.
+  _GH_API_ITEMS=$(
+    printf '%s\n' "$GH_API_CLAUSE_DEEP"     | sed -n 's/^\(..*\)$/no \1/p'
+    printf '%s\n' "$GH_API_CLAUSE_VANISHED" | sed -n 's/^\(..*\)$/yes \1/p'
+    printf '%s\n' "$GH_API_CLAUSE_BLIND"    | sed -n 's/^\(..*\)$/yes \1/p'
+  )
+  while IFS= read -r _GH_API_ITEM; do
+  _GH_API_SPAN_DERIVED=${_GH_API_ITEM%% *}
+  GH_API_CLAUSE=${_GH_API_ITEM#* }
+  [ -n "$_GH_API_ITEM" ] && [ -n "$GH_API_CLAUSE" ] || continue
   # FIXED 2026-09-05 (C2): a method value that is not literal text (an
   # expansion or substitution, e.g. `-X ${x:-POST}`, `-X $METHOD`, `--method
   # $(printf PUT)`) never matches the literal POST/PUT/PATCH/DELETE text the
@@ -5103,7 +5145,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   if [ -n "$GH_API_CLAUSE" ] && grep -Eq "(^|[[:space:]])(-X${_GH_API_M}${_OUT_POS_SUFFIX}|(-X|--method)(${_OUT_SEP}|=)${_GH_API_M}${_OUT_POS_SUFFIX})" <<< "$GH_API_CLAUSE"; then
     deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
-  done
+  done <<< "$_GH_API_ITEMS"
 fi
 
 # --- launcher-family / path-qualified invocation (all gated binaries) -------

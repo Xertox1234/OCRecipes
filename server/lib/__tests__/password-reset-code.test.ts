@@ -5,6 +5,8 @@ import {
   hashResetCode,
   resetCodeMatches,
   DUMMY_RESET_HASH,
+  hashChangeCode,
+  changeCodeMatches,
 } from "../password-reset-code";
 
 describe("password-reset-code", () => {
@@ -51,5 +53,32 @@ describe("password-reset-code", () => {
     expect(resetCodeMatches("user-1", "123456", "")).toBe(false);
     expect(resetCodeMatches("user-1", "123456", "zz")).toBe(false);
     expect(resetCodeMatches("user-1", "123456", DUMMY_RESET_HASH)).toBe(false);
+  });
+});
+
+describe("change-password code hash", () => {
+  const user = "11111111-1111-1111-1111-111111111111";
+
+  it("never equals the reset-code hash for the same user and digits", () => {
+    expect(hashChangeCode(user, "123456")).not.toBe(
+      hashResetCode(user, "123456"),
+    );
+  });
+
+  it("matches the code it was made from, and only that code", () => {
+    const stored = hashChangeCode(user, "123456");
+    expect(changeCodeMatches(user, "123456", stored)).toBe(true);
+    expect(changeCodeMatches(user, "123457", stored)).toBe(false);
+    expect(changeCodeMatches("someone-else", "123456", stored)).toBe(false);
+  });
+
+  it("a reset-code hash is never accepted as a change code", () => {
+    expect(
+      changeCodeMatches(user, "123456", hashResetCode(user, "123456")),
+    ).toBe(false);
+  });
+
+  it("a malformed stored hash is false, not a throw", () => {
+    expect(changeCodeMatches(user, "123456", "abc")).toBe(false);
   });
 });
