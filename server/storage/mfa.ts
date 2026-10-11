@@ -2,6 +2,7 @@ import {
   mfaChallenges,
   mfaRecoveryCodes,
   mfaTrustedDevices,
+  passwordUpgradePasses,
   userMfa,
   users,
   type MfaChallenge,
@@ -23,9 +24,9 @@ import { and, eq, gt, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 // run in one transaction.
 
 /** Rolls a transaction back when its guarded first write matched nothing. */
-class GuardFailed extends Error {}
+export class GuardFailed extends Error {}
 
-async function guarded<T>(fn: () => Promise<T>): Promise<T | undefined> {
+export async function guarded<T>(fn: () => Promise<T>): Promise<T | undefined> {
   try {
     return await fn();
   } catch (err) {
@@ -77,13 +78,36 @@ const PROMOTE_PENDING = (acceptedStep: number) => ({
 /**
  * First setup. Guarded on a live pending secret AND MFA being off; returns the
  * new tokenVersion (every other session ends), or undefined when the guard fails.
+ * Through a short password's pass (password policy spec §6) the pass is
+ * consumed in this same transaction and the account's tokenVersion must still
+ * be the pass's, so a double submit can't enrol twice or mint two sessions.
  */
 export async function confirmTotpEnrollment(
   userId: string,
-  opts: { acceptedStep: number; recoveryHashes: string[] },
+  opts: {
+    acceptedStep: number;
+    recoveryHashes: string[];
+    upgradePass?: { idHash: string; tokenVersion: number };
+  },
 ): Promise<number | undefined> {
+  const pass = opts.upgradePass;
   return guarded(() =>
     db.transaction(async (tx) => {
+      if (pass) {
+        const [consumed] = await tx
+          .update(passwordUpgradePasses)
+          .set({ consumedAt: sql`now()` })
+          .where(
+            and(
+              eq(passwordUpgradePasses.idHash, pass.idHash),
+              eq(passwordUpgradePasses.userId, userId),
+              isNull(passwordUpgradePasses.consumedAt),
+              gt(passwordUpgradePasses.expiresAt, sql`now()`),
+            ),
+          )
+          .returning({ idHash: passwordUpgradePasses.idHash });
+        if (!consumed) throw new GuardFailed();
+      }
       const [promoted] = await tx
         .update(userMfa)
         .set(PROMOTE_PENDING(opts.acceptedStep))
@@ -96,7 +120,13 @@ export async function confirmTotpEnrollment(
           mfaEnabledAt: sql`now()`,
           tokenVersion: sql`${users.tokenVersion} + 1`,
         })
-        .where(and(eq(users.id, userId), isNull(users.mfaEnabledAt)))
+        .where(
+          and(
+            eq(users.id, userId),
+            isNull(users.mfaEnabledAt),
+            pass ? eq(users.tokenVersion, pass.tokenVersion) : undefined,
+          ),
+        )
         .returning({ tokenVersion: users.tokenVersion });
       if (!u) throw new GuardFailed();
       await tx
