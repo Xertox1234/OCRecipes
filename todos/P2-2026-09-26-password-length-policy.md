@@ -1,6 +1,6 @@
 ---
 title: "Password requirements feel unreasonable (the user hit a 14-character minimum) — find where it comes from and decide a policy against current NIST guidance"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-26
 updated: 2026-10-10
@@ -112,3 +112,12 @@ That makes this a genuine trade-off for the user, not a mechanical fix:
 - Split into two PRs. **PR 1** (this branch, OTA-safe, no migration): the shared rule, `pv2$` hashing with a compare-and-swap upgrade at sign-in, the HIBP range check, sign-up at 15 (no switch yet), reset and turning two-step off following the account's state, client copy and iOS password hints. **PR 2** (spec §6, still to come): the upgrade pass for existing short passwords, the sign-up switch and the sign-in gate.
 - The "14": not app code (see the first criterion).
 - Rollback hazard recorded in `docs/runbooks/password-hash-rollback.md`: once PR 1 is live, never redeploy an older server.
+- PR 1 merged as #1368 (`4feb0d5`).
+- **PR 2** (plan `docs/superpowers/plans/2026-10-10-password-policy-pr2.md`, local): the upgrade pass, the sign-in gate and the sign-up switch.
+  - **Sign-in gate.** A correct password under 15 on an account without two-step answers `upgrade_required` with a 30-minute, opaque pass; no session is issued. This applies at sign-in, on the Google/Apple Connect prompt (which also links nothing), and at verification-off sign-up with the switch on.
+  - **The pass.** It is stored hashed in `password_upgrade_passes` (migration 0020) and bound to `tokenVersion`. It is accepted only as `Authorization: UpgradePass`, by three routes, and allows 10 code tries.
+  - **The two ways out.** Turning on two-step enrols and consumes the pass in one transaction. Choosing a 15+ password writes it, consumes the pass, ends sessions, forgets trusted phones and drops a staged email change. Both send an email notice.
+  - **App.** The app's PasswordUpgradeScreen offers both. It holds the session until the recovery codes are saved.
+  - **The switch.** Sign-up's "Use two-step verification" switch sets the minimum to 8.
+  - **Dev account.** The dev `demo` account was reset to `demo-password-2026` (15+).
+  - **Before merge (owner).** Apply migration 0020 to prod, then the explicit merge yes (`security` label).
