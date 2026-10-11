@@ -11,7 +11,10 @@ import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
-import { useRecipeVariants } from "@/hooks/useRecipeCommunity";
+import {
+  useRecipeCommunityStats,
+  useRecipeVariants,
+} from "@/hooks/useRecipeCommunity";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -33,6 +36,10 @@ export default function RecipeVariantsScreen() {
   const { data, isPending, isError, refetch } = useRecipeVariants(
     params.recipeId,
   );
+
+  // Same query the recipe's Community section uses (usually cached). Its
+  // uncapped variantCount tells us when the server-capped list is short.
+  const stats = useRecipeCommunityStats(params.recipeId, true);
 
   const openVariant = (id: number) => {
     haptics.selection();
@@ -99,6 +106,15 @@ export default function RecipeVariantsScreen() {
     );
   }
 
+  const shown = data?.variants.length ?? 0;
+  const total = stats.isSuccess ? stats.data.variantCount : 0;
+  const footer =
+    !isError && total > shown ? (
+      <ThemedText style={[styles.footer, { color: theme.textSecondary }]}>
+        {`Showing the newest ${shown} of ${total} variants.`}
+      </ThemedText>
+    ) : null;
+
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
@@ -114,6 +130,7 @@ export default function RecipeVariantsScreen() {
         keyExtractor={(v) => String(v.id)}
         renderItem={renderItem}
         ListEmptyComponent={empty}
+        ListFooterComponent={footer}
       />
     </View>
   );
@@ -143,6 +160,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: "600",
+  },
+  footer: {
+    textAlign: "center",
+    padding: Spacing.md,
   },
   pressed: {
     opacity: 0.6,
