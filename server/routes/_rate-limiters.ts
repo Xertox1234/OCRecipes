@@ -208,11 +208,13 @@ export const mfaVerifyLimiter = createRateLimiter({
   message: "Too many attempts, please try again later",
 });
 
+// Password-gated like reauthLimiter, so user-keyed (the default; requireAuth
+// runs first): an IP key let a stolen session guess the password across IPs,
+// and on a two-step account a 403 confirms it without deleting (audit L1).
 export const accountDeletionLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 5,
   message: "Too many account deletion attempts, please try again later",
-  keyByUser: false,
 });
 
 // Authenticated, password-gated, and triggers an outbound email — user-keyed

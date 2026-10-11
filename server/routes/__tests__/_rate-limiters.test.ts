@@ -196,3 +196,36 @@ describe("passwordResetEmailKey", () => {
     expect(key(req({}))).toBe("203.0.113.9");
   });
 });
+
+// Auth audit 2026-10-10 L1: DELETE /api/auth/account checks the password, so
+// its limit must follow the ACCOUNT (like reauthLimiter) — an IP-keyed limit
+// lets a stolen session guess the password from many IPs.
+describe("accountDeletionLimiter", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("is keyed per account, not per IP", async () => {
+    vi.resetModules();
+    vi.stubEnv("E2E_RELAXED_RATE_LIMITS", "");
+    const { accountDeletionLimiter } = await import("../_rate-limiters");
+    const app = express();
+    app.use((req, _res, next) => {
+      req.userId = req.header("x-test-user") ?? "";
+      next();
+    });
+    app.delete("/account", accountDeletionLimiter, (_req, res) => {
+      res.status(401).json({ code: "UNAUTHORIZED" });
+    });
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app).delete("/account").set("x-test-user", "a");
+      expect(res.status).toBe(401);
+    }
+    const sixth = await request(app).delete("/account").set("x-test-user", "a");
+    expect(sixth.status).toBe(429);
+    // Same IP, different account: its own budget.
+    const other = await request(app).delete("/account").set("x-test-user", "b");
+    expect(other.status).toBe(401);
+  });
+});
