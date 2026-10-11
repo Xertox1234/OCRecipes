@@ -425,9 +425,9 @@ assert_deny "gh api -XPOST denies (glued short-flag spelling, no separator)" \
 assert_deny "gh api -Xpost denies (glued, lowercase)" \
   "$(json 'gh api -Xpost repos/xertox1234/OCRecipes/pulls/42/merge')" \
   "mutating HTTP method"
-assert_deny "two gh api occurrences denies (ambiguous — a read-only first call must not shadow a mutating second one)" \
+assert_deny "two gh api occurrences: a read-only first call must not shadow a mutating second one" \
   "$(json 'gh api repos/xertox1234/OCRecipes/pulls/42 && gh api -X PUT repos/xertox1234/OCRecipes/pulls/42/merge')" \
-  "more than one command-position 'gh api'"
+  "mutating HTTP method"
 
 # ---------- ROUND-3 CRITICAL C1: command-position ANCHOR gaps ----------
 # HISTORICAL CONTEXT for why these tests exist: at review round 3
@@ -2699,8 +2699,8 @@ assert_deny "CO-OCCURRENCE: a literal mutating gh api method still denies behind
   "$(json '2>/dev/null gh api repos/o/r -X POST')" "mutating HTTP method"
 assert_deny "CO-OCCURRENCE: a literal mutating gh api method still denies glued to a trailing redirect (same regression guard, finding A axis)" \
   "$(json 'gh api repos/o/r -X POST>/dev/null')" "mutating HTTP method"
-assert_deny "CO-OCCURRENCE: two gh api invocations, one read-only and one with an unreadable method, still deny (the pre-existing multi-occurrence ambiguity check fires first, before either single-clause check runs)" \
-  "$(json 'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}')" "ambiguous, cannot verify"
+assert_deny "CO-OCCURRENCE: two gh api invocations, one read-only and one with an unreadable method, still deny (each clause is checked on its own since 2026-10-11, so the second one's own check fires)" \
+  "$(json 'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}')" "not literal text"
 
 # ---------- 2026-09-05: the vanishing-sigil class, three VERB positions ------
 # (suffix/prefix/mid-token OF THE VERB. The class also has a TOOL position and a
@@ -2789,8 +2789,8 @@ assert_allow "a single automerge call is still counted once" \
   "$(json 'gh pr merge 42 --auto')"
 assert_allow "a single gh pr create is still counted once" \
   "$(json 'gh pr create --title t --body b')"
-assert_deny "two gh api occurrences still read as ambiguous" \
-  "$(json 'gh api repos/o/r && gh api -X PUT repos/o/r/pulls/1/merge')" "more than one command-position 'gh api'"
+assert_deny "two gh api occurrences: the mutating second one is still checked" \
+  "$(json 'gh api repos/o/r && gh api -X PUT repos/o/r/pulls/1/merge')" "mutating HTTP method"
 
 # FALSE-POSITIVE CONTROLS -- over-denial is this change's real risk, so the
 # everyday idioms that merely CONTAIN a deletable construct must stay allowed.
@@ -5126,9 +5126,9 @@ assert_deny "path-qualified privilege word stacked on a path-qualified wrapper" 
 assert_deny "two path-qualified gh pr merge invocations still read as AMBIGUOUS (not merged into one)" \
   "$(json '/usr/bin/env gh pr merge 1 --auto; /usr/bin/env gh pr merge 2 --auto')" \
   "more than one command-position 'gh pr merge' occurrence"
-assert_deny "two path-qualified gh api invocations still read as AMBIGUOUS" \
-  "$(json '/usr/bin/env gh api /repos/o/r; /usr/bin/env gh api /repos/o/r2')" \
-  "more than one command-position 'gh api' occurrence"
+# The `gh api` sibling of the row above moved to the 2026-10-11 block: two path-qualified
+# `gh api` reads now ALLOW, and a mutating second call denies on its own method -- proof the
+# path-qualified second occurrence is still cut and checked, not merged into the first.
 
 # ---------- ROUND 5: over-denial controls ----------
 # The first of these is the one that would break a live pipeline rather than merely annoy: the
@@ -5905,6 +5905,63 @@ else
   echo "FAIL: the closer-class pattern matches nothing anywhere -- the structural check above is vacuous"; FAIL=$((FAIL+1))
 fi
 
+# ---------- 2026-10-11: several gh api calls are checked ONE BY ONE, not refused as a group ----------
+# Since the 2026-09-22 freeze this refusal fired 72 times in 38 sessions, 65 of them on commands
+# whose every `gh api` was a plain read (two CI-status reads, a protection read beside a
+# check-run read). Each occurrence's clause now runs the same read-only checks a single call
+# gets. The refusal stays wherever the clauses cannot be told apart (fewer clauses cut than
+# occurrences counted in some rendering) -- the apicollapse rows above pin that.
+assert_allow "two read-only gh api calls allow" \
+  "$(json 'gh api repos/o/r/pulls/1 --jq .state; gh api repos/o/r/commits/abc/check-runs')"
+assert_allow "two read-only gh api calls joined by && allow" \
+  "$(json 'gh api repos/o/r/branches/main/protection/required_status_checks -q .contexts && gh api repos/o/r/commits/abc/check-runs')"
+assert_allow "read-only gh api calls with a shell variable in the route allow (the real-world shape)" \
+  "$(jsonc 'SHA=abc123; gh api "repos/o/r/commits/$SHA/check-runs" --jq .total_count; gh api repos/o/r/branches/main/protection')"
+assert_allow "three read-only gh api calls allow" \
+  "$(json 'gh api a/1; gh api a/2; gh api a/3')"
+assert_allow "two read-only gh api calls inside command substitutions allow" \
+  "$(jsonc 'echo "$(gh api repos/o/r/pulls/1) $(gh api repos/o/r/pulls/2)"')"
+assert_allow "the same read twice allows (identical clauses are not mistaken for an expansion-derived one)" \
+  "$(json 'gh api repos/o/r; gh api repos/o/r')"
+assert_allow "the same explicit GET twice allows" \
+  "$(json 'gh api repos/o/r -X GET; gh api repos/o/r -X GET')"
+assert_deny "a read then a mutating method still denies, on the method reason" \
+  "$(json 'gh api repos/o/r/pulls/1; gh api -X DELETE repos/o/r/git/refs/heads/x')" \
+  "mutating HTTP method"
+assert_deny "a mutating method then a read still denies" \
+  "$(json 'gh api -X PATCH repos/o/r/pulls/1 -f state=closed; gh api repos/o/r/pulls/1')" \
+  "mutating HTTP method"
+assert_deny "a read then an implicit POST (a field, no method) still denies" \
+  "$(json 'gh api repos/o/r/pulls/1 && gh api repos/o/r/merges -f base=main -f head=x')" \
+  "is a POST, not a GET"
+assert_deny "a read then --input (implicit POST) still denies" \
+  "$(json 'gh api repos/o/r/pulls/1; gh api --input body.json repos/o/r/pulls/1/merge')" \
+  "is a POST, not a GET"
+assert_deny "a read then a method from a variable still denies" \
+  "$(jsonc 'gh api repos/o/r; gh api repos/o/r/pulls/1/merge -X ${M}')" \
+  "not literal text"
+assert_deny "a mutation in the THIRD of three calls still denies" \
+  "$(json 'gh api a/1; gh api a/2; gh api -X PUT repos/o/r/pulls/1/merge')" \
+  "mutating HTTP method"
+assert_deny "a mutation inside the second command substitution still denies" \
+  "$(jsonc 'echo "$(gh api repos/o/r) $(gh api -X POST repos/o/r/merges)"')" \
+  "mutating HTTP method"
+# A split verb (`gh a${U}pi`) is invisible to the deep rendering, so its clause exists only in
+# the vanished one, where the same deletion also erases `${M}`. A first call spelled to leave the
+# IDENTICAL text in the deep rendering must not let that clause pass as "already seen": clauses
+# are matched one copy for one copy, never by text alone.
+assert_deny "a split-verb mutation cannot hide behind an identical-looking first call" \
+  "$(jsonc 'gh api repos/o/r -X ; gh a${U}pi repos/o/r -X ${M}')" \
+  "not literal text"
+assert_deny "a split-verb mutation after a plain read still denies" \
+  "$(jsonc 'gh api repos/o/r; gh a${U}pi repos/o/r/pulls/1/merge -X ${M}')" \
+  "not literal text"
+assert_deny "two path-qualified gh api calls: a mutating second one still denies" \
+  "$(json '/usr/bin/env gh api /repos/o/r; /usr/bin/env gh api -X DELETE /repos/o/r2')" \
+  "mutating HTTP method"
+assert_allow "two path-qualified read-only gh api calls allow" \
+  "$(json '/usr/bin/env gh api /repos/o/r; /usr/bin/env gh api /repos/o/r2')"
+
 # 975 -> 977 (2026-09-17, closer-class sweep): +2 structural rows. #991 fixed ONE hand-written
 # `([[:space:]]|$)` closer; the sibling todo's criterion is that leaving the others is this
 # file's most repeated mistake, so the two remaining code-line instances (both `grep -oE`
@@ -5944,7 +6001,10 @@ fi
 # 1201 -> 1207 (2026-09-22, security review round 1): +6 = 3 manufactured-method rows the
 # unanchored blank flipped main-DENY -> head-ALLOW, 2 controls (a longer flag glued to a redirect,
 # a word-initial operator with a glued operand), and the anchor's cost pinned KNOWN-WRONG.
-EXPECTED_TOTAL=1207
+# 1207 -> 1224 (2026-10-11, gh api occurrences checked one by one): +18 rows in the 2026-10-11
+# block (8 allow, 10 deny) - 1 row moved there (the path-qualified gh api pair, now an allow +
+# deny pair). Three existing deny rows kept their command and changed only the reason they pin.
+EXPECTED_TOTAL=1224
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

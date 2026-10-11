@@ -1615,7 +1615,7 @@ add co-ind-pref      DENY  '2>/dev/null eas build --platform ios ${!v:---auto-su
 add co-pos-create    DENY  'gh pr create --title t --body b ${1:---repo} other/org'   # C1-grammar-widening on the create path specifically
 add co-c2-predB      DENY  '2>/dev/null gh api repos/o/r -X ${x:-POST}'   # C2 x finding B: leading redirect + unreadable method
 add co-c2-predA      DENY  'gh api repos/o/r -X ${x:-POST}>/dev/null'   # C2 x finding A: trailing glued redirect + unreadable method
-add co-two-api-c2    DENY  'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}'   # two occurrences, second carries an unreadable method — the pre-existing >1-occurrence ambiguity check fires first
+add co-two-api-c2    DENY  'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}'   # two occurrences, second carries an unreadable method — since 2026-10-11 each clause is checked, so the second one's unreadable-method check fires (it was the >1-occurrence ambiguity refusal before)
 # ADDED 2026-09-06 (security review of PR #926). The review named the absence of
 # a `C2 x vanishing sigil` co-occurrence row as a gap, and that row IS finding
 # C2: `gh a${UNSET}pi repos/o/r -X ${METHOD}` was a live ALLOW. It is the exact
@@ -4784,12 +4784,12 @@ co-mask-c1         : command-position 'gh pr merge' without a REAL --auto flag m
 co-redir-mask      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 co-pref-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, c
 co-pref-dollar     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-co-two-api         : more than one command-position 'gh api' occurrence — ambiguous, cannot
+co-two-api         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 co-ind-pref        : command-position 'eas build --auto-submit' submits the finished binary t
 co-pos-create      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 co-c2-predB        : command-position 'gh api' with a method flag (-X/--method) whose value i
 co-c2-predA        : command-position 'gh api' with a method flag (-X/--method) whose value i
-co-two-api-c2      : more than one command-position 'gh api' occurrence — ambiguous, cannot
+co-two-api-c2      : command-position 'gh api' with a method flag (-X/--method) whose value i
 co-c2-toolsplit    : command-position 'gh api' with a method flag (-X/--method) whose value i
 co-c2-toolsub      : command-position 'gh api' with a method flag (-X/--method) whose value i
 co-c2-halfA        : command-position 'gh api' with a method flag (-X/--method) whose value i
