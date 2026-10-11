@@ -31,6 +31,7 @@ import {
   RecipeInstructions,
 } from "@/components/recipe-detail";
 import { AskCoachSection } from "@/components/AskCoachSection";
+import { RecipeCommunityStats } from "@/components/RecipeCommunityStats";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
 import { useTheme } from "@/hooks/useTheme";
@@ -511,6 +512,17 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
               ))}
             </View>
           )}
+
+        {/* 9c. Community stats (public community recipes only — the
+            component renders nothing unless the stats request succeeds,
+            and the server 404s non-public recipes) */}
+        {isCommunityRecipe && props.recipeId > 0 && (
+          <RecipeCommunityStats
+            recipeId={props.recipeId}
+            recipeTitle={props.title}
+            onRemix={handleRemixPress}
+          />
+        )}
 
         {/* 10. Ask Coach */}
         <AskCoachSection

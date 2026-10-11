@@ -170,6 +170,8 @@ export type RootStackParamList = {
     /** Deep link query param — alias for recipeType */
     type?: "community" | "mealPlan";
   };
+  /** Public community remixes of a recipe (from the recipe's Community section). */
+  RecipeVariants: { recipeId: number; title: string };
   QuickLog: undefined;
   DailyNutritionDetail: undefined;
   MenuScanResult: {
