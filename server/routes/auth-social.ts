@@ -145,21 +145,20 @@ export async function appleRefreshTokenFor(
 }
 
 /**
- * `expectedTokenVersion` (an MFA challenge's version): refuse to mint if a
- * reset or sign-out-everywhere bumped it since — checked on the same read the
- * token is minted from, so the session can never outlive that bump (audit L12).
+ * `expectedTokenVersion` — the version the caller checked or its own write
+ * set: refuse to mint if a reset or sign-out-everywhere bumped it since —
+ * checked on the same read the token is minted from, so the session can never
+ * outlive that bump (audit L12). Required, so a new mint site can't skip it
+ * (audits L1/L3 found the gap one call site at a time).
  */
 export async function issueSession(
   userId: string,
-  expectedTokenVersion?: number,
+  expectedTokenVersion: number,
 ) {
   const user = await storage.getUser(userId);
   if (!user)
     throw new HttpFailure(401, ErrorCode.UNAUTHORIZED, "User not found");
-  if (
-    expectedTokenVersion !== undefined &&
-    user.tokenVersion !== expectedTokenVersion
-  )
+  if (user.tokenVersion !== expectedTokenVersion)
     throw new HttpFailure(
       401,
       ErrorCode.MFA_CHALLENGE_EXPIRED,

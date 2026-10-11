@@ -444,6 +444,17 @@ describe("POST /api/auth/mfa/disable", () => {
     expect(res.body.token).toBeUndefined();
   });
 
+  it("the account vanished under the write (disableMfa returned nothing) → 404, no session", async () => {
+    vi.mocked(storage.disableMfa).mockResolvedValue(undefined);
+    const res = await post("disable", {
+      password: LONG_PASSWORD,
+      secondFactor: { code: "123456" },
+    });
+    expect(res.status).toBe(404);
+    expect(res.body.token).toBeUndefined();
+    expect(storage.getUser).not.toHaveBeenCalled();
+  });
+
   it("no factor → 400 (schema), nothing changed", async () => {
     const res = await post("disable", { password: LONG_PASSWORD });
     expect(res.status).toBe(400);

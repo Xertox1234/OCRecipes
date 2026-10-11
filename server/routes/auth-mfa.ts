@@ -475,6 +475,9 @@ export function register(app: Express): void {
         }
         replacement = await requireFactor(user, body.secondFactor);
         const version = await storage.disableMfa(user.id, { newPasswordHash });
+        if (version === undefined) {
+          throw new Reply(404, ErrorCode.NOT_FOUND, "User not found");
+        }
         invalidateTokenVersionCache(user.id);
         notice(user, "disabled");
         if (newPasswordHash) {
