@@ -497,44 +497,12 @@ export const remindersMutesRateLimit = createRateLimiter({
   message: "Too many mute requests. Please wait.",
 });
 
-/** Store-key prefix for the per-account /api/auth/social/link throttle. */
-export const SOCIAL_LINK_ACCOUNT_KEY_PREFIX = "social-link-account:";
-
 /**
- * Per-account throttle for the PASSWORD branch of POST /api/auth/social/link
- * (spec §4.4). Keys FAILED attempts by the ticket's target user, so an
- * attacker who re-mints link tickets from rotating IPs is still capped per
- * account — same shape as loginAccountLimiter (10 / 15 min,
- * skipSuccessfulRequests). Provider-proof requests carry no password and are
- * skipped. The target is resolved through `resolveTarget` (a read-only ticket
- * lookup injected by the route) so this module stays storage-free; an unknown
- * ticket falls back to the per-IP key.
+ * Per-account cap on FAILED password guesses through POST
+ * /api/auth/social/link (spec §4.4): 10 per fixed 15-minute window from the
+ * first guess, keyed by the ticket's TARGET account so re-minting tickets from
+ * rotating IPs doesn't help. Counted in Postgres by the route
+ * (storage.reserveLinkPasswordGuess) — an in-memory store reset on every
+ * deploy (auth audit 2026-10-10 L15). E2E runs can relax it like the others.
  */
-export function createSocialLinkAccountLimiter(
-  resolveTarget: (ticket: string) => Promise<string | null>,
-) {
-  return rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: resolveRateLimitMax(10, process.env),
-    skipSuccessfulRequests: true,
-    message: {
-      error: "Too many sign-in attempts, please try again later",
-      code: "RATE_LIMITED",
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req: Request) =>
-      typeof (req.body as { password?: unknown } | undefined)?.password !==
-      "string",
-    keyGenerator: async (req: Request) => {
-      const ticket = (req.body as { ticket?: unknown } | undefined)?.ticket;
-      const target =
-        typeof ticket === "string" && ticket.length > 0 && ticket.length <= 200
-          ? await resolveTarget(ticket)
-          : null;
-      return target
-        ? `${SOCIAL_LINK_ACCOUNT_KEY_PREFIX}${target}`
-        : ipKeyGenerator(req);
-    },
-  });
-}
+export const SOCIAL_LINK_ACCOUNT_MAX = resolveRateLimitMax(10, process.env);

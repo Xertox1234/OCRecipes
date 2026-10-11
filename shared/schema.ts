@@ -255,6 +255,21 @@ export const pendingSocialSignIns = pgTable(
   }),
 );
 
+/**
+ * Failed password guesses through POST /api/auth/social/link, per TARGET
+ * account, in a fixed 15-minute window from the first guess (spec §4.4,
+ * auth audit 2026-10-10 L15). In Postgres so a deploy never resets the cap.
+ * Its own table, not columns on users: a deploy that ever beats the migration
+ * breaks only this branch, never every users read.
+ */
+export const socialLinkGuesses = pgTable("social_link_guesses", {
+  userId: varchar("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  count: integer("count").default(0).notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+});
+
 /** One row per account that has started or finished 2FA setup. Never serialized. */
 export const userMfa = pgTable("user_mfa", {
   userId: varchar("user_id")

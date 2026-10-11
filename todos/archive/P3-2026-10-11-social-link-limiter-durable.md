@@ -1,6 +1,6 @@
 ---
 title: "Per-account /social/link guess limit should survive deploys"
-status: backlog
+status: done
 priority: low
 created: 2026-10-11
 updated: 2026-10-11
@@ -23,8 +23,8 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 
 ## Acceptance Criteria
 
-- [ ] Failed link attempts per target user are counted durably in Postgres (a small counter + window on the target, or a Postgres rate-limit store) and checked atomically
-- [ ] Test proves the cap holds across a simulated restart (fresh module import)
+- [x] Failed link attempts per target user are counted durably in Postgres (a small counter + window on the target, or a Postgres rate-limit store) and checked atomically
+- [x] Test proves the cap holds across a simulated restart (fresh module import)
 
 ## Implementation Notes
 
@@ -50,3 +50,5 @@ Source: auth security audit 2026-10-10 (manifest `docs/audits/2026-10-10-securit
 ### 2026-10-11
 
 - Initial creation (deferred from the auth security audit)
+
+- Fixed: new table social_link_guesses (migration 0021, its own table so a deploy that beats the migration breaks only this branch, never every users read). reserveLinkPasswordGuess is one atomic upsert (fixed 15-min window from the first guess, 10 max, E2E-relaxable via resolveRateLimitMax); a right password refunds the guess (only failures count). The in-memory createSocialLinkAccountLimiter is removed. Real-DB test proves the cap across a fresh module import. OWNER: apply 0021 on prod and paste to_regclass before merge.

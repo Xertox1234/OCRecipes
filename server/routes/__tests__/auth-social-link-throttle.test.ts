@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import bcrypt from "bcrypt";
@@ -10,12 +10,15 @@ import {
 import { storage } from "../../storage";
 import { register } from "../auth-social";
 
-// NOTE: deliberately NO vi.mock("express-rate-limit") — this file exercises
-// the REAL per-account limiter on POST /api/auth/social/link (spec §4.4: the
-// password branch is a password-guessing surface, so it is throttled per
-// TARGET ACCOUNT, not just per IP or per ticket). Each test uses its own target
-// user id so the module-scoped MemoryStore buckets never collide.
+// The per-account cap on the PASSWORD branch of POST /api/auth/social/link
+// (spec §4.4) is counted in Postgres (auth audit 2026-10-10 L15), so a deploy
+// never resets it — the storage half is proven against a real DB in
+// server/storage/__tests__/social-link-guesses.test.ts. Here: the route
+// reserves a guess against the TARGET account before checking the password,
+// answers 429 when the cap is reached, and gives the guess back when the
+// password was right (only failures count).
 
+vi.mock("express-rate-limit");
 vi.mock("../../storage", () => ({
   ReservedUsernameError: class ReservedUsernameErrorMock extends Error {},
   isReservedUsername: () => false,
@@ -23,10 +26,12 @@ vi.mock("../../storage", () => ({
     getPendingSignIn: vi.fn(),
     reservePendingLinkAttempt: vi.fn(),
     getUserForAuth: vi.fn(),
+    reserveLinkPasswordGuess: vi.fn(),
+    refundLinkPasswordGuess: vi.fn(),
+    consumeNonce: vi.fn(),
+    createUpgradePass: vi.fn(),
   },
 }));
-
-const LIMIT = 10; // mirrors the social link account limiter's max
 
 let app: express.Express;
 let hash: string;
@@ -34,58 +39,74 @@ let hash: string;
 beforeAll(async () => {
   hash = await bcrypt.hash("right-pass1", 4);
   app = express();
-  app.set("trust proxy", 1);
   app.use(express.json());
   register(app);
 });
 
-/** Every ticket resolves to `target`; each attempt comes from a new IP. */
-function aimAt(target: string) {
-  const row = createMockPendingSocialSignIn({ targetUserId: target });
+beforeEach(() => {
+  vi.clearAllMocks();
+  const row = createMockPendingSocialSignIn({ targetUserId: "target-a" });
   vi.mocked(storage.getPendingSignIn).mockResolvedValue(row);
   vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(row);
   vi.mocked(storage.getUserForAuth).mockResolvedValue(
-    createMockUser({ id: target, password: hash }),
+    createMockUser({ id: "target-a", password: hash, mfaEnabledAt: null }),
   );
-}
+  vi.mocked(storage.reserveLinkPasswordGuess).mockResolvedValue(true);
+  vi.mocked(storage.refundLinkPasswordGuess).mockResolvedValue(undefined);
+  vi.mocked(storage.createUpgradePass).mockResolvedValue(undefined);
+});
 
-function guess(i: number, password = "wrong-pass1") {
-  return request(app)
-    .post("/api/auth/social/link")
-    .set("X-Forwarded-For", `10.9.${Math.floor(i / 200)}.${i % 200}`)
-    .send({ ticket: `ticket-${i}`, password });
-}
+const guess = (password = "wrong-pass1") =>
+  request(app).post("/api/auth/social/link").send({ ticket: "t", password });
 
-describe("POST /api/auth/social/link per-account throttle", () => {
-  it("locks a target account after 10 wrong passwords across fresh tickets and IPs", async () => {
-    aimAt("target-a");
-    for (let i = 0; i < LIMIT; i++) {
-      expect((await guess(i)).status).toBe(401);
-    }
-    const blocked = await guess(LIMIT);
-    expect(blocked.status).toBe(429);
+describe("POST /api/auth/social/link per-account cap", () => {
+  it("cap reached → 429 RATE_LIMITED before the password is checked", async () => {
+    vi.mocked(storage.reserveLinkPasswordGuess).mockResolvedValue(false);
+    const res = await guess("right-pass1");
+    expect(res.status).toBe(429);
+    expect(res.body).toEqual({
+      error: "Too many sign-in attempts, please try again later",
+      code: "RATE_LIMITED",
+    });
+    expect(storage.reserveLinkPasswordGuess).toHaveBeenCalledWith(
+      "target-a",
+      10,
+    );
+    expect(storage.getUserForAuth).not.toHaveBeenCalled();
+    expect(storage.refundLinkPasswordGuess).not.toHaveBeenCalled();
   });
 
-  it("does not throttle a different target account", async () => {
-    aimAt("target-b");
-    expect((await guess(1000)).status).toBe(401);
+  it("a wrong password spends the guess (401, no refund)", async () => {
+    const res = await guess();
+    expect(res.status).toBe(401);
+    expect(storage.reserveLinkPasswordGuess).toHaveBeenCalledWith(
+      "target-a",
+      10,
+    );
+    expect(storage.refundLinkPasswordGuess).not.toHaveBeenCalled();
+  });
+
+  it("a right password gives the guess back", async () => {
+    // Under 15 with no two-step → an upgrade pass; the guess still refunds.
+    const res = await guess("right-pass1");
+    expect(res.status).toBe(200);
+    expect(storage.refundLinkPasswordGuess).toHaveBeenCalledWith("target-a");
+  });
+
+  it("a dead ticket never reaches the account counter", async () => {
+    vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(undefined);
+    const res = await guess();
+    expect(res.status).toBe(400);
+    expect(storage.reserveLinkPasswordGuess).not.toHaveBeenCalled();
   });
 
   it("provider-proof requests are not counted against the account", async () => {
-    aimAt("target-c");
-    for (let i = 0; i < LIMIT; i++) {
-      // No password field → the limiter skips; the request fails validation
-      // of its proof elsewhere, which is not a password guess.
-      await request(app)
-        .post("/api/auth/social/link")
-        .set("X-Forwarded-For", `10.8.0.${i}`)
-        .send({
-          ticket: `t-${i}`,
-          provider: "apple",
-          idToken: "x",
-          nonce: "n",
-        });
-    }
-    expect((await guess(2000)).status).toBe(401);
+    await request(app).post("/api/auth/social/link").send({
+      ticket: "t",
+      provider: "apple",
+      idToken: "x",
+      nonce: "n",
+    });
+    expect(storage.reserveLinkPasswordGuess).not.toHaveBeenCalled();
   });
 });

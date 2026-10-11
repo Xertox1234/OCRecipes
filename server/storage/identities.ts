@@ -7,6 +7,7 @@ import {
   type PendingSocialSignIn,
   type User,
   type UserIdentity,
+  socialLinkGuesses,
 } from "@shared/schema";
 import { db } from "../db";
 import { and, count, eq, gt, isNull, lt, sql } from "drizzle-orm";
@@ -219,6 +220,44 @@ export async function reservePendingLinkAttempt(
     )
     .returning();
   return row;
+}
+
+/** The per-account guess window (spec §4.4) — fixed, from the first guess. */
+const LINK_GUESS_WINDOW_MINUTES = 15;
+
+/**
+ * Reserve one password guess against `userId` through /api/auth/social/link
+ * (auth audit 2026-10-10 L15). One atomic upsert: a fixed 15-minute window
+ * from the first guess, restarted once it has passed; refused (false) when
+ * `max` guesses are already counted in it. In Postgres, so a deploy never
+ * resets the cap, and concurrent guesses serialize on the row.
+ */
+export async function reserveLinkPasswordGuess(
+  userId: string,
+  max: number,
+): Promise<boolean> {
+  const expired = sql`${socialLinkGuesses.windowStart} <= now() - (${LINK_GUESS_WINDOW_MINUTES} * interval '1 minute')`;
+  const [row] = await db
+    .insert(socialLinkGuesses)
+    .values({ userId, count: 1, windowStart: sql`now()` })
+    .onConflictDoUpdate({
+      target: socialLinkGuesses.userId,
+      set: {
+        count: sql`CASE WHEN ${expired} THEN 1 ELSE ${socialLinkGuesses.count} + 1 END`,
+        windowStart: sql`CASE WHEN ${expired} THEN now() ELSE ${socialLinkGuesses.windowStart} END`,
+      },
+      setWhere: sql`${expired} OR ${socialLinkGuesses.count} < ${max}`,
+    })
+    .returning({ userId: socialLinkGuesses.userId });
+  return Boolean(row);
+}
+
+/** Give a guess back — the password was right, and only failures count. */
+export async function refundLinkPasswordGuess(userId: string): Promise<void> {
+  await db
+    .update(socialLinkGuesses)
+    .set({ count: sql`GREATEST(${socialLinkGuesses.count} - 1, 0)` })
+    .where(eq(socialLinkGuesses.userId, userId));
 }
 
 export async function completeLinkFromTicket(

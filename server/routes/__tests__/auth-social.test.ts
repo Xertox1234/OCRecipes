@@ -39,6 +39,9 @@ vi.mock("../../storage", () => ({
     sweepExpiredPendingSignIns: vi.fn(),
     getPendingSignIn: vi.fn(),
     reservePendingLinkAttempt: vi.fn(),
+    // The per-account cap has room (its own file covers the 429).
+    reserveLinkPasswordGuess: vi.fn().mockResolvedValue(true),
+    refundLinkPasswordGuess: vi.fn().mockResolvedValue(undefined),
     completeLinkFromTicket: vi.fn(),
     createMfaChallenge: vi.fn(),
     createUpgradePass: vi.fn(),

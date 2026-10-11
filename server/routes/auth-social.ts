@@ -11,7 +11,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { handleRouteError, formatZodError } from "./_helpers";
 import {
   socialAuthLimiter,
-  createSocialLinkAccountLimiter,
+  SOCIAL_LINK_ACCOUNT_MAX,
   crudRateLimit,
   reauthLimiter,
 } from "./_rate-limiters";
@@ -61,14 +61,6 @@ import { createServiceLogger, toError } from "../lib/logger";
 import type { User } from "@shared/schema";
 
 const logger = createServiceLogger("auth-social");
-
-// Spec §4.4: the password branch of /social/link is a password-guessing
-// surface, so failed attempts are also throttled per TARGET ACCOUNT. The
-// per-ticket cap (5) alone is not enough: tickets can be re-minted.
-const socialLinkAccountLimiter = createSocialLinkAccountLimiter(
-  async (ticket) =>
-    (await storage.getPendingSignIn(ticket, "link"))?.targetUserId ?? null,
-);
 
 export class HttpFailure extends Error {
   constructor(
@@ -594,7 +586,6 @@ export function register(app: Express): void {
   app.post(
     "/api/auth/social/link",
     socialAuthLimiter,
-    socialLinkAccountLimiter,
     async (req: Request, res: Response) => {
       try {
         const parsed = socialLinkSchema.safeParse(req.body);
@@ -617,6 +608,23 @@ export function register(app: Express): void {
           // Attempts are counted (max 5) so a wrong password keeps the ticket alive.
           pending = await storage.reservePendingLinkAttempt(body.ticket);
           if (!pending?.targetUserId) throw expired;
+          // Spec §4.4: a password-guessing surface, so guesses are also
+          // capped per TARGET ACCOUNT — the per-ticket cap (5) alone is not
+          // enough, tickets can be re-minted. Counted in Postgres so a deploy
+          // never resets it (auth audit L15); a right password gives it back.
+          if (
+            !(await storage.reserveLinkPasswordGuess(
+              pending.targetUserId,
+              SOCIAL_LINK_ACCOUNT_MAX,
+            ))
+          ) {
+            return sendError(
+              res,
+              429,
+              "Too many sign-in attempts, please try again later",
+              ErrorCode.RATE_LIMITED,
+            );
+          }
           const target = await storage.getUserForAuth(pending.targetUserId);
           if (
             !target ||
@@ -629,6 +637,7 @@ export function register(app: Express): void {
               ErrorCode.UNAUTHORIZED,
             );
           }
+          await storage.refundLinkPasswordGuess(target.id);
         } else {
           pending = await storage.getPendingSignIn(body.ticket, "link");
           if (!pending?.targetUserId) throw expired;
