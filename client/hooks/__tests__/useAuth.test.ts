@@ -671,6 +671,27 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(true);
     });
 
+    it("upgradeSetPassword: someone else signed in while it was in flight → the late reply does NOT sign in (auth audit L2)", async () => {
+      const { result } = await ready();
+      mockTokenStorage.get.mockResolvedValue(null);
+      // Account B signs in on this phone while A's request is out.
+      mockApiRequest.mockImplementationOnce(async () => {
+        mockTokenStorage.get.mockResolvedValue("t-other");
+        return {
+          json: () =>
+            Promise.resolve({ status: "signed_in", user, token: "t-new" }),
+        };
+      });
+      await act(async () => {
+        await result.current.upgradeSetPassword(
+          "pass-1",
+          "a much longer password",
+        );
+      });
+      expect(mockTokenStorage.set).not.toHaveBeenCalledWith("t-new");
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
     it("register with the switch on sends twoStep and returns upgrade_required without signing in", async () => {
       const { result } = await ready();
       jsonOnce(upgradeRequired);

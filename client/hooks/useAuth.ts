@@ -818,10 +818,15 @@ export function useAuth() {
 
   const upgradeSetPassword = useCallback(
     async (pass: string, newPassword: string) => {
+      const before = await tokenStorage.get();
       const res = await upgradeRequest("/api/auth/upgrade/password", pass, {
         newPassword,
       });
       const { user, token } = (await res.json()) as SignedInResult;
+      // Someone signed in on this phone while it was in flight (the screen
+      // can be left mid-request): a late reply never replaces that session
+      // (auth audit L2). The password change itself stands.
+      if ((await tokenStorage.get()) !== before) return;
       await establishSession(user, token);
     },
     [establishSession],
