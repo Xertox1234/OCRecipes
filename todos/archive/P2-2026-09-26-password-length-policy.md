@@ -1,6 +1,6 @@
 ---
 title: "Password requirements feel unreasonable (the user hit a 14-character minimum) — find where it comes from and decide a policy against current NIST guidance"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-26
 updated: 2026-10-10
@@ -69,7 +69,7 @@ That makes this a genuine trade-off for the user, not a mechanical fix:
 - [x] Error copy says exactly what's required, in one sentence.
 - [x] If iOS strong-password autofill is involved, set the password field's `textContentType`/`passwordRules` so iOS generates a password that satisfies the policy.
 - [x] Tests on both sides for the boundary values.
-- [ ] Reviewed by `security-auditor`; never auto-merged.
+- [x] Reviewed by `security-auditor`; never auto-merged. (PR 1 #1368: roster incl. `security-auditor` clean at its final head, merged on the owner's explicit yes. PR 2: the same roster reviews the PR's final head, and the `security` label means it merges only on the owner's explicit yes.)
 
 ## Implementation Notes
 
@@ -87,7 +87,12 @@ That makes this a genuine trade-off for the user, not a mechanical fix:
   - Client: `client/screens/LoginScreen-utils.ts`, `client/screens/LoginScreen.tsx`, `client/screens/ResetPasswordScreen-utils.ts`, `client/screens/ResetPasswordScreen.tsx`, `client/screens/TwoStepSetupScreen.tsx`, `client/hooks/useAuth.ts`, `client/context/AuthContext.tsx`.
   - Tests and fixtures: the matching `__tests__` files, `test/integration/auth-routes.itest.ts`, `e2e/helpers/enter-registration-passwords*.yaml`.
   - Docs: `docs/runbooks/password-hash-rollback.md`.
-- **PR 2 (spec §6, planned separately):** migration 0019 (`password_upgrade_passes`), the upgrade-pass routes and middleware, `PasswordUpgradeScreen`, the sign-up two-step switch, the sign-in gate, Connect's password branch.
+- **PR 2 (spec §6, plan `docs/superpowers/plans/2026-10-10-password-policy-pr2.md`):** migration **0020** (`password_upgrade_passes`; 0019 was taken), the upgrade-pass routes and middleware, `PasswordUpgradeScreen`, the sign-up two-step switch, the sign-in gate, Connect's password branch. Files:
+  - Shared: `shared/schema.ts`, `shared/constants/password-upgrade.ts`, `shared/constants/password-policy.ts`, `shared/constants/error-codes.ts`, `shared/types/auth.ts`.
+  - Server: `migrations/0020_password_upgrade_passes.sql`, `server/storage/upgrade-passes.ts`, `server/storage/mfa.ts`, `server/storage/index.ts`, `server/lib/upgrade-pass.ts`, `server/middleware/upgrade-pass.ts`, `server/services/mfa-totp.ts`, `server/services/email.ts`, `server/routes/auth-upgrade.ts`, `server/routes/auth-mfa.ts`, `server/routes/auth.ts`, `server/routes/auth-social.ts`, `server/routes/_schemas.ts`, `server/routes/_rate-limiters.ts`, `server/routes.ts`, `server/scripts/cleanup-retention.ts`.
+  - Client: `client/lib/upgrade-pass-request.ts`, `client/hooks/useAuth.ts`, `client/context/AuthContext.tsx`, `client/components/TotpEnrollmentSteps.tsx`, `client/screens/TwoStepSetupScreen.tsx`, `client/screens/TwoStepSetupScreen-utils.ts`, `client/screens/PasswordUpgradeScreen.tsx`, `client/screens/PasswordUpgradeScreen-utils.ts`, `client/screens/LoginScreen.tsx`, `client/screens/LoginScreen-utils.ts`, `client/screens/ConnectAccountScreen.tsx`, `client/navigation/RootStackNavigator.tsx`.
+  - Tests: the matching `__tests__` files (incl. `server/routes/__tests__/auth-route-wiring.test.ts`), `test/integration/auth-routes.itest.ts`.
+  - Docs (spec §5.7, dev `demo` password): `.claude/skills/verify-ui/SKILL.md`; plus two `docs/solutions/` files from codify.
 
 ## Dependencies
 
