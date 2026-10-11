@@ -1,7 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from "vitest";
 import express from "express";
 import request from "supertest";
 import bcrypt from "bcrypt";
+import { hashPassword } from "../../lib/password-hash";
 
 import { storage, ReservedUsernameError } from "../../storage";
 import { detectImageMimeType } from "../../lib/image-mime";
@@ -66,6 +75,7 @@ vi.mock("../../storage", () => ({
     updateUserEmail: vi.fn(),
     stagePendingEmail: vi.fn(),
     incrementTokenVersion: vi.fn(),
+    upgradePasswordHash: vi.fn().mockResolvedValue(true),
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     deleteUser: vi.fn(),
@@ -140,6 +150,18 @@ function createApp() {
 }
 
 const mockUser = createMockUser();
+
+// pv2 fixtures for sign-ins that are NOT about rehashing: a legacy hash on a
+// successful sign-in starts a background rehash (spec §3), which would run
+// into the next test. Computed once — each is a cost-12 bcrypt.
+let pv2Password123: string;
+let pv2Correct: string;
+beforeAll(async () => {
+  [pv2Password123, pv2Correct] = await Promise.all([
+    hashPassword("password123"),
+    hashPassword("correctpassword"),
+  ]);
+});
 
 describe("Auth Routes", () => {
   let app: express.Express;
@@ -591,10 +613,7 @@ describe("Auth Routes", () => {
 
   describe("POST /api/auth/login", () => {
     it("returns user and token on valid credentials", async () => {
-      // Create a real bcrypt hash for "password123"
-      const bcrypt = await import("bcrypt");
-      const hash = await bcrypt.hash("password123", 10);
-      const userWithHash = createMockUser({ password: hash });
+      const userWithHash = createMockUser({ password: pv2Password123 });
 
       vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
         userWithHash,
@@ -641,6 +660,62 @@ describe("Auth Routes", () => {
       expect(res.body.error).toBe("Invalid credentials");
     });
 
+    describe("legacy hash upgrade (spec §3)", () => {
+      beforeEach(() => {
+        vi.mocked(storage.upgradePasswordHash).mockClear();
+      });
+
+      it("a correct sign-in on a legacy hash rehashes to pv2, compare-and-swap on the checked hash", async () => {
+        const legacy = await bcrypt.hash("password123", 4);
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({ id: "u-legacy", password: legacy }),
+        );
+        const res = await request(app)
+          .post("/api/auth/login")
+          .send({ username: "testuser", password: "password123" });
+        expect(res.status).toBe(200);
+        await vi.waitFor(
+          () =>
+            expect(storage.upgradePasswordHash).toHaveBeenCalledWith(
+              "u-legacy",
+              legacy,
+              expect.stringMatching(/^pv2\$/),
+            ),
+          { timeout: 3000 },
+        );
+      });
+
+      it("a pv2 hash is never rehashed", async () => {
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({ password: pv2Password123 }),
+        );
+        const res = await request(app)
+          .post("/api/auth/login")
+          .send({ username: "testuser", password: "password123" });
+        expect(res.status).toBe(200);
+        // Longer than a cost-12 rehash takes to reach storage (the positive
+        // case above lands well inside it), so a regression would show here.
+        await new Promise((r) => setTimeout(r, 1000));
+        expect(storage.upgradePasswordHash).not.toHaveBeenCalled();
+      });
+
+      it("an input over 72 bytes on a legacy hash is not rehashed (only 72 bytes were proven)", async () => {
+        const typed = "a".repeat(80);
+        const legacy = await bcrypt.hash(typed, 4);
+        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+          createMockUser({ password: legacy }),
+        );
+        const res = await request(app)
+          .post("/api/auth/login")
+          .send({ username: "testuser", password: typed });
+        expect(res.status).toBe(200);
+        // Longer than a cost-12 rehash takes to reach storage (the positive
+        // case above lands well inside it), so a regression would show here.
+        await new Promise((r) => setTimeout(r, 1000));
+        expect(storage.upgradePasswordHash).not.toHaveBeenCalled();
+      });
+    });
+
     it("returns 400 for missing credentials", async () => {
       const res = await request(app).post("/api/auth/login").send({});
 
@@ -649,10 +724,8 @@ describe("Auth Routes", () => {
 
     it("blocks login with 403 EMAIL_NOT_VERIFIED when unverified + verification ON", async () => {
       vi.mocked(emailVerificationEnabled).mockReturnValue(true);
-      const bcrypt = await import("bcrypt");
-      const hash = await bcrypt.hash("password123", 10);
       vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
-        createMockUser({ emailVerified: false, password: hash }),
+        createMockUser({ emailVerified: false, password: pv2Password123 }),
       );
 
       const res = await request(app)
@@ -665,10 +738,8 @@ describe("Auth Routes", () => {
     });
 
     it("allows unverified login when verification OFF (fail-open)", async () => {
-      const bcrypt = await import("bcrypt");
-      const hash = await bcrypt.hash("password123", 10);
       vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
-        createMockUser({ emailVerified: false, password: hash }),
+        createMockUser({ emailVerified: false, password: pv2Password123 }),
       );
 
       const res = await request(app)
@@ -682,9 +753,8 @@ describe("Auth Routes", () => {
     it("signs in by email (any case), looking up the lowercased email only", async () => {
       vi.mocked(storage.getUserByEmailForAuth).mockReset();
       vi.mocked(storage.getUserByUsernameForAuth).mockReset();
-      const hash = await bcrypt.hash("password123", 10);
       vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
-        createMockUser({ password: hash }),
+        createMockUser({ password: pv2Password123 }),
       );
       const res = await request(app)
         .post("/api/auth/login")
@@ -1518,9 +1588,8 @@ describe("Auth Routes", () => {
 
   describe("two-step verification on password proofs (spec D2)", () => {
     async function mfaUser() {
-      const bcrypt = await import("bcrypt");
       return createMockUser({
-        password: await bcrypt.hash("correctpassword", 10),
+        password: pv2Correct,
         email: "current@example.com",
         mfaEnabledAt: new Date(),
       });
@@ -1623,11 +1692,8 @@ describe("Auth Routes", () => {
       });
 
       it("no MFA → the unchanged token response, no challenge", async () => {
-        const bcrypt = await import("bcrypt");
         vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
-          createMockUser({
-            password: await bcrypt.hash("correctpassword", 10),
-          }),
+          createMockUser({ password: pv2Correct }),
         );
         const res = await login();
         expect(res.body.token).toBe("mock-jwt-token");

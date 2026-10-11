@@ -114,6 +114,7 @@ export const storage = {
   stagePendingEmail: users.stagePendingEmail,
   applyEmailVerification: users.applyEmailVerification,
   incrementTokenVersion: users.incrementTokenVersion,
+  upgradePasswordHash: users.upgradePasswordHash,
   deleteUser: users.deleteUser,
   getUserIdPage: users.getUserIdPage,
   getUserTimezones: users.getUserTimezones,

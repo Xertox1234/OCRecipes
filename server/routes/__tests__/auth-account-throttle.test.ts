@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
-import bcrypt from "bcrypt";
+import { hashPassword } from "../../lib/password-hash";
 // Same IP-key normalizer the production keyGenerator runs (via ipKeyGenerator),
 // so the test reconstructs the exact loginLimiter store key it needs to reset.
 import { ipKeyGenerator as normalizeIpKey } from "express-rate-limit";
@@ -83,6 +83,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getUserByUsernameForAuth: vi.fn(),
     getUserByEmailForAuth: vi.fn(),
+    upgradePasswordHash: vi.fn().mockResolvedValue(true),
   },
 }));
 
@@ -91,12 +92,13 @@ vi.mock("../../middleware/auth");
 const LIMIT = 10; // mirrors loginAccountLimiter's max
 
 let app: express.Express;
-// Real bcrypt hash of "correct-password" (project convention — auth.test.ts
-// also exercises the real bcrypt.compare instead of mocking it).
+// Real pv2 hash of "correct-password" (project convention — auth.test.ts
+// also exercises the real bcrypt.compare instead of mocking it). pv2, not
+// legacy, so a successful sign-in starts no background rehash.
 let correctPasswordHash: string;
 
 beforeAll(async () => {
-  correctPasswordHash = await bcrypt.hash("correct-password", 10);
+  correctPasswordHash = await hashPassword("correct-password");
 
   app = express();
   // One trusted hop, mirroring production (trust proxy = 1) — lets tests

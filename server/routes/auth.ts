@@ -63,6 +63,7 @@ import {
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
+import { hashPassword, isLegacyHash } from "../lib/password-hash";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { startMfaChallenge } from "../lib/mfa/challenge";
 import { hashTrustKey } from "../lib/mfa/mfa-secrets";
@@ -352,6 +353,23 @@ export function register(app: Express): void {
             401,
             "Invalid credentials",
             ErrorCode.UNAUTHORIZED,
+          );
+        }
+
+        // Legacy hash → pv2, best effort. Only when the input is ≤72 bytes: a
+        // legacy compare proves just the first 72, so a longer input may not
+        // be the password the user really types (spec §3).
+        if (
+          user.password !== null &&
+          isLegacyHash(user.password) &&
+          Buffer.byteLength(validated.password, "utf8") <= 72
+        ) {
+          const legacy = user.password;
+          fireAndForget(
+            "rehash-password",
+            hashPassword(validated.password).then((h) =>
+              storage.upgradePasswordHash(user.id, legacy, h),
+            ),
           );
         }
 
