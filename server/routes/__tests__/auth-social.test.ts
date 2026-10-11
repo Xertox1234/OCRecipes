@@ -39,6 +39,7 @@ vi.mock("../../storage", () => ({
     reservePendingLinkAttempt: vi.fn(),
     completeLinkFromTicket: vi.fn(),
     createMfaChallenge: vi.fn(),
+    createUpgradePass: vi.fn(),
     createUserWithIdentity: vi.fn(),
     getUserByEmailForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
@@ -623,11 +624,12 @@ describe("POST /api/auth/social/link", () => {
     expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
   });
 
-  it("right password → links and signs in", async () => {
+  it("right 15+ password → links and signs in", async () => {
     const user = createMockUser({
       id: "u1",
       emailVerified: true,
-      password: await bcrypt.hash("right-pass1", 4),
+      mfaEnabledAt: null,
+      password: await bcrypt.hash("right-long-pass-1", 4),
     });
     vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
     vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
@@ -639,11 +641,68 @@ describe("POST /api/auth/social/link", () => {
     );
     const res = await request(app())
       .post("/api/auth/social/link")
-      .send({ ticket: "t", password: "right-pass1" });
+      .send({ ticket: "t", password: "right-long-pass-1" });
     expect(res.body.status).toBe("signed_in");
     expect(storage.completeLinkFromTicket).toHaveBeenCalledWith("t", {
       markEmailVerified: false,
     });
+    expect(storage.createUpgradePass).not.toHaveBeenCalled();
+  });
+
+  it("no two-step, right password under 15 → 200 upgrade_required, NOTHING linked, no session (spec §5.2, P3)", async () => {
+    vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
+    vi.mocked(storage.createUpgradePass).mockResolvedValue(undefined);
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(
+      createMockUser({
+        id: "u1",
+        emailVerified: true,
+        tokenVersion: 2,
+        mfaEnabledAt: null,
+        password: await bcrypt.hash("right-pass1", 4), // 11
+      }),
+    );
+    const res = await request(app())
+      .post("/api/auth/social/link")
+      .send({ ticket: "t", password: "right-pass1" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      status: "upgrade_required",
+      pass: expect.any(String),
+      canUseTwoStep: true,
+    });
+    expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
+    expect(storage.getUser).not.toHaveBeenCalled(); // issueSession never ran
+    expect(storage.createUpgradePass).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", tokenVersion: 2 }),
+    );
+  });
+
+  it("an already-linked provider as proof is never gated, even on a short-password account", async () => {
+    vi.mocked(storage.getPendingSignIn).mockResolvedValue(ticketRow);
+    vi.mocked(verifyAppleIdToken).mockResolvedValue({
+      ...gmailClaims,
+      provider: "apple",
+      sub: "a-1",
+    });
+    vi.mocked(storage.findIdentity).mockResolvedValue(
+      createMockUserIdentity({ id: "x", userId: "u1", provider: "apple" }),
+    );
+    const user = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: null,
+      password: await bcrypt.hash("short", 4),
+    });
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    vi.mocked(storage.completeLinkFromTicket).mockResolvedValue(
+      createMockUserIdentity({ id: "i9" }),
+    );
+    const res = await request(app())
+      .post("/api/auth/social/link")
+      .send({ ticket: "t", provider: "apple", idToken: "i", nonce: "n" });
+    expect(res.body.status).toBe("signed_in");
+    expect(storage.createUpgradePass).not.toHaveBeenCalled();
   });
 
   it("MFA account: right password → 200 mfa_required, nothing linked, no session", async () => {
