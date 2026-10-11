@@ -62,6 +62,38 @@ describe("RecipeVariantsScreen", () => {
     });
   });
 
+  const oneVariant = {
+    id: 9,
+    title: "Spicier Chili",
+    imageUrl: null,
+    createdAt: "2026-10-01T00:00:00.000Z",
+  };
+  const statsWith = (variantCount: number) =>
+    ok({ triedCount: 0, triedByMe: false, favouritedCount: 0, variantCount });
+  const routeByUrl = (variantCount: number) =>
+    mockApiRequest.mockImplementation((_m: string, url: string) =>
+      Promise.resolve(
+        url.endsWith("/stats")
+          ? statsWith(variantCount)
+          : ok({ variants: [oneVariant] }),
+      ),
+    );
+
+  it("says the list is capped when the community count exceeds the rows shown", async () => {
+    routeByUrl(80);
+    renderComponent(<RecipeVariantsScreen />);
+    expect(
+      await screen.findByText("Showing the newest 1 of 80 variants."),
+    ).toBeTruthy();
+  });
+
+  it("shows no cap note when every variant is listed", async () => {
+    routeByUrl(1);
+    renderComponent(<RecipeVariantsScreen />);
+    await screen.findByText("Spicier Chili");
+    expect(screen.queryByText(/Showing the newest/)).toBeNull();
+  });
+
   it("shows the empty state when there are no remixes", async () => {
     mockApiRequest.mockResolvedValue(ok({ variants: [] }));
     renderComponent(<RecipeVariantsScreen />);

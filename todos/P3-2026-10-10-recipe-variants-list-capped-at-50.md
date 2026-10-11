@@ -1,6 +1,6 @@
 ---
 title: "Community variants: the row count is uncapped but the list stops at 50"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-10
 updated: 2026-10-10
