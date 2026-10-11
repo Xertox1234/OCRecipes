@@ -128,10 +128,13 @@ export function notifySessionExpired(): void {
  * before any status-based branching, so a dead token is detected regardless of
  * the caller's `on401` behavior (including the `returnNull` short-circuit).
  *
- * Two guards must both hold to fire:
+ * Three guards must all hold to fire:
  * 1. A Bearer token was attached — a 401 with no token is anonymous / bad
  *    credentials (e.g. a wrong-password login), never session death.
- * 2. The error body carries a session-token code (see `SESSION_EXPIRY_CODES`) —
+ * 2. That token is still the stored one — a 401 for a superseded token (a
+ *    sign-out + new sign-in, or a 2FA token swap, while it was in flight)
+ *    concerns a session that already ended (auth audit 2026-10-10 L7).
+ * 3. The error body carries a session-token code (see `SESSION_EXPIRY_CODES`) —
  *    so an authenticated route's own 401 (wrong password on account delete,
  *    etc.) does not trigger a spurious logout.
  *
@@ -140,9 +143,13 @@ export function notifySessionExpired(): void {
  */
 async function notifyIfSessionExpired(
   res: Response,
-  tokenAttached: boolean,
+  sentToken: string | null,
 ): Promise<void> {
-  if (res.status !== 401 || !tokenAttached) return;
+  if (res.status !== 401 || !sentToken) return;
+  // A 401 for a token that is no longer the stored one (signed out and back
+  // in as someone else, or 2FA setup swapped the token mid-flight) is about a
+  // session that already ended — it must not end the CURRENT one (audit L7).
+  if ((await tokenStorage.get()) !== sentToken) return;
   let code: string | undefined;
   try {
     const parsed: unknown = JSON.parse(await res.clone().text());
@@ -195,7 +202,7 @@ export async function apiRequest(
     body: data ? JSON.stringify(data) : undefined,
   });
 
-  await notifyIfSessionExpired(res, Boolean(token));
+  await notifyIfSessionExpired(res, token);
   await throwIfResNotOk(res);
   return res;
 }
@@ -219,7 +226,7 @@ export const getQueryFn: <T>(options: {
       headers,
     });
 
-    await notifyIfSessionExpired(res, Boolean(token));
+    await notifyIfSessionExpired(res, token);
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

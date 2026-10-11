@@ -186,6 +186,12 @@ export function useAuth() {
           headers: { Authorization: `Bearer ${token}` },
         });
 
+        // The token changed while /me was in flight (sign-out + new sign-in, or
+        // a 2FA token swap): this answer is about a session that already ended,
+        // so it must neither clear the new token nor write the old profile
+        // (auth audit 2026-10-10 L7). The new session set its own state.
+        if ((await tokenStorage.get()) !== token) return;
+
         if (response.ok) {
           const freshUser = await response.json();
           await AsyncStorage.setItem(

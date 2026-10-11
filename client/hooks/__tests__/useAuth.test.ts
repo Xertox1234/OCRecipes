@@ -236,6 +236,41 @@ describe("useAuth", () => {
       );
     });
 
+    // Auth audit 2026-10-10 L7: a /me started under token A that finishes after
+    // the token changed (sign-out + new sign-in, 2FA token swap) must neither
+    // clear the NEW token nor write A's profile over the new session.
+    it("drops a /me 401 that finishes after the token changed (keeps the new token)", async () => {
+      mockTokenStorage.get
+        .mockResolvedValueOnce("token-A")
+        .mockResolvedValue("token-B");
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+
+      renderHook(() => useAuth());
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+      await act(async () => {});
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+    });
+
+    it("drops a /me success that finishes after the token changed (no stale profile write)", async () => {
+      mockTokenStorage.get
+        .mockResolvedValueOnce("token-A")
+        .mockResolvedValue("token-B");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      renderHook(() => useAuth());
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+      await act(async () => {});
+      expect(vi.mocked(AsyncStorage.setItem)).not.toHaveBeenCalledWith(
+        "@ocrecipes_auth",
+        expect.anything(),
+      );
+    });
+
     it("clears token on invalid/expired token (non-ok response)", async () => {
       mockTokenStorage.get.mockResolvedValue("expired-token");
       mockFetch.mockResolvedValue({ ok: false, status: 401 });

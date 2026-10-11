@@ -74,8 +74,10 @@ describe("apiRequest pinned bearer override", () => {
       "@/lib/query-client"
     );
     // A token-bearing 401 carrying a session-death code must trigger logout
-    // regardless of HOW the bearer was supplied — the pinned path must pass
-    // `tokenAttached: true` to notifyIfSessionExpired just like the storage path.
+    // regardless of HOW the bearer was supplied — as long as the pinned token
+    // is still the stored one (audit L7: a superseded token's 401 is ignored).
+    const { tokenStorage } = await import("@/lib/token-storage");
+    vi.mocked(tokenStorage.get).mockResolvedValue("token-A-pinned");
     fetchMock.mockResolvedValue(
       new Response(
         JSON.stringify({ error: "expired", code: "TOKEN_EXPIRED" }),
@@ -98,6 +100,27 @@ describe("apiRequest pinned bearer override", () => {
     ).rejects.toThrow();
 
     expect(expiryListener).toHaveBeenCalledOnce();
+    unsubscribe();
+  });
+
+  it("does NOT fire when the pinned token is no longer the stored one (audit L7)", async () => {
+    const { apiRequest, subscribeToSessionExpiry } = await import(
+      "@/lib/query-client"
+    );
+    const { tokenStorage } = await import("@/lib/token-storage");
+    // The offline drain pinned A, but A signed out and B signed in meanwhile.
+    vi.mocked(tokenStorage.get).mockResolvedValue("token-B-current");
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ code: "TOKEN_REVOKED" }), { status: 401 }),
+    );
+    const expiryListener = vi.fn();
+    const unsubscribe = subscribeToSessionExpiry(expiryListener);
+
+    await expect(
+      apiRequest("POST", "/api/scanned-items", { x: 1 }, undefined, "token-A"),
+    ).rejects.toThrow();
+
+    expect(expiryListener).not.toHaveBeenCalled();
     unsubscribe();
   });
 });

@@ -79,6 +79,27 @@ describe("session-expiry interceptor (real query-client module)", () => {
       expect(listener).toHaveBeenCalledTimes(1);
     });
 
+    // Auth audit 2026-10-10 L7: a request sent under a token that is no longer
+    // the stored one (signed out → signed in as someone else, or 2FA setup
+    // swapped the token mid-flight) must not end the CURRENT session.
+    it("does NOT fire when the token it was sent with has since been replaced", async () => {
+      mockTokenStorage.get
+        .mockResolvedValueOnce("old-token")
+        .mockResolvedValue("new-token");
+      mockFetch.mockResolvedValue(
+        mockResponse(401, { error: "revoked", code: "TOKEN_REVOKED" }),
+      );
+      const listener = vi.fn();
+      const unsub = subscribeToSessionExpiry(listener);
+
+      await expect(apiRequest("GET", "/api/protected")).rejects.toThrow(
+        /^401:/,
+      );
+
+      unsub();
+      expect(listener).not.toHaveBeenCalled();
+    });
+
     it("does NOT fire on a 401 when NO token was attached (e.g. wrong-password login)", async () => {
       mockTokenStorage.get.mockResolvedValue(null);
       mockFetch.mockResolvedValue(
@@ -177,6 +198,21 @@ describe("session-expiry interceptor (real query-client module)", () => {
       unsub();
       expect(result).toBeNull();
       expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT fire when the token it was sent with has since been replaced (audit L7)", async () => {
+      mockTokenStorage.get
+        .mockResolvedValueOnce("old-token")
+        .mockResolvedValue("new-token");
+      mockFetch.mockResolvedValue(mockResponse(401, { code: "TOKEN_REVOKED" }));
+      const listener = vi.fn();
+      const unsub = subscribeToSessionExpiry(listener);
+
+      const queryFn = getQueryFn({ on401: "returnNull" });
+      await queryFn(queryCtx(["api", "me"]));
+
+      unsub();
+      expect(listener).not.toHaveBeenCalled();
     });
 
     it("fires session-expiry on a 401 with a token in throw mode", async () => {
