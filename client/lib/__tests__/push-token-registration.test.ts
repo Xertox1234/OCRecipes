@@ -62,4 +62,26 @@ describe("unregisterPushToken (auth audit H2)", () => {
       vi.useRealTimers();
     }
   });
+
+  // A DELETE that fires after the cap would carry whatever session token is
+  // stored THEN — after a new sign-in, the next user's — and remove their row.
+  it("never sends the DELETE once the cap has fired", async () => {
+    vi.useFakeTimers();
+    try {
+      getPermissionsAsync.mockResolvedValue({ status: "granted" });
+      let resolveToken!: (v: { data: string }) => void;
+      getExpoPushTokenAsync.mockReturnValue(
+        new Promise((r) => {
+          resolveToken = r;
+        }),
+      );
+      void unregisterPushToken();
+      await vi.advanceTimersByTimeAsync(3000);
+      resolveToken({ data: "ExponentPushToken[late]" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(apiRequest).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
