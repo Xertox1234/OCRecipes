@@ -144,10 +144,27 @@ export async function appleRefreshTokenFor(
   }
 }
 
-export async function issueSession(userId: string) {
+/**
+ * `expectedTokenVersion` (an MFA challenge's version): refuse to mint if a
+ * reset or sign-out-everywhere bumped it since — checked on the same read the
+ * token is minted from, so the session can never outlive that bump (audit L12).
+ */
+export async function issueSession(
+  userId: string,
+  expectedTokenVersion?: number,
+) {
   const user = await storage.getUser(userId);
   if (!user)
     throw new HttpFailure(401, ErrorCode.UNAUTHORIZED, "User not found");
+  if (
+    expectedTokenVersion !== undefined &&
+    user.tokenVersion !== expectedTokenVersion
+  )
+    throw new HttpFailure(
+      401,
+      ErrorCode.MFA_CHALLENGE_EXPIRED,
+      "This sign-in expired. Please start again.",
+    );
   return {
     status: "signed_in" as const,
     user: serializeUser(user),
@@ -225,6 +242,32 @@ export async function revokeAppleIdentities(
 }
 
 /**
+ * An Apple refresh token exchanged during a request that then failed before
+ * storing it: revoke it so OCRecipes doesn't linger under "Apps using Apple
+ * ID" (App Store 5.1.1(v), audit L17) — but only while no linked identity or
+ * live ticket holds that Apple ID, since revoking any token ends the app's
+ * whole Apple grant (the ticket sweep's rule). Fire-and-forget; never throws.
+ */
+function revokeUnstoredAppleToken(
+  tokenEnc: string | null,
+  appleSubject: string,
+): void {
+  if (!tokenEnc) return;
+  void storage
+    .appleGrantInUse(appleSubject)
+    .then((inUse) =>
+      inUse
+        ? undefined
+        : revokeAppleIdentities([
+            { provider: "apple", appleRefreshTokenEnc: tokenEnc },
+          ]),
+    )
+    .catch((err: unknown) => {
+      logger.error({ err: toError(err) }, "apple orphan-token revoke failed");
+    });
+}
+
+/**
  * Fire-and-forget: clear expired sign-in tickets and revoke the Apple tokens
  * abandoned on them, so an unfinished sign-up doesn't leave OCRecipes under
  * "Apps using Apple ID". Never throws, never delays the request.
@@ -244,10 +287,16 @@ function sweepAbandonedTickets(): void {
 }
 
 export function register(app: Express): void {
-  app.get("/api/auth/social/config", (_req: Request, res: Response) => {
-    const cfg = getSocialConfig();
-    res.json({ google: cfg.google !== null, apple: cfg.apple !== null });
-  });
+  // Public and cheap (env read), but every route carries a limiter; the
+  // general limit, not socialAuthLimiter, so login-screen loads never trip it.
+  app.get(
+    "/api/auth/social/config",
+    crudRateLimit,
+    (_req: Request, res: Response) => {
+      const cfg = getSocialConfig();
+      res.json({ google: cfg.google !== null, apple: cfg.apple !== null });
+    },
+  );
 
   // sign_in/link are public; reauth requires a session. A link nonce issued
   // to a signed-in caller is bound to them (POST /api/auth/identities).
@@ -290,6 +339,8 @@ export function register(app: Express): void {
     "/api/auth/social",
     socialAuthLimiter,
     async (req: Request, res: Response) => {
+      // Set while an exchanged Apple token is not yet stored (audit L17).
+      let unstored: { tokenEnc: string; sub: string } | null = null;
       try {
         const parsed = socialSignInSchema.safeParse(req.body);
         if (!parsed.success)
@@ -375,6 +426,10 @@ export function register(app: Express): void {
               appleTokenEnc = null; // logged inside; never blocks a returning user
             }
           }
+          // A linked Apple ID's grant is in use by definition — its token is
+          // never revoked, whatever happens next.
+          if (appleTokenEnc && !linked)
+            unstored = { tokenEnc: appleTokenEnc, sub: claims.sub };
         }
 
         const verificationOn = emailVerificationEnabled();
@@ -399,6 +454,7 @@ export function register(app: Express): void {
               user.id,
               appleTokenEnc,
             );
+            unstored = null;
           }
           if (linked) await storage.touchIdentity(linked.id, user.id);
           return res.json(await issueSession(user.id));
@@ -421,6 +477,7 @@ export function register(app: Express): void {
               isPrivateRelay: claims.isPrivateRelay,
               appleRefreshTokenEnc: appleTokenEnc,
             });
+            unstored = null;
           } catch (err) {
             if (isUniqueViolation(err))
               throw new HttpFailure(
@@ -446,6 +503,7 @@ export function register(app: Express): void {
           targetUserId:
             decision.kind === "link_required" ? decision.userId : null,
         });
+        unstored = null;
         // After the insert, so this sign-in's own Apple ID counts as live.
         sweepAbandonedTickets();
 
@@ -465,6 +523,7 @@ export function register(app: Express): void {
           email: claims.email,
         });
       } catch (error) {
+        if (unstored) revokeUnstoredAppleToken(unstored.tokenEnc, unstored.sub);
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "sign in with provider");
       }
@@ -521,7 +580,7 @@ export function register(app: Express): void {
           return sendError(
             res,
             400,
-            "This sign-in has expired. Please start again.",
+            "This sign-in expired. Please start again.",
             ErrorCode.INVALID_SIGN_IN_TICKET,
           );
         res.status(201).json(await issueSession(user.id));
@@ -550,7 +609,7 @@ export function register(app: Express): void {
         const expired = new HttpFailure(
           400,
           ErrorCode.INVALID_SIGN_IN_TICKET,
-          "This sign-in has expired. Please start again.",
+          "This sign-in expired. Please start again.",
         );
 
         let pending;
@@ -752,6 +811,8 @@ export function register(app: Express): void {
             appleRefreshTokenEnc: appleTokenEnc,
           });
         } catch (err) {
+          // Not stored: revoke unless that Apple ID is linked (audit L17).
+          revokeUnstoredAppleToken(appleTokenEnc, claims.sub);
           if (isUniqueViolation(err)) {
             throw new HttpFailure(
               409,
@@ -817,7 +878,20 @@ export function register(app: Express): void {
             ),
           );
         }
-        await storage.deleteIdentity(req.userId, provider.data);
+        // The storage delete re-checks "not the last method" under a lock: a
+        // concurrent disconnect that won the race refuses this one (audit L16).
+        if (!(await storage.deleteIdentity(req.userId, provider.data))) {
+          // Refused or already gone (a double tap): say which, truthfully.
+          if (!(await storage.getSignInMethods(req.userId))[provider.data]) {
+            return sendError(res, 404, "Not connected", ErrorCode.NOT_FOUND);
+          }
+          return sendError(
+            res,
+            409,
+            "Set a password with “Forgot password” before disconnecting your only sign-in method.",
+            ErrorCode.LAST_SIGN_IN_METHOD,
+          );
+        }
         res.json({ signInMethods: await storage.getSignInMethods(req.userId) });
       } catch (error) {
         handleRouteError(res, error, "disconnect provider");

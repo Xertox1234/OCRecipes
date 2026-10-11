@@ -45,7 +45,7 @@ async function confirmEnrolled(
   step: number,
   hashes: string[] = ["h1", "h2"],
 ) {
-  await mfa.startTotpEnrollment(userId, "enc");
+  await mfa.startTotpEnrollment(userId, "enc", { mfaEnabled: false });
   await mfa.confirmTotpEnrollment(userId, {
     acceptedStep: step,
     recoveryHashes: hashes,
@@ -84,8 +84,20 @@ describe("MFA storage", () => {
 
   it("every 10th failure locks and trips exactly once; the count keeps going", async () => {
     await confirmEnrolled(testUser.id, 100);
+    const unlock = () =>
+      tx.execute(
+        sql`UPDATE user_mfa SET locked_until = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
+      );
     const trips: boolean[] = [];
-    for (let i = 1; i <= 20; i++)
+    for (let i = 1; i <= 10; i++)
+      trips.push((await mfa.recordMfaFailure(testUser.id)).tripped);
+    // Auth audit 2026-10-10 L10: a lock refuses without counting — failures
+    // recorded while locked never advance the count toward the 100 cap.
+    for (let i = 0; i < 5; i++)
+      expect((await mfa.recordMfaFailure(testUser.id)).tripped).toBe(false);
+    expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(10);
+    await unlock();
+    for (let i = 11; i <= 20; i++)
       trips.push((await mfa.recordMfaFailure(testUser.id)).tripped);
     expect(trips.map((t, i) => (t ? i + 1 : 0)).filter(Boolean)).toEqual([
       10, 20,
@@ -98,6 +110,14 @@ describe("MFA storage", () => {
     );
     expect(await mfa.acceptTotpStep(testUser.id, 200)).toBe(true);
     expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(0);
+  });
+
+  it("a concurrent burst stops counting at the lock (cannot race toward the cap)", async () => {
+    await confirmEnrolled(testUser.id, 100);
+    await Promise.all(
+      Array.from({ length: 30 }, () => mfa.recordMfaFailure(testUser.id)),
+    );
+    expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(10);
   });
 
   it("10 concurrent failures trip the lock exactly once", async () => {
@@ -124,14 +144,14 @@ describe("MFA storage", () => {
 
   it("confirm bumps tokenVersion and sets mfa_enabled_at; a second confirm is a no-op", async () => {
     const before = testUser.tokenVersion;
-    await mfa.startTotpEnrollment(testUser.id, "enc");
+    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
     expect(
       await mfa.confirmTotpEnrollment(testUser.id, {
         acceptedStep: 5,
         recoveryHashes: ["a"],
       }),
     ).toBe(before + 1);
-    await mfa.startTotpEnrollment(testUser.id, "enc2");
+    await mfa.startTotpEnrollment(testUser.id, "enc2", { mfaEnabled: true });
     expect(
       await mfa.confirmTotpEnrollment(testUser.id, {
         acceptedStep: 6,
@@ -142,8 +162,38 @@ describe("MFA storage", () => {
     expect(u.mfaEnabledAt).not.toBeNull();
   });
 
+  it("a locked account's pending secret is unavailable until the lock ends (audit L9)", async () => {
+    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
+    for (let i = 0; i < 10; i++) await mfa.recordMfaFailure(testUser.id);
+    expect(await mfa.getPendingTotpSecret(testUser.id)).toBeUndefined();
+    await tx.execute(
+      sql`UPDATE user_mfa SET locked_until = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
+    );
+    expect(await mfa.getPendingTotpSecret(testUser.id)).toBe("enc");
+  });
+
+  // Auth audit 2026-10-10 L13: setup (MFA off) and new phone (MFA on) stage
+  // only while the account is still in the state the route checked.
+  it("staging refuses when the MFA state no longer matches the caller's", async () => {
+    expect(
+      await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: true }),
+    ).toBe(false);
+    expect(await mfa.getPendingTotpSecret(testUser.id)).toBeUndefined();
+    await confirmEnrolled(testUser.id, 100);
+    expect(
+      await mfa.startTotpEnrollment(testUser.id, "evil", { mfaEnabled: false }),
+    ).toBe(false);
+    expect(await mfa.getPendingTotpSecret(testUser.id)).toBeUndefined();
+    expect(
+      await mfa.startTotpEnrollment(testUser.id, "enc-new", {
+        mfaEnabled: true,
+      }),
+    ).toBe(true);
+    expect(await mfa.getPendingTotpSecret(testUser.id)).toBe("enc-new");
+  });
+
   it("an expired pending secret cannot be confirmed", async () => {
-    await mfa.startTotpEnrollment(testUser.id, "enc");
+    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
     await tx.execute(
       sql`UPDATE user_mfa SET pending_expires_at = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
     );
@@ -159,7 +209,7 @@ describe("MFA storage", () => {
   it("confirmNewPhone swaps the secret, keeps recovery codes, clears trusted devices, bumps version", async () => {
     await confirmEnrolled(testUser.id, 100, ["h1"]);
     await mfa.trustDevice(testUser.id, "k1");
-    await mfa.startTotpEnrollment(testUser.id, "enc-new");
+    await mfa.startTotpEnrollment(testUser.id, "enc-new", { mfaEnabled: true });
     const v = await mfa.confirmNewPhone(testUser.id, { acceptedStep: 300 });
     expect(v).toBe(testUser.tokenVersion + 2);
     expect((await mfa.getActiveTotp(testUser.id))!.secretEnc).toBe("enc-new");
@@ -172,7 +222,7 @@ describe("MFA storage", () => {
   });
 
   it("confirmNewPhone refuses when MFA is off", async () => {
-    await mfa.startTotpEnrollment(testUser.id, "enc");
+    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
     expect(
       await mfa.confirmNewPhone(testUser.id, { acceptedStep: 1 }),
     ).toBeUndefined();

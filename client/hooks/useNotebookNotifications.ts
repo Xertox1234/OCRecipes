@@ -19,6 +19,35 @@ async function setNotificationMap(map: Record<string, string>): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(map));
 }
 
+/**
+ * Cancel every OS-scheduled coach reminder, clear delivered ones from the tray
+ * and drop the global id map. Reminders carry the signed-in user's journal
+ * text, so every session-ending path runs this (via useAuth's
+ * clearDurableLocalState — auth audit 2026-10-10 M2). Coach reminders are the
+ * only local notifications this app schedules, so cancel-all is exact. Never
+ * throws; returns false if any step failed so the durable-owner marker is not
+ * advanced and the next auth resolution retries.
+ */
+export async function clearScheduledCoachReminders(): Promise<boolean> {
+  let ok = true;
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch {
+    ok = false;
+  }
+  try {
+    await Notifications.dismissAllNotificationsAsync();
+  } catch {
+    ok = false;
+  }
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEY);
+  } catch {
+    ok = false;
+  }
+  return ok;
+}
+
 export function useNotebookNotifications() {
   const scheduleCommitmentReminder = useCallback(
     async (

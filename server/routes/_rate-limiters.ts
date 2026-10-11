@@ -129,7 +129,10 @@ export const LOGIN_ACCOUNT_KEY_PREFIX = "login-account:";
  * is still throttled (the IP-keyed loginLimiter above stays in place — the
  * two layers compose). skipSuccessfulRequests un-counts responses < 400, so
  * successful logins never accumulate toward the lockout. The message/shape
- * is byte-identical to loginLimiter's 429 (no account-existence oracle).
+ * is byte-identical to loginLimiter's 429, so it never says whether an
+ * account exists. Accepted trade-off (audit L2): since a username and its
+ * email share one bucket, someone who has already filled an account's bucket
+ * can tell whether a given email belongs to that same account (429 vs 401).
  * Defined inline rather than via createRateLimiter because it needs a
  * body-derived keyGenerator (the documented factory exception). The window
  * is deliberately a short backoff (not a hard lockout) and the threshold is
@@ -150,9 +153,11 @@ export const loginAccountLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: Request) => {
-    const username = normalizeUsernameKey(
-      (req.body as { username?: unknown } | undefined)?.username,
+  keyGenerator: async (req: Request) => {
+    const username = await accountKeyFor(
+      normalizeUsernameKey(
+        (req.body as { username?: unknown } | undefined)?.username,
+      ),
     );
     // Prefix prevents cross-bucket collisions with IP-keyed entries when a
     // username happens to look like an IP. Requests with no usable username
@@ -163,6 +168,26 @@ export const loginAccountLimiter = rateLimit({
       : ipKeyGenerator(req);
   },
 });
+
+/**
+ * Sign-in takes a username OR an email, so an email is resolved to its
+ * account's username: both spellings of one account share one bucket (auth
+ * audit 2026-10-10 L2). An unknown email — or a failed lookup — keys on the
+ * email itself. storage is imported lazily, on the email path only, so this
+ * shared module never loads the database for its many other importers.
+ */
+async function accountKeyFor(
+  identifier: string | null,
+): Promise<string | null> {
+  if (!identifier?.includes("@")) return identifier;
+  try {
+    const { storage } = await import("../storage");
+    const user = await storage.getUserByEmailForAuth(identifier);
+    return user ? normalizeUsernameKey(user.username) : identifier;
+  } catch {
+    return identifier;
+  }
+}
 
 export const registerLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
@@ -220,11 +245,13 @@ export const upgradePassLimiter = createRateLimiter({
   keyByUser: false,
 });
 
+// Password-gated like reauthLimiter, so user-keyed (the default; requireAuth
+// runs first): an IP key let a stolen session guess the password across IPs,
+// and on a two-step account a 403 confirms it without deleting (audit L1).
 export const accountDeletionLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 5,
   message: "Too many account deletion attempts, please try again later",
-  keyByUser: false,
 });
 
 // Authenticated, password-gated, and triggers an outbound email — user-keyed

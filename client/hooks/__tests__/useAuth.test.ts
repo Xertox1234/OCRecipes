@@ -7,6 +7,7 @@ import { AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 import type { User } from "@shared/types/auth";
 
 import { useAuth } from "../useAuth";
+import { unregisterPushToken } from "@/lib/push-token-registration";
 
 // Create mock storage and functions that survive vi.mock hoisting
 const {
@@ -19,6 +20,7 @@ const {
   mockNotifySessionExpired,
   mockClearOfflineQueue,
   mockClearHomeActionsState,
+  mockClearScheduledCoachReminders,
   mockWhenQueryCacheRestored,
 } = vi.hoisted(() => {
   const mockAsyncStorage: Record<string, string> = {};
@@ -41,6 +43,7 @@ const {
     // to falsy and the marker would never advance.
     mockClearOfflineQueue: vi.fn().mockResolvedValue(true),
     mockClearHomeActionsState: vi.fn().mockResolvedValue(true),
+    mockClearScheduledCoachReminders: vi.fn().mockResolvedValue(true),
     // Default: the persisted-cache restore gate is already settled, so the sweep
     // proceeds immediately. Individual tests override with a deferred promise to
     // assert the sweep waits for restoration before clearing.
@@ -87,6 +90,7 @@ vi.mock("@/lib/query-client", () => ({
 
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
+  unregisterPushToken: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/offline-queue", () => ({
@@ -95,6 +99,10 @@ vi.mock("@/lib/offline-queue", () => ({
 
 vi.mock("@/lib/home-actions-storage", () => ({
   clearHomeActionsState: () => mockClearHomeActionsState(),
+}));
+
+vi.mock("@/hooks/useNotebookNotifications", () => ({
+  clearScheduledCoachReminders: () => mockClearScheduledCoachReminders(),
 }));
 
 const { mockGetProviderToken } = vi.hoisted(() => ({
@@ -225,6 +233,41 @@ describe("useAuth", () => {
       );
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(fakeUser),
+      );
+    });
+
+    // Auth audit 2026-10-10 L7: a /me started under token A that finishes after
+    // the token changed (sign-out + new sign-in, 2FA token swap) must neither
+    // clear the NEW token nor write A's profile over the new session.
+    it("drops a /me 401 that finishes after the token changed (keeps the new token)", async () => {
+      mockTokenStorage.get
+        .mockResolvedValueOnce("token-A")
+        .mockResolvedValue("token-B");
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+
+      renderHook(() => useAuth());
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+      await act(async () => {});
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+    });
+
+    it("drops a /me success that finishes after the token changed (no stale profile write)", async () => {
+      mockTokenStorage.get
+        .mockResolvedValueOnce("token-A")
+        .mockResolvedValue("token-B");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      renderHook(() => useAuth());
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+      await act(async () => {});
+      expect(vi.mocked(AsyncStorage.setItem)).not.toHaveBeenCalledWith(
+        "@ocrecipes_auth",
+        expect.anything(),
       );
     });
 
@@ -1143,6 +1186,18 @@ describe("useAuth", () => {
         {},
       );
       expect(mockTokenStorage.clear).toHaveBeenCalled();
+      // Unregisters this device's push token while the session token is still
+      // valid (auth audit H2) — otherwise the previous user's reminders keep
+      // reaching a signed-out phone. It must run BEFORE the logout POST, which
+      // revokes the token the DELETE needs.
+      const unregister = vi.mocked(unregisterPushToken);
+      expect(unregister).toHaveBeenCalledTimes(1);
+      const logoutCall = mockApiRequest.mock.calls.findIndex(
+        (c) => c[1] === "/api/auth/logout",
+      );
+      expect(unregister.mock.invocationCallOrder[0]).toBeLessThan(
+        mockApiRequest.mock.invocationCallOrder[logoutCall],
+      );
       // Clears the TanStack Query cache so a subsequent sign-in can't read the
       // previous session's stale data (cross-session privacy).
       expect(mockQueryClient.clear).toHaveBeenCalled();
@@ -1156,6 +1211,9 @@ describe("useAuth", () => {
       // path only: clearHomeActionsState runs solely via the shared
       // clearDurableLocalState chokepoint, so one path proves wiring for all five.
       expect(mockClearHomeActionsState).toHaveBeenCalled();
+      // ...and the OS-scheduled coach reminders (journal text) plus their global
+      // id map (auth audit M2) — same chokepoint, so one path proves all five.
+      expect(mockClearScheduledCoachReminders).toHaveBeenCalled();
       // ...and the persisted query cache (regression guard: this exact call was
       // previously unasserted, the gap that let the checkAuth 4th-path leak ship).
       expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(

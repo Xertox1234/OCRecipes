@@ -21,25 +21,51 @@ import {
 /** No MFA_SECRET_ENC_KEY: authenticator secrets can't be stored or read. */
 export class TotpUnavailableError extends Error {}
 
-/** Stage a fresh secret (first setup or new phone) and hand it to the app once. */
+/**
+ * The account's two-step state changed after the caller checked it (a setup
+ * racing a confirm) — nothing was staged (audit L13). `mfaEnabled` is the
+ * state the caller expected.
+ */
+export class TotpStateChangedError extends Error {
+  constructor(readonly mfaEnabled: boolean) {
+    super("two-step state changed");
+  }
+}
+
+/**
+ * Stage a fresh secret (first setup or new phone) and hand it to the app once.
+ * Staged only while the account is still in the state the caller checked
+ * (`user.mfaEnabledAt`), so a setup racing the owner's confirm can't leave a
+ * pending secret that a bare session could confirm as a "new phone".
+ */
 export async function stageTotpSecret(
-  user: Pick<User, "id" | "username">,
+  user: Pick<User, "id" | "username" | "mfaEnabledAt">,
 ): Promise<{ secret: string; otpauthUrl: string }> {
   if (!mfaConfigured()) throw new TotpUnavailableError();
   const secret = newTotpSecret();
-  await storage.startTotpEnrollment(user.id, encryptMfaSecret(secret));
+  const mfaEnabled = user.mfaEnabledAt !== null;
+  const staged = await storage.startTotpEnrollment(
+    user.id,
+    encryptMfaSecret(secret),
+    { mfaEnabled },
+  );
+  if (!staged) throw new TotpStateChangedError(mfaEnabled);
   return { secret, otpauthUrl: otpauthUrl(secret, user.username) };
 }
 
-/** Check a code against the staged (pending) secret; returns its time step. */
+/**
+ * Check a code against the staged (pending) secret; returns its time step. A
+ * wrong code counts toward the same lock as every other factor check (spec
+ * §6, audit L9); a locked account's pending secret reads as nothing pending.
+ */
 export async function checkPendingTotpCode(
-  userId: string,
+  user: Pick<User, "id" | "email" | "username">,
   code: string,
 ): Promise<
   | { ok: true; step: number }
   | { ok: false; reason: "wrong_code" | "unavailable" }
 > {
-  const pendingEnc = await storage.getPendingTotpSecret(userId);
+  const pendingEnc = await storage.getPendingTotpSecret(user.id);
   if (!pendingEnc) return { ok: false, reason: "wrong_code" };
   let secret: Buffer;
   try {
@@ -48,9 +74,15 @@ export async function checkPendingTotpCode(
     return { ok: false, reason: "unavailable" };
   }
   const step = matchTotp(secret, code, Date.now());
-  return step === null
-    ? { ok: false, reason: "wrong_code" }
-    : { ok: true, step };
+  if (step !== null) return { ok: true, step };
+  const { tripped } = await storage.recordMfaFailure(user.id);
+  if (tripped) {
+    fireAndForget(
+      "mfa-notice",
+      sendTwoFactorNotice(user.email, user.username, "locked"),
+    );
+  }
+  return { ok: false, reason: "wrong_code" };
 }
 
 /**

@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import bcrypt from "bcrypt";
 import { storage } from "../../storage";
 import { register } from "../auth-social";
+import { crudRateLimit } from "../_rate-limiters";
 import {
   verifyGoogleIdToken,
   verifyAppleIdToken,
@@ -29,6 +30,7 @@ vi.mock("../../storage", () => ({
     issueNonce: vi.fn(),
     consumeNonce: vi.fn(),
     findIdentity: vi.fn(),
+    appleGrantInUse: vi.fn(),
     listIdentities: vi.fn(),
     insertIdentity: vi.fn(),
     setAppleRefreshToken: vi.fn(),
@@ -122,6 +124,18 @@ describe("GET /api/auth/social/config", () => {
   it("reports configured providers", async () => {
     const res = await request(app()).get("/api/auth/social/config");
     expect(res.body).toEqual({ google: true, apple: true });
+  });
+  // Auth audit 2026-10-10 L18: the only route in this file without a limiter.
+  // express-rate-limit is a pass-through here, so assert the wiring itself.
+  it("is mounted behind crudRateLimit", () => {
+    const a = express();
+    register(a);
+    const layer = (
+      a.router.stack as {
+        route?: { path: string; stack: { handle: unknown }[] };
+      }[]
+    ).find((l) => l.route?.path === "/api/auth/social/config");
+    expect(layer?.route?.stack.map((s) => s.handle)).toContain(crudRateLimit);
   });
   it("reports apple false without the encryption key", async () => {
     delete process.env.IDENTITY_TOKEN_ENC_KEY;
@@ -253,12 +267,13 @@ describe("POST /api/auth/social", () => {
     expect(res.body.code).toBe("PROVIDER_EMAIL_REQUIRED");
   });
 
-  it("auto-links a gmail address onto a verified account", async () => {
+  it("auto-links a gmail address onto a verified password-less account", async () => {
     vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
     const user = createMockUser({
       id: "u1",
       email: "me@gmail.com",
       emailVerified: true,
+      password: null,
     });
     vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(user);
     vi.mocked(storage.getUser).mockResolvedValue(user);
@@ -271,6 +286,19 @@ describe("POST /api/auth/social", () => {
         providerSubject: "g-1",
       }),
     );
+  });
+
+  it("link_required (never auto-link) onto a verified account that has a password", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
+      createMockUser({ id: "u1", email: "me@gmail.com", emailVerified: true }),
+    );
+    const res = await request(app()).post("/api/auth/social").send(body);
+    expect(res.body).toMatchObject({
+      status: "link_required",
+      methods: ["password"],
+    });
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
   });
 
   it("link_required for a non-gmail Google address, without inserting", async () => {
@@ -313,6 +341,74 @@ describe("POST /api/auth/social", () => {
     expect(res.status).toBe(502);
     expect(res.body.code).toBe("PROVIDER_EXCHANGE_FAILED");
     expect(storage.createPendingSignIn).not.toHaveBeenCalled();
+  });
+
+  // Auth audit 2026-10-10 L17: an Apple refresh token exchanged during a
+  // sign-in that then fails before storing it is revoked (App Store 5.1.1(v)),
+  // unless that Apple ID is linked — revoking ends the app's whole grant.
+  describe("an exchanged Apple token that never gets stored", () => {
+    const appleClaims = {
+      ...gmailClaims,
+      provider: "apple" as const,
+      email: "me@icloud.com",
+    };
+    const send = () =>
+      request(app()).post("/api/auth/social").send({
+        provider: "apple",
+        idToken: "t",
+        nonce: "n",
+        authorizationCode: "c",
+      });
+    beforeEach(() => {
+      vi.mocked(storage.appleGrantInUse).mockResolvedValue(false);
+      vi.mocked(verifyAppleIdToken).mockResolvedValue(appleClaims);
+      vi.mocked(exchangeAppleCode).mockResolvedValue("orphan-refresh");
+      vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
+        createMockUser({
+          id: "u1",
+          email: "me@icloud.com",
+          emailVerified: true,
+          password: null,
+        }),
+      );
+    });
+
+    it("is revoked when the request then fails", async () => {
+      vi.mocked(storage.insertIdentity).mockRejectedValue(new Error("db down"));
+      const res = await send();
+      expect(res.status).toBe(500);
+      await vi.waitFor(() =>
+        expect(revokeAppleToken).toHaveBeenCalledWith(
+          "orphan-refresh",
+          expect.anything(),
+        ),
+      );
+      expect(storage.appleGrantInUse).toHaveBeenCalledWith(appleClaims.sub);
+    });
+
+    it("is NOT revoked while that Apple grant is in use (linked, or on a live ticket)", async () => {
+      vi.mocked(storage.insertIdentity).mockRejectedValue(
+        Object.assign(new Error("dup"), { code: "23505" }),
+      );
+      vi.mocked(storage.appleGrantInUse).mockResolvedValue(true);
+      const res = await send();
+      expect(res.status).toBe(409);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(revokeAppleToken).not.toHaveBeenCalled();
+    });
+
+    it("is NOT revoked once stored (success)", async () => {
+      vi.mocked(storage.insertIdentity).mockResolvedValue(
+        createMockUserIdentity({ id: "i1", userId: "u1", provider: "apple" }),
+      );
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ id: "u1", emailVerified: true }),
+      );
+      const res = await send();
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(revokeAppleToken).not.toHaveBeenCalled();
+    });
   });
 
   it("repeat Apple sign-in with a stored token skips the exchange and tolerates no email", async () => {

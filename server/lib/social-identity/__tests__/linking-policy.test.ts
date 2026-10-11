@@ -64,6 +64,8 @@ describe("isAuthoritative", () => {
   });
 });
 
+// Every link_required case below except the password-account ones uses a
+// password-LESS account, so each test fails only on the condition it names.
 describe("decideLink", () => {
   it("already linked → sign_in, even if an MFA account owns the email", () => {
     expect(
@@ -79,9 +81,33 @@ describe("decideLink", () => {
       decideLink({ claims: g(), linkedUserId: null, emailAccount: null }),
     ).toEqual({ kind: "choose_username" });
   });
-  it("gmail + verified account + no MFA → auto_link", () => {
+  it("gmail + verified password-less account + no MFA → auto_link", () => {
     expect(
-      decideLink({ claims: g(), linkedUserId: null, emailAccount: acct() }),
+      decideLink({
+        claims: g(),
+        linkedUserId: null,
+        emailAccount: acct({ methods: ["apple"] }),
+      }),
+    ).toEqual({ kind: "auto_link", userId: "u1" });
+  });
+  // Owner ruling 2026-10-11 (auth audit H1): an account with a password is
+  // never auto-linked — verifying an email proves the inbox, not who chose
+  // the password, so the password must be proven before a provider joins it.
+  it.each([
+    ["google (gmail)", g()],
+    ["apple (non-relay)", a({ email: "me@gmail.com" })],
+  ])("%s onto a password account → link_required", (_n, claims) => {
+    expect(
+      decideLink({ claims, linkedUserId: null, emailAccount: acct() }),
+    ).toEqual({ kind: "link_required", userId: "u1", methods: ["password"] });
+  });
+  it("apple onto a google-only account still auto-links (accepted residual)", () => {
+    expect(
+      decideLink({
+        claims: a({ email: "me@gmail.com" }),
+        linkedUserId: null,
+        emailAccount: acct({ methods: ["google"] }),
+      }),
     ).toEqual({ kind: "auto_link", userId: "u1" });
   });
   it("MFA account is never auto-linked", () => {
@@ -89,16 +115,16 @@ describe("decideLink", () => {
       decideLink({
         claims: g(),
         linkedUserId: null,
-        emailAccount: acct({ hasSecondFactor: true }),
+        emailAccount: acct({ hasSecondFactor: true, methods: ["apple"] }),
       }),
-    ).toEqual({ kind: "link_required", userId: "u1", methods: ["password"] });
+    ).toEqual({ kind: "link_required", userId: "u1", methods: ["apple"] });
   });
   it("non-authoritative google address → link_required", () => {
     expect(
       decideLink({
         claims: g({ email: "me@yahoo.com" }),
         linkedUserId: null,
-        emailAccount: acct({ email: "me@yahoo.com" }),
+        emailAccount: acct({ email: "me@yahoo.com", methods: ["apple"] }),
       }).kind,
     ).toBe("link_required");
   });
@@ -107,7 +133,16 @@ describe("decideLink", () => {
       decideLink({
         claims: g(),
         linkedUserId: null,
-        emailAccount: acct({ emailVerified: false }),
+        emailAccount: acct({ emailVerified: false, methods: ["apple"] }),
+      }).kind,
+    ).toBe("link_required");
+  });
+  it("a different address on the account → link_required", () => {
+    expect(
+      decideLink({
+        claims: g(),
+        linkedUserId: null,
+        emailAccount: acct({ email: "other@gmail.com", methods: ["apple"] }),
       }).kind,
     ).toBe("link_required");
   });
@@ -117,7 +152,7 @@ describe("decideLink", () => {
       decideLink({
         claims: a({ email: relay, isPrivateRelay: true }),
         linkedUserId: null,
-        emailAccount: acct({ email: relay }),
+        emailAccount: acct({ email: relay, methods: ["google"] }),
       }).kind,
     ).toBe("link_required");
   });

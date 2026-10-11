@@ -9,7 +9,7 @@ import {
   type UserIdentity,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, count, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { randomToken, sha256Hex } from "../lib/social-identity/nonce";
 import { isReservedUsername, ReservedUsernameError } from "./users";
 
@@ -120,6 +120,56 @@ export async function sweepExpiredPendingSignIns(): Promise<string[]> {
         select 1 from ${t} p
         where p.provider = s.provider and p.provider_subject = s.subject
           and p.expires_at > now()
+      )`);
+  return result.rows.map((r) => r.token);
+}
+
+/**
+ * Whether an Apple ID's grant is still in use — a linked identity or a live
+ * ticket holds it. Revoking any token ends the app's whole Apple grant, so a
+ * token is only revoked when this is false (the expiry sweep's rule).
+ */
+export async function appleGrantInUse(sub: string): Promise<boolean> {
+  const result = await db.execute<{ inUse: boolean }>(sql`
+    select exists (
+      select 1 from ${userIdentities} i
+      where i.provider = 'apple' and i.provider_subject = ${sub}
+    ) or exists (
+      select 1 from ${pendingSocialSignIns} p
+      where p.provider = 'apple' and p.provider_subject = ${sub}
+        and p.expires_at > now()
+    ) as "inUse"`);
+  return Boolean(result.rows[0]?.inUse);
+}
+
+/**
+ * Delete the link tickets aimed at an account (they would cascade away with
+ * it) and return their Apple tokens that nobody else holds — same filters as
+ * the expiry sweep — so account deletion can revoke them (audit L17).
+ */
+export async function takeAppleTokensOnTicketsTargeting(
+  userId: string,
+): Promise<string[]> {
+  const t = pendingSocialSignIns;
+  const result = await db.execute<{ token: string }>(sql`
+    with taken as (
+      delete from ${t}
+      where ${t.targetUserId} = ${userId}
+      returning ${t.provider} as provider,
+        ${t.providerSubject} as subject,
+        ${t.appleRefreshTokenEnc} as token
+    )
+    select s.token from taken s
+    where s.provider = 'apple' and s.token is not null
+      and not exists (
+        select 1 from ${userIdentities} i
+        where i.provider = s.provider and i.provider_subject = s.subject
+      )
+      and not exists (
+        select 1 from ${t} p
+        where p.provider = s.provider and p.provider_subject = s.subject
+          and p.expires_at > now()
+          and p.target_user_id is distinct from ${userId}
       )`);
   return result.rows.map((r) => r.token);
 }
@@ -299,20 +349,41 @@ export async function insertIdentity(
   return row;
 }
 
+/**
+ * Remove one provider — refused (undefined) when it is the account's last way
+ * to sign in (no password, no other provider). The check runs under a lock on
+ * the user row so two concurrent disconnects can't each see the other's row
+ * still present and leave the account with none (auth audit 2026-10-10 L16).
+ */
 export async function deleteIdentity(
   userId: string,
   provider: ProviderName,
 ): Promise<UserIdentity | undefined> {
-  const [row] = await db
-    .delete(userIdentities)
-    .where(
-      and(
-        eq(userIdentities.userId, userId),
-        eq(userIdentities.provider, provider),
-      ),
-    )
-    .returning();
-  return row;
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({ password: users.password })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update");
+    if (!user) return undefined;
+    if (user.password === null) {
+      const [{ n }] = await tx
+        .select({ n: count() })
+        .from(userIdentities)
+        .where(eq(userIdentities.userId, userId));
+      if (n <= 1) return undefined;
+    }
+    const [row] = await tx
+      .delete(userIdentities)
+      .where(
+        and(
+          eq(userIdentities.userId, userId),
+          eq(userIdentities.provider, provider),
+        ),
+      )
+      .returning();
+    return row;
+  });
 }
 
 export async function setAppleRefreshToken(

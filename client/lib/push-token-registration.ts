@@ -62,3 +62,45 @@ export async function registerPushToken(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Remove this device's push token from the signed-in account (auth audit H2).
+ * An Expo push token belongs to the app install, so without this the previous
+ * user's reminders keep reaching a signed-out phone. Call from logout() BEFORE
+ * the logout POST revokes the session token this DELETE needs. Never prompts
+ * for permission and never throws — sign-out must always continue.
+ */
+export async function unregisterPushToken(): Promise<void> {
+  if (!PROJECT_ID) return;
+  // Capped so a slow or offline network can never stall sign-out. Once the
+  // cap fires the DELETE must never be sent: apiRequest attaches whatever
+  // session token is stored at send time, which after a new sign-in is the
+  // NEXT user's, and the DELETE would remove their row instead.
+  const cap = { timedOut: false };
+  await Promise.race([
+    deleteThisDevicesToken(PROJECT_ID, cap),
+    new Promise<void>((resolve) =>
+      setTimeout(() => {
+        cap.timedOut = true;
+        resolve();
+      }, UNREGISTER_TIMEOUT_MS),
+    ),
+  ]);
+}
+
+const UNREGISTER_TIMEOUT_MS = 3000;
+
+async function deleteThisDevicesToken(
+  projectId: string,
+  cap: { timedOut: boolean },
+): Promise<void> {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== "granted") return;
+    const pushToken = await Notifications.getExpoPushTokenAsync({ projectId });
+    if (cap.timedOut) return;
+    await apiRequest("DELETE", "/api/push-tokens", { token: pushToken.data });
+  } catch {
+    // Non-fatal: registering on the next sign-in moves the token anyway.
+  }
+}

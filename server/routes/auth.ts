@@ -24,6 +24,7 @@ import {
   sendSignupAttemptNotice,
   sendPasswordResetCode,
   sendPasswordChangedNotice,
+  sendFinishSignupNotice,
 } from "../services/email";
 import {
   generateResetCode,
@@ -257,13 +258,12 @@ export function register(app: Express): void {
           // Verification ON: anti-enumeration. Same neutral response either way;
           // NEVER create an account and NEVER touch the existing password.
           if (!existingEmail.emailVerified) {
-            // Unverified retry → help them finish, don't alarm them.
+            // Unverified retry → point the inbox owner at Forgot password. NOT
+            // a verify link: that would verify whoever registered first, maybe
+            // a squatter holding their own password (auth audit M4).
             fireAndForget(
-              "resend-verification-on-reregister",
-              sendVerificationEmail(
-                email,
-                signVerificationToken(existingEmail.id, email),
-              ),
+              "finish-signup-notice-on-reregister",
+              sendFinishSignupNotice(email),
             );
           } else {
             fireAndForget(
@@ -656,9 +656,21 @@ export function register(app: Express): void {
           return;
         }
         invalidateTokenVersionCache(reserved.id);
+        // The reset keeps linked Google/Apple sign-ins (owner ruling
+        // 2026-10-11, audit M1); the notice names them so a planted one shows.
         fireAndForget(
           "password-changed-notice",
-          sendPasswordChangedNotice(reserved.email, reserved.username),
+          (async () => {
+            // A failed lookup must not cost the notice itself.
+            const ids = await storage
+              .listIdentities(reserved.id)
+              .catch(() => []);
+            await sendPasswordChangedNotice(
+              reserved.email,
+              reserved.username,
+              ids.map((i) => i.provider),
+            );
+          })(),
         );
         res.status(200).json({ status: "password_reset" });
       } catch (error) {
@@ -917,6 +929,7 @@ export function register(app: Express): void {
     requireAuth,
     accountDeletionLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const validated = deleteAccountSchema.parse(req.body);
 
@@ -934,8 +947,9 @@ export function register(app: Express): void {
           );
         }
         // Spec D2: a password proof on an MFA account also needs the code; a
-        // Google/Apple proof never does (D1). The account is about to go, so a
-        // spent recovery code's replacement is not returned.
+        // Google/Apple proof never does (D1). On success the account goes, so
+        // the replacement is moot — but a failure before the delete leaves it
+        // alive, so the catch hands the replacement back (audit L11).
         const gate = await secondFactorForPasswordProof(
           user,
           "password" in validated,
@@ -943,10 +957,24 @@ export function register(app: Express): void {
         );
         if (!gate.ok)
           return sendError(res, gate.status, gate.message, gate.code);
+        if (gate.replacementRecoveryCode)
+          replacement = {
+            replacementRecoveryCode: gate.replacementRecoveryCode,
+          };
 
         // Revoke Apple tokens BEFORE the delete cascades the identity rows
         // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
         await revokeAppleIdentities(await storage.listIdentities(req.userId));
+        // ...and the Apple tokens on link tickets aimed at this account, which
+        // the delete would otherwise cascade away unrevoked (audit L17).
+        await revokeAppleIdentities(
+          (await storage.takeAppleTokensOnTicketsTargeting(req.userId)).map(
+            (appleRefreshTokenEnc) => ({
+              provider: "apple",
+              appleRefreshTokenEnc,
+            }),
+          ),
+        );
 
         // Read the account's stored images while its rows still exist; the
         // delete below cascades them away.
@@ -979,7 +1007,7 @@ export function register(app: Express): void {
             ),
         );
       } catch (error) {
-        handleRouteError(res, error, "delete account");
+        handleRouteError(res, error, "delete account", replacement);
       }
     },
   );

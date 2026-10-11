@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useNotebookNotifications } from "../useNotebookNotifications";
+import {
+  clearScheduledCoachReminders,
+  useNotebookNotifications,
+} from "../useNotebookNotifications";
 
 const mockAsyncStorage = vi.hoisted(() => ({
   getItem: vi.fn(),
   setItem: vi.fn(),
+  removeItem: vi.fn(),
 }));
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: mockAsyncStorage,
@@ -17,9 +21,13 @@ vi.mock("@/lib/notifications", () => ({
 }));
 
 const mockScheduleNotificationAsync = vi.fn();
+const mockCancelAll = vi.fn();
+const mockDismissAll = vi.fn();
 vi.mock("expo-notifications", () => ({
   scheduleNotificationAsync: (...args: unknown[]) =>
     mockScheduleNotificationAsync(...args),
+  cancelAllScheduledNotificationsAsync: () => mockCancelAll(),
+  dismissAllNotificationsAsync: () => mockDismissAll(),
   cancelScheduledNotificationAsync: vi.fn(),
   SchedulableTriggerInputTypes: { DATE: "date" },
 }));
@@ -63,5 +71,38 @@ describe("useNotebookNotifications", () => {
       entryId: 42,
       url: "ocrecipes://notebook-entry/42",
     });
+  });
+});
+
+// Auth audit 2026-10-10 M2: reminders carry the signed-in user's journal text,
+// so every session-ending path must cancel them and drop the global id map.
+describe("clearScheduledCoachReminders", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCancelAll.mockResolvedValue(undefined);
+    mockDismissAll.mockResolvedValue(undefined);
+    mockAsyncStorage.removeItem.mockResolvedValue(undefined);
+  });
+
+  it("cancels scheduled reminders, clears the tray and drops the id map", async () => {
+    await expect(clearScheduledCoachReminders()).resolves.toBe(true);
+    expect(mockCancelAll).toHaveBeenCalledTimes(1);
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockAsyncStorage.removeItem).toHaveBeenCalledWith(
+      "COACH_NOTIFICATION_IDS",
+    );
+  });
+
+  it("reports false (never throws) and still drops the map when cancelling fails", async () => {
+    mockCancelAll.mockRejectedValue(new Error("native"));
+    await expect(clearScheduledCoachReminders()).resolves.toBe(false);
+    expect(mockAsyncStorage.removeItem).toHaveBeenCalledWith(
+      "COACH_NOTIFICATION_IDS",
+    );
+  });
+
+  it("reports false when the map cannot be removed", async () => {
+    mockAsyncStorage.removeItem.mockRejectedValue(new Error("disk"));
+    await expect(clearScheduledCoachReminders()).resolves.toBe(false);
   });
 });

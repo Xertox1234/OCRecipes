@@ -20,6 +20,7 @@ import {
   checkPendingTotpCode,
   confirmFirstEnrollment,
   stageTotpSecret,
+  TotpStateChangedError,
   TotpUnavailableError,
 } from "../services/mfa-totp";
 import { INVALID_SECOND_FACTOR_MESSAGE } from "../lib/mfa/password-proof-gate";
@@ -70,6 +71,15 @@ function answer(res: Response, error: unknown, label: string): void {
     sendError(res, 503, MFA_UNAVAILABLE_MESSAGE, ErrorCode.MFA_UNAVAILABLE);
     return;
   }
+  if (error instanceof TotpStateChangedError) {
+    sendError(
+      res,
+      409,
+      "Two-step verification is already on.",
+      ErrorCode.MFA_ALREADY_ENABLED,
+    );
+    return;
+  }
   if (error instanceof HttpFailure) {
     sendError(res, error.status, error.message, error.code);
     return;
@@ -116,7 +126,7 @@ export function register(app: Express): void {
         if (!(await storage.reserveUpgradePassAttempt(ctx.idHash))) {
           return expired(res);
         }
-        const check = await checkPendingTotpCode(ctx.user.id, parsed.data.code);
+        const check = await checkPendingTotpCode(ctx.user, parsed.data.code);
         if (!check.ok) {
           return check.reason === "unavailable"
             ? sendError(

@@ -23,10 +23,14 @@ import type {
 } from "@shared/types/auth";
 import { upgradeRequest } from "@/lib/upgrade-pass-request";
 import { getProviderToken } from "@/lib/social-sign-in";
-import { registerPushToken } from "@/lib/push-token-registration";
+import {
+  registerPushToken,
+  unregisterPushToken,
+} from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
 import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
+import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 
 interface AuthState {
@@ -87,6 +91,9 @@ async function clearDurableLocalState(): Promise<boolean> {
     // path. Non-throwing; a failed wipe feeds `ok` so the durable-owner marker is
     // not advanced past this user (the next auth resolution retries).
     if (!(await clearRecentSearches())) ok = false;
+    // OS-scheduled coach reminders carry this user's journal text and outlive
+    // the session in the OS; cancel them and drop their global id map.
+    if (!(await clearScheduledCoachReminders())) ok = false;
     // Gate on the persisted-cache restore: a teardown that races a cold-start
     // restore could otherwise clear() the cache before the restore rehydrates the
     // prior user's data into memory, re-exposing it under the next user. Resolves
@@ -181,6 +188,12 @@ export function useAuth() {
         const response = await fetch(`${getApiUrl()}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+
+        // The token changed while /me was in flight (sign-out + new sign-in, or
+        // a 2FA token swap): this answer is about a session that already ended,
+        // so it must neither clear the new token nor write the old profile
+        // (auth audit 2026-10-10 L7). The new session set its own state.
+        if ((await tokenStorage.get()) !== token) return;
 
         if (response.ok) {
           const freshUser = await response.json();
@@ -481,6 +494,9 @@ export function useAuth() {
     // Edge: if the token already expired, this POST 401s with a TOKEN_* code →
     // the global interceptor fires the session-expiry toast. Accepted by design
     // — the user is logging out anyway, so "session expired" then Login is benign.
+    // Unregister this device's push token first: the logout POST revokes the
+    // session token the DELETE needs (unregisterPushToken never throws).
+    await unregisterPushToken();
     try {
       await apiRequest("POST", "/api/auth/logout", {});
     } catch {}

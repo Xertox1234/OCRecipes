@@ -291,6 +291,48 @@ describe("email service", () => {
       expect(arg.html).toContain("15 minutes");
     });
 
+    // M4 review: register is limited per IP only, so a register-triggered
+    // notice must never spend the account-security bucket the reset code
+    // needs — else re-registering a victim's address starves their recovery.
+    it("finish-signup notices never starve the reset code (general bucket)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendFinishSignupNotice, sendPasswordResetCode } = await import(
+        "../email"
+      );
+      for (let i = 0; i < 10; i++) await sendFinishSignupNotice("v@x.com");
+      mockSend.mockClear();
+      await sendPasswordResetCode("v@x.com", "123456");
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    it("finish-signup notice points to Forgot password and carries no link or code (audit M4)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendFinishSignupNotice } = await import("../email");
+      await sendFinishSignupNotice("r@x.com");
+      const arg = mockSend.mock.calls[0][0];
+      expect(arg.to).toBe("r@x.com");
+      expect(arg.html).toContain("Forgot password");
+      expect(arg.html).not.toMatch(/verify-email|href=/);
+    });
+
+    it("password-changed notice names connected Google/Apple sign-ins (audit M1)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordChangedNotice } = await import("../email");
+      await sendPasswordChangedNotice("r@x.com", "alice", ["google", "apple"]);
+      const html = mockSend.mock.calls[0][0].html as string;
+      expect(html).toContain("still connected");
+      expect(html).toContain("Google and Apple");
+      expect(html).toContain("Sign-in methods");
+    });
+
+    it("password-changed notice says nothing about sign-ins when none are connected", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordChangedNotice } = await import("../email");
+      await sendPasswordChangedNotice("r@x.com", "alice");
+      const html = mockSend.mock.calls[0][0].html as string;
+      expect(html).not.toContain("still connected");
+    });
+
     it("password-changed notice includes the escaped username and support address", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const { sendPasswordChangedNotice } = await import("../email");

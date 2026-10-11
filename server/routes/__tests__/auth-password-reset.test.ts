@@ -22,6 +22,7 @@ vi.mock("../../storage", () => ({
     issuePasswordResetCode: vi.fn(),
     reservePasswordResetAttempt: vi.fn(),
     completePasswordReset: vi.fn(),
+    listIdentities: vi.fn(),
   },
 }));
 vi.mock("../../middleware/auth");
@@ -102,6 +103,7 @@ describe("POST /api/auth/forgot-password", () => {
     vi.clearAllMocks();
     app = createApp();
     vi.mocked(storage.issuePasswordResetCode).mockResolvedValue(true);
+    vi.mocked(storage.listIdentities).mockResolvedValue([]);
   });
 
   it("existing account: neutral 200, stores a code, emails the same code", async () => {
@@ -214,6 +216,35 @@ describe("POST /api/auth/reset-password", () => {
     expect(sendPasswordChangedNotice).toHaveBeenCalledWith(
       "real@example.com",
       "realuser",
+      [],
+    );
+  });
+
+  // Owner ruling 2026-10-11 (auth audit M1): a reset keeps linked Google/Apple
+  // sign-ins, but the notice names them so a planted one can be spotted.
+  it("the notice lists the Google/Apple sign-ins still connected", async () => {
+    vi.mocked(storage.listIdentities).mockResolvedValue([
+      { provider: "apple" },
+      { provider: "google" },
+    ] as Awaited<ReturnType<typeof storage.listIdentities>>);
+    await request(app).post("/api/auth/reset-password").send(good);
+    await flush();
+    expect(storage.listIdentities).toHaveBeenCalledWith(id);
+    expect(sendPasswordChangedNotice).toHaveBeenCalledWith(
+      "real@example.com",
+      "realuser",
+      ["apple", "google"],
+    );
+  });
+
+  it("a failed identity lookup still sends the notice, without the list", async () => {
+    vi.mocked(storage.listIdentities).mockRejectedValue(new Error("db"));
+    await request(app).post("/api/auth/reset-password").send(good);
+    await flush();
+    expect(sendPasswordChangedNotice).toHaveBeenCalledWith(
+      "real@example.com",
+      "realuser",
+      [],
     );
   });
 

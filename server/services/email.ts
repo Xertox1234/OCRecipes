@@ -105,8 +105,8 @@ const EMAIL_FROM =
 // In-service per-recipient throttle. The signup-attempt notice has no endpoint
 // of its own, so the per-IP register limiter cannot cap how many emails a
 // victim's inbox receives. This sliding window is THE per-recipient cap for
-// outbound mail, regardless of entry point, in two buckets. "general" (signup
-// notice + verification) is the original shared 5/hour cap. "account-security"
+// outbound mail, regardless of entry point, in two buckets. "general" (signup +
+// finish-signup notices, verification) is the original shared 5/hour cap. "account-security"
 // (reset code + password-changed notice) is separate: register is limited per
 // IP only, so anyone who knows an address could otherwise drain the shared
 // bucket with signup notices and silently swallow a reset code or the security
@@ -198,6 +198,35 @@ export async function sendVerificationEmail(
   if (error) logger.error({ resendError: error }, "verification email failed");
 }
 
+/**
+ * Someone signed up with an address that already has an UNFINISHED (unverified)
+ * account. A verify link here would verify whoever registered it first —
+ * possibly a squatter holding their own password — so the inbox owner is sent
+ * to Forgot password, which replaces the password AND verifies (auth audit
+ * 2026-10-10 M4). No link, no code, no username: nothing to act on blindly.
+ */
+export async function sendFinishSignupNotice(to: string): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  // The general bucket, like the signup-attempt notice: register is limited
+  // per IP only, so spending the account-security bucket here would let anyone
+  // starve the very reset code this notice points to.
+  if (!canSendTo(to)) {
+    logger.warn({ to }, "finish-signup notice throttled (per-recipient cap)");
+    return;
+  }
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: "Finish setting up your OCRecipes account",
+    html: `<p>Someone — probably you — tried to sign up for OCRecipes with this email address. It already belongs to an account that was never finished.</p>
+<p>To finish it, open OCRecipes, tap <strong>Forgot password</strong> on the sign-in screen, and enter this email address. You'll get a code to choose your password, and the account will be confirmed.</p>
+<p>If this wasn't you, you can ignore this email — nothing changes.</p>`,
+  });
+  if (error)
+    logger.error({ resendError: error }, "finish-signup notice failed");
+}
+
 export async function sendSignupAttemptNotice(
   to: string,
   username: string,
@@ -244,9 +273,17 @@ export async function sendPasswordResetCode(
   if (error) logger.error({ resendError: error }, "reset code email failed");
 }
 
+const PROVIDER_LABELS = { google: "Google", apple: "Apple" } as const;
+
+/**
+ * `connected` lists the Google/Apple sign-ins a reset left in place (owner
+ * ruling 2026-10-11, auth audit M1): a reset keeps them, so the notice names
+ * them for the owner to spot one an attacker linked.
+ */
 export async function sendPasswordChangedNotice(
   to: string,
   username: string,
+  connected: readonly string[] = [],
 ): Promise<void> {
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
@@ -263,10 +300,22 @@ export async function sendPasswordChangedNotice(
     subject: "Your OCRecipes password was changed",
     html: `<p>The password for your OCRecipes account <strong>${escapeHtml(username)}</strong> was just changed, and every device was signed out.</p>
 <p>If this was you, there's nothing else to do.</p>
-<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
+${connectedSignInsParagraph(connected)}<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
   });
   if (error)
     logger.error({ resendError: error }, "password-changed notice failed");
+}
+
+function isLabelledProvider(p: string): p is keyof typeof PROVIDER_LABELS {
+  return Object.hasOwn(PROVIDER_LABELS, p);
+}
+
+function connectedSignInsParagraph(connected: readonly string[]): string {
+  const known = connected.filter(isLabelledProvider);
+  if (known.length === 0) return "";
+  const names = known.map((p) => PROVIDER_LABELS[p]).join(" and ");
+  return `<p>${names} sign-in is still connected to this account. If you didn't connect it, remove it in Profile → Sign-in methods.</p>
+`;
 }
 
 export type TwoFactorNoticeKind =

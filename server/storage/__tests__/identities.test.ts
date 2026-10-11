@@ -225,6 +225,68 @@ describe("identities storage", () => {
     });
   });
 
+  // Auth audit 2026-10-10 L17 review: revoking any token ends the app's whole
+  // Apple grant, so a grant is "in use" while a linked identity OR a live
+  // ticket holds that Apple ID — the ticket sweep's own rule.
+  describe("appleGrantInUse", () => {
+    it("is false for an unknown Apple ID", async () => {
+      expect(await ids.appleGrantInUse("a-none")).toBe(false);
+    });
+    it("is true while a live ticket holds it, false once it expires", async () => {
+      const t = await ids.createPendingSignIn({
+        ...baseTicket,
+        kind: "sign_up",
+        provider: "apple",
+        providerSubject: "a-t",
+        appleRefreshTokenEnc: "v1:t",
+        targetUserId: null,
+      });
+      expect(await ids.appleGrantInUse("a-t")).toBe(true);
+      await getTestTx()
+        .update(pendingSocialSignIns)
+        .set({ expiresAt: sql`now() - interval '1 minute'` })
+        .where(eq(pendingSocialSignIns.ticketHash, sha256Hex(t)));
+      expect(await ids.appleGrantInUse("a-t")).toBe(false);
+    });
+    it("is true while a linked identity holds it", async () => {
+      const u = await createTestUser(getTestTx());
+      await ids.insertIdentity({
+        userId: u.id,
+        provider: "apple",
+        providerSubject: "a-l",
+      });
+      expect(await ids.appleGrantInUse("a-l")).toBe(true);
+    });
+  });
+
+  // Auth audit 2026-10-10 L17: link tickets aimed at an account cascade away
+  // with it — take their Apple tokens first so they can be revoked.
+  describe("takeAppleTokensOnTicketsTargeting", () => {
+    it("removes the account's link tickets and returns their unlinked Apple tokens", async () => {
+      const target = await createTestUser(getTestTx());
+      const other = await createTestUser(getTestTx());
+      const link = (userId: string, sub: string, token: string) => ({
+        ...baseTicket,
+        kind: "link" as const,
+        provider: "apple" as const,
+        providerSubject: sub,
+        appleRefreshTokenEnc: token,
+        targetUserId: userId,
+      });
+      await ids.createPendingSignIn(link(target.id, "a-1", "v1:mine"));
+      const keep = await ids.createPendingSignIn(
+        link(other.id, "a-2", "v1:theirs"),
+      );
+      expect(await ids.takeAppleTokensOnTicketsTargeting(target.id)).toEqual([
+        "v1:mine",
+      ]);
+      const left = await getTestTx()
+        .select({ h: pendingSocialSignIns.ticketHash })
+        .from(pendingSocialSignIns);
+      expect(left.map((r) => r.h)).toEqual([sha256Hex(keep)]);
+    });
+  });
+
   describe("link tickets", () => {
     it("allows at most 5 reserved attempts", async () => {
       const target = await createTestUser(getTestTx());
@@ -322,6 +384,43 @@ describe("identities storage", () => {
     expect((await ids.listIdentities(u.id)).map((i) => i.provider)).toEqual([
       "google",
     ]);
+  });
+
+  // Auth audit 2026-10-10 L16: the "not your last sign-in method" rule lives
+  // in the delete itself (under a user-row lock), not only in a prior read.
+  it("deleteIdentity refuses to remove a password-less account's last method", async () => {
+    const tx = getTestTx();
+    const u = await createTestUser(tx);
+    await tx.update(users).set({ password: null }).where(eq(users.id, u.id));
+    await ids.insertIdentity({
+      userId: u.id,
+      provider: "apple",
+      providerSubject: "a",
+    });
+    await ids.insertIdentity({
+      userId: u.id,
+      provider: "google",
+      providerSubject: "g",
+    });
+    expect(await ids.deleteIdentity(u.id, "apple")).toMatchObject({
+      provider: "apple",
+    });
+    expect(await ids.deleteIdentity(u.id, "google")).toBeUndefined();
+    expect((await ids.listIdentities(u.id)).map((i) => i.provider)).toEqual([
+      "google",
+    ]);
+  });
+
+  it("deleteIdentity may remove the last provider when a password remains", async () => {
+    const u = await createTestUser(getTestTx());
+    await ids.insertIdentity({
+      userId: u.id,
+      provider: "apple",
+      providerSubject: "a",
+    });
+    expect(await ids.deleteIdentity(u.id, "apple")).toMatchObject({
+      provider: "apple",
+    });
   });
 
   it("pending tickets store only the hash", async () => {

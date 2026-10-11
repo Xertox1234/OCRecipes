@@ -29,6 +29,7 @@ vi.mock("../../storage", () => ({
     completePasswordUpgrade: vi.fn(),
     startTotpEnrollment: vi.fn(),
     getPendingTotpSecret: vi.fn(),
+    recordMfaFailure: vi.fn(),
     confirmTotpEnrollment: vi.fn(),
   },
 }));
@@ -88,6 +89,11 @@ beforeEach(() => {
   vi.mocked(isBreached).mockResolvedValue(false);
   vi.mocked(sendTwoFactorNotice).mockResolvedValue(undefined);
   vi.mocked(sendPasswordChangedNotice).mockResolvedValue(undefined);
+  vi.mocked(storage.startTotpEnrollment).mockResolvedValue(true);
+  vi.mocked(storage.recordMfaFailure).mockResolvedValue({
+    failedAttempts: 1,
+    tripped: false,
+  });
   const u = createMockUser({ id: "1", tokenVersion: 0, mfaEnabledAt: null });
   vi.mocked(storage.getUserForAuth).mockResolvedValue(u);
   vi.mocked(storage.getUser).mockResolvedValue(u);
@@ -193,6 +199,8 @@ describe("POST /api/auth/upgrade/totp/confirm", () => {
     expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
     expect(storage.reserveUpgradePassAttempt).toHaveBeenCalledTimes(1);
     expect(storage.confirmTotpEnrollment).not.toHaveBeenCalled();
+    // Also counted toward the account's two-step lock (auth audit L9).
+    expect(storage.recordMfaFailure).toHaveBeenCalledWith("1");
   });
 
   it("no attempt left (dead or capped) → 401 UPGRADE_PASS_EXPIRED; the code is never checked", async () => {

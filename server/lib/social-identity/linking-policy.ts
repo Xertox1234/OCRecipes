@@ -20,7 +20,9 @@ export function normaliseEmail(e: string): string {
 
 // Google's "Verify the Google ID token" guide: Google is authoritative for
 // gmail addresses, or Workspace (hd set) with email_verified. Elsewhere,
-// email_verified only meant "verified at account creation".
+// email_verified only meant "verified at account creation" — and that holds
+// for Apple too, which is why decideLink never auto-links into an account
+// that has a password, whatever the provider (auth audit 2026-10-10 H1).
 const GOOGLE_CONSUMER_DOMAINS = ["@gmail.com", "@googlemail.com"];
 
 export function isAuthoritative(c: ProviderClaims): boolean {
@@ -45,7 +47,11 @@ export function decideLink(input: {
   const sameAddress =
     claims.email !== null &&
     normaliseEmail(claims.email) === normaliseEmail(emailAccount.email);
+  // A password account is never auto-linked: a verified email proves the
+  // inbox, not who chose the password, so a squatter's password account (or
+  // an address that changed hands) would otherwise absorb the provider login.
   if (
+    !emailAccount.methods.includes("password") &&
     !emailAccount.hasSecondFactor &&
     emailAccount.emailVerified &&
     sameAddress &&

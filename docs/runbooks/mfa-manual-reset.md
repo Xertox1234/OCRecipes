@@ -15,13 +15,14 @@ A password reset does **not** turn two-step verification off. It only forgets tr
 
 ## Verify identity
 
-Turning the factor off on the wrong person's request hands the account to them. Before acting:
+Turning the factor off on the wrong person's request hands the account to them. The hard case is someone who has taken over the owner's **mailbox**: they can already reset the password by email (that needs no code), so anything the mailbox can answer proves nothing. The protection is time — a real owner who still reads their mail gets a week to say "that wasn't me".
 
 1. The request must come **from the email address on the account**. Never act on a request sent from any other address, even if it names the account correctly.
-2. Reply to that address and ask for **one detail only the owner knows**. For example, the month the account was created, or a meal they logged recently.
-3. Check the answer against the database (the owner runs any production query).
+2. Reply to that address saying two-step verification will be turned off in **7 days** unless they write back to stop it, and that they should reply at once if they didn't ask for this.
+3. Wait the full **7 days**. Note the date the notice went out.
+4. If anyone replies asking to stop — or the request looks odd in any other way — stop and say no. There's no partial reset.
 
-If either check fails, stop and say no. There's no partial reset.
+Don't ask "security questions" (for example the month the account was created). A guessable answer adds nothing a mailbox thief can't supply, and makes a bad reset look checked.
 
 ## Run
 

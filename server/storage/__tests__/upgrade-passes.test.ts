@@ -220,7 +220,7 @@ describe("upgrade pass storage", () => {
 
   it("confirmTotpEnrollment with an upgradePass consumes it in the same transaction; a second confirm loses", async () => {
     await passes.createUpgradePass(pass());
-    await mfa.startTotpEnrollment(testUser.id, "enc");
+    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
     const opts = {
       acceptedStep: 1,
       recoveryHashes: ["h1"],
@@ -236,7 +236,7 @@ describe("upgrade pass storage", () => {
   it("confirmTotpEnrollment with a consumed pass changes nothing", async () => {
     await passes.createUpgradePass(pass());
     await markConsumed("hash-a");
-    await mfa.startTotpEnrollment(testUser.id, "enc");
+    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
     expect(
       await mfa.confirmTotpEnrollment(testUser.id, {
         acceptedStep: 1,
@@ -250,7 +250,7 @@ describe("upgrade pass storage", () => {
 
   it("confirmTotpEnrollment with a pass whose tokenVersion moved on changes nothing", async () => {
     await passes.createUpgradePass(pass());
-    await mfa.startTotpEnrollment(testUser.id, "enc");
+    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
     await tx
       .update(users)
       .set({ tokenVersion: testUser.tokenVersion + 1 })

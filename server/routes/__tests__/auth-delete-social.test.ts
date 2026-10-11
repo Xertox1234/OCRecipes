@@ -33,6 +33,7 @@ vi.mock("../../storage", () => ({
     consumeNonce: vi.fn(),
     deleteUser: vi.fn(),
     collectUserImageUrls: vi.fn().mockResolvedValue([]),
+    takeAppleTokensOnTicketsTargeting: vi.fn().mockResolvedValue([]),
     filterUnreferencedImageUrls: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -215,6 +216,36 @@ describe("DELETE /api/auth/account — provider re-auth", () => {
       .send({ password: "pw-123456" });
     expect(res.status).toBe(200);
     expect(revokeAppleToken).toHaveBeenCalled();
+  });
+
+  // Auth audit 2026-10-10 L17: link tickets aimed at the account cascade away
+  // with it; their Apple tokens are revoked first.
+  it("revokes the Apple tokens on link tickets aimed at the account", async () => {
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(
+      createMockUser({
+        id: "u1",
+        password: await bcrypt.hash("pw-123456", 4),
+      }),
+    );
+    vi.mocked(storage.takeAppleTokensOnTicketsTargeting).mockResolvedValue([
+      encryptToken("ticket-refresh"),
+    ]);
+    const res = await request(app())
+      .delete("/api/auth/account")
+      .set(auth)
+      .send({ password: "pw-123456" });
+    expect(res.status).toBe(200);
+    expect(storage.takeAppleTokensOnTicketsTargeting).toHaveBeenCalledWith(
+      "u1",
+    );
+    expect(revokeAppleToken).toHaveBeenCalledWith(
+      "ticket-refresh",
+      expect.anything(),
+    );
+    const revokeOrder = vi.mocked(revokeAppleToken).mock.invocationCallOrder[0];
+    const deleteOrder = vi.mocked(storage.deleteUser).mock
+      .invocationCallOrder[0];
+    expect(revokeOrder).toBeLessThan(deleteOrder);
   });
 
   it("401 without a session", async () => {

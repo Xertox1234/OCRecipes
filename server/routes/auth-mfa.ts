@@ -45,6 +45,7 @@ import {
   checkPendingTotpCode,
   confirmFirstEnrollment,
   stageTotpSecret,
+  TotpStateChangedError,
   TotpUnavailableError,
 } from "../services/mfa-totp";
 import { INVALID_SECOND_FACTOR_MESSAGE } from "../lib/mfa/password-proof-gate";
@@ -146,6 +147,22 @@ function answer(
       ErrorCode.MFA_UNAVAILABLE,
       extra,
     );
+  if (error instanceof TotpStateChangedError)
+    return error.mfaEnabled
+      ? sendError(
+          res,
+          409,
+          "Two-step verification is off.",
+          ErrorCode.MFA_NOT_ENABLED,
+          extra,
+        )
+      : sendError(
+          res,
+          409,
+          "Two-step verification is already on.",
+          ErrorCode.MFA_ALREADY_ENABLED,
+          extra,
+        );
   if (error instanceof Reply || error instanceof HttpFailure)
     return sendError(res, error.status, error.message, error.code, extra);
   handleRouteError(res, error, label, extra);
@@ -256,7 +273,7 @@ export function register(app: Express): void {
 
         let session;
         try {
-          session = await issueSession(user.id);
+          session = await issueSession(user.id, row.tokenVersion);
         } catch (err) {
           if (err instanceof HttpFailure)
             return fail(err.status, err.code, err.message);
@@ -354,7 +371,7 @@ export function register(app: Express): void {
           ErrorCode.INVALID_SECOND_FACTOR,
           INVALID_SECOND_FACTOR_MESSAGE,
         );
-        const check = await checkPendingTotpCode(user.id, code);
+        const check = await checkPendingTotpCode(user, code);
         if (!check.ok) {
           if (check.reason === "unavailable") {
             throw new Reply(
@@ -409,6 +426,9 @@ export function register(app: Express): void {
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      // Once a recovery code is spent, a failure before MFA is off must still
+      // hand back its replacement (audit L11).
+      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const body = parse(mfaDisableSchema, req.body);
         const user = await me(req);
@@ -441,7 +461,7 @@ export function register(app: Express): void {
           }
           newPasswordHash = await hashPassword(body.newPassword);
         }
-        await requireFactor(user, body.secondFactor);
+        replacement = await requireFactor(user, body.secondFactor);
         await storage.disableMfa(user.id, { newPasswordHash });
         invalidateTokenVersionCache(user.id);
         notice(user, "disabled");
@@ -453,7 +473,7 @@ export function register(app: Express): void {
         }
         res.json(await issueSession(user.id));
       } catch (error) {
-        answer(res, error, "turn off two-step verification");
+        answer(res, error, "turn off two-step verification", replacement);
       }
     },
   );
@@ -464,12 +484,15 @@ export function register(app: Express): void {
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
+      // Once a recovery code is spent, a failed replace leaves the old set in
+      // place minus that code — hand back its replacement (audit L11).
+      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const body = parse(mfaPasswordAndFactorSchema, req.body);
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
-        await requireFactor(user, body.secondFactor);
+        replacement = await requireFactor(user, body.secondFactor);
         const recoveryCodes = generateRecoveryCodes();
         await storage.replaceRecoveryCodes(
           user.id,
@@ -480,7 +503,7 @@ export function register(app: Express): void {
         notice(user, "recovery_codes_replaced");
         res.json({ recoveryCodes });
       } catch (error) {
-        answer(res, error, "replace recovery codes");
+        answer(res, error, "replace recovery codes", replacement);
       }
     },
   );

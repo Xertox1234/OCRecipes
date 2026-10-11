@@ -55,6 +55,26 @@ describe("push-tokens storage", () => {
       expect(row.platform).toBe("ios");
     });
 
+    // Auth audit 2026-10-10 H2: an Expo push token belongs to the app install,
+    // not the user — when B signs in on A's old phone, A must stop receiving
+    // pushes (coach reminders carry journal text) on that device.
+    it("moves a device token to the new user, removing the previous user's row", async () => {
+      const other = await createTestUser(tx);
+      await upsertPushToken(testUser.id, "device-1", "ios");
+      await upsertPushToken(other.id, "device-1", "ios");
+      expect(await getPushTokensForUser(testUser.id)).toEqual([]);
+      const mine = await getPushTokensForUser(other.id);
+      expect(mine.map((r) => r.token)).toEqual(["device-1"]);
+    });
+
+    it("leaves another user's DIFFERENT token alone", async () => {
+      const other = await createTestUser(tx);
+      await upsertPushToken(testUser.id, "device-1", "ios");
+      await upsertPushToken(other.id, "device-2", "ios");
+      const mine = await getPushTokensForUser(testUser.id);
+      expect(mine.map((r) => r.token)).toEqual(["device-1"]);
+    });
+
     it("replaces the existing token on conflict (user+platform unique)", async () => {
       const first = await upsertPushToken(testUser.id, "token-A", "ios");
       const second = await upsertPushToken(testUser.id, "token-B", "ios");

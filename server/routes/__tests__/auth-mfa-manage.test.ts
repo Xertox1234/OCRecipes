@@ -32,6 +32,7 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     startTotpEnrollment: vi.fn(),
     getPendingTotpSecret: vi.fn(),
+    recordMfaFailure: vi.fn(),
     confirmTotpEnrollment: vi.fn(),
     confirmNewPhone: vi.fn(),
     disableMfa: vi.fn(),
@@ -97,6 +98,7 @@ beforeEach(async () => {
   });
   vi.mocked(sendTwoFactorNotice).mockResolvedValue(undefined);
   vi.mocked(sendPasswordChangedNotice).mockResolvedValue(undefined);
+  vi.mocked(storage.startTotpEnrollment).mockResolvedValue(true);
   saved = {
     MFA_SECRET_ENC_KEY: process.env.MFA_SECRET_ENC_KEY,
     MFA_SETUP_ENABLED: process.env.MFA_SETUP_ENABLED,
@@ -115,6 +117,16 @@ afterEach(() => {
 });
 
 describe("POST /api/auth/mfa/totp/setup", () => {
+  // Auth audit 2026-10-10 L13: setup stages for an MFA-OFF account only.
+  it("stages as setup (MFA off); a confirm that won the race → 409", async () => {
+    vi.mocked(storage.startTotpEnrollment).mockResolvedValue(false);
+    const res = await post("totp/setup", { password: "right-pass1" });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("MFA_ALREADY_ENABLED");
+    expect(vi.mocked(storage.startTotpEnrollment).mock.calls[0][2]).toEqual({
+      mfaEnabled: false,
+    });
+  });
   it("right password → a secret and an authenticator link; only the encrypted secret is stored", async () => {
     const res = await post("totp/setup", { password: "right-pass1" });
     expect(res.status).toBe(200);
@@ -168,6 +180,10 @@ describe("POST /api/auth/mfa/totp/confirm", () => {
     vi.mocked(storage.getPendingTotpSecret).mockResolvedValue(
       encryptMfaSecret(SECRET),
     );
+    vi.mocked(storage.recordMfaFailure).mockResolvedValue({
+      failedAttempts: 1,
+      tripped: false,
+    });
   });
 
   it("first setup → 10 recovery codes and a session minted AFTER the version bump", async () => {
@@ -216,6 +232,34 @@ describe("POST /api/auth/mfa/totp/confirm", () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
     expect(storage.confirmTotpEnrollment).not.toHaveBeenCalled();
+  });
+
+  // Auth audit 2026-10-10 L9: spec §6 — every path that checks a factor counts
+  // failures toward the lock; confirm used to guess for free.
+  it("a wrong code is counted toward the lock; tripping it sends the lock notice", async () => {
+    const wrong = String((Number(currentCode()) + 1) % 1_000_000).padStart(
+      6,
+      "0",
+    );
+    vi.mocked(storage.recordMfaFailure).mockResolvedValueOnce({
+      failedAttempts: 3,
+      tripped: false,
+    });
+    await post("totp/confirm", { code: wrong });
+    expect(storage.recordMfaFailure).toHaveBeenCalledWith("1");
+    expect(sendTwoFactorNotice).not.toHaveBeenCalled();
+
+    vi.mocked(storage.recordMfaFailure).mockResolvedValueOnce({
+      failedAttempts: 10,
+      tripped: true,
+    });
+    const res = await post("totp/confirm", { code: wrong });
+    expect(res.status).toBe(400);
+    expect(sendTwoFactorNotice).toHaveBeenCalledWith(
+      "testuser@example.com",
+      "testuser",
+      "locked",
+    );
   });
 
   it("no pending (or expired) setup → 400 INVALID_SECOND_FACTOR", async () => {
@@ -320,6 +364,22 @@ describe("POST /api/auth/mfa/disable", () => {
   beforeEach(async () => {
     longHash ??= await bcrypt.hash(LONG_PASSWORD, 4);
     asUser({ password: longHash, mfaEnabledAt: new Date() });
+  });
+
+  // Auth audit 2026-10-10 L11: once a recovery code is spent, a later failure
+  // must still hand back its replacement (the 10-10 spent-credential rule).
+  it("a recovery code then a failed write → 500 that still carries its replacement", async () => {
+    mockVerifySecondFactor.mockResolvedValue({
+      ok: true,
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+    });
+    vi.mocked(storage.disableMfa).mockRejectedValue(new Error("db"));
+    const res = await post("disable", {
+      password: LONG_PASSWORD,
+      secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
   });
 
   it("password + factor → off, sessions end, notice sent, a fresh session returned", async () => {
@@ -446,6 +506,21 @@ describe("POST /api/auth/mfa/disable", () => {
 });
 
 describe("POST /api/auth/mfa/recovery-codes", () => {
+  it("a recovery code then a failed replace → 500 that still carries its replacement (audit L11)", async () => {
+    asUser({ mfaEnabledAt: new Date() });
+    mockVerifySecondFactor.mockResolvedValue({
+      ok: true,
+      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
+    });
+    vi.mocked(storage.replaceRecoveryCodes).mockRejectedValue(new Error("db"));
+    const res = await post("recovery-codes", {
+      password: "right-pass1",
+      secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+  });
+
   it("password + factor → 10 new codes, old ones replaced, notice sent", async () => {
     asUser({ mfaEnabledAt: new Date() });
     const res = await post("recovery-codes", {

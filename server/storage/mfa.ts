@@ -40,19 +40,44 @@ const pendingLive = and(
   gt(userMfa.pendingExpiresAt, sql`now()`),
 );
 
-/** Stage a candidate secret (first setup, or a new phone). The active secret is untouched. */
+const notLocked = or(
+  isNull(userMfa.lockedUntil),
+  lte(userMfa.lockedUntil, sql`now()`),
+);
+
+/**
+ * Stage a candidate secret (first setup, or a new phone). The active secret is
+ * untouched. Stages only while the account is still in the MFA state the
+ * caller checked (`mfaEnabled`: false = setup, true = new phone) — the user
+ * row is locked, so a setup racing the owner's confirm can no longer leave a
+ * pending secret on an MFA-on account that a bare session could then confirm
+ * as a "new phone" (audit L13). Returns false when the state has changed.
+ * Lock order is users → user_mfa (as confirmNewPhone); a rare race with
+ * confirmTotpEnrollment's opposite order is a Postgres deadlock abort — one
+ * request errors and is retried, nothing is staged wrongly.
+ */
 export async function startTotpEnrollment(
   userId: string,
   pendingSecretEnc: string,
-): Promise<void> {
+  expected: { mfaEnabled: boolean },
+): Promise<boolean> {
   const expires = sql`now() + (${MFA_ENROLL_TTL_MINUTES} * interval '1 minute')`;
-  await db
-    .insert(userMfa)
-    .values({ userId, pendingSecretEnc, pendingExpiresAt: expires })
-    .onConflictDoUpdate({
-      target: userMfa.userId,
-      set: { pendingSecretEnc, pendingExpiresAt: expires },
-    });
+  return db.transaction(async (tx) => {
+    const [u] = await tx
+      .select({ mfaEnabledAt: users.mfaEnabledAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update");
+    if (!u || (u.mfaEnabledAt !== null) !== expected.mfaEnabled) return false;
+    await tx
+      .insert(userMfa)
+      .values({ userId, pendingSecretEnc, pendingExpiresAt: expires })
+      .onConflictDoUpdate({
+        target: userMfa.userId,
+        set: { pendingSecretEnc, pendingExpiresAt: expires },
+      });
+    return true;
+  });
 }
 
 export async function getPendingTotpSecret(
@@ -61,7 +86,9 @@ export async function getPendingTotpSecret(
   const [row] = await db
     .select({ enc: userMfa.pendingSecretEnc })
     .from(userMfa)
-    .where(and(eq(userMfa.userId, userId), pendingLive));
+    // Unavailable while locked: confirm counts wrong codes toward the same
+    // lock as every other factor check (spec §6, audit L9).
+    .where(and(eq(userMfa.userId, userId), pendingLive, notLocked));
   return row?.enc ?? undefined;
 }
 
@@ -196,11 +223,6 @@ export async function getActiveTotp(
   };
 }
 
-const notLocked = or(
-  isNull(userMfa.lockedUntil),
-  lte(userMfa.lockedUntil, sql`now()`),
-);
-
 /** Accept a matched TOTP step once (replay guard); refused while locked. Resets failures. */
 export async function acceptTotpStep(
   userId: string,
@@ -224,8 +246,9 @@ export async function acceptTotpStep(
 /**
  * One failed second-factor check. Every MFA_LOCK_EVERY_FAILURES-th consecutive
  * failure locks for MFA_LOCK_MINUTES; the count never resets on lock, so it can
- * reach MFA_TOTP_FAILURE_CAP (plan deviation 1). `tripped` is true exactly once
- * per lock — the row lock serialises concurrent calls.
+ * reach MFA_TOTP_FAILURE_CAP (plan deviation 1). A failure while locked is not
+ * counted. `tripped` is true exactly once per lock — the row lock serialises
+ * concurrent calls, and each re-evaluates the lock after the previous commit.
  */
 export async function recordMfaFailure(
   userId: string,
@@ -239,7 +262,9 @@ export async function recordMfaFailure(
         THEN now() + (${MFA_LOCK_MINUTES} * interval '1 minute')
         ELSE ${userMfa.lockedUntil} END`,
     })
-    .where(eq(userMfa.userId, userId))
+    // A lock refuses without counting (audit L10): a concurrent burst of wrong
+    // guesses can no longer race failed_attempts past the cap during a lock.
+    .where(and(eq(userMfa.userId, userId), notLocked))
     .returning({ failedAttempts: userMfa.failedAttempts });
   if (!row) return { failedAttempts: 0, tripped: false };
   return {
