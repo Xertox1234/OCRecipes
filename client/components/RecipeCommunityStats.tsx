@@ -141,7 +141,7 @@ export function RecipeCommunityStats({
 
 const styles = StyleSheet.create({
   section: {
-    marginHorizontal: Spacing.md,
+    marginHorizontal: Spacing.lg,
     marginTop: Spacing.xl,
   },
   heading: {
