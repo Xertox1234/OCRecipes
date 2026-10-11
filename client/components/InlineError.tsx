@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import {
   StyleSheet,
-  AccessibilityInfo,
   Platform,
   type StyleProp,
   type ViewStyle,
@@ -10,6 +9,7 @@ import { Feather } from "@expo/vector-icons";
 import Animated from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { announceTogether } from "@/lib/announce-together";
 import { useTheme } from "@/hooks/useTheme";
 import { useShake } from "@/hooks/useShake";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
@@ -40,7 +40,7 @@ export function InlineError({ message, style, shakeKey }: InlineErrorProps) {
 
   useEffect(() => {
     if (message && Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(message);
+      announceTogether(message);
     }
   }, [message]);
 

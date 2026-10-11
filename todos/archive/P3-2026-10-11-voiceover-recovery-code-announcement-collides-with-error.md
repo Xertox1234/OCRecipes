@@ -1,6 +1,6 @@
 ---
 title: "VoiceOver: a spent recovery code's announcement is cut off by an error announced in the same render"
-status: backlog
+status: done
 priority: low
 created: 2026-10-11
 updated: 2026-10-11
@@ -30,3 +30,8 @@ Found by the mobile re-review of the change-password app PR (2026-10-11), measur
 - `client/components/ReplacementCodeCard.tsx` (mount-effect announce), `client/components/InlineError.tsx` (iOS announce effect).
 - Callers: `client/screens/ChangePasswordScreen.tsx`, `client/components/ChangeEmailModal.tsx`, `client/components/PasswordConfirmModal.tsx`, `client/screens/TwoStepCodeScreen.tsx`, `client/screens/TwoStepSetupScreen.tsx`.
 - Option: an `announce={false}` prop on the card plus a combined announcement from the caller; or have the card announce after a short delay so it queues after the error.
+
+## Resolution (2026-10-11)
+
+- Owner ruling: change password checks the new password BEFORE the proof and the second factor, so a rejected password (on a two-step account only the breached-password check can reject after the form floor) never spends a recovery code or an emailed-code attempt. Mirrors `/mfa/disable`.
+- Shared fix for the remaining co-mount cases (`code_gone` / `TOKEN_REVOKED` races, failures after the factor on other screens): `client/lib/announce-together.ts` joins announcements made in the same tick into one, with the card's message first. `ReplacementCodeCard` and `InlineError` both route through it, so every caller is covered without per-screen changes.

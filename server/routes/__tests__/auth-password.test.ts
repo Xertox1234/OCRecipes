@@ -16,6 +16,7 @@ import { reauthenticate, issueSession } from "../auth-social";
 import { serializeUser } from "../_serialize-user";
 import { createMockUser } from "../../__tests__/factories";
 import { hashChangeCode } from "../../lib/password-reset-code";
+import { isBreached } from "../../lib/pwned-password";
 
 vi.mock("../../storage", () => ({
   ReservedUsernameError: class ReservedUsernameErrorMock extends Error {},
@@ -306,6 +307,41 @@ describe("POST /api/auth/change-password", () => {
       });
       expect(res.status).toBe(401);
       expect(res.body.replacementRecoveryCode).toBe("new-recovery-1");
+    });
+
+    // A rejected new password must not cost a recovery code: the person would
+    // have to save a replacement just to retry, and the card and the error
+    // would announce together.
+    it("a breached new password is refused before the recovery code is spent", async () => {
+      vi.mocked(isBreached).mockResolvedValue(true);
+      mockVerifySecondFactor.mockResolvedValue({
+        ok: true,
+        replacementRecoveryCode: "new-recovery-1",
+      });
+      const res = await post("change-password", {
+        proof: {
+          password: "current-pass-123",
+          secondFactor: { recoveryCode: "old-1" },
+        },
+        newPassword: LONG,
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("PASSWORD_BREACHED");
+      expect(mockVerifySecondFactor).not.toHaveBeenCalled();
+      expect(res.body.replacementRecoveryCode).toBeUndefined();
+      expect(storage.changePassword).not.toHaveBeenCalled();
+    });
+
+    it("…nor an emailed-code attempt", async () => {
+      vi.mocked(isBreached).mockResolvedValue(true);
+      const res = await post("change-password", {
+        proof: { emailCode: "123456", secondFactor: { recoveryCode: "old-1" } },
+        newPassword: LONG,
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("PASSWORD_BREACHED");
+      expect(storage.reservePasswordChangeAttempt).not.toHaveBeenCalled();
+      expect(mockVerifySecondFactor).not.toHaveBeenCalled();
     });
   });
 

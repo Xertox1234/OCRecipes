@@ -73,8 +73,9 @@ export function register(app: Express): void {
   );
 
   // Set a new password, proven by the current password, a fresh Google/Apple
-  // confirmation, or the emailed code (spec §4.1 order: proof → second factor
-  // → policy → one pinned commit → session).
+  // confirmation, or the emailed code. Order: policy → proof → second factor →
+  // one pinned commit → session (spec §4.1 had policy after the factor; moved
+  // first by owner ruling 2026-10-11 so a rejection never spends a code).
   app.post(
     "/api/auth/change-password",
     requireAuth,
@@ -96,6 +97,23 @@ export function register(app: Express): void {
         const user = await storage.getUserForAuth(req.userId);
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+        }
+
+        // Before any proof or factor, so a rejected new password never spends
+        // a recovery code or an emailed-code attempt (as /mfa/disable does).
+        const mfa = user.mfaEnabledAt !== null;
+        const rejected = await checkNewPassword(
+          newPassword,
+          mfa ? PASSWORD_MIN_WITH_MFA : PASSWORD_MIN_SINGLE_FACTOR,
+          mfa ? "mfa" : "single_factor",
+        );
+        if (rejected) {
+          return sendError(
+            res,
+            rejected.status,
+            rejected.message,
+            rejected.code,
+          );
         }
 
         let consumeCodeHash: string | undefined;
@@ -134,22 +152,6 @@ export function register(app: Express): void {
           replacement = {
             replacementRecoveryCode: gate.replacementRecoveryCode,
           };
-        }
-
-        const mfa = user.mfaEnabledAt !== null;
-        const rejected = await checkNewPassword(
-          newPassword,
-          mfa ? PASSWORD_MIN_WITH_MFA : PASSWORD_MIN_SINGLE_FACTOR,
-          mfa ? "mfa" : "single_factor",
-        );
-        if (rejected) {
-          return sendError(
-            res,
-            rejected.status,
-            rejected.message,
-            rejected.code,
-            replacement,
-          );
         }
 
         const changed = await storage.changePassword({
