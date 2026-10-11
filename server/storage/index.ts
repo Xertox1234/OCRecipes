@@ -81,6 +81,8 @@ export const storage = {
   sweepExpiredPendingSignIns: identities.sweepExpiredPendingSignIns,
   getPendingSignIn: identities.getPendingSignIn,
   reservePendingLinkAttempt: identities.reservePendingLinkAttempt,
+  reserveLinkPasswordGuess: identities.reserveLinkPasswordGuess,
+  refundLinkPasswordGuess: identities.refundLinkPasswordGuess,
   completeLinkFromTicket: identities.completeLinkFromTicket,
   completeLinkByTicketHash: identities.completeLinkByTicketHash,
   createUserWithIdentity: identities.createUserWithIdentity,
