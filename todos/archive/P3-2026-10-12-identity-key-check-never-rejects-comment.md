@@ -1,6 +1,6 @@
 ---
 title: 'Identity key boot check: the "never rejects" comment overstates it'
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
 updated: 2026-10-12
@@ -23,8 +23,8 @@ A server-reviewer suggestion on the identity-key boot-check PR (head f112eb3a). 
 
 ## Acceptance Criteria
 
-- [ ] Either reword the docblock ("never rejects for a valid key; env.ts rejects a malformed one at boot"), or wrap `loadIdentityKey` so a malformed key logs `identity key check: could not run` and the function really never rejects.
-- [ ] If wrapped: a test with a 16-byte key resolves and warns.
+- [x] Either reword the docblock ("never rejects for a valid key; env.ts rejects a malformed one at boot"), or wrap `loadIdentityKey` so a malformed key logs `identity key check: could not run` and the function really never rejects.
+- [x] If wrapped: a test with a 16-byte key resolves and warns.
 
 ## Implementation Notes
 

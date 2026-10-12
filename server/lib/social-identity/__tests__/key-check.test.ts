@@ -132,6 +132,18 @@ describe("runIdentityKeyBootCheck", () => {
     expect(d.report).not.toHaveBeenCalled();
   });
 
+  it("malformed key → warns it could not run, never rejects or reads the database", async () => {
+    const d = deps(async () => [], crypto.randomBytes(16).toString("base64"));
+    await expect(runIdentityKeyBootCheck(d)).resolves.toBeUndefined();
+    expect(d.log.warn).toHaveBeenCalledTimes(1);
+    expect(d.log.warn.mock.calls[0][1]).toBe(
+      "identity key check: could not run",
+    );
+    expect(d.sample).not.toHaveBeenCalled();
+    expect(d.log.error).not.toHaveBeenCalled();
+    expect(d.report).not.toHaveBeenCalled();
+  });
+
   it("no key configured (Apple sign-in off) → skips without reading the database", async () => {
     const d = deps(async () => [], null);
     await runIdentityKeyBootCheck(d);

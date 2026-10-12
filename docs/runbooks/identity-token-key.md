@@ -15,7 +15,7 @@ Every server start logs one line saying whether the key reads the stored tokens 
 - `passed` (with `checked: N`): fine.
 - `no stored Apple tokens to check` (`checked: 0`): fine; nothing to compare against.
 - `IDENTITY_TOKEN_ENC_KEY cannot read stored Apple tokens` (error, plus a Sentry event): the key was replaced. The server keeps running (owner ruling 2026-10-12); only Apple revocation is affected.
-- `could not run`: the database didn't answer at startup. This doesn't say anything about the key.
+- `could not run`: the database didn't answer at startup, or the key isn't 32 bytes (startup normally refuses that earlier). On its own this doesn't mean the key was replaced.
 
 A `keyFingerprint` that differs from the previous deploy's means the key changed, and the log timestamp says when.
 
