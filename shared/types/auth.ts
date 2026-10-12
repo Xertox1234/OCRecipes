@@ -39,21 +39,18 @@ export interface ApiError {
 }
 
 // ── Two-step verification ───────────────────────────────────────────────────
-/** An authenticator-app code, or one of the saved recovery codes. */
-export type SecondFactorInput = { code: string } | { recoveryCode: string };
-/** How an account's two-step code arrives. */
-export type TwoStepMethod = "totp" | "email";
+/** The 6-digit code from the two-step email. */
+export type SecondFactorInput = { code: string };
 /**
- * A correct password on a 2FA account: answer the challenge with a code. On an
- * email account the code has already been sent to `emailHint` (masked);
- * `codeSent` is false when the resend wait or the daily limit held it back.
+ * A correct password on a two-step account: the code has already been emailed
+ * to `emailHint` (masked); `codeSent` is false when the resend wait or the
+ * daily limit held it back. Answer the challenge with the code.
  */
 export type MfaChallengeResult = {
   status: "mfa_required";
   challenge: string;
-  method?: TwoStepMethod;
-  emailHint?: string;
-  codeSent?: boolean;
+  emailHint: string;
+  codeSent: boolean;
 };
 /** POST /api/auth/mfa/email/setup, /send and /resend. */
 export type EmailCodeSent = { status: "code_sent"; emailHint: string };
@@ -64,8 +61,6 @@ export type SessionResult = SignedInResult | MfaChallengeResult;
 export interface MfaVerifyResult extends SignedInResult {
   /** "Trust this phone" key — stored in the Keychain, sent on later sign-ins. */
   trustKey?: string;
-  /** A recovery code was spent: show this new one once so it can be saved. */
-  replacementRecoveryCode?: string;
 }
 
 // ── Sign in with Google / Apple ─────────────────────────────────────────────

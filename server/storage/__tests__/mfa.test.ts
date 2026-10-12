@@ -19,8 +19,8 @@ import type * as schema from "@shared/schema";
 import {
   users,
   userMfa,
-  mfaRecoveryCodes,
   mfaChallenges,
+  mfaEmailCodes,
   mfaTrustedDevices,
 } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
@@ -32,6 +32,7 @@ vi.mock("../../db", () => ({
 }));
 
 const mfa = await import("../mfa");
+const me = await import("../mfa-email");
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
@@ -40,16 +41,18 @@ let otherUser: schema.User;
 // All queries share the one test transaction (one connection), so the
 // "concurrent" cases below serialise; they pin that the SQL guard admits
 // exactly one winner, not true parallelism (the itest covers real requests).
-async function confirmEnrolled(
-  userId: string,
-  step: number,
-  hashes: string[] = ["h1", "h2"],
-) {
-  await mfa.startTotpEnrollment(userId, "enc", { mfaEnabled: false });
-  await mfa.confirmTotpEnrollment(userId, {
-    acceptedStep: step,
-    recoveryHashes: hashes,
-  });
+async function enrolled(userId: string) {
+  await me.issueMfaEmailCode(userId, "setup");
+  await me.enableEmailMfa(userId, "setup");
+}
+
+/** A fresh code, past the resend cooldown (now() is fixed in the tx). */
+async function freshCode(userId: string, hash: string) {
+  await tx
+    .update(mfaEmailCodes)
+    .set({ lastSentAt: sql`now() - interval '31 seconds'` })
+    .where(eq(mfaEmailCodes.userId, userId));
+  await me.issueMfaEmailCode(userId, hash);
 }
 
 describe("MFA storage", () => {
@@ -65,25 +68,8 @@ describe("MFA storage", () => {
     await closeTestPool();
   });
 
-  it("acceptTotpStep accepts a step once and refuses it (and older) after", async () => {
-    await confirmEnrolled(testUser.id, 100);
-    expect(await mfa.acceptTotpStep(testUser.id, 100)).toBe(false);
-    expect(await mfa.acceptTotpStep(testUser.id, 99)).toBe(false);
-    expect(await mfa.acceptTotpStep(testUser.id, 101)).toBe(true);
-    expect(await mfa.acceptTotpStep(testUser.id, 101)).toBe(false);
-  });
-
-  it("two concurrent accepts of the same step: exactly one wins", async () => {
-    await confirmEnrolled(testUser.id, 100);
-    const r = await Promise.all([
-      mfa.acceptTotpStep(testUser.id, 101),
-      mfa.acceptTotpStep(testUser.id, 101),
-    ]);
-    expect(r.filter(Boolean)).toHaveLength(1);
-  });
-
   it("every 10th failure locks and trips exactly once; the count keeps going", async () => {
-    await confirmEnrolled(testUser.id, 100);
+    await enrolled(testUser.id);
     const unlock = () =>
       tx.execute(
         sql`UPDATE user_mfa SET locked_until = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
@@ -92,144 +78,43 @@ describe("MFA storage", () => {
     for (let i = 1; i <= 10; i++)
       trips.push((await mfa.recordMfaFailure(testUser.id)).tripped);
     // Auth audit 2026-10-10 L10: a lock refuses without counting — failures
-    // recorded while locked never advance the count toward the 100 cap.
+    // recorded while locked never advance the count.
     for (let i = 0; i < 5; i++)
       expect((await mfa.recordMfaFailure(testUser.id)).tripped).toBe(false);
-    expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(10);
+    expect((await me.getMfaState(testUser.id))!.failedAttempts).toBe(10);
     await unlock();
     for (let i = 11; i <= 20; i++)
       trips.push((await mfa.recordMfaFailure(testUser.id)).tripped);
     expect(trips.map((t, i) => (t ? i + 1 : 0)).filter(Boolean)).toEqual([
       10, 20,
     ]);
-    expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(20);
-    expect((await mfa.getActiveTotp(testUser.id))!.locked).toBe(true);
-    expect(await mfa.acceptTotpStep(testUser.id, 200)).toBe(false);
-    await tx.execute(
-      sql`UPDATE user_mfa SET locked_until = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
-    );
-    expect(await mfa.acceptTotpStep(testUser.id, 200)).toBe(true);
-    expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(0);
+    expect((await me.getMfaState(testUser.id))!.failedAttempts).toBe(20);
+    expect((await me.getMfaState(testUser.id))!.locked).toBe(true);
+    await freshCode(testUser.id, "c1");
+    expect(await me.acceptMfaEmailCode(testUser.id, "c1")).toBe(false);
+    await unlock();
+    expect(await me.acceptMfaEmailCode(testUser.id, "c1")).toBe(true);
+    expect((await me.getMfaState(testUser.id))!.failedAttempts).toBe(0);
   });
 
-  it("a concurrent burst stops counting at the lock (cannot race toward the cap)", async () => {
-    await confirmEnrolled(testUser.id, 100);
+  it("a concurrent burst stops counting at the lock", async () => {
+    await enrolled(testUser.id);
     await Promise.all(
       Array.from({ length: 30 }, () => mfa.recordMfaFailure(testUser.id)),
     );
-    expect((await mfa.getActiveTotp(testUser.id))!.failedAttempts).toBe(10);
+    expect((await me.getMfaState(testUser.id))!.failedAttempts).toBe(10);
   });
 
   it("10 concurrent failures trip the lock exactly once", async () => {
-    await confirmEnrolled(testUser.id, 100);
+    await enrolled(testUser.id);
     const r = await Promise.all(
       Array.from({ length: 10 }, () => mfa.recordMfaFailure(testUser.id)),
     );
     expect(r.filter((x) => x.tripped)).toHaveLength(1);
   });
 
-  it("a recovery code works once and is replaced; concurrent redemption: one wins", async () => {
-    await confirmEnrolled(testUser.id, 100, ["h1", "h2"]);
-    const r = await Promise.all([
-      mfa.consumeRecoveryCode(testUser.id, "h1", "h3"),
-      mfa.consumeRecoveryCode(testUser.id, "h1", "h4"),
-    ]);
-    expect(r.filter(Boolean)).toHaveLength(1);
-    const rows = await tx
-      .select()
-      .from(mfaRecoveryCodes)
-      .where(eq(mfaRecoveryCodes.userId, testUser.id));
-    expect(rows).toHaveLength(2); // h2 + exactly one replacement
-  });
-
-  it("confirm bumps tokenVersion and sets mfa_enabled_at; a second confirm is a no-op", async () => {
-    const before = testUser.tokenVersion;
-    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
-    expect(
-      await mfa.confirmTotpEnrollment(testUser.id, {
-        acceptedStep: 5,
-        recoveryHashes: ["a"],
-      }),
-    ).toBe(before + 1);
-    await mfa.startTotpEnrollment(testUser.id, "enc2", { mfaEnabled: true });
-    expect(
-      await mfa.confirmTotpEnrollment(testUser.id, {
-        acceptedStep: 6,
-        recoveryHashes: ["b"],
-      }),
-    ).toBeUndefined();
-    const [u] = await tx.select().from(users).where(eq(users.id, testUser.id));
-    expect(u.mfaEnabledAt).not.toBeNull();
-  });
-
-  it("a locked account's pending secret is unavailable until the lock ends (audit L9)", async () => {
-    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
-    for (let i = 0; i < 10; i++) await mfa.recordMfaFailure(testUser.id);
-    expect(await mfa.getPendingTotpSecret(testUser.id)).toBeUndefined();
-    await tx.execute(
-      sql`UPDATE user_mfa SET locked_until = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
-    );
-    expect(await mfa.getPendingTotpSecret(testUser.id)).toBe("enc");
-  });
-
-  // Auth audit 2026-10-10 L13: setup (MFA off) and new phone (MFA on) stage
-  // only while the account is still in the state the route checked.
-  it("staging refuses when the MFA state no longer matches the caller's", async () => {
-    expect(
-      await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: true }),
-    ).toBe(false);
-    expect(await mfa.getPendingTotpSecret(testUser.id)).toBeUndefined();
-    await confirmEnrolled(testUser.id, 100);
-    expect(
-      await mfa.startTotpEnrollment(testUser.id, "evil", { mfaEnabled: false }),
-    ).toBe(false);
-    expect(await mfa.getPendingTotpSecret(testUser.id)).toBeUndefined();
-    expect(
-      await mfa.startTotpEnrollment(testUser.id, "enc-new", {
-        mfaEnabled: true,
-      }),
-    ).toBe(true);
-    expect(await mfa.getPendingTotpSecret(testUser.id)).toBe("enc-new");
-  });
-
-  it("an expired pending secret cannot be confirmed", async () => {
-    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
-    await tx.execute(
-      sql`UPDATE user_mfa SET pending_expires_at = now() - interval '1 second' WHERE user_id = ${testUser.id}`,
-    );
-    expect(
-      await mfa.confirmTotpEnrollment(testUser.id, {
-        acceptedStep: 5,
-        recoveryHashes: ["a"],
-      }),
-    ).toBeUndefined();
-    expect(await mfa.getPendingTotpSecret(testUser.id)).toBeUndefined();
-  });
-
-  it("confirmNewPhone swaps the secret, keeps recovery codes, clears trusted devices, bumps version", async () => {
-    await confirmEnrolled(testUser.id, 100, ["h1"]);
-    await mfa.trustDevice(testUser.id, "k1");
-    await mfa.startTotpEnrollment(testUser.id, "enc-new", { mfaEnabled: true });
-    const v = await mfa.confirmNewPhone(testUser.id, { acceptedStep: 300 });
-    expect(v).toBe(testUser.tokenVersion + 2);
-    expect((await mfa.getActiveTotp(testUser.id))!.secretEnc).toBe("enc-new");
-    expect(await mfa.isTrustedDevice(testUser.id, "k1")).toBe(false);
-    const codes = await tx
-      .select()
-      .from(mfaRecoveryCodes)
-      .where(eq(mfaRecoveryCodes.userId, testUser.id));
-    expect(codes).toHaveLength(1);
-  });
-
-  it("confirmNewPhone refuses when MFA is off", async () => {
-    await mfa.startTotpEnrollment(testUser.id, "enc", { mfaEnabled: false });
-    expect(
-      await mfa.confirmNewPhone(testUser.id, { acceptedStep: 1 }),
-    ).toBeUndefined();
-  });
-
   it("disableMfa clears every MFA row and bumps tokenVersion", async () => {
-    await confirmEnrolled(testUser.id, 100);
+    await enrolled(testUser.id);
     await mfa.trustDevice(testUser.id, "k1");
     await mfa.createMfaChallenge({
       tokenHash: "t",
@@ -241,9 +126,9 @@ describe("MFA storage", () => {
     expect(v).toBe(testUser.tokenVersion + 2);
     for (const table of [
       userMfa,
-      mfaRecoveryCodes,
       mfaChallenges,
       mfaTrustedDevices,
+      mfaEmailCodes,
     ]) {
       const rows = await tx
         .select()
@@ -258,7 +143,7 @@ describe("MFA storage", () => {
   });
 
   it("disableMfa with clearPendingEmail (the manual reset): drops a staged email, keeps the password", async () => {
-    await confirmEnrolled(testUser.id, 100);
+    await enrolled(testUser.id);
     await tx
       .update(users)
       .set({ pendingEmail: "staged@example.com" })

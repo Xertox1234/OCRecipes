@@ -171,7 +171,7 @@ export const tokenStorage = {
 // "Trust this phone" key from a two-step sign-in (90 days). Its own Keychain
 // entry: signing out, session expiry and tokenStorage.clear() never touch it
 // (spec D5 — trust survives sign-out); only "Forget trusted phones" clears it.
-// It skips the authenticator code, never the password.
+// It skips the emailed two-step code, never the password.
 const TRUST_KEY = "ocrecipes_mfa_trust";
 
 export const trustKeyStorage = {

@@ -27,7 +27,6 @@ vi.mock("../../storage", () => ({
     reservePasswordChangeAttempt: vi.fn(),
     changePassword: vi.fn(),
     listIdentities: vi.fn(),
-    getMfaState: vi.fn(),
   },
 }));
 vi.mock("../../middleware/auth");
@@ -234,27 +233,26 @@ describe("POST /api/auth/change-password", () => {
       expect(storage.changePassword).not.toHaveBeenCalled();
     });
 
-    it("emailed code also needs the authenticator code", async () => {
-      vi.mocked(storage.reservePasswordChangeAttempt).mockResolvedValue(
-        hashChangeCode("1", "123456"),
-      );
+    it("password proof with the emailed two-step code → changed", async () => {
+      mockVerifySecondFactor.mockResolvedValue({ ok: true });
       const res = await post("change-password", {
-        proof: { emailCode: "123456" },
+        proof: {
+          password: "current-pass-123",
+          secondFactor: { code: "654321" },
+        },
         newPassword: LONG,
       });
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
-      expect(storage.changePassword).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(mockVerifySecondFactor).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "1" }),
+        { code: "654321" },
+      );
+      expect(storage.changePassword).toHaveBeenCalled();
     });
 
-    // Owner ruling 4: on an EMAIL two-step account the change-password code
-    // already proved the same inbox — never ask for a second emailed code.
-    it("email two-step: the emailed change code alone is enough", async () => {
-      vi.mocked(storage.getMfaState).mockResolvedValue({
-        method: "email",
-        failedAttempts: 0,
-        locked: false,
-      });
+    // Owner ruling 4: the change-password code already proved the same inbox —
+    // never ask for a second emailed code.
+    it("the emailed change code alone is enough", async () => {
       vi.mocked(storage.reservePasswordChangeAttempt).mockResolvedValue(
         hashChangeCode("1", "123456"),
       );
@@ -267,21 +265,7 @@ describe("POST /api/auth/change-password", () => {
       expect(storage.changePassword).toHaveBeenCalled();
     });
 
-    it("email two-step: a password proof still needs the emailed two-step code", async () => {
-      vi.mocked(storage.getMfaState).mockResolvedValue({
-        method: "email",
-        failedAttempts: 0,
-        locked: false,
-      });
-      const res = await post("change-password", {
-        proof: { password: "current-pass-123" },
-        newPassword: LONG,
-      });
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
-    });
-
-    it("Google/Apple proof needs no authenticator code", async () => {
+    it("Google/Apple proof needs no code", async () => {
       const res = await post("change-password", {
         proof: { provider: "apple", idToken: "id", nonce: "n" },
         newPassword: LONG,
@@ -290,17 +274,13 @@ describe("POST /api/auth/change-password", () => {
       expect(mockVerifySecondFactor).not.toHaveBeenCalled();
     });
 
-    // Review Focus 3.
-    it("wrong two-step code: 401 and the emailed code is NOT consumed", async () => {
-      vi.mocked(storage.reservePasswordChangeAttempt).mockResolvedValue(
-        hashChangeCode("1", "123456"),
-      );
-      mockVerifySecondFactor.mockResolvedValue({
-        ok: false,
-        reason: "invalid",
-      });
+    it("wrong two-step code → 401, nothing written", async () => {
+      mockVerifySecondFactor.mockResolvedValue({ ok: false });
       const res = await post("change-password", {
-        proof: { emailCode: "123456", secondFactor: { code: "000000" } },
+        proof: {
+          password: "current-pass-123",
+          secondFactor: { code: "000000" },
+        },
         newPassword: LONG,
       });
       expect(res.status).toBe(401);
@@ -308,80 +288,36 @@ describe("POST /api/auth/change-password", () => {
       expect(storage.changePassword).not.toHaveBeenCalled();
     });
 
-    it("a spent recovery code's replacement rides the success answer", async () => {
-      mockVerifySecondFactor.mockResolvedValue({
-        ok: true,
-        replacementRecoveryCode: "new-recovery-1",
-      });
-      const res = await post("change-password", {
-        proof: {
-          password: "current-pass-123",
-          secondFactor: { recoveryCode: "old-1" },
-        },
-        newPassword: "eight-ch", // 8 is enough with two-step
-      });
-      expect(res.status).toBe(200);
-      expect(res.body.replacementRecoveryCode).toBe("new-recovery-1");
-    });
-
-    it("…and a later failure still hands it back", async () => {
-      mockVerifySecondFactor.mockResolvedValue({
-        ok: true,
-        replacementRecoveryCode: "new-recovery-1",
-      });
-      vi.mocked(storage.changePassword).mockResolvedValue({
-        ok: false,
-        reason: "version_moved",
-      });
-      const res = await post("change-password", {
-        proof: {
-          password: "current-pass-123",
-          secondFactor: { recoveryCode: "old-1" },
-        },
-        newPassword: LONG,
-      });
-      expect(res.status).toBe(401);
-      expect(res.body.replacementRecoveryCode).toBe("new-recovery-1");
-    });
-
-    // A rejected new password must not cost a recovery code: the person would
-    // have to save a replacement just to retry, and the card and the error
-    // would announce together.
-    it("a breached new password is refused before the recovery code is spent", async () => {
+    // A rejected new password must not spend a guess at the two-step code.
+    it("a breached new password is refused before the two-step code is checked", async () => {
       vi.mocked(isBreached).mockResolvedValue(true);
-      mockVerifySecondFactor.mockResolvedValue({
-        ok: true,
-        replacementRecoveryCode: "new-recovery-1",
-      });
       const res = await post("change-password", {
         proof: {
           password: "current-pass-123",
-          secondFactor: { recoveryCode: "old-1" },
+          secondFactor: { code: "654321" },
         },
         newPassword: LONG,
       });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("PASSWORD_BREACHED");
       expect(mockVerifySecondFactor).not.toHaveBeenCalled();
-      expect(res.body.replacementRecoveryCode).toBeUndefined();
       expect(storage.changePassword).not.toHaveBeenCalled();
     });
 
-    it("…nor an emailed-code attempt", async () => {
+    it("…nor the emailed change code", async () => {
       vi.mocked(isBreached).mockResolvedValue(true);
       const res = await post("change-password", {
-        proof: { emailCode: "123456", secondFactor: { recoveryCode: "old-1" } },
+        proof: { emailCode: "123456" },
         newPassword: LONG,
       });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("PASSWORD_BREACHED");
       expect(storage.reservePasswordChangeAttempt).not.toHaveBeenCalled();
-      expect(mockVerifySecondFactor).not.toHaveBeenCalled();
     });
   });
 
   // Review Focus 4.
-  it("password-less + two-step: emailCode still needs the authenticator code", async () => {
+  it("password-less + two-step: the emailed change code alone sets a password", async () => {
     user.password = null;
     user.mfaEnabledAt = new Date();
     vi.mocked(storage.reservePasswordChangeAttempt).mockResolvedValue(
@@ -391,8 +327,8 @@ describe("POST /api/auth/change-password", () => {
       proof: { emailCode: "123456" },
       newPassword: LONG,
     });
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
+    expect(res.status).toBe(200);
+    expect(mockVerifySecondFactor).not.toHaveBeenCalled();
   });
 
   it("password-less account: Set a password with Google works", async () => {

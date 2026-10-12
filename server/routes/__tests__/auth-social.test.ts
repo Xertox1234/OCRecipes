@@ -44,7 +44,6 @@ vi.mock("../../storage", () => ({
     refundLinkPasswordGuess: vi.fn().mockResolvedValue(undefined),
     completeLinkFromTicket: vi.fn(),
     createMfaChallenge: vi.fn(),
-    getMfaState: vi.fn(),
     createUserWithIdentity: vi.fn(),
     getUserByEmailForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
@@ -53,6 +52,11 @@ vi.mock("../../storage", () => ({
   },
 }));
 vi.mock("express-rate-limit");
+// Every two-step challenge emails a code; stub only the send.
+vi.mock("../../lib/mfa/email-code", async (orig) => ({
+  ...(await orig<typeof import("../../lib/mfa/email-code")>()),
+  sendMfaEmailCode: vi.fn().mockResolvedValue("issued"),
+}));
 vi.mock("../../lib/email-config", () => ({
   emailVerificationEnabled: vi.fn(),
 }));
@@ -813,7 +817,9 @@ describe("POST /api/auth/social/link", () => {
     expect(res.body).toEqual({
       status: "mfa_required",
       challenge: expect.any(String),
-      method: "totp",
+      method: "email",
+      emailHint: "t•••@example.com",
+      codeSent: true,
     });
     expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
     expect(storage.getUser).not.toHaveBeenCalled(); // issueSession never ran

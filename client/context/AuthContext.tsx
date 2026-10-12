@@ -3,13 +3,11 @@ import {
   useAuth,
   type DeleteAccountProof,
   type ChangePasswordProof,
-  type TwoStepSecret,
 } from "@/hooks/useAuth";
 import type {
   MfaVerifyResult,
   SecondFactorInput,
   SessionResult,
-  SignedInResult,
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
@@ -32,35 +30,20 @@ interface AuthContextType {
     trustDevice: boolean,
   ) => Promise<MfaVerifyResult>;
   finishSignIn: (user: User, token: string) => Promise<void>;
-  startTwoStepSetup: (password: string) => Promise<TwoStepSecret>;
   startEmailTwoStep: (password: string) => Promise<EmailCodeSent>;
   confirmEmailTwoStep: (code: string) => Promise<void>;
   resendSignInCode: (challenge: string) => Promise<EmailCodeSent>;
-  startNewPhone: (
-    password: string,
-    secondFactor: SecondFactorInput,
-  ) => Promise<TwoStepSecret & { replacementRecoveryCode?: string }>;
-  confirmTwoStep: (code: string) => Promise<{ recoveryCodes?: string[] }>;
   disableTwoStep: (
     password: string,
     secondFactor: SecondFactorInput,
   ) => Promise<void>;
-  replaceRecoveryCodes: (
-    password: string,
-    secondFactor: SecondFactorInput,
-  ) => Promise<string[]>;
   forgetTrustedPhones: () => Promise<void>;
   requestPasswordChangeCode: () => Promise<void>;
   changePassword: (
     proof: ChangePasswordProof,
     newPassword: string,
     secondFactor?: SecondFactorInput,
-  ) => Promise<{
-    done: boolean;
-    replacementRecoveryCode?: string;
-    /** Set when this phone was signed out mid-request: call once it's saved. */
-    endSession?: () => Promise<void>;
-  }>;
+  ) => Promise<{ done: boolean }>;
   register: (
     username: string,
     password: string,
@@ -82,9 +65,7 @@ interface AuthContextType {
     password: string,
     secondFactor?: SecondFactorInput,
   ) => Promise<
-    ({ status: "updated"; user: User } | { status: "verification_pending" }) & {
-      replacementRecoveryCode?: string;
-    }
+    { status: "updated"; user: User } | { status: "verification_pending" }
   >;
   checkAuth: () => Promise<void>;
   signInWithProvider: (
@@ -105,10 +86,7 @@ interface AuthContextType {
     provider: SocialProvider,
     password: string,
     secondFactor?: SecondFactorInput,
-  ) => Promise<{
-    signInMethods: SignInMethods;
-    replacementRecoveryCode?: string;
-  } | null>;
+  ) => Promise<{ signInMethods: SignInMethods } | null>;
   disconnectProvider: (provider: SocialProvider) => Promise<SignInMethods>;
 }
 

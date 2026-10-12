@@ -1,10 +1,6 @@
 import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  EmailCodeSent,
-  SignInMethods,
-  TwoStepMethod,
-} from "@shared/types/auth";
+import type { EmailCodeSent, SignInMethods } from "@shared/types/auth";
 import { apiRequest } from "@/lib/query-client";
 
 const ME_KEY = ["/api/auth/me"] as const;
@@ -13,8 +9,6 @@ interface MeResponse {
   signInMethods?: SignInMethods;
   /** Two-step verification is on (password proofs need the code too). */
   mfaEnabled?: boolean;
-  /** How the code arrives; null when two-step is off. */
-  mfaMethod?: TwoStepMethod | null;
 }
 
 async function fetchMe(): Promise<MeResponse> {
@@ -32,8 +26,6 @@ export function useSignInMethods(): {
   methods: SignInMethods | undefined;
   /** Two-step verification is on; false while loading. */
   mfaEnabled: boolean;
-  /** How the code arrives; null when off or still loading. */
-  mfaMethod: TwoStepMethod | null;
   /** The load failed (after retries); `methods` stays undefined. */
   isError: boolean;
   refetch: () => void;
@@ -57,7 +49,6 @@ export function useSignInMethods(): {
   return {
     methods: data?.signInMethods,
     mfaEnabled: data?.mfaEnabled === true,
-    mfaMethod: data?.mfaEnabled === true ? (data.mfaMethod ?? "totp") : null,
     isError,
     refetch: () => {
       void refetch();
@@ -78,18 +69,12 @@ async function sendSignedInCode(): Promise<EmailCodeSent> {
   return (await res.json()) as EmailCodeSent;
 }
 
+const SIGNED_IN_EMAIL_CODE: EmailCodeSource = { send: sendSignedInCode };
+
 /**
- * For a signed-in code field: a code source when the account's two-step is
- * by email, else undefined. Reads the account the screen behind already
- * loaded — never fetches it — so it is safe inside any modal.
+ * For a signed-in code field ("Email me a code"). Every two-step account gets
+ * its codes by email, and the field shows only once the server asked for one.
  */
-export function useSignedInEmailCode(): EmailCodeSource | undefined {
-  const { data } = useQuery<MeResponse>({
-    queryKey: ME_KEY,
-    queryFn: fetchMe,
-    enabled: false,
-  });
-  return data?.mfaEnabled === true && data.mfaMethod === "email"
-    ? { send: sendSignedInCode }
-    : undefined;
+export function useSignedInEmailCode(): EmailCodeSource {
+  return SIGNED_IN_EMAIL_CODE;
 }

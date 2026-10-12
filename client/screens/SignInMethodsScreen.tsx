@@ -28,7 +28,6 @@ import type { SecondFactorInput, SocialProvider } from "@shared/types/auth";
 import {
   isSecondFactorRequired,
   isTwoStepCheckError,
-  replacementFromError,
   secondFactorErrorMessage,
 } from "@/lib/second-factor-utils";
 import {
@@ -57,7 +56,7 @@ export default function SignInMethodsScreen() {
   const toast = useToast();
   const { connectProvider, disconnectProvider, forgetTrustedPhones } =
     useAuthContext();
-  const { methods, mfaEnabled, mfaMethod, isError, refetch, setMethods } =
+  const { methods, mfaEnabled, isError, refetch, setMethods } =
     useSignInMethods();
   const config = useSocialConfig();
   // Offer a connect only when this build can open the provider AND the
@@ -75,11 +74,6 @@ export default function SignInMethodsScreen() {
   const [connectError, setConnectError] = useState<string | null>(null);
   // Two-step: ask for the code with the password (known on, or the server asked).
   const [needsCode, setNeedsCode] = useState(false);
-  // A spent recovery code's replacement; `connected` = the connect itself worked.
-  const [replacement, setReplacement] = useState<{
-    code: string;
-    connected: boolean;
-  } | null>(null);
 
   // Same as SettingsScreen: hide the header back button while the sheet is
   // up so a screen reader can't swipe past the sheet to it.
@@ -118,14 +112,12 @@ export default function SignInMethodsScreen() {
   const openConnect = (provider: SocialProvider) => {
     setConnectError(null);
     setNeedsCode(mfaEnabled);
-    setReplacement(null);
     setConnecting(provider);
   };
 
   // No try/finally: React Compiler cannot lower a `finally`.
   const finishConnect = (provider: SocialProvider) => {
     setConnecting(null);
-    setReplacement(null);
     toast.success(`${label(provider)} connected`);
   };
 
@@ -148,23 +140,13 @@ export default function SignInMethodsScreen() {
       // null = the Apple sheet was cancelled: keep the prompt open to retry.
       if (next) {
         setMethods(next.signInMethods);
-        if (next.replacementRecoveryCode) {
-          // Show the new recovery code before closing.
-          setReplacement({
-            code: next.replacementRecoveryCode,
-            connected: true,
-          });
-          return;
-        }
         finishConnect(provider);
       }
     } catch (err) {
       setBusy(false);
-      const spent = replacementFromError(err);
-      if (spent) setReplacement({ code: spent, connected: false });
       if (isSecondFactorRequired(err)) {
         setNeedsCode(true);
-        setConnectError("Enter the code from your authenticator app.");
+        setConnectError("Enter the code we email you.");
         return;
       }
       setConnectError(
@@ -345,7 +327,6 @@ export default function SignInMethodsScreen() {
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
                 {twoStepSubtitle({
                   enabled: mfaEnabled,
-                  method: mfaMethod,
                   hasPassword: methods.password,
                 })}
               </ThemedText>
@@ -362,52 +343,37 @@ export default function SignInMethodsScreen() {
               </Button>
             ) : null}
           </View>
-          {mfaEnabled
-            ? (
-                [
-                  ["Set up on a new phone", "smartphone", "new_phone"],
-                  ["New recovery codes", "key", "new_codes"],
-                  ["Turn off two-step verification", "shield-off", "disable"],
-                ] as const
-              )
-                // Email accounts have no authenticator to move and no
-                // recovery codes.
-                .filter(
-                  ([, , mode]) => mfaMethod !== "email" || mode === "disable",
-                )
-                .map(([text, icon, mode]) => (
-                  <View key={mode}>
-                    <View
-                      style={[
-                        styles.divider,
-                        { backgroundColor: theme.border },
-                      ]}
-                    />
-                    <Pressable
-                      onPress={() =>
-                        navigation.navigate("TwoStepSetup", { mode })
-                      }
-                      accessibilityRole="button"
-                      accessibilityLabel={text}
-                      style={styles.row}
-                    >
-                      <Feather
-                        name={icon}
-                        size={20}
-                        color={theme.textSecondary}
-                        accessible={false}
-                      />
-                      <ThemedText style={styles.rowText}>{text}</ThemedText>
-                      <Feather
-                        name="chevron-right"
-                        size={20}
-                        color={theme.textSecondary}
-                        accessible={false}
-                      />
-                    </Pressable>
-                  </View>
-                ))
-            : null}
+          {mfaEnabled ? (
+            <View>
+              <View
+                style={[styles.divider, { backgroundColor: theme.border }]}
+              />
+              <Pressable
+                onPress={() =>
+                  navigation.navigate("TwoStepSetup", { mode: "disable" })
+                }
+                accessibilityRole="button"
+                accessibilityLabel="Turn off two-step verification"
+                style={styles.row}
+              >
+                <Feather
+                  name="shield-off"
+                  size={20}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
+                <ThemedText style={styles.rowText}>
+                  Turn off two-step verification
+                </ThemedText>
+                <Feather
+                  name="chevron-right"
+                  size={20}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
+              </Pressable>
+            </View>
+          ) : null}
           {mfaEnabled ? (
             <View>
               <View
@@ -444,11 +410,6 @@ export default function SignInMethodsScreen() {
         onCancel={() => setConnecting(null)}
         onSubmit={(pw, factor) => void submitConnect(pw, factor)}
         askCode={needsCode}
-        replacementCode={replacement?.code ?? null}
-        onReplacementSaved={() => {
-          if (replacement?.connected && connecting) finishConnect(connecting);
-          else setReplacement(null);
-        }}
       />
       <ConfirmationModal />
     </>

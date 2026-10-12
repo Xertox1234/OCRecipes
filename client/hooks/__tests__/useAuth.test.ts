@@ -659,46 +659,32 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(true);
     });
 
-    it("connectProvider sends the code inside the password proof and returns a replacement", async () => {
+    it("connectProvider sends the code inside the password proof", async () => {
       const { result } = await ready();
       jsonOnce({ nonce: "raw-c", nonceHash: "hash-c" });
       mockGetProviderToken.mockResolvedValue({ idToken: "id-c" });
       const methods = { password: true, google: null, apple: null };
-      jsonOnce({
-        signInMethods: methods,
-        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-      });
+      jsonOnce({ signInMethods: methods });
       let out: unknown;
       await act(async () => {
         out = await result.current.connectProvider("google", "pw-1", {
-          recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ",
+          code: "123456",
         });
       });
       expect(mockApiRequest).toHaveBeenLastCalledWith(
         "POST",
         "/api/auth/identities",
         expect.objectContaining({
-          proof: {
-            password: "pw-1",
-            secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-          },
+          proof: { password: "pw-1", secondFactor: { code: "123456" } },
         }),
       );
-      expect(out).toEqual({
-        signInMethods: methods,
-        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-      });
+      expect(out).toEqual({ signInMethods: methods });
     });
 
-    it("changeEmail sends the code and returns a spent recovery code's replacement", async () => {
+    it("changeEmail sends the code", async () => {
       const { result } = await ready();
-      jsonOnce({
-        id: "u1",
-        username: "testuser",
-        email: "new@x.com",
-        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-      });
-      let out: { replacementRecoveryCode?: string } | undefined;
+      jsonOnce({ id: "u1", username: "testuser", email: "new@x.com" });
+      let out: { status: string } | undefined;
       await act(async () => {
         out = await result.current.changeEmail("new@x.com", "pw-1", {
           code: "123456",
@@ -713,9 +699,7 @@ describe("useAuth", () => {
           secondFactor: { code: "123456" },
         },
       );
-      expect(out?.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
-      // The replacement is not part of the cached user.
-      expect(mockAsyncStorage["@ocrecipes_auth"]).not.toContain("AAAA");
+      expect(out?.status).toBe("updated");
     });
 
     it("deleteAccount sends the code with a password proof only", async () => {
@@ -732,88 +716,6 @@ describe("useAuth", () => {
         "/api/auth/account",
         { password: "pw-1", secondFactor: { code: "123456" } },
       );
-    });
-
-    it("startTwoStepSetup posts the password and returns the secret", async () => {
-      const { result } = await ready();
-      jsonOnce({ secret: "ABCD", otpauthUrl: "otpauth://x" });
-      let out: unknown;
-      await act(async () => {
-        out = await result.current.startTwoStepSetup("pw-1");
-      });
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "/api/auth/mfa/totp/setup",
-        { password: "pw-1" },
-      );
-      expect(out).toEqual({ secret: "ABCD", otpauthUrl: "otpauth://x" });
-    });
-
-    it("startNewPhone sends the password and the current factor", async () => {
-      const { result } = await ready();
-      jsonOnce({ secret: "ABCD", otpauthUrl: "otpauth://x" });
-      await act(async () => {
-        await result.current.startNewPhone("pw-1", { code: "123456" });
-      });
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "/api/auth/mfa/totp/reset",
-        { password: "pw-1", secondFactor: { code: "123456" } },
-      );
-    });
-
-    it("confirmTwoStep keeps the new session (other devices were signed out) and returns the codes", async () => {
-      const { result } = await ready();
-      jsonOnce({
-        status: "signed_in",
-        user,
-        token: "t-new",
-        recoveryCodes: ["A", "B"],
-      });
-      let out: { recoveryCodes?: string[] } | undefined;
-      await act(async () => {
-        out = await result.current.confirmTwoStep("123456");
-      });
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "/api/auth/mfa/totp/confirm",
-        { code: "123456" },
-      );
-      expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
-      expect(out?.recoveryCodes).toEqual(["A", "B"]);
-    });
-
-    it("confirmTwoStep refused after two-step went on (a reset landed) → returns the codes, no session (audit 2026-10-11)", async () => {
-      const { result } = await ready();
-      mockApiRequest.mockRejectedValueOnce(
-        new ApiError(
-          '401: {"error":"x","code":"MFA_CHALLENGE_EXPIRED","recoveryCodes":["A","B"]}',
-          "MFA_CHALLENGE_EXPIRED",
-          401,
-        ),
-      );
-      let out: { recoveryCodes?: string[] } | undefined;
-      await act(async () => {
-        out = await result.current.confirmTwoStep("123456");
-      });
-      expect(out?.recoveryCodes).toEqual(["A", "B"]);
-      expect(mockTokenStorage.set).not.toHaveBeenCalled();
-    });
-
-    it("confirmTwoStep refused with no codes → still throws", async () => {
-      const { result } = await ready();
-      mockApiRequest.mockRejectedValueOnce(
-        new ApiError(
-          '400: {"code":"INVALID_SECOND_FACTOR"}',
-          "INVALID_SECOND_FACTOR",
-          400,
-        ),
-      );
-      await act(async () => {
-        await expect(result.current.confirmTwoStep("123456")).rejects.toThrow(
-          ApiError,
-        );
-      });
     });
 
     it("disableTwoStep keeps the new session", async () => {
@@ -844,18 +746,6 @@ describe("useAuth", () => {
           secondFactor: { code: "123456" },
         },
       );
-    });
-
-    it("replaceRecoveryCodes returns the new codes", async () => {
-      const { result } = await ready();
-      jsonOnce({ recoveryCodes: ["X", "Y"] });
-      let out: string[] | undefined;
-      await act(async () => {
-        out = await result.current.replaceRecoveryCodes("pw-1", {
-          code: "123456",
-        });
-      });
-      expect(out).toEqual(["X", "Y"]);
     });
 
     it("forgetTrustedPhones asks the server, then forgets this phone's key", async () => {
@@ -1820,7 +1710,7 @@ describe("useAuth", () => {
     it("current password: posts the proof with its second factor, stores the new session", async () => {
       const { result } = await ready();
       jsonOnce({ status: "signed_in", user, token: "t-new" });
-      let out: { done: boolean; replacementRecoveryCode?: string } | undefined;
+      let out: { done: boolean } | undefined;
       await act(async () => {
         out = await result.current.changePassword({ password: "old" }, NEW, {
           code: "123456",
@@ -1835,7 +1725,7 @@ describe("useAuth", () => {
         },
       );
       expect(mockTokenStorage.set).toHaveBeenCalledWith("t-new");
-      expect(out).toEqual({ done: true, replacementRecoveryCode: undefined });
+      expect(out).toEqual({ done: true });
     });
 
     it("emailed code: posts { emailCode } with no second factor", async () => {
@@ -1907,81 +1797,7 @@ describe("useAuth", () => {
       expect(mockTokenStorage.set).not.toHaveBeenCalledWith("t-new");
     });
 
-    it("returns a spent recovery code's replacement", async () => {
-      const { result } = await ready();
-      jsonOnce({
-        status: "signed_in",
-        user,
-        token: "t-new",
-        replacementRecoveryCode: "r-1",
-      });
-      let out: { done: boolean; replacementRecoveryCode?: string } | undefined;
-      await act(async () => {
-        out = await result.current.changePassword({ password: "old" }, NEW, {
-          recoveryCode: "old-r",
-        });
-      });
-      expect(out?.replacementRecoveryCode).toBe("r-1");
-    });
-
-    // A reset landed mid-request: signed out, but the spent code's replacement
-    // rides the refusal. Show it first; the session ends on "I've saved it".
-    const revokedWithReplacement = () =>
-      new ApiError(
-        `401: ${JSON.stringify({
-          error: "Please sign in again.",
-          code: "TOKEN_REVOKED",
-          replacementRecoveryCode: "r-1",
-        })}`,
-        "TOKEN_REVOKED",
-        401,
-      );
-
-    it("TOKEN_REVOKED with a replacement → resolves with the code; endSession signs out", async () => {
-      const { result } = await ready();
-      mockTokenStorage.get.mockResolvedValue("t-live");
-      mockApiRequest.mockRejectedValueOnce(revokedWithReplacement());
-      let out:
-        | {
-            done: boolean;
-            replacementRecoveryCode?: string;
-            endSession?: () => Promise<void>;
-          }
-        | undefined;
-      await act(async () => {
-        out = await result.current.changePassword({ password: "old" }, NEW, {
-          recoveryCode: "old-r",
-        });
-      });
-      expect(out?.done).toBe(true);
-      expect(out?.replacementRecoveryCode).toBe("r-1");
-      expect(mockTokenStorage.set).not.toHaveBeenCalled();
-      expect(mockNotifySessionExpired).not.toHaveBeenCalled();
-      await act(async () => {
-        await out?.endSession?.();
-      });
-      expect(mockNotifySessionExpired).toHaveBeenCalledTimes(1);
-    });
-
-    it("endSession does nothing once someone else has signed in here (audit L7)", async () => {
-      const { result } = await ready();
-      mockTokenStorage.get.mockResolvedValue("t-live");
-      mockApiRequest.mockRejectedValueOnce(revokedWithReplacement());
-      let out: { endSession?: () => Promise<void> } | undefined;
-      await act(async () => {
-        out = await result.current.changePassword({ password: "old" }, NEW, {
-          recoveryCode: "old-r",
-        });
-      });
-      mockTokenStorage.get.mockResolvedValue("t-other");
-      await act(async () => {
-        await out?.endSession?.();
-      });
-      expect(out?.endSession).toBeDefined();
-      expect(mockNotifySessionExpired).not.toHaveBeenCalled();
-    });
-
-    it("TOKEN_REVOKED without a replacement still rejects", async () => {
+    it("TOKEN_REVOKED rejects", async () => {
       const { result } = await ready();
       mockApiRequest.mockRejectedValueOnce(
         new ApiError(

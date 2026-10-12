@@ -114,19 +114,6 @@ const envSchema = z.object({
         "IDENTITY_TOKEN_ENC_KEY must be 32 bytes, base64 (openssl rand -base64 32)",
     })
     .optional(),
-  // Encrypts authenticator-app (TOTP) secrets at rest. Independent of
-  // JWT_SECRET and IDENTITY_TOKEN_ENC_KEY. Unset ⇒ 2FA setup and verify answer
-  // MFA_UNAVAILABLE; losing it strands every 2FA account on recovery codes.
-  MFA_SECRET_ENC_KEY: z
-    .string()
-    .refine((v) => Buffer.from(v, "base64").length === 32, {
-      message:
-        "MFA_SECRET_ENC_KEY must be 32 bytes, base64 (openssl rand -base64 32)",
-    })
-    .optional(),
-  // "true" lets accounts turn two-step verification ON. Never gates sign-in for
-  // accounts that already have it.
-  MFA_SETUP_ENABLED: z.string().optional(),
 
   // Google IAP (optional)
   GOOGLE_PACKAGE_NAME: z.string().optional(),

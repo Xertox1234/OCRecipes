@@ -5,8 +5,8 @@ import {
 } from "./verify-second-factor";
 
 export type PasswordProofGate =
-  | { ok: true; replacementRecoveryCode?: string }
-  | { ok: false; status: 401 | 403 | 503; code: string; message: string };
+  | { ok: true }
+  | { ok: false; status: 401 | 403; code: string; message: string };
 
 export const INVALID_SECOND_FACTOR_MESSAGE =
   "That code didn't work. After several wrong codes, codes pause for 15 minutes.";
@@ -40,20 +40,7 @@ export async function secondFactorForPasswordProof(
     { id: user.id, email: user.email, username: user.username },
     secondFactor,
   );
-  if (result.ok) {
-    return result.replacementRecoveryCode
-      ? { ok: true, replacementRecoveryCode: result.replacementRecoveryCode }
-      : { ok: true };
-  }
-  if (result.reason === "unavailable") {
-    return {
-      ok: false,
-      status: 503,
-      code: ErrorCode.MFA_UNAVAILABLE,
-      message:
-        "Two-step verification is unavailable right now. Try again later.",
-    };
-  }
+  if (result.ok) return { ok: true };
   return {
     ok: false,
     status: 401,

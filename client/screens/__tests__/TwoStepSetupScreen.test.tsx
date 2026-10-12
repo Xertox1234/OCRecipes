@@ -2,54 +2,35 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
-import { Alert, Linking } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { renderComponent } from "../../../test/utils/render-component";
 import TwoStepSetupScreen from "../TwoStepSetupScreen";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import { ApiError } from "@/lib/api-error";
-import { recoveryCodesText } from "../TwoStepSetupScreen-utils";
 
 type Props = NativeStackScreenProps<ProfileStackParamList, "TwoStepSetup">;
 
 const h = vi.hoisted(() => ({
   startEmailTwoStep: vi.fn(),
   confirmEmailTwoStep: vi.fn(),
-  emailSource: undefined as unknown,
-  startTwoStepSetup: vi.fn(),
-  startNewPhone: vi.fn(),
-  confirmTwoStep: vi.fn(),
+  emailSource: { send: vi.fn() } as unknown,
   disableTwoStep: vi.fn(),
-  replaceRecoveryCodes: vi.fn(),
-  copy: vi.fn(),
   toastSuccess: vi.fn(),
-  usePreventRemove: vi.fn(),
 }));
 
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
     startEmailTwoStep: h.startEmailTwoStep,
     confirmEmailTwoStep: h.confirmEmailTwoStep,
-    startTwoStepSetup: h.startTwoStepSetup,
-    startNewPhone: h.startNewPhone,
-    confirmTwoStep: h.confirmTwoStep,
     disableTwoStep: h.disableTwoStep,
-    replaceRecoveryCodes: h.replaceRecoveryCodes,
   }),
 }));
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: h.toastSuccess, error: vi.fn() }),
 }));
-vi.mock("expo-clipboard", () => ({ setStringAsync: h.copy }));
 vi.mock("@/hooks/useSignInMethods", () => ({
   useSignedInEmailCode: () => h.emailSource,
 }));
-vi.mock("@react-navigation/native", async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  usePreventRemove: h.usePreventRemove,
-}));
-
-const CODES = Array.from({ length: 10 }, (_, i) => `AAAA-BBBB-CCCC-DD${i}D`);
 
 function renderScreen(mode: Props["route"]["params"]["mode"]) {
   const route = { params: { mode } } as unknown as Props["route"];
@@ -69,8 +50,6 @@ const press = (name: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  h.copy.mockResolvedValue(true);
-  h.emailSource = undefined;
 });
 
 // Owner ruling 4 (2026-10-12): turning it on means codes by email.
@@ -101,7 +80,6 @@ describe("TwoStepSetupScreen — turning it on (email)", () => {
     );
     await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
     expect(h.toastSuccess).toHaveBeenCalledWith("Two-step verification is on");
-    expect(h.startTwoStepSetup).not.toHaveBeenCalled();
   });
 
   it("a wrong code stays on the code step and says so", async () => {
@@ -168,8 +146,7 @@ describe("TwoStepSetupScreen — managing it", () => {
     await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
   });
 
-  it("turning off an email account: the code field offers Email me a code", () => {
-    h.emailSource = { send: vi.fn() };
+  it("turning it off: the code field offers Email me a code", () => {
     renderScreen("disable");
     expect(
       screen.getByText("Enter your password and the code we email you."),
@@ -177,95 +154,5 @@ describe("TwoStepSetupScreen — managing it", () => {
     expect(
       screen.getByRole("button", { name: "Email me a code" }),
     ).toBeTruthy();
-  });
-
-  it("new recovery codes go straight to the save step", async () => {
-    h.replaceRecoveryCodes.mockResolvedValue(CODES);
-    renderScreen("new_codes");
-    type("Password", "pw-1");
-    type("6-digit code", "123456");
-    press("Continue");
-    await screen.findByText(CODES[0]);
-    expect(h.replaceRecoveryCodes).toHaveBeenCalledWith("pw-1", {
-      code: "123456",
-    });
-  });
-
-  it("a new phone confirms without new codes", async () => {
-    h.startNewPhone.mockResolvedValue({
-      secret: "ABCDEFGHIJKLMNOP",
-      otpauthUrl: "otpauth://totp/x",
-    });
-    h.confirmTwoStep.mockResolvedValue({});
-    const navigation = renderScreen("new_phone");
-    type("Password", "pw-1");
-    type("6-digit code", "111111");
-    press("Continue");
-    await screen.findByText("ABCD EFGH IJKL MNOP");
-    expect(h.startNewPhone).toHaveBeenCalledWith("pw-1", { code: "111111" });
-    press("Next");
-    type("6-digit code", "123456");
-    press("Confirm");
-    await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
-  });
-});
-
-describe("TwoStepSetupScreen — a spent recovery code is never lost", () => {
-  it("a new-phone request that fails after spending a recovery code still shows its replacement", async () => {
-    h.startNewPhone.mockRejectedValue(
-      new ApiError(
-        `500: ${JSON.stringify({ error: "x", code: "INTERNAL_ERROR", replacementRecoveryCode: "NEW2-AAAA-BBBB-CCCC" })}`,
-        "INTERNAL_ERROR",
-        500,
-      ),
-    );
-    renderScreen("new_phone");
-    type("Password", "pw-1");
-    fireEvent.click(screen.getByText("Use a recovery code instead"));
-    type("Recovery code", "WXYZ-WXYZ-WXYZ-WXYZ");
-    press("Continue");
-    expect(await screen.findByText("NEW2-AAAA-BBBB-CCCC")).toBeTruthy();
-  });
-});
-
-describe("TwoStepSetupScreen — leaving before the codes are saved", () => {
-  /** The latest `usePreventRemove(prevent, onLeave)` the screen rendered with. */
-  const lastGuard = () =>
-    h.usePreventRemove.mock.calls.at(-1) as [
-      boolean,
-      (e: { data: { action: { type: string } } }) => void,
-    ];
-
-  async function reachSaveCodes() {
-    h.replaceRecoveryCodes.mockResolvedValue(CODES);
-    const navigation = renderScreen("new_codes");
-    expect(lastGuard()[0]).toBe(false);
-    type("Password", "pw-1");
-    type("6-digit code", "123456");
-    press("Continue");
-    await screen.findByText(CODES[0]);
-    return navigation;
-  }
-
-  it("asks before leaving while the codes are unsaved, and Leave goes back", async () => {
-    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-    const navigation = await reachSaveCodes();
-    const [prevent, onLeave] = lastGuard();
-    expect(prevent).toBe(true);
-
-    const action = { type: "GO_BACK" };
-    onLeave({ data: { action } });
-    expect(alert).toHaveBeenCalledTimes(1);
-    const buttons = alert.mock.calls[0][2] ?? [];
-    buttons.find((b) => b.text === "Stay")?.onPress?.();
-    expect(navigation.dispatch).not.toHaveBeenCalled();
-    buttons.find((b) => b.text === "Leave")?.onPress?.();
-    expect(navigation.dispatch).toHaveBeenCalledWith(action);
-  });
-
-  it("stops guarding once 'I've saved these' is ticked", async () => {
-    await reachSaveCodes();
-    fireEvent.click(screen.getByRole("checkbox", { name: "I've saved these" }));
-    expect(lastGuard()[0]).toBe(false);
   });
 });

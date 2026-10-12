@@ -96,11 +96,10 @@ export const registerSchema = z.object({
 // sign-in method): the current password, OR a fresh Google/Apple token for an
 // identity ALREADY linked to this account (social-only accounts have no
 // password). The provider branch needs a `reauth` nonce bound to the caller.
-/** An authenticator code or a recovery code (two-step verification). */
-export const secondFactorSchema = z.union([
-  z.object({ code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code") }),
-  z.object({ recoveryCode: z.string().min(1).max(40) }),
-]);
+/** The 6-digit code from the two-step email. */
+export const secondFactorSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
+});
 
 export const reauthProofSchema = z.union([
   z.object({
@@ -117,13 +116,12 @@ export type ReauthProof = z.infer<typeof reauthProofSchema>;
 
 // Signed-in password change (change-password spec §4.1). The password and
 // Google/Apple variants are reauthProofSchema's own, unchanged; the emailed
-// code carries the second factor INSIDE the proof, as the password one does.
+// change code never needs a second code (it proves the same inbox).
 export const changePasswordSchema = z.object({
   proof: z.union([
     ...reauthProofSchema.options,
     z.object({
       emailCode: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
-      secondFactor: secondFactorSchema.optional(),
     }),
   ]),
   newPassword: newPasswordSchema,
@@ -240,10 +238,9 @@ export const mfaPasswordSchema = z.object({
     .min(1, "Password is required")
     .max(PASSWORD_INPUT_MAX_UNITS),
 });
-export const mfaPasswordAndFactorSchema = mfaPasswordSchema.extend({
+export const mfaDisableSchema = mfaPasswordSchema.extend({
   secondFactor: secondFactorSchema,
 });
-export const mfaDisableSchema = mfaPasswordAndFactorSchema;
 export const mfaConfirmSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
 });

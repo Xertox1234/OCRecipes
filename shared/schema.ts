@@ -85,8 +85,7 @@ export const users = pgTable(
       .notNull(),
     tokenVersion: integer("token_version").default(0).notNull(),
     /**
-     * When two-step verification was turned on; NULL = off. Not a secret (the
-     * secret lives in user_mfa). Read by secondFactor.requiresSecondFactor.
+     * When two-step verification (an emailed code) was turned on; NULL = off.
      */
     mfaEnabledAt: timestamp("mfa_enabled_at", { withTimezone: true }),
     /**
@@ -292,9 +291,9 @@ export const passwordChangeCodes = pgTable("password_change_codes", {
 });
 
 /**
- * Code emailed for two-step sign-in (and its setup), on accounts whose
- * user_mfa.method is 'email'. Its own table, so it never shares a limit with
- * Forgot password or the change-password code. One row per user.
+ * Code emailed for two-step sign-in (and its setup). Its own table, so it
+ * never shares a limit with Forgot password or the change-password code. One
+ * row per user.
  */
 export const mfaEmailCodes = pgTable("mfa_email_codes", {
   userId: varchar("user_id")
@@ -313,48 +312,15 @@ export const mfaEmailCodes = pgTable("mfa_email_codes", {
   lastSentAt: timestamp("last_sent_at", { withTimezone: true }).notNull(),
 });
 
-/** One row per account that has started or finished 2FA setup. Never serialized. */
-export const userMfa = pgTable(
-  "user_mfa",
-  {
-    userId: varchar("user_id")
-      .primaryKey()
-      .references(() => users.id, { onDelete: "cascade" }),
-    /** How the second factor is proven: an authenticator app or an emailed code. */
-    method: text("method").default("totp").notNull(),
-    /** AES-256-GCM (MFA_SECRET_ENC_KEY) of the active base32 secret; NULL until confirmed. */
-    totpSecretEnc: text("totp_secret_enc"),
-    /** Highest accepted TOTP time step — replay guard (a code is usable once). */
-    totpLastStep: integer("totp_last_step"),
-    /** Setup or new phone in progress: encrypted candidate secret + its expiry. */
-    pendingSecretEnc: text("pending_secret_enc"),
-    pendingExpiresAt: timestamp("pending_expires_at", { withTimezone: true }),
-    /** Consecutive failed second-factor checks (any success resets). */
-    failedAttempts: integer("failed_attempts").default(0).notNull(),
-    lockedUntil: timestamp("locked_until", { withTimezone: true }),
-  },
-  (t) => [
-    check("user_mfa_method_check", sql`${t.method} IN ('totp', 'email')`),
-  ],
-);
-
-export const mfaRecoveryCodes = pgTable(
-  "mfa_recovery_codes",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    /** sha256(`mfa-recovery:${userId}:${normalizedCode}`) — server/lib/mfa/mfa-secrets.ts */
-    codeHash: text("code_hash").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-  },
-  (t) => [
-    uniqueIndex("mfa_recovery_codes_user_hash_unique").on(t.userId, t.codeHash),
-  ],
-);
+/** One row per account with two-step on (an emailed code). Never serialized. */
+export const userMfa = pgTable("user_mfa", {
+  userId: varchar("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** Consecutive failed second-factor checks (any success resets). */
+  failedAttempts: integer("failed_attempts").default(0).notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+});
 
 /** A password check passed; the second factor has not. Single use. */
 export const mfaChallenges = pgTable(

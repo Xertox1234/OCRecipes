@@ -4,8 +4,6 @@ import {
   normalizeCodeInput,
   isSecondFactorRequired,
   secondFactorErrorMessage,
-  replacementFromError,
-  recoveryCodesOrThrow,
   isTwoStepCheckError,
   emailCodeButtonLabel,
   emailCodeSendError,
@@ -89,52 +87,6 @@ describe("secondFactorErrorMessage", () => {
   });
 });
 
-describe("replacementFromError", () => {
-  it("reads a spent recovery code's replacement off a failed response", () => {
-    expect(
-      replacementFromError(
-        apiError(409, {
-          code: "IDENTITY_IN_USE",
-          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-        }),
-      ),
-    ).toBe("AAAA-BBBB-CCCC-DDDD");
-  });
-  it("undefined when absent or unreadable", () => {
-    expect(replacementFromError(apiError(401, { code: "X" }))).toBeUndefined();
-    expect(
-      replacementFromError(new ApiError("500: <html>", undefined, 500)),
-    ).toBeUndefined();
-    expect(replacementFromError(new Error("x"))).toBeUndefined();
-  });
-});
-
-// Auth audit 2026-10-11 (Phase 6): a refused session mint after two-step was
-// turned on still carries the new codes — they are the account's only ones.
-describe("recoveryCodesOrThrow", () => {
-  it("returns the codes a refused answer carries", () => {
-    expect(
-      recoveryCodesOrThrow(
-        apiError(401, {
-          code: "MFA_CHALLENGE_EXPIRED",
-          recoveryCodes: ["A", "B"],
-        }),
-      ),
-    ).toEqual(["A", "B"]);
-  });
-  it("re-throws the same error when there are no codes", () => {
-    for (const err of [
-      apiError(401, { code: "MFA_CHALLENGE_EXPIRED" }),
-      apiError(401, { code: "X", recoveryCodes: "A" }),
-      apiError(401, { code: "X", recoveryCodes: [1, 2] }),
-      new ApiError("500: <html>", undefined, 500),
-      new Error("x"),
-    ]) {
-      expect(() => recoveryCodesOrThrow(err)).toThrow(err);
-    }
-  });
-});
-
 describe("isTwoStepCheckError", () => {
   it("matches the answers about the code itself, not other failures", () => {
     for (const code of [
@@ -199,7 +151,6 @@ describe("twoStepCodeParams", () => {
         {
           status: "mfa_required",
           challenge: "c",
-          method: "email",
           emailHint: "w•••@x.com",
           codeSent: true,
         },
@@ -208,7 +159,6 @@ describe("twoStepCodeParams", () => {
     ).toEqual({
       challenge: "c",
       purpose: "link",
-      method: "email",
       emailHint: "w•••@x.com",
       codeSent: true,
     });

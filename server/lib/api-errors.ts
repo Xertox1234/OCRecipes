@@ -13,7 +13,7 @@ export function sendError(
   status: number,
   error: string,
   code?: string,
-  /** Extra fields that must survive an error (e.g. a spent recovery code's replacement). */
+  /** Extra fields that must ride along with the error. */
   extra?: Record<string, unknown>,
 ): void {
   const body: Record<string, unknown> = { ...extra, error };

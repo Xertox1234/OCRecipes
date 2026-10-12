@@ -14,7 +14,6 @@ import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
-import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
 import { ApiError } from "@/lib/api-error";
 import { useAuthContext } from "@/context/AuthContext";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
@@ -24,7 +23,6 @@ import {
   isSecondFactorRequired,
   isTwoStepCheckError,
   normalizeCodeInput,
-  replacementFromError,
   secondFactorErrorMessage,
 } from "@/lib/second-factor-utils";
 import {
@@ -39,14 +37,10 @@ import { Spacing } from "@/constants/theme";
 
 type Props = NativeStackScreenProps<ProfileStackParamList, "ChangePassword">;
 type Mode = "current" | "forgot" | "code";
-type SaveResult = {
-  done: boolean;
-  replacementRecoveryCode?: string;
-  endSession?: () => Promise<void>;
-};
+type SaveResult = { done: boolean };
 type ErrorField = "current" | "code" | "new";
 
-const ENTER_AUTH_CODE = "Enter the code from your authenticator app.";
+const ENTER_AUTH_CODE = "Enter the two-step code we email you.";
 
 /** Which input an error belongs to, so that field is marked invalid. */
 function fieldFor(err: unknown): ErrorField | null {
@@ -61,14 +55,14 @@ function fieldFor(err: unknown): ErrorField | null {
 /**
  * Change (or set) the password while signed in — change-password spec §3.
  * Proof: the current password, a fresh Google/Apple confirmation, or a code
- * emailed to the account; two-step accounts add the authenticator code for
- * the first and last. A stranger who knows only the email can't block it.
+ * emailed to the account. On a two-step account the current password also
+ * needs the emailed two-step code. A stranger who knows only the email can't
+ * block it.
  */
 export default function ChangePasswordScreen({ route, navigation }: Props) {
   const { hasPassword, providers, mfaEnabled } = route.params;
   const { theme } = useTheme();
   const { changePassword, requestPasswordChangeCode } = useAuthContext();
-  // Set when the account's two-step codes come by email.
   const twoStepEmail = useSignedInEmailCode();
   const [mode, setMode] = useState<Mode>(hasPassword ? "current" : "forgot");
   const [current, setCurrent] = useState("");
@@ -83,21 +77,12 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const [busy, setBusy] = useState(false);
   // A ref, not state: a second tap in the same frame must see it.
   const busyRef = useRef(false);
-  // A spent recovery code's replacement. `changed` = the request is over
-  // (then "I've saved it" leaves — or, when this phone was signed out
-  // mid-request, `endSession` signs out); after a refusal the card sits
-  // above the form with its error, and the person tries again.
-  const [replacement, setReplacement] = useState<{
-    code: string;
-    changed: boolean;
-    endSession?: () => Promise<void>;
-  } | null>(null);
 
-  // The authenticator field remounts empty when the mode changes, so drop
-  // the code it held then — never send a code the person can't see.
-  // On an email two-step account the change code from the email IS the
-  // second factor — never ask for a second emailed code (owner ruling 4).
-  const factorNeeded = needsFactor && !(twoStepEmail && mode === "code");
+  // The two-step field remounts empty when the mode changes, so drop the code
+  // it held then — never send a code the person can't see. The change code
+  // from the email already proves the inbox — never ask for a second emailed
+  // code (owner ruling 4).
+  const factorNeeded = needsFactor && mode !== "code";
 
   const switchMode = (next: Mode) => {
     if (next !== mode) setFactor(null);
@@ -112,8 +97,6 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
 
   // Outside the try (React Compiler: no conditionals inside a try).
   const handleSaveError = (err: unknown) => {
-    const spent = replacementFromError(err);
-    if (spent) setReplacement({ code: spent, changed: false });
     if (isSecondFactorRequired(err)) {
       setNeedsFactor(true);
       setErrorField(null);
@@ -129,19 +112,13 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   };
   const finishSave = (out: SaveResult) => {
     if (!out.done) return; // the Google/Apple sheet was cancelled
-    if (out.replacementRecoveryCode)
-      setReplacement({
-        code: out.replacementRecoveryCode,
-        changed: true,
-        endSession: out.endSession,
-      });
-    else navigation.goBack();
+    navigation.goBack();
   };
 
   const save = async (provider?: SocialProvider) => {
     if (busyRef.current) return;
-    // Never send without the authenticator code once it's asked for: the
-    // server would refuse, and an emailed-code guess would be spent on it.
+    // Never send without the two-step code once it's asked for: the server
+    // would refuse, and a guess at the code would be spent on it.
     if (!provider && factorNeeded && !factor) {
       setErrorField(null);
       setError(ENTER_AUTH_CODE);
@@ -184,22 +161,6 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     else switchMode("code");
   };
 
-  if (replacement && replacement.changed) {
-    const { endSession } = replacement;
-    return (
-      <ScreenScrollView
-        style={{ backgroundColor: theme.backgroundRoot }}
-        contentContainerStyle={styles.content}
-        headerInsetExtra={Spacing.lg}
-      >
-        <ReplacementCodeCard
-          code={replacement.code}
-          onDone={() => (endSession ? void endSession() : navigation.goBack())}
-        />
-      </ScreenScrollView>
-    );
-  }
-
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
@@ -209,12 +170,6 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
         contentContainerStyle={styles.content}
         headerInsetExtra={Spacing.lg}
       >
-        {replacement ? (
-          <ReplacementCodeCard
-            code={replacement.code}
-            onDone={() => setReplacement(null)}
-          />
-        ) : null}
         {mode === "current" ? (
           <View style={styles.group}>
             <TextInput

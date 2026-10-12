@@ -131,23 +131,13 @@ export default function SettingsScreen() {
       // changeEmail throws on wrong password / duplicate / rate-limit — let the
       // modal surface it and stay open. Only close + confirm on success.
       const result = await changeEmail(newEmail, password, secondFactor);
-      const finish = () => {
-        setShowChangeEmailModal(false);
-        Alert.alert(
-          "Email Updated",
-          result.status === "verification_pending"
-            ? "Almost done — check your new inbox for a verification link to confirm the change."
-            : "Your email address has been updated.",
-        );
-      };
-      // A spent recovery code: the modal shows its replacement, then finishes.
-      if (result.replacementRecoveryCode) {
-        return {
-          replacementRecoveryCode: result.replacementRecoveryCode,
-          finish,
-        };
-      }
-      finish();
+      setShowChangeEmailModal(false);
+      Alert.alert(
+        "Email Updated",
+        result.status === "verification_pending"
+          ? "Almost done — check your new inbox for a verification link to confirm the change."
+          : "Your email address has been updated.",
+      );
     },
     [changeEmail],
   );

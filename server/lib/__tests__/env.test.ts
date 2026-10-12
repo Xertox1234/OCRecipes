@@ -203,10 +203,11 @@ describe("validateEnv email verification (Resend)", () => {
     expect(() => validateEnv()).toThrow(/IDENTITY_TOKEN_ENC_KEY.*32 bytes/);
   });
 
-  it("throws when MFA_SECRET_ENC_KEY is not 32 bytes", async () => {
+  // Authenticator apps were removed: a leftover key in the host is ignored.
+  it("ignores a leftover MFA_SECRET_ENC_KEY", async () => {
     process.env.MFA_SECRET_ENC_KEY = Buffer.alloc(16).toString("base64");
     const { validateEnv } = await load();
-    expect(() => validateEnv()).toThrow(/MFA_SECRET_ENC_KEY.*32 bytes/);
+    expect(() => validateEnv()).not.toThrow();
   });
 
   it("throws when APPLE_SIGN_IN_PRIVATE_KEY is not a PEM", async () => {

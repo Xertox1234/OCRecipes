@@ -14,6 +14,7 @@ import { hashChallengeToken } from "../../lib/mfa/mfa-secrets";
 import { hashSignInCode } from "../../lib/password-reset-code";
 import { createMockUser } from "../../__tests__/factories";
 import type { MfaChallenge } from "@shared/schema";
+import { secondFactorSchema } from "../_schemas";
 
 // Two-step by emailed code (owner ruling 4, 2026-10-12).
 
@@ -23,14 +24,11 @@ vi.mock("../../storage", () => ({
   storage: {
     getUserForAuth: vi.fn(),
     getUser: vi.fn(),
-    getMfaState: vi.fn(),
     issueMfaEmailCode: vi.fn(),
     reserveMfaEmailAttempt: vi.fn(),
     enableEmailMfa: vi.fn(),
     getLiveMfaChallenge: vi.fn(),
     recordMfaFailure: vi.fn(),
-    replaceRecoveryCodes: vi.fn(),
-    startTotpEnrollment: vi.fn(),
   },
 }));
 vi.mock("../../middleware/auth");
@@ -72,12 +70,6 @@ function asUser(over: Parameters<typeof createMockUser>[0] = {}) {
   vi.mocked(storage.getUser).mockResolvedValue(u);
   return u;
 }
-
-const EMAIL_STATE = {
-  method: "email",
-  failedAttempts: 0,
-  locked: false,
-} as const;
 
 beforeEach(async () => {
   vi.resetAllMocks();
@@ -257,7 +249,6 @@ describe("POST /api/auth/mfa/email/resend (sign-in screen, no session)", () => {
       createdAt: new Date(),
     };
     vi.mocked(storage.getLiveMfaChallenge).mockResolvedValue(live);
-    vi.mocked(storage.getMfaState).mockResolvedValue(EMAIL_STATE);
   });
 
   it("a live challenge → a new code to the account's email", async () => {
@@ -287,11 +278,8 @@ describe("POST /api/auth/mfa/email/resend (sign-in screen, no session)", () => {
     expect(sendSignInCode).not.toHaveBeenCalled();
   });
 
-  it("an authenticator account → 409, nothing sent", async () => {
-    vi.mocked(storage.getMfaState).mockResolvedValue({
-      ...EMAIL_STATE,
-      method: "totp",
-    });
+  it("two-step turned off since the challenge opened → 409, nothing sent", async () => {
+    asUser({ mfaEnabledAt: null, tokenVersion: 2 });
     const res = await post("email/resend", { challenge: CHALLENGE }, false);
     expect(res.status).toBe(409);
     expect(sendSignInCode).not.toHaveBeenCalled();
@@ -307,7 +295,6 @@ describe("POST /api/auth/mfa/email/resend (sign-in screen, no session)", () => {
 describe("POST /api/auth/mfa/email/send (signed-in code fields)", () => {
   it("an email account → a code", async () => {
     asUser({ mfaEnabledAt: new Date() });
-    vi.mocked(storage.getMfaState).mockResolvedValue(EMAIL_STATE);
     const res = await post("email/send");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -321,42 +308,34 @@ describe("POST /api/auth/mfa/email/send (signed-in code fields)", () => {
     expect(res.status).toBe(409);
     expect(sendSignInCode).not.toHaveBeenCalled();
   });
-
-  it("an authenticator account → 409", async () => {
-    asUser({ mfaEnabledAt: new Date() });
-    vi.mocked(storage.getMfaState).mockResolvedValue({
-      ...EMAIL_STATE,
-      method: "totp",
-    });
-    const res = await post("email/send");
-    expect(res.status).toBe(409);
-  });
 });
 
-describe("authenticator-only actions refuse email accounts", () => {
-  beforeEach(() => {
-    asUser({ mfaEnabledAt: new Date() });
-    vi.mocked(storage.getMfaState).mockResolvedValue(EMAIL_STATE);
-    mockVerifySecondFactor.mockResolvedValue({ ok: true });
+// Authenticator apps and recovery codes were removed (owner ruling 4).
+describe("authenticator and recovery-code routes are gone", () => {
+  it.each(["totp/setup", "totp/reset", "totp/confirm", "recovery-codes"])(
+    "POST /api/auth/mfa/%s → 404",
+    async (path) => {
+      asUser({ mfaEnabledAt: new Date() });
+      mockVerifySecondFactor.mockResolvedValue({ ok: true });
+      const res = await post(path, {
+        password: "right-pass1",
+        secondFactor: { code: "123456" },
+        code: "123456",
+      });
+      expect(res.status).toBe(404);
+    },
+  );
+});
+
+describe("secondFactorSchema", () => {
+  it("takes a 6-digit code", () => {
+    expect(secondFactorSchema.safeParse({ code: "123456" }).success).toBe(true);
   });
 
-  // Else a staged authenticator key would be promoted while the account
-  // stays 'email' — and the code check would never look at it.
-  it("new-phone authenticator setup → 409", async () => {
-    const res = await post("totp/reset", {
-      password: "right-pass1",
-      secondFactor: { code: "123456" },
-    });
-    expect(res.status).toBe(409);
-    expect(storage.startTotpEnrollment).not.toHaveBeenCalled();
-  });
-
-  it("new recovery codes → 409", async () => {
-    const res = await post("recovery-codes", {
-      password: "right-pass1",
-      secondFactor: { code: "123456" },
-    });
-    expect(res.status).toBe(409);
-    expect(storage.replaceRecoveryCodes).not.toHaveBeenCalled();
+  it("no longer takes a recovery code", () => {
+    expect(
+      secondFactorSchema.safeParse({ recoveryCode: "ABCD-EFGH-IJKL-MNOP" })
+        .success,
+    ).toBe(false);
   });
 });

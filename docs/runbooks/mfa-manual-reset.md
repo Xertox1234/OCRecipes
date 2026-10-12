@@ -4,12 +4,9 @@ Turns two-step verification off for one account, so its owner can sign in with t
 
 ## When
 
-Only when the person has lost **both**:
+Two-step codes are emailed to the account's address. Use this only when the person still controls that address but the codes don't reach them (for example, their mail provider drops them), after they have checked spam and tried **Resend code**.
 
-- the phone with their authenticator app, **and**
-- every recovery code.
-
-If they still have the phone or a recovery code, they don't need this. They can sign in with the recovery code, then open **Profile → Sign-in methods → Two-step verification** to move it to a new phone.
+If they no longer control the address, this runbook can't help: the identity check below runs through that same address, so there's no safe way to verify them. Say no.
 
 A password reset does **not** turn two-step verification off. It only forgets trusted phones. So a forgotten password plus a working phone is not a case for this runbook.
 
@@ -32,9 +29,9 @@ The owner runs every production command with `!`. Look up the user's id first (b
 # 1. Dry run (the default): prints the username and when two-step was turned on. Writes nothing.
 npx tsx scripts/mfa-reset.ts --user <id>
 
-# 2. Real run: turns two-step off, deletes the secret, recovery codes, open
-#    challenges and trusted phones, cancels any pending email change, signs
-#    every device out, and emails the account.
+# 2. Real run: turns two-step off, deletes its codes, open challenges and
+#    trusted phones, cancels any pending email change, signs every device
+#    out, and emails the account.
 npx tsx scripts/mfa-reset.ts --user <id> --commit
 ```
 
@@ -48,5 +45,5 @@ Tell the person:
 
 - Sign in with your password. No code will be asked.
 - If you had started changing your email address, that change was cancelled. Start it again once you're signed in.
-- Two-step verification is optional. If you want it back, set it up again (Profile → Sign-in methods) and save the new recovery codes, for example in a note in the Passwords app.
+- Two-step verification is optional. If you want it back, turn it on again in Profile → Sign-in methods once the codes reach you.
 - You'll get an email saying two-step verification was turned off. That's expected.

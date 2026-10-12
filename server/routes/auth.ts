@@ -79,18 +79,12 @@ import { reauthenticate, revokeAppleIdentities } from "./auth-social";
 
 export { serializeUser };
 
-function sendVerificationPending(
-  res: Response,
-  extra: { replacementRecoveryCode?: string } = {},
-): void {
+function sendVerificationPending(res: Response): void {
   // Content-free neutral response — identical for new / existing-unverified /
   // existing-verified signups so the registrant cannot enumerate emails.
-  // `extra` only ever carries a spent recovery code's replacement, which the
-  // caller already proved (password + second factor) is theirs.
   res.status(200).json({
     status: "verification_pending",
     message: "Check your inbox to verify your email.",
-    ...extra,
   });
 }
 
@@ -736,8 +730,6 @@ export function register(app: Express): void {
     requireAuth,
     changeEmailLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
-      // Once a recovery code is spent, every answer carries its replacement.
-      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const parsed = changeEmailSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -775,11 +767,6 @@ export function register(app: Express): void {
         );
         if (!gate.ok)
           return sendError(res, gate.status, gate.message, gate.code);
-        if (gate.replacementRecoveryCode) {
-          replacement = {
-            replacementRecoveryCode: gate.replacementRecoveryCode,
-          };
-        }
 
         // Unchanged address (case-insensitive): no-op. Skips the write so the
         // current verified state is never reset and the row never self-collides
@@ -787,8 +774,8 @@ export function register(app: Express): void {
         // lowercase defensively in case a legacy row was not normalized.)
         if (newEmail === user.email.toLowerCase()) {
           return verificationOn
-            ? sendVerificationPending(res, replacement)
-            : res.json({ ...serializeUser(user), ...replacement });
+            ? sendVerificationPending(res)
+            : res.json(serializeUser(user));
         }
 
         if (verificationOn) {
@@ -799,13 +786,7 @@ export function register(app: Express): void {
           // collision, if any, surfaces only at commit (applyEmailVerification).
           const staged = await storage.stagePendingEmail(req.userId, newEmail);
           if (!staged) {
-            return sendError(
-              res,
-              404,
-              "User not found",
-              ErrorCode.NOT_FOUND,
-              replacement,
-            );
+            return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
           }
           // Anti-enum send policy, mirroring register's deliberate posture:
           // ALWAYS do the lookup (so the awaited work is equalized) and ALWAYS
@@ -840,7 +821,7 @@ export function register(app: Express): void {
               "requested",
             ),
           );
-          return sendVerificationPending(res, replacement);
+          return sendVerificationPending(res);
         }
 
         // Fail-open (gate OFF): no verify round-trip exists to commit a staged
@@ -859,24 +840,17 @@ export function register(app: Express): void {
               409,
               "Email already registered",
               ErrorCode.CONFLICT,
-              replacement,
             );
           }
           throw err;
         }
         if (!updated) {
-          return sendError(
-            res,
-            404,
-            "User not found",
-            ErrorCode.NOT_FOUND,
-            replacement,
-          );
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
         // No verification email is sent when the gate is off.
-        return res.json({ ...serializeUser(updated), ...replacement });
+        return res.json(serializeUser(updated));
       } catch (error) {
-        handleRouteError(res, error, "change email", replacement);
+        handleRouteError(res, error, "change email");
       }
     },
   );
@@ -922,11 +896,9 @@ export function register(app: Express): void {
           ...serializeUser(user),
           signInMethods: await storage.getSignInMethods(user.id),
           mfaEnabled: user.mfaEnabledAt !== null,
-          // Which code the app asks for: an authenticator's or an emailed one.
-          mfaMethod:
-            user.mfaEnabledAt === null
-              ? null
-              : ((await storage.getMfaState(user.id))?.method ?? "totp"),
+          // Always "email" when on; app bundles from before authenticator apps
+          // were removed read it to pick the code field.
+          mfaMethod: user.mfaEnabledAt === null ? null : "email",
         });
       } catch (error) {
         handleRouteError(res, error, "fetch current user");
@@ -979,7 +951,6 @@ export function register(app: Express): void {
     requireAuth,
     accountDeletionLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
-      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const validated = deleteAccountSchema.parse(req.body);
 
@@ -997,9 +968,7 @@ export function register(app: Express): void {
           );
         }
         // Spec D2: a password proof on an MFA account also needs the code; a
-        // Google/Apple proof never does (D1). On success the account goes, so
-        // the replacement is moot — but a failure before the delete leaves it
-        // alive, so the catch hands the replacement back (audit L11).
+        // Google/Apple proof never does (D1).
         const gate = await secondFactorForPasswordProof(
           user,
           "password" in validated,
@@ -1007,10 +976,6 @@ export function register(app: Express): void {
         );
         if (!gate.ok)
           return sendError(res, gate.status, gate.message, gate.code);
-        if (gate.replacementRecoveryCode)
-          replacement = {
-            replacementRecoveryCode: gate.replacementRecoveryCode,
-          };
 
         // Revoke Apple tokens BEFORE the delete cascades the identity rows
         // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
@@ -1057,7 +1022,7 @@ export function register(app: Express): void {
             ),
         );
       } catch (error) {
-        handleRouteError(res, error, "delete account", replacement);
+        handleRouteError(res, error, "delete account");
       }
     },
   );

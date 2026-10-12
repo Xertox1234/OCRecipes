@@ -3,7 +3,6 @@ import { db } from "../db";
 import {
   mfaChallenges,
   mfaEmailCodes,
-  mfaRecoveryCodes,
   userMfa,
   users,
   type MfaChallenge,
@@ -118,11 +117,11 @@ async function spendCode(
 }
 
 /**
- * Turn two-step on as 'email', spending the setup code in the same
- * transaction. Guarded on two-step being off (the check is in the write).
- * Replaces any half-finished authenticator setup and drops stale recovery
- * codes. Returns the new tokenVersion (every other session ends), or
- * undefined when two-step is already on or the code was spent or replaced.
+ * Turn two-step on, spending the setup code in the same transaction. Guarded
+ * on two-step being off (the check is in the write). A stale row's failures
+ * and lock are cleared. Returns the new tokenVersion (every other session
+ * ends), or undefined when two-step is already on or the code was spent or
+ * replaced.
  */
 export async function enableEmailMfa(
   userId: string,
@@ -140,58 +139,32 @@ export async function enableEmailMfa(
         .returning({ tokenVersion: users.tokenVersion });
       if (!u) throw new GuardFailed();
       await spendCode(tx, userId, codeHash);
-      const fresh = {
-        method: "email",
-        totpSecretEnc: null,
-        totpLastStep: null,
-        pendingSecretEnc: null,
-        pendingExpiresAt: null,
-        failedAttempts: 0,
-        lockedUntil: null,
-      };
-      await Promise.all([
-        tx
-          .insert(userMfa)
-          .values({ userId, ...fresh })
-          .onConflictDoUpdate({ target: userMfa.userId, set: fresh }),
-        tx.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId)),
-      ]);
+      const fresh = { failedAttempts: 0, lockedUntil: null };
+      await tx
+        .insert(userMfa)
+        .values({ userId, ...fresh })
+        .onConflictDoUpdate({ target: userMfa.userId, set: fresh });
       return u.tokenVersion;
     }),
   );
 }
 
-export type MfaMethod = "totp" | "email";
-
 /**
- * The account's active second factor, or undefined when none is active. An
- * authenticator row counts only once its secret is confirmed; an email row
- * counts as soon as it exists.
+ * The second factor's failure state, or undefined when two-step is off (a
+ * leftover row on an account with two-step off does not count).
  */
 export async function getMfaState(
   userId: string,
-): Promise<
-  { method: MfaMethod; failedAttempts: number; locked: boolean } | undefined
-> {
+): Promise<{ failedAttempts: number; locked: boolean } | undefined> {
   const [row] = await db
     .select({
-      method: userMfa.method,
       failedAttempts: userMfa.failedAttempts,
       locked: sql<boolean>`coalesce(${userMfa.lockedUntil} > now(), false)`,
     })
     .from(userMfa)
-    .where(
-      and(
-        eq(userMfa.userId, userId),
-        or(eq(userMfa.method, "email"), isNotNull(userMfa.totpSecretEnc)),
-      ),
-    );
-  if (!row) return undefined;
-  return {
-    method: row.method === "email" ? "email" : "totp",
-    failedAttempts: row.failedAttempts,
-    locked: row.locked,
-  };
+    .innerJoin(users, eq(users.id, userMfa.userId))
+    .where(and(eq(userMfa.userId, userId), isNotNull(users.mfaEnabledAt)));
+  return row;
 }
 
 /**

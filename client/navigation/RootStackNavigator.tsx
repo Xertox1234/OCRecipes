@@ -40,7 +40,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Colors } from "@/constants/theme";
 import type { PhotoIntent } from "@shared/constants/preparation";
-import type { SignInMethod, TwoStepMethod } from "@shared/types/auth";
+import type { SignInMethod } from "@shared/types/auth";
 import type {
   CookingSessionIngredient,
   SubstitutionResult,
@@ -78,8 +78,7 @@ export type RootStackParamList = {
   TwoStepCode: {
     challenge: string;
     purpose: "login" | "link";
-    /** Email accounts: the code already went to `emailHint` (masked). */
-    method?: TwoStepMethod;
+    /** The code already went to `emailHint` (masked). */
     emailHint?: string;
     codeSent?: boolean;
   };
