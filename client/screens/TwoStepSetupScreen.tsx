@@ -91,6 +91,10 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
       if (mode === "setup") {
         const sent = await auth.startEmailTwoStep(password);
         setEmailSentTo(sent.emailHint);
+        // Same words SecondFactorField announces on a resend.
+        AccessibilityInfo.announceForAccessibility(
+          `Code sent to ${sent.emailHint}.`,
+        );
       } else if (factor) {
         await auth.disableTwoStep(password, factor);
         finish("Two-step verification is off");
