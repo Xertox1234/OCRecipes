@@ -48,7 +48,15 @@ export async function runIdentityKeyBootCheck({
 }: BootCheckDeps): Promise<void> {
   // The key is optional (Apple sign-in off) — nothing to check without it.
   if (!raw) return;
-  const key = loadIdentityKey(raw);
+  // env.ts refuses a malformed key at boot; this keeps the promise above true
+  // for callers that skip that validation.
+  let key: Buffer;
+  try {
+    key = loadIdentityKey(raw);
+  } catch (err) {
+    log.warn({ err: toError(err) }, "identity key check: could not run");
+    return;
+  }
   const keyFingerprint = identityKeyFingerprint(key);
 
   let blobs: string[];
