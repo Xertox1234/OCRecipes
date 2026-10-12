@@ -79,3 +79,31 @@ export function changeCodeMatches(
   }
   return crypto.timingSafeEqual(expected, stored);
 }
+
+/**
+ * HMAC for the two-step code emailed at sign-in (owner ruling 4, 2026-10-12).
+ * Its own `mfa-email:` prefix, so it never equals a reset or change-code hash
+ * for the same user and digits: no kind of code can be spent as another.
+ */
+export function hashSignInCode(userId: string, code: string): string {
+  return crypto
+    .createHmac("sha256", HMAC_KEY)
+    .update(`mfa-email:${userId}:${code}`)
+    .digest("hex");
+}
+
+/** Constant-time comparison of a submitted sign-in code against the stored HMAC. */
+export function signInCodeMatches(
+  userId: string,
+  code: string,
+  storedHash: string,
+): boolean {
+  const expected = Buffer.from(hashSignInCode(userId, code), "hex");
+  const stored = Buffer.from(storedHash, "hex");
+  if (stored.length !== expected.length) {
+    // Burn the same compare cost, then fail — malformed input is never a match.
+    crypto.timingSafeEqual(expected, expected);
+    return false;
+  }
+  return crypto.timingSafeEqual(expected, stored);
+}

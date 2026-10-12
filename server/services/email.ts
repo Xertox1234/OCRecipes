@@ -5,6 +5,7 @@ import { createServiceLogger } from "../lib/logger";
 import { escapeHtml } from "../lib/html-escape";
 import { RESET_CODE_TTL_MINUTES } from "@shared/constants/password-reset";
 import { CHANGE_CODE_TTL_MINUTES } from "@shared/constants/password-change";
+import { MFA_EMAIL_CODE_TTL_MINUTES } from "@shared/constants/mfa";
 
 const logger = createServiceLogger("email");
 
@@ -118,11 +119,13 @@ const EMAIL_FROM =
 // their bucket would let a stranger silence the owner's code
 // (change-password security review).
 const RECIPIENT_WINDOW_MS = 60 * 60 * 1000;
-type SendBucket = "general" | "account-security" | "signed-in";
+type SendBucket = "general" | "account-security" | "signed-in" | "sign-in-code";
 const BUCKET_CAPS: Record<SendBucket, number> = {
   general: 5,
   "account-security": 10,
   "signed-in": 10,
+  // Two-step codes: their own budget, so no other mail can starve sign-in.
+  "sign-in-code": 10,
 };
 // Sweep fully-expired keys once the map grows past this many recipients. A
 // recipient touched once and never again (the enumeration case) is otherwise
@@ -315,6 +318,33 @@ export async function sendPasswordChangeCode(
   // Log only the Resend error — the payload (which holds the code) never.
   if (error)
     logger.error({ resendError: error }, "change-password code email failed");
+}
+
+/**
+ * Two-step code for signing in, setting two-step up, or a signed-in action
+ * (owner ruling 4, 2026-10-12). The code is in the subject so it shows in the
+ * notification and iOS can offer it above the keyboard.
+ */
+export async function sendSignInCode(to: string, code: string): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "sign-in-code")) {
+    // Never log the code — only the recipient.
+    logger.warn({ to }, "two-step code throttled (sign-in-code cap)");
+    return;
+  }
+  const safe = escapeHtml(code);
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: `Your OCRecipes code is ${safe}`,
+    html: `<p>Your OCRecipes code is:</p>
+<p style="font-size:28px;font-weight:bold;letter-spacing:6px">${safe}</p>
+<p>It expires in ${MFA_EMAIL_CODE_TTL_MINUTES} minutes.</p>
+<p>Didn't try to sign in? Someone may know your password — change your password in the app, and don't share this code.</p>`,
+  });
+  // Log only the Resend error — the payload (which holds the code) never.
+  if (error) logger.error({ resendError: error }, "two-step code email failed");
 }
 
 const PROVIDER_LABELS = { google: "Google", apple: "Apple" } as const;

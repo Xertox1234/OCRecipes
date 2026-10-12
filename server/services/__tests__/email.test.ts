@@ -337,6 +337,45 @@ describe("email service", () => {
       expect(mockSend).toHaveBeenCalledTimes(1);
     });
 
+    it("sends a two-step sign-in code with a 10-minute note and what to do if it wasn't you", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendSignInCode } = await import("../email");
+      await sendSignInCode("r@x.com", "042917");
+      const arg = mockSend.mock.calls[0][0];
+      expect(arg.to).toBe("r@x.com");
+      expect(arg.subject).toBe("Your OCRecipes code is 042917");
+      expect(arg.html).toContain("042917");
+      expect(arg.html).toContain("10 minutes");
+      expect(arg.html).toContain("change your password");
+    });
+
+    // Sign-in codes go out only after a correct password (or to a signed-in
+    // owner), but Forgot password mail is triggerable by anyone: they must
+    // never share a per-recipient budget (2026-10-11 starvation solution).
+    it("a sign-in code is still sent after reset codes exhaust the account-security bucket", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordResetCode, sendSignInCode } = await import(
+        "../email"
+      );
+      for (let i = 0; i < 12; i++)
+        await sendPasswordResetCode("w@x.com", "123456");
+      mockSend.mockClear();
+      await sendSignInCode("w@x.com", "654321");
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    it("a sign-in code is still sent after change-password codes exhaust the signed-in bucket", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordChangeCode, sendSignInCode } = await import(
+        "../email"
+      );
+      for (let i = 0; i < 12; i++)
+        await sendPasswordChangeCode("z@x.com", "123456");
+      mockSend.mockClear();
+      await sendSignInCode("z@x.com", "654321");
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
     it("sends a reset code with the code in the body and a 15-minute note", async () => {
       vi.stubEnv("RESEND_API_KEY", "re_test");
       const { sendPasswordResetCode } = await import("../email");

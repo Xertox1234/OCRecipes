@@ -3,6 +3,7 @@ import { storage } from "../../storage";
 import { sendTwoFactorNotice } from "../../services/email";
 import { fireAndForget } from "../fire-and-forget";
 import { logger } from "../logger";
+import { signInCodeMatches } from "../password-reset-code";
 import { base32Decode, matchTotp } from "./totp";
 import {
   decryptMfaSecret,
@@ -33,6 +34,26 @@ async function fail(user: NoticeUser): Promise<SecondFactorResult> {
 }
 
 /**
+ * Email accounts: the code from the latest email. A lock refuses without
+ * counting. There are no recovery codes, so there is no hard failure cap — the
+ * every-10th lock plus 5 guesses per code and 10 codes a day bound guessing.
+ * Never touches MFA_SECRET_ENC_KEY.
+ */
+async function verifyEmailCode(
+  user: NoticeUser,
+  proof: SecondFactorProof,
+  state: { locked: boolean },
+): Promise<SecondFactorResult> {
+  if (state.locked) return INVALID;
+  if (!("code" in proof)) return fail(user);
+  const stored = await storage.reserveMfaEmailAttempt(user.id);
+  if (!stored || !signInCodeMatches(user.id, proof.code, stored))
+    return fail(user);
+  if (!(await storage.acceptMfaEmailCode(user.id, stored))) return fail(user);
+  return { ok: true };
+}
+
+/**
  * Check an authenticator code or a recovery code for an account with MFA on.
  * Spec §3.2: a lock refuses both kinds without counting (one generic answer);
  * past MFA_TOTP_FAILURE_CAP consecutive failures only a recovery code works.
@@ -43,6 +64,9 @@ export async function verifySecondFactor(
   proof: SecondFactorProof,
   nowMs: number = Date.now(),
 ): Promise<SecondFactorResult> {
+  const state = await storage.getMfaState(user.id);
+  if (state?.method === "email") return verifyEmailCode(user, proof, state);
+
   const active = await storage.getActiveTotp(user.id);
   if (!active || active.locked) return INVALID;
 
