@@ -8,6 +8,7 @@ import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
+import { getStepLabel } from "@/context/onboarding-steps";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const DIET_TYPES = [
@@ -45,7 +46,7 @@ const DIET_TYPES = [
     id: "paleo",
     name: "Paleo",
     description: "Whole foods, no grains",
-    icon: "leaf",
+    icon: "compass",
   },
   {
     id: "mediterranean",
@@ -76,7 +77,7 @@ const DIET_TYPES = [
 export default function DietTypeScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data, updateData, nextStep, prevStep } = useOnboarding();
+  const { data, updateData, nextStep, prevStep, currentStep } = useOnboarding();
 
   const selectDietType = (dietId: string) => {
     updateData({ dietType: data.dietType === dietId ? null : dietId });
@@ -100,7 +101,7 @@ export default function DietTypeScreen() {
               type="small"
               style={{ color: theme.success, fontWeight: "600" }}
             >
-              Step 3 of 6
+              {getStepLabel(currentStep)}
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>

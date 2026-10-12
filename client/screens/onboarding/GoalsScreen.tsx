@@ -8,36 +8,41 @@ import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
+import { getStepLabel } from "@/context/onboarding-steps";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const GOALS = [
-  // hardcoded — goal-specific accent colors for visual differentiation
   {
     id: "lose_weight",
     name: "Lose Weight",
     icon: "trending-down",
-    color: "#C94E1A", // hardcoded
+    accent: "accentPink",
   },
   {
     id: "gain_muscle",
     name: "Build Muscle",
     icon: "trending-up",
-    color: "#008A38", // hardcoded
+    accent: "accentGreen",
   },
-  { id: "maintain", name: "Maintain Weight", icon: "minus", color: "#2196F3" }, // hardcoded
+  {
+    id: "maintain",
+    name: "Maintain Weight",
+    icon: "minus",
+    accent: "accentBlue",
+  },
   {
     id: "eat_healthier",
     name: "Eat Healthier",
     icon: "heart",
-    color: "#E91E63", // hardcoded
+    accent: "accentAmber",
   },
   {
     id: "manage_condition",
     name: "Manage Condition",
     icon: "activity",
-    color: "#9C27B0", // hardcoded
+    accent: "accentPurple",
   },
-];
+] as const;
 
 const ACTIVITY_LEVELS = [
   { id: "sedentary", name: "Sedentary", description: "Little to no exercise" },
@@ -66,7 +71,7 @@ const ACTIVITY_LEVELS = [
 export default function GoalsScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data, updateData, nextStep, prevStep } = useOnboarding();
+  const { data, updateData, nextStep, prevStep, currentStep } = useOnboarding();
 
   const selectGoal = (goalId: string) => {
     updateData({ primaryGoal: data.primaryGoal === goalId ? null : goalId });
@@ -96,7 +101,7 @@ export default function GoalsScreen() {
               type="small"
               style={{ color: theme.success, fontWeight: "600" }}
             >
-              Step 4 of 6
+              {getStepLabel(currentStep)}
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>
@@ -118,6 +123,7 @@ export default function GoalsScreen() {
           <View style={styles.goalsGrid} accessibilityRole="radiogroup">
             {GOALS.map((goal) => {
               const selected = data.primaryGoal === goal.id;
+              const goalColor = theme[goal.accent];
               return (
                 <SelectableTile
                   key={goal.id}
@@ -129,22 +135,22 @@ export default function GoalsScreen() {
                     styles.goalItem,
                     {
                       backgroundColor: selected
-                        ? withOpacity(goal.color, 0.08)
+                        ? withOpacity(goalColor, 0.08)
                         : theme.backgroundDefault,
-                      borderColor: selected ? goal.color : theme.border,
+                      borderColor: selected ? goalColor : theme.border,
                     },
                   ]}
                 >
                   <View
                     style={[
                       styles.goalIcon,
-                      { backgroundColor: withOpacity(goal.color, 0.12) },
+                      { backgroundColor: withOpacity(goalColor, 0.12) },
                     ]}
                   >
                     <Feather
                       name={goal.icon as keyof typeof Feather.glyphMap}
                       size={24}
-                      color={goal.color}
+                      color={goalColor}
                     />
                   </View>
                   <ThemedText
@@ -285,7 +291,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.sm,
-    justifyContent: "space-between",
+    justifyContent: "center",
   },
   goalItem: {
     flexBasis: "30%",

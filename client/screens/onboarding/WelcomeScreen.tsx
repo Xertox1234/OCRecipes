@@ -13,6 +13,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
+import { QUESTION_STEP_COUNT } from "@/context/onboarding-steps";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 export default function WelcomeScreen() {
@@ -37,11 +38,11 @@ export default function WelcomeScreen() {
       <ScrollView
         style={styles.content}
         contentContainerStyle={{
-          paddingTop: Spacing["3xl"],
+          paddingTop: Spacing.xl,
           paddingHorizontal: Spacing.xl,
-          paddingBottom: Spacing["3xl"],
+          paddingBottom: Spacing.xl,
         }}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator
       >
         <View style={styles.iconContainer}>
           <View
@@ -64,7 +65,7 @@ export default function WelcomeScreen() {
             type="small"
             style={{ color: theme.link, fontWeight: "600" }}
           >
-            6 quick steps
+            {QUESTION_STEP_COUNT} quick steps
           </ThemedText>
         </View>
 
@@ -173,12 +174,12 @@ const styles = StyleSheet.create({
   },
   iconContainer: {
     alignItems: "center",
-    marginBottom: Spacing["3xl"],
+    marginBottom: Spacing.xl,
   },
   iconCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -195,7 +196,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     textAlign: "center",
-    marginBottom: Spacing["3xl"],
+    marginBottom: Spacing.xl,
   },
   features: {
     gap: Spacing.lg,

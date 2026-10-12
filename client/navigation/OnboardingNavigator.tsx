@@ -4,6 +4,10 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
+import {
+  QUESTION_STEP_COUNT,
+  getQuestionStep,
+} from "@/context/onboarding-steps";
 import { OnboardingProgressBar } from "@/components/OnboardingProgressBar";
 import { useTheme } from "@/hooks/useTheme";
 import WelcomeScreen from "@/screens/onboarding/WelcomeScreen";
@@ -43,7 +47,7 @@ const SCREENS = [
 ];
 
 function OnboardingStack() {
-  const { currentStep, totalSteps } = useOnboarding();
+  const { currentStep } = useOnboarding();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const currentScreen = SCREENS[currentStep];
@@ -59,8 +63,8 @@ function OnboardingStack() {
       ]}
     >
       <OnboardingProgressBar
-        currentStep={currentStep}
-        totalSteps={totalSteps}
+        currentStep={getQuestionStep(currentStep) - 1}
+        totalSteps={QUESTION_STEP_COUNT}
       />
       <View style={styles.content}>
         <Stack.Navigator

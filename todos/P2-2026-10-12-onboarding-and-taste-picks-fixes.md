@@ -1,6 +1,6 @@
 ---
 title: "Onboarding and Taste Picks: blank recipe tiles, content hidden behind footers, inconsistent step counter"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-12
 updated: 2026-10-12

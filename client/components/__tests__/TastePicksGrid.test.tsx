@@ -4,6 +4,7 @@ import { screen, fireEvent } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
 import { TastePicksGrid } from "../TastePicksGrid";
+import { resolveImageUrl } from "@/lib/query-client";
 import type { RecipeCandidate } from "@shared/types/taste-picks";
 
 const candidates = [
@@ -36,5 +37,26 @@ describe("TastePicksGrid", () => {
         .getByRole("checkbox", { name: "Tacos" })
         .getAttribute("aria-checked"),
     ).toBe("true");
+  });
+
+  it("resolves server-relative image URLs against the API base", () => {
+    const relative = [
+      {
+        id: 3,
+        title: "Dal",
+        imageUrl: "/api/recipe-images/3.jpg",
+        cuisineOrigin: null,
+      },
+    ] as unknown as RecipeCandidate[];
+    const { container } = renderComponent(
+      <TastePicksGrid
+        candidates={relative}
+        selectedIds={new Set()}
+        onToggle={vi.fn()}
+      />,
+    );
+    const src = container.querySelector("img")?.getAttribute("src");
+    expect(src).toBe(resolveImageUrl("/api/recipe-images/3.jpg"));
+    expect(src).toMatch(/^https?:\/\/.+\/api\/recipe-images\/3\.jpg$/);
   });
 });

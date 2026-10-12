@@ -2,6 +2,7 @@ import React, { useCallback } from "react";
 import { View, FlatList, Image, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
+import { resolveImageUrl } from "@/lib/query-client";
 import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -46,7 +47,7 @@ const RecipeCard = React.memo(function RecipeCard({
     >
       <View style={styles.imageContainer}>
         <Image
-          source={{ uri: item.imageUrl }}
+          source={{ uri: resolveImageUrl(item.imageUrl) ?? undefined }}
           style={styles.image}
           resizeMode="cover"
         />
@@ -59,7 +60,7 @@ const RecipeCard = React.memo(function RecipeCard({
         )}
       </View>
       <View style={styles.cardBody}>
-        <ThemedText type="small" numberOfLines={1} style={styles.cardTitle}>
+        <ThemedText type="small" numberOfLines={2} style={styles.cardTitle}>
           {item.title}
         </ThemedText>
         {item.cuisineOrigin && (

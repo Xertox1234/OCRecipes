@@ -8,6 +8,7 @@ import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
+import { getStepLabel } from "@/context/onboarding-steps";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
   COMMON_DISLIKES,
@@ -19,7 +20,7 @@ import {
 export default function PreferencesScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data, updateData, prevStep, nextStep } = useOnboarding();
+  const { data, updateData, prevStep, nextStep, currentStep } = useOnboarding();
 
   const toggleCuisine = (cuisineId: string) => {
     const isSelected = data.cuisinePreferences.includes(cuisineId);
@@ -80,7 +81,7 @@ export default function PreferencesScreen() {
               type="small"
               style={{ color: theme.success, fontWeight: "600" }}
             >
-              Step 6 of 7
+              {getStepLabel(currentStep)}
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>

@@ -15,6 +15,7 @@ import { SelectableTile } from "@/components/SelectableTile";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
+import { getStepLabel } from "@/context/onboarding-steps";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const COMMON_ALLERGENS = [
@@ -38,7 +39,7 @@ const SEVERITY_OPTIONS = [
 export default function AllergiesScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data, updateData, nextStep, prevStep } = useOnboarding();
+  const { data, updateData, nextStep, prevStep, currentStep } = useOnboarding();
   const [selectedAllergen, setSelectedAllergen] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,7 +102,7 @@ export default function AllergiesScreen() {
               type="small"
               style={{ color: theme.success, fontWeight: "600" }}
             >
-              Step 1 of 6
+              {getStepLabel(currentStep)}
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>
