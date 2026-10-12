@@ -1,6 +1,6 @@
 ---
 title: "Two-step setup doesn't tell screen readers the first code was sent"
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
 updated: 2026-10-12
@@ -21,9 +21,9 @@ Mobile-reviewer suggestion on the "remove authenticator apps" PR (head 30902b81)
 
 ## Acceptance Criteria
 
-- [ ] After a successful setup send, "Code sent to <masked email>." is announced once (`AccessibilityInfo.announceForAccessibility`).
-- [ ] A failed send announces nothing.
-- [ ] A test covers both.
+- [x] After a successful setup send, "Code sent to <masked email>." is announced once (`AccessibilityInfo.announceForAccessibility`).
+- [x] A failed send announces nothing.
+- [x] A test covers both.
 
 ## Implementation Notes
 

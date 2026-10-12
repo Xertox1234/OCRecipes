@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import * as RN from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { renderComponent } from "../../../test/utils/render-component";
 import TwoStepSetupScreen from "../TwoStepSetupScreen";
@@ -80,6 +81,35 @@ describe("TwoStepSetupScreen — turning it on (email)", () => {
     );
     await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
     expect(h.toastSuccess).toHaveBeenCalledWith("Two-step verification is on");
+  });
+
+  it("tells screen readers the first code went out, once", async () => {
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    h.startEmailTwoStep.mockResolvedValue(sent);
+    renderScreen("setup");
+    type("Password", "pw-1");
+    press("Continue");
+    await screen.findByLabelText("6-digit code");
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith("Code sent to w•••@gmail.com.");
+  });
+
+  it("a failed send announces nothing", async () => {
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    h.startEmailTwoStep.mockRejectedValue(
+      new ApiError(
+        `409: ${JSON.stringify({ code: "EMAIL_NOT_VERIFIED", error: "x" })}`,
+        "EMAIL_NOT_VERIFIED",
+        409,
+      ),
+    );
+    renderScreen("setup");
+    type("Password", "pw-1");
+    press("Continue");
+    await screen.findByText(
+      "Confirm your email address first, so the codes reach you.",
+    );
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it("a wrong code stays on the code step and says so", async () => {
