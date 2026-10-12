@@ -110,15 +110,11 @@ export default function RecipeAIGenerateScreen() {
             style={[
               styles.iconCircle,
               {
-                backgroundColor: withOpacity("#f59e0b", 0.15), // hardcoded — amber tint
+                backgroundColor: withOpacity(theme.badgeWarningText, 0.15),
               },
             ]}
           >
-            <Feather
-              name="zap"
-              size={32}
-              color="#f59e0b" // hardcoded — amber icon
-            />
+            <Feather name="zap" size={32} color={theme.badgeWarningText} />
           </View>
         </View>
 

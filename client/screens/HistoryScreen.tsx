@@ -427,7 +427,7 @@ const DashboardHeader = React.memo(function DashboardHeader({
           >
             <ThemedText
               type="caption"
-              style={{ color: withOpacity(theme.buttonText, 0.8) }}
+              style={{ color: withOpacity(theme.buttonText, 0.9) }}
             >
               TODAY&apos;S CALORIES
             </ThemedText>
@@ -442,7 +442,7 @@ const DashboardHeader = React.memo(function DashboardHeader({
               <ThemedText
                 type="body"
                 style={{
-                  color: withOpacity(theme.buttonText, 0.8),
+                  color: withOpacity(theme.buttonText, 0.9),
                   marginLeft: Spacing.xs,
                 }}
               >
@@ -453,7 +453,7 @@ const DashboardHeader = React.memo(function DashboardHeader({
               <ThemedText
                 type="caption"
                 style={{
-                  color: withOpacity(theme.buttonText, 0.6),
+                  color: withOpacity(theme.buttonText, 0.9),
                   marginTop: Spacing.xs,
                 }}
               >
@@ -466,24 +466,20 @@ const DashboardHeader = React.memo(function DashboardHeader({
         {/* Items scanned card */}
         <Card
           elevation={1}
-          style={[styles.statCard, { backgroundColor: theme.warning }]}
+          style={[
+            styles.statCard,
+            { backgroundColor: theme.backgroundSecondary },
+          ]}
         >
           <View
             accessible={true}
             accessibilityRole="text"
             accessibilityLabel={`Items scanned today: ${itemCount}`}
           >
-            <ThemedText
-              type="caption"
-              style={{ color: withOpacity(theme.buttonText, 0.8) }}
-            >
+            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
               ITEMS SCANNED
             </ThemedText>
-            <ThemedText
-              type="h2"
-              style={{ color: theme.buttonText }}
-              maxScale={1.3}
-            >
+            <ThemedText type="h2" style={{ color: theme.text }} maxScale={1.3}>
               {itemCount}
             </ThemedText>
           </View>

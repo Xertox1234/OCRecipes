@@ -47,22 +47,22 @@ export default function WelcomeScreen() {
           <View
             style={[
               styles.iconCircle,
-              { backgroundColor: withOpacity(theme.success, 0.08) },
+              { backgroundColor: withOpacity(theme.link, 0.08) },
             ]}
           >
-            <Feather name="heart" size={48} color={theme.success} />
+            <Feather name="heart" size={48} color={theme.link} />
           </View>
         </View>
 
         <View
           style={[
             styles.stepIndicator,
-            { backgroundColor: withOpacity(theme.success, 0.08) },
+            { backgroundColor: withOpacity(theme.link, 0.08) },
           ]}
         >
           <ThemedText
             type="small"
-            style={{ color: theme.success, fontWeight: "600" }}
+            style={{ color: theme.link, fontWeight: "600" }}
           >
             6 quick steps
           </ThemedText>
@@ -147,15 +147,10 @@ function FeatureItem({
       <View
         style={[
           styles.featureIcon,
-          { backgroundColor: withOpacity(theme.success, 0.08) },
+          { backgroundColor: withOpacity(theme.link, 0.08) },
         ]}
       >
-        <Feather
-          name={icon}
-          size={20}
-          color={theme.success}
-          accessible={false}
-        />
+        <Feather name={icon} size={20} color={theme.link} accessible={false} />
       </View>
       <View style={styles.featureText}>
         <ThemedText type="body" style={{ fontWeight: "600" }}>

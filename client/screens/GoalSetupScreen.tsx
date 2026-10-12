@@ -146,19 +146,13 @@ function SelectableChip({
         styles.chip,
         {
           backgroundColor: selected
-            ? withOpacity(theme.success, 0.12)
+            ? withOpacity(theme.link, 0.12)
             : theme.backgroundSecondary,
-          borderColor: selected ? theme.success : "transparent",
+          borderColor: selected ? theme.link : "transparent",
         },
       ]}
     >
-      <ThemedText
-        type="body"
-        style={[
-          styles.chipLabel,
-          { color: selected ? theme.success : theme.text },
-        ]}
-      >
+      <ThemedText type="body" style={[styles.chipLabel, { color: theme.text }]}>
         {label}
       </ThemedText>
       {description && (
@@ -367,7 +361,7 @@ export default function GoalSetupScreen() {
         >
           <Card elevation={1} style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Feather name="user" size={20} color={theme.success} />
+              <Feather name="user" size={20} color={theme.link} />
               <ThemedText type="h4">Physical Profile</ThemedText>
             </View>
 
@@ -492,7 +486,7 @@ export default function GoalSetupScreen() {
               accessibilityLabel="Calculate my goals"
               style={[
                 styles.calculateButton,
-                { backgroundColor: theme.success },
+                { backgroundColor: theme.accentSolid },
               ]}
             >
               Calculate My Goals
@@ -517,11 +511,11 @@ export default function GoalSetupScreen() {
               elevation={2}
               style={[
                 styles.resultsCard,
-                { borderColor: theme.success, borderWidth: 2 },
+                { borderColor: theme.link, borderWidth: 2 },
               ]}
             >
               <View style={styles.resultsHeader}>
-                <Feather name="check-circle" size={24} color={theme.success} />
+                <Feather name="check-circle" size={24} color={theme.link} />
                 <ThemedText type="h4">Your Daily Targets</ThemedText>
               </View>
 
@@ -680,7 +674,10 @@ export default function GoalSetupScreen() {
                 onPress={handleSave}
                 loading={saveMutation.isPending}
                 accessibilityLabel="Save my goals"
-                style={[styles.saveButton, { backgroundColor: theme.success }]}
+                style={[
+                  styles.saveButton,
+                  { backgroundColor: theme.accentSolid },
+                ]}
               >
                 Save My Goals
               </Button>

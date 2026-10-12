@@ -60,11 +60,12 @@ export const Colors = {
     // meaning is conveyed by adjacent text labels, so they're exempt from
     // WCAG 1.4.11 (non-text contrast). Do NOT use these as the sole carrier
     // of meaning.
+    // White icons sit on these fills, so each is >= 3:1 against #FFFFFF (WCAG 1.4.11).
     accentPurple: "#C4521A", // terracotta (property name kept for compat)
-    accentAmber: "#f59e0b",
-    accentGreen: "#22c55e",
-    accentBlue: "#3b82f6",
-    accentPink: "#E07050", // warm salmon (property name kept for compat)
+    accentAmber: "#B45309", // 5.0:1
+    accentGreen: "#15803D", // 5.0:1
+    accentBlue: "#2563EB", // 5.2:1
+    accentPink: "#E07050", // warm salmon (property name kept for compat), 3.2:1
   },
   dark: {
     // Text
@@ -115,11 +116,12 @@ export const Colors = {
     // Feature-hub brand accents — same hex as light mode. These appear on
     // icon-container backgrounds (not text or meaning-bearing surfaces), so
     // dark-mode contrast to the background does not impair usability.
-    accentPurple: "#E07050", // warm coral (property name kept for compat)
-    accentAmber: "#f59e0b",
-    accentGreen: "#22c55e",
-    accentBlue: "#3b82f6",
-    accentPink: "#F0956B", // warm peach (property name kept for compat)
+    // Same white-icon-on-fill rule as light mode: every value >= 3:1 vs #FFFFFF.
+    accentPurple: "#E07050", // warm coral (property name kept for compat), 3.2:1
+    accentAmber: "#B45309", // 5.0:1
+    accentGreen: "#15803D", // 5.0:1
+    accentBlue: "#2563EB", // 5.2:1
+    accentPink: "#D9683F", // warm peach (property name kept for compat), 3.5:1
   },
 };
 

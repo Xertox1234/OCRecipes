@@ -97,7 +97,7 @@ export default function MicronutrientSummary({
           <Ionicons
             name="checkmark-circle"
             size={16}
-            color="#2E7D32" // hardcoded — green checkmark for met-goal
+            color={theme.badgeSuccessText}
           />{" "}
           <Text style={[styles.statText, { color: theme.text }]}>
             {metGoalCount} met goal
@@ -105,11 +105,7 @@ export default function MicronutrientSummary({
         </View>
         {lowCount > 0 && (
           <View style={styles.stat}>
-            <Ionicons
-              name="warning"
-              size={16}
-              color="#C62828" // hardcoded — red warning for low nutrient
-            />{" "}
+            <Ionicons name="warning" size={16} color={theme.badgeErrorText} />{" "}
             <Text style={[styles.statText, { color: theme.text }]}>
               {lowCount} low
             </Text>

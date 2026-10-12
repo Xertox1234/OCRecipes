@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import {
   View,
-  Text,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -36,6 +35,7 @@ import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { ThemedText } from "@/components/ThemedText";
 import CoachDashboard from "@/components/coach/CoachDashboard";
 import CoachChat from "@/components/coach/CoachChat";
 import {
@@ -43,7 +43,7 @@ import {
   SkeletonLoadingRegion,
   SkeletonProvider,
 } from "@/components/SkeletonLoader";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { logger } from "@/lib/logger";
 import type { CoachChatNavigationProp } from "@/types/navigation";
@@ -226,15 +226,17 @@ export default function CoachProScreen() {
       )}
       {isContextError && (
         <View style={styles.errorContainer}>
-          <Text style={[styles.errorText, { color: theme.textSecondary }]}>
+          <ThemedText type="small" style={{ color: theme.textSecondary }}>
             Unable to load dashboard
-          </Text>
+          </ThemedText>
           <Pressable
             onPress={() => refetchContext()}
             accessibilityRole="button"
             accessibilityLabel="Retry loading dashboard"
           >
-            <Text style={[styles.retryText, { color: theme.link }]}>Retry</Text>
+            <ThemedText type="small" style={{ color: theme.link }}>
+              Retry
+            </ThemedText>
           </Pressable>
         </View>
       )}
@@ -243,6 +245,7 @@ export default function CoachProScreen() {
           <View
             style={[styles.notebookHeader, { borderBottomColor: theme.border }]}
           >
+            <ThemedText type="h4">Coach</ThemedText>
             <Pressable
               onPress={() => navigation.navigate("NotebookScreen")}
               style={[styles.notebookBtn, { borderColor: theme.border }]}
@@ -250,11 +253,9 @@ export default function CoachProScreen() {
               accessibilityLabel="Open notebook"
             >
               <Feather name="book-open" size={16} color={theme.textSecondary} />
-              <Text
-                style={[styles.notebookBtnText, { color: theme.textSecondary }]}
-              >
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
                 Notebook
-              </Text>
+              </ThemedText>
             </Pressable>
           </View>
           <CoachDashboard
@@ -282,7 +283,12 @@ export default function CoachProScreen() {
           accessibilityRole="button"
           accessibilityLabel="Start a new coach conversation"
         >
-          <Text style={[styles.newThreadText, { color: theme.link }]}>New</Text>
+          <ThemedText
+            type="caption"
+            style={[styles.bold, { color: theme.link }]}
+          >
+            New
+          </ThemedText>
         </Pressable>
         {conversationsError && threadBarConversations.length === 0 ? (
           <Pressable
@@ -298,12 +304,13 @@ export default function CoachProScreen() {
               style={styles.pinIcon}
               accessible={false}
             />
-            <Text
-              style={[styles.threadTitle, { color: theme.textSecondary }]}
+            <ThemedText
+              type="caption"
+              style={{ color: theme.textSecondary }}
               numberOfLines={1}
             >
               Couldn&apos;t load · Retry
-            </Text>
+            </ThemedText>
           </Pressable>
         ) : null}
         <ScrollView
@@ -343,15 +350,15 @@ export default function CoachProScreen() {
                     accessible={false}
                   />
                 )}
-                <Text
+                <ThemedText
+                  type="caption"
                   numberOfLines={1}
-                  style={[
-                    styles.threadTitle,
-                    { color: isSelected ? theme.text : theme.textSecondary },
-                  ]}
+                  style={{
+                    color: isSelected ? theme.text : theme.textSecondary,
+                  }}
                 >
                   {conversation.title || "Coach conversation"}
-                </Text>
+                </ThemedText>
               </Pressable>
             );
           })}
@@ -365,9 +372,9 @@ export default function CoachProScreen() {
             accessibilityRole="button"
             accessibilityLabel="See all conversations"
           >
-            <Text style={[styles.threadTitle, { color: theme.textSecondary }]}>
+            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
               See all ›
-            </Text>
+            </ThemedText>
           </Pressable>
         </ScrollView>
       </View>
@@ -396,13 +403,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.xs,
   },
-  errorText: {
-    fontSize: 13,
-  },
-  retryText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
   threadBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -419,10 +419,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  newThreadText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
+  bold: { fontFamily: FontFamily.semiBold },
   threadList: {
     gap: Spacing.sm,
     paddingRight: Spacing.md,
@@ -437,15 +434,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  threadTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
   pinIcon: { marginRight: 3 },
   seeAllChip: { width: 72 },
   notebookHeader: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -459,5 +453,4 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
   },
-  notebookBtnText: { fontSize: 13 },
 });

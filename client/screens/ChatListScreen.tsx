@@ -14,6 +14,7 @@ import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
@@ -380,44 +381,20 @@ export default function ChatListScreen() {
         }
         ListEmptyComponent={
           isLoading ? null : (
-            <View style={styles.emptyContainer}>
-              <View
-                style={[
-                  styles.emptyIcon,
-                  { backgroundColor: withOpacity(theme.link, 0.1) },
-                ]}
-              >
-                <Feather name="message-circle" size={40} color={theme.link} />
-              </View>
-              <ThemedText type="h4" style={styles.emptyTitle}>
-                Start a Conversation
-              </ThemedText>
-              <ThemedText
-                type="body"
-                style={[styles.emptyText, { color: theme.textSecondary }]}
-              >
-                Ask NutriCoach for personalized nutrition advice, meal
-                suggestions, and help reaching your goals.
-              </ThemedText>
-              <Pressable
-                onPress={handleNewChat}
-                style={[
-                  styles.emptyButton,
-                  { backgroundColor: theme.accentSolid },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Start your first chat"
-                disabled={isCreatingChat}
-              >
-                <Feather name="plus" size={18} color={theme.buttonText} />
-                <ThemedText
-                  type="body"
-                  style={[styles.emptyButtonText, { color: theme.buttonText }]}
-                >
-                  New Chat
-                </ThemedText>
-              </Pressable>
-            </View>
+            <EmptyState
+              variant="firstTime"
+              icon={isRecipeMode ? "book-open" : "message-circle"}
+              title={
+                isRecipeMode ? "No recipe chats yet" : "Start a Conversation"
+              }
+              description={
+                isRecipeMode
+                  ? "Ask the recipe chef to invent, adapt or remix a recipe and it will show up here."
+                  : "Ask NutriCoach for personalized nutrition advice, meal suggestions, and help reaching your goals."
+              }
+              actionLabel={isRecipeMode ? "New Recipe Chat" : "New Chat"}
+              onAction={isCreatingChat ? undefined : handleNewChat}
+            />
           )
         }
       />

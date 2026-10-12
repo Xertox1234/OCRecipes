@@ -1,18 +1,34 @@
 /**
- * Shared color map for notebook entry types.
- *
- * Colors are fixed-palette values independent of dark/light mode — they serve
- * as category identifiers (semantic hue), not as foreground text on
- * white/cream. Contrast has been verified against both themes via
- * `docs/legacy-patterns/design-system.md` WCAG guidelines.
+ * Colour for a notebook entry type, as a theme token so it follows dark mode.
+ * Used as TEXT / dot colour on the card surface (the badge-text tokens are
+ * tuned for >= 4.5:1 on backgroundRoot; `link` is ~4.4:1 on backgroundSecondary in light mode) —
+ * never as a fill behind white text.
  */
-export const TYPE_COLORS: Record<string, string> = {
-  commitment: "#f59e0b",
-  insight: "#7c6dff",
-  goal: "#008A38",
-  preference: "#06b6d4",
-  coaching_strategy: "#06b6d4",
-  motivation: "#ec4899",
-  emotional_context: "#ec4899",
-  conversation_summary: "#888888",
-};
+export function notebookTypeColor(
+  theme: {
+    badgeWarningText: string;
+    badgeInfoText: string;
+    badgeSuccessText: string;
+    badgeErrorText: string;
+    badgeNeutralText: string;
+    link: string;
+  },
+  type: string,
+): string {
+  switch (type) {
+    case "commitment":
+      return theme.badgeWarningText;
+    case "insight":
+      return theme.badgeInfoText;
+    case "goal":
+      return theme.badgeSuccessText;
+    case "preference":
+    case "coaching_strategy":
+      return theme.link;
+    case "motivation":
+    case "emotional_context":
+      return theme.badgeErrorText;
+    default:
+      return theme.badgeNeutralText;
+  }
+}
