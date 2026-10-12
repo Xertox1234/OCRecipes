@@ -130,8 +130,16 @@ export function register(app: Express): void {
 
         // An emailed code is one factor, like a password: on a two-step
         // account it also needs the code (2FA spec D2). Only a Google/Apple
-        // confirmation is exempt (D1).
-        const singleFactor = "password" in proof || "emailCode" in proof;
+        // confirmation is exempt (D1) — and an emailed code on an EMAIL
+        // two-step account, whose second code would come from the same inbox
+        // (owner ruling 4, 2026-10-12).
+        const emailCodeIsTheFactor =
+          "emailCode" in proof &&
+          user.mfaEnabledAt !== null &&
+          (await storage.getMfaState(user.id))?.method === "email";
+        const singleFactor =
+          "password" in proof ||
+          ("emailCode" in proof && !emailCodeIsTheFactor);
         const gate = await secondFactorForPasswordProof(
           user,
           singleFactor,

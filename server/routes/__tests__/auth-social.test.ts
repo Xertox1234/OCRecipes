@@ -44,6 +44,7 @@ vi.mock("../../storage", () => ({
     refundLinkPasswordGuess: vi.fn().mockResolvedValue(undefined),
     completeLinkFromTicket: vi.fn(),
     createMfaChallenge: vi.fn(),
+    getMfaState: vi.fn(),
     createUserWithIdentity: vi.fn(),
     getUserByEmailForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
@@ -812,6 +813,7 @@ describe("POST /api/auth/social/link", () => {
     expect(res.body).toEqual({
       status: "mfa_required",
       challenge: expect.any(String),
+      method: "totp",
     });
     expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
     expect(storage.getUser).not.toHaveBeenCalled(); // issueSession never ran
