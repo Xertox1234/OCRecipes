@@ -11,6 +11,7 @@ interface ThemeColors {
   backgroundDefault: string;
   backgroundSecondary: string;
   backgroundTertiary: string;
+  surface: string;
   success: string;
   warning: string;
   error: string;
@@ -25,7 +26,9 @@ export function getBackgroundColorForElevation(
 ): string {
   switch (elevation) {
     case 1:
-      return theme.backgroundDefault;
+      // `backgroundDefault` equals `backgroundRoot` in both themes, which made
+      // elevation-1 cards invisible; `surface` is the elevated card token.
+      return theme.surface;
     case 2:
       return theme.backgroundSecondary;
     case 3:
