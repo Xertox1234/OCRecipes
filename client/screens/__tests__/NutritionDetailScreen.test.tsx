@@ -671,7 +671,7 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
   it("re-gates after a manual search replaces the acknowledged numbers", () => {
     // Starts on a numbered product: a numberless "Product Not Found" screen no
     // longer offers the log bar at all (QA sweep #86 — see the unknown-product
-    // test below), but the productName discriminator guards any product swap.
+    // test above), but the productName discriminator guards any product swap.
     const { queryByText, getByText, rerender } = renderScanRoute(GATED, {
       productName: "Sparkling Water",
       calories: 0,
