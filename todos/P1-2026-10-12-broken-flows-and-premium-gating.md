@@ -1,6 +1,6 @@
 ---
 title: "Broken flows and premium gating: Profile rate-limit error, unreachable scan options, recipe-chat gating"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-10-12
 updated: 2026-10-12

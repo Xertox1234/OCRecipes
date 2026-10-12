@@ -181,6 +181,7 @@ export const HOME_ACTIONS: HomeAction[] = [
     icon: "package",
     label: "Pantry",
     subtitle: "Track what you have",
+    premium: true,
   },
 ];
 

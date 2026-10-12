@@ -25,8 +25,11 @@ const ANNUAL_WITH_TRIAL: IAPProduct = {
 };
 
 describe("BENEFITS constant", () => {
-  it("has exactly 4 benefits", () => {
-    expect(BENEFITS).toHaveLength(4);
+  it("lists every feature that opens the paywall (QA #54)", () => {
+    const labels = BENEFITS.map((b) => b.label);
+    expect(labels).toContain("Quick Log from text");
+    expect(labels).toContain("Pantry tracking");
+    expect(BENEFITS).toHaveLength(6);
   });
 
   it("each benefit has icon and label", () => {

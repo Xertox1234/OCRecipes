@@ -24,6 +24,12 @@ describe("action-config", () => {
       expect(quickLog?.premium).toBe(true);
     });
 
+    // Same lock as the Profile Pantry tile (QA sweep #65).
+    it("marks Pantry as premium", () => {
+      const pantry = HOME_ACTIONS.find((a) => a.id === "pantry");
+      expect(pantry?.premium).toBe(true);
+    });
+
     // Inline drawers render only their label, so the rule covers row actions.
     it("premium row actions have a subtitle (shown under the label)", () => {
       const premiumActions = HOME_ACTIONS.filter(

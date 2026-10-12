@@ -15,6 +15,7 @@ import {
 import { useProfileWidgets } from "@/hooks/useProfileWidgets";
 import { useLibraryCounts } from "@/hooks/useLibraryCounts";
 import { useAvatarUpload } from "@/hooks/useAvatarUpload";
+import { getProfileLoadState } from "@/hooks/profile-load-state";
 import type { ProfileScreenNavigationProp } from "@/types/navigation";
 
 export function useProfileData() {
@@ -34,11 +35,13 @@ export function useProfileData() {
     data: widgetData,
     isLoading: widgetsLoading,
     isError: widgetsError,
+    error: widgetsErr,
     refetch: refetchWidgets,
   } = useProfileWidgets();
   const {
     data: libraryCounts,
     isError: libraryCountsError,
+    error: libraryCountsErr,
     refetch: refetchLibraryCounts,
   } = useLibraryCounts();
 
@@ -58,7 +61,14 @@ export function useProfileData() {
   // whole screen. The verification query feeds a single badge (compositeScore)
   // and falls back to 0, so it is allowed to fail silently rather than hide the
   // entire profile.
-  const isError = widgetsError || libraryCountsError;
+  const { isError, isRateLimited } = getProfileLoadState([
+    { isError: widgetsError, error: widgetsErr, data: widgetData },
+    {
+      isError: libraryCountsError,
+      error: libraryCountsErr,
+      data: libraryCounts,
+    },
+  ]);
   const refetch = useCallback(() => {
     void refetchWidgets();
     void refetchLibraryCounts();
@@ -121,6 +131,7 @@ export function useProfileData() {
     verificationData,
     isInitialLoading,
     isError,
+    isRateLimited,
     refetch,
     handleThemeToggle,
     handleAvatarPress,

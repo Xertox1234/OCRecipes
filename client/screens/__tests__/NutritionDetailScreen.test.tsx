@@ -657,9 +657,24 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
    * `nutrition?.barcode` does NOT discriminate here (both sides carry the same
    * route barcode); `productName` does. See the dep-array comment in the screen.
    */
+  it("offers the label scan, not Add to Today, for an unknown barcode (QA #86)", () => {
+    const { queryByText, getByText } = renderScanRoute(GATED, {
+      productName: "Unknown Product",
+      barcode: "06772408",
+    });
+
+    expect(queryByText("Add to Today")).toBeNull();
+    expect(queryByText(GATED_LABEL)).toBeNull();
+    expect(getByText("Scan the nutrition label")).toBeTruthy();
+  });
+
   it("re-gates after a manual search replaces the acknowledged numbers", () => {
+    // Starts on a numbered product: a numberless "Product Not Found" screen no
+    // longer offers the log bar at all (QA sweep #86 — see the unknown-product
+    // test below), but the productName discriminator guards any product swap.
     const { queryByText, getByText, rerender } = renderScanRoute(GATED, {
-      productName: "Product Not Found",
+      productName: "Sparkling Water",
+      calories: 0,
       barcode: "06772408",
     });
 

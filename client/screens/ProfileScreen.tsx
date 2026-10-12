@@ -45,6 +45,7 @@ export default function ProfileScreen() {
     verificationData,
     isInitialLoading,
     isError,
+    isRateLimited,
     refetch,
     handleThemeToggle,
     handleAvatarPress,
@@ -120,7 +121,11 @@ export default function ProfileScreen() {
           variant="temporary"
           icon="alert-circle"
           title="Couldn't load your profile"
-          description="Something went wrong fetching your profile data. Check your connection and try again."
+          description={
+            isRateLimited
+              ? "You're refreshing a lot. Wait a moment, then try again."
+              : "Something went wrong fetching your profile data. Check your connection and try again."
+          }
           actionLabel="Try Again"
           onAction={refetch}
         />

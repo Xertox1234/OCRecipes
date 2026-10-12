@@ -43,6 +43,15 @@ export function useRefreshOnFocus(
   options?: { settleMs?: number },
 ) {
   const settleMs = options?.settleMs;
+  // Latest-ref: callers pass an inline arrow (new identity every render). If
+  // that identity were a useCallback dependency, useFocusEffect would re-run
+  // (and refetch) on EVERY re-render of the screen, not just on refocus — a
+  // modal toggle or any state change then bursts requests into the rate
+  // limiter (QA sweep #61).
+  const refetchRef = useRef(refetch);
+  useEffect(() => {
+    refetchRef.current = refetch;
+  }, [refetch]);
   const firstTimeRef = useRef(true);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -65,17 +74,17 @@ export function useRefreshOnFocus(
         firstTimeRef.current = false;
         return;
       }
-      refetch();
+      refetchRef.current();
       if (settleMs === undefined) return;
       const timer = setTimeout(() => {
         settleTimerRef.current = null;
-        refetch();
+        refetchRef.current();
       }, settleMs);
       settleTimerRef.current = timer;
       return () => {
         clearTimeout(timer);
         if (settleTimerRef.current === timer) settleTimerRef.current = null;
       };
-    }, [refetch, settleMs]),
+    }, [settleMs]),
   );
 }

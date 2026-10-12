@@ -62,6 +62,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { RecipeDiscoveryFeed } from "@/components/meal-plan/RecipeDiscoveryFeed";
 import { isBlankBrowseState } from "@/components/meal-plan/recipe-discovery-utils";
+import { getSourceTab } from "./source-tab-utils";
 import {
   shouldGatePremiumSource,
   isQuotaExceededError,
@@ -773,7 +774,8 @@ export default function RecipeBrowserScreen() {
               // returns to the existing Main instead of pushing a second one
               // (see AllConversationsNavigationProp in types/navigation.ts).
               // Adding a recipe from Profile or the Coach therefore switches
-              // to Plan;
+              // to Plan (`returnToTab` makes the hub's Back return to the tab
+              // it came from, QA sweep #10);
               // `initial: false` keeps Plan home underneath when the Plan
               // stack wasn't mounted yet (otherwise Add Recipe would be its
               // only screen, with no way back to Plan home).
@@ -783,7 +785,7 @@ export default function RecipeBrowserScreen() {
                   screen: "MealPlanTab",
                   params: {
                     screen: "RecipeEntryHub",
-                    params: {},
+                    params: { returnToTab: getSourceTab(navigation) },
                     initial: false,
                   },
                 },

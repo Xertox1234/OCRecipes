@@ -439,10 +439,20 @@ export default function RecipeChatScreen() {
     [toggleFavourite, handleSaveRecipe, addFavourite],
   );
 
+  // Recipe chat is premium (server: recipeGeneration). Gate before anything
+  // is consumed so a free user keeps their typed prompt and no empty
+  // "New Recipe Chat" is created (QA sweep #59).
+  const canGenerate = usePremiumFeature("recipeGeneration");
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
   const handleSend = useCallback(
     async (text?: string) => {
       const content = (text || inputText).trim();
       if (!content || isStreaming) return;
+      if (!canGenerate) {
+        setShowUpgrade(true);
+        return;
+      }
 
       setInputText("");
       setHasStarted(true);
@@ -476,6 +486,7 @@ export default function RecipeChatScreen() {
     [
       inputText,
       isStreaming,
+      canGenerate,
       conversationId,
       createConversation,
       sendMessage,
@@ -486,12 +497,10 @@ export default function RecipeChatScreen() {
   );
 
   const canSearchOnline = usePremiumFeature("catalogSave");
-  const canGenerate = usePremiumFeature("recipeGeneration");
   const finderLocks = useMemo(
     () => lockedFinderButtons({ canSearchOnline, canGenerate }),
     [canSearchOnline, canGenerate],
   );
-  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // The adjust card's choices by flowId: the card first renders in the
   // pending bubble, then remounts as the saved row — same flow, same choices.
@@ -850,7 +859,7 @@ export default function RecipeChatScreen() {
           >
             {isRemixMode
               ? "Choose a modification or describe what you'd like to change"
-              : "Describe a recipe, upload a photo of ingredients, or pick a suggestion below"}
+              : "Describe a recipe or pick a suggestion below"}
           </ThemedText>
 
           {/* Suggestion Chips */}
@@ -953,6 +962,28 @@ export default function RecipeChatScreen() {
           ListFooterComponent={streamingFooter}
         />
       )}
+
+      {!canGenerate ? (
+        <Pressable
+          onPress={openUpgrade}
+          accessibilityRole="button"
+          accessibilityLabel="Recipe chat is a premium feature. Upgrade to unlock."
+          style={[
+            styles.lockBanner,
+            { backgroundColor: withOpacity(theme.warning, 0.15) },
+          ]}
+        >
+          <Feather
+            name="lock"
+            size={16}
+            color={theme.warning}
+            accessible={false}
+          />
+          <ThemedText type="small" style={styles.lockBannerText}>
+            Recipe chat is a Premium feature. Tap to upgrade.
+          </ThemedText>
+        </Pressable>
+      ) : null}
 
       {/* Input Bar */}
       <View
@@ -1087,6 +1118,17 @@ const styles = StyleSheet.create({
   assistantBubble: {
     alignSelf: "flex-start",
     borderBottomLeftRadius: BorderRadius.xs,
+  },
+  lockBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    minHeight: 44,
+  },
+  lockBannerText: {
+    flex: 1,
   },
   inputBar: {
     flexDirection: "row",

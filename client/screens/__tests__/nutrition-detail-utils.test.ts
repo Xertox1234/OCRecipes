@@ -2,8 +2,27 @@ import { describe, it, expect } from "vitest";
 import {
   deriveLogGate,
   getServingContextLabel,
+  isUnknownProduct,
   roundToOneDecimal,
 } from "../nutrition-detail-utils";
+
+describe("isUnknownProduct (QA #86)", () => {
+  it("is true for the placeholder names with no calories", () => {
+    expect(isUnknownProduct({ productName: "Unknown Product" })).toBe(true);
+    expect(isUnknownProduct({ productName: "Product Not Found" })).toBe(true);
+  });
+
+  it("is false for a real product, a placeholder with calories, or no data", () => {
+    expect(isUnknownProduct({ productName: "Cola", calories: 140 })).toBe(
+      false,
+    );
+    expect(
+      isUnknownProduct({ productName: "Unknown Product", calories: 50 }),
+    ).toBe(false);
+    expect(isUnknownProduct(null)).toBe(false);
+    expect(isUnknownProduct(undefined)).toBe(false);
+  });
+});
 
 const OPTIONS = [
   { label: "250 ml", grams: 250 },

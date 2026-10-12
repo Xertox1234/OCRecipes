@@ -30,7 +30,11 @@ export type MealPlanStackParamList = {
     planDays?: MealPlanDay[];
   };
   RecipeEntryHub:
-    | { returnToMealPlan?: { mealType: string; plannedDate: string } }
+    | {
+        returnToMealPlan?: { mealType: string; plannedDate: string };
+        /** Tab the user jumped from (Profile/Coach stack browser) — Back returns there. */
+        returnToTab?: "ProfileTab" | "CoachTab";
+      }
     | undefined;
   RecipeAIGenerate:
     | { returnToMealPlan?: { mealType: string; plannedDate: string } }

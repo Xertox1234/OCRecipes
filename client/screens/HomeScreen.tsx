@@ -144,13 +144,18 @@ export default function HomeScreen() {
   const canQuickLog = usePremiumFeature("textFoodParsing");
   const { isPremiumResolved } = usePremiumContext();
   const quickLogLocked = isPremiumResolved && !canQuickLog;
+  // Pantry uses the same flag as the Profile tile (LibraryGrid) so both
+  // entry points lock identically and open the paywall (QA sweep #65).
+  const canUsePantry = usePremiumFeature("pantryTracking");
+  const pantryLocked = isPremiumResolved && !canUsePantry;
   const isActionLocked = useCallback(
     (action: HomeAction) => {
       if (!action.premium) return false;
       if (action.id === "quick-log") return quickLogLocked;
+      if (action.id === "pantry") return pantryLocked;
       return !isPremium;
     },
-    [isPremium, quickLogLocked],
+    [isPremium, quickLogLocked, pantryLocked],
   );
 
   // BottomSheetModal must be declared directly in this screen component —

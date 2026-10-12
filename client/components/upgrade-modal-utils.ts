@@ -11,6 +11,8 @@ export const BENEFITS = [
   { icon: "bar-chart-2" as const, label: "Detailed macro goals" },
   { icon: "book-open" as const, label: "AI recipe generation" },
   { icon: "camera" as const, label: "High quality photo capture" },
+  { icon: "edit-3" as const, label: "Quick Log from text" },
+  { icon: "package" as const, label: "Pantry tracking" },
 ];
 
 const UNIT_TITLE: Record<SubscriptionPeriodUnit, string> = {

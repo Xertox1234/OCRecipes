@@ -26,6 +26,7 @@ vi.mock("@react-navigation/native", () => ({
   useRoute: () => ({ params: {} }),
   // useSheetBackHandler (a real collaborator here) calls useIsFocused itself.
   useIsFocused: () => true,
+  usePreventRemove: vi.fn(),
 }));
 
 // Renders a real close trigger (not `() => null`) so the Android-trap-release

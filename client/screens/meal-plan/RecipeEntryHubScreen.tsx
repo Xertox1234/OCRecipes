@@ -2,7 +2,11 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, View, ScrollView, Pressable, Text } from "react-native";
 import Animated from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  usePreventRemove,
+} from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
@@ -14,6 +18,7 @@ import {
   ImportRecipeSheetContent,
   IMPORT_RECIPE_SNAP_POINTS,
 } from "@/components/meal-plan/ImportRecipeSheet";
+import { BACK_ACTION_TYPES } from "@/hooks/useFromHomeBackRedirect";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePressScale } from "@/hooks/usePressScale";
 import { useTheme } from "@/hooks/useTheme";
@@ -142,6 +147,20 @@ export default function RecipeEntryHubScreen() {
   const headerHeight = useHeaderHeight();
 
   const returnToMealPlan = route.params?.returnToMealPlan;
+  const returnToTab = route.params?.returnToTab;
+
+  // Reached from the Profile/Coach recipe browser's "+ Add": a Back gesture
+  // returns to that tab instead of dead-ending on Plan home (QA sweep #10).
+  // Armed only while `returnToTab` is set; forward navigation (replace/pop by
+  // the hub's own flows) is re-dispatched untouched.
+  usePreventRemove(!!returnToTab, (e) => {
+    if (!BACK_ACTION_TYPES.has(e.data.action.type)) {
+      navigation.dispatch(e.data.action);
+      return;
+    }
+    navigation.setParams({ returnToTab: undefined });
+    navigation.getParent()?.navigate(returnToTab as "ProfileTab" | "CoachTab");
+  });
 
   // BottomSheetModal must be declared directly in this screen component —
   // declaring it inside an imported child component silently breaks
