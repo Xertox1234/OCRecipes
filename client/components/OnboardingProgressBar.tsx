@@ -23,6 +23,11 @@ export function OnboardingProgressBar({
   totalSteps,
 }: OnboardingProgressBarProps) {
   const { theme } = useTheme();
+  // currentStep < 0 means the intro screens, before the first question.
+  const stepText =
+    currentStep < 0
+      ? "Getting started"
+      : `Step ${currentStep + 1} of ${totalSteps}`;
   return (
     <View
       style={styles.container}
@@ -31,9 +36,13 @@ export function OnboardingProgressBar({
         min: 0,
         max: totalSteps,
         now: currentStep + 1,
-        text: `Step ${currentStep + 1} of ${totalSteps}`,
+        text: stepText,
       }}
-      accessibilityLabel={`Onboarding progress: step ${currentStep + 1} of ${totalSteps}`}
+      accessibilityLabel={
+        currentStep < 0
+          ? "Onboarding progress: getting started"
+          : `Onboarding progress: step ${currentStep + 1} of ${totalSteps}`
+      }
     >
       {Array.from({ length: totalSteps }, (_, i) => (
         <ProgressSegment

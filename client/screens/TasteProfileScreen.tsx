@@ -167,7 +167,7 @@ export default function TasteProfileScreen() {
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <View style={[styles.header, { paddingTop: headerInset }]}>
         <ThemedText type="body" style={{ color: theme.textSecondary }}>
-          Recipes you love — used to personalise your feed.
+          Recipes you love — used to personalize your feed.
         </ThemedText>
         <View
           style={[

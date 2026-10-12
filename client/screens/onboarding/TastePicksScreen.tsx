@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 import { TastePicksGrid } from "@/components/TastePicksGrid";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
+import { getStepLabel } from "@/context/onboarding-steps";
 import { useAuthContext } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { apiRequest } from "@/lib/query-client";
@@ -27,7 +28,7 @@ const SUBMIT_ERROR_MESSAGE = "Something went wrong. Please try again.";
 export default function TastePicksScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data, prevStep } = useOnboarding();
+  const { data, prevStep, currentStep } = useOnboarding();
   const { updateUser } = useAuthContext();
   const toast = useToast();
 
@@ -166,6 +167,19 @@ export default function TastePicksScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <View style={styles.header}>
+        <View
+          style={[
+            styles.stepIndicator,
+            { backgroundColor: withOpacity(theme.success, 0.08) },
+          ]}
+        >
+          <ThemedText
+            type="small"
+            style={{ color: theme.success, fontWeight: "600" }}
+          >
+            {getStepLabel(currentStep)}
+          </ThemedText>
+        </View>
         <ThemedText type="h3" style={styles.title}>
           Pick recipes you love
         </ThemedText>
@@ -173,7 +187,7 @@ export default function TastePicksScreen() {
           type="body"
           style={[styles.subtitle, { color: theme.textSecondary }]}
         >
-          We&apos;ll personalise your recommendations. Tap at least {MIN_PICKS}.
+          We&apos;ll personalize your recommendations. Tap at least {MIN_PICKS}.
         </ThemedText>
         <View
           style={[
@@ -282,6 +296,12 @@ const styles = StyleSheet.create({
     paddingTop: Spacing["2xl"],
     paddingBottom: Spacing.md,
     gap: Spacing.sm,
+  },
+  stepIndicator: {
+    alignSelf: "flex-start",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
   },
   title: {},
   subtitle: { lineHeight: 22 },

@@ -74,8 +74,8 @@ export default function HealthDataConsentScreen() {
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[styles.content, { paddingTop: Spacing["3xl"] }]}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.content, { paddingTop: Spacing.xl }]}
+        showsVerticalScrollIndicator
       >
         <View style={styles.header}>
           <View
@@ -95,6 +95,28 @@ export default function HealthDataConsentScreen() {
           >
             Before we ask about allergies, conditions, and goals, here&apos;s
             what we collect and why.
+          </ThemedText>
+        </View>
+
+        <View
+          style={[
+            styles.purposeBox,
+            {
+              backgroundColor: withOpacity(theme.success, 0.08),
+              borderColor: withOpacity(theme.success, 0.2),
+            },
+          ]}
+        >
+          <ThemedText type="body" style={{ fontWeight: "600" }}>
+            Why we ask
+          </ThemedText>
+          <ThemedText
+            type="small"
+            style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
+          >
+            To personalize nutrition recommendations and AI coaching. Your
+            health data is never sold or shared with advertisers. You can update
+            or delete it any time from your Profile.
           </ThemedText>
         </View>
 
@@ -134,28 +156,6 @@ export default function HealthDataConsentScreen() {
               </View>
             </View>
           ))}
-        </View>
-
-        <View
-          style={[
-            styles.purposeBox,
-            {
-              backgroundColor: withOpacity(theme.success, 0.08),
-              borderColor: withOpacity(theme.success, 0.2),
-            },
-          ]}
-        >
-          <ThemedText type="body" style={{ fontWeight: "600" }}>
-            Why we ask
-          </ThemedText>
-          <ThemedText
-            type="small"
-            style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-          >
-            To personalize nutrition recommendations and AI coaching. Your
-            health data is never sold or shared with advertisers. You can update
-            or delete it any time from your Profile.
-          </ThemedText>
         </View>
 
         <Pressable
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.xl,
   },
   privacyLink: {
     flexDirection: "row",

@@ -24,4 +24,11 @@ describe("OnboardingProgressBar", () => {
     const bar = screen.getByRole("progressbar");
     expect(bar).toBeDefined();
   });
+
+  it("labels the intro screens (currentStep -1) as getting started", () => {
+    renderComponent(<OnboardingProgressBar currentStep={-1} totalSteps={6} />);
+    expect(
+      screen.getByLabelText("Onboarding progress: getting started"),
+    ).toBeDefined();
+  });
 });
