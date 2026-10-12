@@ -43,7 +43,7 @@ describe("ResetPasswordScreen-utils", () => {
       }),
     ).toBeNull();
   });
-  it("checks only the floor (8, no composition rule): the server applies 15 when two-step is off", () => {
+  it("accepts 8 characters with no composition rule (8 for everyone)", () => {
     expect(
       validateResetForm({
         code: "123456",
@@ -55,7 +55,7 @@ describe("ResetPasswordScreen-utils", () => {
   it("maps the server's password-policy codes to plain sentences", () => {
     expect(
       getResetErrorMessage(new ApiError("x", "PASSWORD_TOO_SHORT", 400)),
-    ).toBe("Use at least 15 characters, or 8 if two-step verification is on.");
+    ).toBe("Use at least 8 characters.");
     expect(
       getResetErrorMessage(new ApiError("x", "PASSWORD_BREACHED", 400)),
     ).toBe(

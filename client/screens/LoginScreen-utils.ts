@@ -28,7 +28,6 @@ import { ApiError } from "@/lib/api-error";
 import {
   PASSWORD_MAX,
   PASSWORD_MIN_SINGLE_FACTOR,
-  PASSWORD_MIN_WITH_MFA,
   newPasswordProblem,
   passwordMessage,
   type PasswordContext,
@@ -76,30 +75,22 @@ export interface AuthFormInput {
   confirmPassword: string;
   ageConfirmed: boolean;
   email: string;
-  /** The sign-up "Use two-step verification" switch: minimum 8, not 15. */
-  twoStep?: boolean;
 }
 
-/** The sign-up minimum and the sentence that goes with it, from the switch. */
-function signupRule(twoStep: boolean | undefined): {
-  min: number;
-  context: PasswordContext;
-} {
-  return twoStep
-    ? { min: PASSWORD_MIN_WITH_MFA, context: "mfa" }
-    : { min: PASSWORD_MIN_SINGLE_FACTOR, context: "signup" };
+/** The sign-up minimum: 8 for everyone (owner ruling 2026-10-12). */
+const SIGNUP_RULE: { min: number; context: PasswordContext } = {
+  min: PASSWORD_MIN_SINGLE_FACTOR,
+  context: "signup",
+};
+
+/** iOS strong-password suggestions follow the sign-up minimum. */
+export function registerPasswordRules(): string {
+  return `minlength: ${SIGNUP_RULE.min}; maxlength: ${PASSWORD_MAX};`;
 }
 
-/** iOS strong-password suggestions follow the active sign-up minimum (spec §7). */
-export function registerPasswordRules(twoStep: boolean): string {
-  return `minlength: ${signupRule(twoStep).min}; maxlength: ${PASSWORD_MAX};`;
-}
-
-/** The live hint under the sign-up password field. */
-export function registerPasswordHint(twoStep: boolean): string {
-  return twoStep
-    ? `At least ${PASSWORD_MIN_WITH_MFA} characters.`
-    : `At least ${PASSWORD_MIN_SINGLE_FACTOR} characters, or ${PASSWORD_MIN_WITH_MFA} with two-step verification.`;
+/** The hint under the sign-up password field. */
+export function registerPasswordHint(): string {
+  return `At least ${SIGNUP_RULE.min} characters.`;
 }
 
 /**
@@ -147,7 +138,7 @@ export function validateAuthForm(input: AuthFormInput): string | null {
   const passwordError = validateNewPassword(
     input.password,
     input.confirmPassword,
-    signupRule(input.twoStep),
+    SIGNUP_RULE,
   );
   if (passwordError) return passwordError;
   if (!input.ageConfirmed) {
@@ -195,17 +186,13 @@ export function validateAuthFormFields(input: AuthFormInput): AuthFieldErrors {
  * rate-limit case (otherwise indistinguishable from a generic failure); all
  * other failures fall back to the generic mode copy.
  */
-export function getAuthErrorMessage(
-  error: unknown,
-  mode: AuthMode,
-  opts: { twoStep?: boolean } = {},
-): string {
+export function getAuthErrorMessage(error: unknown, mode: AuthMode): string {
   if (error instanceof ApiError && error.code === "RATE_LIMITED") {
     return "Too many attempts. Please wait a few minutes and try again.";
   }
   if (mode === "register" && error instanceof ApiError) {
     if (error.code === "PASSWORD_TOO_SHORT") {
-      return passwordMessage("too_short", signupRule(opts.twoStep).context);
+      return passwordMessage("too_short", SIGNUP_RULE.context);
     }
     if (error.code === "PASSWORD_BREACHED") return BREACHED_PASSWORD_MESSAGE;
   }

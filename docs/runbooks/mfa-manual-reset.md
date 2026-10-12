@@ -47,7 +47,6 @@ Sessions that were already open can keep working for up to **60 seconds** after 
 Tell the person:
 
 - Sign in with your password. No code will be asked.
-- If your password is shorter than 15 characters, the app will ask you to choose a longer one (or turn two-step back on) before it signs you in. A password that short isn't enough on its own.
 - If you had started changing your email address, that change was cancelled. Start it again once you're signed in.
-- Set up two-step verification again (Profile → Sign-in methods), and save the new recovery codes somewhere other than your phone.
+- Two-step verification is optional. If you want it back, set it up again (Profile → Sign-in methods) and save the new recovery codes, for example in a note in the Passwords app.
 - You'll get an email saying two-step verification was turned off. That's expected.

@@ -370,13 +370,21 @@ describe("POST /api/auth/change-password", () => {
     expect(reauthenticate).toHaveBeenCalledWith("1", null, expect.anything());
   });
 
-  it("too short for an account without two-step → 400 PASSWORD_TOO_SHORT, nothing written", async () => {
+  it("12 characters on an account without two-step → changed (8 for everyone, owner ruling 2026-10-12)", async () => {
     const res = await post("change-password", {
       proof: { password: "current-pass-123" },
-      newPassword: "short-pass-1", // 12 < 15
+      newPassword: "short-pass-1", // 12
+    });
+    expect(res.status).toBe(200);
+    expect(storage.changePassword).toHaveBeenCalledTimes(1);
+  });
+
+  it("7 characters → 400, nothing written", async () => {
+    const res = await post("change-password", {
+      proof: { password: "current-pass-123" },
+      newPassword: "short-7",
     });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
     expect(storage.changePassword).not.toHaveBeenCalled();
   });
 

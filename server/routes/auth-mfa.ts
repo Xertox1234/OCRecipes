@@ -14,10 +14,7 @@ import {
 import { fireAndForget } from "../lib/fire-and-forget";
 import { passwordMatches } from "../lib/password-check";
 import { hashPassword } from "../lib/password-hash";
-import {
-  PASSWORD_MIN_SINGLE_FACTOR,
-  passwordLength,
-} from "@shared/constants/password-policy";
+import { PASSWORD_MIN_SINGLE_FACTOR } from "@shared/constants/password-policy";
 import { checkNewPassword } from "./_password-rules";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -431,8 +428,7 @@ export function register(app: Express): void {
   );
 
   // Turn off: password + factor. Every session ends; this one gets a new token.
-  // A password under 15 can't stand alone, so it must be replaced in the same
-  // step (spec §5.4).
+  // An optional newPassword changes the password in the same step.
   app.post(
     "/api/auth/mfa/disable",
     requireAuth,
@@ -446,18 +442,8 @@ export function register(app: Express): void {
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
-        // Before the factor check, so a policy rejection never spends a
-        // recovery code (spec §5.4 as amended by the PR 1 plan).
-        if (
-          !body.newPassword &&
-          passwordLength(body.password) < PASSWORD_MIN_SINGLE_FACTOR
-        ) {
-          throw new Reply(
-            400,
-            ErrorCode.PASSWORD_UPGRADE_NEEDED,
-            "Your password is shorter than 15 characters. Choose a new one of at least 15 to turn off two-step verification.",
-          );
-        }
+        // An optional newPassword is checked before the factor, so a policy
+        // rejection never spends a recovery code.
         let newPasswordHash: string | undefined;
         if (body.newPassword) {
           const rejected = await checkNewPassword(

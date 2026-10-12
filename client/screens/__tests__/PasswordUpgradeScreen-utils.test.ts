@@ -19,7 +19,7 @@ describe("showTwoStepChoice", () => {
 describe("upgradeMessageFor — static copy per code, never the raw message", () => {
   it.each([
     ["UPGRADE_PASS_EXPIRED", "This sign-in expired. Please sign in again."],
-    ["PASSWORD_TOO_SHORT", "Use at least 15 characters."],
+    ["PASSWORD_TOO_SHORT", "Use at least 8 characters."],
     [
       "PASSWORD_BREACHED",
       "That password has appeared in a data breach. Choose a different one.",

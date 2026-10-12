@@ -227,73 +227,42 @@ describe("Auth Routes", () => {
         vi.mocked(isBreached).mockResolvedValue(false);
       });
 
-      it("14 characters → 400 PASSWORD_TOO_SHORT naming the switch, no account", async () => {
-        const res = await send("a".repeat(14));
+      // Owner ruling 2026-10-12: 8 characters for everyone, and sign-up never
+      // stops at a "longer password or two-step" screen.
+      it("7 characters → 400 at the 8 floor, no account", async () => {
+        const res = await send("a".repeat(7));
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
-        expect(res.body.error).toBe(
-          "Use at least 15 characters, or turn on two-step verification to use 8.",
-        );
+        expect(res.body.error).toContain("Use at least 8 characters.");
         expect(storage.createUser).not.toHaveBeenCalled();
       });
 
-      describe("the two-step switch (spec P4)", () => {
-        beforeEach(() => {
+      it("8 characters → account created with a token, never an upgrade pass", async () => {
+        vi.mocked(storage.createUpgradePass).mockReset();
+        const res = await send("a".repeat(8));
+        expect(res.status).toBe(201);
+        expect(res.body.token).toBe("mock-jwt-token");
+        expect(res.body.status).toBeUndefined();
+        expect(storage.createUpgradePass).not.toHaveBeenCalled();
+      });
+
+      it("8 characters with verification ON → verification pending", async () => {
+        vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+        const res = await send("a".repeat(8));
+        expect(res.status).toBe(200);
+        expect(res.body.status).toBe("verification_pending");
+        expect(storage.createUser).toHaveBeenCalledTimes(1);
+      });
+
+      describe("twoStep from an older app build", () => {
+        it("is accepted and changes nothing: 10 characters → a token", async () => {
           vi.mocked(storage.createUpgradePass).mockReset();
-          vi.mocked(storage.createUpgradePass).mockResolvedValue(undefined);
-        });
-
-        it("switch on: 10 characters are accepted", async () => {
-          vi.mocked(emailVerificationEnabled).mockReturnValue(true);
           const res = await send("a".repeat(10), { twoStep: true });
-          expect(res.status).toBe(200);
-          expect(res.body.status).toBe("verification_pending");
-          expect(storage.createUser).toHaveBeenCalledTimes(1);
-        });
-
-        it("switch on: 7 characters → 400 at the schema's 8 floor, no account", async () => {
-          // Under 8 never reaches the route's state-dependent check: the
-          // schema floor answers first (as it has since part 1).
-          const res = await send("a".repeat(7), { twoStep: true });
-          expect(res.status).toBe(400);
-          expect(res.body.code).toBe("VALIDATION_ERROR");
-          expect(res.body.error).toContain("Use at least 8 characters.");
-          expect(storage.createUser).not.toHaveBeenCalled();
-        });
-
-        it("switch on: 8 characters is the floor that passes", async () => {
-          const res = await send("a".repeat(8), { twoStep: true });
-          expect(res.status).toBe(201);
-          expect(storage.createUser).toHaveBeenCalledTimes(1);
-        });
-
-        it("switch off (explicit false) keeps the 15 minimum", async () => {
-          const res = await send("a".repeat(10), { twoStep: false });
-          expect(res.status).toBe(400);
-          expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
-        });
-
-        it("verification OFF, switch on, 10 characters → 201 upgrade_required with a pass, NO token", async () => {
-          const res = await send("a".repeat(10), { twoStep: true });
-          expect(res.status).toBe(201);
-          expect(res.body).toEqual({
-            status: "upgrade_required",
-            pass: expect.any(String),
-            canUseTwoStep: true,
-          });
-          expect(storage.createUpgradePass).toHaveBeenCalledTimes(1);
-          const authMod = await import("../../middleware/auth");
-          expect(authMod.generateToken).not.toHaveBeenCalled();
-        });
-
-        it("verification OFF, switch on, 15+ characters → a token as before", async () => {
-          const res = await send(GOOD_PASSWORD, { twoStep: true });
           expect(res.status).toBe(201);
           expect(res.body.token).toBe("mock-jwt-token");
           expect(storage.createUpgradePass).not.toHaveBeenCalled();
         });
 
-        it("twoStep must be a boolean", async () => {
+        it("twoStep must still be a boolean", async () => {
           const res = await send(GOOD_PASSWORD, { twoStep: "yes" });
           expect(res.status).toBe(400);
           expect(res.body.code).toBe("VALIDATION_ERROR");
@@ -886,7 +855,7 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(400);
     });
 
-    describe("sign-in gate (spec §5.2)", () => {
+    describe("no forced stop at sign-in (owner ruling 2026-10-12)", () => {
       const signIn = (password: string) =>
         request(app)
           .post("/api/auth/login")
@@ -894,85 +863,43 @@ describe("Auth Routes", () => {
 
       beforeEach(() => {
         vi.mocked(storage.createUpgradePass).mockReset();
-        vi.mocked(storage.createUpgradePass).mockResolvedValue(undefined);
         vi.mocked(storage.createMfaChallenge).mockReset();
         vi.mocked(storage.createMfaChallenge).mockResolvedValue(undefined);
       });
 
-      it("no two-step, correct 14-character password → 200 upgrade_required with a pass, NO token", async () => {
-        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
-          createMockUser({
-            password: pv2Fourteen,
-            tokenVersion: 4,
-            mfaEnabledAt: null,
-          }),
-        );
-        const res = await signIn(FOURTEEN);
-        expect(res.status).toBe(200);
-        expect(res.body).toEqual({
-          status: "upgrade_required",
-          pass: expect.any(String),
-          canUseTwoStep: true,
-        });
-        expect(storage.createUpgradePass).toHaveBeenCalledWith(
-          expect.objectContaining({ tokenVersion: 4, twoStepAllowed: true }),
-        );
-        const authMod = await import("../../middleware/auth");
-        expect(authMod.generateToken).not.toHaveBeenCalled();
-      });
+      it.each([
+        ["14", () => pv2Fourteen, FOURTEEN],
+        ["7 (set before the policy)", () => pv2Seven, SEVEN],
+      ])(
+        "no two-step, correct %s-character password → a session, never a pass",
+        async (_n, hash, typed) => {
+          vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+            createMockUser({ password: hash(), mfaEnabledAt: null }),
+          );
+          const res = await signIn(typed);
+          expect(res.status).toBe(200);
+          expect(res.body.token).toBe("mock-jwt-token");
+          expect(res.body.status).toBeUndefined();
+          expect(storage.createUpgradePass).not.toHaveBeenCalled();
+        },
+      );
 
-      it("a 7-character password → a pass that can't use two-step", async () => {
-        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
-          createMockUser({ password: pv2Seven, mfaEnabledAt: null }),
-        );
-        const res = await signIn(SEVEN);
-        expect(res.status).toBe(200);
-        expect(res.body.canUseTwoStep).toBe(false);
-        expect(res.body.token).toBeUndefined();
-      });
-
-      it("a 15-character password → a session as before (e.g. switch on, but typed 15+)", async () => {
-        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
-          createMockUser({ password: pv2Fifteen, mfaEnabledAt: null }),
-        );
-        const res = await signIn(FIFTEEN);
-        expect(res.status).toBe(200);
-        expect(res.body.token).toBe("mock-jwt-token");
-        expect(storage.createUpgradePass).not.toHaveBeenCalled();
-      });
-
-      it("a two-step account with a 14-character password still gets the challenge, never the pass", async () => {
+      it("a two-step account with a 14-character password still gets the challenge", async () => {
         vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
           createMockUser({ password: pv2Fourteen, mfaEnabledAt: new Date() }),
         );
         const res = await signIn(FOURTEEN);
         expect(res.status).toBe(200);
         expect(res.body.status).toBe("mfa_required");
-        expect(storage.createUpgradePass).not.toHaveBeenCalled();
+        expect(res.body.token).toBeUndefined();
       });
 
-      it("a wrong short password → 401, no pass", async () => {
+      it("a wrong password → 401", async () => {
         vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
           createMockUser({ password: pv2Fourteen, mfaEnabledAt: null }),
         );
         const res = await signIn("wrong-password");
         expect(res.status).toBe(401);
-        expect(storage.createUpgradePass).not.toHaveBeenCalled();
-      });
-
-      it("an unverified email wins over the gate (403 EMAIL_NOT_VERIFIED, no pass)", async () => {
-        vi.mocked(emailVerificationEnabled).mockReturnValue(true);
-        vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
-          createMockUser({
-            password: pv2Fourteen,
-            emailVerified: false,
-            mfaEnabledAt: null,
-          }),
-        );
-        const res = await signIn(FOURTEEN);
-        expect(res.status).toBe(403);
-        expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
-        expect(storage.createUpgradePass).not.toHaveBeenCalled();
       });
     });
 

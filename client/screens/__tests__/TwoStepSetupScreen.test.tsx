@@ -193,10 +193,10 @@ describe("TwoStepSetupScreen — managing it", () => {
     press("Turn off");
     await screen.findByLabelText("New password");
 
-    type("New password", "still-short-1");
-    type("Confirm new password", "still-short-1");
+    type("New password", "short-7");
+    type("Confirm new password", "short-7");
     press("Turn off");
-    await screen.findByText("Use at least 15 characters.");
+    await screen.findByText("Use at least 8 characters.");
 
     type("New password", "a-long-test-passphrase");
     type("Confirm new password", "a-long-test-passphrasf");

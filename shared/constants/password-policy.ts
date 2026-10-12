@@ -1,10 +1,12 @@
 /**
- * The one password rule (spec docs/superpowers/specs/2026-10-10-password-policy-design.md §2),
- * imported by server and client. SP 800-63B-4: 15 characters for a password
- * used alone, 8 when it is one of two factors; no composition rules; length
- * is counted in code points after NFC.
+ * The one password rule, imported by server and client. Owner ruling
+ * 2026-10-12 (supersedes the 15-character rule of spec
+ * docs/superpowers/specs/2026-10-10-password-policy-design.md §2): 8
+ * characters for everyone, whether or not two-step is on. No composition
+ * rules; length is counted in code points after NFC; breached passwords are
+ * still refused (server/lib/pwned-password.ts).
  */
-export const PASSWORD_MIN_SINGLE_FACTOR = 15;
+export const PASSWORD_MIN_SINGLE_FACTOR = 8;
 export const PASSWORD_MIN_WITH_MFA = 8;
 export const PASSWORD_MAX = 128;
 
@@ -31,13 +33,10 @@ export function newPasswordProblem(
 
 export function passwordMessage(
   problem: PasswordProblem,
-  context: PasswordContext,
+  // Kept so callers don't change in this PR; every context now has the same
+  // minimum, so it no longer affects the sentence.
+  _context: PasswordContext,
 ): string {
   if (problem === "too_long") return `Use at most ${PASSWORD_MAX} characters.`;
-  if (context === "mfa")
-    return `Use at least ${PASSWORD_MIN_WITH_MFA} characters.`;
-  if (context === "signup") {
-    return `Use at least ${PASSWORD_MIN_SINGLE_FACTOR} characters, or turn on two-step verification to use ${PASSWORD_MIN_WITH_MFA}.`;
-  }
   return `Use at least ${PASSWORD_MIN_SINGLE_FACTOR} characters.`;
 }

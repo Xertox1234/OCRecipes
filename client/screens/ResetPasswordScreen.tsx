@@ -189,7 +189,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             errorMessage={errorField === "password" ? error : undefined}
             testID="input-reset-password"
             accessibilityLabel="New password"
-            accessibilityHint="At least 15 characters, or 8 if two-step verification is on"
+            accessibilityHint={`At least ${PASSWORD_MIN_WITH_MFA} characters`}
           />
           <TextInput
             leftIcon="lock"

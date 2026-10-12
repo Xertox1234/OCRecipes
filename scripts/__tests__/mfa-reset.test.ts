@@ -56,11 +56,10 @@ describe("resetMfaForUser", () => {
     );
   });
 
-  // The stored hash can't show the password's length, so the script can't
-  // refuse on it; the sign-in gate (needsPasswordUpgrade) stops a short one.
-  // Both runs must tell the operator, so the person is told to expect it.
+  // No sign-in stop for a short password any more (owner ruling 2026-10-12),
+  // so neither run warns about one.
   it.each([true, false])(
-    "dryRun=%s tells the operator a short password must be replaced at sign-in",
+    "dryRun=%s says nothing about a longer password",
     async (dryRun) => {
       storage.getUser.mockResolvedValue(
         createMockUser({ id: "u1", mfaEnabledAt: new Date() }),
@@ -68,8 +67,8 @@ describe("resetMfaForUser", () => {
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
       try {
         await resetMfaForUser("u1", { dryRun });
-        expect(log.mock.calls.flat().join("\n")).toMatch(
-          /shorter than 15 characters.*choose a longer one/,
+        expect(log.mock.calls.flat().join("\n")).not.toMatch(
+          /longer one|15 characters/,
         );
       } finally {
         log.mockRestore();

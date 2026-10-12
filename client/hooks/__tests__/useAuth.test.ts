@@ -710,16 +710,14 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(false);
     });
 
-    it("register with the switch on sends twoStep and returns upgrade_required without signing in", async () => {
+    it("register sends no twoStep field (owner ruling 2026-10-12)", async () => {
       const { result } = await ready();
-      jsonOnce(upgradeRequired);
-      let out: unknown;
+      jsonOnce({ status: "verification_pending" });
       await act(async () => {
-        out = await result.current.register(
+        await result.current.register(
           "newuser",
           "ten-chars!",
           "new@example.com",
-          true,
           true,
         );
       });
@@ -731,11 +729,8 @@ describe("useAuth", () => {
           password: "ten-chars!",
           email: "new@example.com",
           ageConfirmed: true,
-          twoStep: true,
         },
       );
-      expect(out).toEqual(upgradeRequired);
-      expect(mockTokenStorage.set).not.toHaveBeenCalled();
     });
 
     it("login sends this phone's trust key when it has one", async () => {
