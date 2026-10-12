@@ -22,7 +22,10 @@ import type {
   User,
 } from "@shared/types/auth";
 import { upgradeRequest } from "@/lib/upgrade-pass-request";
-import { recoveryCodesOrThrow } from "@/lib/second-factor-utils";
+import {
+  recoveryCodesOrThrow,
+  revokedReplacementOrThrow,
+} from "@/lib/second-factor-utils";
 import { getProviderToken } from "@/lib/social-sign-in";
 import {
   registerPushToken,
@@ -852,13 +855,22 @@ export function useAuth() {
    * signs every other device out and answers with a session for this phone;
    * it is stored only if no one else signed in here meanwhile (auth audit L7).
    * Resolves done:false only when the Google/Apple sheet was cancelled.
+   *
+   * A reset landing mid-request signs this phone out (TOKEN_REVOKED); when a
+   * recovery code was spent, its replacement rides that refusal and the
+   * interceptor leaves the sign-out to us. Resolves with the code and
+   * `endSession`, which the screen calls once it is saved.
    */
   const changePassword = useCallback(
     async (
       proof: ChangePasswordProof,
       newPassword: string,
       secondFactor?: SecondFactorInput,
-    ): Promise<{ done: boolean; replacementRecoveryCode?: string }> => {
+    ): Promise<{
+      done: boolean;
+      replacementRecoveryCode?: string;
+      endSession?: () => Promise<void>;
+    }> => {
       const before = await tokenStorage.get();
       let body: object;
       if ("provider" in proof) {
@@ -873,7 +885,18 @@ export function useAuth() {
         const withFactor = secondFactor ? { ...proof, secondFactor } : proof;
         body = { proof: withFactor, newPassword };
       }
-      const res = await apiRequest("POST", "/api/auth/change-password", body);
+      const res = await apiRequest(
+        "POST",
+        "/api/auth/change-password",
+        body,
+      ).catch(revokedReplacementOrThrow);
+      if (typeof res === "string") {
+        const endSession = async () => {
+          // Only the session that was refused: never sign out a newer one.
+          if ((await tokenStorage.get()) === before) notifySessionExpired();
+        };
+        return { done: true, replacementRecoveryCode: res, endSession };
+      }
       const data = (await res.json()) as SignedInResult & {
         replacementRecoveryCode?: string;
       };

@@ -38,7 +38,11 @@ import { Spacing } from "@/constants/theme";
 
 type Props = NativeStackScreenProps<ProfileStackParamList, "ChangePassword">;
 type Mode = "current" | "forgot" | "code";
-type SaveResult = { done: boolean; replacementRecoveryCode?: string };
+type SaveResult = {
+  done: boolean;
+  replacementRecoveryCode?: string;
+  endSession?: () => Promise<void>;
+};
 type ErrorField = "current" | "code" | "new";
 
 const ENTER_AUTH_CODE = "Enter the code from your authenticator app.";
@@ -76,12 +80,14 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const [busy, setBusy] = useState(false);
   // A ref, not state: a second tap in the same frame must see it.
   const busyRef = useRef(false);
-  // A spent recovery code's replacement. `changed` = the password change
-  // itself went through (then "I've saved it" leaves); after a refusal the
-  // card sits above the form with its error, and the person tries again.
+  // A spent recovery code's replacement. `changed` = the request is over
+  // (then "I've saved it" leaves — or, when this phone was signed out
+  // mid-request, `endSession` signs out); after a refusal the card sits
+  // above the form with its error, and the person tries again.
   const [replacement, setReplacement] = useState<{
     code: string;
     changed: boolean;
+    endSession?: () => Promise<void>;
   } | null>(null);
 
   // The authenticator field remounts empty when the mode changes, so drop
@@ -117,7 +123,11 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const finishSave = (out: SaveResult) => {
     if (!out.done) return; // the Google/Apple sheet was cancelled
     if (out.replacementRecoveryCode)
-      setReplacement({ code: out.replacementRecoveryCode, changed: true });
+      setReplacement({
+        code: out.replacementRecoveryCode,
+        changed: true,
+        endSession: out.endSession,
+      });
     else navigation.goBack();
   };
 
@@ -168,6 +178,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   };
 
   if (replacement && replacement.changed) {
+    const { endSession } = replacement;
     return (
       <ScreenScrollView
         style={{ backgroundColor: theme.backgroundRoot }}
@@ -176,7 +187,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
       >
         <ReplacementCodeCard
           code={replacement.code}
-          onDone={() => navigation.goBack()}
+          onDone={() => (endSession ? void endSession() : navigation.goBack())}
         />
       </ScreenScrollView>
     );

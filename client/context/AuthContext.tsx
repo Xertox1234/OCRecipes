@@ -67,7 +67,12 @@ interface AuthContextType {
     proof: ChangePasswordProof,
     newPassword: string,
     secondFactor?: SecondFactorInput,
-  ) => Promise<{ done: boolean; replacementRecoveryCode?: string }>;
+  ) => Promise<{
+    done: boolean;
+    replacementRecoveryCode?: string;
+    /** Set when this phone was signed out mid-request: call once it's saved. */
+    endSession?: () => Promise<void>;
+  }>;
   register: (
     username: string,
     password: string,
