@@ -12,9 +12,24 @@ export function glideToTopOffset(
   currentScrollY: number,
   rowPageY: number,
   collapsedBarHeight: number,
+  header?: { expanded: number; collapsed: number; threshold: number },
 ): number {
   "worklet";
-  return Math.max(0, currentScrollY + (rowPageY - collapsedBarHeight));
+  const need = rowPageY - collapsedBarHeight;
+  if (!header || header.threshold <= 0 || need <= 0) {
+    return Math.max(0, currentScrollY + need);
+  }
+  // The in-flow header shrinks as the page scrolls, so the row rises faster than
+  // the scroll delta: row travel = d + min(k*d, remainingShrink). `rowPageY` was
+  // measured with the header at its height for `currentScrollY`; ignoring the
+  // shrink overshoots by up to (expanded - collapsed) and slides the row under
+  // the collapsed bar.
+  const k = (header.expanded - header.collapsed) / header.threshold;
+  const remaining = Math.max(0, header.threshold - currentScrollY);
+  const remainingShrink = k * remaining;
+  const delta =
+    need <= (1 + k) * remaining ? need / (1 + k) : need - remainingShrink;
+  return Math.max(0, currentScrollY + delta);
 }
 
 /** Bottom padding for the Home scroll content. `basePadding` is the always-on

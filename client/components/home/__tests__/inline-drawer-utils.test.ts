@@ -16,6 +16,35 @@ describe("glideToTopOffset", () => {
   it("never returns a negative offset", () => {
     expect(glideToTopOffset(0, 10, 90)).toBe(0);
   });
+
+  describe("with a collapsing header (QA sweep #2)", () => {
+    const HEADER = { expanded: 100, collapsed: 44, threshold: 80 };
+    const BAR = 90;
+    // header height at scroll s
+    const headerAt = (s: number) => 100 - 0.7 * Math.min(s, 80);
+    // where the row ends up after scrolling from `cur` to `target`
+    const rowAfter = (cur: number, pageY: number, target: number) =>
+      pageY - (target - cur) - (headerAt(cur) - headerAt(target));
+
+    it("lands the row on the bar when the shrink completes mid-glide", () => {
+      const target = glideToTopOffset(0, 700, BAR, HEADER);
+      expect(rowAfter(0, 700, target)).toBeCloseTo(BAR, 5);
+    });
+    it("lands the row on the bar when the glide stays inside the shrink zone", () => {
+      const target = glideToTopOffset(0, 150, BAR, HEADER);
+      expect(rowAfter(0, 150, target)).toBeCloseTo(BAR, 5);
+      expect(target).toBeLessThan(80);
+    });
+    it("matches the plain offset once the header is already collapsed", () => {
+      expect(glideToTopOffset(200, 400, BAR, HEADER)).toBe(
+        glideToTopOffset(200, 400, BAR),
+      );
+    });
+    it("old formula overshoots by the remaining shrink (regression)", () => {
+      const plain = glideToTopOffset(0, 700, BAR);
+      expect(rowAfter(0, 700, plain)).toBeCloseTo(BAR - 56, 5);
+    });
+  });
 });
 
 describe("scrollBottomPadding", () => {

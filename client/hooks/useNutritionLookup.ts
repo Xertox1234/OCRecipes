@@ -191,8 +191,13 @@ export function useNutritionLookup(params: {
       grams: lookup.servingSizeGrams || 100,
       wasCorrected: false,
     };
-    return getServingSizeOptions(info, lookup.nutrition?.productName || "");
+    return getServingSizeOptions(
+      info,
+      lookup.nutrition?.productName || "",
+      lookup.isBeverage === true,
+    );
   }, [
+    lookup.isBeverage,
     lookup.validatedData,
     lookup.nutrition?.productName,
     lookup.nutrition?.servingSize,

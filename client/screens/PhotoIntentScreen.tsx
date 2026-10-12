@@ -144,7 +144,11 @@ export default function PhotoIntentScreen() {
   return (
     <ThemedView style={styles.container} accessibilityViewIsModal>
       <View style={headerPaddingStyle}>
-        <ScanFlowStepIndicator currentStep={2} totalSteps={3} />
+        {/* Step 2 of 3 only means something once a photo has been captured;
+            the Home "Scan Menu" action arrives here with none. */}
+        {imageUri ? (
+          <ScanFlowStepIndicator currentStep={2} totalSteps={3} />
+        ) : null}
       </View>
       {/* ScrollView: 7 options + thumbnail overflow short screens (QA #84) */}
       <ScrollView
@@ -196,7 +200,7 @@ export default function PhotoIntentScreen() {
                   style={[
                     styles.intentCard,
                     option.isPrimary && {
-                      borderColor: theme.success,
+                      borderColor: theme.link,
                       borderWidth: 2,
                     },
                   ]}
@@ -207,7 +211,7 @@ export default function PhotoIntentScreen() {
                         styles.iconContainer,
                         {
                           backgroundColor: option.isPrimary
-                            ? withOpacity(theme.success, 0.12)
+                            ? withOpacity(theme.link, 0.14)
                             : withOpacity(theme.link, 0.08),
                         },
                       ]}
@@ -215,13 +219,7 @@ export default function PhotoIntentScreen() {
                       <Feather
                         name={option.icon}
                         size={22}
-                        color={
-                          isLocked
-                            ? theme.textSecondary
-                            : option.isPrimary
-                              ? theme.success
-                              : theme.link
-                        }
+                        color={isLocked ? theme.textSecondary : theme.link}
                       />
                     </View>
                     <View style={styles.intentTextContainer}>

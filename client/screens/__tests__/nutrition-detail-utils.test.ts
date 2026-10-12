@@ -32,7 +32,7 @@ const OPTIONS = [
 
 describe("nutrition-detail-utils", () => {
   describe("getServingContextLabel", () => {
-    it("uses the matching serving option's label with the quantity prefix", () => {
+    it("uses the matching serving option's label, with a quantity prefix only when it is not 1", () => {
       expect(
         getServingContextLabel({
           servingQuantity: 1,
@@ -40,7 +40,18 @@ describe("nutrition-detail-utils", () => {
           servingOptions: OPTIONS,
           isPer100g: false,
         }),
-      ).toBe("1 × 250 ml");
+      ).toBe("250 ml");
+    });
+
+    it("does not prefix a single serving whose label already starts with a count", () => {
+      expect(
+        getServingContextLabel({
+          servingQuantity: 1,
+          servingSizeGrams: 30,
+          servingOptions: [{ label: "1 portion", grams: 30 }],
+          isPer100g: false,
+        }),
+      ).toBe("1 portion");
     });
 
     it("matches an option within the 0.1 g tolerance used by the chips", () => {
@@ -51,7 +62,7 @@ describe("nutrition-detail-utils", () => {
           servingOptions: OPTIONS,
           isPer100g: false,
         }),
-      ).toBe("1 × 250 ml");
+      ).toBe("250 ml");
     });
 
     it("formats fractional quantities to one decimal", () => {

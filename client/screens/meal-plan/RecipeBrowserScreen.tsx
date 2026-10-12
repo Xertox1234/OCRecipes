@@ -1018,6 +1018,7 @@ export default function RecipeBrowserScreen() {
               }));
           }}
           contentBottomInset={bottomBudget}
+          onScroll={scrollHandler}
         />
       ) : isLoading ? (
         <SkeletonProvider>
