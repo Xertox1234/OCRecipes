@@ -1,6 +1,6 @@
 ---
 title: "Design system: Coach Pro off ThemedText, green/off-palette colours, notebook layout"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-12
 updated: 2026-10-12

@@ -403,9 +403,9 @@ export default function EditDietaryProfileScreen() {
                     styles.listItem,
                     {
                       backgroundColor: selected
-                        ? withOpacity(theme.success, 0.08)
+                        ? withOpacity(theme.link, 0.08)
                         : theme.backgroundDefault,
-                      borderColor: selected ? theme.success : theme.border,
+                      borderColor: selected ? theme.link : theme.border,
                     },
                   ]}
                 >
@@ -424,11 +424,7 @@ export default function EditDietaryProfileScreen() {
                     </ThemedText>
                   </View>
                   {selected ? (
-                    <Feather
-                      name="check-circle"
-                      size={20}
-                      color={theme.success}
-                    />
+                    <Feather name="check-circle" size={20} color={theme.link} />
                   ) : (
                     <View
                       style={[styles.checkbox, { borderColor: theme.border }]}
@@ -466,9 +462,9 @@ export default function EditDietaryProfileScreen() {
                     styles.dietChip,
                     {
                       backgroundColor: selected
-                        ? theme.success
+                        ? theme.accentSolid
                         : theme.backgroundDefault,
-                      borderColor: selected ? theme.success : theme.border,
+                      borderColor: selected ? theme.link : theme.border,
                     },
                   ]}
                 >
@@ -610,9 +606,9 @@ export default function EditDietaryProfileScreen() {
                     styles.listItem,
                     {
                       backgroundColor: selected
-                        ? withOpacity(theme.success, 0.08)
+                        ? withOpacity(theme.link, 0.08)
                         : theme.backgroundDefault,
-                      borderColor: selected ? theme.success : theme.border,
+                      borderColor: selected ? theme.link : theme.border,
                     },
                   ]}
                 >
@@ -631,11 +627,7 @@ export default function EditDietaryProfileScreen() {
                     </ThemedText>
                   </View>
                   {selected ? (
-                    <Feather
-                      name="check-circle"
-                      size={20}
-                      color={theme.success}
-                    />
+                    <Feather name="check-circle" size={20} color={theme.link} />
                   ) : (
                     <View
                       style={[styles.radio, { borderColor: theme.border }]}
@@ -667,9 +659,9 @@ export default function EditDietaryProfileScreen() {
                     styles.cuisineChip,
                     {
                       backgroundColor: selected
-                        ? theme.success
+                        ? theme.accentSolid
                         : theme.backgroundDefault,
-                      borderColor: selected ? theme.success : theme.border,
+                      borderColor: selected ? theme.link : theme.border,
                     },
                   ]}
                 >
@@ -716,9 +708,9 @@ export default function EditDietaryProfileScreen() {
                     styles.listItem,
                     {
                       backgroundColor: selected
-                        ? withOpacity(theme.success, 0.08)
+                        ? withOpacity(theme.link, 0.08)
                         : theme.backgroundDefault,
-                      borderColor: selected ? theme.success : theme.border,
+                      borderColor: selected ? theme.link : theme.border,
                     },
                   ]}
                 >
@@ -737,11 +729,7 @@ export default function EditDietaryProfileScreen() {
                     </ThemedText>
                   </View>
                   {selected ? (
-                    <Feather
-                      name="check-circle"
-                      size={20}
-                      color={theme.success}
-                    />
+                    <Feather name="check-circle" size={20} color={theme.link} />
                   ) : (
                     <View
                       style={[styles.radio, { borderColor: theme.border }]}
@@ -781,9 +769,9 @@ export default function EditDietaryProfileScreen() {
                     styles.listItem,
                     {
                       backgroundColor: selected
-                        ? withOpacity(theme.success, 0.08)
+                        ? withOpacity(theme.link, 0.08)
                         : theme.backgroundDefault,
-                      borderColor: selected ? theme.success : theme.border,
+                      borderColor: selected ? theme.link : theme.border,
                     },
                   ]}
                 >
@@ -802,11 +790,7 @@ export default function EditDietaryProfileScreen() {
                     </ThemedText>
                   </View>
                   {selected ? (
-                    <Feather
-                      name="check-circle"
-                      size={20}
-                      color={theme.success}
-                    />
+                    <Feather name="check-circle" size={20} color={theme.link} />
                   ) : (
                     <View
                       style={[styles.radio, { borderColor: theme.border }]}
@@ -835,7 +819,7 @@ export default function EditDietaryProfileScreen() {
           onPress={handleSave}
           loading={isSaving}
           accessibilityLabel={isSaving ? "Saving changes" : "Save Changes"}
-          style={{ backgroundColor: theme.success }}
+          style={{ backgroundColor: theme.accentSolid }}
         >
           Save Changes
         </Button>

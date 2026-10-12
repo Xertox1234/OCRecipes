@@ -283,7 +283,10 @@ export default function MainTabNavigator() {
                       importantForAccessibility="no"
                       style={[
                         styles.dot,
-                        { borderColor: theme.backgroundDefault },
+                        {
+                          borderColor: theme.backgroundDefault,
+                          backgroundColor: theme.error,
+                        },
                       ]}
                     />
                   )}
@@ -333,7 +336,6 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 5,
-    backgroundColor: "#EF4444", // hardcoded — badge red is always red-500
     borderWidth: 2,
   },
 });

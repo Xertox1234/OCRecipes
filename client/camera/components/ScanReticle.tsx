@@ -26,7 +26,7 @@ const SPRING_MORPH = { damping: 16, stiffness: 220 };
 const SPRING_SNAP = { damping: 8, stiffness: 300 };
 
 // Confidence colour stops — semantic design values, cannot use theme in worklet
-const CONFIDENCE_COLORS = ["#FFFFFF", "#f59e0b", "#22c55e"] as const; // hardcoded
+const CONFIDENCE_COLORS = ["#FFFFFF", "#f59e0b", "#22c55e"] as const; // hardcoded — live-camera overlay, not theme-able
 
 type Corner = "tl" | "tr" | "bl" | "br";
 

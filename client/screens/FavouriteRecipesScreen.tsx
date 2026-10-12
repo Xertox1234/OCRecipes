@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
@@ -253,21 +254,12 @@ export default function FavouriteRecipesScreen() {
               </Pressable>
             </View>
           ) : (
-            <View style={styles.emptyState}>
-              <Ionicons
-                name="heart-outline"
-                size={48}
-                color={withOpacity(theme.text, 0.2)}
-              />
-              <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-                No Favourites
-              </ThemedText>
-              <ThemedText
-                style={[styles.emptySubtitle, { color: theme.textSecondary }]}
-              >
-                Heart recipes to save them here for quick access.
-              </ThemedText>
-            </View>
+            <EmptyState
+              variant="firstTime"
+              icon="heart"
+              title="No Favourites"
+              description="Heart recipes to save them here for quick access."
+            />
           )
         }
       />

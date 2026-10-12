@@ -54,7 +54,7 @@ export function UpgradeModal({
   const upgradeErrorMessage =
     state.status === "error" ? getUpgradeErrorMessage(state.error.code) : null;
 
-  const accentColor = theme.success;
+  const accentColor = theme.link;
   const inProgress = isPurchaseInProgress(state);
   const ctaLabel = getCtaLabel(state.status, product);
   const ctaDisabled = isCtaDisabled(state.status, product !== null);
@@ -304,7 +304,7 @@ export function UpgradeModal({
               style={({ pressed }) => [
                 styles.ctaButton,
                 {
-                  backgroundColor: accentColor,
+                  backgroundColor: theme.accentSolid,
                   opacity: ctaDisabled ? 0.6 : pressed ? 0.85 : 1,
                 },
               ]}

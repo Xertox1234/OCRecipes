@@ -72,8 +72,8 @@ export const CalorieRing = React.memo(function CalorieRing({
               x2="1"
               y2="1"
             >
-              <Stop offset="0%" stopColor={"#B794F6" /* hardcoded */} />
-              <Stop offset="100%" stopColor={"#7C4DFF" /* hardcoded */} />
+              <Stop offset="0%" stopColor={theme.calorieAccent} />
+              <Stop offset="100%" stopColor={theme.accentSolid} />
             </LinearGradient>
           </Defs>
           {/* Track */}

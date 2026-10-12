@@ -449,16 +449,16 @@ export default function SettingsScreen() {
                   styles.unitOption,
                   {
                     backgroundColor: selected
-                      ? withOpacity(theme.success, 0.12)
+                      ? withOpacity(theme.link, 0.12)
                       : theme.backgroundSecondary,
-                    borderColor: selected ? theme.success : "transparent",
+                    borderColor: selected ? theme.link : "transparent",
                   },
                 ]}
               >
                 <ThemedText
                   style={[
                     styles.unitOptionLabel,
-                    { color: selected ? theme.success : theme.text },
+                    { color: selected ? theme.link : theme.text },
                   ]}
                 >
                   {option.label}

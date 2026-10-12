@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Pressable, ScrollView, StyleSheet } from "react-native";
 import Animated, {
   useAnimatedStyle,
   withTiming,
@@ -7,6 +7,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
 import { PressableScale } from "@/components/PressableScale";
+import { ThemedText } from "@/components/ThemedText";
+import { toSecondPerson } from "./notebook-text-utils";
 import type { CoachContextData } from "@/hooks/useCoachContext";
 
 interface Props {
@@ -53,69 +55,93 @@ const CoachDashboard = React.memo(function CoachDashboard({
         accessibilityRole="button"
       >
         <View>
-          <Text style={[styles.greeting, { color: theme.text }]}>
+          <ThemedText type="h4" style={styles.greeting}>
             {getGreeting()}
-          </Text>
+          </ThemedText>
           {!expanded && (
-            <Text style={[styles.miniSummary, { color: theme.textSecondary }]}>
+            <ThemedText
+              type="caption"
+              style={[styles.miniSummary, { color: theme.textSecondary }]}
+            >
               {todayIntake
                 ? `${todayIntake.totalCalories} cal today`
                 : "No meals logged yet"}
-            </Text>
+            </ThemedText>
           )}
         </View>
-        <Text style={{ color: theme.link, fontSize: 12 }}>
+        <ThemedText type="caption" style={{ color: theme.link }}>
           {expanded ? "Less \u25B4" : "See all \u25BE"}
-        </Text>
+        </ThemedText>
       </Pressable>
 
       <View style={styles.statRow}>
         <View
           style={[styles.stat, { backgroundColor: theme.backgroundDefault }]}
         >
-          <Text style={[styles.statValue, { color: theme.link }]}>
+          <ThemedText
+            type="h4"
+            style={[styles.statValue, { color: theme.link }]}
+          >
             {todayIntake?.totalCalories ?? 0}
-          </Text>
-          <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            type="caption"
+            style={[styles.statLabel, { color: theme.textSecondary }]}
+          >
             Calories
-          </Text>
+          </ThemedText>
         </View>
         <View
           style={[styles.stat, { backgroundColor: theme.backgroundDefault }]}
         >
-          <Text style={[styles.statValue, { color: theme.success }]}>
+          <ThemedText
+            type="h4"
+            style={[styles.statValue, { color: theme.proteinAccent }]}
+          >
             {todayIntake?.totalProtein ?? 0}g
-          </Text>
-          <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            type="caption"
+            style={[styles.statLabel, { color: theme.textSecondary }]}
+          >
             Protein
-          </Text>
+          </ThemedText>
         </View>
         <View
           style={[styles.stat, { backgroundColor: theme.backgroundDefault }]}
         >
-          <Text style={[styles.statValue, { color: theme.warning }]}>
+          <ThemedText
+            type="h4"
+            style={[styles.statValue, { color: theme.badgeWarningText }]}
+          >
             {goals
               ? goals.calories - (todayIntake?.totalCalories ?? 0)
               : "\u2014"}
-          </Text>
-          <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            type="caption"
+            style={[styles.statLabel, { color: theme.textSecondary }]}
+          >
             Remaining
-          </Text>
+          </ThemedText>
         </View>
       </View>
 
       <Animated.View style={[styles.expandedSection, expandedStyle]}>
         {dueCommitments.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+            <ThemedText
+              type="caption"
+              style={[styles.sectionTitle, { color: theme.textSecondary }]}
+            >
               Commitments
-            </Text>
+            </ThemedText>
             {dueCommitments.map((c) => (
               <View key={c.id} style={styles.commitmentRow}>
                 <View style={[styles.commitDot, { borderColor: theme.link }]} />
-                <Text style={[styles.commitText, { color: theme.text }]}>
-                  {c.content}
-                </Text>
+                <ThemedText type="small" style={styles.commitText}>
+                  {toSecondPerson(c.content)}
+                </ThemedText>
               </View>
             ))}
           </View>
@@ -131,10 +157,12 @@ const CoachDashboard = React.memo(function CoachDashboard({
             accessibilityRole="button"
             accessibilityLabel={`Discuss: ${insight.content}`}
           >
-            <Text style={[styles.insightText, { color: theme.text }]}>
-              {insight.content}
-            </Text>
-            <Text style={{ color: theme.link, fontSize: 11 }}>{"\u2192"}</Text>
+            <ThemedText type="small" style={styles.insightText}>
+              {toSecondPerson(insight.content)}
+            </ThemedText>
+            <ThemedText type="caption" style={{ color: theme.link }}>
+              {"\u2192"}
+            </ThemedText>
           </Pressable>
         ))}
       </Animated.View>
@@ -158,7 +186,9 @@ const CoachDashboard = React.memo(function CoachDashboard({
               accessibilityLabel={s}
               accessibilityRole="button"
             >
-              <Text style={[styles.chipText, { color: theme.link }]}>{s}</Text>
+              <ThemedText type="small" style={{ color: theme.link }}>
+                {s}
+              </ThemedText>
             </PressableScale>
           ))}
         </ScrollView>
@@ -190,8 +220,8 @@ const styles = StyleSheet.create({
     padding: 14,
     paddingBottom: 8,
   },
-  greeting: { fontSize: 16, fontWeight: "600" },
-  miniSummary: { fontSize: 12, marginTop: 2 },
+  greeting: {},
+  miniSummary: { marginTop: 2 },
   statRow: {
     flexDirection: "row",
     gap: 8,
@@ -199,12 +229,11 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   stat: { flex: 1, borderRadius: 10, padding: 8, alignItems: "center" },
-  statValue: { fontSize: 18, fontWeight: "700" },
-  statLabel: { fontSize: 10, marginTop: 2 },
+  statValue: {},
+  statLabel: { marginTop: 2 },
   expandedSection: { overflow: "hidden", paddingHorizontal: 14 },
   section: { marginBottom: 8 },
   sectionTitle: {
-    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 6,
@@ -216,16 +245,15 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   commitDot: { width: 14, height: 14, borderRadius: 4, borderWidth: 2 },
-  commitText: { fontSize: 13, flex: 1 },
+  commitText: { flex: 1 },
   insightRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 6,
   },
-  insightText: { fontSize: 13, flex: 1, marginRight: 8 },
+  insightText: { flex: 1, marginRight: 8 },
   chips: { paddingBottom: 12 },
   chipsContent: { paddingHorizontal: 14, gap: 8 },
   chip: { borderRadius: 16, paddingVertical: 6, paddingHorizontal: 14 },
-  chipText: { fontSize: 13 },
 });

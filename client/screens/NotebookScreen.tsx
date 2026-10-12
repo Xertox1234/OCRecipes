@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from "react";
 import {
   View,
-  Text,
   FlatList,
   Pressable,
   Alert,
@@ -21,9 +20,11 @@ import {
   useDeleteNotebookEntry,
   type NotebookEntry,
 } from "@/hooks/useChat";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { ThemedText } from "@/components/ThemedText";
+import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
-import { TYPE_COLORS } from "@/constants/notebook-colors";
+import { toSecondPerson } from "@/components/coach/notebook-text-utils";
+import { notebookTypeColor } from "@/constants/notebook-colors";
 import type { NotebookScreenNavigationProp } from "@/types/navigation";
 
 const FILTERS = [
@@ -36,10 +37,6 @@ const FILTERS = [
   "archived",
 ] as const;
 type Filter = (typeof FILTERS)[number];
-
-function typeColor(type: string): string {
-  return TYPE_COLORS[type] ?? "#888888"; // hardcoded
-}
 
 export default function NotebookScreen() {
   const { theme } = useTheme();
@@ -99,7 +96,7 @@ export default function NotebookScreen() {
 
   const renderEntry = useCallback(
     ({ item }: { item: NotebookEntry }) => {
-      const color = typeColor(item.type);
+      const color = notebookTypeColor(theme, item.type);
       const isCompleted = item.status === "completed";
       return (
         <Pressable
@@ -117,31 +114,33 @@ export default function NotebookScreen() {
           <View style={styles.entryRow}>
             <View style={[styles.typeDot, { backgroundColor: color }]} />
             <View style={styles.entryBody}>
-              <Text style={[styles.typeLabel, { color }]}>
+              <ThemedText type="caption" style={[styles.typeLabel, { color }]}>
                 {item.type.replace(/_/g, " ").toUpperCase()}
                 {isCompleted ? " · DONE" : ""}
-              </Text>
-              <Text
+              </ThemedText>
+              <ThemedText
+                type="small"
                 numberOfLines={2}
                 style={[
-                  styles.entryContent,
-                  { color: isCompleted ? theme.textSecondary : theme.text },
+                  isCompleted && { color: theme.textSecondary },
                   isCompleted && styles.strikethrough,
                 ]}
               >
-                {item.content}
-              </Text>
+                {toSecondPerson(item.content)}
+              </ThemedText>
               {item.followUpDate && !isCompleted && (
-                <Text style={[styles.dueDate, { color }]}>
+                <ThemedText type="caption" style={[styles.dueDate, { color }]}>
                   {new Date(item.followUpDate).toLocaleDateString()}
-                </Text>
+                </ThemedText>
               )}
             </View>
             <View style={styles.entryActions}>
               <Pressable
-                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.entryAction,
+                  pressed && { opacity: 0.7 },
+                ]}
                 onPress={() => handleArchive(item)}
-                hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel="Archive entry"
               >
@@ -154,9 +153,8 @@ export default function NotebookScreen() {
               </Pressable>
               <Pressable
                 onPress={() => handleDelete(item)}
-                hitSlop={12}
                 style={({ pressed }) => [
-                  { marginTop: Spacing.xs },
+                  styles.entryAction,
                   pressed && { opacity: 0.7 },
                 ]}
                 accessibilityRole="button"
@@ -186,9 +184,7 @@ export default function NotebookScreen() {
       ]}
     >
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>
-          My Notebook
-        </Text>
+        <ThemedText type="h4">My Notebook</ThemedText>
         <View style={styles.headerActions}>
           <PressableScale
             onPress={() => navigation.navigate("NotebookEntry", {})}
@@ -197,7 +193,12 @@ export default function NotebookScreen() {
             accessibilityRole="button"
             accessibilityLabel="Create new notebook entry"
           >
-            <Text style={styles.newBtnText}>+ New</Text>
+            <ThemedText
+              type="small"
+              style={[styles.newBtnText, { color: theme.buttonText }]}
+            >
+              + New
+            </ThemedText>
           </PressableScale>
           <Pressable
             onPress={() => navigation.goBack()}
@@ -217,6 +218,7 @@ export default function NotebookScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
         contentContainerStyle={styles.filterRow}
       >
         {FILTERS.map((f) => (
@@ -236,10 +238,13 @@ export default function NotebookScreen() {
             accessibilityState={{ selected: filter === f }}
             accessibilityLabel={`Filter by ${f === "all" ? "all" : f}`}
           >
-            <Text
+            <ThemedText
+              type="small"
               style={[
                 styles.filterText,
-                { color: filter === f ? "#FFFFFF" : theme.textSecondary }, // hardcoded
+                {
+                  color: filter === f ? theme.buttonText : theme.textSecondary,
+                },
               ]}
             >
               {f === "all"
@@ -251,7 +256,7 @@ export default function NotebookScreen() {
                     : f === "preference"
                       ? "Preference"
                       : f.charAt(0).toUpperCase() + f.slice(1)}
-            </Text>
+            </ThemedText>
           </PressableScale>
         ))}
       </ScrollView>
@@ -269,9 +274,12 @@ export default function NotebookScreen() {
           ]}
           {...FLATLIST_DEFAULTS}
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>
+            <ThemedText
+              type="small"
+              style={[styles.empty, { color: theme.textSecondary }]}
+            >
               No entries yet
-            </Text>
+            </ThemedText>
           }
         />
       )}
@@ -289,14 +297,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: { fontSize: 17, fontWeight: "600" },
   headerActions: { flexDirection: "row", alignItems: "center" },
   newBtn: {
     paddingHorizontal: Spacing.md,
     paddingVertical: 6,
     borderRadius: BorderRadius.full,
   },
-  newBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" }, // hardcoded
+  newBtnText: { fontFamily: FontFamily.semiBold },
+  // A horizontal ScrollView with no flexGrow:0 stretches to fill the column
+  filterScroll: { flexGrow: 0 },
   filterRow: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -307,7 +316,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: BorderRadius.full,
   },
-  filterText: { fontSize: 13, fontWeight: "500" },
+  filterText: { fontFamily: FontFamily.medium },
   list: { padding: Spacing.md, gap: Spacing.sm },
   entryCard: {
     borderRadius: BorderRadius.md,
@@ -323,15 +332,19 @@ const styles = StyleSheet.create({
   },
   entryBody: { flex: 1 },
   typeLabel: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontFamily: FontFamily.semiBold,
     letterSpacing: 0.5,
     marginBottom: 3,
   },
-  entryContent: { fontSize: 14, lineHeight: 20 },
   strikethrough: { textDecorationLine: "line-through" },
-  dueDate: { fontSize: 12, marginTop: 4 },
-  entryActions: { alignItems: "center", gap: 4 },
+  dueDate: { marginTop: 4 },
+  entryActions: { alignItems: "center" },
+  entryAction: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   loading: { marginTop: Spacing.xl },
-  empty: { textAlign: "center", marginTop: Spacing.xl, fontSize: 14 },
+  empty: { textAlign: "center", marginTop: Spacing.xl },
 });

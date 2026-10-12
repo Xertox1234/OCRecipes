@@ -55,6 +55,8 @@ interface EditableItem extends ReceiptItem {
   id: string;
 }
 
+// hardcoded — decorative per-category dot beside a text label (meaning is carried
+// by the label, so no text-contrast requirement); a deliberate fixed palette.
 const CATEGORY_COLORS: Record<string, string> = {
   produce: "#4CAF50", // hardcoded
   meat: "#E53935", // hardcoded

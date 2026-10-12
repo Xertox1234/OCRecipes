@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
-  Text,
   TextInput,
   Pressable,
   ScrollView,
@@ -22,15 +21,26 @@ import {
   useUpdateNotebookEntry,
   type NotebookEntry,
 } from "@/hooks/useChat";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Feather } from "@expo/vector-icons";
+import { ThemedText } from "@/components/ThemedText";
+import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
+import {
+  addDaysToISO,
+  formatFollowUpDate,
+} from "@/components/coach/notebook-date-utils";
 import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
-import { TYPE_COLORS } from "@/constants/notebook-colors";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NotebookEntryNavigationProp } from "@/types/navigation";
 import { safeGoBack } from "@/navigation/safeGoBack";
 
 type RouteProps = RouteProp<RootStackParamList, "NotebookEntry">;
+
+const QUICK_DATES = [
+  { label: "Tomorrow", days: 1 },
+  { label: "In 3 days", days: 3 },
+  { label: "Next week", days: 7 },
+];
 
 const TYPE_LABELS: Record<string, string> = {
   commitment: "Commitment",
@@ -116,6 +126,8 @@ export default function NotebookEntryScreen() {
         (entry?.followUpDate
           ? new Date(entry.followUpDate).toISOString().slice(0, 10)
           : null);
+
+  const canSave = isDirty && !isSaving && content.trim().length > 0;
 
   const handleSave = useCallback(async () => {
     if (!content.trim()) return;
@@ -241,11 +253,14 @@ export default function NotebookEntryScreen() {
           },
         ]}
       >
-        <Text style={[styles.notFoundText, { color: theme.textSecondary }]}>
+        <ThemedText
+          type="body"
+          style={[styles.notFoundText, { color: theme.textSecondary }]}
+        >
           {isError
             ? "Couldn't load this entry. Check your connection and try again."
             : "This entry couldn't be found. It may have been deleted."}
-        </Text>
+        </ThemedText>
         {isError ? (
           <Pressable
             onPress={() => void refetch()}
@@ -253,7 +268,9 @@ export default function NotebookEntryScreen() {
             accessibilityRole="button"
             accessibilityLabel="Retry loading the entry"
           >
-            <Text style={[styles.back, { color: theme.link }]}>Retry</Text>
+            <ThemedText type="small" style={{ color: theme.link }}>
+              Retry
+            </ThemedText>
           </Pressable>
         ) : null}
         <Pressable
@@ -262,7 +279,9 @@ export default function NotebookEntryScreen() {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Text style={[styles.back, { color: theme.link }]}>← Back</Text>
+          <ThemedText type="small" style={{ color: theme.link }}>
+            ← Back
+          </ThemedText>
         </Pressable>
       </View>
     );
@@ -286,41 +305,47 @@ export default function NotebookEntryScreen() {
         <View style={styles.headerRow}>
           <Pressable
             onPress={goBack}
-            hitSlop={12}
+            style={styles.headerAction}
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Text style={[styles.back, { color: theme.link }]}>← Back</Text>
+            <ThemedText type="small" style={{ color: theme.link }}>
+              ← Back
+            </ThemedText>
           </Pressable>
+          <ThemedText type="h4">
+            {isCreate ? "New entry" : "Edit entry"}
+          </ThemedText>
           <Pressable
             onPress={handleSave}
-            disabled={!isDirty || isSaving || !content.trim()}
+            disabled={!canSave}
+            style={[
+              styles.saveBtn,
+              {
+                backgroundColor: theme.accentSolid,
+                opacity: canSave ? 1 : 0.4,
+              },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Save entry"
-            accessibilityState={{
-              disabled: !isDirty || isSaving || !content.trim(),
-            }}
+            accessibilityState={{ disabled: !canSave }}
           >
-            <Text
-              style={[
-                styles.saveBtn,
-                {
-                  color:
-                    isDirty && content.trim()
-                      ? theme.link
-                      : theme.textSecondary,
-                },
-              ]}
+            <ThemedText
+              type="small"
+              style={[styles.saveBtnText, { color: theme.buttonText }]}
             >
               {isSaving ? "Saving…" : "Save"}
-            </Text>
+            </ThemedText>
           </Pressable>
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
+          <ThemedText
+            type="caption"
+            style={[styles.label, { color: theme.textSecondary }]}
+          >
             TYPE
-          </Text>
+          </ThemedText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View role="radiogroup" style={styles.typeRow}>
               {notebookEntryTypes.map((t) => (
@@ -332,7 +357,9 @@ export default function NotebookEntryScreen() {
                     styles.typeChip,
                     {
                       backgroundColor:
-                        type === t ? TYPE_COLORS[t] : theme.backgroundSecondary,
+                        type === t
+                          ? theme.accentSolid
+                          : theme.backgroundSecondary,
                     },
                   ]}
                   hitSlop={{ top: 7, bottom: 7 }}
@@ -340,14 +367,18 @@ export default function NotebookEntryScreen() {
                   accessibilityState={{ selected: type === t }}
                   accessibilityLabel={TYPE_LABELS[t] ?? t}
                 >
-                  <Text
+                  <ThemedText
+                    type="caption"
                     style={[
                       styles.typeChipText,
-                      { color: type === t ? "#FFFFFF" : theme.textSecondary }, // hardcoded
+                      {
+                        color:
+                          type === t ? theme.buttonText : theme.textSecondary,
+                      },
                     ]}
                   >
                     {TYPE_LABELS[t] ?? t}
-                  </Text>
+                  </ThemedText>
                 </SelectableTile>
               ))}
             </View>
@@ -355,9 +386,12 @@ export default function NotebookEntryScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
+          <ThemedText
+            type="caption"
+            style={[styles.label, { color: theme.textSecondary }]}
+          >
             CONTENT
-          </Text>
+          </ThemedText>
           <TextInput
             style={[
               styles.contentInput,
@@ -371,54 +405,131 @@ export default function NotebookEntryScreen() {
             placeholderTextColor={theme.textSecondary}
             accessibilityLabel="Entry content"
           />
-          <Text style={[styles.charCount, { color: theme.textSecondary }]}>
+          <ThemedText
+            type="caption"
+            style={[styles.charCount, { color: theme.textSecondary }]}
+          >
             {content.length}/500
-          </Text>
+          </ThemedText>
         </View>
 
         {type === "commitment" && (
           <View style={styles.section}>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>
+            <ThemedText
+              type="caption"
+              style={[styles.label, { color: theme.textSecondary }]}
+            >
               FOLLOW-UP DATE
-            </Text>
-            <TextInput
-              style={[
-                styles.dateInput,
-                {
-                  backgroundColor: theme.backgroundSecondary,
-                  color: theme.text,
-                },
-              ]}
-              value={followUpDate ?? ""}
-              onChangeText={(v) => setFollowUpDate(v || null)}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={theme.textSecondary}
-              keyboardType="numbers-and-punctuation"
-              maxLength={10}
-              accessibilityLabel="Follow-up date in YYYY-MM-DD format"
-            />
+            </ThemedText>
+            <View style={styles.dateRow}>
+              <Pressable
+                onPress={() => setFollowUpDate(addDaysToISO(followUpDate, -1))}
+                disabled={!followUpDate}
+                style={[
+                  styles.dateStep,
+                  {
+                    backgroundColor: theme.backgroundSecondary,
+                    opacity: followUpDate ? 1 : 0.4,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Earlier by one day"
+                accessibilityState={{ disabled: !followUpDate }}
+              >
+                <Feather
+                  name="chevron-left"
+                  size={20}
+                  color={theme.text}
+                  accessible={false}
+                />
+              </Pressable>
+              <ThemedText
+                type="body"
+                style={styles.dateValue}
+                accessibilityLabel={`Follow-up date: ${formatFollowUpDate(followUpDate)}`}
+              >
+                {formatFollowUpDate(followUpDate)}
+              </ThemedText>
+              <Pressable
+                onPress={() => setFollowUpDate(addDaysToISO(followUpDate, 1))}
+                style={[
+                  styles.dateStep,
+                  { backgroundColor: theme.backgroundSecondary },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Later by one day"
+              >
+                <Feather
+                  name="chevron-right"
+                  size={20}
+                  color={theme.text}
+                  accessible={false}
+                />
+              </Pressable>
+            </View>
+            <View style={styles.dateQuickRow}>
+              {QUICK_DATES.map((q) => (
+                <Pressable
+                  key={q.label}
+                  onPress={() => setFollowUpDate(addDaysToISO(null, q.days))}
+                  style={[
+                    styles.quickChip,
+                    { backgroundColor: theme.backgroundSecondary },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Set follow-up to ${q.label}`}
+                >
+                  <ThemedText type="caption" style={{ color: theme.text }}>
+                    {q.label}
+                  </ThemedText>
+                </Pressable>
+              ))}
+              {followUpDate ? (
+                <Pressable
+                  onPress={() => setFollowUpDate(null)}
+                  style={styles.quickChip}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear follow-up date"
+                >
+                  <ThemedText type="caption" style={{ color: theme.link }}>
+                    Clear
+                  </ThemedText>
+                </Pressable>
+              ) : null}
+            </View>
           </View>
         )}
 
         <View style={styles.section}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
+          <ThemedText
+            type="caption"
+            style={[styles.label, { color: theme.textSecondary }]}
+          >
             SOURCE
-          </Text>
-          <Text style={[styles.sourceText, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText type="small" style={{ color: theme.textSecondary }}>
             {sourceLabel}
-          </Text>
+          </ThemedText>
         </View>
 
         {!isCreate && entry?.status === "active" && (
           <View style={styles.actionRow}>
             {(entry.type === "commitment" || entry.type === "goal") && (
               <Pressable
-                style={[styles.actionBtn, { backgroundColor: "#008A38" }]} // hardcoded
+                style={[
+                  styles.actionBtn,
+                  { backgroundColor: theme.accentSolid },
+                ]}
                 onPress={handleMarkComplete}
                 accessibilityRole="button"
                 accessibilityLabel="Mark complete"
               >
-                <Text style={styles.actionBtnText}>Mark Complete</Text>
+                <ThemedText
+                  type="small"
+                  style={[styles.actionBtnText, { color: theme.buttonText }]}
+                >
+                  Mark Complete
+                </ThemedText>
               </Pressable>
             )}
             <Pressable
@@ -430,11 +541,12 @@ export default function NotebookEntryScreen() {
               accessibilityRole="button"
               accessibilityLabel="Archive entry"
             >
-              <Text
+              <ThemedText
+                type="small"
                 style={[styles.actionBtnText, { color: theme.textSecondary }]}
               >
                 Archive
-              </Text>
+              </ThemedText>
             </Pressable>
           </View>
         )}
@@ -452,19 +564,26 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
     paddingHorizontal: Spacing.xl,
   },
-  notFoundText: { fontSize: 15, textAlign: "center" },
+  notFoundText: { textAlign: "center" },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: Spacing.lg,
   },
-  back: { fontSize: 14 },
-  saveBtn: { fontSize: 14, fontWeight: "600" },
+  headerAction: { minHeight: 44, justifyContent: "center" },
+  saveBtn: {
+    minHeight: 44,
+    minWidth: 64,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  saveBtnText: { fontFamily: FontFamily.semiBold },
   section: { marginBottom: Spacing.lg },
   label: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontFamily: FontFamily.semiBold,
     letterSpacing: 0.5,
     marginBottom: Spacing.xs,
   },
@@ -474,7 +593,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: BorderRadius.full,
   },
-  typeChipText: { fontSize: 12, fontWeight: "600" },
+  typeChipText: { fontFamily: FontFamily.semiBold },
   contentInput: {
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
@@ -483,13 +602,28 @@ const styles = StyleSheet.create({
     minHeight: 100,
     textAlignVertical: "top",
   },
-  charCount: { fontSize: 11, textAlign: "right", marginTop: 4 },
-  dateInput: {
+  charCount: { textAlign: "right", marginTop: 4 },
+  dateRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  dateStep: {
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    fontSize: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  sourceText: { fontSize: 13 },
+  dateValue: { flex: 1, textAlign: "center" },
+  dateQuickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
+  },
+  quickChip: {
+    minHeight: 44,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    justifyContent: "center",
+  },
   actionRow: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md },
   actionBtn: {
     flex: 1,
@@ -497,5 +631,5 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     alignItems: "center",
   },
-  actionBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" }, // hardcoded
+  actionBtnText: { fontFamily: FontFamily.semiBold },
 });

@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
-  Text,
   ScrollView,
   TextInput,
   Pressable,
@@ -26,7 +25,13 @@ import {
   REFRESH_ON_FOCUS_SETTLE_MS,
   useRefreshOnFocus,
 } from "@/hooks/useRefreshOnFocus";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { ThemedText } from "@/components/ThemedText";
+import {
+  Spacing,
+  BorderRadius,
+  FontFamily,
+  withOpacity,
+} from "@/constants/theme";
 import type { AllConversationsNavigationProp } from "@/types/navigation";
 import { safeGoBack } from "@/navigation/safeGoBack";
 
@@ -184,23 +189,23 @@ export default function AllConversationsScreen() {
         accessibilityLabel={`Open conversation: ${conv.title}`}
       >
         <View style={styles.rowContent}>
-          <Text
-            numberOfLines={1}
-            style={[styles.rowTitle, { color: theme.text }]}
-          >
+          <ThemedText type="small" numberOfLines={1} style={styles.rowTitle}>
             {conv.title ||
               (activeSegment === "recipe"
                 ? "Recipe chat"
                 : "Coach conversation")}
-          </Text>
-          <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            type="caption"
+            style={[styles.rowMeta, { color: theme.textSecondary }]}
+          >
             {formatRelativeDate(conv.updatedAt)}
-          </Text>
+          </ThemedText>
         </View>
         <View style={styles.rowActions}>
           <Pressable
             onPress={() => handleTogglePin(conv)}
-            hitSlop={12}
+            style={styles.rowAction}
             accessibilityRole="button"
             accessibilityLabel={
               conv.isPinned ? "Unpin conversation" : "Pin conversation"
@@ -215,8 +220,7 @@ export default function AllConversationsScreen() {
           </Pressable>
           <Pressable
             onPress={() => handleDelete(conv)}
-            hitSlop={12}
-            style={{ marginLeft: Spacing.sm }}
+            style={styles.rowAction}
             accessibilityRole="button"
             accessibilityLabel="Delete conversation"
           >
@@ -249,9 +253,9 @@ export default function AllConversationsScreen() {
       ]}
     >
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>
+        <ThemedText type="h4" style={styles.headerTitle}>
           All Conversations
-        </Text>
+        </ThemedText>
         <Pressable
           onPress={() =>
             safeGoBack(navigation, () =>
@@ -295,17 +299,17 @@ export default function AllConversationsScreen() {
                 segment === "coach" ? "Coach chats" : "Recipe chats"
               }
             >
-              <Text
-                style={[
-                  styles.segmentLabel,
-                  {
-                    color: isActive ? theme.text : theme.textSecondary,
-                    fontWeight: isActive ? "600" : "400",
-                  },
-                ]}
+              <ThemedText
+                type="caption"
+                style={{
+                  color: isActive ? theme.text : theme.textSecondary,
+                  fontFamily: isActive
+                    ? FontFamily.semiBold
+                    : FontFamily.regular,
+                }}
               >
                 {segment === "coach" ? "Coach" : "Recipes"}
-              </Text>
+              </ThemedText>
             </Pressable>
           );
         })}
@@ -346,26 +350,33 @@ export default function AllConversationsScreen() {
         >
           {pinned.length > 0 && (
             <>
-              <Text style={[styles.sectionLabel, { color: theme.link }]}>
+              <ThemedText
+                type="caption"
+                style={[styles.sectionLabel, { color: theme.link }]}
+              >
                 PINNED
-              </Text>
+              </ThemedText>
               {pinned.map(renderRow)}
             </>
           )}
           {unpinned.length > 0 && (
             <>
-              <Text
+              <ThemedText
+                type="caption"
                 style={[styles.sectionLabel, { color: theme.textSecondary }]}
               >
                 CONVERSATIONS
-              </Text>
+              </ThemedText>
               {unpinned.map(renderRow)}
             </>
           )}
           {conversations.length === 0 && (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>
+            <ThemedText
+              type="small"
+              style={[styles.empty, { color: theme.textSecondary }]}
+            >
               No conversations found
-            </Text>
+            </ThemedText>
           )}
         </ScrollView>
       )}
@@ -383,7 +394,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: { fontSize: 17, fontWeight: "600" },
+  headerTitle: {},
   segmentContainer: {
     flexDirection: "row",
     marginHorizontal: Spacing.md,
@@ -406,7 +417,6 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  segmentLabel: { fontSize: 13 },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -418,8 +428,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14 },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontFamily: FontFamily.semiBold,
     letterSpacing: 0.5,
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.md,
@@ -433,10 +442,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   rowContent: { flex: 1 },
-  rowTitle: { fontSize: 14, fontWeight: "500" },
-  rowMeta: { fontSize: 12, marginTop: 2 },
+  rowTitle: { fontFamily: FontFamily.medium },
+  rowMeta: { marginTop: 2 },
+  rowAction: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   rowActions: { flexDirection: "row", alignItems: "center" },
   listContent: {},
   loading: { marginTop: Spacing.xl },
-  empty: { textAlign: "center", marginTop: Spacing.xl, fontSize: 14 },
+  empty: { textAlign: "center", marginTop: Spacing.xl },
 });
