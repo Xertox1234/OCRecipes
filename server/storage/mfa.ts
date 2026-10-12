@@ -2,7 +2,6 @@ import {
   mfaChallenges,
   mfaRecoveryCodes,
   mfaTrustedDevices,
-  passwordUpgradePasses,
   userMfa,
   users,
   type MfaChallenge,
@@ -105,36 +104,16 @@ const PROMOTE_PENDING = (acceptedStep: number) => ({
 /**
  * First setup. Guarded on a live pending secret AND MFA being off; returns the
  * new tokenVersion (every other session ends), or undefined when the guard fails.
- * Through a short password's pass (password policy spec §6) the pass is
- * consumed in this same transaction and the account's tokenVersion must still
- * be the pass's, so a double submit can't enrol twice or mint two sessions.
  */
 export async function confirmTotpEnrollment(
   userId: string,
   opts: {
     acceptedStep: number;
     recoveryHashes: string[];
-    upgradePass?: { idHash: string; tokenVersion: number };
   },
 ): Promise<number | undefined> {
-  const pass = opts.upgradePass;
   return guarded(() =>
     db.transaction(async (tx) => {
-      if (pass) {
-        const [consumed] = await tx
-          .update(passwordUpgradePasses)
-          .set({ consumedAt: sql`now()` })
-          .where(
-            and(
-              eq(passwordUpgradePasses.idHash, pass.idHash),
-              eq(passwordUpgradePasses.userId, userId),
-              isNull(passwordUpgradePasses.consumedAt),
-              gt(passwordUpgradePasses.expiresAt, sql`now()`),
-            ),
-          )
-          .returning({ idHash: passwordUpgradePasses.idHash });
-        if (!consumed) throw new GuardFailed();
-      }
       const [promoted] = await tx
         .update(userMfa)
         .set(PROMOTE_PENDING(opts.acceptedStep))
@@ -147,13 +126,7 @@ export async function confirmTotpEnrollment(
           mfaEnabledAt: sql`now()`,
           tokenVersion: sql`${users.tokenVersion} + 1`,
         })
-        .where(
-          and(
-            eq(users.id, userId),
-            isNull(users.mfaEnabledAt),
-            pass ? eq(users.tokenVersion, pass.tokenVersion) : undefined,
-          ),
-        )
+        .where(and(eq(users.id, userId), isNull(users.mfaEnabledAt)))
         .returning({ tokenVersion: users.tokenVersion });
       if (!u) throw new GuardFailed();
       await tx
@@ -327,17 +300,12 @@ export async function replaceRecoveryCodes(
 }
 
 /** Turn MFA off: every MFA row goes, and every session ends. */
-/**
- * Turn two-step off. With `newPasswordHash` (a password under 15 must be
- * replaced in the same step, spec §5.4) the password changes in the same
- * transaction, and a staged email change is dropped: its link is a JWT that
- * tokenVersion cannot cancel.
- */
 export async function disableMfa(
   userId: string,
   // clearPendingEmail: the manual reset (scripts/mfa-reset.ts) is account
-  // recovery, so like every password change it drops a staged email change.
-  opts: { newPasswordHash?: string; clearPendingEmail?: boolean } = {},
+  // recovery, so like every password change it drops a staged email change
+  // (its link is a JWT that tokenVersion cannot cancel).
+  opts: { clearPendingEmail?: boolean } = {},
 ): Promise<number | undefined> {
   return db.transaction(async (tx) => {
     await Promise.all([
@@ -351,10 +319,7 @@ export async function disableMfa(
       .set({
         mfaEnabledAt: null,
         tokenVersion: sql`${users.tokenVersion} + 1`,
-        ...(opts.newPasswordHash ? { password: opts.newPasswordHash } : {}),
-        ...(opts.newPasswordHash || opts.clearPendingEmail
-          ? { pendingEmail: null }
-          : {}),
+        ...(opts.clearPendingEmail ? { pendingEmail: null } : {}),
       })
       .where(eq(users.id, userId))
       .returning({ tokenVersion: users.tokenVersion });

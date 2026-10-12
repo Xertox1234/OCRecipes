@@ -296,39 +296,31 @@ describe("getAuthErrorMessage", () => {
 });
 
 describe("validateNewPassword (the shared password policy)", () => {
-  const signup = { min: 8, context: "signup" as const };
-  const floor = { min: 8, context: "mfa" as const };
-
   it("enforces length, then match, in that order", () => {
-    expect(validateNewPassword("a".repeat(7), "a".repeat(7), signup)).toBe(
+    expect(validateNewPassword("a".repeat(7), "a".repeat(7))).toBe(
       "Use at least 8 characters.",
     );
-    expect(validateNewPassword("a".repeat(129), "a".repeat(129), signup)).toBe(
+    expect(validateNewPassword("a".repeat(129), "a".repeat(129))).toBe(
       "Use at most 128 characters.",
     );
-    expect(validateNewPassword("a".repeat(8), "b".repeat(8), signup)).toBe(
+    expect(validateNewPassword("a".repeat(8), "b".repeat(8))).toBe(
       "Passwords do not match",
     );
-    expect(
-      validateNewPassword("a".repeat(8), "a".repeat(8), signup),
-    ).toBeNull();
+    expect(validateNewPassword("a".repeat(8), "a".repeat(8))).toBeNull();
   });
 
-  it("the floor accepts 8 and refuses 7", () => {
-    expect(validateNewPassword("abcdefgh", "abcdefgh", floor)).toBeNull();
-    expect(validateNewPassword("abcdefg", "abcdefg", floor)).toBe(
+  it("counts an emoji as one character at the boundary", () => {
+    const eight = "a".repeat(7) + "😀"; // 8 characters, 9 UTF-16 units
+    const seven = "a".repeat(6) + "😀"; // 7 characters, 8 UTF-16 units
+    expect(validateNewPassword(eight, eight)).toBeNull();
+    expect(validateNewPassword(seven, seven)).toBe(
       "Use at least 8 characters.",
     );
-  });
-
-  it("counts an emoji as one character", () => {
-    const pw = "a".repeat(14) + "😀";
-    expect(validateNewPassword(pw, pw, signup)).toBeNull();
   });
 
   it("returns the exported mismatch constant, so callers can match on it", () => {
     expect(PASSWORD_MISMATCH_MESSAGE).toBe("Passwords do not match");
-    expect(validateNewPassword("abcdefgh", "abcdefgi", floor)).toBe(
+    expect(validateNewPassword("abcdefgh", "abcdefgi")).toBe(
       PASSWORD_MISMATCH_MESSAGE,
     );
   });

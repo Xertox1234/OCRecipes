@@ -27,10 +27,9 @@
 import { ApiError } from "@/lib/api-error";
 import {
   PASSWORD_MAX,
-  PASSWORD_MIN_SINGLE_FACTOR,
+  PASSWORD_MIN,
   newPasswordProblem,
   passwordMessage,
-  type PasswordContext,
 } from "@shared/constants/password-policy";
 
 export type AuthMode = "login" | "register";
@@ -50,17 +49,16 @@ export const BREACHED_PASSWORD_MESSAGE =
   "That password has appeared in a data breach. Choose a different one.";
 
 /**
- * New-password check shared by sign-up and the reset screen: length for the
- * given minimum (counted in characters, no composition rule), then the match.
+ * New-password check shared by sign-up and the reset screen: length
+ * (counted in characters, no composition rule), then the match.
  */
 export function validateNewPassword(
   password: string,
   confirmPassword: string,
-  opts: { min: number; context: PasswordContext },
 ): string | null {
-  const problem = newPasswordProblem(password, { min: opts.min });
+  const problem = newPasswordProblem(password);
   if (problem) {
-    return passwordMessage(problem, opts.context);
+    return passwordMessage(problem);
   }
   if (password !== confirmPassword) {
     return PASSWORD_MISMATCH_MESSAGE;
@@ -77,20 +75,14 @@ export interface AuthFormInput {
   email: string;
 }
 
-/** The sign-up minimum: 8 for everyone (owner ruling 2026-10-12). */
-const SIGNUP_RULE: { min: number; context: PasswordContext } = {
-  min: PASSWORD_MIN_SINGLE_FACTOR,
-  context: "signup",
-};
-
-/** iOS strong-password suggestions follow the sign-up minimum. */
+/** iOS strong-password suggestions follow the minimum. */
 export function registerPasswordRules(): string {
-  return `minlength: ${SIGNUP_RULE.min}; maxlength: ${PASSWORD_MAX};`;
+  return `minlength: ${PASSWORD_MIN}; maxlength: ${PASSWORD_MAX};`;
 }
 
 /** The hint under the sign-up password field. */
 export function registerPasswordHint(): string {
-  return `At least ${SIGNUP_RULE.min} characters.`;
+  return `At least ${PASSWORD_MIN} characters.`;
 }
 
 /**
@@ -138,7 +130,6 @@ export function validateAuthForm(input: AuthFormInput): string | null {
   const passwordError = validateNewPassword(
     input.password,
     input.confirmPassword,
-    SIGNUP_RULE,
   );
   if (passwordError) return passwordError;
   if (!input.ageConfirmed) {
@@ -192,7 +183,7 @@ export function getAuthErrorMessage(error: unknown, mode: AuthMode): string {
   }
   if (mode === "register" && error instanceof ApiError) {
     if (error.code === "PASSWORD_TOO_SHORT") {
-      return passwordMessage("too_short", SIGNUP_RULE.context);
+      return passwordMessage("too_short");
     }
     if (error.code === "PASSWORD_BREACHED") return BREACHED_PASSWORD_MESSAGE;
   }

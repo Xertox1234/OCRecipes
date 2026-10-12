@@ -44,7 +44,6 @@ vi.mock("../../storage", () => ({
     refundLinkPasswordGuess: vi.fn().mockResolvedValue(undefined),
     completeLinkFromTicket: vi.fn(),
     createMfaChallenge: vi.fn(),
-    createUpgradePass: vi.fn(),
     createUserWithIdentity: vi.fn(),
     getUserByEmailForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
@@ -745,10 +744,9 @@ describe("POST /api/auth/social/link", () => {
     expect(storage.completeLinkFromTicket).toHaveBeenCalledWith("t", {
       markEmailVerified: false,
     });
-    expect(storage.createUpgradePass).not.toHaveBeenCalled();
   });
 
-  it("no two-step, right 11-character password → links and signs in, no upgrade pass (owner ruling 2026-10-12)", async () => {
+  it("no two-step, right 11-character password → links and signs in (owner ruling 2026-10-12)", async () => {
     const user = createMockUser({
       id: "u1",
       emailVerified: true,
@@ -756,7 +754,6 @@ describe("POST /api/auth/social/link", () => {
       password: await bcrypt.hash("right-pass1", 4), // 11
     });
     vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
-    vi.mocked(storage.createUpgradePass).mockReset();
     vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
     vi.mocked(storage.getUser).mockResolvedValue(user);
     vi.mocked(storage.completeLinkFromTicket).mockResolvedValue(
@@ -767,7 +764,6 @@ describe("POST /api/auth/social/link", () => {
       .send({ ticket: "t", password: "right-pass1" });
     expect(res.body.status).toBe("signed_in");
     expect(storage.completeLinkFromTicket).toHaveBeenCalledTimes(1);
-    expect(storage.createUpgradePass).not.toHaveBeenCalled();
   });
 
   it("an already-linked provider as proof is never gated, even on a short-password account", async () => {
@@ -795,7 +791,6 @@ describe("POST /api/auth/social/link", () => {
       .post("/api/auth/social/link")
       .send({ ticket: "t", provider: "apple", idToken: "i", nonce: "n" });
     expect(res.body.status).toBe("signed_in");
-    expect(storage.createUpgradePass).not.toHaveBeenCalled();
   });
 
   it("MFA account: right password → 200 mfa_required, nothing linked, no session", async () => {

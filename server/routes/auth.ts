@@ -69,7 +69,6 @@ import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
 import { hashPassword, isLegacyHash } from "../lib/password-hash";
-import { PASSWORD_MIN_SINGLE_FACTOR } from "@shared/constants/password-policy";
 import { checkNewPassword } from "./_password-rules";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { startMfaChallenge } from "../lib/mfa/challenge";
@@ -200,11 +199,7 @@ export function register(app: Express): void {
 
         // Password policy before ANY account lookup, so neither the answer nor
         // its latency depends on whether the username or email exists.
-        const rejected = await checkNewPassword(
-          password,
-          PASSWORD_MIN_SINGLE_FACTOR,
-          "signup",
-        );
+        const rejected = await checkNewPassword(password);
         if (rejected) {
           return sendError(
             res,
@@ -677,11 +672,7 @@ export function register(app: Express): void {
         // Only after a correct code, so a wrong code never learns anything
         // about the account. A rejection keeps the code, but this request
         // has already used one of its RESET_CODE_MAX_ATTEMPTS tries.
-        const rejected = await checkNewPassword(
-          newPassword,
-          PASSWORD_MIN_SINGLE_FACTOR,
-          "single_factor",
-        );
+        const rejected = await checkNewPassword(newPassword);
         if (rejected) {
           sendError(res, rejected.status, rejected.message, rejected.code);
           return;

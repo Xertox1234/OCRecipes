@@ -333,20 +333,6 @@ describe("every protected route is registered behind requireAuth (static guard)"
       "POST /api/auth/mfa/verify",
       "two-step sign-in — single-use challenge in body (never a JWT)",
     ],
-    // A short password's sign-in pass (password policy spec §6): behind
-    // requireUpgradePass instead — pinned by the test below.
-    [
-      "POST /api/auth/upgrade/totp/setup",
-      "short-password sign-in pass — requireUpgradePass, never a JWT",
-    ],
-    [
-      "POST /api/auth/upgrade/totp/confirm",
-      "short-password sign-in pass — requireUpgradePass, never a JWT",
-    ],
-    [
-      "POST /api/auth/upgrade/password",
-      "short-password sign-in pass — requireUpgradePass, never a JWT",
-    ],
     [
       "POST /webhooks/apple/notifications",
       "Apple store webhook — JWS-verified",
@@ -367,13 +353,11 @@ describe("every protected route is registered behind requireAuth (static guard)"
     key: string;
     file: string;
     hasAuth: boolean;
-    hasUpgradePass: boolean;
   }[] {
     const out: {
       key: string;
       file: string;
       hasAuth: boolean;
-      hasUpgradePass: boolean;
     }[] = [];
     const files = fs
       .readdirSync(ROUTES_DIR)
@@ -403,7 +387,6 @@ describe("every protected route is registered behind requireAuth (static guard)"
           key: `${method} ${route}`,
           file,
           hasAuth: /\brequireAuth\b/.test(windowText),
-          hasUpgradePass: /\brequireUpgradePass\b/.test(windowText),
         });
       }
     }
@@ -421,29 +404,6 @@ describe("every protected route is registered behind requireAuth (static guard)"
       .filter((r) => !r.hasAuth && !PUBLIC_ROUTES.has(r.key))
       .map((r) => `${r.key}  (${r.file})`);
     expect(offenders).toEqual([]);
-  });
-
-  it("every /api/auth/upgrade route is behind requireUpgradePass, and the pass guards nothing else", () => {
-    const upgrade = routes.filter((r) =>
-      r.key.startsWith("POST /api/auth/upgrade/"),
-    );
-    // Non-vacuous: the three routes the pass unlocks are all scanned.
-    expect(upgrade.map((r) => r.key).sort()).toEqual([
-      "POST /api/auth/upgrade/password",
-      "POST /api/auth/upgrade/totp/confirm",
-      "POST /api/auth/upgrade/totp/setup",
-    ]);
-    expect(upgrade.filter((r) => !r.hasUpgradePass).map((r) => r.key)).toEqual(
-      [],
-    );
-    expect(
-      routes
-        .filter(
-          (r) =>
-            r.hasUpgradePass && !r.key.startsWith("POST /api/auth/upgrade/"),
-        )
-        .map((r) => r.key),
-    ).toEqual([]);
   });
 
   it("the public-route allowlist has no stale entries", () => {

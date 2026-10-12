@@ -18,10 +18,8 @@ import type {
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
-  UpgradeRequiredResult,
   User,
 } from "@shared/types/auth";
-import { upgradeRequest } from "@/lib/upgrade-pass-request";
 import {
   recoveryCodesOrThrow,
   revokedReplacementOrThrow,
@@ -333,9 +331,7 @@ export function useAuth() {
   /**
    * Password sign-in. On a 2FA account the server answers with a challenge
    * instead of a session (unless this phone is trusted): the caller routes to
-   * the code screen, and nothing is stored until the code passes. A password
-   * under 15 on an account without two-step answers with an upgrade pass
-   * (password policy spec §5.2): the caller routes to PasswordUpgrade.
+   * the code screen, and nothing is stored until the code passes.
    */
   const login = useCallback(
     async (username: string, password: string): Promise<SessionResult> => {
@@ -347,7 +343,6 @@ export function useAuth() {
       });
       const data = (await response.json()) as
         | MfaChallengeResult
-        | UpgradeRequiredResult
         | { user: User; token: string };
       if ("status" in data) return data;
       const { user, token } = data as { user: User; token: string };
@@ -459,7 +454,6 @@ export function useAuth() {
     ): Promise<
       | { status: "authenticated"; user: User }
       | { status: "verification_pending" }
-      | UpgradeRequiredResult
     > => {
       const response = await apiRequest("POST", "/api/auth/register", {
         username,
@@ -470,11 +464,6 @@ export function useAuth() {
         ageConfirmed,
       });
       const data = await response.json();
-      // The current server never sends this (owner ruling 2026-10-12); it
-      // goes with the rest of the upgrade flow.
-      if (data.status === "upgrade_required") {
-        return data as UpgradeRequiredResult;
-      }
       // Verification OFF (fail-open) → server returns a token → auto-login,
       // preserving the pre-feature behavior.
       if (data.token) {
@@ -752,18 +741,11 @@ export function useAuth() {
   );
 
   /** Turn two-step off. Every device was signed out; keep this one. */
-  // `newPassword` replaces a password under 15 in the same step (the server
-  // answers PASSWORD_UPGRADE_NEEDED without it); sent only when given.
   const disableTwoStep = useCallback(
-    async (
-      password: string,
-      secondFactor: SecondFactorInput,
-      newPassword?: string,
-    ) => {
+    async (password: string, secondFactor: SecondFactorInput) => {
       const res = await apiRequest("POST", "/api/auth/mfa/disable", {
         password,
         secondFactor,
-        ...(newPassword ? { newPassword } : {}),
       });
       const data = (await res.json()) as SignedInResult;
       await establishSession(data.user, data.token);
@@ -790,57 +772,6 @@ export function useAuth() {
     await apiRequest("DELETE", "/api/auth/mfa/trusted-devices");
     await trustKeyStorage.clear();
   }, []);
-
-  // ── A short password's upgrade pass (password policy spec §6) ─────────
-  // Every call rides the pass, never the stored Bearer token.
-
-  const upgradeStartTwoStep = useCallback(
-    async (pass: string): Promise<TwoStepSecret> => {
-      const res = await upgradeRequest("/api/auth/upgrade/totp/setup", pass);
-      return (await res.json()) as TwoStepSecret;
-    },
-    [],
-  );
-
-  /**
-   * Returns the session WITHOUT signing in: signing in swaps the whole
-   * navigator, which would unmount the screen before the recovery codes are
-   * saved. The screen calls finishSignIn once they are.
-   */
-  const upgradeConfirmTwoStep = useCallback(
-    async (
-      pass: string,
-      code: string,
-    ): Promise<{ session?: SignedInResult; recoveryCodes: string[] }> => {
-      const res = await upgradeRequest("/api/auth/upgrade/totp/confirm", pass, {
-        code,
-      }).catch(recoveryCodesOrThrow);
-      // Refused after two-step went on: save the codes, then sign in again.
-      if (Array.isArray(res)) return { session: undefined, recoveryCodes: res };
-      const { recoveryCodes, ...session } =
-        (await res.json()) as SignedInResult & {
-          recoveryCodes: string[];
-        };
-      return { session, recoveryCodes };
-    },
-    [],
-  );
-
-  const upgradeSetPassword = useCallback(
-    async (pass: string, newPassword: string) => {
-      const before = await tokenStorage.get();
-      const res = await upgradeRequest("/api/auth/upgrade/password", pass, {
-        newPassword,
-      });
-      const { user, token } = (await res.json()) as SignedInResult;
-      // Someone signed in on this phone while it was in flight (the screen
-      // can be left mid-request): a late reply never replaces that session
-      // (auth audit L2). The password change itself stands.
-      if ((await tokenStorage.get()) !== before) return;
-      await establishSession(user, token);
-    },
-    [establishSession],
-  );
 
   /** Email a code for a signed-in password change ("I forgot it"). */
   const requestPasswordChangeCode = useCallback(async () => {
@@ -918,9 +849,6 @@ export function useAuth() {
     disableTwoStep,
     replaceRecoveryCodes,
     forgetTrustedPhones,
-    upgradeStartTwoStep,
-    upgradeConfirmTwoStep,
-    upgradeSetPassword,
     requestPasswordChangeCode,
     changePassword,
     login,

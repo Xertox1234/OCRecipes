@@ -82,9 +82,7 @@ const ALLOWED_IDENTIFIERS = new Set<string>([
   "scanned_at",
   "updated_at",
   "user_id",
-  "password_upgrade_passes",
   "expires_at",
-  "consumed_at",
   "mfa_challenges",
   "mfa_trusted_devices",
   "user_mfa",
@@ -289,41 +287,6 @@ export function _resetRunningStateForTests(): void {
   isRunning = false;
 }
 
-/** How long a used or expired upgrade pass is kept before the sweep drops it. */
-const DEAD_UPGRADE_PASS_RETENTION_DAYS = 1;
-
-/**
- * Upgrade passes (password policy spec §6) die 30 minutes after they are
- * minted, or when used; drop rows a day after they died. Not per-user data
- * retention, so no active-user exemption. Minting a new pass also sweeps
- * that user's own dead rows (server/storage/upgrade-passes.ts).
- */
-export async function purgeDeadUpgradePasses(
-  database: RetentionDb,
-  now: Date,
-): Promise<PurgeResult> {
-  const cutoff = new Date(
-    now.getTime() - daysToMs(DEAD_UPGRADE_PASS_RETENTION_DAYS),
-  );
-  const [table, expiresAt, consumedAt] = [
-    "password_upgrade_passes",
-    "expires_at",
-    "consumed_at",
-  ].map((name) => {
-    assertAllowedIdentifier(name);
-    return sql.raw(name);
-  });
-  const result = await database.execute(sql`
-    DELETE FROM ${table}
-    WHERE ${expiresAt} < ${cutoff} OR ${consumedAt} < ${cutoff}
-  `);
-  return {
-    domain: "password_upgrade_passes",
-    rowsDeleted: (result as { rowCount?: number | null }).rowCount ?? 0,
-    retentionDays: DEAD_UPGRADE_PASS_RETENTION_DAYS,
-  };
-}
-
 /** How long an expired 2FA row is kept before the sweep drops it. */
 const DEAD_MFA_ROW_RETENTION_DAYS = 1;
 
@@ -484,9 +447,6 @@ export async function runRetentionCleanup(
       ),
     );
 
-    // Dead upgrade passes: auth bookkeeping, not user data — no exemption.
-    results.push(await purgeDeadUpgradePasses(database, now));
-
     // Expired 2FA rows: auth bookkeeping too — no exemption.
     results.push(...(await purgeExpiredMfaRows(database, now)));
 
@@ -540,7 +500,6 @@ async function main() {
     `scanned_items:      ${SCANNED_ITEMS_RETENTION_DAYS} days\n` +
       `chat_conversations: ${CHAT_RETENTION_DAYS} days\n` +
       `daily_logs:         ${DAILY_LOGS_RETENTION_DAYS} days\n` +
-      `upgrade passes:     ${DEAD_UPGRADE_PASS_RETENTION_DAYS} day after death\n` +
       `active-user window: ${ACTIVE_USER_WINDOW_DAYS} days (exempt)\n`,
   );
 

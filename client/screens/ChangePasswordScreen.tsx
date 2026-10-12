@@ -268,7 +268,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           autoComplete="new-password"
         />
         <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          {passwordMessage("too_short", needsFactor ? "mfa" : "single_factor")}
+          {passwordMessage("too_short")}
         </ThemedText>
 
         {needsFactor && mode !== "forgot" ? (

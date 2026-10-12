@@ -129,15 +129,6 @@ export default function LoginScreen() {
           });
           return;
         }
-        if (result.status === "upgrade_required") {
-          // Right password, but under 15 with no two-step (spec §5.2).
-          navigation.navigate("PasswordUpgrade", {
-            pass: result.pass,
-            canUseTwoStep: result.canUseTwoStep,
-            purpose: "login",
-          });
-          return;
-        }
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       } else {
         const result = await register(
@@ -146,16 +137,6 @@ export default function LoginScreen() {
           email.trim(),
           ageConfirmed,
         );
-        if (result.status === "upgrade_required") {
-          // The current server never sends this (owner ruling 2026-10-12);
-          // it goes with the rest of the upgrade flow.
-          navigation.navigate("PasswordUpgrade", {
-            pass: result.pass,
-            canUseTwoStep: result.canUseTwoStep,
-            purpose: "login",
-          });
-          return;
-        }
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         if (result.status === "verification_pending") {
           // Account created but email not verified → route to the verify screen

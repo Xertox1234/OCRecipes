@@ -28,25 +28,11 @@ import {
 } from "@/lib/second-factor-utils";
 import { Spacing } from "@/constants/theme";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
-import {
-  PASSWORD_MAX,
-  PASSWORD_MIN_SINGLE_FACTOR,
-  passwordMessage,
-} from "@shared/constants/password-policy";
-import {
-  BREACHED_PASSWORD_MESSAGE,
-  validateNewPassword,
-} from "./LoginScreen-utils";
 import { finishMessage, setupTitle } from "./TwoStepSetupScreen-utils";
 
 type Props = NativeStackScreenProps<ProfileStackParamList, "TwoStepSetup">;
 
 const ME_KEY = ["/api/auth/me"] as const;
-
-const UPGRADE_NEEDED_MESSAGE =
-  "Your password is shorter than 15 characters. Choose a new one of at least 15 to turn off two-step verification.";
-// iOS strong-password suggestions honour these (spec §2).
-const NEW_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_SINGLE_FACTOR}; maxlength: ${PASSWORD_MAX};`;
 
 /** Static copy for a failed request on this screen — never the raw response. */
 function messageFor(err: unknown): string {
@@ -60,10 +46,6 @@ function messageFor(err: unknown): string {
     if (err.code === "MFA_ALREADY_ENABLED")
       return "Two-step verification is already on.";
     if (err.code === "MFA_NOT_ENABLED") return "Two-step verification is off.";
-    if (err.code === "PASSWORD_UPGRADE_NEEDED") return UPGRADE_NEEDED_MESSAGE;
-    if (err.code === "PASSWORD_TOO_SHORT")
-      return passwordMessage("too_short", "single_factor");
-    if (err.code === "PASSWORD_BREACHED") return BREACHED_PASSWORD_MESSAGE;
     if (isTwoStepCheckError(err)) return secondFactorErrorMessage(err).message;
   }
   return "Something went wrong. Please try again.";
@@ -91,12 +73,6 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const [replacement, setReplacement] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // Turning it off with a password under 15: the server asks for a new 15+
-  // one in the same step (PASSWORD_UPGRADE_NEEDED). It answers before the
-  // factor check, so a recovery code typed above is still unspent.
-  const [needsNewPassword, setNeedsNewPassword] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   // Swipe-back, header back or Android back while the codes are unsaved.
   // Done is only enabled once they're ticked as saved, so its goBack() passes.
@@ -121,9 +97,6 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
     // A recovery code spent on a request that then failed: show its replacement.
     const spent = replacementFromError(err);
     if (spent) setReplacement(spent);
-    if (err instanceof ApiError && err.code === "PASSWORD_UPGRADE_NEEDED") {
-      setNeedsNewPassword(true);
-    }
     setError(messageFor(err));
   };
 
@@ -138,18 +111,6 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   // No try/finally in the handlers: React Compiler cannot lower a `finally`.
   const onConfirmIdentity = async () => {
     if (busy || !password || (needsFactor && !factor)) return;
-    // Checked here, before the try (React Compiler can't lower a ternary in it).
-    const newPasswordError = needsNewPassword
-      ? validateNewPassword(newPassword, confirmNewPassword, {
-          min: PASSWORD_MIN_SINGLE_FACTOR,
-          context: "single_factor",
-        })
-      : null;
-    if (newPasswordError) {
-      setError(newPasswordError);
-      return;
-    }
-    const upgrade = needsNewPassword ? newPassword : undefined;
     setBusy(true);
     setError("");
     try {
@@ -168,7 +129,7 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
             secret: { secret: next.secret, otpauthUrl: next.otpauthUrl },
           });
         } else if (mode === "disable") {
-          await auth.disableTwoStep(password, factor, upgrade);
+          await auth.disableTwoStep(password, factor);
           finish("Two-step verification is off");
           return;
         } else {
@@ -226,45 +187,10 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
               autoFocus={false}
             />
           ) : null}
-          {needsNewPassword ? (
-            <>
-              <TextInput
-                leftIcon="lock"
-                placeholder="New password"
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                autoComplete="new-password"
-                textContentType="newPassword"
-                passwordRules={NEW_PASSWORD_RULES}
-                editable={!busy}
-                accessibilityLabel="New password"
-                accessibilityHint={`At least ${PASSWORD_MIN_SINGLE_FACTOR} characters`}
-              />
-              <TextInput
-                leftIcon="lock"
-                placeholder="Confirm new password"
-                value={confirmNewPassword}
-                onChangeText={setConfirmNewPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                autoComplete="new-password"
-                textContentType="newPassword"
-                passwordRules={NEW_PASSWORD_RULES}
-                editable={!busy}
-                accessibilityLabel="Confirm new password"
-              />
-            </>
-          ) : null}
           <InlineError message={error} />
           <Button
             onPress={() => void onConfirmIdentity()}
-            disabled={
-              !password ||
-              (needsFactor && !factor) ||
-              (needsNewPassword && (!newPassword || !confirmNewPassword))
-            }
+            disabled={!password || (needsFactor && !factor)}
             loading={busy}
             variant={mode === "disable" ? "secondary" : "primary"}
           >

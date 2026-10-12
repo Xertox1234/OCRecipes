@@ -6,7 +6,7 @@ import { insertUserProfileSchema, allergySchema } from "@shared/schema";
 import { measurementUnitSchema } from "@shared/lib/units";
 import {
   PASSWORD_MAX,
-  PASSWORD_MIN_WITH_MFA,
+  PASSWORD_MIN,
   passwordLength,
 } from "@shared/constants/password-policy";
 
@@ -51,10 +51,10 @@ export const newPasswordSchema = z
   .max(PASSWORD_INPUT_MAX_UNITS)
   .superRefine((pw, ctx) => {
     const n = passwordLength(pw);
-    if (n < PASSWORD_MIN_WITH_MFA)
+    if (n < PASSWORD_MIN)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Use at least ${PASSWORD_MIN_WITH_MFA} characters.`,
+        message: `Use at least ${PASSWORD_MIN} characters.`,
       });
     if (n > PASSWORD_MAX)
       ctx.addIssue({
@@ -243,14 +243,7 @@ export const mfaPasswordSchema = z.object({
 export const mfaPasswordAndFactorSchema = mfaPasswordSchema.extend({
   secondFactor: secondFactorSchema,
 });
-// Turning two-step off, optionally changing the password in the same step.
-export const mfaDisableSchema = mfaPasswordAndFactorSchema.extend({
-  newPassword: newPasswordSchema.optional(),
-});
-/** "Choose a longer password" on a short password's pass; the 15 is checked in the route. */
-export const upgradePasswordSchema = z.object({
-  newPassword: newPasswordSchema,
-});
+export const mfaDisableSchema = mfaPasswordAndFactorSchema;
 export const mfaConfirmSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
 });

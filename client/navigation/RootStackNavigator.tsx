@@ -15,7 +15,6 @@ import ChooseUsernameScreen from "@/screens/ChooseUsernameScreen";
 import ConnectAccountScreen from "@/screens/ConnectAccountScreen";
 import ResetPasswordScreen from "@/screens/ResetPasswordScreen";
 import TwoStepCodeScreen from "@/screens/TwoStepCodeScreen";
-import PasswordUpgradeScreen from "@/screens/PasswordUpgradeScreen";
 import ScanScreen from "@/screens/ScanScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
 import PhotoIntentScreen from "@/screens/PhotoIntentScreen";
@@ -77,16 +76,6 @@ export type RootStackParamList = {
   ResetPassword: { email: string };
   /** A correct password on a 2FA account: enter the code (sign-in or Connect prompt). */
   TwoStepCode: { challenge: string; purpose: "login" | "link" };
-  /**
-   * A correct password under 15 without two-step (password policy spec §6):
-   * turn on two-step or choose a longer password. The pass lives only in
-   * this param — never in storage.
-   */
-  PasswordUpgrade: {
-    pass: string;
-    canUseTwoStep: boolean;
-    purpose: "login" | "link";
-  };
   VerifyEmail:
     | {
         token?: string;
@@ -304,11 +293,6 @@ export default function RootStackNavigator() {
             name="TwoStepCode"
             component={TwoStepCodeScreen}
             options={{ headerShown: false, title: "Two-step verification" }}
-          />
-          <Stack.Screen
-            name="PasswordUpgrade"
-            component={PasswordUpgradeScreen}
-            options={{ title: "Stronger sign-in" }}
           />
         </>
       ) : needsOnboarding ? (

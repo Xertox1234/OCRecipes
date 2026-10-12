@@ -84,17 +84,6 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
         });
         return;
       }
-      if (result.status === "upgrade_required") {
-        // Under 15 with no two-step: nothing was linked (spec §5.2, P3).
-        // Once the account is fixed, tapping the provider again links it.
-        setBusy(false);
-        navigation.replace("PasswordUpgrade", {
-          pass: result.pass,
-          canUseTwoStep: result.canUseTwoStep,
-          purpose: "link",
-        });
-        return;
-      }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
       fail(err, "password");

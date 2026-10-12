@@ -16,14 +16,8 @@ export const ErrorCode = {
   INVALID_RESET_CODE: "INVALID_RESET_CODE",
   /** New password under the account's minimum (15, or 8 with two-step). */
   PASSWORD_TOO_SHORT: "PASSWORD_TOO_SHORT",
-  /** Turning two-step off with a password under 15 needs a new 15+ one in the same step. */
-  PASSWORD_UPGRADE_NEEDED: "PASSWORD_UPGRADE_NEEDED",
   /** The new password appears in a known breach (HIBP range check). */
   PASSWORD_BREACHED: "PASSWORD_BREACHED",
-  /** A short password's sign-in pass is used, expired, out of tries, or no longer matches the account. */
-  UPGRADE_PASS_EXPIRED: "UPGRADE_PASS_EXPIRED",
-  /** The pass came from a password under 8, so two-step can't make it valid — choose a longer one. */
-  UPGRADE_TWO_STEP_NOT_ALLOWED: "UPGRADE_TWO_STEP_NOT_ALLOWED",
   CONFLICT: "CONFLICT",
   INTERNAL_ERROR: "INTERNAL_ERROR",
   API_KEY_INVALID: "API_KEY_INVALID",

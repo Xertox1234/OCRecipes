@@ -14,7 +14,6 @@ import {
   sendTwoFactorNotice,
   sendPasswordChangedNotice,
 } from "../../services/email";
-import { passwordMatches } from "../../lib/password-check";
 import { isBreached } from "../../lib/pwned-password";
 import {
   encryptMfaSecret,
@@ -69,7 +68,6 @@ const SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
 const currentCode = () => hotp(base32Decode(SECRET), timeStep(Date.now()));
 let passwordHash: string;
 let saved: Record<string, string | undefined>;
-// Turning two-step off needs a 15+ current password (spec §5.4).
 const LONG_PASSWORD = "right-long-pass-1";
 const SHORT_PASSWORD = "short-pass-1"; // 12
 let longHash: string;
@@ -418,9 +416,7 @@ describe("POST /api/auth/mfa/disable", () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.token).toBe("mock-jwt-token");
-    const [id, opts] = vi.mocked(storage.disableMfa).mock.calls[0];
-    expect(id).toBe("1");
-    expect(opts?.newPasswordHash).toBeUndefined();
+    expect(storage.disableMfa).toHaveBeenCalledWith("1");
     expect(sendPasswordChangedNotice).not.toHaveBeenCalled();
     expect(invalidateTokenVersionCache).toHaveBeenCalledWith("1");
     expect(sendTwoFactorNotice).toHaveBeenCalledWith(
@@ -503,12 +499,11 @@ describe("POST /api/auth/mfa/disable", () => {
       expect(res.status).toBe(200);
       expect(res.body.code).toBeUndefined();
       expect(mockVerifySecondFactor).toHaveBeenCalledTimes(1);
-      const [, opts] = vi.mocked(storage.disableMfa).mock.calls[0];
-      expect(opts?.newPasswordHash).toBeUndefined();
+      expect(storage.disableMfa).toHaveBeenCalledWith("1");
       expect(sendPasswordChangedNotice).not.toHaveBeenCalled();
     });
 
-    it("a 7-character password set before the policy also turns it off (no PASSWORD_UPGRADE_NEEDED)", async () => {
+    it("a 7-character password set before the policy also turns it off", async () => {
       asUser({
         password: await bcrypt.hash("seven-7", 4),
         mfaEnabledAt: new Date(),
@@ -521,11 +516,10 @@ describe("POST /api/auth/mfa/disable", () => {
         password: "seven-7",
         secondFactor: { code: "123456" },
       });
-      expect(res.body.code).not.toBe("PASSWORD_UPGRADE_NEEDED");
       expect(res.status).toBe(200);
     });
 
-    it("a wrong current password still answers 401, never the upgrade prompt", async () => {
+    it("a wrong current password still answers 401", async () => {
       const res = await post("disable", {
         password: "wrong-pass1",
         secondFactor: { code: "123456" },
@@ -534,7 +528,7 @@ describe("POST /api/auth/mfa/disable", () => {
       expect(storage.disableMfa).not.toHaveBeenCalled();
     });
 
-    it("a newPassword: turns off and changes the password in one call, then notifies", async () => {
+    it("a newPassword from an older build is ignored: off, password unchanged, no notice", async () => {
       vi.mocked(storage.disableMfa).mockResolvedValue(6);
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ tokenVersion: 6 }),
@@ -545,39 +539,8 @@ describe("POST /api/auth/mfa/disable", () => {
         newPassword: "a-long-test-passphrase",
       });
       expect(res.status).toBe(200);
-      const [, opts] = vi.mocked(storage.disableMfa).mock.calls[0];
-      expect(opts?.newPasswordHash).toMatch(/^pv2\$/);
-      expect(
-        await passwordMatches("a-long-test-passphrase", opts!.newPasswordHash!),
-      ).toBe(true);
-      expect(sendPasswordChangedNotice).toHaveBeenCalledWith(
-        "testuser@example.com",
-        "testuser",
-      );
-    });
-
-    it("a 7-character newPassword: 400, factor not checked, still on", async () => {
-      const res = await post("disable", {
-        password: SHORT_PASSWORD,
-        secondFactor: { recoveryCode: "ABCD-EFGH-IJKL-MNOP" },
-        newPassword: "short-7",
-      });
-      expect(res.status).toBe(400);
-      expect(mockVerifySecondFactor).not.toHaveBeenCalled();
-      expect(storage.disableMfa).not.toHaveBeenCalled();
-    });
-
-    it("a breached newPassword: 400 PASSWORD_BREACHED, factor not checked, still on", async () => {
-      vi.mocked(isBreached).mockResolvedValue(true);
-      const res = await post("disable", {
-        password: SHORT_PASSWORD,
-        secondFactor: { recoveryCode: "ABCD-EFGH-IJKL-MNOP" },
-        newPassword: "a-long-test-passphrase",
-      });
-      expect(res.status).toBe(400);
-      expect(res.body.code).toBe("PASSWORD_BREACHED");
-      expect(mockVerifySecondFactor).not.toHaveBeenCalled();
-      expect(storage.disableMfa).not.toHaveBeenCalled();
+      expect(storage.disableMfa).toHaveBeenCalledWith("1");
+      expect(sendPasswordChangedNotice).not.toHaveBeenCalled();
     });
   });
 });

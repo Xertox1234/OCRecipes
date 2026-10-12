@@ -192,17 +192,15 @@ describe("runRetentionCleanup", () => {
     _resetRunningStateForTests();
   });
 
-  it("purges chat_conversations, scanned_items, and daily_logs in order, then dead upgrade passes and dead 2FA rows", async () => {
+  it("purges chat_conversations, scanned_items, and daily_logs in order, then dead 2FA rows", async () => {
     // 1 call for the active-user union + 3 calls for the three domains (each
-    // returns rowCount < BATCH_SIZE so the loop exits after one batch) + 1
-    // for the dead upgrade passes (one unbatched DELETE) + 3 single-batch
-    // 2FA steps (challenges, trusted phones, pending secrets).
+    // returns rowCount < BATCH_SIZE so the loop exits after one batch) + 3
+    // single-batch 2FA steps (challenges, trusted phones, pending secrets).
     const { db, execute } = makeFakeDb([
       { rows: [] },
       { rowCount: 5 },
       { rowCount: 7 },
       { rowCount: 11 },
-      { rowCount: 2 },
       { rowCount: 3 },
       { rowCount: 4 },
       { rowCount: 1 },
@@ -216,15 +214,14 @@ describe("runRetentionCleanup", () => {
       "chat_conversations",
       "daily_logs",
       "scanned_items",
-      "password_upgrade_passes",
       "mfa_challenges",
       "mfa_trusted_devices",
       "user_mfa_pending_secrets",
     ]);
-    expect(results.map((r) => r.rowsDeleted)).toEqual([5, 7, 11, 2, 3, 4, 1]);
+    expect(results.map((r) => r.rowsDeleted)).toEqual([5, 7, 11, 3, 4, 1]);
 
-    // Active-user query + 3 single-batch deletes + the pass sweep + 3 2FA steps.
-    expect(execute).toHaveBeenCalledTimes(8);
+    // Active-user query + 3 single-batch deletes + 3 2FA steps.
+    expect(execute).toHaveBeenCalledTimes(7);
   });
 
   it("loops until a batch returns fewer rows than BATCH_SIZE", async () => {
@@ -243,8 +240,8 @@ describe("runRetentionCleanup", () => {
       new Date("2026-05-11T00:00:00Z"),
     );
     expect(results[0].rowsDeleted).toBe(2250);
-    // ...plus the one unbatched dead-upgrade-pass DELETE and 3 2FA steps.
-    expect(execute).toHaveBeenCalledTimes(10);
+    // ...plus 3 2FA steps.
+    expect(execute).toHaveBeenCalledTimes(9);
   });
 
   it("preserves rows within the retention window", async () => {

@@ -8,10 +8,7 @@ import {
   RESET_CODE_LENGTH,
   RESET_RESEND_COOLDOWN_SECONDS,
 } from "@shared/constants/password-reset";
-import {
-  PASSWORD_MIN_WITH_MFA,
-  passwordMessage,
-} from "@shared/constants/password-policy";
+import { passwordMessage } from "@shared/constants/password-policy";
 import {
   BREACHED_PASSWORD_MESSAGE,
   PASSWORD_MISMATCH_MESSAGE,
@@ -47,10 +44,7 @@ export function validateResetForm(input: {
     return { field: "code", message: "Enter the 6-digit code from the email" };
   }
   // 8 for everyone (owner ruling 2026-10-12); the server checks again.
-  const message = validateNewPassword(input.password, input.confirmPassword, {
-    min: PASSWORD_MIN_WITH_MFA,
-    context: "mfa",
-  });
+  const message = validateNewPassword(input.password, input.confirmPassword);
   if (!message) return null;
   // validateNewPassword checks length (password field) before the mismatch
   // (confirm field), so a mismatch message means the password itself passed.
@@ -64,7 +58,7 @@ export function getResetErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === "INVALID_RESET_CODE") return INVALID_RESET_CODE_MESSAGE;
     if (err.code === "PASSWORD_TOO_SHORT") {
-      return passwordMessage("too_short", "mfa");
+      return passwordMessage("too_short");
     }
     if (err.code === "PASSWORD_BREACHED") return BREACHED_PASSWORD_MESSAGE;
     if (err.status === 429) {
