@@ -10,17 +10,20 @@ import { ApiError } from "@/lib/api-error";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TwoStepCode">;
 
-const { mockVerify, mockFinish, mockToastError, mockCopy } = vi.hoisted(() => ({
-  mockVerify: vi.fn(),
-  mockFinish: vi.fn(),
-  mockToastError: vi.fn(),
-  mockCopy: vi.fn(),
-}));
+const { mockVerify, mockFinish, mockToastError, mockCopy, mockResend } =
+  vi.hoisted(() => ({
+    mockResend: vi.fn(),
+    mockVerify: vi.fn(),
+    mockFinish: vi.fn(),
+    mockToastError: vi.fn(),
+    mockCopy: vi.fn(),
+  }));
 
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
     verifySecondFactor: mockVerify,
     finishSignIn: mockFinish,
+    resendSignInCode: mockResend,
   }),
 }));
 vi.mock("@/context/ToastContext", () => ({
@@ -39,9 +42,12 @@ vi.mock("react-native-keyboard-controller", () => ({
 
 const user = { id: "u1", username: "chef" };
 
-function renderScreen(purpose: "login" | "link" = "login") {
+function renderScreen(
+  purpose: "login" | "link" = "login",
+  extra: Record<string, unknown> = {},
+) {
   const route = {
-    params: { challenge: "c-1", purpose },
+    params: { challenge: "c-1", purpose, ...extra },
   } as unknown as Props["route"];
   const navigation = {
     navigate: vi.fn(),
@@ -69,22 +75,62 @@ describe("TwoStepCodeScreen", () => {
     typeCode("123456");
     await waitFor(() => expect(mockFinish).toHaveBeenCalledWith(user, "t"));
     expect(mockVerify).toHaveBeenCalledTimes(1);
-    expect(mockVerify).toHaveBeenCalledWith("c-1", { code: "123456" }, false);
+    // "Don't ask again on this phone" is on by default.
+    expect(mockVerify).toHaveBeenCalledWith("c-1", { code: "123456" }, true);
   });
 
-  it("the trust switch is offered on sign-in and sent when on", async () => {
+  it("turning 'Don't ask again' off sends trust false", async () => {
     mockVerify.mockResolvedValue({ status: "signed_in", user, token: "t" });
     renderScreen("login");
-    fireEvent.click(screen.getByLabelText("Trust this phone for 90 days"));
+    fireEvent.click(screen.getByLabelText("Don't ask again on this phone"));
     typeCode("123456");
     await waitFor(() =>
-      expect(mockVerify).toHaveBeenCalledWith("c-1", { code: "123456" }, true),
+      expect(mockVerify).toHaveBeenCalledWith("c-1", { code: "123456" }, false),
     );
   });
 
-  it("connecting a sign-in method never offers to trust the phone", () => {
+  it("connecting a sign-in method never offers to trust the phone", async () => {
+    mockVerify.mockResolvedValue({ status: "signed_in", user, token: "t" });
     renderScreen("link");
-    expect(screen.queryByLabelText("Trust this phone for 90 days")).toBeNull();
+    expect(screen.queryByLabelText("Don't ask again on this phone")).toBeNull();
+    typeCode("123456");
+    await waitFor(() =>
+      expect(mockVerify).toHaveBeenCalledWith("c-1", { code: "123456" }, false),
+    );
+  });
+
+  it("email account: says where the code went and can resend it", async () => {
+    mockResend.mockResolvedValue({
+      status: "code_sent",
+      emailHint: "w•••@gmail.com",
+    });
+    renderScreen("login", {
+      method: "email",
+      emailHint: "w•••@gmail.com",
+      codeSent: true,
+    });
+    expect(
+      screen.getByText(
+        "We emailed a 6-digit code to w•••@gmail.com. It can take a minute to arrive.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Use a recovery code instead")).toBeNull();
+    // The first code just went out: the resend button starts waiting.
+    expect(screen.getByLabelText("Resend code in 30s")).toBeTruthy();
+  });
+
+  it("email account whose code was held back: Resend works straight away", async () => {
+    mockResend.mockResolvedValue({
+      status: "code_sent",
+      emailHint: "w•••@gmail.com",
+    });
+    renderScreen("login", {
+      method: "email",
+      emailHint: "w•••@gmail.com",
+      codeSent: false,
+    });
+    fireEvent.click(screen.getByLabelText("Email me a code"));
+    await waitFor(() => expect(mockResend).toHaveBeenCalledWith("c-1"));
   });
 
   it("a recovery code's replacement is shown, and sign-in waits for 'I've saved it'", async () => {
@@ -104,7 +150,7 @@ describe("TwoStepCodeScreen", () => {
     expect(mockVerify).toHaveBeenCalledWith(
       "c-1",
       { recoveryCode: "wxyz-wxyz-wxyz-wxyz" },
-      false,
+      true, // "Don't ask again" is on by default
     );
     expect(mockFinish).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Copy"));

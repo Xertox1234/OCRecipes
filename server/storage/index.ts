@@ -13,6 +13,7 @@ import * as passwordReset from "./password-reset";
 import * as passwordChange from "./password-change";
 import * as identities from "./identities";
 import * as mfa from "./mfa";
+import * as mfaEmail from "./mfa-email";
 import * as accountImages from "./account-images";
 import * as nutrition from "./nutrition";
 import * as mealPlans from "./meal-plans";
@@ -105,6 +106,12 @@ export const storage = {
   confirmTotpEnrollment: mfa.confirmTotpEnrollment,
   confirmNewPhone: mfa.confirmNewPhone,
   getActiveTotp: mfa.getActiveTotp,
+  issueMfaEmailCode: mfaEmail.issueMfaEmailCode,
+  reserveMfaEmailAttempt: mfaEmail.reserveMfaEmailAttempt,
+  enableEmailMfa: mfaEmail.enableEmailMfa,
+  getMfaState: mfaEmail.getMfaState,
+  acceptMfaEmailCode: mfaEmail.acceptMfaEmailCode,
+  getLiveMfaChallenge: mfaEmail.getLiveMfaChallenge,
   acceptTotpStep: mfa.acceptTotpStep,
   recordMfaFailure: mfa.recordMfaFailure,
   consumeRecoveryCode: mfa.consumeRecoveryCode,

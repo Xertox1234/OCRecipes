@@ -248,6 +248,10 @@ export const mfaConfirmSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
 });
 
+export const mfaEmailResendSchema = z.object({
+  challenge: z.string().min(20).max(100),
+});
+
 export const mfaVerifySchema = z.object({
   challenge: z.string().min(20).max(100),
   secondFactor: secondFactorSchema,

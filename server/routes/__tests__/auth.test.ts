@@ -87,6 +87,7 @@ vi.mock("../../storage", () => ({
     filterUnreferencedImageUrls: vi.fn().mockResolvedValue([]),
     applyEmailVerification: vi.fn(),
     getSignInMethods: vi.fn(),
+    getMfaState: vi.fn(),
     findIdentity: vi.fn(),
     listIdentities: vi.fn().mockResolvedValue([]),
     consumeNonce: vi.fn(),
@@ -1906,8 +1907,30 @@ describe("Auth Routes", () => {
           .set("Authorization", "Bearer mock-token");
         expect(res.status).toBe(200);
         expect(res.body.mfaEnabled).toBe(true);
+        // No state row read → an older authenticator account.
+        expect(res.body.mfaMethod).toBe("totp");
         expect(res.body).not.toHaveProperty("mfaEnabledAt");
         expect(JSON.stringify(res.body)).not.toContain("v1:");
+      });
+
+      it("reports mfaMethod 'email' for an email two-step account", async () => {
+        vi.mocked(storage.getUser).mockResolvedValue(
+          createMockUser({ mfaEnabledAt: new Date() }),
+        );
+        vi.mocked(storage.getMfaState).mockResolvedValueOnce({
+          method: "email",
+          failedAttempts: 0,
+          locked: false,
+        });
+        vi.mocked(storage.getSignInMethods).mockResolvedValue({
+          password: true,
+          google: null,
+          apple: null,
+        });
+        const res = await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", "Bearer mock-token");
+        expect(res.body.mfaMethod).toBe("email");
       });
 
       it("mfaEnabled is false when two-step verification is off", async () => {
@@ -1945,6 +1968,7 @@ describe("Auth Routes", () => {
         expect(res.body).toEqual({
           status: "mfa_required",
           challenge: expect.any(String),
+          method: "totp",
         });
         expect(storage.createMfaChallenge).toHaveBeenCalledTimes(1);
         const authMod = await import("../../middleware/auth");

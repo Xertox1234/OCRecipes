@@ -13,10 +13,15 @@ import { passwordMatches } from "../lib/password-check";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { handleRouteError, formatZodError } from "./_helpers";
-import { mfaVerifyLimiter, reauthLimiter } from "./_rate-limiters";
+import {
+  mfaEmailSendLimiter,
+  mfaVerifyLimiter,
+  reauthLimiter,
+} from "./_rate-limiters";
 import {
   mfaConfirmSchema,
   mfaDisableSchema,
+  mfaEmailResendSchema,
   mfaPasswordAndFactorSchema,
   mfaPasswordSchema,
   mfaVerifySchema,
@@ -41,6 +46,9 @@ import {
 } from "../services/mfa-totp";
 import { INVALID_SECOND_FACTOR_MESSAGE } from "../lib/mfa/password-proof-gate";
 import { HttpFailure, issueSession } from "./auth-social";
+import { emailVerificationEnabled } from "../lib/email-config";
+import { maskEmail, sendMfaEmailCode } from "../lib/mfa/email-code";
+import { signInCodeMatches } from "../lib/password-reset-code";
 
 // Two-step verification — spec docs/superpowers/specs/2026-10-10-totp-second-factor-design.md.
 // Never log a code, recovery code, challenge, trust key or secret.
@@ -157,6 +165,40 @@ function answer(
   if (error instanceof Reply || error instanceof HttpFailure)
     return sendError(res, error.status, error.message, error.code, extra);
   handleRouteError(res, error, label, extra);
+}
+
+/**
+ * Authenticator-only actions (new phone, recovery codes) on an email account
+ * would stage a key the code check never reads — refuse them.
+ */
+async function requireTotpMethod(user: User): Promise<void> {
+  const state = await storage.getMfaState(user.id);
+  if (state?.method === "email") {
+    throw new Reply(
+      409,
+      ErrorCode.MFA_NOT_ENABLED,
+      "Your two-step codes come by email, so there's no authenticator to change.",
+    );
+  }
+}
+
+/** Email the code, or say plainly why not (never a "sent" with nothing sent). */
+async function emailCodeOrReply(user: User): Promise<void> {
+  const result = await sendMfaEmailCode(user);
+  if (result === "cooldown") {
+    throw new Reply(
+      429,
+      ErrorCode.RATE_LIMITED,
+      "Wait a moment before asking for another code.",
+    );
+  }
+  if (result === "capped") {
+    throw new Reply(
+      429,
+      ErrorCode.MFA_EMAIL_DAILY_LIMIT,
+      "Too many codes today. Use the newest one in your email, or try again tomorrow.",
+    );
+  }
 }
 
 function requireConfigured(): void {
@@ -285,6 +327,152 @@ export function register(app: Express): void {
     },
   );
 
+  // Two-step by emailed code (owner ruling 4, 2026-10-12). Setup is NOT gated
+  // by MFA_SETUP_ENABLED or MFA_SECRET_ENC_KEY: email codes use neither. It
+  // IS gated on the server being able to send email — two-step must never
+  // turn on where its codes can't arrive.
+  app.post(
+    "/api/auth/mfa/email/setup",
+    requireAuth,
+    reauthLimiter,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const { password } = parse(mfaPasswordSchema, req.body);
+        const user = await me(req);
+        if (user.password === null) {
+          throw new Reply(
+            409,
+            ErrorCode.MFA_NEEDS_PASSWORD,
+            "Set a password first — two-step verification protects password sign-in.",
+          );
+        }
+        await requirePassword(user, password);
+        if (user.mfaEnabledAt !== null) {
+          throw new Reply(
+            409,
+            ErrorCode.MFA_ALREADY_ENABLED,
+            "Two-step verification is already on.",
+          );
+        }
+        if (!emailVerificationEnabled()) {
+          throw new Reply(
+            503,
+            ErrorCode.MFA_UNAVAILABLE,
+            MFA_UNAVAILABLE_MESSAGE,
+          );
+        }
+        if (!user.emailVerified) {
+          throw new Reply(
+            409,
+            ErrorCode.EMAIL_NOT_VERIFIED,
+            "Confirm your email address first, so the codes reach you.",
+          );
+        }
+        await emailCodeOrReply(user);
+        res.json({ status: "code_sent", emailHint: maskEmail(user.email) });
+      } catch (error) {
+        answer(res, error, "start email two-step setup");
+      }
+    },
+  );
+
+  // Finish email setup with the code. Every other session ends; this one gets
+  // a fresh token minted under the version the write set.
+  app.post(
+    "/api/auth/mfa/email/confirm",
+    requireAuth,
+    mfaVerifyLimiter,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const { code } = parse(mfaConfirmSchema, req.body);
+        const user = await me(req);
+        if (user.mfaEnabledAt !== null) {
+          throw new Reply(
+            409,
+            ErrorCode.MFA_ALREADY_ENABLED,
+            "Two-step verification is already on.",
+          );
+        }
+        const wrong = new Reply(
+          400,
+          ErrorCode.INVALID_SECOND_FACTOR,
+          "That code didn't work. Check the newest email, or ask for a new code.",
+        );
+        const stored = await storage.reserveMfaEmailAttempt(user.id);
+        if (!stored || !signInCodeMatches(user.id, code, stored)) throw wrong;
+        const version = await storage.enableEmailMfa(user.id, stored);
+        if (version === undefined) throw wrong;
+        invalidateTokenVersionCache(user.id);
+        notice(user, "enabled");
+        res.json(await issueSession(user.id, version));
+      } catch (error) {
+        answer(res, error, "confirm email two-step setup");
+      }
+    },
+  );
+
+  // "Resend code" on the sign-in screen. No requireAuth: the live challenge is
+  // the credential, read WITHOUT spending one of its guesses. The code goes
+  // only to the account's own address.
+  app.post(
+    "/api/auth/mfa/email/resend",
+    mfaEmailSendLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const { challenge } = parse(mfaEmailResendSchema, req.body);
+        const expired = new Reply(
+          401,
+          ErrorCode.MFA_CHALLENGE_EXPIRED,
+          CHALLENGE_EXPIRED,
+        );
+        const row = await storage.getLiveMfaChallenge(
+          hashChallengeToken(challenge),
+        );
+        if (!row) throw expired;
+        const user = await storage.getUserForAuth(row.userId);
+        if (!user || user.tokenVersion !== row.tokenVersion) throw expired;
+        const state = await storage.getMfaState(user.id);
+        if (state?.method !== "email") {
+          throw new Reply(
+            409,
+            ErrorCode.MFA_NOT_ENABLED,
+            "This account doesn't use emailed codes.",
+          );
+        }
+        await emailCodeOrReply(user);
+        res.json({ status: "code_sent", emailHint: maskEmail(user.email) });
+      } catch (error) {
+        answer(res, error, "resend two-step code");
+      }
+    },
+  );
+
+  // "Email me a code" next to a signed-in code field (change password, email
+  // change, turning two-step off).
+  app.post(
+    "/api/auth/mfa/email/send",
+    requireAuth,
+    mfaEmailSendLimiter,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const user = await me(req);
+        requireEnabled(user);
+        const state = await storage.getMfaState(user.id);
+        if (state?.method !== "email") {
+          throw new Reply(
+            409,
+            ErrorCode.MFA_NOT_ENABLED,
+            "This account doesn't use emailed codes.",
+          );
+        }
+        await emailCodeOrReply(user);
+        res.json({ status: "code_sent", emailHint: maskEmail(user.email) });
+      } catch (error) {
+        answer(res, error, "send two-step code");
+      }
+    },
+  );
+
   // Start setup: password → a secret to add to the authenticator app. Off until
   // the owner flips MFA_SETUP_ENABLED (never gates sign-in for existing users).
   app.post(
@@ -336,6 +524,7 @@ export function register(app: Express): void {
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
+        await requireTotpMethod(user);
         // Before the factor: a missing key must not spend a recovery code.
         requireConfigured();
         replacement = await requireFactor(user, body.secondFactor);
@@ -464,6 +653,7 @@ export function register(app: Express): void {
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
+        await requireTotpMethod(user);
         replacement = await requireFactor(user, body.secondFactor);
         const recoveryCodes = generateRecoveryCodes();
         await storage.replaceRecoveryCodes(

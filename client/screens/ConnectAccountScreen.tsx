@@ -14,6 +14,7 @@ import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
+import { twoStepCodeParams } from "@/lib/second-factor-utils";
 import { useToast } from "@/context/ToastContext";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
@@ -78,10 +79,7 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
       if (result.status === "mfa_required") {
         // A 2FA account: the code finishes the connection (spec §3.3).
         setBusy(false);
-        navigation.replace("TwoStepCode", {
-          challenge: result.challenge,
-          purpose: "link",
-        });
+        navigation.replace("TwoStepCode", twoStepCodeParams(result, "link"));
         return;
       }
       haptics.notification(Haptics.NotificationFeedbackType.Success);

@@ -13,6 +13,9 @@ import { recoveryCodesText } from "../TwoStepSetupScreen-utils";
 type Props = NativeStackScreenProps<ProfileStackParamList, "TwoStepSetup">;
 
 const h = vi.hoisted(() => ({
+  startEmailTwoStep: vi.fn(),
+  confirmEmailTwoStep: vi.fn(),
+  emailSource: undefined as unknown,
   startTwoStepSetup: vi.fn(),
   startNewPhone: vi.fn(),
   confirmTwoStep: vi.fn(),
@@ -25,6 +28,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
+    startEmailTwoStep: h.startEmailTwoStep,
+    confirmEmailTwoStep: h.confirmEmailTwoStep,
     startTwoStepSetup: h.startTwoStepSetup,
     startNewPhone: h.startNewPhone,
     confirmTwoStep: h.confirmTwoStep,
@@ -36,6 +41,9 @@ vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: h.toastSuccess, error: vi.fn() }),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: h.copy }));
+vi.mock("@/hooks/useSignInMethods", () => ({
+  useSignedInEmailCode: () => h.emailSource,
+}));
 vi.mock("@react-navigation/native", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   usePreventRemove: h.usePreventRemove,
@@ -62,75 +70,85 @@ const press = (name: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   h.copy.mockResolvedValue(true);
+  h.emailSource = undefined;
 });
 
-describe("TwoStepSetupScreen — turning it on", () => {
-  it("walks password → key → code → codes, and Done waits for 'I've saved these'", async () => {
-    h.startTwoStepSetup.mockResolvedValue({
-      secret: "ABCDEFGHIJKLMNOP",
-      otpauthUrl: "otpauth://totp/x",
-    });
-    h.confirmTwoStep.mockResolvedValue({ recoveryCodes: CODES });
+// Owner ruling 4 (2026-10-12): turning it on means codes by email.
+describe("TwoStepSetupScreen — turning it on (email)", () => {
+  const sent = { status: "code_sent", emailHint: "w•••@gmail.com" };
+
+  it("password → emailed code → on: no keys, no recovery codes", async () => {
+    h.startEmailTwoStep.mockResolvedValue(sent);
+    h.confirmEmailTwoStep.mockResolvedValue(undefined);
     const navigation = renderScreen("setup");
-
-    type("Password", "pw-1");
-    press("Continue");
-    await screen.findByText("ABCD EFGH IJKL MNOP");
-    expect(h.startTwoStepSetup).toHaveBeenCalledWith("pw-1");
-
-    press("Next");
-    type("6-digit code", "123456");
-    press("Confirm");
-    await screen.findByText(CODES[0]);
-    expect(h.confirmTwoStep).toHaveBeenCalledWith("123456");
-
-    const done = screen.getByRole("button", { name: "Done" });
-    expect(done.hasAttribute("disabled")).toBe(true);
-    press("Copy all");
-    await waitFor(() =>
-      expect(h.copy).toHaveBeenCalledWith(recoveryCodesText(CODES)),
-    );
-    fireEvent.click(screen.getByRole("checkbox", { name: "I've saved these" }));
     expect(
-      screen.getByRole("button", { name: "Done" }).hasAttribute("disabled"),
-    ).toBe(false);
-    press("Done");
-    expect(navigation.goBack).toHaveBeenCalled();
-    expect(h.toastSuccess).toHaveBeenCalled();
-  });
-
-  it("no authenticator app opening shows the copy-the-key fallback", async () => {
-    h.startTwoStepSetup.mockResolvedValue({
-      secret: "ABCDEFGHIJKLMNOP",
-      otpauthUrl: "otpauth://totp/x",
-    });
-    vi.spyOn(Linking, "openURL").mockRejectedValue(new Error("no handler"));
-    renderScreen("setup");
+      screen.getByText(
+        "When you sign in on a new phone, we'll email you a 6-digit code. Enter your password to start.",
+      ),
+    ).toBeTruthy();
     type("Password", "pw-1");
     press("Continue");
-    await screen.findByText("ABCD EFGH IJKL MNOP");
-    press("Add to Passwords"); // the test RN mock reports iOS
     expect(
       await screen.findByText(
-        "No authenticator app opened — copy the key instead.",
+        "We emailed a 6-digit code to w•••@gmail.com. Enter it below.",
       ),
     ).toBeTruthy();
+    expect(h.startEmailTwoStep).toHaveBeenCalledWith("pw-1");
+    expect(screen.queryByLabelText("Use a recovery code instead")).toBeNull();
+    type("6-digit code", "123456");
+    await waitFor(() =>
+      expect(h.confirmEmailTwoStep).toHaveBeenCalledWith("123456"),
+    );
+    await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
+    expect(h.toastSuccess).toHaveBeenCalledWith("Two-step verification is on");
+    expect(h.startTwoStepSetup).not.toHaveBeenCalled();
   });
 
-  it("while the feature is off on the server it says so", async () => {
-    h.startTwoStepSetup.mockRejectedValue(
+  it("a wrong code stays on the code step and says so", async () => {
+    h.startEmailTwoStep.mockResolvedValue(sent);
+    h.confirmEmailTwoStep.mockRejectedValue(
       new ApiError(
-        `403: ${JSON.stringify({ code: "MFA_SETUP_DISABLED", error: "x" })}`,
-        "MFA_SETUP_DISABLED",
-        403,
+        `400: ${JSON.stringify({ code: "INVALID_SECOND_FACTOR", error: "That code didn't work. Check the newest email, or ask for a new code." })}`,
+        "INVALID_SECOND_FACTOR",
+        400,
+      ),
+    );
+    const navigation = renderScreen("setup");
+    type("Password", "pw-1");
+    press("Continue");
+    await screen.findByLabelText("6-digit code");
+    type("6-digit code", "000000");
+    expect(
+      await screen.findByText(
+        "That code didn't work. Check the newest email, or ask for a new code.",
+      ),
+    ).toBeTruthy();
+    expect(navigation.goBack).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "EMAIL_NOT_VERIFIED",
+      409,
+      "Confirm your email address first, so the codes reach you.",
+    ],
+    [
+      "MFA_UNAVAILABLE",
+      503,
+      "Two-step verification is unavailable right now. Please try again later.",
+    ],
+  ])("%s → plain words", async (code, status, words) => {
+    h.startEmailTwoStep.mockRejectedValue(
+      new ApiError(
+        `${status}: ${JSON.stringify({ code, error: "x" })}`,
+        code,
+        status,
       ),
     );
     renderScreen("setup");
     type("Password", "pw-1");
     press("Continue");
-    expect(
-      await screen.findByText("Two-step verification isn't available yet."),
-    ).toBeTruthy();
+    expect(await screen.findByText(words)).toBeTruthy();
   });
 });
 
@@ -148,6 +166,17 @@ describe("TwoStepSetupScreen — managing it", () => {
       expect(h.disableTwoStep).toHaveBeenCalledWith("pw-1", { code: "123456" }),
     );
     await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
+  });
+
+  it("turning off an email account: the code field offers Email me a code", () => {
+    h.emailSource = { send: vi.fn() };
+    renderScreen("disable");
+    expect(
+      screen.getByText("Enter your password and the code we email you."),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Email me a code" }),
+    ).toBeTruthy();
   });
 
   it("new recovery codes go straight to the save step", async () => {

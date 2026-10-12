@@ -4,6 +4,8 @@ import {
   afterVerify,
   afterVerifyFailure,
   showTrustSwitch,
+  codeScreenIntro,
+  TRUST_LABEL,
 } from "../TwoStepCodeScreen-utils";
 
 const user = { id: "u1", username: "chef" };
@@ -75,5 +77,41 @@ describe("afterVerifyFailure", () => {
       restart: true,
       replacement: "AAAA-BBBB-CCCC-DDDD",
     });
+  });
+});
+
+describe("codeScreenIntro", () => {
+  it("email, sent: names the masked address", () => {
+    expect(
+      codeScreenIntro({
+        method: "email",
+        emailHint: "w•••@gmail.com",
+        codeSent: true,
+      }),
+    ).toBe(
+      "We emailed a 6-digit code to w•••@gmail.com. It can take a minute to arrive.",
+    );
+  });
+  it("email, held back by the limit: use the newest one", () => {
+    expect(
+      codeScreenIntro({
+        method: "email",
+        emailHint: "w•••@gmail.com",
+        codeSent: false,
+      }),
+    ).toBe(
+      "We've already emailed codes to w•••@gmail.com. Use the newest one, or tap Email me a code.",
+    );
+  });
+  it("authenticator (or an older server that sends no method)", () => {
+    expect(codeScreenIntro({ method: "totp" })).toBe(
+      "Enter the 6-digit code from your authenticator app.",
+    );
+    expect(codeScreenIntro({})).toBe(
+      "Enter the 6-digit code from your authenticator app.",
+    );
+  });
+  it("the trust switch says what it does, in plain words", () => {
+    expect(TRUST_LABEL).toBe("Don't ask again on this phone");
   });
 });

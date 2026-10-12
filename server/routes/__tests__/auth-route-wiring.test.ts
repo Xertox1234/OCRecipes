@@ -334,6 +334,10 @@ describe("every protected route is registered behind requireAuth (static guard)"
       "two-step sign-in — single-use challenge in body (never a JWT)",
     ],
     [
+      "POST /api/auth/mfa/email/resend",
+      "two-step sign-in resend — live challenge in body; mails only the account's own address",
+    ],
+    [
       "POST /webhooks/apple/notifications",
       "Apple store webhook — JWS-verified",
     ],

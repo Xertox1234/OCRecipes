@@ -27,6 +27,7 @@ vi.mock("../../storage", () => ({
     reservePasswordChangeAttempt: vi.fn(),
     changePassword: vi.fn(),
     listIdentities: vi.fn(),
+    getMfaState: vi.fn(),
   },
 }));
 vi.mock("../../middleware/auth");
@@ -244,6 +245,40 @@ describe("POST /api/auth/change-password", () => {
       expect(res.status).toBe(403);
       expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
       expect(storage.changePassword).not.toHaveBeenCalled();
+    });
+
+    // Owner ruling 4: on an EMAIL two-step account the change-password code
+    // already proved the same inbox — never ask for a second emailed code.
+    it("email two-step: the emailed change code alone is enough", async () => {
+      vi.mocked(storage.getMfaState).mockResolvedValue({
+        method: "email",
+        failedAttempts: 0,
+        locked: false,
+      });
+      vi.mocked(storage.reservePasswordChangeAttempt).mockResolvedValue(
+        hashChangeCode("1", "123456"),
+      );
+      const res = await post("change-password", {
+        proof: { emailCode: "123456" },
+        newPassword: LONG,
+      });
+      expect(res.status).toBe(200);
+      expect(mockVerifySecondFactor).not.toHaveBeenCalled();
+      expect(storage.changePassword).toHaveBeenCalled();
+    });
+
+    it("email two-step: a password proof still needs the emailed two-step code", async () => {
+      vi.mocked(storage.getMfaState).mockResolvedValue({
+        method: "email",
+        failedAttempts: 0,
+        locked: false,
+      });
+      const res = await post("change-password", {
+        proof: { password: "current-pass-123" },
+        newPassword: LONG,
+      });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("SECOND_FACTOR_REQUIRED");
     });
 
     it("Google/Apple proof needs no authenticator code", async () => {

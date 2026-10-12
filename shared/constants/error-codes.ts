@@ -66,6 +66,8 @@ export const ErrorCode = {
   MFA_NOT_ENABLED: "MFA_NOT_ENABLED",
   MFA_NEEDS_PASSWORD: "MFA_NEEDS_PASSWORD",
   MFA_SETUP_DISABLED: "MFA_SETUP_DISABLED",
+  /** Two-step by email: the account's 10 codes for today are used up. */
+  MFA_EMAIL_DAILY_LIMIT: "MFA_EMAIL_DAILY_LIMIT",
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- intentional: merging value + type

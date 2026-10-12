@@ -243,6 +243,17 @@ export const mfaVerifyLimiter = createRateLimiter({
   message: "Too many attempts, please try again later",
 });
 
+/**
+ * Two-step email code sends (sign-in resend per IP; signed-in sends per
+ * user): a burst guard only — the real bounds are the 30 s cooldown and the
+ * 10-a-day cap in mfa_email_codes.
+ */
+export const mfaEmailSendLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many code requests. Please wait.",
+});
+
 // Password-gated like reauthLimiter, so user-keyed (the default; requireAuth
 // runs first): an IP key let a stolen session guess the password across IPs,
 // and on a two-step account a 403 confirms it without deleting (audit L1).

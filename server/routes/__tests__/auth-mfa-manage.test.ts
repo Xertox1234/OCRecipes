@@ -37,6 +37,7 @@ vi.mock("../../storage", () => ({
     disableMfa: vi.fn(),
     replaceRecoveryCodes: vi.fn(),
     forgetTrustedDevices: vi.fn(),
+    getMfaState: vi.fn(),
   },
 }));
 vi.mock("../../middleware/auth");

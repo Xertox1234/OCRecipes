@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import crypto from "node:crypto";
 import { base32Encode, hotp, timeStep } from "../totp";
 import { hashRecoveryCode, normalizeRecoveryCode } from "../mfa-secrets";
+import { hashSignInCode } from "../../password-reset-code";
 
 const { storage, sendTwoFactorNotice, decrypt } = vi.hoisted(() => ({
   storage: {
@@ -9,6 +10,9 @@ const { storage, sendTwoFactorNotice, decrypt } = vi.hoisted(() => ({
     acceptTotpStep: vi.fn(),
     recordMfaFailure: vi.fn(),
     consumeRecoveryCode: vi.fn(),
+    getMfaState: vi.fn(),
+    reserveMfaEmailAttempt: vi.fn(),
+    acceptMfaEmailCode: vi.fn(),
   },
   sendTwoFactorNotice: vi.fn(),
   decrypt: vi.fn(),
@@ -52,6 +56,11 @@ beforeEach(() => {
   });
   storage.consumeRecoveryCode.mockResolvedValue(true);
   sendTwoFactorNotice.mockResolvedValue(undefined);
+  storage.getMfaState.mockResolvedValue({
+    method: "totp",
+    failedAttempts: 0,
+    locked: false,
+  });
   active();
 });
 
@@ -178,5 +187,85 @@ describe("verifySecondFactor — recovery code", () => {
     expect(r).toEqual({ ok: false, reason: "invalid" });
     expect(storage.consumeRecoveryCode).not.toHaveBeenCalled();
     expect(storage.recordMfaFailure).not.toHaveBeenCalled();
+  });
+});
+
+describe("verifySecondFactor — emailed code", () => {
+  const CODE = "482913";
+  beforeEach(() => {
+    storage.getMfaState.mockResolvedValue({
+      method: "email",
+      failedAttempts: 0,
+      locked: false,
+    });
+    storage.reserveMfaEmailAttempt.mockResolvedValue(
+      hashSignInCode("u1", CODE),
+    );
+    storage.acceptMfaEmailCode.mockResolvedValue(true);
+  });
+
+  it("the right code passes and is spent; no authenticator key is touched", async () => {
+    const r = await verifySecondFactor(USER, { code: CODE }, NOW);
+    expect(r).toEqual({ ok: true });
+    expect(storage.acceptMfaEmailCode).toHaveBeenCalledWith(
+      "u1",
+      hashSignInCode("u1", CODE),
+    );
+    expect(storage.getActiveTotp).not.toHaveBeenCalled();
+    expect(decrypt).not.toHaveBeenCalled();
+    expect(storage.recordMfaFailure).not.toHaveBeenCalled();
+  });
+
+  it("a wrong code counts one failure and spends nothing", async () => {
+    const r = await verifySecondFactor(USER, { code: "000000" }, NOW);
+    expect(r).toEqual({ ok: false, reason: "invalid" });
+    expect(storage.recordMfaFailure).toHaveBeenCalledTimes(1);
+    expect(storage.acceptMfaEmailCode).not.toHaveBeenCalled();
+  });
+
+  it("no live code (expired, used up, or never sent) counts one failure", async () => {
+    storage.reserveMfaEmailAttempt.mockResolvedValue(undefined);
+    const r = await verifySecondFactor(USER, { code: CODE }, NOW);
+    expect(r).toEqual({ ok: false, reason: "invalid" });
+    expect(storage.recordMfaFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("a code spent by a racing request is a failure", async () => {
+    storage.acceptMfaEmailCode.mockResolvedValue(false);
+    const r = await verifySecondFactor(USER, { code: CODE }, NOW);
+    expect(r).toEqual({ ok: false, reason: "invalid" });
+    expect(storage.recordMfaFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("while locked, the right code is refused without counting or spending a guess", async () => {
+    storage.getMfaState.mockResolvedValue({
+      method: "email",
+      failedAttempts: 10,
+      locked: true,
+    });
+    const r = await verifySecondFactor(USER, { code: CODE }, NOW);
+    expect(r).toEqual({ ok: false, reason: "invalid" });
+    expect(storage.reserveMfaEmailAttempt).not.toHaveBeenCalled();
+    expect(storage.recordMfaFailure).not.toHaveBeenCalled();
+  });
+
+  // No recovery codes exist for email accounts, so there is no hard cap:
+  // the every-10th lock and the per-code / per-day limits bound guessing.
+  it("past 100 failures the right code still works", async () => {
+    storage.getMfaState.mockResolvedValue({
+      method: "email",
+      failedAttempts: 150,
+      locked: false,
+    });
+    expect(await verifySecondFactor(USER, { code: CODE }, NOW)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("a recovery code is refused and counted", async () => {
+    const r = await verifySecondFactor(USER, { recoveryCode: RECOVERY }, NOW);
+    expect(r).toEqual({ ok: false, reason: "invalid" });
+    expect(storage.consumeRecoveryCode).not.toHaveBeenCalled();
+    expect(storage.recordMfaFailure).toHaveBeenCalledTimes(1);
   });
 });

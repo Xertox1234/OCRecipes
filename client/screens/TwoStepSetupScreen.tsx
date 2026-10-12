@@ -22,13 +22,19 @@ import { useAuthContext } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { ApiError } from "@/lib/api-error";
 import {
+  emailCodeSendError,
   isTwoStepCheckError,
   replacementFromError,
   secondFactorErrorMessage,
 } from "@/lib/second-factor-utils";
 import { Spacing } from "@/constants/theme";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
-import { finishMessage, setupTitle } from "./TwoStepSetupScreen-utils";
+import {
+  finishMessage,
+  identityIntro,
+  setupTitle,
+} from "./TwoStepSetupScreen-utils";
+import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 
 type Props = NativeStackScreenProps<ProfileStackParamList, "TwoStepSetup">;
 
@@ -46,14 +52,18 @@ function messageFor(err: unknown): string {
     if (err.code === "MFA_ALREADY_ENABLED")
       return "Two-step verification is already on.";
     if (err.code === "MFA_NOT_ENABLED") return "Two-step verification is off.";
+    if (err.code === "EMAIL_NOT_VERIFIED")
+      return "Confirm your email address first, so the codes reach you.";
+    if (err.code === "MFA_EMAIL_DAILY_LIMIT") return emailCodeSendError(err);
     if (isTwoStepCheckError(err)) return secondFactorErrorMessage(err).message;
   }
   return "Something went wrong. Please try again.";
 }
 
 /**
- * Two-step verification (authenticator app): turn it on, move it to a new
- * phone, turn it off, or make new recovery codes.
+ * Two-step verification: turn it on (codes by email — owner ruling 4,
+ * 2026-10-12), or turn it off. Older authenticator-app accounts can still
+ * move it to a new phone or make new recovery codes.
  */
 export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const { mode } = route.params;
@@ -63,6 +73,8 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const queryClient = useQueryClient();
   const auth = useAuthContext();
   const needsFactor = mode !== "setup";
+  // Set when the account's two-step codes come by email.
+  const twoStepEmail = useSignedInEmailCode();
 
   const [password, setPassword] = useState("");
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
@@ -73,6 +85,8 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const [replacement, setReplacement] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Email setup: set once the first code went out (the masked address).
+  const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
 
   // Swipe-back, header back or Android back while the codes are unsaved.
   // Done is only enabled once they're ticked as saved, so its goBack() passes.
@@ -115,8 +129,8 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
     setError("");
     try {
       if (mode === "setup") {
-        const secret = await auth.startTwoStepSetup(password);
-        setStart({ kind: "secret", secret });
+        const sent = await auth.startEmailTwoStep(password);
+        setEmailSentTo(sent.emailHint);
       } else if (factor) {
         // No `&&`/ternaries in here: React Compiler can't lower them in a try.
         if (mode === "new_phone") {
@@ -145,6 +159,19 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
     }
   };
 
+  // No try/finally: React Compiler cannot lower a `finally`.
+  const confirmEmailCode = async (input: SecondFactorInput) => {
+    if (busy || !("code" in input)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await auth.confirmEmailTwoStep(input.code);
+      finish("Two-step verification is on");
+    } catch (err) {
+      fail(err);
+    }
+  };
+
   const confirmCode = async (code: string) =>
     (await auth.confirmTwoStep(code)).recoveryCodes;
 
@@ -161,12 +188,27 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
         />
       ) : null}
 
-      {!start ? (
+      {emailSentTo ? (
         <View style={styles.section}>
           <ThemedText type="body" style={{ color: theme.textSecondary }}>
-            {needsFactor
-              ? "Enter your password and a code from your authenticator app (or a recovery code)."
-              : "Enter your password to start."}
+            {`We emailed a 6-digit code to ${emailSentTo}. Enter it below.`}
+          </ThemedText>
+          <SecondFactorField
+            onSubmit={(input) => void confirmEmailCode(input)}
+            error={error}
+            busy={busy}
+            emailCode={{
+              send: () => auth.startEmailTwoStep(password),
+              alreadySent: true,
+            }}
+          />
+        </View>
+      ) : null}
+
+      {!start && !emailSentTo ? (
+        <View style={styles.section}>
+          <ThemedText type="body" style={{ color: theme.textSecondary }}>
+            {identityIntro(mode, twoStepEmail !== undefined)}
           </ThemedText>
           <TextInput
             leftIcon="lock"
@@ -185,6 +227,7 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
               onChange={setFactor}
               busy={busy}
               autoFocus={false}
+              emailCode={twoStepEmail}
             />
           ) : null}
           <InlineError message={error} />

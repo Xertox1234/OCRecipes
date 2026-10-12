@@ -1,5 +1,6 @@
 import {
   mfaChallenges,
+  mfaEmailCodes,
   mfaRecoveryCodes,
   mfaTrustedDevices,
   userMfa,
@@ -313,6 +314,7 @@ export async function disableMfa(
       tx.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId)),
       tx.delete(mfaChallenges).where(eq(mfaChallenges.userId, userId)),
       tx.delete(mfaTrustedDevices).where(eq(mfaTrustedDevices.userId, userId)),
+      tx.delete(mfaEmailCodes).where(eq(mfaEmailCodes.userId, userId)),
     ]);
     const [u] = await tx
       .update(users)
@@ -336,10 +338,12 @@ export interface NewMfaChallenge {
   linkMarkEmailVerified?: boolean;
   /** A link challenge never outlives its pending link row. */
   notAfter?: Date;
+  /** Defaults to MFA_CHALLENGE_TTL_MINUTES; an emailed code needs its own TTL. */
+  ttlMinutes?: number;
 }
 
 export async function createMfaChallenge(c: NewMfaChallenge): Promise<void> {
-  const ttl = sql`now() + (${MFA_CHALLENGE_TTL_MINUTES} * interval '1 minute')`;
+  const ttl = sql`now() + (${c.ttlMinutes ?? MFA_CHALLENGE_TTL_MINUTES} * interval '1 minute')`;
   const expiresAt = c.notAfter
     ? sql`LEAST(${ttl}, ${c.notAfter.toISOString()}::timestamptz)`
     : ttl;

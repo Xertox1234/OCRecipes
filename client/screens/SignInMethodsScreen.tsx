@@ -36,6 +36,7 @@ import {
   methodSubtitle,
   providerRowState,
   reauthProviders,
+  twoStepSubtitle,
 } from "./SignInMethodsScreen-utils";
 
 const PROVIDERS: { provider: SocialProvider; label: string }[] = [
@@ -56,7 +57,7 @@ export default function SignInMethodsScreen() {
   const toast = useToast();
   const { connectProvider, disconnectProvider, forgetTrustedPhones } =
     useAuthContext();
-  const { methods, mfaEnabled, isError, refetch, setMethods } =
+  const { methods, mfaEnabled, mfaMethod, isError, refetch, setMethods } =
     useSignInMethods();
   const config = useSocialConfig();
   // Offer a connect only when this build can open the provider AND the
@@ -342,11 +343,11 @@ export default function SignInMethodsScreen() {
             <View style={styles.rowText}>
               <ThemedText>Two-step verification</ThemedText>
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {mfaEnabled
-                  ? "On"
-                  : methods.password
-                    ? "Off"
-                    : "Set a password to turn on two-step verification"}
+                {twoStepSubtitle({
+                  enabled: mfaEnabled,
+                  method: mfaMethod,
+                  hasPassword: methods.password,
+                })}
               </ThemedText>
             </View>
             {!mfaEnabled && methods.password ? (
@@ -368,35 +369,44 @@ export default function SignInMethodsScreen() {
                   ["New recovery codes", "key", "new_codes"],
                   ["Turn off two-step verification", "shield-off", "disable"],
                 ] as const
-              ).map(([text, icon, mode]) => (
-                <View key={mode}>
-                  <View
-                    style={[styles.divider, { backgroundColor: theme.border }]}
-                  />
-                  <Pressable
-                    onPress={() =>
-                      navigation.navigate("TwoStepSetup", { mode })
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel={text}
-                    style={styles.row}
-                  >
-                    <Feather
-                      name={icon}
-                      size={20}
-                      color={theme.textSecondary}
-                      accessible={false}
+              )
+                // Email accounts have no authenticator to move and no
+                // recovery codes.
+                .filter(
+                  ([, , mode]) => mfaMethod !== "email" || mode === "disable",
+                )
+                .map(([text, icon, mode]) => (
+                  <View key={mode}>
+                    <View
+                      style={[
+                        styles.divider,
+                        { backgroundColor: theme.border },
+                      ]}
                     />
-                    <ThemedText style={styles.rowText}>{text}</ThemedText>
-                    <Feather
-                      name="chevron-right"
-                      size={20}
-                      color={theme.textSecondary}
-                      accessible={false}
-                    />
-                  </Pressable>
-                </View>
-              ))
+                    <Pressable
+                      onPress={() =>
+                        navigation.navigate("TwoStepSetup", { mode })
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={text}
+                      style={styles.row}
+                    >
+                      <Feather
+                        name={icon}
+                        size={20}
+                        color={theme.textSecondary}
+                        accessible={false}
+                      />
+                      <ThemedText style={styles.rowText}>{text}</ThemedText>
+                      <Feather
+                        name="chevron-right"
+                        size={20}
+                        color={theme.textSecondary}
+                        accessible={false}
+                      />
+                    </Pressable>
+                  </View>
+                ))
             : null}
           {mfaEnabled ? (
             <View>

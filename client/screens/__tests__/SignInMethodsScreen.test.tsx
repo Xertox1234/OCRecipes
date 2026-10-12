@@ -11,6 +11,7 @@ import SignInMethodsScreen from "../SignInMethodsScreen";
 const h = vi.hoisted(() => ({
   methods: undefined as SignInMethods | undefined,
   mfaEnabled: false,
+  mfaMethod: null as "totp" | "email" | null,
   isError: false,
   refetch: vi.fn(),
   setMethods: vi.fn(),
@@ -33,10 +34,12 @@ vi.mock("@/hooks/useSignInMethods", () => ({
   useSignInMethods: () => ({
     methods: h.methods,
     mfaEnabled: h.mfaEnabled,
+    mfaMethod: h.mfaMethod,
     isError: h.isError,
     refetch: h.refetch,
     setMethods: h.setMethods,
   }),
+  useSignedInEmailCode: () => undefined,
 }));
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
@@ -71,6 +74,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.methods = undefined;
   h.mfaEnabled = false;
+  h.mfaMethod = null;
   h.isError = false;
   h.config = { apple: true, google: false };
 });
@@ -337,11 +341,39 @@ describe("SignInMethodsScreen — Security (two-step verification)", () => {
     ).toBeNull();
   });
 
-  it("on: new phone, new codes, turn off and forget trusted phones", () => {
+  it("on by email: turn off and forget trusted phones — no authenticator rows", () => {
     h.methods = { password: true, google: null, apple: null };
     h.mfaEnabled = true;
+    h.mfaMethod = "email";
     renderComponent(<SignInMethodsScreen />);
-    expect(screen.getByText("On")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "On. Signing in on a new phone needs a code we email you.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Set up on a new phone" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "New recovery codes" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Turn off two-step verification" }),
+    );
+    expect(h.navigate).toHaveBeenLastCalledWith("TwoStepSetup", {
+      mode: "disable",
+    });
+    expect(
+      screen.getByRole("button", { name: "Forget trusted phones" }),
+    ).toBeTruthy();
+  });
+
+  it("on with an authenticator (older setups): new phone, new codes, turn off and forget trusted phones", () => {
+    h.methods = { password: true, google: null, apple: null };
+    h.mfaEnabled = true;
+    h.mfaMethod = "totp";
+    renderComponent(<SignInMethodsScreen />);
+    expect(screen.getByText("On, with an authenticator app.")).toBeTruthy();
     for (const [name, mode] of [
       ["Set up on a new phone", "new_phone"],
       ["New recovery codes", "new_codes"],

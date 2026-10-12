@@ -15,3 +15,11 @@ export const MFA_TOTP_FAILURE_CAP = 100;
 export const MFA_RECOVERY_CODE_COUNT = 10;
 export const MFA_RECOVERY_CODE_BYTES = 10; // 80 bits → 16 base32 chars
 export const MFA_TRUST_DAYS = 90;
+// Two-step by emailed code (owner ruling 4, 2026-10-12).
+export const MFA_EMAIL_CODE_TTL_MINUTES = 10;
+/** Guesses allowed against one emailed code (every guess counts, right or wrong). */
+export const MFA_EMAIL_CODE_MAX_ATTEMPTS = 5;
+/** Codes per account per fixed 24 h window, starting at the first code. */
+export const MFA_EMAIL_CODE_DAILY_ISSUE_CAP = 10;
+/** Minimum gap between two emailed codes. */
+export const MFA_EMAIL_RESEND_COOLDOWN_SECONDS = 30;

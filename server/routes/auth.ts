@@ -922,6 +922,11 @@ export function register(app: Express): void {
           ...serializeUser(user),
           signInMethods: await storage.getSignInMethods(user.id),
           mfaEnabled: user.mfaEnabledAt !== null,
+          // Which code the app asks for: an authenticator's or an emailed one.
+          mfaMethod:
+            user.mfaEnabledAt === null
+              ? null
+              : ((await storage.getMfaState(user.id))?.method ?? "totp"),
         });
       } catch (error) {
         handleRouteError(res, error, "fetch current user");

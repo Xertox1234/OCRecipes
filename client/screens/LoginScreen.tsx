@@ -16,6 +16,7 @@ import { TextInput } from "@/components/TextInput";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
+import { twoStepCodeParams } from "@/lib/second-factor-utils";
 import { Spacing, withOpacity } from "@/constants/theme";
 import {
   validateAuthForm,
@@ -123,10 +124,10 @@ export default function LoginScreen() {
         const result = await login(username.trim(), password);
         if (result.status === "mfa_required") {
           // Right password on a 2FA account (and this phone isn't trusted).
-          navigation.navigate("TwoStepCode", {
-            challenge: result.challenge,
-            purpose: "login",
-          });
+          navigation.navigate(
+            "TwoStepCode",
+            twoStepCodeParams(result, "login"),
+          );
           return;
         }
         haptics.notification(Haptics.NotificationFeedbackType.Success);
