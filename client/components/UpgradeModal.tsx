@@ -280,12 +280,7 @@ export function UpgradeModal({
           {/* Pinned footer: price, CTA, and the auto-renew/legal disclosure stay
               visible on open instead of scrolling below the benefits (QA #54,
               App Store guideline 3.1.2). */}
-          <ScrollView
-            style={styles.footerScroll}
-            contentContainerStyle={styles.footer}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
+          <View style={styles.footer}>
             {/* Price — from the store's live product, never a fixed string */}
             <ThemedText type="h4" style={styles.priceText}>
               {getPriceLine(product)}
@@ -402,7 +397,7 @@ export function UpgradeModal({
                 </ThemedText>
               </Pressable>
             </View>
-          </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>
@@ -426,13 +421,6 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   scroll: {
-    flexShrink: 1,
-  },
-  // The footer shares the sheet's 85% cap with the benefits list. At the
-  // largest accessibility text sizes on a small screen it can outgrow what is
-  // left, so it scrolls instead of overflowing past the sheet's edge.
-  footerScroll: {
-    flexGrow: 0,
     flexShrink: 1,
   },
   footer: {

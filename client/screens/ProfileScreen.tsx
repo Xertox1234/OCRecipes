@@ -76,7 +76,8 @@ export default function ProfileScreen() {
   // The collapsed bar slides in from above instead of cross-fading: a fade left
   // it translucent mid-scroll so the widget cards showed through it (QA #63).
   // It stays fully opaque, so content passes cleanly underneath.
-  const barHeight = insets.top + PROFILE_HEADER_COLLAPSED;
+  const barHeight =
+    insets.top + PROFILE_HEADER_COLLAPSED + StyleSheet.hairlineWidth;
   const collapsedBarSlideStyle = useAnimatedStyle(() => {
     if (reducedMotion) return { transform: [{ translateY: -barHeight }] };
     return {
