@@ -1,6 +1,6 @@
 ---
 title: "Replacing IDENTITY_TOKEN_ENC_KEY silently breaks Apple token revocation: catch a key that can't read the stored tokens"
-status: backlog
+status: done
 priority: high
 created: 2026-10-11
 updated: 2026-10-12
@@ -8,7 +8,6 @@ assignee:
 labels: [deferred, auth, security]
 github_issue:
 human_led: true
-blocked_reason: "Owner ruling needed (refuse to start vs. run degraded). Auth crypto: implement in-session, never delegate."
 ---
 
 # A changed identity-token key breaks Apple token revocation without warning
@@ -30,10 +29,10 @@ Priority is kept from the original todo; the owner may lower it now that the two
 
 ## Acceptance Criteria
 
-- [ ] At startup, the server checks the configured `IDENTITY_TOKEN_ENC_KEY` against stored Apple refresh tokens. When stored tokens exist and the key cannot decrypt them, it fails loudly: an error log + Sentry event at minimum. The owner decides between refusing to start and running degraded; record the ruling here.
-- [ ] Each boot logs a non-secret key fingerprint (first 8 hex of sha256), so a key change shows up in the logs with a timestamp.
-- [ ] Tests: right key → passes; wrong key → the loud failure fires; no stored tokens → passes (a fresh database must still boot).
-- [ ] The runbook says the key must never be regenerated in place, and how to rotate it safely (re-encrypt every row under the new key, then switch).
+- [x] At startup, the server checks the configured `IDENTITY_TOKEN_ENC_KEY` against stored Apple refresh tokens. When stored tokens exist and the key cannot decrypt them, it fails loudly: an error log + Sentry event at minimum. **Owner ruling 2026-10-12: keep running and alert** (error log + Sentry event); never refuse to start over this.
+- [x] Each boot logs a non-secret key fingerprint (first 8 hex of sha256), so a key change shows up in the logs with a timestamp.
+- [x] Tests: right key → passes; wrong key → the loud failure fires; no stored tokens → passes (a fresh database must still boot).
+- [x] The runbook says the key must never be regenerated in place, and how to rotate it safely (re-encrypt every row under the new key, then switch).
 
 ## Implementation Notes
 

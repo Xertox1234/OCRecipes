@@ -287,6 +287,64 @@ describe("identities storage", () => {
     });
   });
 
+  // Boot-time key check (P1 identity-key todo): the sample must reach the
+  // OLDEST rows — a half-rotated table fails there first — and tickets too.
+  describe("sampleStoredAppleTokens", () => {
+    // The dev DB may hold real rows; clear both tables inside the test tx.
+    beforeEach(async () => {
+      await getTestTx().delete(pendingSocialSignIns);
+      await getTestTx().delete(userIdentities);
+    });
+
+    it("returns stored tokens oldest first, skips empty ones, includes tickets, and caps the count", async () => {
+      const u1 = await createTestUser(getTestTx());
+      const u2 = await createTestUser(getTestTx());
+      const u3 = await createTestUser(getTestTx());
+      const add = async (
+        userId: string,
+        sub: string,
+        token: string | null,
+        age: string,
+      ) => {
+        const row = await ids.insertIdentity({
+          userId,
+          provider: "apple",
+          providerSubject: sub,
+          appleRefreshTokenEnc: token,
+        });
+        await getTestTx()
+          .update(userIdentities)
+          .set({ createdAt: sql`now() - ${age}::interval` })
+          .where(eq(userIdentities.id, row.id));
+      };
+      await add(u1.id, "a-new", "v1:newest", "1 day");
+      await add(u2.id, "a-old", "v1:oldest", "30 days");
+      await add(u3.id, "a-none", null, "60 days");
+      await ids.createPendingSignIn({
+        ...baseTicket,
+        kind: "sign_up",
+        provider: "apple",
+        providerSubject: "a-ticket",
+        appleRefreshTokenEnc: "v1:ticket",
+        targetUserId: null,
+      });
+
+      expect(await ids.sampleStoredAppleTokens(10)).toEqual([
+        "v1:oldest",
+        "v1:newest",
+        "v1:ticket",
+      ]);
+      expect(await ids.sampleStoredAppleTokens(1)).toEqual([
+        "v1:oldest",
+        "v1:ticket",
+      ]);
+    });
+
+    it("is empty on a database with no stored tokens", async () => {
+      expect(await ids.sampleStoredAppleTokens(10)).toEqual([]);
+    });
+  });
+
   describe("link tickets", () => {
     it("allows at most 5 reserved attempts", async () => {
       const target = await createTestUser(getTestTx());

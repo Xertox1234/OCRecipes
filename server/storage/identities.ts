@@ -144,6 +144,29 @@ export async function appleGrantInUse(sub: string): Promise<boolean> {
 }
 
 /**
+ * Stored Apple refresh tokens for the boot-time key check: up to `limit` from
+ * linked identities, OLDEST first (a half-rotated table fails there first),
+ * plus up to `limit` from sign-in tickets.
+ */
+export async function sampleStoredAppleTokens(
+  limit: number,
+): Promise<string[]> {
+  const result = await db.execute<{ token: string }>(sql`
+    (select ${userIdentities.appleRefreshTokenEnc} as token
+      from ${userIdentities}
+      where ${userIdentities.appleRefreshTokenEnc} is not null
+      order by ${userIdentities.createdAt} asc
+      limit ${limit})
+    union all
+    (select ${pendingSocialSignIns.appleRefreshTokenEnc} as token
+      from ${pendingSocialSignIns}
+      where ${pendingSocialSignIns.appleRefreshTokenEnc} is not null
+      order by ${pendingSocialSignIns.expiresAt} asc
+      limit ${limit})`);
+  return result.rows.map((r) => r.token);
+}
+
+/**
  * Delete the link tickets aimed at an account (they would cascade away with
  * it) and return their Apple tokens that nobody else holds — same filters as
  * the expiry sweep — so account deletion can revoke them (audit L17).

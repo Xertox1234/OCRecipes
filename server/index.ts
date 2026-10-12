@@ -14,6 +14,9 @@ import { registerRoutes } from "./routes";
 import * as path from "path";
 import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
+import { sampleStoredAppleTokens } from "./storage/identities";
+import { runIdentityKeyBootCheck } from "./lib/social-identity/key-check";
+import { fireAndForget } from "./lib/fire-and-forget";
 import { startPromotionJob } from "./services/canonical-promotion";
 import { logger, rootLogger, toError } from "./lib/logger";
 import {
@@ -335,6 +338,16 @@ function startServer() {
     () => {
       logger.info({ port }, "express server started");
     },
+  );
+
+  // Can IDENTITY_TOKEN_ENC_KEY still read the stored Apple tokens? Logs the
+  // key fingerprint and alerts on a replaced key; never blocks startup.
+  fireAndForget(
+    "identity-key-boot-check",
+    runIdentityKeyBootCheck({
+      raw: process.env.IDENTITY_TOKEN_ENC_KEY,
+      sample: () => sampleStoredAppleTokens(25),
+    }),
   );
 
   // Start periodic cache cleanup (every 6 hours)
