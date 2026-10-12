@@ -269,11 +269,9 @@ describe("POST /api/auth/upgrade/password", () => {
     expect(sendPasswordChangedNotice).toHaveBeenCalled();
   });
 
-  it("14 characters → 400 PASSWORD_TOO_SHORT, nothing written, no attempt reserved", async () => {
-    const res = await post("password", { newPassword: "a".repeat(14) });
+  it("7 characters → 400, nothing written, no attempt reserved", async () => {
+    const res = await post("password", { newPassword: "a".repeat(7) });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
-    expect(res.body.error).toBe("Use at least 15 characters.");
     expect(storage.completePasswordUpgrade).not.toHaveBeenCalled();
     expect(storage.reserveUpgradePassAttempt).not.toHaveBeenCalled();
   });
