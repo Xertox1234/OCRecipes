@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as RN from "react-native";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { TotpEnrollmentSteps } from "../TotpEnrollmentSteps";
@@ -48,7 +49,7 @@ describe("TotpEnrollmentSteps", () => {
     expect(p.confirm).toHaveBeenCalledWith("123456");
   });
 
-  it("a wrong code gets the clock hint and stays on the code step", async () => {
+  it("a wrong code names the stale-entry trap and the clock, and stays on the code step", async () => {
     setup({
       confirm: vi
         .fn()
@@ -61,7 +62,7 @@ describe("TotpEnrollmentSteps", () => {
     press("Confirm");
     expect(
       await screen.findByText(
-        "That code didn't work. Check the time on your phone and try again.",
+        "That code didn't match. Use the newest OCRecipes entry (delete older ones), and check your phone's time is set automatically.",
       ),
     ).toBeTruthy();
   });
@@ -118,9 +119,52 @@ describe("TotpEnrollmentSteps", () => {
     expect(p.onGuardChange).not.toHaveBeenCalledWith(true);
   });
 
+  it("the save step suggests where to keep the codes", () => {
+    setup({ start: { kind: "codes", codes: CODES } });
+    expect(
+      screen.getByText(
+        "Save these recovery codes somewhere you can reach without this phone — for example, paste them into a note in the Passwords app. Each works once. They won't be shown again.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("starting from codes opens on the save step", () => {
     setup({ start: { kind: "codes", codes: CODES } });
     expect(screen.getByText(CODES[0])).toBeTruthy();
     expect(screen.queryByText("ABCD EFGH IJKL MNOP")).toBeNull();
+  });
+});
+
+describe("TotpEnrollmentSteps — one iPhone (owner ruling 2026-10-12)", () => {
+  const originalOS = RN.Platform.OS;
+  afterEach(() => {
+    RN.Platform.OS = originalOS;
+  });
+
+  it("on iOS the button says Passwords and the next step says where the code is", () => {
+    RN.Platform.OS = "ios";
+    setup();
+    expect(
+      screen.getByRole("button", { name: "Add to Passwords" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Then open Passwords → Codes → OCRecipes, and come back with the 6-digit code.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Using another app? Tap Copy key, then in that app choose “Enter a setup key” — not “Scan a QR code” — and paste it.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("on Android the button stays generic", () => {
+    RN.Platform.OS = "android";
+    setup();
+    expect(
+      screen.getByRole("button", { name: "Add to authenticator app" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Passwords → Codes/)).toBeNull();
   });
 });

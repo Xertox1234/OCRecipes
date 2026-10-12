@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import {
   AccessibilityInfo,
   Linking,
+  Platform,
   Pressable,
   Share,
   StyleSheet,
@@ -20,6 +21,8 @@ import { ApiError } from "@/lib/api-error";
 import { normalizeCodeInput } from "@/lib/second-factor-utils";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import {
+  addKeyCopy,
+  WRONG_CODE_MESSAGE,
   canFinishSaveCodes,
   formatSetupKey,
   recoveryCodesText,
@@ -75,6 +78,7 @@ export function TotpEnrollmentSteps({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const secret = start.kind === "secret" ? start.secret : null;
+  const addKey = addKeyCopy(Platform.OS);
 
   const openAuthenticator = async () => {
     if (!secret) return;
@@ -112,9 +116,7 @@ export function TotpEnrollmentSteps({
       setBusy(false);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       if (err instanceof ApiError && err.code === "INVALID_SECOND_FACTOR") {
-        setError(
-          "That code didn't work. Check the time on your phone and try again.",
-        );
+        setError(WRONG_CODE_MESSAGE);
         return;
       }
       setError(messageFor(err));
@@ -133,14 +135,18 @@ export function TotpEnrollmentSteps({
       {step === "add-key" && secret ? (
         <View style={styles.section}>
           <ThemedText type="body" style={{ color: theme.textSecondary }}>
-            Add OCRecipes to an authenticator app such as Google Authenticator,
-            Microsoft Authenticator or 1Password.
+            {addKey.intro}
           </ThemedText>
           <Button onPress={() => void openAuthenticator()}>
-            Add to authenticator app
+            {addKey.button}
           </Button>
+          {addKey.after ? (
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              {addKey.after}
+            </ThemedText>
+          ) : null}
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            Or enter this key in the app:
+            {addKey.manual}
           </ThemedText>
           <View
             style={[
@@ -205,8 +211,9 @@ export function TotpEnrollmentSteps({
       {step === "save-codes" ? (
         <View style={styles.section}>
           <ThemedText type="body" style={{ color: theme.textSecondary }}>
-            Save these recovery codes somewhere other than this phone. Each
-            works once if you lose the phone. They won&apos;t be shown again.
+            Save these recovery codes somewhere you can reach without this phone
+            — for example, paste them into a note in the Passwords app. Each
+            works once. They won&apos;t be shown again.
           </ThemedText>
           <View
             style={[

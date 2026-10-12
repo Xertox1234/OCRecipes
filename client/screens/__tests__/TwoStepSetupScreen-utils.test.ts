@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  addKeyCopy,
+  WRONG_CODE_MESSAGE,
   formatSetupKey,
   recoveryCodesText,
   canFinishSaveCodes,
@@ -67,5 +69,48 @@ describe("setupTitle", () => {
     ["new_codes", "New recovery codes"],
   ] as const)("%s → %s", (mode, title) => {
     expect(setupTitle(mode)).toBe(title);
+  });
+});
+
+describe("addKeyCopy — setup on one phone (owner ruling 2026-10-12)", () => {
+  it("iPhone: the button says what it opens — Passwords — and where the code is", () => {
+    const c = addKeyCopy("ios");
+    expect(c.button).toBe("Add to Passwords");
+    expect(c.after).toBe(
+      "Then open Passwords → Codes → OCRecipes, and come back with the 6-digit code.",
+    );
+  });
+
+  it.each(["android", "web"] as const)(
+    "%s: a generic authenticator app",
+    (os) => {
+      const c = addKeyCopy(os);
+      expect(c.button).toBe("Add to authenticator app");
+      expect(c.after).toBeNull();
+    },
+  );
+
+  it.each(["ios", "android"] as const)(
+    "%s: the manual path says to type the key, not scan",
+    (os) => {
+      expect(addKeyCopy(os).manual).toBe(
+        "Using another app? Tap Copy key, then in that app choose “Enter a setup key” — not “Scan a QR code” — and paste it.",
+      );
+    },
+  );
+
+  it("the main path never mentions a QR code (the code is on this phone)", () => {
+    for (const os of ["ios", "android", "web"] as const) {
+      const c = addKeyCopy(os);
+      expect([c.intro, c.button, c.after ?? ""].join(" ")).not.toMatch(/QR/i);
+    }
+  });
+});
+
+describe("WRONG_CODE_MESSAGE", () => {
+  it("names the stale-entry trap as well as the clock", () => {
+    expect(WRONG_CODE_MESSAGE).toBe(
+      "That code didn't match. Use the newest OCRecipes entry (delete older ones), and check your phone's time is set automatically.",
+    );
   });
 });

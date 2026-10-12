@@ -113,7 +113,7 @@ describe("recoveryCodesOrThrow", () => {
     expect(
       recoveryCodesOrThrow(
         apiError(401, {
-          code: "UPGRADE_PASS_EXPIRED",
+          code: "MFA_CHALLENGE_EXPIRED",
           recoveryCodes: ["A", "B"],
         }),
       ),
@@ -121,7 +121,7 @@ describe("recoveryCodesOrThrow", () => {
   });
   it("re-throws the same error when there are no codes", () => {
     for (const err of [
-      apiError(401, { code: "UPGRADE_PASS_EXPIRED" }),
+      apiError(401, { code: "MFA_CHALLENGE_EXPIRED" }),
       apiError(401, { code: "X", recoveryCodes: "A" }),
       apiError(401, { code: "X", recoveryCodes: [1, 2] }),
       new ApiError("500: <html>", undefined, 500),

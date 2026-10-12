@@ -13,10 +13,9 @@ import {
   normalizeRecoveryCode,
 } from "../lib/mfa/mfa-secrets";
 
-// Authenticator setup shared by /api/auth/mfa/totp/* (signed in) and
-// /api/auth/upgrade/totp/* (a short password's pass) — password policy spec
-// §6. Callers have already authenticated the user and map results to
-// responses. Never log a code, secret or recovery code.
+// Authenticator setup for /api/auth/mfa/totp/* (signed in). Callers have
+// already authenticated the user and map results to responses. Never log a
+// code, secret or recovery code.
 
 /** No MFA_SECRET_ENC_KEY: authenticator secrets can't be stored or read. */
 export class TotpUnavailableError extends Error {}

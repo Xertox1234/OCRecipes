@@ -109,7 +109,7 @@ describe("TwoStepSetupScreen — turning it on", () => {
     type("Password", "pw-1");
     press("Continue");
     await screen.findByText("ABCD EFGH IJKL MNOP");
-    press("Add to authenticator app");
+    press("Add to Passwords"); // the test RN mock reports iOS
     expect(
       await screen.findByText(
         "No authenticator app opened — copy the key instead.",
