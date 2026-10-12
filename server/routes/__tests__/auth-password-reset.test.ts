@@ -276,23 +276,17 @@ describe("POST /api/auth/reset-password", () => {
     expect(storage.reservePasswordResetAttempt).not.toHaveBeenCalled();
   });
 
-  describe("minimum follows the account's two-step state (spec §4)", () => {
+  describe("minimum is 8 whether or not two-step is on", () => {
     const mockReserved = (mfaEnabledAt: Date | null) =>
       vi
         .mocked(storage.reservePasswordResetAttempt)
         .mockResolvedValue({ ...reserved, mfaEnabledAt });
 
-    it("10 chars on a no-two-step account: 400 PASSWORD_TOO_SHORT after a correct code; nothing reset", async () => {
+    it("10 chars on a no-two-step account: accepted (8 for everyone, owner ruling 2026-10-12)", async () => {
       mockReserved(null);
       const res = await post({ ...good, newPassword: "ten-chars!" });
-      expect(res.status).toBe(400);
-      expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
-      expect(res.body.error).toBe("Use at least 15 characters.");
-      expect(storage.completePasswordReset).not.toHaveBeenCalled();
-      // The code stays, but this rejection came after the attempt was used:
-      // the 15 (and the breach check) need the account, which only the
-      // reserving UPDATE reveals. Only the 8 floor is checked before it.
-      expect(storage.reservePasswordResetAttempt).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(200);
+      expect(storage.completePasswordReset).toHaveBeenCalledTimes(1);
     });
 
     it("10 chars on a two-step account: accepted", async () => {
@@ -302,7 +296,7 @@ describe("POST /api/auth/reset-password", () => {
       expect(storage.completePasswordReset).toHaveBeenCalledTimes(1);
     });
 
-    it("a wrong code with a short password returns the invalid-code 400, never PASSWORD_TOO_SHORT", async () => {
+    it("a wrong code with a password returns the invalid-code 400", async () => {
       mockReserved(null);
       const res = await post({
         ...good,

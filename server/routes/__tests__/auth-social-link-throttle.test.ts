@@ -6,6 +6,7 @@ import bcrypt from "bcrypt";
 import {
   createMockUser,
   createMockPendingSocialSignIn,
+  createMockUserIdentity,
 } from "../../__tests__/factories";
 import { storage } from "../../storage";
 import { register } from "../auth-social";
@@ -29,7 +30,8 @@ vi.mock("../../storage", () => ({
     reserveLinkPasswordGuess: vi.fn(),
     refundLinkPasswordGuess: vi.fn(),
     consumeNonce: vi.fn(),
-    createUpgradePass: vi.fn(),
+    completeLinkFromTicket: vi.fn(),
+    getUser: vi.fn(),
   },
 }));
 
@@ -53,7 +55,12 @@ beforeEach(() => {
   );
   vi.mocked(storage.reserveLinkPasswordGuess).mockResolvedValue(true);
   vi.mocked(storage.refundLinkPasswordGuess).mockResolvedValue(undefined);
-  vi.mocked(storage.createUpgradePass).mockResolvedValue(undefined);
+  vi.mocked(storage.completeLinkFromTicket).mockResolvedValue(
+    createMockUserIdentity({ id: "i1", userId: "target-a" }),
+  );
+  vi.mocked(storage.getUser).mockResolvedValue(
+    createMockUser({ id: "target-a", mfaEnabledAt: null }),
+  );
 });
 
 const guess = (password = "wrong-pass1") =>
@@ -87,9 +94,9 @@ describe("POST /api/auth/social/link per-account cap", () => {
   });
 
   it("a right password gives the guess back", async () => {
-    // Under 15 with no two-step → an upgrade pass; the guess still refunds.
     const res = await guess("right-pass1");
     expect(res.status).toBe(200);
+    expect(res.body.status).toBe("signed_in");
     expect(storage.refundLinkPasswordGuess).toHaveBeenCalledWith("target-a");
   });
 

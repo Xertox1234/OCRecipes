@@ -171,13 +171,13 @@ describe("PasswordUpgradeScreen — turning on two-step", () => {
 });
 
 describe("PasswordUpgradeScreen — a longer password", () => {
-  it("14 characters is caught before sending", async () => {
+  it("7 characters is caught before sending", async () => {
     renderScreen();
     press(LONGER);
-    type("New password", "a".repeat(14));
-    type("Confirm new password", "a".repeat(14));
+    type("New password", "a".repeat(7));
+    type("Confirm new password", "a".repeat(7));
     press("Save and sign in");
-    expect(await screen.findByText("Use at least 15 characters.")).toBeTruthy();
+    expect(await screen.findByText("Use at least 8 characters.")).toBeTruthy();
     expect(h.upgradeSetPassword).not.toHaveBeenCalled();
   });
 

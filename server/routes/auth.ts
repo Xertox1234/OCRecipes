@@ -69,14 +69,10 @@ import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
 import { hashPassword, isLegacyHash } from "../lib/password-hash";
-import {
-  PASSWORD_MIN_SINGLE_FACTOR,
-  PASSWORD_MIN_WITH_MFA,
-} from "@shared/constants/password-policy";
+import { PASSWORD_MIN_SINGLE_FACTOR } from "@shared/constants/password-policy";
 import { checkNewPassword } from "./_password-rules";
 import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
 import { startMfaChallenge } from "../lib/mfa/challenge";
-import { needsPasswordUpgrade, startUpgradePass } from "../lib/upgrade-pass";
 import { hashTrustKey } from "../lib/mfa/mfa-secrets";
 import { secondFactor } from "../lib/social-identity/sign-in-gates";
 import { serializeUser } from "./_serialize-user";
@@ -197,17 +193,17 @@ export function register(app: Express): void {
           );
           return;
         }
-        const { username, password, email, twoStep } = parsed.data;
+        // twoStep is still accepted from older app builds and ignored: the
+        // minimum is 8 for everyone (owner ruling 2026-10-12).
+        const { username, password, email } = parsed.data;
         const verificationOn = emailVerificationEnabled();
 
         // Password policy before ANY account lookup, so neither the answer nor
-        // its latency depends on whether the username or email exists. The
-        // two-step switch lowers the minimum to 8; sign-in decides later
-        // whether the account still needs to finish setting it up (§5.2).
+        // its latency depends on whether the username or email exists.
         const rejected = await checkNewPassword(
           password,
-          twoStep ? PASSWORD_MIN_WITH_MFA : PASSWORD_MIN_SINGLE_FACTOR,
-          twoStep ? "mfa" : "signup",
+          PASSWORD_MIN_SINGLE_FACTOR,
+          "signup",
         );
         if (rejected) {
           return sendError(
@@ -355,12 +351,7 @@ export function register(app: Express): void {
           return sendVerificationPending(res);
         }
 
-        // Fail-open: pre-feature auto-login (201 + token) — but never a full
-        // session for a password under 15 (spec §5.1): a switch-on account
-        // gets the pass and finishes two-step (or a longer password) first.
-        if (needsPasswordUpgrade(user, password)) {
-          return res.status(201).json(await startUpgradePass(user, password));
-        }
+        // Fail-open: pre-feature auto-login (201 + token).
         const token = generateToken(
           user.id.toString(),
           user.tokenVersion,
@@ -451,14 +442,6 @@ export function register(app: Express): void {
           )
         ) {
           return res.json(await startMfaChallenge({ user, purpose: "login" }));
-        }
-
-        // A password under 15 can't stand alone on an account without
-        // two-step (password policy spec §5.2): a restricted pass, never a
-        // session. 200, like the challenge, so loginAccountLimiter doesn't
-        // count a correct password as a failure.
-        if (needsPasswordUpgrade(user, validated.password)) {
-          return res.json(await startUpgradePass(user, validated.password));
         }
 
         const token = generateToken(
@@ -696,10 +679,8 @@ export function register(app: Express): void {
         // has already used one of its RESET_CODE_MAX_ATTEMPTS tries.
         const rejected = await checkNewPassword(
           newPassword,
-          reserved.mfaEnabledAt
-            ? PASSWORD_MIN_WITH_MFA
-            : PASSWORD_MIN_SINGLE_FACTOR,
-          reserved.mfaEnabledAt ? "mfa" : "single_factor",
+          PASSWORD_MIN_SINGLE_FACTOR,
+          "single_factor",
         );
         if (rejected) {
           sendError(res, rejected.status, rejected.message, rejected.code);

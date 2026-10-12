@@ -78,7 +78,6 @@ interface AuthContextType {
     password: string,
     email: string,
     ageConfirmed: boolean,
-    twoStep?: boolean,
   ) => Promise<
     | { status: "authenticated"; user: User }
     | { status: "verification_pending" }

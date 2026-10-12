@@ -31,13 +31,6 @@ export function parseArgs(argv: readonly string[]): {
   return { userId, dryRun };
 }
 
-// The stored hash can't show the password's length, so the script can't
-// check it. It doesn't need to: with two-step off, sign-in refuses a full
-// session to a password under 15 (needsPasswordUpgrade) until a longer one
-// is chosen or two-step is turned back on.
-const SHORT_PASSWORD_NOTE =
-  "Note: if their password is shorter than 15 characters, their next sign-in will ask them to choose a longer one (or turn two-step back on) before signing them in. Tell them to expect it.";
-
 export async function resetMfaForUser(
   userId: string,
   opts: { dryRun: boolean },
@@ -58,7 +51,6 @@ export async function resetMfaForUser(
     console.log(
       "[DRY RUN] Would turn two-step verification off, cancel any pending email change, sign out every device and email the account. Re-run with --commit.",
     );
-    console.log(SHORT_PASSWORD_NOTE);
     return "reset";
   }
   await storage.disableMfa(userId, { clearPendingEmail: true });
@@ -66,7 +58,6 @@ export async function resetMfaForUser(
   console.log(
     "Done: two-step verification is off, any pending email change is cancelled, and every device is signed out (sessions already open can last up to 60 s more).",
   );
-  console.log(SHORT_PASSWORD_NOTE);
   return "reset";
 }
 

@@ -243,8 +243,7 @@ export const mfaPasswordSchema = z.object({
 export const mfaPasswordAndFactorSchema = mfaPasswordSchema.extend({
   secondFactor: secondFactorSchema,
 });
-// Turning two-step off: a current password under 15 must be replaced in the
-// same step (spec §5.4); the route enforces the 15.
+// Turning two-step off, optionally changing the password in the same step.
 export const mfaDisableSchema = mfaPasswordAndFactorSchema.extend({
   newPassword: newPasswordSchema.optional(),
 });

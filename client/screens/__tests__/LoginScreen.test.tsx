@@ -210,34 +210,24 @@ describe("LoginScreen — email field", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
 
     // Verifies email threading AND that ageConfirmed is the live checkbox
-    // value (true), never a hardcoded literal. The two-step switch is off.
+    // value (true), never a hardcoded literal.
     await waitFor(() =>
       expect(mockRegister).toHaveBeenCalledWith(
         "chef_tony",
         "recipe-passphrase-1",
         "chef@example.com",
         true,
-        false,
       ),
     );
   });
 
-  it("the two-step switch allows 8+ characters and is sent with the sign-up", async () => {
+  it("sign-up takes 8+ characters with no two-step switch (owner ruling 2026-10-12)", async () => {
     mockRegister.mockResolvedValue({ status: "verification_pending" });
     renderComponent(<LoginScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
-    expect(
-      screen.getByText(
-        "At least 15 characters, or 8 with two-step verification.",
-      ),
-    ).toBeTruthy();
-
-    fireEvent.click(
-      screen.getByLabelText(
-        "Use two-step verification (lets you use 8+ characters)",
-      ),
-    );
     expect(screen.getByText("At least 8 characters.")).toBeTruthy();
+    expect(screen.queryByTestId("switch-two-step")).toBeNull();
+    expect(screen.queryByText(/two-step/i)).toBeNull();
 
     fireEvent.change(screen.getByLabelText("Username"), {
       target: { value: "newchef" },
@@ -261,18 +251,8 @@ describe("LoginScreen — email field", () => {
         "ten-chars!",
         "new@example.com",
         true,
-        true,
       ),
     );
-  });
-
-  it("the switch is not shown on sign-in", () => {
-    renderComponent(<LoginScreen />);
-    expect(
-      screen.queryByLabelText(
-        "Use two-step verification (lets you use 8+ characters)",
-      ),
-    ).toBeNull();
   });
 
   it("navigates to VerifyEmail after a verification-pending registration", async () => {

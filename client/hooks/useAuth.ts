@@ -456,8 +456,6 @@ export function useAuth() {
       password: string,
       email: string,
       ageConfirmed: boolean,
-      // The "Use two-step verification" switch (spec P4): 8+ instead of 15+.
-      twoStep = false,
     ): Promise<
       | { status: "authenticated"; user: User }
       | { status: "verification_pending" }
@@ -470,11 +468,10 @@ export function useAuth() {
         // COPPA 13+ age attestation — caller forwards user's actual checkbox
         // state; server enforces with `z.literal(true)` (zero trust on client).
         ageConfirmed,
-        ...(twoStep ? { twoStep: true } : {}),
       });
       const data = await response.json();
-      // Verification OFF with the switch on and a password under 15: no
-      // session yet — the caller routes to PasswordUpgrade (spec §5.1).
+      // The current server never sends this (owner ruling 2026-10-12); it
+      // goes with the rest of the upgrade flow.
       if (data.status === "upgrade_required") {
         return data as UpgradeRequiredResult;
       }

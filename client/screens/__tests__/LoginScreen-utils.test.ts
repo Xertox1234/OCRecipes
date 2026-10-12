@@ -11,50 +11,36 @@ import {
   PASSWORD_MISMATCH_MESSAGE,
 } from "../LoginScreen-utils";
 
-describe("the sign-up two-step switch (spec P4)", () => {
-  const register = (password: string, twoStep: boolean) => ({
+describe("sign-up password minimum: 8 for everyone (owner ruling 2026-10-12)", () => {
+  const register = (password: string) => ({
     mode: "register" as const,
     username: "chef_tony",
     email: "chef@example.com",
     password,
     confirmPassword: password,
     ageConfirmed: true,
-    twoStep,
   });
 
-  it("switch on: 10 characters pass", () => {
-    expect(validateAuthForm(register("a".repeat(10), true))).toBeNull();
+  it("8 characters pass", () => {
+    expect(validateAuthForm(register("a".repeat(8)))).toBeNull();
   });
 
-  it("switch off: 10 characters → the sentence that names the switch", () => {
-    expect(validateAuthForm(register("a".repeat(10), false))).toBe(
-      "Use at least 15 characters, or turn on two-step verification to use 8.",
-    );
-  });
-
-  it("switch on: 7 characters → 'Use at least 8 characters.'", () => {
-    expect(validateAuthForm(register("a".repeat(7), true))).toBe(
+  it("7 characters → 'Use at least 8 characters.'", () => {
+    expect(validateAuthForm(register("a".repeat(7)))).toBe(
       "Use at least 8 characters.",
     );
   });
 
-  it("a server PASSWORD_TOO_SHORT follows the switch", () => {
+  it("a server PASSWORD_TOO_SHORT gets the same sentence", () => {
     const short = new ApiError("400: x", "PASSWORD_TOO_SHORT", 400);
-    expect(getAuthErrorMessage(short, "register", { twoStep: true })).toBe(
+    expect(getAuthErrorMessage(short, "register")).toBe(
       "Use at least 8 characters.",
-    );
-    expect(getAuthErrorMessage(short, "register", { twoStep: false })).toBe(
-      "Use at least 15 characters, or turn on two-step verification to use 8.",
     );
   });
 
-  it("iOS password rules and the hint track the switch", () => {
-    expect(registerPasswordRules(true)).toBe("minlength: 8; maxlength: 128;");
-    expect(registerPasswordRules(false)).toBe("minlength: 15; maxlength: 128;");
-    expect(registerPasswordHint(true)).toBe("At least 8 characters.");
-    expect(registerPasswordHint(false)).toBe(
-      "At least 15 characters, or 8 with two-step verification.",
-    );
+  it("iOS password rules and the hint say 8", () => {
+    expect(registerPasswordRules()).toBe("minlength: 8; maxlength: 128;");
+    expect(registerPasswordHint()).toBe("At least 8 characters.");
   });
 });
 
@@ -155,24 +141,22 @@ describe("validateAuthForm", () => {
     ).toBeNull();
   });
 
-  it("rejects a 14-character password with the sign-up minimum", () => {
+  it("rejects a 7-character password with the sign-up minimum", () => {
     expect(
       validateAuthForm({
         ...validRegister,
-        password: "a".repeat(14),
-        confirmPassword: "a".repeat(14),
+        password: "a".repeat(7),
+        confirmPassword: "a".repeat(7),
       }),
-    ).toBe(
-      "Use at least 15 characters, or turn on two-step verification to use 8.",
-    );
+    ).toBe("Use at least 8 characters.");
   });
 
-  it("has no composition rule: 15 letters only is fine", () => {
+  it("has no composition rule: 8 letters only is fine", () => {
     expect(
       validateAuthForm({
         ...validRegister,
-        password: "abcdefghijklmno",
-        confirmPassword: "abcdefghijklmno",
+        password: "abcdefgh",
+        confirmPassword: "abcdefgh",
       }),
     ).toBeNull();
   });
@@ -278,9 +262,7 @@ describe("getAuthErrorMessage", () => {
         new ApiError("400: short", "PASSWORD_TOO_SHORT"),
         "register",
       ),
-    ).toBe(
-      "Use at least 15 characters, or turn on two-step verification to use 8.",
-    );
+    ).toBe("Use at least 8 characters.");
   });
 
   it("register: a breached password gets the breach sentence", () => {
@@ -314,21 +296,21 @@ describe("getAuthErrorMessage", () => {
 });
 
 describe("validateNewPassword (the shared password policy)", () => {
-  const signup = { min: 15, context: "signup" as const };
+  const signup = { min: 8, context: "signup" as const };
   const floor = { min: 8, context: "mfa" as const };
 
   it("enforces length, then match, in that order", () => {
-    expect(validateNewPassword("a".repeat(14), "a".repeat(14), signup)).toBe(
-      "Use at least 15 characters, or turn on two-step verification to use 8.",
+    expect(validateNewPassword("a".repeat(7), "a".repeat(7), signup)).toBe(
+      "Use at least 8 characters.",
     );
     expect(validateNewPassword("a".repeat(129), "a".repeat(129), signup)).toBe(
       "Use at most 128 characters.",
     );
-    expect(validateNewPassword("a".repeat(15), "b".repeat(15), signup)).toBe(
+    expect(validateNewPassword("a".repeat(8), "b".repeat(8), signup)).toBe(
       "Passwords do not match",
     );
     expect(
-      validateNewPassword("a".repeat(15), "a".repeat(15), signup),
+      validateNewPassword("a".repeat(8), "a".repeat(8), signup),
     ).toBeNull();
   });
 

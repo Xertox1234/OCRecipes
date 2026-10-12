@@ -723,7 +723,7 @@ describe("POST /api/auth/social/link", () => {
     expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
   });
 
-  it("right 15+ password → links and signs in", async () => {
+  it("right password → links and signs in", async () => {
     const user = createMockUser({
       id: "u1",
       emailVerified: true,
@@ -748,32 +748,26 @@ describe("POST /api/auth/social/link", () => {
     expect(storage.createUpgradePass).not.toHaveBeenCalled();
   });
 
-  it("no two-step, right password under 15 → 200 upgrade_required, NOTHING linked, no session (spec §5.2, P3)", async () => {
+  it("no two-step, right 11-character password → links and signs in, no upgrade pass (owner ruling 2026-10-12)", async () => {
+    const user = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: null,
+      password: await bcrypt.hash("right-pass1", 4), // 11
+    });
     vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
-    vi.mocked(storage.createUpgradePass).mockResolvedValue(undefined);
-    vi.mocked(storage.getUserForAuth).mockResolvedValue(
-      createMockUser({
-        id: "u1",
-        emailVerified: true,
-        tokenVersion: 2,
-        mfaEnabledAt: null,
-        password: await bcrypt.hash("right-pass1", 4), // 11
-      }),
+    vi.mocked(storage.createUpgradePass).mockReset();
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    vi.mocked(storage.completeLinkFromTicket).mockResolvedValue(
+      createMockUserIdentity({ id: "i9" }),
     );
     const res = await request(app())
       .post("/api/auth/social/link")
       .send({ ticket: "t", password: "right-pass1" });
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      status: "upgrade_required",
-      pass: expect.any(String),
-      canUseTwoStep: true,
-    });
-    expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
-    expect(storage.getUser).not.toHaveBeenCalled(); // issueSession never ran
-    expect(storage.createUpgradePass).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "u1", tokenVersion: 2 }),
-    );
+    expect(res.body.status).toBe("signed_in");
+    expect(storage.completeLinkFromTicket).toHaveBeenCalledTimes(1);
+    expect(storage.createUpgradePass).not.toHaveBeenCalled();
   });
 
   it("an already-linked provider as proof is never gated, even on a short-password account", async () => {

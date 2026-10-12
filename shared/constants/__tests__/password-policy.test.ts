@@ -23,8 +23,8 @@ describe("passwordLength", () => {
 
 describe("newPasswordProblem", () => {
   it.each([
-    [14, PASSWORD_MIN_SINGLE_FACTOR, "too_short"],
-    [15, PASSWORD_MIN_SINGLE_FACTOR, null],
+    [7, PASSWORD_MIN_SINGLE_FACTOR, "too_short"],
+    [8, PASSWORD_MIN_SINGLE_FACTOR, null],
     [7, PASSWORD_MIN_WITH_MFA, "too_short"],
     [8, PASSWORD_MIN_WITH_MFA, null],
     [128, PASSWORD_MIN_WITH_MFA, null],
@@ -32,25 +32,23 @@ describe("newPasswordProblem", () => {
   ] as const)("%i chars with min %i → %s", (n, min, want) => {
     expect(newPasswordProblem("a".repeat(n), { min })).toBe(want);
   });
-  it("has no composition rule: 15 letters only is fine", () => {
-    expect(newPasswordProblem("abcdefghijklmno", { min: 15 })).toBeNull();
+  it("has no composition rule: 8 letters only is fine", () => {
+    expect(newPasswordProblem("abcdefgh", { min: 8 })).toBeNull();
   });
   it("counts an emoji as one character at the boundary", () => {
-    expect(newPasswordProblem("a".repeat(14) + "😀", { min: 15 })).toBeNull();
+    expect(newPasswordProblem("a".repeat(7) + "😀", { min: 8 })).toBeNull();
   });
 });
 
 describe("passwordMessage", () => {
-  it("one sentence per context", () => {
-    expect(passwordMessage("too_short", "signup")).toBe(
-      "Use at least 15 characters, or turn on two-step verification to use 8.",
-    );
-    expect(passwordMessage("too_short", "single_factor")).toBe(
-      "Use at least 15 characters.",
-    );
-    expect(passwordMessage("too_short", "mfa")).toBe(
-      "Use at least 8 characters.",
-    );
+  it("is 8 for everyone, whether or not two-step is on (owner ruling 2026-10-12)", () => {
+    expect(PASSWORD_MIN_SINGLE_FACTOR).toBe(8);
+    expect(PASSWORD_MIN_WITH_MFA).toBe(8);
+    for (const context of ["signup", "single_factor", "mfa"] as const) {
+      expect(passwordMessage("too_short", context)).toBe(
+        "Use at least 8 characters.",
+      );
+    }
     expect(passwordMessage("too_long", "signup")).toBe(
       "Use at most 128 characters.",
     );

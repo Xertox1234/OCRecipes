@@ -484,22 +484,45 @@ describe("POST /api/auth/mfa/disable", () => {
     expect(res.body.code).toBe("MFA_UNAVAILABLE");
   });
 
-  describe("a password under 15 needs a new 15+ one in the same step (spec §5.4)", () => {
+  describe("a short password turns two-step off as it is (owner ruling 2026-10-12)", () => {
     beforeEach(async () => {
       shortHash ??= await bcrypt.hash(SHORT_PASSWORD, 4);
       asUser({ password: shortHash, mfaEnabledAt: new Date() });
       vi.mocked(isBreached).mockResolvedValue(false);
     });
 
-    it("no newPassword: 400 PASSWORD_UPGRADE_NEEDED before the factor is checked", async () => {
+    it("a 12-character password, no newPassword: two-step off, password unchanged", async () => {
+      vi.mocked(storage.disableMfa).mockResolvedValue(6);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ tokenVersion: 6 }),
+      );
       const res = await post("disable", {
         password: SHORT_PASSWORD,
-        secondFactor: { recoveryCode: "ABCD-EFGH-IJKL-MNOP" },
+        secondFactor: { code: "123456" },
       });
-      expect(res.status).toBe(400);
-      expect(res.body.code).toBe("PASSWORD_UPGRADE_NEEDED");
-      expect(mockVerifySecondFactor).not.toHaveBeenCalled(); // no recovery code spent
-      expect(storage.disableMfa).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBeUndefined();
+      expect(mockVerifySecondFactor).toHaveBeenCalledTimes(1);
+      const [, opts] = vi.mocked(storage.disableMfa).mock.calls[0];
+      expect(opts?.newPasswordHash).toBeUndefined();
+      expect(sendPasswordChangedNotice).not.toHaveBeenCalled();
+    });
+
+    it("a 7-character password set before the policy also turns it off (no PASSWORD_UPGRADE_NEEDED)", async () => {
+      asUser({
+        password: await bcrypt.hash("seven-7", 4),
+        mfaEnabledAt: new Date(),
+      });
+      vi.mocked(storage.disableMfa).mockResolvedValue(6);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ tokenVersion: 6 }),
+      );
+      const res = await post("disable", {
+        password: "seven-7",
+        secondFactor: { code: "123456" },
+      });
+      expect(res.body.code).not.toBe("PASSWORD_UPGRADE_NEEDED");
+      expect(res.status).toBe(200);
     });
 
     it("a wrong current password still answers 401, never the upgrade prompt", async () => {
@@ -511,7 +534,7 @@ describe("POST /api/auth/mfa/disable", () => {
       expect(storage.disableMfa).not.toHaveBeenCalled();
     });
 
-    it("a 15+ newPassword: turns off and changes the password in one call, then notifies", async () => {
+    it("a newPassword: turns off and changes the password in one call, then notifies", async () => {
       vi.mocked(storage.disableMfa).mockResolvedValue(6);
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ tokenVersion: 6 }),
@@ -533,15 +556,13 @@ describe("POST /api/auth/mfa/disable", () => {
       );
     });
 
-    it("a short newPassword: 400 PASSWORD_TOO_SHORT, factor not checked, still on", async () => {
+    it("a 7-character newPassword: 400, factor not checked, still on", async () => {
       const res = await post("disable", {
         password: SHORT_PASSWORD,
         secondFactor: { recoveryCode: "ABCD-EFGH-IJKL-MNOP" },
-        newPassword: "still-short-1",
+        newPassword: "short-7",
       });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe("PASSWORD_TOO_SHORT");
-      expect(res.body.error).toBe("Use at least 15 characters.");
       expect(mockVerifySecondFactor).not.toHaveBeenCalled();
       expect(storage.disableMfa).not.toHaveBeenCalled();
     });
