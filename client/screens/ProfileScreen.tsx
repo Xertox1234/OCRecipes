@@ -22,13 +22,7 @@ import { InlineSettings } from "@/components/profile/InlineSettings";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { resolveImageUrl } from "@/lib/query-client";
-import {
-  Colors,
-  Spacing,
-  FAB_CLEARANCE,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+import { Colors, Spacing, FontFamily, withOpacity } from "@/constants/theme";
 
 type Theme = (typeof Colors)["light"] | (typeof Colors)["dark"];
 
@@ -197,7 +191,7 @@ export default function ProfileScreen() {
 
       <Animated.ScrollView
         contentContainerStyle={{
-          paddingBottom: tabBarHeight + FAB_CLEARANCE + Spacing.lg,
+          paddingBottom: tabBarHeight + Spacing.lg,
         }}
         scrollEventThrottle={16}
         onScroll={scrollHandler}

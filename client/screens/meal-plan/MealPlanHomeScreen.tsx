@@ -56,7 +56,6 @@ import {
   BorderRadius,
   FontFamily,
   withOpacity,
-  FAB_CLEARANCE,
 } from "@/constants/theme";
 import {
   dateStripSnapBackSpringConfig,
@@ -1477,7 +1476,7 @@ export default function MealPlanHomeScreen() {
           styles.container,
           {
             paddingTop: headerHeight,
-            paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+            paddingBottom: tabBarHeight + Spacing.xl,
             backgroundColor: theme.backgroundRoot,
           },
         ]}
@@ -1510,7 +1509,7 @@ export default function MealPlanHomeScreen() {
         testID="meal-plan-home-scroll"
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.sm,
-          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+          paddingBottom: tabBarHeight + Spacing.xl,
         }}
         refreshControl={
           <RefreshControl

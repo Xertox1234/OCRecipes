@@ -37,12 +37,7 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHistoryData } from "@/hooks/useHistoryData";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
-import {
-  Spacing,
-  BorderRadius,
-  withOpacity,
-  FAB_CLEARANCE,
-} from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { pressSpringConfig, expandTimingConfig } from "@/constants/animations";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { ScannedItemResponse } from "@/types/api";
@@ -766,7 +761,7 @@ export default function HistoryScreen() {
         style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.xl,
-          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+          paddingBottom: tabBarHeight + Spacing.xl,
           paddingHorizontal: Spacing.lg,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
@@ -788,7 +783,7 @@ export default function HistoryScreen() {
           {
             backgroundColor: theme.backgroundRoot,
             paddingTop: headerHeight + Spacing.xl,
-            paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+            paddingBottom: tabBarHeight + Spacing.xl,
           },
         ]}
       >
@@ -827,7 +822,7 @@ export default function HistoryScreen() {
           styles.listContent,
           {
             paddingTop: headerHeight + Spacing.xl,
-            paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+            paddingBottom: tabBarHeight + Spacing.xl,
           },
           displayItems.length === 0 && !isLoading && styles.emptyListContent,
         ]}
