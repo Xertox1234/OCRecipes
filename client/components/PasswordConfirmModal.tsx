@@ -14,7 +14,6 @@ import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
-import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
 import type { SecondFactorInput } from "@shared/types/auth";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, Spacing } from "@/constants/theme";
@@ -32,10 +31,6 @@ interface PasswordConfirmModalProps {
   onSubmit: (password: string, secondFactor?: SecondFactorInput) => void;
   /** Two-step verification: ask for the code together with the password. */
   askCode?: boolean;
-  /** A spent recovery code's replacement to show before anything else. */
-  replacementCode?: string | null;
-  /** "I've saved it" on the replacement card. */
-  onReplacementSaved?: () => void;
 }
 
 /**
@@ -52,10 +47,7 @@ export function PasswordConfirmModal({
   onCancel,
   onSubmit,
   askCode = false,
-  replacementCode = null,
-  onReplacementSaved,
 }: PasswordConfirmModalProps) {
-  // Set when the account's two-step codes come by email.
   const twoStepEmail = useSignedInEmailCode();
   const { theme } = useTheme();
   const [password, setPassword] = useState("");
@@ -72,8 +64,7 @@ export function PasswordConfirmModal({
   }, [visible]);
 
   const cancel = () => {
-    // With a replacement recovery code showing, only "I've saved it" closes.
-    if (!busy && !replacementCode) onCancel();
+    if (!busy) onCancel();
   };
 
   return (
@@ -115,65 +106,55 @@ export function PasswordConfirmModal({
             >
               {message}
             </ThemedText>
-            {replacementCode ? (
-              <ReplacementCodeCard
-                code={replacementCode}
-                onDone={() => onReplacementSaved?.()}
+            <TextInput
+              leftIcon="lock"
+              rightIcon={showPassword ? "eye-off" : "eye"}
+              rightIconAccessibilityLabel={
+                showPassword ? "Hide password" : "Show password"
+              }
+              onRightIconPress={() => setShowPassword((s) => !s)}
+              placeholder="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoComplete="current-password"
+              textContentType="password"
+              editable={!busy}
+              accessibilityLabel="Password"
+              error={!!error}
+            />
+            {askCode ? (
+              <SecondFactorField
+                onChange={setFactor}
+                busy={busy}
+                autoFocus={false}
+                emailCode={twoStepEmail}
               />
             ) : null}
-            {replacementCode ? null : (
-              <>
-                <TextInput
-                  leftIcon="lock"
-                  rightIcon={showPassword ? "eye-off" : "eye"}
-                  rightIconAccessibilityLabel={
-                    showPassword ? "Hide password" : "Show password"
-                  }
-                  onRightIconPress={() => setShowPassword((s) => !s)}
-                  placeholder="Password"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoComplete="current-password"
-                  textContentType="password"
-                  editable={!busy}
-                  accessibilityLabel="Password"
-                  error={!!error}
-                />
-                {askCode ? (
-                  <SecondFactorField
-                    onChange={setFactor}
-                    busy={busy}
-                    autoFocus={false}
-                    emailCode={twoStepEmail}
-                  />
-                ) : null}
-                <InlineError message={error} />
-                <View style={styles.buttons}>
-                  <Button
-                    variant="secondary"
-                    onPress={cancel}
-                    disabled={busy}
-                    style={styles.flex}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onPress={() =>
-                      askCode && factor
-                        ? onSubmit(password, factor)
-                        : onSubmit(password)
-                    }
-                    disabled={!password || (askCode && !factor)}
-                    loading={busy}
-                    style={styles.flex}
-                  >
-                    Continue
-                  </Button>
-                </View>
-              </>
-            )}
+            <InlineError message={error} />
+            <View style={styles.buttons}>
+              <Button
+                variant="secondary"
+                onPress={cancel}
+                disabled={busy}
+                style={styles.flex}
+              >
+                Cancel
+              </Button>
+              <Button
+                onPress={() =>
+                  askCode && factor
+                    ? onSubmit(password, factor)
+                    : onSubmit(password)
+                }
+                disabled={!password || (askCode && !factor)}
+                loading={busy}
+                style={styles.flex}
+              >
+                Continue
+              </Button>
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>

@@ -77,8 +77,6 @@ export function register(app: Express): void {
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
-      // Once a recovery code is spent, every answer carries its replacement.
-      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const parsed = changePasswordSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -96,7 +94,7 @@ export function register(app: Express): void {
         }
 
         // Before any proof or factor, so a rejected new password never spends
-        // a recovery code or an emailed-code attempt.
+        // a guess at an emailed code.
         const rejected = await checkNewPassword(newPassword);
         if (rejected) {
           return sendError(
@@ -128,30 +126,17 @@ export function register(app: Express): void {
           );
         }
 
-        // An emailed code is one factor, like a password: on a two-step
-        // account it also needs the code (2FA spec D2). Only a Google/Apple
-        // confirmation is exempt (D1) — and an emailed code on an EMAIL
-        // two-step account, whose second code would come from the same inbox
-        // (owner ruling 4, 2026-10-12).
-        const emailCodeIsTheFactor =
-          "emailCode" in proof &&
-          user.mfaEnabledAt !== null &&
-          (await storage.getMfaState(user.id))?.method === "email";
-        const singleFactor =
-          "password" in proof ||
-          ("emailCode" in proof && !emailCodeIsTheFactor);
+        // A password proof on a two-step account also needs the emailed code
+        // (2FA spec D2). The emailed change code does not: a second code would
+        // come from the same inbox (owner ruling 4, 2026-10-12). A Google/Apple
+        // confirmation is exempt (D1).
         const gate = await secondFactorForPasswordProof(
           user,
-          singleFactor,
-          "provider" in proof ? undefined : proof.secondFactor,
+          "password" in proof,
+          "password" in proof ? proof.secondFactor : undefined,
         );
         if (!gate.ok)
           return sendError(res, gate.status, gate.message, gate.code);
-        if (gate.replacementRecoveryCode) {
-          replacement = {
-            replacementRecoveryCode: gate.replacementRecoveryCode,
-          };
-        }
 
         const changed = await storage.changePassword({
           userId: user.id,
@@ -167,17 +152,10 @@ export function register(app: Express): void {
             400,
             "That code didn't work. Request a new one.",
             ErrorCode.INVALID_RESET_CODE,
-            replacement,
           );
         }
         if (!changed.ok) {
-          return sendError(
-            res,
-            401,
-            "Please sign in again.",
-            "TOKEN_REVOKED",
-            replacement,
-          );
+          return sendError(res, 401, "Please sign in again.", "TOKEN_REVOKED");
         }
         invalidateTokenVersionCache(user.id);
         fireAndForget(
@@ -193,18 +171,12 @@ export function register(app: Express): void {
           })(),
         );
         const session = await issueSession(user.id, changed.tokenVersion);
-        res.json({ ...session, ...replacement });
+        res.json(session);
       } catch (error) {
         if (error instanceof HttpFailure && error.status === 401) {
-          return sendError(
-            res,
-            401,
-            "Please sign in again.",
-            "TOKEN_REVOKED",
-            replacement,
-          );
+          return sendError(res, 401, "Please sign in again.", "TOKEN_REVOKED");
         }
-        handleRouteError(res, error, "change password", replacement);
+        handleRouteError(res, error, "change password");
       }
     },
   );

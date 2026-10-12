@@ -139,17 +139,12 @@ describe("POST /api/auth/mfa/verify", () => {
 
   // Auth audit 2026-10-10 L12: a reset landing between the challenge's version
   // check and minting must not yield a session that survives that reset.
-  it("a reset between the version check and minting → 401, no token, replacement kept", async () => {
-    mockVerifySecondFactor.mockResolvedValue({
-      ok: true,
-      replacementRecoveryCode: "NEW-CODE",
-    });
+  it("a reset between the version check and minting → 401, no token", async () => {
     vi.mocked(storage.getUser).mockResolvedValue({ ...USER, tokenVersion: 5 });
     const res = await verify();
     expect(res.status).toBe(401);
     expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
     expect(res.body.token).toBeUndefined();
-    expect(res.body.replacementRecoveryCode).toBe("NEW-CODE");
     expect(generateToken).not.toHaveBeenCalled();
   });
 
@@ -160,18 +155,8 @@ describe("POST /api/auth/mfa/verify", () => {
     expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
   });
 
-  it("unreadable secret → 503 MFA_UNAVAILABLE", async () => {
-    mockVerifySecondFactor.mockResolvedValue({
-      ok: false,
-      reason: "unavailable",
-    });
-    const res = await verify();
-    expect(res.status).toBe(503);
-    expect(res.body.code).toBe("MFA_UNAVAILABLE");
-  });
-
   it("wrong code → 401 INVALID_SECOND_FACTOR, the challenge survives for another try", async () => {
-    mockVerifySecondFactor.mockResolvedValue({ ok: false, reason: "invalid" });
+    mockVerifySecondFactor.mockResolvedValue({ ok: false });
     const res = await verify();
     expect(res.status).toBe(401);
     expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
@@ -195,36 +180,17 @@ describe("POST /api/auth/mfa/verify", () => {
   it("two concurrent verifies with one valid code → exactly one 200", async () => {
     mockVerifySecondFactor
       .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: false, reason: "invalid" });
+      .mockResolvedValueOnce({ ok: false });
     const [a, b] = await Promise.all([verify(), verify()]);
     expect([a.status, b.status].sort()).toEqual([200, 401]);
   });
 
-  it("a recovery code that passes but loses the consume race → 401 that STILL carries its replacement", async () => {
-    mockVerifySecondFactor.mockResolvedValue({
-      ok: true,
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-    });
+  it("a right code that loses the consume race → 401 MFA_CHALLENGE_EXPIRED, no token", async () => {
     vi.mocked(storage.consumeMfaChallenge).mockResolvedValue(false);
-    const res = await verify({
-      secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-    });
+    const res = await verify();
     expect(res.status).toBe(401);
     expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
-    expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
-  });
-
-  it("a recovery code on success → the session carries its replacement", async () => {
-    mockVerifySecondFactor.mockResolvedValue({
-      ok: true,
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-    });
-    const res = await verify({
-      secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.token).toBe("mock-jwt-token");
-    expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+    expect(res.body.token).toBeUndefined();
   });
 
   it("trustDevice on a login → returns a trust key and stores only its hash", async () => {
@@ -269,18 +235,11 @@ describe("POST /api/auth/mfa/verify", () => {
       expect(storage.trustDevice).not.toHaveBeenCalled();
     });
 
-    it("the ticket expired meanwhile → 401 INVALID_SIGN_IN_TICKET, carrying a spent recovery code's replacement", async () => {
-      mockVerifySecondFactor.mockResolvedValue({
-        ok: true,
-        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-      });
+    it("the ticket expired meanwhile → 401 INVALID_SIGN_IN_TICKET", async () => {
       vi.mocked(storage.completeLinkByTicketHash).mockResolvedValue(undefined);
-      const res = await verify({
-        secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-      });
+      const res = await verify();
       expect(res.status).toBe(401);
       expect(res.body.code).toBe("INVALID_SIGN_IN_TICKET");
-      expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
     });
 
     it("the provider account was linked elsewhere meanwhile → 409 IDENTITY_IN_USE", async () => {
@@ -293,24 +252,15 @@ describe("POST /api/auth/mfa/verify", () => {
     });
   });
 
-  it("never logs the challenge, code, recovery code or trust key", async () => {
-    mockVerifySecondFactor.mockResolvedValue({
-      ok: true,
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-    });
+  it("never logs the challenge, code or trust key", async () => {
     vi.mocked(storage.consumeMfaChallenge).mockResolvedValue(false);
-    await verify({ secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" } });
+    await verify();
     vi.mocked(storage.consumeMfaChallenge).mockRejectedValue(new Error("db"));
     await verify({ trustDevice: true });
     // Denominator: the second request's DB error WAS logged.
     expect(mockLog.error).toHaveBeenCalled();
     const logs = allLogCalls();
-    for (const secret of [
-      CHALLENGE,
-      "123456",
-      "WXYZ-WXYZ-WXYZ-WXYZ",
-      "AAAA-BBBB-CCCC-DDDD",
-    ]) {
+    for (const secret of [CHALLENGE, "123456"]) {
       expect(logs).not.toContain(secret);
     }
   });

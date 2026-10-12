@@ -12,12 +12,9 @@ const auth = vi.hoisted(() => ({
   requestPasswordChangeCode: vi.fn(),
 }));
 vi.mock("@/context/AuthContext", () => ({ useAuthContext: () => auth }));
-const emailTwoStep = vi.hoisted(() => ({ source: undefined as unknown }));
 vi.mock("@/hooks/useSignInMethods", () => ({
-  useSignedInEmailCode: () => emailTwoStep.source,
+  useSignedInEmailCode: () => ({ send: vi.fn() }),
 }));
-// The replacement-code card copies with expo-clipboard (native module).
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 
 const navigation = { goBack: vi.fn() };
 const NEW = "a-long-new-passphrase-1";
@@ -46,7 +43,6 @@ beforeEach(() => {
   // leak its reply into the next one.
   auth.changePassword.mockReset();
   auth.requestPasswordChangeCode.mockReset();
-  emailTwoStep.source = undefined;
 });
 
 describe("ChangePasswordScreen", () => {
@@ -140,7 +136,7 @@ describe("ChangePasswordScreen", () => {
     expect(screen.queryByLabelText("Code from the email")).toBeNull();
   });
 
-  it("SECOND_FACTOR_REQUIRED reveals the authenticator field, then sends it", async () => {
+  it("SECOND_FACTOR_REQUIRED reveals the two-step code field, then sends it", async () => {
     auth.changePassword.mockRejectedValueOnce(
       new ApiError(
         '403: {"code":"SECOND_FACTOR_REQUIRED"}',
@@ -197,73 +193,16 @@ describe("ChangePasswordScreen", () => {
     expect(auth.changePassword).toHaveBeenCalledTimes(1);
   });
 
-  it("a spent recovery code's replacement is shown before going back", async () => {
-    auth.changePassword.mockResolvedValue({
-      done: true,
-      replacementRecoveryCode: "r-1",
-    });
-    renderScreen({ hasPassword: true, providers: [] });
-    type("Current password", "old-pass");
-    type("New password", NEW);
-    await act(async () => tap("Save new password"));
-    expect(screen.getByText("r-1")).toBeTruthy();
-    expect(navigation.goBack).not.toHaveBeenCalled();
-  });
-
-  // Signed out mid-request: the code shows first, and "I've saved it" ends
-  // the session instead of going back (the navigator swap does the leaving).
-  it("signed out mid-request: shows the code, then 'I've saved it' ends the session", async () => {
-    const endSession = vi.fn().mockResolvedValue(undefined);
-    auth.changePassword.mockResolvedValue({
-      done: true,
-      replacementRecoveryCode: "r-1",
-      endSession,
-    });
-    renderScreen({ hasPassword: true, providers: [] });
-    type("Current password", "old-pass");
-    type("New password", NEW);
-    await act(async () => tap("Save new password"));
-    expect(screen.getByText("r-1")).toBeTruthy();
-    expect(endSession).not.toHaveBeenCalled();
-    await act(async () => tap("I've saved it"));
-    expect(endSession).toHaveBeenCalledTimes(1);
-    expect(navigation.goBack).not.toHaveBeenCalled();
-  });
-
-  // Review (security): a spent recovery code then a refused change must not
-  // look like success — the new code shows, AND the error and form stay.
-  it("a refused change after a spent recovery code keeps the error and the form", async () => {
-    auth.changePassword.mockRejectedValueOnce(
-      new ApiError(
-        '400: {"error":"Too short for this account.","code":"PASSWORD_TOO_SHORT","replacementRecoveryCode":"r-9"}',
-        "PASSWORD_TOO_SHORT",
-        400,
-      ),
-    );
-    renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
-    type("Current password", "old-pass");
-    type("New password", "short");
-    type("6-digit code", "123456");
-    await act(async () => tap("Save new password"));
-    expect(screen.getByText("r-9")).toBeTruthy();
-    expect(screen.getByText("Too short for this account.")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Save new password" }),
-    ).toBeTruthy();
-    expect(navigation.goBack).not.toHaveBeenCalled();
-  });
-
   // Review (code): a two-step account knows its rule (8) up front and is
-  // asked for the authenticator code with the first submit.
+  // asked for the two-step code with the first submit.
   it("two-step on: the 8-character hint and the code field from the start", () => {
     renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
     expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
     expect(screen.getByLabelText("6-digit code")).toBeTruthy();
   });
 
-  // Owner ruling 4: an email two-step account never types two emailed codes.
-  it("email two-step: the emailed change code alone saves — no second code field", async () => {
-    emailTwoStep.source = { send: vi.fn() };
+  // Owner ruling 4: a two-step account never types two emailed codes.
+  it("two-step on: the emailed change code alone saves — no second code field", async () => {
     auth.requestPasswordChangeCode.mockResolvedValue(undefined);
     auth.changePassword.mockResolvedValue({ done: true });
     renderScreen({ hasPassword: false, providers: [], mfaEnabled: true });
@@ -279,8 +218,7 @@ describe("ChangePasswordScreen", () => {
     );
   });
 
-  it("email two-step + current password: the code field offers Email me a code", () => {
-    emailTwoStep.source = { send: vi.fn() };
+  it("two-step on + current password: the code field offers Email me a code", () => {
     renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
     expect(screen.getByLabelText("6-digit code")).toBeTruthy();
     expect(
@@ -289,7 +227,7 @@ describe("ChangePasswordScreen", () => {
     expect(screen.queryByLabelText("Use a recovery code instead")).toBeNull();
   });
 
-  it("two-step on: Google/Apple needs no authenticator code field", () => {
+  it("two-step on: Google/Apple needs no two-step code field", () => {
     renderScreen({
       hasPassword: false,
       providers: ["google"],
@@ -334,20 +272,20 @@ describe("ChangePasswordScreen", () => {
     ).toBe("true");
   });
 
-  // Review (code, 2nd round): an empty authenticator field never sends —
-  // on the emailed-code path that would spend one of the code's 5 guesses.
-  it("two-step on: Save with the authenticator field empty sends nothing and says why", async () => {
+  // Review (code, 2nd round): an empty two-step field never sends — that
+  // would spend one of the code's 5 guesses.
+  it("two-step on: Save with the two-step field empty sends nothing and says why", async () => {
     renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
     type("Current password", "old-pass");
     type("New password", NEW);
     await act(async () => tap("Save new password"));
     expect(auth.changePassword).not.toHaveBeenCalled();
     expect(
-      screen.getByText("Enter the code from your authenticator app."),
+      screen.getByText("Enter the two-step code we email you."),
     ).toBeTruthy();
   });
 
-  it("SECOND_FACTOR_REQUIRED says to enter the authenticator code", async () => {
+  it("SECOND_FACTOR_REQUIRED says to enter the emailed two-step code", async () => {
     auth.changePassword.mockRejectedValueOnce(
       new ApiError(
         '403: {"code":"SECOND_FACTOR_REQUIRED"}',
@@ -360,7 +298,7 @@ describe("ChangePasswordScreen", () => {
     type("New password", NEW);
     await act(async () => tap("Save new password"));
     expect(
-      screen.getByText("Enter the code from your authenticator app."),
+      screen.getByText("Enter the two-step code we email you."),
     ).toBeTruthy();
   });
 
@@ -390,9 +328,10 @@ describe("ChangePasswordScreen", () => {
 
   // Review (confirmation pass): a code typed on the current-password view is
   // dropped when the person switches to the emailed code — the field they
-  // see there is empty, so nothing hidden may be sent.
-  it("two-step on: an authenticator code typed before 'I forgot it' is not sent with the emailed code", async () => {
+  // see there is gone, so nothing hidden may be sent.
+  it("two-step on: a code typed before 'I forgot it' is never sent with the emailed change code", async () => {
     auth.requestPasswordChangeCode.mockResolvedValue(undefined);
+    auth.changePassword.mockResolvedValue({ done: true });
     renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
     type("6-digit code", "111111");
     tap("I forgot it");
@@ -400,9 +339,10 @@ describe("ChangePasswordScreen", () => {
     type("Code from the email", "123456");
     type("New password", NEW);
     await act(async () => tap("Save new password"));
-    expect(auth.changePassword).not.toHaveBeenCalled();
-    expect(
-      screen.getByText("Enter the code from your authenticator app."),
-    ).toBeTruthy();
+    expect(auth.changePassword).toHaveBeenCalledWith(
+      { emailCode: "123456" },
+      NEW,
+      undefined,
+    );
   });
 });

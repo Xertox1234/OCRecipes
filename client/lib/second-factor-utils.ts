@@ -4,7 +4,7 @@ import type { MfaChallengeResult } from "@shared/types/auth";
 // Two-step verification helpers shared by the challenge screen and the inline
 // code fields (change email, delete account, connect a sign-in method).
 
-/** Digits only, at most 6 — what an authenticator app shows. */
+/** Digits only, at most 6 — the emailed code. */
 export function normalizeCodeInput(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 6);
 }
@@ -42,42 +42,6 @@ export function isTwoStepCheckError(err: unknown): boolean {
     err.code !== undefined &&
     TWO_STEP_CHECK_CODES.has(err.code)
   );
-}
-
-/**
- * Once a recovery code is spent, the server returns its replacement even when
- * the request then fails — read it so the person can still save it.
- */
-export function replacementFromError(err: unknown): string | undefined {
-  const value = errorBody(err)?.replacementRecoveryCode;
-  return typeof value === "string" ? value : undefined;
-}
-
-/**
- * Change password: a reset landed mid-request (401 TOKEN_REVOKED), so this
- * session is over — but the spent recovery code's replacement rides the
- * refusal. Return it so it is shown before signing out. Anything else is
- * re-thrown unchanged.
- */
-export function revokedReplacementOrThrow(err: unknown): string {
-  const revoked = err instanceof ApiError && err.code === "TOKEN_REVOKED";
-  const code = revoked ? replacementFromError(err) : undefined;
-  if (code) return code;
-  throw err;
-}
-
-/**
- * Two-step went on and the server then refused the session (a reset landed
- * mid-request): the answer still carries the new recovery codes — the
- * account's only ones — so return them for the save step. Anything else is
- * re-thrown unchanged.
- */
-export function recoveryCodesOrThrow(err: unknown): string[] {
-  const codes = errorBody(err)?.recoveryCodes;
-  if (Array.isArray(codes) && codes.every((c) => typeof c === "string")) {
-    return codes as string[];
-  }
-  throw err;
 }
 
 export function secondFactorErrorMessage(err: unknown): {
@@ -155,7 +119,6 @@ export function twoStepCodeParams(
   return {
     challenge: result.challenge,
     purpose,
-    method: result.method,
     emailHint: result.emailHint,
     codeSent: result.codeSent,
   };

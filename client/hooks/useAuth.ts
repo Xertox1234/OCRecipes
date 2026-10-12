@@ -21,10 +21,6 @@ import type {
   User,
   EmailCodeSent,
 } from "@shared/types/auth";
-import {
-  recoveryCodesOrThrow,
-  revokedReplacementOrThrow,
-} from "@/lib/second-factor-utils";
 import { getProviderToken } from "@/lib/social-sign-in";
 import {
   registerPushToken,
@@ -123,12 +119,6 @@ async function clearDurableLocalState(): Promise<boolean> {
     ok = false;
   }
   return ok;
-}
-
-/** A new authenticator secret, shown once (setup or new phone). */
-export interface TwoStepSecret {
-  secret: string;
-  otpauthUrl: string;
 }
 
 export type DeleteAccountProof =
@@ -355,8 +345,7 @@ export function useAuth() {
 
   /**
    * Answer a two-step challenge. Keeps a returned "trust this phone" key but
-   * does NOT sign in: the screen first shows a replacement recovery code (if a
-   * recovery code was spent), then calls finishSignIn.
+   * does NOT sign in: the screen calls finishSignIn.
    */
   const verifySecondFactor = useCallback(
     async (
@@ -597,11 +586,7 @@ export function useAuth() {
       provider: SocialProvider,
       password: string,
       secondFactor?: SecondFactorInput,
-    ): Promise<{
-      signInMethods: SignInMethods;
-      /** A spent recovery code's replacement — show it once. */
-      replacementRecoveryCode?: string;
-    } | null> => {
+    ): Promise<{ signInMethods: SignInMethods } | null> => {
       const { nonce, nonceHash } = await fetchNonce("link");
       const token = await getProviderToken(provider, nonceHash);
       if (!token) return null;
@@ -614,10 +599,7 @@ export function useAuth() {
         authorizationCode: token.authorizationCode,
         proof: { password, ...(secondFactor ? { secondFactor } : {}) },
       });
-      return (await res.json()) as {
-        signInMethods: SignInMethods;
-        replacementRecoveryCode?: string;
-      };
+      return (await res.json()) as { signInMethods: SignInMethods };
     },
     [],
   );
@@ -663,25 +645,14 @@ export function useAuth() {
       password: string,
       secondFactor?: SecondFactorInput,
     ): Promise<
-      (
-        | { status: "updated"; user: User }
-        | { status: "verification_pending" }
-      ) & { replacementRecoveryCode?: string }
+      { status: "updated"; user: User } | { status: "verification_pending" }
     > => {
       const response = await apiRequest("POST", "/api/auth/change-email", {
         newEmail,
         password,
         ...(secondFactor ? { secondFactor } : {}),
       });
-      const raw = await response.json();
-      // A spent recovery code's replacement rides along; it is not user data.
-      const { replacementRecoveryCode, ...data } = (raw ?? {}) as Record<
-        string,
-        unknown
-      > & { replacementRecoveryCode?: string };
-      const replacement = replacementRecoveryCode
-        ? { replacementRecoveryCode }
-        : {};
+      const data = ((await response.json()) ?? {}) as Record<string, unknown>;
       // Gate OFF echoes the updated user (has an `id`); gate ON returns the
       // neutral pending status with no user object. `data` is the parsed JSON
       // (Response.json → any), matching how updateUser consumes it uncast.
@@ -689,58 +660,15 @@ export function useAuth() {
         const user = data as unknown as User;
         await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
         setState((prev) => ({ ...prev, user }));
-        return { status: "updated", user, ...replacement };
+        return { status: "updated", user };
       }
       await checkAuth();
-      return { status: "verification_pending", ...replacement };
+      return { status: "verification_pending" };
     },
     [checkAuth],
   );
 
-  // ── Two-step verification management (Profile → Sign-in methods) ────────
-  const startTwoStepSetup = useCallback(
-    async (password: string): Promise<TwoStepSecret> => {
-      const res = await apiRequest("POST", "/api/auth/mfa/totp/setup", {
-        password,
-      });
-      return (await res.json()) as TwoStepSecret;
-    },
-    [],
-  );
-
-  const startNewPhone = useCallback(
-    async (
-      password: string,
-      secondFactor: SecondFactorInput,
-    ): Promise<TwoStepSecret & { replacementRecoveryCode?: string }> => {
-      const res = await apiRequest("POST", "/api/auth/mfa/totp/reset", {
-        password,
-        secondFactor,
-      });
-      return (await res.json()) as TwoStepSecret & {
-        replacementRecoveryCode?: string;
-      };
-    },
-    [],
-  );
-
-  /** Finish setup or a new phone. Other devices were signed out; keep this one. */
-  const confirmTwoStep = useCallback(
-    async (code: string): Promise<{ recoveryCodes?: string[] }> => {
-      const res = await apiRequest("POST", "/api/auth/mfa/totp/confirm", {
-        code,
-      }).catch(recoveryCodesOrThrow);
-      // Refused after two-step went on: show the codes; no new session.
-      if (Array.isArray(res)) return { recoveryCodes: res };
-      const data = (await res.json()) as SignedInResult & {
-        recoveryCodes?: string[];
-      };
-      await establishSession(data.user, data.token);
-      return data.recoveryCodes ? { recoveryCodes: data.recoveryCodes } : {};
-    },
-    [establishSession],
-  );
-
+  // ── Two-step verification (Profile → Sign-in methods) ──────────────────
   /** Turn two-step off. Every device was signed out; keep this one. */
   const disableTwoStep = useCallback(
     async (password: string, secondFactor: SecondFactorInput) => {
@@ -754,21 +682,6 @@ export function useAuth() {
     [establishSession],
   );
 
-  const replaceRecoveryCodes = useCallback(
-    async (
-      password: string,
-      secondFactor: SecondFactorInput,
-    ): Promise<string[]> => {
-      const res = await apiRequest("POST", "/api/auth/mfa/recovery-codes", {
-        password,
-        secondFactor,
-      });
-      return ((await res.json()) as { recoveryCodes: string[] }).recoveryCodes;
-    },
-    [],
-  );
-
-  // ── Two-step by emailed code (owner ruling 4, 2026-10-12) ───────────────
   /** Password → a code emailed to the account's address. */
   const startEmailTwoStep = useCallback(
     async (password: string): Promise<EmailCodeSent> => {
@@ -819,22 +732,13 @@ export function useAuth() {
    * signs every other device out and answers with a session for this phone;
    * it is stored only if no one else signed in here meanwhile (auth audit L7).
    * Resolves done:false only when the Google/Apple sheet was cancelled.
-   *
-   * A reset landing mid-request signs this phone out (TOKEN_REVOKED); when a
-   * recovery code was spent, its replacement rides that refusal and the
-   * interceptor leaves the sign-out to us. Resolves with the code and
-   * `endSession`, which the screen calls once it is saved.
    */
   const changePassword = useCallback(
     async (
       proof: ChangePasswordProof,
       newPassword: string,
       secondFactor?: SecondFactorInput,
-    ): Promise<{
-      done: boolean;
-      replacementRecoveryCode?: string;
-      endSession?: () => Promise<void>;
-    }> => {
+    ): Promise<{ done: boolean }> => {
       const before = await tokenStorage.get();
       let body: object;
       if ("provider" in proof) {
@@ -849,44 +753,24 @@ export function useAuth() {
         const withFactor = secondFactor ? { ...proof, secondFactor } : proof;
         body = { proof: withFactor, newPassword };
       }
-      const res = await apiRequest(
-        "POST",
-        "/api/auth/change-password",
-        body,
-      ).catch(revokedReplacementOrThrow);
-      if (typeof res === "string") {
-        const endSession = async () => {
-          // Only the session that was refused: never sign out a newer one.
-          if ((await tokenStorage.get()) === before) notifySessionExpired();
-        };
-        return { done: true, replacementRecoveryCode: res, endSession };
-      }
-      const data = (await res.json()) as SignedInResult & {
-        replacementRecoveryCode?: string;
-      };
+      const res = await apiRequest("POST", "/api/auth/change-password", body);
+      const data = (await res.json()) as SignedInResult;
       // A late reply never replaces a newer sign-in on this phone; the
       // password change itself stands.
       if ((await tokenStorage.get()) === before) {
         await establishSession(data.user, data.token);
       }
-      return {
-        done: true,
-        replacementRecoveryCode: data.replacementRecoveryCode,
-      };
+      return { done: true };
     },
     [establishSession],
   );
 
   return {
     ...state,
-    startTwoStepSetup,
     startEmailTwoStep,
     confirmEmailTwoStep,
     resendSignInCode,
-    startNewPhone,
-    confirmTwoStep,
     disableTwoStep,
-    replaceRecoveryCodes,
     forgetTrustedPhones,
     requestPasswordChangeCode,
     changePassword,

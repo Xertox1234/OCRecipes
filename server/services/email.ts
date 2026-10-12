@@ -392,13 +392,7 @@ function connectedSignInsParagraph(connected: readonly string[]): string {
 `;
 }
 
-export type TwoFactorNoticeKind =
-  | "enabled"
-  | "disabled"
-  | "new_phone"
-  | "recovery_code_used"
-  | "recovery_codes_replaced"
-  | "locked";
+export type TwoFactorNoticeKind = "enabled" | "disabled" | "locked";
 
 const TWO_FACTOR_NOTICES: Record<
   TwoFactorNoticeKind,
@@ -413,21 +407,6 @@ const TWO_FACTOR_NOTICES: Record<
     subject: "Two-step verification is off",
     first: (u) =>
       `Two-step verification was turned off for <strong>${u}</strong>, and every device was signed out.`,
-  },
-  new_phone: {
-    subject: "Two-step verification moved to a new phone",
-    first: (u) =>
-      `Your authenticator app for <strong>${u}</strong> was replaced, trusted phones were forgotten and other devices were signed out.`,
-  },
-  recovery_code_used: {
-    subject: "A recovery code was used",
-    first: (u) =>
-      `One of your recovery codes for <strong>${u}</strong> was just used.`,
-  },
-  recovery_codes_replaced: {
-    subject: "New recovery codes",
-    first: (u) =>
-      `New recovery codes were created for <strong>${u}</strong>; the old ones no longer work.`,
   },
   locked: {
     subject: "Several wrong two-step codes",

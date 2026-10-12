@@ -85,8 +85,6 @@ const ALLOWED_IDENTIFIERS = new Set<string>([
   "expires_at",
   "mfa_challenges",
   "mfa_trusted_devices",
-  "user_mfa",
-  "pending_expires_at",
 ]);
 
 function assertAllowedIdentifier(name: string): void {
@@ -291,8 +289,8 @@ export function _resetRunningStateForTests(): void {
 const DEAD_MFA_ROW_RETENTION_DAYS = 1;
 
 /**
- * Expired 2FA bookkeeping (auth audit 2026-10-10 L14): sign-in challenges,
- * trusted phones and abandoned setup secrets. Every read is already gated on
+ * Expired 2FA bookkeeping (auth audit 2026-10-10 L14): sign-in challenges
+ * and trusted phones. Every read is already gated on
  * expiry, and each is pruned per user on that user's next insert — so only
  * inactive users' rows piled up. Dropped a day after expiry, in bounded
  * batches. Auth bookkeeping, not user data: no active-user exemption.
@@ -314,55 +312,7 @@ export async function purgeExpiredMfaRows(
       now,
       batchSize,
     );
-  return [
-    await purge("mfa_challenges"),
-    await purge("mfa_trusted_devices"),
-    await clearExpiredPendingSecrets(database, now, batchSize),
-  ];
-}
-
-/**
- * Null a setup's candidate secret a day after it expired. The row stays: it
- * may also hold the confirmed secret, the replay guard and the lockout.
- * The expiry test sits in the outer WHERE as well as the ctid subquery, so a
- * setup restarted between the two (a fresh pending secret) is never cleared.
- */
-async function clearExpiredPendingSecrets(
-  database: RetentionDb,
-  now: Date,
-  batchSize: number,
-): Promise<PurgeResult> {
-  const cutoff = cutoffFor(DEAD_MFA_ROW_RETENTION_DAYS, now);
-  const [table, expiresAt] = ["user_mfa", "pending_expires_at"].map((name) => {
-    assertAllowedIdentifier(name);
-    return sql.raw(name);
-  });
-  const MAX_ITERATIONS = 10_000;
-  let total = 0;
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const result = await database.execute(sql`
-      UPDATE ${table}
-      SET pending_secret_enc = NULL, ${expiresAt} = NULL
-      WHERE ${expiresAt} < ${cutoff}
-        AND ctid IN (
-          SELECT ctid FROM ${table}
-          WHERE ${expiresAt} < ${cutoff}
-          LIMIT ${batchSize}
-        )
-    `);
-    const updated = (result as { rowCount?: number | null }).rowCount ?? 0;
-    total += updated;
-    if (updated < batchSize) break;
-  }
-  log.info(
-    { domain: "user_mfa_pending_secrets", rowsDeleted: total },
-    "retention purge completed",
-  );
-  return {
-    domain: "user_mfa_pending_secrets",
-    rowsDeleted: total,
-    retentionDays: DEAD_MFA_ROW_RETENTION_DAYS,
-  };
+  return [await purge("mfa_challenges"), await purge("mfa_trusted_devices")];
 }
 
 /**

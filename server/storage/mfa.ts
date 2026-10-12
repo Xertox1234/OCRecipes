@@ -1,7 +1,6 @@
 import {
   mfaChallenges,
   mfaEmailCodes,
-  mfaRecoveryCodes,
   mfaTrustedDevices,
   userMfa,
   users,
@@ -9,16 +8,16 @@ import {
 } from "@shared/schema";
 import {
   MFA_CHALLENGE_MAX_ATTEMPTS,
-  MFA_CHALLENGE_TTL_MINUTES,
-  MFA_ENROLL_TTL_MINUTES,
+  MFA_EMAIL_CODE_TTL_MINUTES,
   MFA_LOCK_EVERY_FAILURES,
   MFA_LOCK_MINUTES,
   MFA_TRUST_DAYS,
 } from "@shared/constants/mfa";
 import { db } from "../db";
-import { and, eq, gt, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, lte, or, sql } from "drizzle-orm";
 
-// Second factor — spec docs/superpowers/specs/2026-10-10-totp-second-factor-design.md.
+// Second factor (an emailed code; the codes themselves are in mfa-email.ts) —
+// spec docs/superpowers/specs/2026-10-10-totp-second-factor-design.md.
 // Every expiry / counter / single-use check is ONE atomic statement on the
 // database clock (now()), the pattern of password-reset.ts. Multi-row changes
 // run in one transaction.
@@ -35,194 +34,17 @@ export async function guarded<T>(fn: () => Promise<T>): Promise<T | undefined> {
   }
 }
 
-const pendingLive = and(
-  isNotNull(userMfa.pendingSecretEnc),
-  gt(userMfa.pendingExpiresAt, sql`now()`),
-);
-
 const notLocked = or(
   isNull(userMfa.lockedUntil),
   lte(userMfa.lockedUntil, sql`now()`),
 );
 
 /**
- * Stage a candidate secret (first setup, or a new phone). The active secret is
- * untouched. Stages only while the account is still in the MFA state the
- * caller checked (`mfaEnabled`: false = setup, true = new phone) — the user
- * row is locked, so a setup racing the owner's confirm can no longer leave a
- * pending secret on an MFA-on account that a bare session could then confirm
- * as a "new phone" (audit L13). Returns false when the state has changed.
- * Lock order is users → user_mfa (as confirmNewPhone); a rare race with
- * confirmTotpEnrollment's opposite order is a Postgres deadlock abort — one
- * request errors and is retried, nothing is staged wrongly.
- */
-export async function startTotpEnrollment(
-  userId: string,
-  pendingSecretEnc: string,
-  expected: { mfaEnabled: boolean },
-): Promise<boolean> {
-  const expires = sql`now() + (${MFA_ENROLL_TTL_MINUTES} * interval '1 minute')`;
-  return db.transaction(async (tx) => {
-    const [u] = await tx
-      .select({ mfaEnabledAt: users.mfaEnabledAt })
-      .from(users)
-      .where(eq(users.id, userId))
-      .for("update");
-    if (!u || (u.mfaEnabledAt !== null) !== expected.mfaEnabled) return false;
-    await tx
-      .insert(userMfa)
-      .values({ userId, pendingSecretEnc, pendingExpiresAt: expires })
-      .onConflictDoUpdate({
-        target: userMfa.userId,
-        set: { pendingSecretEnc, pendingExpiresAt: expires },
-      });
-    return true;
-  });
-}
-
-export async function getPendingTotpSecret(
-  userId: string,
-): Promise<string | undefined> {
-  const [row] = await db
-    .select({ enc: userMfa.pendingSecretEnc })
-    .from(userMfa)
-    // Unavailable while locked: confirm counts wrong codes toward the same
-    // lock as every other factor check (spec §6, audit L9).
-    .where(and(eq(userMfa.userId, userId), pendingLive, notLocked));
-  return row?.enc ?? undefined;
-}
-
-/** Pending → active secret, with the replay floor and counters reset. */
-const PROMOTE_PENDING = (acceptedStep: number) => ({
-  totpSecretEnc: sql`${userMfa.pendingSecretEnc}`,
-  totpLastStep: acceptedStep,
-  pendingSecretEnc: null,
-  pendingExpiresAt: null,
-  failedAttempts: 0,
-  lockedUntil: null,
-});
-
-/**
- * First setup. Guarded on a live pending secret AND MFA being off; returns the
- * new tokenVersion (every other session ends), or undefined when the guard fails.
- */
-export async function confirmTotpEnrollment(
-  userId: string,
-  opts: {
-    acceptedStep: number;
-    recoveryHashes: string[];
-  },
-): Promise<number | undefined> {
-  return guarded(() =>
-    db.transaction(async (tx) => {
-      const [promoted] = await tx
-        .update(userMfa)
-        .set(PROMOTE_PENDING(opts.acceptedStep))
-        .where(and(eq(userMfa.userId, userId), pendingLive))
-        .returning({ userId: userMfa.userId });
-      if (!promoted) throw new GuardFailed();
-      const [u] = await tx
-        .update(users)
-        .set({
-          mfaEnabledAt: sql`now()`,
-          tokenVersion: sql`${users.tokenVersion} + 1`,
-        })
-        .where(and(eq(users.id, userId), isNull(users.mfaEnabledAt)))
-        .returning({ tokenVersion: users.tokenVersion });
-      if (!u) throw new GuardFailed();
-      await tx
-        .delete(mfaRecoveryCodes)
-        .where(eq(mfaRecoveryCodes.userId, userId));
-      if (opts.recoveryHashes.length > 0) {
-        await tx.insert(mfaRecoveryCodes).values(
-          [...new Set(opts.recoveryHashes)].map((codeHash) => ({
-            userId,
-            codeHash,
-          })),
-        );
-      }
-      return u.tokenVersion;
-    }),
-  );
-}
-
-/**
- * New phone on an account that already has MFA. Recovery codes are kept;
- * trusted phones are forgotten. Returns the new tokenVersion or undefined.
- */
-export async function confirmNewPhone(
-  userId: string,
-  opts: { acceptedStep: number },
-): Promise<number | undefined> {
-  return guarded(() =>
-    db.transaction(async (tx) => {
-      const [u] = await tx
-        .update(users)
-        .set({ tokenVersion: sql`${users.tokenVersion} + 1` })
-        .where(and(eq(users.id, userId), isNotNull(users.mfaEnabledAt)))
-        .returning({ tokenVersion: users.tokenVersion });
-      if (!u) throw new GuardFailed();
-      const [promoted] = await tx
-        .update(userMfa)
-        .set(PROMOTE_PENDING(opts.acceptedStep))
-        .where(and(eq(userMfa.userId, userId), pendingLive))
-        .returning({ userId: userMfa.userId });
-      if (!promoted) throw new GuardFailed();
-      await tx
-        .delete(mfaTrustedDevices)
-        .where(eq(mfaTrustedDevices.userId, userId));
-      return u.tokenVersion;
-    }),
-  );
-}
-
-export async function getActiveTotp(
-  userId: string,
-): Promise<
-  { secretEnc: string; failedAttempts: number; locked: boolean } | undefined
-> {
-  const [row] = await db
-    .select({
-      secretEnc: userMfa.totpSecretEnc,
-      failedAttempts: userMfa.failedAttempts,
-      locked: sql<boolean>`coalesce(${userMfa.lockedUntil} > now(), false)`,
-    })
-    .from(userMfa)
-    .where(and(eq(userMfa.userId, userId), isNotNull(userMfa.totpSecretEnc)));
-  if (!row?.secretEnc) return undefined;
-  return {
-    secretEnc: row.secretEnc,
-    failedAttempts: row.failedAttempts,
-    locked: row.locked,
-  };
-}
-
-/** Accept a matched TOTP step once (replay guard); refused while locked. Resets failures. */
-export async function acceptTotpStep(
-  userId: string,
-  step: number,
-): Promise<boolean> {
-  const [row] = await db
-    .update(userMfa)
-    .set({ totpLastStep: step, failedAttempts: 0, lockedUntil: null })
-    .where(
-      and(
-        eq(userMfa.userId, userId),
-        isNotNull(userMfa.totpSecretEnc),
-        or(isNull(userMfa.totpLastStep), lt(userMfa.totpLastStep, step)),
-        notLocked,
-      ),
-    )
-    .returning({ userId: userMfa.userId });
-  return Boolean(row);
-}
-
-/**
  * One failed second-factor check. Every MFA_LOCK_EVERY_FAILURES-th consecutive
- * failure locks for MFA_LOCK_MINUTES; the count never resets on lock, so it can
- * reach MFA_TOTP_FAILURE_CAP (plan deviation 1). A failure while locked is not
- * counted. `tripped` is true exactly once per lock — the row lock serialises
- * concurrent calls, and each re-evaluates the lock after the previous commit.
+ * failure locks for MFA_LOCK_MINUTES; the count never resets on lock (plan
+ * deviation 1). A failure while locked is not counted. `tripped` is true
+ * exactly once per lock — the row lock serialises concurrent calls, and each
+ * re-evaluates the lock after the previous commit.
  */
 export async function recordMfaFailure(
   userId: string,
@@ -237,7 +59,7 @@ export async function recordMfaFailure(
         ELSE ${userMfa.lockedUntil} END`,
     })
     // A lock refuses without counting (audit L10): a concurrent burst of wrong
-    // guesses can no longer race failed_attempts past the cap during a lock.
+    // guesses cannot pile up failures during a lock.
     .where(and(eq(userMfa.userId, userId), notLocked))
     .returning({ failedAttempts: userMfa.failedAttempts });
   if (!row) return { failedAttempts: 0, tripped: false };
@@ -245,59 +67,6 @@ export async function recordMfaFailure(
     failedAttempts: row.failedAttempts,
     tripped: row.failedAttempts % MFA_LOCK_EVERY_FAILURES === 0,
   };
-}
-
-/**
- * Spend a recovery code and store its replacement in one transaction. Refused
- * (false, nothing written) while the second factor is locked. Resets failures.
- */
-export async function consumeRecoveryCode(
-  userId: string,
-  codeHash: string,
-  replacementHash: string,
-): Promise<boolean> {
-  const done = await guarded(() =>
-    db.transaction(async (tx) => {
-      const [deleted] = await tx
-        .delete(mfaRecoveryCodes)
-        .where(
-          and(
-            eq(mfaRecoveryCodes.userId, userId),
-            eq(mfaRecoveryCodes.codeHash, codeHash),
-            sql`NOT EXISTS (SELECT 1 FROM ${userMfa}
-              WHERE ${userMfa.userId} = ${userId}
-                AND ${userMfa.lockedUntil} > now())`,
-          ),
-        )
-        .returning({ id: mfaRecoveryCodes.id });
-      if (!deleted) throw new GuardFailed();
-      await tx
-        .insert(mfaRecoveryCodes)
-        .values({ userId, codeHash: replacementHash });
-      await tx
-        .update(userMfa)
-        .set({ failedAttempts: 0, lockedUntil: null })
-        .where(eq(userMfa.userId, userId));
-      return true;
-    }),
-  );
-  return done === true;
-}
-
-export async function replaceRecoveryCodes(
-  userId: string,
-  hashes: string[],
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx
-      .delete(mfaRecoveryCodes)
-      .where(eq(mfaRecoveryCodes.userId, userId));
-    if (hashes.length > 0) {
-      await tx
-        .insert(mfaRecoveryCodes)
-        .values([...new Set(hashes)].map((codeHash) => ({ userId, codeHash })));
-    }
-  });
 }
 
 /** Turn MFA off: every MFA row goes, and every session ends. */
@@ -311,7 +80,6 @@ export async function disableMfa(
   return db.transaction(async (tx) => {
     await Promise.all([
       tx.delete(userMfa).where(eq(userMfa.userId, userId)),
-      tx.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId)),
       tx.delete(mfaChallenges).where(eq(mfaChallenges.userId, userId)),
       tx.delete(mfaTrustedDevices).where(eq(mfaTrustedDevices.userId, userId)),
       tx.delete(mfaEmailCodes).where(eq(mfaEmailCodes.userId, userId)),
@@ -338,12 +106,11 @@ export interface NewMfaChallenge {
   linkMarkEmailVerified?: boolean;
   /** A link challenge never outlives its pending link row. */
   notAfter?: Date;
-  /** Defaults to MFA_CHALLENGE_TTL_MINUTES; an emailed code needs its own TTL. */
-  ttlMinutes?: number;
 }
 
+/** A challenge lives as long as the emailed code it waits for. */
 export async function createMfaChallenge(c: NewMfaChallenge): Promise<void> {
-  const ttl = sql`now() + (${c.ttlMinutes ?? MFA_CHALLENGE_TTL_MINUTES} * interval '1 minute')`;
+  const ttl = sql`now() + (${MFA_EMAIL_CODE_TTL_MINUTES} * interval '1 minute')`;
   const expiresAt = c.notAfter
     ? sql`LEAST(${ttl}, ${c.notAfter.toISOString()}::timestamptz)`
     : ttl;

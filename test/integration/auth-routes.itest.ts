@@ -62,10 +62,10 @@ import {
 } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { users, mfaRecoveryCodes } from "@shared/schema";
+import { users, mfaEmailCodes } from "@shared/schema";
 
 import {
   setupTestTransaction,
@@ -93,6 +93,24 @@ vi.mock("../../server/lib/pwned-password", () => ({
   isBreached: vi.fn().mockResolvedValue(false),
 }));
 
+// Two-step codes go out by email: capture them instead of sending. Every
+// other send resolves without a network call.
+const sentCodes: string[] = [];
+vi.mock("../../server/services/email", async (orig) => {
+  const real = await orig<Record<string, unknown>>();
+  const stubbed: Record<string, unknown> = { ...real };
+  for (const [name, value] of Object.entries(real)) {
+    if (name.startsWith("send") && typeof value === "function") {
+      stubbed[name] = vi.fn().mockResolvedValue(undefined);
+    }
+  }
+  stubbed.sendSignInCode = vi.fn((_to: string, code: string) => {
+    sentCodes.push(code);
+    return Promise.resolve();
+  });
+  return stubbed;
+});
+
 // Dynamic import so the route module's dependency graph (storage → db)
 // resolves against the mocks registered above, mirroring
 // server/storage/__tests__/users.test.ts's `await import(...)` pattern.
@@ -101,9 +119,6 @@ const { register: registerAuthMfa } = await import(
   "../../server/routes/auth-mfa"
 );
 const { hashPassword } = await import("../../server/lib/password-hash");
-const { base32Decode, hotp, timeStep } = await import(
-  "../../server/lib/mfa/totp"
-);
 const { hashResetCode } = await import("../../server/lib/password-reset-code");
 const { generateToken } = await import("../../server/middleware/auth");
 const { storage } = await import("../../server/storage");
@@ -264,9 +279,8 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
   describe("two-step verification — one account's whole journey", () => {
     // Each step is the positive control for the next: they share one
     // transaction (rolled back afterwards), so they run as one ordered test.
-    it("setup, challenge, trust, replay, recovery, inline proof, reset, revocation", async () => {
-      vi.stubEnv("MFA_SECRET_ENC_KEY", Buffer.alloc(32, 7).toString("base64"));
-      vi.stubEnv("MFA_SETUP_ENABLED", "true");
+    it("setup, challenge, trust, spent code, inline proof, reset, revocation", async () => {
+      sentCodes.length = 0;
       const app = buildApp();
       const creds = uniqueCredentials();
       const reg = await request(app).post("/api/auth/register").send(creds);
@@ -281,29 +295,47 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
             password: creds.password,
             ...extra,
           });
+      const [row] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, creds.username));
+      // Setup needs a confirmed address and a server that can send email.
+      await tx
+        .update(users)
+        .set({ emailVerified: true })
+        .where(eq(users.id, row.id));
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const lastCode = () => sentCodes[sentCodes.length - 1];
+      // now() is fixed inside the test transaction: step the resend wait back.
+      const pastCooldown = () =>
+        tx
+          .update(mfaEmailCodes)
+          .set({ lastSentAt: sql`now() - interval '31 seconds'` })
+          .where(eq(mfaEmailCodes.userId, row.id));
 
-      // 1. Setup + confirm → 10 recovery codes and a fresh token.
+      // 1. Setup emails a code; confirming it turns two-step on with a fresh token.
       const setup = await request(app)
-        .post("/api/auth/mfa/totp/setup")
+        .post("/api/auth/mfa/email/setup")
         .set(bearer(t0))
         .send({ password: creds.password });
       expect(setup.status).toBe(200);
-      const secret = base32Decode(setup.body.secret);
-      const codeAt = (offset: number) =>
-        hotp(secret, timeStep(Date.now()) + offset);
+      expect(setup.body.status).toBe("code_sent");
+      expect(sentCodes).toHaveLength(1);
       const confirm = await request(app)
-        .post("/api/auth/mfa/totp/confirm")
+        .post("/api/auth/mfa/email/confirm")
         .set(bearer(t0))
-        .send({ code: codeAt(0) });
+        .send({ code: lastCode() });
       expect(confirm.status).toBe(200);
-      expect(confirm.body.recoveryCodes).toHaveLength(10);
-      const recovery: string[] = confirm.body.recoveryCodes;
+      expect(typeof confirm.body.token).toBe("string");
 
-      // 2. Password sign-in now stops at a challenge — 200, and NO token.
+      // 2. Password sign-in now stops at a challenge — 200, a code emailed, NO token.
+      await pastCooldown();
       const challenged = await login();
       expect(challenged.status).toBe(200);
       expect(challenged.body.status).toBe("mfa_required");
+      expect(challenged.body.codeSent).toBe(true);
       expect(challenged.body).not.toHaveProperty("token");
+      expect(sentCodes).toHaveLength(2);
       const challenge: string = challenged.body.challenge;
 
       // 3. The REAL requireAuth refuses the challenge as a session.
@@ -312,8 +344,8 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
         .set(bearer(challenge));
       expect(asSession.status).toBe(401);
 
-      // 4. The code (a fresh step) + "trust this phone" → token + trust key.
-      const step4Code = codeAt(1);
+      // 4. The emailed code + "don't ask again" → token + trust key.
+      const step4Code = lastCode();
       const verified = await request(app)
         .post("/api/auth/mfa/verify")
         .send({
@@ -341,7 +373,8 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
       expect(typeof trusted.body.token).toBe("string");
       expect(trusted.body.status).toBeUndefined();
 
-      // 6. Replay of step 4's code fails; a recovery code works once.
+      // 6. A spent code fails; a recovery code is no longer a factor; the new code works.
+      await pastCooldown();
       const c2 = (await login()).body.challenge as string;
       const replay = await request(app)
         .post("/api/auth/mfa/verify")
@@ -350,17 +383,16 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
       expect(replay.body.code).toBe("INVALID_SECOND_FACTOR");
       const viaRecovery = await request(app)
         .post("/api/auth/mfa/verify")
-        .send({ challenge: c2, secondFactor: { recoveryCode: recovery[0] } });
-      expect(viaRecovery.status).toBe(200);
-      expect(viaRecovery.body.replacementRecoveryCode).toMatch(
-        /^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$/,
-      );
-      const t3: string = viaRecovery.body.token;
-      const c3 = (await login()).body.challenge as string;
-      const reused = await request(app)
+        .send({
+          challenge: c2,
+          secondFactor: { recoveryCode: "ABCD-EFGH-IJKL-MNOP" },
+        });
+      expect(viaRecovery.status).toBe(400);
+      const fresh = await request(app)
         .post("/api/auth/mfa/verify")
-        .send({ challenge: c3, secondFactor: { recoveryCode: recovery[0] } });
-      expect(reused.status).toBe(401);
+        .send({ challenge: c2, secondFactor: { code: lastCode() } });
+      expect(fresh.status).toBe(200);
+      const t3: string = fresh.body.token;
 
       // 7. A password proof inside the app also needs the code.
       const changeEmail = await request(app)
@@ -371,11 +403,9 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
       expect(changeEmail.body.code).toBe("SECOND_FACTOR_REQUIRED");
 
       // 8. A password reset forgets the trusted phone and kills open challenges.
+      await pastCooldown();
       const openBeforeReset = (await login()).body.challenge as string;
-      const [row] = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.username, creds.username));
+      const codeBeforeReset = lastCode();
       await storage.issuePasswordResetCode(
         row.id,
         hashResetCode(row.id, "123456"),
@@ -387,13 +417,14 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
       });
       expect(reset.status).toBe(200);
       creds.password = "a brand new passphrase 7";
+      await pastCooldown();
       const afterReset = await login({ trustKey });
       expect(afterReset.body.status).toBe("mfa_required");
       const dead = await request(app)
         .post("/api/auth/mfa/verify")
         .send({
           challenge: openBeforeReset,
-          secondFactor: { recoveryCode: recovery[1] },
+          secondFactor: { code: codeBeforeReset },
         });
       expect(dead.status).toBe(401);
       expect(dead.body.code).toBe("MFA_CHALLENGE_EXPIRED");

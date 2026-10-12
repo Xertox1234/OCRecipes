@@ -3,7 +3,7 @@ import { AccessibilityInfo } from "react-native";
 /**
  * VoiceOver does not queue announcements: a second one made in the same
  * moment cuts the first off. Components that announce on mount and can mount
- * in the same render (a spent recovery code's card next to an error) route
+ * in the same render (say, a status line next to an error) route
  * through here, so everything said in one tick goes out as ONE announcement.
  * `first` messages lead — the one the person must not miss.
  */

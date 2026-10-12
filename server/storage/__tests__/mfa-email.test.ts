@@ -20,7 +20,6 @@ import type * as schema from "@shared/schema";
 import {
   mfaChallenges,
   mfaEmailCodes,
-  mfaRecoveryCodes,
   mfaTrustedDevices,
   userMfa,
   users,
@@ -109,7 +108,7 @@ describe("two-step email codes (real DB)", () => {
     expect(await me.reserveMfaEmailAttempt(user.id)).toBe("h2");
   });
 
-  it("enableEmailMfa: spends the code, turns two-step on as email, version+1", async () => {
+  it("enableEmailMfa: spends the code, turns two-step on, version+1", async () => {
     const user = await createTestUser(tx);
     await me.issueMfaEmailCode(user.id, "h1");
     const v = await me.enableEmailMfa(user.id, "h1");
@@ -120,34 +119,25 @@ describe("two-step email codes (real DB)", () => {
       .select()
       .from(userMfa)
       .where(eq(userMfa.userId, user.id));
-    expect(m.method).toBe("email");
-    expect(m.totpSecretEnc).toBeNull();
+    expect(m.failedAttempts).toBe(0);
     expect(await me.reserveMfaEmailAttempt(user.id)).toBeUndefined();
   });
 
-  it("enableEmailMfa replaces a half-finished authenticator setup", async () => {
+  it("enableEmailMfa clears a stale row's failures and lock", async () => {
     const user = await createTestUser(tx);
     await tx.insert(userMfa).values({
       userId: user.id,
-      pendingSecretEnc: "enc",
-      pendingExpiresAt: sql`now() + interval '5 minutes'`,
+      failedAttempts: 7,
+      lockedUntil: sql`now() + interval '5 minutes'`,
     });
-    await tx
-      .insert(mfaRecoveryCodes)
-      .values({ userId: user.id, codeHash: "r" });
     await me.issueMfaEmailCode(user.id, "h1");
     expect(await me.enableEmailMfa(user.id, "h1")).toBe(user.tokenVersion + 1);
     const [m] = await tx
       .select()
       .from(userMfa)
       .where(eq(userMfa.userId, user.id));
-    expect(m.method).toBe("email");
-    expect(m.pendingSecretEnc).toBeNull();
-    const codes = await tx
-      .select()
-      .from(mfaRecoveryCodes)
-      .where(eq(mfaRecoveryCodes.userId, user.id));
-    expect(codes).toHaveLength(0);
+    expect(m.failedAttempts).toBe(0);
+    expect(m.lockedUntil).toBeNull();
   });
 
   it("enableEmailMfa refuses when two-step is already on — nothing written", async () => {
@@ -179,19 +169,16 @@ describe("two-step email codes (real DB)", () => {
     return user;
   }
 
-  it("getMfaState reports the method; a TOTP row without a secret is not active", async () => {
+  it("getMfaState reports the failure state only while two-step is on", async () => {
     const email = await emailAccount();
     expect(await me.getMfaState(email.id)).toEqual({
-      method: "email",
       failedAttempts: 0,
       locked: false,
     });
-    const half = await createTestUser(tx);
-    await tx.insert(userMfa).values({ userId: half.id, pendingSecretEnc: "e" });
-    expect(await me.getMfaState(half.id)).toBeUndefined();
-    const totp = await createTestUser(tx);
-    await tx.insert(userMfa).values({ userId: totp.id, totpSecretEnc: "s" });
-    expect((await me.getMfaState(totp.id))?.method).toBe("totp");
+    // A leftover row on an account with two-step off is not active.
+    const off = await createTestUser(tx);
+    await tx.insert(userMfa).values({ userId: off.id });
+    expect(await me.getMfaState(off.id)).toBeUndefined();
   });
 
   it("acceptMfaEmailCode spends the code once and clears the failure count", async () => {
@@ -253,7 +240,6 @@ describe("two-step email codes (real DB)", () => {
       userId: user.id,
       tokenVersion: user.tokenVersion,
       purpose: "login",
-      ttlMinutes: 10,
     });
     const [row] = await tx
       .select({
@@ -273,13 +259,6 @@ describe("two-step email codes (real DB)", () => {
       .from(mfaEmailCodes)
       .where(eq(mfaEmailCodes.userId, user.id));
     expect(rows).toHaveLength(0);
-  });
-
-  it("the method column refuses anything but totp or email", async () => {
-    const user = await createTestUser(tx);
-    await expect(
-      tx.insert(userMfa).values({ userId: user.id, method: "sms" }),
-    ).rejects.toThrow();
   });
 
   it("trusted phones survive turning email two-step on (none exist yet) and are untouched by codes", async () => {

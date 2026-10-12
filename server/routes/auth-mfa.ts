@@ -22,36 +22,25 @@ import {
   mfaConfirmSchema,
   mfaDisableSchema,
   mfaEmailResendSchema,
-  mfaPasswordAndFactorSchema,
   mfaPasswordSchema,
   mfaVerifySchema,
 } from "./_schemas";
 import { isUniqueViolation } from "../lib/db-errors";
 import {
-  generateRecoveryCodes,
   hashChallengeToken,
-  hashRecoveryCode,
   hashTrustKey,
-  mfaConfigured,
   newTrustKey,
-  normalizeRecoveryCode,
 } from "../lib/mfa/mfa-secrets";
 import { verifySecondFactor } from "../lib/mfa/verify-second-factor";
-import {
-  checkPendingTotpCode,
-  confirmFirstEnrollment,
-  stageTotpSecret,
-  TotpStateChangedError,
-  TotpUnavailableError,
-} from "../services/mfa-totp";
 import { INVALID_SECOND_FACTOR_MESSAGE } from "../lib/mfa/password-proof-gate";
 import { HttpFailure, issueSession } from "./auth-social";
 import { emailVerificationEnabled } from "../lib/email-config";
 import { maskEmail, sendMfaEmailCode } from "../lib/mfa/email-code";
 import { signInCodeMatches } from "../lib/password-reset-code";
 
-// Two-step verification — spec docs/superpowers/specs/2026-10-10-totp-second-factor-design.md.
-// Never log a code, recovery code, challenge, trust key or secret.
+// Two-step verification by emailed code (owner ruling 4, 2026-10-12) — spec
+// docs/superpowers/specs/2026-10-10-totp-second-factor-design.md, authenticator
+// apps and recovery codes since removed. Never log a code, challenge or trust key.
 
 const CHALLENGE_EXPIRED = "This sign-in expired. Please start again.";
 const MFA_UNAVAILABLE_MESSAGE =
@@ -99,20 +88,13 @@ function requireEnabled(user: User): void {
   }
 }
 
-/** The current factor (code or recovery code); returns a spent code's replacement. */
+/** The code from the latest two-step email. */
 async function requireFactor(
   user: User,
-  secondFactor: { code: string } | { recoveryCode: string },
-): Promise<{ replacementRecoveryCode?: string }> {
+  secondFactor: { code: string },
+): Promise<void> {
   const r = await verifySecondFactor(user, secondFactor);
-  if (r.ok) {
-    return r.replacementRecoveryCode
-      ? { replacementRecoveryCode: r.replacementRecoveryCode }
-      : {};
-  }
-  if (r.reason === "unavailable") {
-    throw new Reply(503, ErrorCode.MFA_UNAVAILABLE, MFA_UNAVAILABLE_MESSAGE);
-  }
+  if (r.ok) return;
   throw new Reply(
     401,
     ErrorCode.INVALID_SECOND_FACTOR,
@@ -132,54 +114,10 @@ function parse<S extends z.ZodTypeAny>(schema: S, body: unknown): z.infer<S> {
   return parsed.data;
 }
 
-function answer(
-  res: Response,
-  error: unknown,
-  label: string,
-  extra?: Record<string, unknown>,
-) {
-  if (error instanceof TotpUnavailableError)
-    return sendError(
-      res,
-      503,
-      MFA_UNAVAILABLE_MESSAGE,
-      ErrorCode.MFA_UNAVAILABLE,
-      extra,
-    );
-  if (error instanceof TotpStateChangedError)
-    return error.mfaEnabled
-      ? sendError(
-          res,
-          409,
-          "Two-step verification is off.",
-          ErrorCode.MFA_NOT_ENABLED,
-          extra,
-        )
-      : sendError(
-          res,
-          409,
-          "Two-step verification is already on.",
-          ErrorCode.MFA_ALREADY_ENABLED,
-          extra,
-        );
+function answer(res: Response, error: unknown, label: string) {
   if (error instanceof Reply || error instanceof HttpFailure)
-    return sendError(res, error.status, error.message, error.code, extra);
-  handleRouteError(res, error, label, extra);
-}
-
-/**
- * Authenticator-only actions (new phone, recovery codes) on an email account
- * would stage a key the code check never reads — refuse them.
- */
-async function requireTotpMethod(user: User): Promise<void> {
-  const state = await storage.getMfaState(user.id);
-  if (state?.method === "email") {
-    throw new Reply(
-      409,
-      ErrorCode.MFA_NOT_ENABLED,
-      "Your two-step codes come by email, so there's no authenticator to change.",
-    );
-  }
+    return sendError(res, error.status, error.message, error.code);
+  handleRouteError(res, error, label);
 }
 
 /** Email the code, or say plainly why not (never a "sent" with nothing sent). */
@@ -198,12 +136,6 @@ async function emailCodeOrReply(user: User): Promise<void> {
       ErrorCode.MFA_EMAIL_DAILY_LIMIT,
       "Too many codes today. Use the newest one in your email, or try again tomorrow.",
     );
-  }
-}
-
-function requireConfigured(): void {
-  if (!mfaConfigured()) {
-    throw new Reply(503, ErrorCode.MFA_UNAVAILABLE, MFA_UNAVAILABLE_MESSAGE);
   }
 }
 
@@ -251,28 +183,16 @@ export function register(app: Express): void {
 
         const r = await verifySecondFactor(user, secondFactor);
         if (!r.ok) {
-          return r.reason === "unavailable"
-            ? sendError(
-                res,
-                503,
-                MFA_UNAVAILABLE_MESSAGE,
-                ErrorCode.MFA_UNAVAILABLE,
-              )
-            : sendError(
-                res,
-                401,
-                INVALID_SECOND_FACTOR_MESSAGE,
-                ErrorCode.INVALID_SECOND_FACTOR,
-              );
+          return sendError(
+            res,
+            401,
+            INVALID_SECOND_FACTOR_MESSAGE,
+            ErrorCode.INVALID_SECOND_FACTOR,
+          );
         }
 
-        // From here a spent recovery code is gone, so EVERY answer — success
-        // or failure — hands back its replacement.
-        const replacement = r.replacementRecoveryCode
-          ? { replacementRecoveryCode: r.replacementRecoveryCode }
-          : {};
         const fail = (status: number, code: string, error: string) =>
-          res.status(status).json({ error, code, ...replacement });
+          sendError(res, status, error, code);
 
         if (!(await storage.consumeMfaChallenge(tokenHash))) {
           return fail(401, ErrorCode.MFA_CHALLENGE_EXPIRED, CHALLENGE_EXPIRED);
@@ -316,21 +236,15 @@ export function register(app: Express): void {
           row.purpose === "login" && trustDevice ? newTrustKey() : undefined;
         if (trustKey)
           await storage.trustDevice(user.id, hashTrustKey(trustKey));
-        res.json({
-          ...session,
-          ...(trustKey ? { trustKey } : {}),
-          ...replacement,
-        });
+        res.json({ ...session, ...(trustKey ? { trustKey } : {}) });
       } catch (error) {
         handleRouteError(res, error, "verify second factor");
       }
     },
   );
 
-  // Two-step by emailed code (owner ruling 4, 2026-10-12). Setup is NOT gated
-  // by MFA_SETUP_ENABLED or MFA_SECRET_ENC_KEY: email codes use neither. It
-  // IS gated on the server being able to send email — two-step must never
-  // turn on where its codes can't arrive.
+  // Turn two-step on. Gated on the server being able to send email — two-step
+  // must never turn on where its codes can't arrive.
   app.post(
     "/api/auth/mfa/email/setup",
     requireAuth,
@@ -431,14 +345,7 @@ export function register(app: Express): void {
         if (!row) throw expired;
         const user = await storage.getUserForAuth(row.userId);
         if (!user || user.tokenVersion !== row.tokenVersion) throw expired;
-        const state = await storage.getMfaState(user.id);
-        if (state?.method !== "email") {
-          throw new Reply(
-            409,
-            ErrorCode.MFA_NOT_ENABLED,
-            "This account doesn't use emailed codes.",
-          );
-        }
+        requireEnabled(user);
         await emailCodeOrReply(user);
         res.json({ status: "code_sent", emailHint: maskEmail(user.email) });
       } catch (error) {
@@ -457,155 +364,10 @@ export function register(app: Express): void {
       try {
         const user = await me(req);
         requireEnabled(user);
-        const state = await storage.getMfaState(user.id);
-        if (state?.method !== "email") {
-          throw new Reply(
-            409,
-            ErrorCode.MFA_NOT_ENABLED,
-            "This account doesn't use emailed codes.",
-          );
-        }
         await emailCodeOrReply(user);
         res.json({ status: "code_sent", emailHint: maskEmail(user.email) });
       } catch (error) {
         answer(res, error, "send two-step code");
-      }
-    },
-  );
-
-  // Start setup: password → a secret to add to the authenticator app. Off until
-  // the owner flips MFA_SETUP_ENABLED (never gates sign-in for existing users).
-  app.post(
-    "/api/auth/mfa/totp/setup",
-    requireAuth,
-    reauthLimiter,
-    async (req: AuthenticatedRequest, res: Response) => {
-      try {
-        if (process.env.MFA_SETUP_ENABLED !== "true") {
-          throw new Reply(
-            403,
-            ErrorCode.MFA_SETUP_DISABLED,
-            "Two-step verification isn't available yet.",
-          );
-        }
-        const { password } = parse(mfaPasswordSchema, req.body);
-        const user = await me(req);
-        if (user.password === null) {
-          throw new Reply(
-            409,
-            ErrorCode.MFA_NEEDS_PASSWORD,
-            "Set a password first — two-step verification protects password sign-in.",
-          );
-        }
-        await requirePassword(user, password);
-        if (user.mfaEnabledAt !== null) {
-          throw new Reply(
-            409,
-            ErrorCode.MFA_ALREADY_ENABLED,
-            "Two-step verification is already on.",
-          );
-        }
-        res.json(await stageTotpSecret(user));
-      } catch (error) {
-        answer(res, error, "start two-step setup");
-      }
-    },
-  );
-
-  // New phone: password + the CURRENT factor (or a recovery code) → a new secret.
-  app.post(
-    "/api/auth/mfa/totp/reset",
-    requireAuth,
-    reauthLimiter,
-    async (req: AuthenticatedRequest, res: Response) => {
-      let replacement: { replacementRecoveryCode?: string } = {};
-      try {
-        const body = parse(mfaPasswordAndFactorSchema, req.body);
-        const user = await me(req);
-        await requirePassword(user, body.password);
-        requireEnabled(user);
-        await requireTotpMethod(user);
-        // Before the factor: a missing key must not spend a recovery code.
-        requireConfigured();
-        replacement = await requireFactor(user, body.secondFactor);
-        res.json({ ...(await stageTotpSecret(user)), ...replacement });
-      } catch (error) {
-        // Once a recovery code is spent, every answer carries its replacement.
-        answer(res, error, "start new-phone setup", replacement);
-      }
-    },
-  );
-
-  // Finish setup or a new phone with a code from the app. Every other session
-  // ends (tokenVersion bump); this one gets a fresh token minted after it.
-  app.post(
-    "/api/auth/mfa/totp/confirm",
-    requireAuth,
-    mfaVerifyLimiter,
-    async (req: AuthenticatedRequest, res: Response) => {
-      let recoveryCodes: string[] | undefined;
-      try {
-        const { code } = parse(mfaConfirmSchema, req.body);
-        const user = await me(req);
-        const wrong = new Reply(
-          400,
-          ErrorCode.INVALID_SECOND_FACTOR,
-          INVALID_SECOND_FACTOR_MESSAGE,
-        );
-        const check = await checkPendingTotpCode(user, code);
-        if (!check.ok) {
-          if (check.reason === "unavailable") {
-            throw new Reply(
-              503,
-              ErrorCode.MFA_UNAVAILABLE,
-              MFA_UNAVAILABLE_MESSAGE,
-            );
-          }
-          throw wrong;
-        }
-
-        let version: number;
-        if (user.mfaEnabledAt === null) {
-          // Sends the "enabled" notice itself.
-          const enrolled = await confirmFirstEnrollment(user, check.step);
-          if (!enrolled) {
-            throw new Reply(
-              409,
-              ErrorCode.MFA_ALREADY_ENABLED,
-              "Two-step verification is already on.",
-            );
-          }
-          recoveryCodes = enrolled.recoveryCodes;
-          version = enrolled.tokenVersion;
-        } else {
-          const moved = await storage.confirmNewPhone(user.id, {
-            acceptedStep: check.step,
-          });
-          if (moved === undefined) {
-            throw new Reply(
-              409,
-              ErrorCode.MFA_NOT_ENABLED,
-              "Two-step verification is off.",
-            );
-          }
-          notice(user, "new_phone");
-          version = moved;
-        }
-        invalidateTokenVersionCache(user.id);
-        // Only under the version this confirm set: a reset or sign-out-
-        // everywhere since then wins (auth audit L3, as L12). New codes ride
-        // the refusal too — they are already the account's only codes.
-        res.json({
-          ...(await issueSession(user.id, version)),
-          ...(recoveryCodes ? { recoveryCodes } : {}),
-        });
-      } catch (error) {
-        answer(
-          res,
-          error,
-          "confirm two-step setup",
-          recoveryCodes ? { recoveryCodes } : undefined,
-        );
       }
     },
   );
@@ -616,15 +378,12 @@ export function register(app: Express): void {
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
-      // Once a recovery code is spent, a failure before MFA is off must still
-      // hand back its replacement (audit L11).
-      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const body = parse(mfaDisableSchema, req.body);
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
-        replacement = await requireFactor(user, body.secondFactor);
+        await requireFactor(user, body.secondFactor);
         const version = await storage.disableMfa(user.id);
         if (version === undefined) {
           throw new Reply(404, ErrorCode.NOT_FOUND, "User not found");
@@ -634,38 +393,7 @@ export function register(app: Express): void {
         // Only under the version this write set (auth audit L3, as L12).
         res.json(await issueSession(user.id, version));
       } catch (error) {
-        answer(res, error, "turn off two-step verification", replacement);
-      }
-    },
-  );
-
-  // New recovery codes: password + factor. The old ones stop working.
-  app.post(
-    "/api/auth/mfa/recovery-codes",
-    requireAuth,
-    reauthLimiter,
-    async (req: AuthenticatedRequest, res: Response) => {
-      // Once a recovery code is spent, a failed replace leaves the old set in
-      // place minus that code — hand back its replacement (audit L11).
-      let replacement: { replacementRecoveryCode?: string } = {};
-      try {
-        const body = parse(mfaPasswordAndFactorSchema, req.body);
-        const user = await me(req);
-        await requirePassword(user, body.password);
-        requireEnabled(user);
-        await requireTotpMethod(user);
-        replacement = await requireFactor(user, body.secondFactor);
-        const recoveryCodes = generateRecoveryCodes();
-        await storage.replaceRecoveryCodes(
-          user.id,
-          recoveryCodes.map((c) =>
-            hashRecoveryCode(user.id, normalizeRecoveryCode(c)!),
-          ),
-        );
-        notice(user, "recovery_codes_replaced");
-        res.json({ recoveryCodes });
-      } catch (error) {
-        answer(res, error, "replace recovery codes", replacement);
+        answer(res, error, "turn off two-step verification");
       }
     },
   );

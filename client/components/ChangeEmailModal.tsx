@@ -18,12 +18,10 @@ import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
-import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
 import type { SecondFactorInput } from "@shared/types/auth";
 import {
   isSecondFactorRequired,
   isTwoStepCheckError,
-  replacementFromError,
   secondFactorErrorMessage,
 } from "@/lib/second-factor-utils";
 import { useTheme } from "@/hooks/useTheme";
@@ -47,20 +45,11 @@ interface ChangeEmailModalProps {
     newEmail: string,
     password: string,
     secondFactor?: SecondFactorInput,
-  ) => Promise<void | ChangeEmailNeedsSave>;
+  ) => Promise<void>;
   /** Two-step verification is on: ask for the code with the password. */
   askCode?: boolean;
   /** The user's current email, shown for context. */
   currentEmail?: string;
-}
-
-/**
- * The change went through but used up a recovery code: show its replacement
- * first, then `finish` (close + confirm) once the person has saved it.
- */
-export interface ChangeEmailNeedsSave {
-  replacementRecoveryCode: string;
-  finish: () => void;
 }
 
 // Client mirror of the server's `z.string().email()` — immediate feedback so a
@@ -83,7 +72,6 @@ export function ChangeEmailModal({
   currentEmail,
   askCode = false,
 }: ChangeEmailModalProps) {
-  // Set when the account's two-step codes come by email.
   const twoStepEmail = useSignedInEmailCode();
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -97,11 +85,6 @@ export function ChangeEmailModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [needsCode, setNeedsCode] = useState(askCode);
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
-  // A spent recovery code's replacement; `finish` is set when the change itself succeeded.
-  const [replacement, setReplacement] = useState<{
-    code: string;
-    finish?: () => void;
-  } | null>(null);
 
   // Reset every time the modal opens so a re-open after a failed attempt starts
   // clean.
@@ -115,7 +98,6 @@ export function ChangeEmailModal({
       setIsSubmitting(false);
       setNeedsCode(askCode);
       setFactor(null);
-      setReplacement(null);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(
           "Change email. Enter your new email and current password.",
@@ -150,7 +132,7 @@ export function ChangeEmailModal({
       return;
     }
     if (needsCode && !factor) {
-      rejectInput("Enter the code from your authenticator app");
+      rejectInput("Enter the code we email you");
       return;
     }
     setError(null);
@@ -158,25 +140,15 @@ export function ChangeEmailModal({
     // Outside the try: React Compiler can't lower a conditional inside one.
     const proof = needsCode && factor ? factor : undefined;
     try {
-      const result = await onConfirm(trimmedEmail, password, proof);
-      // onConfirm closes the modal + surfaces the outcome on success, unless a
-      // spent recovery code's replacement must be saved first.
-      if (result) {
-        setReplacement({
-          code: result.replacementRecoveryCode,
-          finish: result.finish,
-        });
-        setIsSubmitting(false);
-      }
+      // onConfirm closes the modal + surfaces the outcome on success.
+      await onConfirm(trimmedEmail, password, proof);
     } catch (err) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setIsSubmitting(false);
-      const spent = replacementFromError(err);
-      if (spent) setReplacement({ code: spent });
       if (isSecondFactorRequired(err)) {
         // Right password on a 2FA account: keep it, ask for the code too.
         setNeedsCode(true);
-        setError("Enter the code from your authenticator app.");
+        setError("Enter the code we email you.");
         return;
       }
       if (isTwoStepCheckError(err)) {
@@ -210,11 +182,9 @@ export function ChangeEmailModal({
   ]);
 
   const handleCancel = useCallback(() => {
-    // A replacement recovery code is on screen: "I've saved it" is the only
-    // way out, or the one-time code (and the change's confirmation) is lost.
-    if (isSubmitting || replacement) return;
+    if (isSubmitting) return;
     onClose();
-  }, [isSubmitting, onClose, replacement]);
+  }, [isSubmitting, onClose]);
 
   return (
     <Modal
@@ -389,43 +359,31 @@ export function ChangeEmailModal({
                 />
               ) : null}
 
-              {replacement ? (
-                <ReplacementCodeCard
-                  code={replacement.code}
-                  onDone={() => {
-                    if (replacement.finish) replacement.finish();
-                    else setReplacement(null);
-                  }}
-                />
-              ) : null}
-
               <InlineError message={error} shakeKey={shakeKey} />
 
-              {replacement ? null : (
-                <View style={styles.buttonRow}>
-                  <Button
-                    onPress={handleCancel}
-                    variant="secondary"
-                    disabled={isSubmitting}
-                    style={styles.flexButton}
-                    accessibilityLabel="Cancel"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onPress={handleConfirm}
-                    loading={isSubmitting}
-                    loadingText="Updating..."
-                    disabled={isSubmitting}
-                    style={styles.flexButton}
-                    accessibilityLabel={
-                      isSubmitting ? "Updating email" : "Update email"
-                    }
-                  >
-                    Update email
-                  </Button>
-                </View>
-              )}
+              <View style={styles.buttonRow}>
+                <Button
+                  onPress={handleCancel}
+                  variant="secondary"
+                  disabled={isSubmitting}
+                  style={styles.flexButton}
+                  accessibilityLabel="Cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onPress={handleConfirm}
+                  loading={isSubmitting}
+                  loadingText="Updating..."
+                  disabled={isSubmitting}
+                  style={styles.flexButton}
+                  accessibilityLabel={
+                    isSubmitting ? "Updating email" : "Update email"
+                  }
+                >
+                  Update email
+                </Button>
+              </View>
             </ScrollView>
           </View>
         </View>

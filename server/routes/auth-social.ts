@@ -721,8 +721,6 @@ export function register(app: Express): void {
     requireAuth,
     reauthLimiter,
     async (req: AuthenticatedRequest, res: Response) => {
-      // Once a recovery code is spent, every answer carries its replacement.
-      let replacement: { replacementRecoveryCode?: string } = {};
       try {
         const parsed = connectIdentitySchema.safeParse(req.body);
         if (!parsed.success) {
@@ -751,8 +749,7 @@ export function register(app: Express): void {
         // Spec D2: a password proof on an MFA account also needs the code (a
         // Google/Apple proof never does). Checked BEFORE the new provider's
         // nonce is spent, so a retry after SECOND_FACTOR_REQUIRED reuses the
-        // same token. A recovery code is spent here: later failures carry its
-        // replacement.
+        // same token.
         const gate = await secondFactorForPasswordProof(
           me,
           "password" in body.proof,
@@ -760,11 +757,6 @@ export function register(app: Express): void {
         );
         if (!gate.ok)
           return sendError(res, gate.status, gate.message, gate.code);
-        if (gate.replacementRecoveryCode) {
-          replacement = {
-            replacementRecoveryCode: gate.replacementRecoveryCode,
-          };
-        }
         const claims = await verifyProviderToken(
           body.provider,
           body.idToken,
@@ -824,18 +816,11 @@ export function register(app: Express): void {
         }
         res.json({
           signInMethods: await storage.getSignInMethods(req.userId),
-          ...replacement,
         });
       } catch (error) {
         if (error instanceof HttpFailure)
-          return sendError(
-            res,
-            error.status,
-            error.message,
-            error.code,
-            replacement,
-          );
-        handleRouteError(res, error, "connect provider", replacement);
+          return sendError(res, error.status, error.message, error.code);
+        handleRouteError(res, error, "connect provider");
       }
     },
   );

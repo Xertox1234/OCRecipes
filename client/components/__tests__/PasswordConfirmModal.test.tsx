@@ -5,12 +5,9 @@ import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { PasswordConfirmModal } from "../PasswordConfirmModal";
 
-// The replacement-code card copies with expo-clipboard (native module).
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
-
-function renderModal(replacementCode: string | null) {
+function renderModal(askCode = false) {
   const onCancel = vi.fn();
-  const onReplacementSaved = vi.fn();
+  const onSubmit = vi.fn();
   renderComponent(
     <PasswordConfirmModal
       visible
@@ -19,26 +16,23 @@ function renderModal(replacementCode: string | null) {
       busy={false}
       error={null}
       onCancel={onCancel}
-      onSubmit={vi.fn()}
-      replacementCode={replacementCode}
-      onReplacementSaved={onReplacementSaved}
+      onSubmit={onSubmit}
+      askCode={askCode}
     />,
   );
-  return { onCancel, onReplacementSaved };
+  return { onCancel, onSubmit };
 }
 
-describe("PasswordConfirmModal — a replacement recovery code on screen", () => {
-  it("tapping outside does not close it; only 'I've saved it' moves on", () => {
-    const { onCancel, onReplacementSaved } = renderModal("AAAA-BBBB-CCCC-DDDD");
-    fireEvent.click(screen.getByTestId("password-confirm-backdrop"));
-    expect(onCancel).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("I've saved it"));
-    expect(onReplacementSaved).toHaveBeenCalled();
-  });
-
-  it("without a replacement code, tapping outside cancels as before", () => {
-    const { onCancel } = renderModal(null);
+describe("PasswordConfirmModal", () => {
+  it("tapping outside cancels", () => {
+    const { onCancel } = renderModal();
     fireEvent.click(screen.getByTestId("password-confirm-backdrop"));
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("with two-step on, the code field offers Email me a code and no recovery code", () => {
+    renderModal(true);
+    expect(screen.getByLabelText("Email me a code")).toBeTruthy();
+    expect(screen.queryByLabelText("Use a recovery code instead")).toBeNull();
   });
 });

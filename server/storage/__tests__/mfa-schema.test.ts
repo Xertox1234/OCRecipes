@@ -10,7 +10,6 @@ import type * as schema from "@shared/schema";
 import {
   users,
   userMfa,
-  mfaRecoveryCodes,
   mfaChallenges,
   mfaTrustedDevices,
 } from "@shared/schema";
@@ -50,12 +49,8 @@ describe("MFA schema (migration 0018)", () => {
     expect(row.at).toBeNull();
   });
 
-  it("deleting the user cascades to all four MFA tables", async () => {
+  it("deleting the user cascades to the MFA tables", async () => {
     await tx.insert(userMfa).values({ userId: testUser.id });
-    await tx.insert(mfaRecoveryCodes).values([
-      { userId: testUser.id, codeHash: "a" },
-      { userId: testUser.id, codeHash: "b" },
-    ]);
     await tx.insert(mfaChallenges).values({
       tokenHash: "t1",
       userId: testUser.id,
@@ -73,24 +68,10 @@ describe("MFA schema (migration 0018)", () => {
 
     const counts = await tx.execute(sql`
       SELECT (SELECT count(*) FROM user_mfa WHERE user_id = ${testUser.id})
-           + (SELECT count(*) FROM mfa_recovery_codes WHERE user_id = ${testUser.id})
            + (SELECT count(*) FROM mfa_challenges WHERE user_id = ${testUser.id})
            + (SELECT count(*) FROM mfa_trusted_devices WHERE user_id = ${testUser.id})
            AS n`);
     expect(Number(counts.rows[0].n)).toBe(0);
-  });
-
-  it("a recovery code hash is unique per user (23505)", async () => {
-    await tx
-      .insert(mfaRecoveryCodes)
-      .values({ userId: testUser.id, codeHash: "same" });
-    expect(
-      await pgCode(
-        tx
-          .insert(mfaRecoveryCodes)
-          .values({ userId: testUser.id, codeHash: "same" }),
-      ),
-    ).toBe("23505");
   });
 
   it("a link challenge without a ticket hash is refused (23514)", async () => {

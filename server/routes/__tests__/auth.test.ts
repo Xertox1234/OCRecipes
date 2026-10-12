@@ -87,7 +87,6 @@ vi.mock("../../storage", () => ({
     filterUnreferencedImageUrls: vi.fn().mockResolvedValue([]),
     applyEmailVerification: vi.fn(),
     getSignInMethods: vi.fn(),
-    getMfaState: vi.fn(),
     findIdentity: vi.fn(),
     listIdentities: vi.fn().mockResolvedValue([]),
     consumeNonce: vi.fn(),
@@ -118,6 +117,12 @@ vi.mock("../../services/email", () => ({
   sendSignupAttemptNotice: vi.fn().mockResolvedValue(undefined),
   sendFinishSignupNotice: vi.fn().mockResolvedValue(undefined),
   sendEmailChangeNotice: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Every two-step challenge emails a code; stub only the send.
+vi.mock("../../lib/mfa/email-code", async (orig) => ({
+  ...(await orig<typeof import("../../lib/mfa/email-code")>()),
+  sendMfaEmailCode: vi.fn().mockResolvedValue("issued"),
 }));
 
 // The password-proof gate runs for real; only the code check is stubbed.
@@ -1890,13 +1895,10 @@ describe("Auth Routes", () => {
     });
 
     describe("GET /api/auth/me", () => {
-      it("reports mfaEnabled and never a secret, pending secret or the raw timestamp", async () => {
-        vi.mocked(storage.getUser).mockResolvedValue({
-          ...createMockUser({ mfaEnabledAt: new Date() }),
-          // A row that somehow carried MFA secrets must still not leak them.
-          totpSecretEnc: "v1:secret",
-          pendingSecretEnc: "v1:pending",
-        } as unknown as Awaited<ReturnType<typeof storage.getUser>>);
+      it("reports mfaEnabled, mfaMethod 'email' for older app builds, and never the raw timestamp", async () => {
+        vi.mocked(storage.getUser).mockResolvedValue(
+          createMockUser({ mfaEnabledAt: new Date() }),
+        );
         vi.mocked(storage.getSignInMethods).mockResolvedValue({
           password: true,
           google: null,
@@ -1907,30 +1909,8 @@ describe("Auth Routes", () => {
           .set("Authorization", "Bearer mock-token");
         expect(res.status).toBe(200);
         expect(res.body.mfaEnabled).toBe(true);
-        // No state row read → an older authenticator account.
-        expect(res.body.mfaMethod).toBe("totp");
-        expect(res.body).not.toHaveProperty("mfaEnabledAt");
-        expect(JSON.stringify(res.body)).not.toContain("v1:");
-      });
-
-      it("reports mfaMethod 'email' for an email two-step account", async () => {
-        vi.mocked(storage.getUser).mockResolvedValue(
-          createMockUser({ mfaEnabledAt: new Date() }),
-        );
-        vi.mocked(storage.getMfaState).mockResolvedValueOnce({
-          method: "email",
-          failedAttempts: 0,
-          locked: false,
-        });
-        vi.mocked(storage.getSignInMethods).mockResolvedValue({
-          password: true,
-          google: null,
-          apple: null,
-        });
-        const res = await request(app)
-          .get("/api/auth/me")
-          .set("Authorization", "Bearer mock-token");
         expect(res.body.mfaMethod).toBe("email");
+        expect(res.body).not.toHaveProperty("mfaEnabledAt");
       });
 
       it("mfaEnabled is false when two-step verification is off", async () => {
@@ -1968,7 +1948,9 @@ describe("Auth Routes", () => {
         expect(res.body).toEqual({
           status: "mfa_required",
           challenge: expect.any(String),
-          method: "totp",
+          method: "email",
+          emailHint: expect.stringContaining("•••@"),
+          codeSent: true,
         });
         expect(storage.createMfaChallenge).toHaveBeenCalledTimes(1);
         const authMod = await import("../../middleware/auth");
@@ -2036,21 +2018,6 @@ describe("Auth Routes", () => {
         expect(mockVerifySecondFactor).not.toHaveBeenCalled();
       });
 
-      it("wrong code → 401 INVALID_SECOND_FACTOR and no write", async () => {
-        vi.mocked(storage.getUserForAuth).mockResolvedValue(await mfaUser());
-        mockVerifySecondFactor.mockResolvedValue({
-          ok: false,
-          reason: "invalid",
-        });
-        const res = await send({
-          password: "correctpassword",
-          secondFactor: { code: "000000" },
-        });
-        expect(res.status).toBe(401);
-        expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
-        expect(storage.updateUserEmail).not.toHaveBeenCalled();
-      });
-
       it("right code → the email changes", async () => {
         const user = await mfaUser();
         vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
@@ -2068,78 +2035,18 @@ describe("Auth Routes", () => {
           "1",
           "new@example.com",
         );
-        expect(res.body.replacementRecoveryCode).toBeUndefined();
       });
 
-      it("a recovery code → the response carries its replacement", async () => {
-        const user = await mfaUser();
-        vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
-        mockVerifySecondFactor.mockResolvedValue({
-          ok: true,
-          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-        });
-        vi.mocked(storage.updateUserEmail).mockResolvedValue({
-          ...user,
-          email: "new@example.com",
-        });
+      it("wrong code → 401 INVALID_SECOND_FACTOR and no write", async () => {
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(await mfaUser());
+        mockVerifySecondFactor.mockResolvedValue({ ok: false });
         const res = await send({
           password: "correctpassword",
-          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
+          secondFactor: { code: "000000" },
         });
-        expect(res.status).toBe(200);
-        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
-      });
-
-      it("a recovery code then an email collision → 409 that still carries its replacement", async () => {
-        const user = await mfaUser();
-        vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
-        mockVerifySecondFactor.mockResolvedValue({
-          ok: true,
-          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-        });
-        vi.mocked(storage.updateUserEmail).mockRejectedValue(
-          Object.assign(new Error("dup"), { code: "23505" }),
-        );
-        const res = await send({
-          password: "correctpassword",
-          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-        });
-        expect(res.status).toBe(409);
-        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
-      });
-
-      it("a recovery code then an unexpected error → 500 that still carries its replacement", async () => {
-        const user = await mfaUser();
-        vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
-        mockVerifySecondFactor.mockResolvedValue({
-          ok: true,
-          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-        });
-        vi.mocked(storage.updateUserEmail).mockRejectedValue(new Error("db"));
-        const res = await send({
-          password: "correctpassword",
-          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-        });
-        expect(res.status).toBe(500);
-        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
-      });
-
-      it("a recovery code on the verification-pending path also carries its replacement", async () => {
-        vi.mocked(emailVerificationEnabled).mockReturnValue(true);
-        const user = await mfaUser();
-        vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
-        vi.mocked(storage.stagePendingEmail).mockResolvedValue(user);
-        mockVerifySecondFactor.mockResolvedValue({
-          ok: true,
-          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-        });
-        const res = await send({
-          password: "correctpassword",
-          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-        });
-        expect(res.status).toBe(200);
-        expect(res.body.status).toBe("verification_pending");
-        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+        expect(res.status).toBe(401);
+        expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
+        expect(storage.updateUserEmail).not.toHaveBeenCalled();
       });
     });
 
@@ -2167,10 +2074,7 @@ describe("Auth Routes", () => {
 
       it("wrong code → 401 INVALID_SECOND_FACTOR and no delete", async () => {
         vi.mocked(storage.getUserForAuth).mockResolvedValue(await mfaUser());
-        mockVerifySecondFactor.mockResolvedValue({
-          ok: false,
-          reason: "invalid",
-        });
+        mockVerifySecondFactor.mockResolvedValue({ ok: false });
         const res = await del({
           password: "correctpassword",
           secondFactor: { code: "000000" },
@@ -2178,23 +2082,6 @@ describe("Auth Routes", () => {
         expect(res.status).toBe(401);
         expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
         expect(storage.deleteUser).not.toHaveBeenCalled();
-      });
-
-      // Auth audit 2026-10-10 L11: a failure before the account is gone leaves
-      // it alive, so a spent recovery code's replacement must ride the 500.
-      it("a recovery code then a failed delete → 500 that still carries its replacement", async () => {
-        vi.mocked(storage.getUserForAuth).mockResolvedValue(await mfaUser());
-        mockVerifySecondFactor.mockResolvedValue({
-          ok: true,
-          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-        });
-        vi.mocked(storage.deleteUser).mockRejectedValueOnce(new Error("db"));
-        const res = await del({
-          password: "correctpassword",
-          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-        });
-        expect(res.status).toBe(500);
-        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
       });
 
       it("right code → deleted", async () => {

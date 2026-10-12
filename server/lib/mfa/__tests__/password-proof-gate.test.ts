@@ -48,7 +48,7 @@ describe("secondFactorForPasswordProof", () => {
   });
 
   it("a wrong code → 401 INVALID_SECOND_FACTOR with the generic copy", async () => {
-    verifySecondFactor.mockResolvedValue({ ok: false, reason: "invalid" });
+    verifySecondFactor.mockResolvedValue({ ok: false });
     expect(
       await secondFactorForPasswordProof(MFA_USER, true, { code: "000000" }),
     ).toEqual({
@@ -60,35 +60,14 @@ describe("secondFactorForPasswordProof", () => {
     });
   });
 
-  it("an unreadable secret → 503 MFA_UNAVAILABLE", async () => {
-    verifySecondFactor.mockResolvedValue({ ok: false, reason: "unavailable" });
-    const g = await secondFactorForPasswordProof(MFA_USER, true, {
-      code: "000000",
-    });
-    expect(g).toMatchObject({
-      ok: false,
-      status: 503,
-      code: ErrorCode.MFA_UNAVAILABLE,
-    });
-  });
-
-  it("the right code passes; a recovery code carries its replacement", async () => {
-    verifySecondFactor.mockResolvedValueOnce({ ok: true });
+  it("the right code passes", async () => {
+    verifySecondFactor.mockResolvedValue({ ok: true });
     expect(
       await secondFactorForPasswordProof(MFA_USER, true, { code: "123456" }),
     ).toEqual({ ok: true });
-    verifySecondFactor.mockResolvedValueOnce({
-      ok: true,
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-    });
-    expect(
-      await secondFactorForPasswordProof(MFA_USER, true, {
-        recoveryCode: "x",
-      }),
-    ).toEqual({ ok: true, replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD" });
-    expect(verifySecondFactor).toHaveBeenLastCalledWith(
+    expect(verifySecondFactor).toHaveBeenCalledWith(
       { id: "u1", email: "u@x.com", username: "chef" },
-      { recoveryCode: "x" },
+      { code: "123456" },
     );
   });
 });

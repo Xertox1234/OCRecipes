@@ -130,7 +130,7 @@ export function notifySessionExpired(): void {
  * before any status-based branching, so a dead token is detected regardless of
  * the caller's `on401` behavior (including the `returnNull` short-circuit).
  *
- * Four guards must all hold to fire:
+ * Three guards must all hold to fire:
  * 1. A Bearer token was attached — a 401 with no token is anonymous / bad
  *    credentials (e.g. a wrong-password login), never session death.
  * 2. That token is still the stored one — a 401 for a superseded token (a
@@ -139,13 +139,6 @@ export function notifySessionExpired(): void {
  * 3. The error body carries a session-token code (see `SESSION_EXPIRY_CODES`) —
  *    so an authenticated route's own 401 (wrong password on account delete,
  *    etc.) does not trigger a spurious logout.
- * 4. The body carries no `replacementRecoveryCode` — change password answers
- *    TOKEN_REVOKED with a spent recovery code's replacement, and signing out
- *    here would unmount the screen before it is shown. The caller shows the
- *    code, then ends the session (`useAuth.changePassword`'s `endSession`). If
- *    it never does, the token is dead server-side anyway: the next authed
- *    request is refused by the middleware, whose answer carries no extras, and
- *    signs out then.
  *
  * The body is read via `res.clone()` so the caller's own `res.text()`/`.json()`
  * is left intact.
@@ -160,21 +153,16 @@ async function notifyIfSessionExpired(
   // session that already ended — it must not end the CURRENT one (audit L7).
   if ((await tokenStorage.get()) !== sentToken) return;
   let code: string | undefined;
-  let carriesReplacement = false;
   try {
     const parsed: unknown = JSON.parse(await res.clone().text());
     if (parsed !== null && typeof parsed === "object") {
-      const body = parsed as {
-        code?: unknown;
-        replacementRecoveryCode?: unknown;
-      };
+      const body = parsed as { code?: unknown };
       if (typeof body.code === "string") code = body.code;
-      carriesReplacement = typeof body.replacementRecoveryCode === "string";
     }
   } catch {
     // Non-JSON / unreadable body — no session code, so not a token rejection.
   }
-  if (code && SESSION_EXPIRY_CODES.has(code) && !carriesReplacement) {
+  if (code && SESSION_EXPIRY_CODES.has(code)) {
     notifySessionExpired();
   }
 }

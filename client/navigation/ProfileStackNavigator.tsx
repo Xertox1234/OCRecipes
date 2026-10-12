@@ -47,7 +47,7 @@ export type ProfileStackParamList = LibraryRoutes & {
   Profile: undefined;
   Settings: undefined;
   SignInMethods: undefined;
-  /** Two-step verification: turn on, new phone, turn off, new recovery codes. */
+  /** Two-step verification: turn on or turn off. */
   TwoStepSetup: { mode: TwoStepSetupMode };
   ChangePassword: {
     hasPassword: boolean;

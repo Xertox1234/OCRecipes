@@ -1,7 +1,7 @@
 // scripts/mfa-reset.ts
 /**
- * Manual two-step reset for an account holder who lost BOTH their phone and
- * their recovery codes. Runbook: docs/runbooks/mfa-manual-reset.md — verify the
+ * Manual two-step reset for an account holder whose emailed two-step codes
+ * don't reach them. Runbook: docs/runbooks/mfa-manual-reset.md — verify the
  * person's identity first; never act on a request from a different address.
  *
  * Polarity: dry-run by DEFAULT — pass --commit (without --dry-run, which

@@ -142,9 +142,7 @@ export function DeleteAccountModal({
     if (mode.kind !== "password") return;
     if (!password || (needsCode && !factor)) {
       setError(
-        password
-          ? "Enter the code from your authenticator app"
-          : "Password is required",
+        password ? "Enter the code we email you" : "Password is required",
       );
       setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
@@ -162,7 +160,7 @@ export function DeleteAccountModal({
       if (isSecondFactorRequired(err)) {
         // Right password on a 2FA account: keep it, ask for the code too.
         setNeedsCode(true);
-        setError("Enter the code from your authenticator app.");
+        setError("Enter the code we email you.");
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         setIsDeleting(false);
         return;

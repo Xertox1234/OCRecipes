@@ -126,14 +126,10 @@ export function reauthProviders(
 /** The two-step row's second line. */
 export function twoStepSubtitle(p: {
   enabled: boolean;
-  method: "totp" | "email" | null;
   hasPassword: boolean;
 }): string {
-  if (p.enabled) {
-    return p.method === "totp"
-      ? "On, with an authenticator app."
-      : "On. Signing in on a new phone needs a code we email you.";
-  }
+  if (p.enabled)
+    return "On. Signing in on a new phone needs a code we email you.";
   return p.hasPassword
     ? "Off. When it's on, signing in on a new phone needs a code we email you."
     : "Set a password to turn on two-step verification";

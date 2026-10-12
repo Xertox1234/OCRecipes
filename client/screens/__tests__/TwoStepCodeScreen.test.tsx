@@ -10,14 +10,14 @@ import { ApiError } from "@/lib/api-error";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TwoStepCode">;
 
-const { mockVerify, mockFinish, mockToastError, mockCopy, mockResend } =
-  vi.hoisted(() => ({
+const { mockVerify, mockFinish, mockToastError, mockResend } = vi.hoisted(
+  () => ({
     mockResend: vi.fn(),
     mockVerify: vi.fn(),
     mockFinish: vi.fn(),
     mockToastError: vi.fn(),
-    mockCopy: vi.fn(),
-  }));
+  }),
+);
 
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
@@ -29,7 +29,6 @@ vi.mock("@/context/AuthContext", () => ({
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ error: mockToastError, success: vi.fn() }),
 }));
-vi.mock("expo-clipboard", () => ({ setStringAsync: mockCopy }));
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardAwareScrollView: ({
     children,
@@ -65,7 +64,6 @@ const typeCode = (code: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   mockFinish.mockResolvedValue(undefined);
-  mockCopy.mockResolvedValue(true);
 });
 
 describe("TwoStepCodeScreen", () => {
@@ -99,13 +97,12 @@ describe("TwoStepCodeScreen", () => {
     );
   });
 
-  it("email account: says where the code went and can resend it", async () => {
+  it("says where the code went and can resend it", async () => {
     mockResend.mockResolvedValue({
       status: "code_sent",
       emailHint: "w•••@gmail.com",
     });
     renderScreen("login", {
-      method: "email",
       emailHint: "w•••@gmail.com",
       codeSent: true,
     });
@@ -119,62 +116,17 @@ describe("TwoStepCodeScreen", () => {
     expect(screen.getByLabelText("Resend code in 30s")).toBeTruthy();
   });
 
-  it("email account whose code was held back: Resend works straight away", async () => {
+  it("a code held back by the limit: Resend works straight away", async () => {
     mockResend.mockResolvedValue({
       status: "code_sent",
       emailHint: "w•••@gmail.com",
     });
     renderScreen("login", {
-      method: "email",
       emailHint: "w•••@gmail.com",
       codeSent: false,
     });
     fireEvent.click(screen.getByLabelText("Email me a code"));
     await waitFor(() => expect(mockResend).toHaveBeenCalledWith("c-1"));
-  });
-
-  it("a recovery code's replacement is shown, and sign-in waits for 'I've saved it'", async () => {
-    mockVerify.mockResolvedValue({
-      status: "signed_in",
-      user,
-      token: "t",
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-    });
-    renderScreen();
-    fireEvent.click(screen.getByText("Use a recovery code instead"));
-    fireEvent.change(screen.getByLabelText("Recovery code"), {
-      target: { value: "wxyz-wxyz-wxyz-wxyz" },
-    });
-    fireEvent.click(screen.getByText("Continue"));
-    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
-    expect(mockVerify).toHaveBeenCalledWith(
-      "c-1",
-      { recoveryCode: "wxyz-wxyz-wxyz-wxyz" },
-      true, // "Don't ask again" is on by default
-    );
-    expect(mockFinish).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("Copy"));
-    expect(mockCopy).toHaveBeenCalledWith("AAAA-BBBB-CCCC-DDDD");
-    fireEvent.click(screen.getByText("I've saved it"));
-    await waitFor(() => expect(mockFinish).toHaveBeenCalledWith(user, "t"));
-  });
-
-  it("a failed answer that spent a recovery code still shows its replacement", async () => {
-    mockVerify.mockRejectedValue(
-      new ApiError(
-        `401: ${JSON.stringify({ code: "INVALID_SIGN_IN_TICKET", error: "This sign-in has expired. Please start again.", replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD" })}`,
-        "INVALID_SIGN_IN_TICKET",
-        401,
-      ),
-    );
-    renderScreen("link");
-    fireEvent.click(screen.getByText("Use a recovery code instead"));
-    fireEvent.change(screen.getByLabelText("Recovery code"), {
-      target: { value: "wxyz-wxyz-wxyz-wxyz" },
-    });
-    fireEvent.click(screen.getByText("Continue"));
-    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
-    expect(mockFinish).not.toHaveBeenCalled();
   });
 
   it("a wrong code shows the server's message and stays", async () => {

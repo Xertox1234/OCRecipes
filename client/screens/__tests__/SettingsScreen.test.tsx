@@ -367,25 +367,4 @@ describe("SettingsScreen — two-step verification on password proofs", () => {
       { code: "123456" },
     );
   });
-
-  it("a spent recovery code on change email keeps the modal open until it is saved", async () => {
-    mockChangeEmail.mockResolvedValue({
-      status: "verification_pending",
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-    });
-    renderComponent(<SettingsScreen />);
-    let out: unknown;
-    await act(async () => {
-      out = await changeEmailModal.props?.onConfirm("n@x.com", "pw", {
-        recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ",
-      });
-    });
-    expect(mockChangeEmail).toHaveBeenCalledWith("n@x.com", "pw", {
-      recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ",
-    });
-    expect(out).toMatchObject({
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-      finish: expect.any(Function),
-    });
-  });
 });

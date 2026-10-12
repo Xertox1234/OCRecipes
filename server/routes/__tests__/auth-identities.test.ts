@@ -209,81 +209,6 @@ describe("POST /api/auth/identities", () => {
       expect(mockVerifySecondFactor).not.toHaveBeenCalled();
     });
 
-    describe("a spent recovery code's replacement survives a later failure (spec §3.2)", () => {
-      const withRecovery = {
-        ...body,
-        proof: {
-          ...proof,
-          secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-        },
-      };
-      beforeEach(() => {
-        mockVerifySecondFactor.mockResolvedValue({
-          ok: true,
-          replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-        });
-      });
-      afterEach(() => {
-        // clearAllMocks keeps implementations; don't leak the rejection.
-        vi.mocked(storage.insertIdentity).mockReset();
-      });
-
-      it("the Google account belongs to someone else → 409 that carries it", async () => {
-        vi.mocked(storage.findIdentity).mockResolvedValue(
-          createMockUserIdentity({
-            userId: "someone-else",
-            provider: "google",
-          }),
-        );
-        const res = await request(app())
-          .post("/api/auth/identities")
-          .set(auth)
-          .send(withRecovery);
-        expect(res.status).toBe(409);
-        expect(res.body.code).toBe("IDENTITY_IN_USE");
-        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
-      });
-
-      it("the provider token was already used → 401 that carries it", async () => {
-        vi.mocked(storage.consumeNonce).mockResolvedValue(false);
-        const res = await request(app())
-          .post("/api/auth/identities")
-          .set(auth)
-          .send(withRecovery);
-        expect(res.status).toBe(401);
-        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
-      });
-
-      it("an unexpected error → 500 that carries it", async () => {
-        vi.mocked(storage.insertIdentity).mockRejectedValue(
-          new Error("db down"),
-        );
-        const res = await request(app())
-          .post("/api/auth/identities")
-          .set(auth)
-          .send(withRecovery);
-        expect(res.status).toBe(500);
-        expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
-      });
-    });
-
-    it("wrong code → 401 INVALID_SECOND_FACTOR, nothing connected", async () => {
-      mockVerifySecondFactor.mockResolvedValue({
-        ok: false,
-        reason: "invalid",
-      });
-      const res = await request(app())
-        .post("/api/auth/identities")
-        .set(auth)
-        .send({
-          ...body,
-          proof: { ...proof, secondFactor: { code: "000000" } },
-        });
-      expect(res.status).toBe(401);
-      expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
-      expect(storage.insertIdentity).not.toHaveBeenCalled();
-    });
-
     it("right code → connected", async () => {
       mockVerifySecondFactor.mockResolvedValue({ ok: true });
       const res = await request(app())
@@ -295,26 +220,20 @@ describe("POST /api/auth/identities", () => {
         });
       expect(res.status).toBe(200);
       expect(storage.insertIdentity).toHaveBeenCalled();
-      expect(res.body.replacementRecoveryCode).toBeUndefined();
     });
 
-    it("a recovery code → connected, and the response carries its replacement", async () => {
-      mockVerifySecondFactor.mockResolvedValue({
-        ok: true,
-        replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-      });
+    it("wrong code → 401 INVALID_SECOND_FACTOR, nothing connected", async () => {
+      mockVerifySecondFactor.mockResolvedValue({ ok: false });
       const res = await request(app())
         .post("/api/auth/identities")
         .set(auth)
         .send({
           ...body,
-          proof: {
-            ...proof,
-            secondFactor: { recoveryCode: "WXYZ-WXYZ-WXYZ-WXYZ" },
-          },
+          proof: { ...proof, secondFactor: { code: "000000" } },
         });
-      expect(res.status).toBe(200);
-      expect(res.body.replacementRecoveryCode).toBe("AAAA-BBBB-CCCC-DDDD");
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("INVALID_SECOND_FACTOR");
+      expect(storage.insertIdentity).not.toHaveBeenCalled();
     });
 
     it("a Google/Apple proof needs no code (D1)", async () => {

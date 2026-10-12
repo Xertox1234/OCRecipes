@@ -16,9 +16,6 @@ vi.mock("react-native-reanimated", async (importOriginal) => {
   return { ...actual, default: actual.default, withSequence: withSequenceSpy };
 });
 
-// The replacement-code card copies with expo-clipboard (native module).
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
-
 function renderModal(onConfirm = vi.fn()) {
   renderComponent(
     <ChangeEmailModal visible onClose={vi.fn()} onConfirm={onConfirm} />,
@@ -163,86 +160,5 @@ describe("ChangeEmailModal — two-step verification", () => {
     await screen.findByText(
       "That code didn't work. After several wrong codes, codes pause for 15 minutes.",
     );
-  });
-
-  it("a spent recovery code's replacement is shown before finishing", async () => {
-    const finish = vi.fn();
-    const onConfirm = vi.fn().mockResolvedValue({
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-      finish,
-    });
-    renderComponent(
-      <ChangeEmailModal
-        visible
-        askCode
-        onClose={vi.fn()}
-        onConfirm={onConfirm}
-      />,
-    );
-    fill();
-    fireEvent.click(screen.getByText("Use a recovery code instead"));
-    type("Recovery code", "WXYZ-WXYZ-WXYZ-WXYZ");
-    submit();
-    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
-    expect(finish).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("I've saved it"));
-    expect(finish).toHaveBeenCalled();
-  });
-
-  it("a failure that spent a recovery code still shows its replacement", async () => {
-    const onConfirm = vi
-      .fn()
-      .mockRejectedValue(
-        new ApiError(
-          `409: ${JSON.stringify({ code: "CONFLICT", error: "Email already registered", replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD" })}`,
-          "CONFLICT",
-          409,
-        ),
-      );
-    renderComponent(
-      <ChangeEmailModal
-        visible
-        askCode
-        onClose={vi.fn()}
-        onConfirm={onConfirm}
-      />,
-    );
-    fill();
-    fireEvent.click(screen.getByText("Use a recovery code instead"));
-    type("Recovery code", "WXYZ-WXYZ-WXYZ-WXYZ");
-    submit();
-    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
-  });
-});
-
-describe("ChangeEmailModal — the replacement card is the only way out", () => {
-  it("after a successful change, Cancel and Update email are gone and closing is ignored", async () => {
-    const finish = vi.fn();
-    const onClose = vi.fn();
-    const onConfirm = vi.fn().mockResolvedValue({
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-      finish,
-    });
-    renderComponent(
-      <ChangeEmailModal
-        visible
-        askCode
-        onClose={onClose}
-        onConfirm={onConfirm}
-      />,
-    );
-    type("New email address", "new@x.com");
-    type("Confirm new email address", "new@x.com");
-    type("Current password", "pw-1");
-    fireEvent.click(screen.getByText("Use a recovery code instead"));
-    type("Recovery code", "WXYZ-WXYZ-WXYZ-WXYZ");
-    submit();
-    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Update email" })).toBeNull();
-    fireEvent.click(screen.getByLabelText("Close change email dialog"));
-    expect(onClose).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("I've saved it"));
-    expect(finish).toHaveBeenCalled();
   });
 });

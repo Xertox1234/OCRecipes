@@ -3,7 +3,7 @@ import { sha256Hex } from "../../social-identity/nonce";
 import { hashChallengeToken } from "../mfa-secrets";
 
 const { storage, sendMfaEmailCode } = vi.hoisted(() => ({
-  storage: { createMfaChallenge: vi.fn(), getMfaState: vi.fn() },
+  storage: { createMfaChallenge: vi.fn() },
   sendMfaEmailCode: vi.fn(),
 }));
 vi.mock("../../../storage", () => ({ storage }));
@@ -17,11 +17,7 @@ const { startMfaChallenge } = await import("../challenge");
 beforeEach(() => {
   vi.resetAllMocks();
   storage.createMfaChallenge.mockResolvedValue(undefined);
-  storage.getMfaState.mockResolvedValue({
-    method: "totp",
-    failedAttempts: 0,
-    locked: false,
-  });
+  sendMfaEmailCode.mockResolvedValue("issued");
 });
 
 describe("startMfaChallenge", () => {
@@ -31,8 +27,6 @@ describe("startMfaChallenge", () => {
       purpose: "login",
     });
     expect(r.status).toBe("mfa_required");
-    expect(r.method).toBe("totp");
-    expect(sendMfaEmailCode).not.toHaveBeenCalled();
     expect(r.challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const row = storage.createMfaChallenge.mock.calls[0][0];
     expect(row).toEqual({
@@ -43,7 +37,6 @@ describe("startMfaChallenge", () => {
       linkTicketHash: undefined,
       linkMarkEmailVerified: false,
       notAfter: undefined,
-      ttlMinutes: undefined,
     });
     expect(JSON.stringify(row)).not.toContain(r.challenge);
   });
@@ -62,13 +55,8 @@ describe("startMfaChallenge", () => {
     expect(row.notAfter).toBe(notAfter);
   });
 
-  it("email account: emails a code, lives 10 minutes, and says where it went", async () => {
-    storage.getMfaState.mockResolvedValue({
-      method: "email",
-      failedAttempts: 0,
-      locked: false,
-    });
-    sendMfaEmailCode.mockResolvedValue("issued");
+  // Every two-step account is an email account (authenticator apps removed).
+  it("emails a code, lives 10 minutes, and says where it went", async () => {
     const r = await startMfaChallenge({
       user: { id: "u1", tokenVersion: 3, email: "william@gmail.com" },
       purpose: "login",
@@ -83,15 +71,9 @@ describe("startMfaChallenge", () => {
       id: "u1",
       email: "william@gmail.com",
     });
-    expect(storage.createMfaChallenge.mock.calls[0][0].ttlMinutes).toBe(10);
   });
 
-  it("email account at its daily limit: the challenge still opens, codeSent false", async () => {
-    storage.getMfaState.mockResolvedValue({
-      method: "email",
-      failedAttempts: 0,
-      locked: false,
-    });
+  it("at the daily limit: the challenge still opens, codeSent false", async () => {
     sendMfaEmailCode.mockResolvedValue("capped");
     const r = await startMfaChallenge({
       user: { id: "u1", tokenVersion: 3, email: "william@gmail.com" },

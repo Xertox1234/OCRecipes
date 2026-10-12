@@ -11,7 +11,6 @@ import SignInMethodsScreen from "../SignInMethodsScreen";
 const h = vi.hoisted(() => ({
   methods: undefined as SignInMethods | undefined,
   mfaEnabled: false,
-  mfaMethod: null as "totp" | "email" | null,
   isError: false,
   refetch: vi.fn(),
   setMethods: vi.fn(),
@@ -34,12 +33,11 @@ vi.mock("@/hooks/useSignInMethods", () => ({
   useSignInMethods: () => ({
     methods: h.methods,
     mfaEnabled: h.mfaEnabled,
-    mfaMethod: h.mfaMethod,
     isError: h.isError,
     refetch: h.refetch,
     setMethods: h.setMethods,
   }),
-  useSignedInEmailCode: () => undefined,
+  useSignedInEmailCode: () => ({ send: vi.fn() }),
 }));
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
@@ -65,16 +63,12 @@ vi.mock("@/components/ConfirmationModal", () => ({
   }),
 }));
 
-// The replacement-code card copies with expo-clipboard (native module).
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
-
 const relay = { email: "x@privaterelay.appleid.com", isPrivateRelay: true };
 
 beforeEach(() => {
   vi.clearAllMocks();
   h.methods = undefined;
   h.mfaEnabled = false;
-  h.mfaMethod = null;
   h.isError = false;
   h.config = { apple: true, google: false };
 });
@@ -276,48 +270,6 @@ describe("SignInMethodsScreen — connecting on a 2FA account", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(await screen.findByLabelText("6-digit code")).toBeTruthy();
   });
-
-  it("a spent recovery code's replacement is shown before the prompt closes", async () => {
-    h.methods = { password: true, google: null, apple: null };
-    h.mfaEnabled = true;
-    const next = { password: true, google: null, apple: relay };
-    h.connectProvider.mockResolvedValue({
-      signInMethods: next,
-      replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD",
-    });
-    renderComponent(<SignInMethodsScreen />);
-    openPrompt();
-    fireEvent.click(screen.getByText("Use a recovery code instead"));
-    fireEvent.change(screen.getByLabelText("Recovery code"), {
-      target: { value: "WXYZ-WXYZ-WXYZ-WXYZ" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
-    expect(h.setMethods).toHaveBeenCalledWith(next);
-    expect(h.toastSuccess).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("I've saved it"));
-    await waitFor(() => expect(h.toastSuccess).toHaveBeenCalled());
-  });
-
-  it("a failed connect that spent a recovery code still shows its replacement", async () => {
-    h.methods = { password: true, google: null, apple: null };
-    h.mfaEnabled = true;
-    h.connectProvider.mockRejectedValue(
-      new ApiError(
-        `409: ${JSON.stringify({ code: "IDENTITY_IN_USE", error: "x", replacementRecoveryCode: "AAAA-BBBB-CCCC-DDDD" })}`,
-        "IDENTITY_IN_USE",
-        409,
-      ),
-    );
-    renderComponent(<SignInMethodsScreen />);
-    openPrompt();
-    fireEvent.click(screen.getByText("Use a recovery code instead"));
-    fireEvent.change(screen.getByLabelText("Recovery code"), {
-      target: { value: "WXYZ-WXYZ-WXYZ-WXYZ" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    await screen.findByText("AAAA-BBBB-CCCC-DDDD");
-  });
 });
 
 describe("SignInMethodsScreen — Security (two-step verification)", () => {
@@ -341,10 +293,9 @@ describe("SignInMethodsScreen — Security (two-step verification)", () => {
     ).toBeNull();
   });
 
-  it("on by email: turn off and forget trusted phones — no authenticator rows", () => {
+  it("on: turn off and forget trusted phones — no authenticator rows", () => {
     h.methods = { password: true, google: null, apple: null };
     h.mfaEnabled = true;
-    h.mfaMethod = "email";
     renderComponent(<SignInMethodsScreen />);
     expect(
       screen.getByText(
@@ -363,25 +314,6 @@ describe("SignInMethodsScreen — Security (two-step verification)", () => {
     expect(h.navigate).toHaveBeenLastCalledWith("TwoStepSetup", {
       mode: "disable",
     });
-    expect(
-      screen.getByRole("button", { name: "Forget trusted phones" }),
-    ).toBeTruthy();
-  });
-
-  it("on with an authenticator (older setups): new phone, new codes, turn off and forget trusted phones", () => {
-    h.methods = { password: true, google: null, apple: null };
-    h.mfaEnabled = true;
-    h.mfaMethod = "totp";
-    renderComponent(<SignInMethodsScreen />);
-    expect(screen.getByText("On, with an authenticator app.")).toBeTruthy();
-    for (const [name, mode] of [
-      ["Set up on a new phone", "new_phone"],
-      ["New recovery codes", "new_codes"],
-      ["Turn off two-step verification", "disable"],
-    ] as const) {
-      fireEvent.click(screen.getByRole("button", { name }));
-      expect(h.navigate).toHaveBeenLastCalledWith("TwoStepSetup", { mode });
-    }
     expect(
       screen.getByRole("button", { name: "Forget trusted phones" }),
     ).toBeTruthy();

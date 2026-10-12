@@ -443,9 +443,6 @@ describe("email service", () => {
     it.each([
       ["enabled", "Two-step verification is on"],
       ["disabled", "Two-step verification is off"],
-      ["new_phone", "Two-step verification moved to a new phone"],
-      ["recovery_code_used", "A recovery code was used"],
-      ["recovery_codes_replaced", "New recovery codes"],
       ["locked", "Several wrong two-step codes"],
     ] as const)(
       "two-step notice %s has its subject, the escaped username and support",
