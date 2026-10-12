@@ -85,9 +85,11 @@ const styles = StyleSheet.create({
   },
   watermark: {
     position: "absolute",
-    right: -4,
-    bottom: -4,
+    right: 6,
+    bottom: 0,
     fontSize: 64,
+    // Explicit line box: the default clips the emoji's top/bottom (QA #1).
+    lineHeight: 80,
     opacity: 0.15,
   },
   dismissButton: {

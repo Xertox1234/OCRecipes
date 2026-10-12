@@ -299,6 +299,22 @@ export default function CookbookDetailScreen() {
         }}
         ListHeaderComponent={
           <View style={styles.header}>
+            {cookbook?.coverImageUrl ? (
+              <FallbackImage
+                source={{ uri: cookbook.coverImageUrl }}
+                style={styles.coverImage}
+                contentFit="cover"
+              />
+            ) : null}
+            {cookbook?.name ? (
+              <ThemedText
+                type="h2"
+                accessibilityRole="header"
+                style={styles.cookbookTitle}
+              >
+                {cookbook.name}
+              </ThemedText>
+            ) : null}
             {cookbook?.description ? (
               <ThemedText
                 style={[styles.description, { color: theme.textSecondary }]}
@@ -356,7 +372,7 @@ export default function CookbookDetailScreen() {
               variant="firstTime"
               icon="book-open"
               title="This cookbook is empty"
-              description="Browse recipes and save your favorites here."
+              description="Browse recipes and save your favourites here."
               actionLabel="Add Recipes"
               onAction={handleAddRecipes}
             />
@@ -376,6 +392,15 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: Spacing.lg,
+  },
+  coverImage: {
+    width: "100%",
+    height: 160,
+    borderRadius: BorderRadius.card,
+    marginBottom: Spacing.md,
+  },
+  cookbookTitle: {
+    marginBottom: Spacing.xs,
   },
   description: {
     fontSize: 14,

@@ -194,7 +194,7 @@ function NumberInput({
           onChangeText={onChange}
           keyboardType="numeric"
           placeholder={placeholder}
-          placeholderTextColor={theme.textSecondary}
+          placeholderTextColor={withOpacity(theme.textSecondary, 0.6)}
           accessibilityLabel={label}
         />
         <ThemedText type="body" style={{ color: theme.textSecondary }}>
@@ -241,6 +241,14 @@ export default function GoalSetupScreen() {
 
   const isFormComplete =
     age && weight && height && gender && activityLevel && primaryGoal;
+  const missingFields = [
+    !age && "age",
+    !weight && "weight",
+    !height && "height",
+    !gender && "gender",
+    !activityLevel && "activity level",
+    !primaryGoal && "primary goal",
+  ].filter((f): f is string => typeof f === "string");
 
   const calculateMutation = useMutation({
     mutationFn: async () => {
@@ -262,6 +270,11 @@ export default function GoalSetupScreen() {
       setManualCarbs(data.dailyCarbs.toString());
       setManualFat(data.dailyFat.toString());
       haptics.notification(Haptics.NotificationFeedbackType.Success);
+      // The results render below the fold of a long form — bring them into
+      // view (deferred one frame so they have laid out). QA #70.
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: !reducedMotion });
+      });
     },
     onError: () => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
@@ -334,6 +347,9 @@ export default function GoalSetupScreen() {
           },
         ]}
         showsVerticalScrollIndicator={false}
+        // The numeric pad has no Done key — let a drag dismiss it.
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
       >
         {/* Header */}
         <Animated.View
@@ -371,21 +387,21 @@ export default function GoalSetupScreen() {
                 value={age}
                 onChange={setAge}
                 unit="years"
-                placeholder="25"
+                placeholder="e.g. 25"
               />
               <NumberInput
                 label="Weight"
                 value={weight}
                 onChange={setWeight}
                 unit={weightUnitLabel(unit)}
-                placeholder={unit === "imperial" ? "154" : "70"}
+                placeholder={unit === "imperial" ? "e.g. 154" : "e.g. 70"}
               />
               <NumberInput
                 label="Height"
                 value={height}
                 onChange={setHeight}
                 unit={heightUnitLabel(unit)}
-                placeholder={unit === "imperial" ? "67" : "170"}
+                placeholder={unit === "imperial" ? "e.g. 67" : "e.g. 170"}
               />
             </View>
 
@@ -491,6 +507,14 @@ export default function GoalSetupScreen() {
             >
               Calculate My Goals
             </Button>
+            {missingFields.length > 0 ? (
+              <ThemedText
+                type="small"
+                style={[styles.calculateHint, { color: theme.textSecondary }]}
+              >
+                {`Still needed: ${missingFields.join(", ")}`}
+              </ThemedText>
+            ) : null}
             <InlineError
               message={
                 calculateMutation.isError
@@ -550,7 +574,7 @@ export default function GoalSetupScreen() {
                 </View>
 
                 <View
-                  style={[styles.goalItem, !canSetMacros && { opacity: 0.4 }]}
+                  style={[styles.goalItem, !canSetMacros && { opacity: 0.6 }]}
                 >
                   <View>
                     <TextInput
@@ -571,15 +595,6 @@ export default function GoalSetupScreen() {
                           : "Daily protein target (Premium required)"
                       }
                     />
-                    {!canSetMacros && (
-                      <View style={styles.goalLockIcon}>
-                        <Feather
-                          name="lock"
-                          size={12}
-                          color={theme.textSecondary}
-                        />
-                      </View>
-                    )}
                   </View>
                   <ThemedText
                     type="small"
@@ -590,7 +605,7 @@ export default function GoalSetupScreen() {
                 </View>
 
                 <View
-                  style={[styles.goalItem, !canSetMacros && { opacity: 0.4 }]}
+                  style={[styles.goalItem, !canSetMacros && { opacity: 0.6 }]}
                 >
                   <View>
                     <TextInput
@@ -611,15 +626,6 @@ export default function GoalSetupScreen() {
                           : "Daily carbs target (Premium required)"
                       }
                     />
-                    {!canSetMacros && (
-                      <View style={styles.goalLockIcon}>
-                        <Feather
-                          name="lock"
-                          size={12}
-                          color={theme.textSecondary}
-                        />
-                      </View>
-                    )}
                   </View>
                   <ThemedText
                     type="small"
@@ -630,7 +636,7 @@ export default function GoalSetupScreen() {
                 </View>
 
                 <View
-                  style={[styles.goalItem, !canSetMacros && { opacity: 0.4 }]}
+                  style={[styles.goalItem, !canSetMacros && { opacity: 0.6 }]}
                 >
                   <View>
                     <TextInput
@@ -651,15 +657,6 @@ export default function GoalSetupScreen() {
                           : "Daily fat target (Premium required)"
                       }
                     />
-                    {!canSetMacros && (
-                      <View style={styles.goalLockIcon}>
-                        <Feather
-                          name="lock"
-                          size={12}
-                          color={theme.textSecondary}
-                        />
-                      </View>
-                    )}
                   </View>
                   <ThemedText
                     type="small"
@@ -669,6 +666,23 @@ export default function GoalSetupScreen() {
                   </ThemedText>
                 </View>
               </View>
+
+              {!canSetMacros && (
+                <View style={styles.premiumNote}>
+                  <Feather
+                    name="lock"
+                    size={12}
+                    color={theme.textSecondary}
+                    accessible={false}
+                  />
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    Editing protein, carb and fat targets requires Premium.
+                  </ThemedText>
+                </View>
+              )}
 
               <Button
                 onPress={handleSave}
@@ -731,7 +745,9 @@ const styles = StyleSheet.create({
   },
   numberInputContainer: {
     flex: 1,
-    minWidth: 80,
+    // Wide enough that the field keeps room for 3 digits beside its unit
+    // label ("years"); narrower and a 2-digit age clipped to "2!" (QA #68).
+    minWidth: 130,
   },
   inputLabel: {
     marginBottom: Spacing.xs,
@@ -743,6 +759,7 @@ const styles = StyleSheet.create({
   },
   numberInput: {
     flex: 1,
+    minWidth: 56,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.xs,
@@ -770,7 +787,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   calculateButton: {
-    marginVertical: Spacing.lg,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  calculateHint: {
+    textAlign: "center",
+    marginBottom: Spacing.lg,
   },
   resultsCard: {
     padding: Spacing["2xl"],
@@ -795,7 +817,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   goalItem: {
-    width: "48%",
+    // 48% + gap overflowed 100% and collapsed the grid to one column (QA #70).
+    flexBasis: "45%",
+    flexGrow: 1,
     alignItems: "center",
   },
   goalInput: {
@@ -808,10 +832,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: Spacing.xs,
   },
-  goalLockIcon: {
-    position: "absolute",
-    top: Spacing.sm,
-    right: Spacing.sm,
+  premiumNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    marginBottom: Spacing.lg,
   },
   saveButton: {
     marginTop: Spacing.md,

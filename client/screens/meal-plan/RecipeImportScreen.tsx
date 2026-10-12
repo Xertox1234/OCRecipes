@@ -210,6 +210,7 @@ export default function RecipeImportScreen() {
               onPress={handleTryAgain}
               style={[
                 styles.actionButton,
+                styles.errorAction,
                 { backgroundColor: theme.accentSolid },
               ]}
               accessibilityRole="button"
@@ -221,6 +222,7 @@ export default function RecipeImportScreen() {
               onPress={handleCreateManually}
               style={[
                 styles.secondaryButton,
+                styles.errorAction,
                 { borderColor: withOpacity(theme.text, 0.15) },
               ]}
               accessibilityRole="button"
@@ -306,6 +308,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: Spacing.lg,
+  },
+  // centeredContent centres children, so buttons would shrink-wrap their label
+  // and sit edge-to-edge without a gutter (QA #15) — stretch inside the padding.
+  errorAction: {
+    alignSelf: "stretch",
   },
   errorText: {
     fontSize: 14,

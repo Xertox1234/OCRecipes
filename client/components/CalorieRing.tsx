@@ -101,7 +101,14 @@ export const CalorieRing = React.memo(function CalorieRing({
         </Svg>
         {/* Center content overlaid on the ring */}
         <View style={styles.centerContent}>
-          <MaterialCommunityIcons name="fire" size={22} color={theme.link} />
+          <MaterialCommunityIcons
+            name="fire"
+            size={22}
+            color={theme.link}
+            accessible={false}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
           <ThemedText style={styles.consumedValue}>
             {consumed.toLocaleString()}
           </ThemedText>

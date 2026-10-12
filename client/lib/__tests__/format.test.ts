@@ -3,6 +3,7 @@ import {
   formatDateMedium,
   formatDuration,
   formatDateRange,
+  formatGroceryListTitle,
 } from "../format";
 
 describe("Format Utilities", () => {
@@ -59,6 +60,22 @@ describe("Format Utilities", () => {
       expect(result).toContain("5");
       expect(result).toContain("12");
       expect(result).toContain("-");
+    });
+  });
+
+  describe("formatGroceryListTitle", () => {
+    it("rewrites a generated ISO-date title as a readable range", () => {
+      const result = formatGroceryListTitle(
+        "Grocery List 2024-01-05 to 2024-01-12",
+      );
+      expect(result).toContain("Grocery List");
+      expect(result).toContain("Jan 5");
+      expect(result).toContain("Jan 12");
+      expect(result).not.toContain("2024-01-05");
+    });
+
+    it("leaves a user-chosen title untouched", () => {
+      expect(formatGroceryListTitle("Party shopping")).toBe("Party shopping");
     });
   });
 });

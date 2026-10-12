@@ -65,6 +65,13 @@ vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
 
+// react-native-web's ScrollView ref has no scrollToEnd under jsdom; the screen
+// scrolls the results into view after Calculate (QA #70).
+const mockScrollToEnd = vi.fn();
+(
+  HTMLElement.prototype as unknown as { scrollToEnd: typeof mockScrollToEnd }
+).scrollToEnd = mockScrollToEnd;
+
 async function fillCalculateAndSave() {
   renderComponent(<GoalSetupScreen />);
 

@@ -55,8 +55,10 @@ function MacroProgressBar({
   theme: AppTheme;
   reducedMotion: boolean;
 }) {
-  const progress =
-    macro.goal > 0 ? Math.min(Math.max(macro.current / macro.goal, 0), 1) : 0;
+  const hasGoal = macro.goal > 0;
+  const progress = hasGoal
+    ? Math.min(Math.max(macro.current / macro.goal, 0), 1)
+    : 0;
   const accentColor = theme[macro.colorKey];
 
   const animatedWidth = useSharedValue(0);
@@ -77,12 +79,18 @@ function MacroProgressBar({
     <View
       style={styles.macroRow}
       accessibilityRole="progressbar"
-      accessibilityLabel={`${macro.label}: ${macro.current} grams of ${macro.goal} gram goal`}
+      accessibilityLabel={
+        hasGoal
+          ? `${macro.label}: ${macro.current} grams of ${macro.goal} gram goal`
+          : `${macro.label}: ${macro.current} grams, no goal set`
+      }
       accessibilityValue={{
         min: 0,
         max: macro.goal,
         now: macro.current,
-        text: `${macro.current}g of ${macro.goal}g`,
+        text: hasGoal
+          ? `${macro.current}g of ${macro.goal}g`
+          : `${macro.current}g, no goal set`,
       }}
     >
       <View style={styles.macroHeader}>
@@ -92,7 +100,7 @@ function MacroProgressBar({
         <ThemedText
           style={[styles.macroValues, { color: theme.textSecondary }]}
         >
-          {macro.current}g / {macro.goal}g
+          {hasGoal ? `${macro.current}g / ${macro.goal}g` : "No goal set"}
         </ThemedText>
       </View>
       <View

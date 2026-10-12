@@ -30,7 +30,7 @@ import { VERIFICATION_STREAK_UNLOCK_THRESHOLD } from "@shared/types/premium";
 import type { GroceryListsScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { GroceryList } from "@shared/schema";
-import { formatDateRange } from "@/lib/format";
+import { formatDateRange, formatGroceryListTitle } from "@/lib/format";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
 export default function GroceryListsScreen() {
@@ -157,11 +157,11 @@ export default function GroceryListsScreen() {
           pressed && { opacity: 0.7 },
         ]}
         accessibilityRole="button"
-        accessibilityLabel={item.title}
+        accessibilityLabel={formatGroceryListTitle(item.title)}
       >
         <View style={styles.listItemContent}>
           <ThemedText style={styles.listItemTitle} numberOfLines={1}>
-            {item.title}
+            {formatGroceryListTitle(item.title)}
           </ThemedText>
           <ThemedText
             style={[styles.listItemDate, { color: theme.textSecondary }]}
@@ -174,7 +174,7 @@ export default function GroceryListsScreen() {
           onPress={() => handleDelete(item.id)}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={`Delete ${item.title}`}
+          accessibilityLabel={`Delete ${formatGroceryListTitle(item.title)}`}
         >
           <Feather name="trash-2" size={16} color={theme.textSecondary} />
         </Pressable>
