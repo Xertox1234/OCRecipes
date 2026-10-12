@@ -358,6 +358,14 @@ export default function HomeScreen() {
       if (!rowRef) return;
       const currentY = scrollY.value;
       const animated = !reducedMotion;
+      // Reduced motion keeps the header expanded (no shrink to account for).
+      const headerShrink = reducedMotion
+        ? undefined
+        : {
+            expanded: HOME_HEADER_EXPANDED,
+            collapsed: HOME_HEADER_COLLAPSED,
+            threshold: HOME_COLLAPSE_THRESHOLD,
+          };
       scheduleOnUI(() => {
         "worklet";
         const m = measure(rowRef);
@@ -365,7 +373,7 @@ export default function HomeScreen() {
         scrollTo(
           scrollRef,
           0,
-          glideToTopOffset(currentY, m.pageY, collapsedBarHeight),
+          glideToTopOffset(currentY, m.pageY, collapsedBarHeight, headerShrink),
           animated,
         );
       });

@@ -59,6 +59,9 @@ const HERO_IMAGE_HEIGHT = 250;
 const HERO_PLACEHOLDER_HEIGHT = 200;
 
 export interface RecipeDetailContentProps {
+  /** Called with the outer scroll offset (JS thread, throttled). Lets a host that
+   *  floats controls over the hero draw a backing band once content scrolls. */
+  onScrollOffset?: (y: number) => void;
   recipeId: number;
   recipeType: "mealPlan" | "community";
   title: string;
@@ -219,6 +222,12 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
+        onScroll={
+          props.onScrollOffset
+            ? (e) => props.onScrollOffset?.(e.nativeEvent.contentOffset.y)
+            : undefined
+        }
+        scrollEventThrottle={16}
       >
         {/* 1. Hero Image / Gallery */}
         {props.isCanonical && (props.canonicalImages?.length ?? 0) > 0 ? (

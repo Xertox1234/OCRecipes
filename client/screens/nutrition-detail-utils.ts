@@ -82,7 +82,7 @@ export function deriveLogGate(params: {
 /**
  * Label for the hero card's "Per …" caption, derived from the SAME serving
  * state that scales the displayed nutrition values so the caption can never
- * desync from the numbers (e.g. "1.5 × 250 ml", "2 × 75 g", "100 g").
+ * desync from the numbers (e.g. "250 ml", "1.5 × 250 ml", "2 × 75 g", "100 g").
  */
 export function getServingContextLabel({
   servingQuantity,
@@ -105,5 +105,8 @@ export function getServingContextLabel({
     (opt) => Math.abs(opt.grams - servingSizeGrams) < OPTION_MATCH_TOLERANCE,
   );
   const servingLabel = match ? match.label : `${servingSizeGrams} g`;
+  // A single serving reads as just its label ("250 ml", "1 portion"); the
+  // multiplier prefix would otherwise give "1 × 1 portion" (QA sweep #86).
+  if (servingQuantity === 1) return servingLabel;
   return `${formatQuantity(servingQuantity)} × ${servingLabel}`;
 }

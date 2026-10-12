@@ -68,6 +68,11 @@ import type {
 import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 import { ErrorCode } from "@shared/constants/error-codes";
 
+/** Content height of the backing band below the status-bar inset (close button
+ *  bottom = Spacing.sm + 36, plus breathing room). */
+const HEADER_BAND_CONTENT = 56;
+/** Scroll offset past which the band shows. */
+const HEADER_BAND_SCROLL_THRESHOLD = 24;
 const HANDLE_WIDTH = 36;
 const HANDLE_HEIGHT = 5;
 const SAVE_BAR_HEIGHT = 72;
@@ -110,6 +115,12 @@ export default function FeaturedRecipeDetailScreen() {
   const resolvedRecipeType = resolveFeaturedRecipeType(recipeType, type);
   const navigation = useNavigation<FeaturedRecipeDetailScreenNavigationProp>();
   const insets = useSafeAreaInsets();
+  const [isScrolled, setIsScrolled] = useState(false);
+  const handleScrollOffset = useCallback((y: number) => {
+    // setState bails out when the boolean is unchanged, so this only re-renders
+    // on a threshold crossing.
+    setIsScrolled(y > HEADER_BAND_SCROLL_THRESHOLD);
+  }, []);
   const { theme } = useTheme();
   const toast = useToast();
 
@@ -450,6 +461,22 @@ export default function FeaturedRecipeDetailScreen() {
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       accessibilityViewIsModal
     >
+      {/* Header band: once the content scrolls under the floating grabber and
+          close button, give them an opaque backing so they never sit on text. */}
+      {isScrolled ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.headerBand,
+            {
+              height: insets.top + HEADER_BAND_CONTENT,
+              backgroundColor: theme.backgroundRoot,
+              borderBottomColor: theme.border,
+            },
+          ]}
+        />
+      ) : null}
+
       {/* Drag handle */}
       <View
         style={[styles.handleContainer, { top: insets.top + Spacing.xs }]}
@@ -532,6 +559,7 @@ export default function FeaturedRecipeDetailScreen() {
         </View>
       ) : (
         <RecipeDetailContent
+          onScrollOffset={handleScrollOffset}
           // A catalog preview is not a row in our DB yet: recipeId 0 hides
           // the favourite/cookbook/remix affordances that key on it.
           recipeId={resolvedRecipeType === "catalog" ? 0 : recipeId}
@@ -652,6 +680,14 @@ export default function FeaturedRecipeDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerBand: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   handleContainer: {
     position: "absolute",

@@ -530,12 +530,13 @@ export function estimateReasonableServingGrams(
  *
  * Returns an array of { label, grams, isDefault } options including:
  *   - The validated product serving (if available)
- *   - Common household measurements
+ *   - Common household measurements (no tsp/tbsp for beverages)
  *   - 100g reference
  */
 export function getServingSizeOptions(
   servingInfo: ServingSizeInfo,
   productName: string,
+  isBeverage = false,
 ): { label: string; grams: number; isDefault: boolean }[] {
   const options: { label: string; grams: number; isDefault: boolean }[] = [];
   const usedGrams = new Set<number>();
@@ -555,8 +556,11 @@ export function getServingSizeOptions(
   }
 
   // Option 2: Common household measurements
-  addOption("1 tsp (4g)", 4, false);
-  addOption("1 tbsp (12g)", 12, false);
+  // Teaspoon/tablespoon portions make no sense for a drink (QA sweep #86).
+  if (!isBeverage) {
+    addOption("1 tsp (4g)", 4, false);
+    addOption("1 tbsp (12g)", 12, false);
+  }
   addOption("¼ cup (60g)", 60, false);
   addOption("1 cup (240g)", 240, false);
 

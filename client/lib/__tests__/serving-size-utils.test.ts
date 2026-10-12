@@ -312,6 +312,18 @@ describe("getServingSizeOptions", () => {
     expect(options.some((o) => o.grams === 12)).toBe(true); // 1 tbsp
   });
 
+  it("omits tsp/tbsp options for a beverage but keeps the cup and 100g ones", () => {
+    const options = getServingSizeOptions(
+      { grams: 330, displayLabel: "1 can (330ml)", wasCorrected: false },
+      "Cola",
+      true,
+    );
+    expect(options.some((o) => o.grams === 4)).toBe(false);
+    expect(options.some((o) => o.grams === 12)).toBe(false);
+    expect(options.some((o) => o.grams === 240)).toBe(true);
+    expect(options.some((o) => o.grams === 100)).toBe(true);
+  });
+
   it("marks the product serving as default", () => {
     const options = getServingSizeOptions(
       {

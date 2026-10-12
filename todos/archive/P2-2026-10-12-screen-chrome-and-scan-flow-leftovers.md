@@ -1,6 +1,6 @@
 ---
 title: "Leftovers from the screen-chrome and broken-flows runs: scroll headers, FAB overlap, insets, scan-flow polish"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-12
 updated: 2026-10-12
@@ -81,3 +81,18 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local); screensh
 ### 2026-10-12
 
 - Filed from the deferred lists of #1401 and #1404.
+
+### 2026-10-12 (executor)
+
+Fixed: #2 (glide accounts for the shrinking Home header), #7 (discovery feed now drives the RecipeBrowser header collapse), #31 (header band behind grabber and close once scrolled), #63 (Profile collapsed bar slides in opaque instead of fading), #35 (For You card actions left-aligned, off the FAB), #62 (doubled gutter removed), EditDietaryProfile skeleton inset, PhotoIntent (green outline to link, no step bar without a photo), NutritionDetail ("1 x" prefix dropped for a single serving, no tsp/tbsp for beverages), RecipeChatScreen test comment moved.
+
+Declined, with reasons:
+
+- Plan tab left on the Add Recipe hub: the fix goes through `usePreventRemove` re-dispatch in RecipeEntryHubScreen; unverifiable without the simulator and Low priority.
+- "Scan Menu" opens the general picker: a menu-specific entry needs a new Scan mode param (new mechanism, outside the Scope Contract).
+- NutritionDetail white card: `theme.surface` is a deliberate token; colour drift belongs to the design-system colour-drift todo.
+- "Contains caffeine" next to "Not recorded": the flag comes from product evidence and the always-show-every-row panel is deliberate; reconciling is a product decision.
+- `useKeyboardVisible` on iPad floating/hardware keyboards: needs an iPad simulator, not available here.
+- UpgradeModal footer at largest Dynamic Type: not measured; an unmeasured footer-scroll change was reverted after review (it could push the CTA below the fold). Still open.
+- Home's own collapsed bar still fades (same translucency as Profile's old one); not reported in the sweep, left unchanged.
+- No simulator verification (light/dark) was performed for any visual change.

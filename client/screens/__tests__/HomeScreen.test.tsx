@@ -596,7 +596,13 @@ describe("HomeScreen — keyboard inset for inline drawers", () => {
     expect(scrollTo).toHaveBeenCalledWith(
       expect.anything(),
       0,
-      glideToTopOffset(0, 600, COLLAPSED_BAR),
+      // The Home header (100 -> 44 over 80pt of scroll) shrinks in-flow during
+      // the glide, so the target is 56pt shorter than the bare row-to-bar delta.
+      glideToTopOffset(0, 600, COLLAPSED_BAR, {
+        expanded: 100,
+        collapsed: 44,
+        threshold: 80,
+      }),
       expect.any(Boolean),
     );
     expect(paddingAtGlide).toEqual([KEYBOARD + Spacing.lg]);

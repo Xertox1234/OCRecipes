@@ -8,7 +8,12 @@ import {
 } from "react-native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, {
+  FadeInDown,
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+} from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -60,16 +65,33 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const hasAnimated = useRef(false);
 
-  const {
-    scrollHandler,
-    headerAnimatedStyle,
-    collapsedBarAnimatedStyle,
-    isBarVisible,
-  } = useScrollLinkedHeader({
-    expandedHeight: PROFILE_HEADER_EXPANDED,
-    collapsedHeight: PROFILE_HEADER_COLLAPSED,
-    collapseThreshold: PROFILE_COLLAPSE_THRESHOLD,
-    reducedMotion,
+  const { scrollHandler, scrollY, headerAnimatedStyle, isBarVisible } =
+    useScrollLinkedHeader({
+      expandedHeight: PROFILE_HEADER_EXPANDED,
+      collapsedHeight: PROFILE_HEADER_COLLAPSED,
+      collapseThreshold: PROFILE_COLLAPSE_THRESHOLD,
+      reducedMotion,
+    });
+
+  // The collapsed bar slides in from above instead of cross-fading: a fade left
+  // it translucent mid-scroll so the widget cards showed through it (QA #63).
+  // It stays fully opaque, so content passes cleanly underneath.
+  const barHeight =
+    insets.top + PROFILE_HEADER_COLLAPSED + StyleSheet.hairlineWidth;
+  const collapsedBarSlideStyle = useAnimatedStyle(() => {
+    if (reducedMotion) return { transform: [{ translateY: -barHeight }] };
+    return {
+      transform: [
+        {
+          translateY: interpolate(
+            scrollY.value,
+            [PROFILE_COLLAPSE_THRESHOLD * 0.5, PROFILE_COLLAPSE_THRESHOLD],
+            [-barHeight, 0],
+            Extrapolation.CLAMP,
+          ),
+        },
+      ],
+    };
   });
 
   // Gate entrance animations — play only on first mount
@@ -141,7 +163,7 @@ export default function ProfileScreen() {
       <Animated.View
         style={[
           styles.collapsedBar,
-          collapsedBarAnimatedStyle,
+          collapsedBarSlideStyle,
           {
             paddingTop: insets.top,
             backgroundColor: theme.backgroundSecondary,

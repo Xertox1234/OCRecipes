@@ -110,8 +110,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    // No horizontal padding of its own: Card already insets its content by
+    // Spacing.xl, and adding Spacing.lg on top doubled the gutter (QA #62).
     paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
     minHeight: 48,
   },
   rowLeft: {
@@ -127,6 +128,5 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginHorizontal: Spacing.lg,
   },
 });

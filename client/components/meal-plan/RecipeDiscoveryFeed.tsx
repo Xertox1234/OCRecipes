@@ -1,5 +1,5 @@
 import React from "react";
-import { ScrollView } from "react-native";
+import Animated from "react-native-reanimated";
 
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing } from "@/constants/theme";
@@ -11,17 +11,23 @@ interface RecipeDiscoveryFeedProps {
   onOpenRecipe: (recipe: SearchableRecipe) => void;
   onSeePreset: (key: "pantry" | "quick" | "featured") => void;
   contentBottomInset?: number;
+  /** Reanimated scroll handler (from `useScrollLinkedHeader`) so scrolling the
+   *  feed collapses the browser's header like the search-results list does. */
+  onScroll?: React.ComponentProps<typeof Animated.ScrollView>["onScroll"];
 }
 
 export function RecipeDiscoveryFeed({
   onOpenRecipe,
   onSeePreset,
   contentBottomInset = 0,
+  onScroll,
 }: RecipeDiscoveryFeedProps) {
   const { isPremium } = usePremiumContext();
 
   return (
-    <ScrollView
+    <Animated.ScrollView
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       contentContainerStyle={{
         paddingTop: Spacing.md,
         paddingBottom: contentBottomInset + Spacing.xl,
@@ -37,6 +43,6 @@ export function RecipeDiscoveryFeed({
           onSeeAll={() => onSeePreset(p.key)}
         />
       ))}
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }

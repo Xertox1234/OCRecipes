@@ -217,7 +217,10 @@ export default function EditDietaryProfileScreen() {
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       >
         <ScrollView
-          contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+          contentContainerStyle={{
+            paddingTop: headerInset,
+            paddingBottom: insets.bottom + 100,
+          }}
         >
           <DietaryProfileSkeleton />
         </ScrollView>
