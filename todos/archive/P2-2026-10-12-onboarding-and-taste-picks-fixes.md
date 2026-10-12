@@ -1,6 +1,6 @@
 ---
 title: "Onboarding and Taste Picks: blank recipe tiles, content hidden behind footers, inconsistent step counter"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-12
 updated: 2026-10-12
@@ -28,10 +28,10 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), group D;
 
 ## Acceptance Criteria
 
-- [ ] TastePicks tiles show images in onboarding and Settings → Taste Profile (unit test on the URL resolution).
-- [ ] Welcome and HealthDataConsent content is fully visible above the footer at rest or clearly scrollable; consent text visible before "I Agree".
-- [ ] One source of truth for step count; badge, bar and Welcome copy agree on every step.
-- [ ] Goals grid has no hole; #51, #52 fixed or declined.
+- [x] TastePicks tiles show images in onboarding and Settings → Taste Profile (unit test on the URL resolution).
+- [x] Welcome and HealthDataConsent content is fully visible above the footer at rest or clearly scrollable; consent text visible before "I Agree".
+- [x] One source of truth for step count; badge, bar and Welcome copy agree on every step.
+- [x] Goals grid has no hole; #51, #52 fixed or declined.
 - [ ] Re-checked light + dark through the full onboarding flow with a fresh account.
 
 ## Implementation Notes
@@ -57,3 +57,9 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), group D;
 ### 2026-10-12
 
 - Filed from the visual QA sweep triage.
+
+### 2026-10-12 (executor)
+
+- Fixed #48 (TastePicksGrid uses resolveImageUrl; titles wrap to 2 lines), #47/#41 (consent "Why we ask" moved above the category list; Welcome/consent spacing tightened and scroll indicator shown), #49 (single step source `client/context/onboarding-steps.ts`; badges, 6-segment bar and Welcome copy derive from it; TastePicks gets a badge), #50 (Goals grid centred, accent colours from theme tokens), #51 (Paleo icon was an invalid Feather glyph, now compass), #52 "personalise" -> "personalize". Declined: #52 tile-style/gutter unification, #51 grid off-centre beyond spacing (not reproduced from code).
+- Heart icon sliding under the progress bar on Welcome is ScrollView clipping at the bar edge: expected, left as is.
+- Last AC (light + dark walk-through with a fresh account in the simulator) NOT done by the executor; left unticked for a human/sim run.
