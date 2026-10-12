@@ -4,10 +4,10 @@ track: bug
 category: logic-errors
 tags: [accessibility, ios, voiceover, announceForAccessibility, react-native, live-region]
 module: client
-applies_to: ["client/**/*.tsx"]
+applies_to: ["client/**/*.tsx", "client/lib/announce-together.ts"]
 symptoms: ["On iOS/VoiceOver one of two pieces of content that appear together is never spoken (product name announced but the safety badge that appeared with it is silent, or vice-versa)", "Non-deterministic across runs — sometimes the first announcement wins, sometimes the second", "Android/TalkBack announces both correctly (badge has its own accessibilityLiveRegion), so the bug looks iOS-only"]
 created: 2026-07-21
-last_updated: 2026-10-01
+last_updated: 2026-10-11
 severity: medium
 ---
 
@@ -113,8 +113,37 @@ utterance (`parts.push`) rather than getting an effect of its own:
   acts). Keep the announce ungated on both platforms: the banner carries no live
   region, and adding one would double-speak it on Android.
 
+### Third adopter: two SEPARATE components that can mount together (#1391)
+
+The fixes above merge announcements inside one effect. That is impossible when
+the two announcers are different components: `ReplacementCodeCard` announces the
+new recovery code on mount, `InlineError` announces its message (iOS) on mount,
+and a request that spends a recovery code and then fails renders both in one
+commit. The reviewer measured it with an announce spy: two calls in one commit,
+and the error cut the code off. Five screens render the card, most next to an
+`InlineError`, so merging per screen would have meant five copies.
+
+Fix: both components call `announceTogether(message, { first? })` from
+`client/lib/announce-together.ts` instead of `announceForAccessibility`. It
+collects every message posted in the same tick and sends ONE announcement on a
+`setTimeout(0)` (after every effect in the commit has run), `first` messages
+leading. The card passes `first: true`, so the code is heard before the error.
+
+- The platform split is unchanged: `InlineError` still calls it only on iOS (its
+  assertive live region covers Android); the card still announces on both.
+- Every `InlineError` announcement is now one tick later. A test that spies and
+  asserts right after `render` must wait: `await act(() => new Promise((r) => setTimeout(r, 0)))`
+  (two `NutritionDetailScreen` tests), or use fake timers and `vi.runAllTimers()`
+  inside `act(() => { ... })` (a block body: an expression body returns the
+  thenable and trips `no-floating-promises`).
+- Regression test: mount both in one render, `toHaveBeenCalledTimes(1)`, and
+  assert the code's index is before the error's.
+
 ## Prevention
 
+- A shared component that announces on mount and can co-mount with another
+  announcer (an error, a toast) routes through `announceTogether`, not
+  `announceForAccessibility` directly.
 - Before adding a second imperative `announceForAccessibility` to a component,
   check whether its trigger state can become defined in the same commit as an
   existing announce. If so, merge them.
@@ -141,6 +170,9 @@ utterance (`parts.push`) rather than getting an effect of its own:
   confidence-banner effect (second adopter).
 - `client/screens/__tests__/LabelAnalysisScreen.a11y.test.tsx` — the
   exact-string, exactly-once and both-node live-region pins.
+- `client/lib/announce-together.ts` — same-tick coalescer for announcers in
+  separate components (third adopter); `client/components/ReplacementCodeCard.tsx`,
+  `client/components/InlineError.tsx`, `client/components/__tests__/ReplacementCodeCard.test.tsx`.
 
 ## See Also
 
