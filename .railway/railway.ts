@@ -50,8 +50,6 @@ export default defineRailway(() => {
       GOOGLE_OAUTH_WEB_CLIENT_ID: preserve(),
       IDENTITY_TOKEN_ENC_KEY: preserve(),
       JWT_SECRET: preserve(),
-      MFA_SECRET_ENC_KEY: preserve(),
-      MFA_SETUP_ENABLED: preserve(),
       NODE_ENV: preserve(),
       OPENROUTER_API_KEY: preserve(),
       R2_ACCESS_KEY_ID: preserve(),

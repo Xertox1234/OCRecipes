@@ -39,7 +39,7 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), groups C
 ## Implementation Notes
 
 - Verify links act only on a POST from a confirm button (see the solution doc on emailed links clicked by mail scanners) — keep that.
-- Local 2FA testing needs `MFA_SETUP_ENABLED=true` and `MFA_SECRET_ENC_KEY` (the sweep's throwaway key is in `~/qa-sweep-2026-10/logs/mfa-key.txt`; test account `qasweep1` has 2FA on).
+- Local two-step testing needs no extra variables: since #1410 two-step is an emailed code only, and `MFA_SETUP_ENABLED` / `MFA_SECRET_ENC_KEY` are gone (test account `qasweep1` had authenticator 2FA, which migration 0025 removed).
 
 ## Scope Contract
 
