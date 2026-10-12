@@ -7,6 +7,8 @@ updated: 2026-10-11
 assignee:
 labels: [deferred, auth, security]
 github_issue:
+human_led: true
+blocked_reason: "Owner ruling needed (refuse to start vs. run degraded; option a vs. b). Auth crypto: implement in-session, never delegate."
 ---
 
 # A changed MFA key breaks every authenticator without warning
