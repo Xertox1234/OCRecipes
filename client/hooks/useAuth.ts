@@ -19,6 +19,7 @@ import type {
   SocialProvider,
   SocialSignInResult,
   User,
+  EmailCodeSent,
 } from "@shared/types/auth";
 import {
   recoveryCodesOrThrow,
@@ -767,6 +768,41 @@ export function useAuth() {
     [],
   );
 
+  // ── Two-step by emailed code (owner ruling 4, 2026-10-12) ───────────────
+  /** Password → a code emailed to the account's address. */
+  const startEmailTwoStep = useCallback(
+    async (password: string): Promise<EmailCodeSent> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/email/setup", {
+        password,
+      });
+      return (await res.json()) as EmailCodeSent;
+    },
+    [],
+  );
+
+  /** The emailed code turns two-step on. Other devices were signed out; keep this one. */
+  const confirmEmailTwoStep = useCallback(
+    async (code: string) => {
+      const res = await apiRequest("POST", "/api/auth/mfa/email/confirm", {
+        code,
+      });
+      const data = (await res.json()) as SignedInResult;
+      await establishSession(data.user, data.token);
+    },
+    [establishSession],
+  );
+
+  /** "Resend code" on the sign-in code screen (no session yet). */
+  const resendSignInCode = useCallback(
+    async (challenge: string): Promise<EmailCodeSent> => {
+      const res = await apiRequest("POST", "/api/auth/mfa/email/resend", {
+        challenge,
+      });
+      return (await res.json()) as EmailCodeSent;
+    },
+    [],
+  );
+
   /** Every trusted phone asks for the code again — this one included. */
   const forgetTrustedPhones = useCallback(async () => {
     await apiRequest("DELETE", "/api/auth/mfa/trusted-devices");
@@ -844,6 +880,9 @@ export function useAuth() {
   return {
     ...state,
     startTwoStepSetup,
+    startEmailTwoStep,
+    confirmEmailTwoStep,
+    resendSignInCode,
     startNewPhone,
     confirmTwoStep,
     disableTwoStep,

@@ -195,7 +195,7 @@ async function emailCodeOrReply(user: User): Promise<void> {
   if (result === "capped") {
     throw new Reply(
       429,
-      ErrorCode.RATE_LIMITED,
+      ErrorCode.MFA_EMAIL_DAILY_LIMIT,
       "Too many codes today. Use the newest one in your email, or try again tomorrow.",
     );
   }

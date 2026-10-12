@@ -91,3 +91,15 @@ export function addKeyCopy(os: string): {
 /** A wrong code: usually an older OCRecipes entry, sometimes the clock. */
 export const WRONG_CODE_MESSAGE =
   "That code didn't match. Use the newest OCRecipes entry (delete older ones), and check your phone's time is set automatically.";
+
+/** The first step's line: what is about to happen, in plain words. */
+export function identityIntro(
+  mode: TwoStepSetupMode,
+  byEmail: boolean,
+): string {
+  if (mode === "setup")
+    return "When you sign in on a new phone, we'll email you a 6-digit code. Enter your password to start.";
+  return byEmail
+    ? "Enter your password and the code we email you."
+    : "Enter your password and a code from your authenticator app (or a recovery code).";
+}

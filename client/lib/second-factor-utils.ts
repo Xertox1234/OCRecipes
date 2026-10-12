@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api-error";
+import type { MfaChallengeResult } from "@shared/types/auth";
 
 // Two-step verification helpers shared by the challenge screen and the inline
 // code fields (change email, delete account, connect a sign-in method).
@@ -119,5 +120,43 @@ export function secondFactorErrorMessage(err: unknown): {
   return {
     message: "Couldn't check that code. Please try again.",
     restart: false,
+  };
+}
+
+/** The "Email me a code" button on an email two-step account. */
+export function emailCodeButtonLabel(
+  sent: boolean,
+  secondsLeft: number,
+): string {
+  if (!sent) return "Email me a code";
+  return secondsLeft > 0 ? `Resend code in ${secondsLeft}s` : "Resend code";
+}
+
+/** A failed "Email me a code" — static copy, never the raw response. */
+export function emailCodeSendError(err: unknown): string {
+  const code = err instanceof ApiError ? err.code : undefined;
+  if (code === "MFA_EMAIL_DAILY_LIMIT")
+    return "Too many codes today. Use the newest one in your email, or try again tomorrow.";
+  if (code === "MFA_CHALLENGE_EXPIRED")
+    return "This sign-in expired. Please start again.";
+  if (
+    code === "RATE_LIMITED" ||
+    (err instanceof ApiError && err.status === 429)
+  )
+    return "Wait a moment before asking for another code.";
+  return "Couldn't send a code. Please try again.";
+}
+
+/** The code screen's params from a sign-in (or connect) challenge. */
+export function twoStepCodeParams(
+  result: MfaChallengeResult,
+  purpose: "login" | "link",
+) {
+  return {
+    challenge: result.challenge,
+    purpose,
+    method: result.method,
+    emailHint: result.emailHint,
+    codeSent: result.codeSent,
   };
 }

@@ -8,6 +8,7 @@ import {
   providerRowState,
   identityErrorMessage,
   deleteProofMode,
+  twoStepSubtitle,
 } from "../SignInMethodsScreen-utils";
 
 const APPLE_ONLY = { apple: true, google: false } as const;
@@ -167,5 +168,30 @@ describe("reauthProviders (Change password → I forgot it)", () => {
         allNative,
       ),
     ).toEqual(["apple"]);
+  });
+});
+
+describe("twoStepSubtitle", () => {
+  it("off: says what turning it on means", () => {
+    expect(
+      twoStepSubtitle({ enabled: false, method: null, hasPassword: true }),
+    ).toBe(
+      "Off. When it's on, signing in on a new phone needs a code we email you.",
+    );
+  });
+  it("on by email", () => {
+    expect(
+      twoStepSubtitle({ enabled: true, method: "email", hasPassword: true }),
+    ).toBe("On. Signing in on a new phone needs a code we email you.");
+  });
+  it("on by authenticator (older setups)", () => {
+    expect(
+      twoStepSubtitle({ enabled: true, method: "totp", hasPassword: true }),
+    ).toBe("On, with an authenticator app.");
+  });
+  it("no password yet", () => {
+    expect(
+      twoStepSubtitle({ enabled: false, method: null, hasPassword: false }),
+    ).toBe("Set a password to turn on two-step verification");
   });
 });

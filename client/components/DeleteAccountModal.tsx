@@ -17,6 +17,7 @@ import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
+import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import type { DeleteAccountProof } from "@/hooks/useAuth";
@@ -73,6 +74,8 @@ export function DeleteAccountModal({
   loadError = false,
   askCode = false,
 }: DeleteAccountModalProps) {
+  // Set when the account's two-step codes come by email.
+  const twoStepEmail = useSignedInEmailCode();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const mode = deleteProofMode(
@@ -345,6 +348,7 @@ export function DeleteAccountModal({
                       onChange={setFactor}
                       busy={isDeleting}
                       autoFocus={!askCode}
+                      emailCode={twoStepEmail}
                     />
                   ) : null}
                 </>

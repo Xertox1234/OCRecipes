@@ -170,16 +170,19 @@ describe("POST /api/auth/mfa/email/setup", () => {
   });
 
   it.each([
-    ["cooldown", "Wait a moment"],
-    ["capped", "Too many codes"],
-  ] as const)("%s → 429 with a plain reason, no email", async (r, words) => {
-    vi.mocked(storage.issueMfaEmailCode).mockResolvedValue(r);
-    const res = await post("email/setup", { password: "right-pass1" });
-    expect(res.status).toBe(429);
-    expect(res.body.code).toBe("RATE_LIMITED");
-    expect(res.body.error).toContain(words);
-    expect(sendSignInCode).not.toHaveBeenCalled();
-  });
+    ["cooldown", "RATE_LIMITED", "Wait a moment"],
+    ["capped", "MFA_EMAIL_DAILY_LIMIT", "Too many codes"],
+  ] as const)(
+    "%s → 429 %s with a plain reason, no email",
+    async (r, code, words) => {
+      vi.mocked(storage.issueMfaEmailCode).mockResolvedValue(r);
+      const res = await post("email/setup", { password: "right-pass1" });
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe(code);
+      expect(res.body.error).toContain(words);
+      expect(sendSignInCode).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("POST /api/auth/mfa/email/confirm", () => {

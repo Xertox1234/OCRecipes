@@ -25,24 +25,29 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
   afterVerify,
   afterVerifyFailure,
+  codeScreenIntro,
   showTrustSwitch,
+  TRUST_LABEL,
 } from "./TwoStepCodeScreen-utils";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TwoStepCode">;
 
 /**
  * The password was right on an account with two-step verification: enter the
- * code from the authenticator app (or a recovery code) to finish signing in,
- * or to finish connecting Google/Apple from the Connect prompt.
+ * code — from the email we just sent, or from the authenticator app (or a
+ * recovery code) on older setups — to finish signing in, or to finish
+ * connecting Google/Apple from the Connect prompt.
  */
 export default function TwoStepCodeScreen({ route, navigation }: Props) {
-  const { challenge, purpose } = route.params;
+  const { challenge, purpose, method, emailHint, codeSent } = route.params;
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const { verifySecondFactor, finishSignIn } = useAuthContext();
-  const [trust, setTrust] = useState(false);
+  const { verifySecondFactor, finishSignIn, resendSignInCode } =
+    useAuthContext();
+  // On by default: a phone that passed the check once isn't asked again.
+  const [trust, setTrust] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [replacement, setReplacement] = useState<string | null>(null);
@@ -118,7 +123,7 @@ export default function TwoStepCodeScreen({ route, navigation }: Props) {
             Two-step verification
           </ThemedText>
           <ThemedText type="body" style={{ color: theme.textSecondary }}>
-            Enter the 6-digit code from your authenticator app.
+            {codeScreenIntro({ method, emailHint, codeSent })}
           </ThemedText>
         </View>
 
@@ -132,12 +137,24 @@ export default function TwoStepCodeScreen({ route, navigation }: Props) {
 
         {pending ? null : (
           <>
-            <SecondFactorField onSubmit={submit} error={error} busy={busy} />
+            <SecondFactorField
+              onSubmit={submit}
+              error={error}
+              busy={busy}
+              emailCode={
+                method === "email"
+                  ? {
+                      send: () => resendSignInCode(challenge),
+                      alreadySent: codeSent !== false,
+                    }
+                  : undefined
+              }
+            />
 
             {showTrustSwitch(purpose) ? (
               <View style={styles.trustRow}>
                 <ThemedText type="body" style={styles.flex}>
-                  Trust this phone for 90 days
+                  {TRUST_LABEL}
                 </ThemedText>
                 <Switch
                   value={trust}
@@ -146,8 +163,8 @@ export default function TwoStepCodeScreen({ route, navigation }: Props) {
                     setTrust(v);
                   }}
                   disabled={busy}
-                  accessibilityLabel="Trust this phone for 90 days"
-                  accessibilityHint="Skip the code on this phone when you sign in with your password"
+                  accessibilityLabel={TRUST_LABEL}
+                  accessibilityHint="For 90 days, signing in with your password on this phone won't ask for a code"
                   trackColor={{
                     false: withOpacity(theme.textSecondary, 0.3),
                     true: theme.link,

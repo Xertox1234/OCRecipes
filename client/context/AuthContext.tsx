@@ -14,6 +14,7 @@ import type {
   SocialProvider,
   SocialSignInResult,
   User,
+  EmailCodeSent,
 } from "@shared/types/auth";
 
 interface AuthContextType {
@@ -32,6 +33,9 @@ interface AuthContextType {
   ) => Promise<MfaVerifyResult>;
   finishSignIn: (user: User, token: string) => Promise<void>;
   startTwoStepSetup: (password: string) => Promise<TwoStepSecret>;
+  startEmailTwoStep: (password: string) => Promise<EmailCodeSent>;
+  confirmEmailTwoStep: (code: string) => Promise<void>;
+  resendSignInCode: (challenge: string) => Promise<EmailCodeSent>;
   startNewPhone: (
     password: string,
     secondFactor: SecondFactorInput,

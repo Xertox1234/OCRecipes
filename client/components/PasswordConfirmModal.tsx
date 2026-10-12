@@ -13,6 +13,7 @@ import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
+import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
 import type { SecondFactorInput } from "@shared/types/auth";
 import { useTheme } from "@/hooks/useTheme";
@@ -54,6 +55,8 @@ export function PasswordConfirmModal({
   replacementCode = null,
   onReplacementSaved,
 }: PasswordConfirmModalProps) {
+  // Set when the account's two-step codes come by email.
+  const twoStepEmail = useSignedInEmailCode();
   const { theme } = useTheme();
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -143,6 +146,7 @@ export function PasswordConfirmModal({
                     onChange={setFactor}
                     busy={busy}
                     autoFocus={false}
+                    emailCode={twoStepEmail}
                   />
                 ) : null}
                 <InlineError message={error} />

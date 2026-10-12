@@ -17,6 +17,7 @@ import { SecondFactorField } from "@/components/SecondFactorField";
 import { ReplacementCodeCard } from "@/components/ReplacementCodeCard";
 import { ApiError } from "@/lib/api-error";
 import { useAuthContext } from "@/context/AuthContext";
+import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import { useTheme } from "@/hooks/useTheme";
 import type { ChangePasswordProof } from "@/hooks/useAuth";
 import {
@@ -67,6 +68,8 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const { hasPassword, providers, mfaEnabled } = route.params;
   const { theme } = useTheme();
   const { changePassword, requestPasswordChangeCode } = useAuthContext();
+  // Set when the account's two-step codes come by email.
+  const twoStepEmail = useSignedInEmailCode();
   const [mode, setMode] = useState<Mode>(hasPassword ? "current" : "forgot");
   const [current, setCurrent] = useState("");
   const [emailCode, setEmailCode] = useState("");
@@ -92,6 +95,10 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
 
   // The authenticator field remounts empty when the mode changes, so drop
   // the code it held then — never send a code the person can't see.
+  // On an email two-step account the change code from the email IS the
+  // second factor — never ask for a second emailed code (owner ruling 4).
+  const factorNeeded = needsFactor && !(twoStepEmail && mode === "code");
+
   const switchMode = (next: Mode) => {
     if (next !== mode) setFactor(null);
     setMode(next);
@@ -135,7 +142,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     if (busyRef.current) return;
     // Never send without the authenticator code once it's asked for: the
     // server would refuse, and an emailed-code guess would be spent on it.
-    if (!provider && needsFactor && !factor) {
+    if (!provider && factorNeeded && !factor) {
       setErrorField(null);
       setError(ENTER_AUTH_CODE);
       return;
@@ -145,7 +152,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     setError(null);
     setErrorField(null);
     const proof = proofFor(provider);
-    const secondFactor = needsFactor && factor ? factor : undefined;
+    const secondFactor = factorNeeded && factor ? factor : undefined;
     let out: SaveResult | null = null;
     let failure: unknown = null;
     try {
@@ -271,11 +278,12 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           {passwordMessage("too_short")}
         </ThemedText>
 
-        {needsFactor && mode !== "forgot" ? (
+        {factorNeeded && mode !== "forgot" ? (
           <SecondFactorField
             onChange={setFactor}
             busy={busy}
             autoFocus={false}
+            emailCode={twoStepEmail}
           />
         ) : null}
         {error ? <InlineError message={error} /> : null}

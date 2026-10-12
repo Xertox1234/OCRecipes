@@ -7,6 +7,9 @@ import {
   replacementFromError,
   recoveryCodesOrThrow,
   isTwoStepCheckError,
+  emailCodeButtonLabel,
+  emailCodeSendError,
+  twoStepCodeParams,
 } from "../second-factor-utils";
 
 /** The shape throwIfResNotOk produces: `${status}: ${body}`. */
@@ -145,5 +148,69 @@ describe("isTwoStepCheckError", () => {
       false,
     );
     expect(isTwoStepCheckError(new Error("x"))).toBe(false);
+  });
+});
+
+describe("emailCodeButtonLabel", () => {
+  it("before any send: Email me a code", () => {
+    expect(emailCodeButtonLabel(false, 0)).toBe("Email me a code");
+  });
+  it("counting down after a send", () => {
+    expect(emailCodeButtonLabel(true, 27)).toBe("Resend code in 27s");
+  });
+  it("after the wait: Resend code", () => {
+    expect(emailCodeButtonLabel(true, 0)).toBe("Resend code");
+  });
+});
+
+describe("emailCodeSendError", () => {
+  it("too soon", () => {
+    expect(
+      emailCodeSendError(apiError(429, { code: "RATE_LIMITED", error: "x" })),
+    ).toBe("Wait a moment before asking for another code.");
+  });
+  it("daily limit points at the newest email", () => {
+    expect(
+      emailCodeSendError(
+        apiError(429, { code: "MFA_EMAIL_DAILY_LIMIT", error: "x" }),
+      ),
+    ).toBe(
+      "Too many codes today. Use the newest one in your email, or try again tomorrow.",
+    );
+  });
+  it("a dead sign-in", () => {
+    expect(
+      emailCodeSendError(
+        apiError(401, { code: "MFA_CHALLENGE_EXPIRED", error: "x" }),
+      ),
+    ).toBe("This sign-in expired. Please start again.");
+  });
+  it("anything else: plain retry copy, never the raw response", () => {
+    expect(emailCodeSendError(new Error("boom"))).toBe(
+      "Couldn't send a code. Please try again.",
+    );
+  });
+});
+
+describe("twoStepCodeParams", () => {
+  it("carries the email details through to the code screen", () => {
+    expect(
+      twoStepCodeParams(
+        {
+          status: "mfa_required",
+          challenge: "c",
+          method: "email",
+          emailHint: "w•••@x.com",
+          codeSent: true,
+        },
+        "link",
+      ),
+    ).toEqual({
+      challenge: "c",
+      purpose: "link",
+      method: "email",
+      emailHint: "w•••@x.com",
+      codeSent: true,
+    });
   });
 });

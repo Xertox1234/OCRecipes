@@ -12,6 +12,10 @@ const auth = vi.hoisted(() => ({
   requestPasswordChangeCode: vi.fn(),
 }));
 vi.mock("@/context/AuthContext", () => ({ useAuthContext: () => auth }));
+const emailTwoStep = vi.hoisted(() => ({ source: undefined as unknown }));
+vi.mock("@/hooks/useSignInMethods", () => ({
+  useSignedInEmailCode: () => emailTwoStep.source,
+}));
 // The replacement-code card copies with expo-clipboard (native module).
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 
@@ -42,6 +46,7 @@ beforeEach(() => {
   // leak its reply into the next one.
   auth.changePassword.mockReset();
   auth.requestPasswordChangeCode.mockReset();
+  emailTwoStep.source = undefined;
 });
 
 describe("ChangePasswordScreen", () => {
@@ -254,6 +259,34 @@ describe("ChangePasswordScreen", () => {
     renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
     expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
     expect(screen.getByLabelText("6-digit code")).toBeTruthy();
+  });
+
+  // Owner ruling 4: an email two-step account never types two emailed codes.
+  it("email two-step: the emailed change code alone saves — no second code field", async () => {
+    emailTwoStep.source = { send: vi.fn() };
+    auth.requestPasswordChangeCode.mockResolvedValue(undefined);
+    auth.changePassword.mockResolvedValue({ done: true });
+    renderScreen({ hasPassword: false, providers: [], mfaEnabled: true });
+    await act(async () => tap("Email me a code"));
+    expect(screen.queryByLabelText("6-digit code")).toBeNull();
+    type("Code from the email", "654321");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(auth.changePassword).toHaveBeenCalledWith(
+      { emailCode: "654321" },
+      NEW,
+      undefined,
+    );
+  });
+
+  it("email two-step + current password: the code field offers Email me a code", () => {
+    emailTwoStep.source = { send: vi.fn() };
+    renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
+    expect(screen.getByLabelText("6-digit code")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Email me a code" }),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Use a recovery code instead")).toBeNull();
   });
 
   it("two-step on: Google/Apple needs no authenticator code field", () => {

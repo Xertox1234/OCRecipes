@@ -40,7 +40,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Colors } from "@/constants/theme";
 import type { PhotoIntent } from "@shared/constants/preparation";
-import type { SignInMethod } from "@shared/types/auth";
+import type { SignInMethod, TwoStepMethod } from "@shared/types/auth";
 import type {
   CookingSessionIngredient,
   SubstitutionResult,
@@ -75,7 +75,14 @@ export type RootStackParamList = {
   };
   ResetPassword: { email: string };
   /** A correct password on a 2FA account: enter the code (sign-in or Connect prompt). */
-  TwoStepCode: { challenge: string; purpose: "login" | "link" };
+  TwoStepCode: {
+    challenge: string;
+    purpose: "login" | "link";
+    /** Email accounts: the code already went to `emailHint` (masked). */
+    method?: TwoStepMethod;
+    emailHint?: string;
+    codeSent?: boolean;
+  };
   VerifyEmail:
     | {
         token?: string;
