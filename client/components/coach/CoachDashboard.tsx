@@ -155,7 +155,7 @@ const CoachDashboard = React.memo(function CoachDashboard({
             ]}
             onPress={() => onSuggestionPress(insight.content)}
             accessibilityRole="button"
-            accessibilityLabel={`Discuss: ${insight.content}`}
+            accessibilityLabel={`Discuss: ${toSecondPerson(insight.content)}`}
           >
             <ThemedText type="small" style={styles.insightText}>
               {toSecondPerson(insight.content)}

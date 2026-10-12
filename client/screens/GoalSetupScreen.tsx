@@ -152,13 +152,7 @@ function SelectableChip({
         },
       ]}
     >
-      <ThemedText
-        type="body"
-        style={[
-          styles.chipLabel,
-          { color: selected ? theme.link : theme.text },
-        ]}
-      >
+      <ThemedText type="body" style={[styles.chipLabel, { color: theme.text }]}>
         {label}
       </ThemedText>
       {description && (

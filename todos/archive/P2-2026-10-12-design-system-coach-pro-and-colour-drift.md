@@ -1,6 +1,6 @@
 ---
 title: "Design system: Coach Pro off ThemedText, green/off-palette colours, notebook layout"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-12
 updated: 2026-10-12
@@ -72,3 +72,4 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), group G 
 ### 2026-10-12
 
 - Filed from the visual QA sweep triage.
+- Implemented 2026-10-12 (todo-executor). Done: ThemedText migration of the five Coach Pro files; #75 (second-person display via toSecondPerson, display-only), #76, #77 (stepper/quick-pick date instead of free text; no picker lib installed), #78 (Coach title, 44pt targets), #56, #36; colour drift on paywall, GoalSetup, EditDietaryProfile, Settings, Welcome, hub tiles (theme.ts accent\* values darkened for white-icon contrast), CalorieRing, tab badge, History stat cards, notebook type colours. Declined/left: #87 (three chat inputs, a design call), Lows #4/#16/#18/#9/#85/#50, History's five tile colours, allergy-severity colours (semantic), MenuScan/progress-display semantic colours, camera overlays, the extraction-prompt rewrite for notebook text (display fix chosen). Light+dark simulator re-check not performed by the executor.

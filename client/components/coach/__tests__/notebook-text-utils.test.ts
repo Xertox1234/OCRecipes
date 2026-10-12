@@ -20,6 +20,12 @@ describe("toSecondPerson", () => {
     );
   });
 
+  it("handles -oes verbs and contractions", () => {
+    expect(toSecondPerson("User goes to the gym")).toBe("You go to the gym");
+    expect(toSecondPerson("User doesn't eat meat")).toBe("You don't eat meat");
+    expect(toSecondPerson("User isn't vegan")).toBe("You aren't vegan");
+  });
+
   it("leaves other text untouched", () => {
     expect(toSecondPerson("Eats late on weekends")).toBe(
       "Eats late on weekends",

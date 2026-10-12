@@ -1,7 +1,7 @@
 /**
  * Colour for a notebook entry type, as a theme token so it follows dark mode.
  * Used as TEXT / dot colour on the card surface (the badge-text tokens are
- * tuned for >= 4.5:1 on backgroundRoot and the card surfaces in both modes) —
+ * tuned for >= 4.5:1 on backgroundRoot; `link` is ~4.4:1 on backgroundSecondary in light mode) —
  * never as a fill behind white text.
  */
 export function notebookTypeColor(

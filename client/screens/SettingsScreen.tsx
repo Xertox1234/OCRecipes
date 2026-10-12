@@ -456,10 +456,7 @@ export default function SettingsScreen() {
                 ]}
               >
                 <ThemedText
-                  style={[
-                    styles.unitOptionLabel,
-                    { color: selected ? theme.link : theme.text },
-                  ]}
+                  style={[styles.unitOptionLabel, { color: theme.text }]}
                 >
                   {option.label}
                 </ThemedText>
