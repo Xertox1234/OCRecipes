@@ -151,7 +151,11 @@ describe("two-step email codes (real DB)", () => {
   });
 
   it("enableEmailMfa refuses when two-step is already on — nothing written", async () => {
-    const user = await createTestUser(tx, { mfaEnabledAt: new Date() });
+    const user = await createTestUser(tx);
+    await tx
+      .update(users)
+      .set({ mfaEnabledAt: new Date() })
+      .where(eq(users.id, user.id));
     await me.issueMfaEmailCode(user.id, "h1");
     expect(await me.enableEmailMfa(user.id, "h1")).toBeUndefined();
     expect(await me.reserveMfaEmailAttempt(user.id)).toBe("h1"); // not spent
