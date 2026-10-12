@@ -114,24 +114,4 @@ describe("ConnectAccountScreen — two-step verification", () => {
       }),
     );
   });
-
-  it("a right password under 15 without two-step replaces this screen with PasswordUpgrade (nothing linked)", async () => {
-    mockLinkWithPassword.mockResolvedValue({
-      status: "upgrade_required",
-      pass: "pass-link",
-      canUseTwoStep: false,
-    });
-    const navigation = renderScreen();
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "short" },
-    });
-    fireEvent.click(screen.getByText("Connect and sign in"));
-    await waitFor(() =>
-      expect(navigation.replace).toHaveBeenCalledWith("PasswordUpgrade", {
-        pass: "pass-link",
-        canUseTwoStep: false,
-        purpose: "link",
-      }),
-    );
-  });
 });

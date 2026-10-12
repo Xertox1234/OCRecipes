@@ -15,10 +15,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing } from "@/constants/theme";
 import { ApiError } from "@/lib/api-error";
 import { RESET_CODE_LENGTH } from "@shared/constants/password-reset";
-import {
-  PASSWORD_MAX,
-  PASSWORD_MIN_WITH_MFA,
-} from "@shared/constants/password-policy";
+import { PASSWORD_MAX, PASSWORD_MIN } from "@shared/constants/password-policy";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
   type ResetFormField,
@@ -41,9 +38,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "ResetPassword">;
  * reveal a code exists). Success signs nobody in: it resets the stack to Login
  * with the email prefilled and a one-time toast (LoginScreen consumes it).
  */
-// The floor only: this screen doesn't know whether two-step is on (the server
-// applies 15 when it is off). iOS suggestions are longer than 15 anyway.
-const RESET_PASSWORD_RULES = `minlength: ${PASSWORD_MIN_WITH_MFA}; maxlength: ${PASSWORD_MAX};`;
+// iOS strong-password suggestions follow the minimum (8 for everyone).
+const RESET_PASSWORD_RULES = `minlength: ${PASSWORD_MIN}; maxlength: ${PASSWORD_MAX};`;
 
 export default function ResetPasswordScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -189,7 +185,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             errorMessage={errorField === "password" ? error : undefined}
             testID="input-reset-password"
             accessibilityLabel="New password"
-            accessibilityHint={`At least ${PASSWORD_MIN_WITH_MFA} characters`}
+            accessibilityHint={`At least ${PASSWORD_MIN} characters`}
           />
           <TextInput
             leftIcon="lock"

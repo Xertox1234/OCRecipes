@@ -44,10 +44,10 @@ describe("changePasswordErrorMessage", () => {
     ],
     [
       apiErr(400, {
-        error: "Use at least 15 characters.",
+        error: "Use at least 8 characters.",
         code: "PASSWORD_TOO_SHORT",
       }),
-      "Use at least 15 characters.",
+      "Use at least 8 characters.",
     ],
     [
       apiErr(400, {

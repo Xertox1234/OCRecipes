@@ -13,7 +13,6 @@ import type {
   SignInMethods,
   SocialProvider,
   SocialSignInResult,
-  UpgradeRequiredResult,
   User,
 } from "@shared/types/auth";
 
@@ -23,7 +22,6 @@ interface AuthContextType {
   isAuthenticated: boolean;
   /**
    * On a 2FA account: `mfa_required` with a challenge, and nothing stored.
-   * A password under 15 without two-step: `upgrade_required` with a pass.
    */
   login: (username: string, password: string) => Promise<SessionResult>;
   /** Answers a challenge; keeps a trust key but does not sign in (see finishSignIn). */
@@ -42,26 +40,12 @@ interface AuthContextType {
   disableTwoStep: (
     password: string,
     secondFactor: SecondFactorInput,
-    newPassword?: string,
   ) => Promise<void>;
   replaceRecoveryCodes: (
     password: string,
     secondFactor: SecondFactorInput,
   ) => Promise<string[]>;
   forgetTrustedPhones: () => Promise<void>;
-  /** A short password's pass (spec §6): stage an authenticator secret. */
-  upgradeStartTwoStep: (pass: string) => Promise<TwoStepSecret>;
-  /**
-   * Returns the session WITHOUT signing in — save the codes, then finishSignIn.
-   * No session when the server refused it after two-step went on: the codes
-   * still come back, and the person signs in again.
-   */
-  upgradeConfirmTwoStep: (
-    pass: string,
-    code: string,
-  ) => Promise<{ session?: SignedInResult; recoveryCodes: string[] }>;
-  /** Sets a 15+ password on the pass and signs in. */
-  upgradeSetPassword: (pass: string, newPassword: string) => Promise<void>;
   requestPasswordChangeCode: () => Promise<void>;
   changePassword: (
     proof: ChangePasswordProof,
@@ -79,9 +63,7 @@ interface AuthContextType {
     email: string,
     ageConfirmed: boolean,
   ) => Promise<
-    | { status: "authenticated"; user: User }
-    | { status: "verification_pending" }
-    | UpgradeRequiredResult
+    { status: "authenticated"; user: User } | { status: "verification_pending" }
   >;
   logout: () => Promise<void>;
   expireSession: () => Promise<void>;

@@ -86,17 +86,14 @@ export async function checkPendingTotpCode(
 }
 
 /**
- * First setup: promote the pending secret and issue recovery codes. Through a
- * short password's pass, the pass is consumed in the same transaction.
+ * First setup: promote the pending secret and issue recovery codes.
  * Returns the plain codes (shown once) and the tokenVersion the enrolment
  * bumped to — mint the session only under it (auth audit L1, as L12) — or
- * undefined when the storage guard refused (already on, nothing pending, or
- * the pass was spent / outdated).
+ * undefined when the storage guard refused (already on, or nothing pending).
  */
 export async function confirmFirstEnrollment(
   user: User,
   step: number,
-  opts: { upgradePass?: { idHash: string; tokenVersion: number } } = {},
 ): Promise<{ recoveryCodes: string[]; tokenVersion: number } | undefined> {
   const recoveryCodes = generateRecoveryCodes();
   const version = await storage.confirmTotpEnrollment(user.id, {
@@ -104,16 +101,11 @@ export async function confirmFirstEnrollment(
     recoveryHashes: recoveryCodes.map((c) =>
       hashRecoveryCode(user.id, normalizeRecoveryCode(c)!),
     ),
-    ...(opts.upgradePass ? { upgradePass: opts.upgradePass } : {}),
   });
   if (version === undefined) return undefined;
   fireAndForget(
     "mfa-notice",
-    sendTwoFactorNotice(
-      user.email,
-      user.username,
-      opts.upgradePass ? "enabled_at_sign_in" : "enabled",
-    ),
+    sendTwoFactorNotice(user.email, user.username, "enabled"),
   );
   return { recoveryCodes, tokenVersion: version };
 }

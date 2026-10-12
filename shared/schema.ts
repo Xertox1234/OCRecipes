@@ -382,35 +382,6 @@ export const mfaTrustedDevices = pgTable(
   ],
 );
 
-/**
- * A short password's restricted pass (password policy spec §6): an opaque
- * token, never a JWT, so requireAuth can never accept it. Only its hash is
- * stored, bound to the user's tokenVersion.
- */
-export const passwordUpgradePasses = pgTable(
-  "password_upgrade_passes",
-  {
-    /** sha256(`pw-upgrade:${token}`); the token itself only lives in app memory. */
-    idHash: text("id_hash").primaryKey(),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    tokenVersion: integer("token_version").notNull(),
-    attempts: integer("attempts").default(0).notNull(),
-    /** The sign-in password was ≥8, so turning two-step on leaves a valid account. */
-    twoStepAllowed: boolean("two_step_allowed").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    consumedAt: timestamp("consumed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-  },
-  (t) => [
-    index("password_upgrade_passes_user_id_idx").on(t.userId),
-    index("password_upgrade_passes_expires_at_idx").on(t.expiresAt),
-  ],
-);
-
 export const allergySchema = z.object({
   name: z.string().max(100),
   severity: z.enum(["mild", "moderate", "severe"]),
@@ -1557,7 +1528,6 @@ export type AuthNonce = typeof authNonces.$inferSelect;
 export type PendingSocialSignIn = typeof pendingSocialSignIns.$inferSelect;
 export type UserMfa = typeof userMfa.$inferSelect;
 export type MfaChallenge = typeof mfaChallenges.$inferSelect;
-export type PasswordUpgradePass = typeof passwordUpgradePasses.$inferSelect;
 export type InsertScannedItem = z.infer<typeof insertScannedItemSchema>;
 export type ScannedItem = typeof scannedItems.$inferSelect;
 export type InsertDailyLog = z.infer<typeof insertDailyLogSchema>;

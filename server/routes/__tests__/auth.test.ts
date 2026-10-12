@@ -92,7 +92,6 @@ vi.mock("../../storage", () => ({
     consumeNonce: vi.fn(),
     isTrustedDevice: vi.fn(),
     createMfaChallenge: vi.fn(),
-    createUpgradePass: vi.fn(),
   },
 }));
 
@@ -165,7 +164,7 @@ function createApp() {
 
 const mockUser = createMockUser();
 
-// Sign-up needs 15+ characters (spec §2); no composition rule.
+// Sign-up needs 8+ characters; no composition rule.
 const GOOD_PASSWORD = "a-long-test-passphrase";
 
 // pv2 fixtures for sign-ins that are NOT about rehashing: a legacy hash on a
@@ -173,7 +172,7 @@ const GOOD_PASSWORD = "a-long-test-passphrase";
 // into the next test. Computed once — each is a cost-12 bcrypt.
 let pv2Password123: string;
 let pv2Correct: string;
-// The sign-in gate (spec §5.2): under 15 on a no-two-step account → pass.
+// Short passwords for the "no forced stop at sign-in" tests.
 const FOURTEEN = "fourteen-chars"; // 14
 const FIFTEEN = "fifteen-chars-1"; // 15
 const SEVEN = "seven-7"; // 7
@@ -236,13 +235,11 @@ describe("Auth Routes", () => {
         expect(storage.createUser).not.toHaveBeenCalled();
       });
 
-      it("8 characters → account created with a token, never an upgrade pass", async () => {
-        vi.mocked(storage.createUpgradePass).mockReset();
+      it("8 characters → account created with a token", async () => {
         const res = await send("a".repeat(8));
         expect(res.status).toBe(201);
         expect(res.body.token).toBe("mock-jwt-token");
         expect(res.body.status).toBeUndefined();
-        expect(storage.createUpgradePass).not.toHaveBeenCalled();
       });
 
       it("8 characters with verification ON → verification pending", async () => {
@@ -255,11 +252,9 @@ describe("Auth Routes", () => {
 
       describe("twoStep from an older app build", () => {
         it("is accepted and changes nothing: 10 characters → a token", async () => {
-          vi.mocked(storage.createUpgradePass).mockReset();
           const res = await send("a".repeat(10), { twoStep: true });
           expect(res.status).toBe(201);
           expect(res.body.token).toBe("mock-jwt-token");
-          expect(storage.createUpgradePass).not.toHaveBeenCalled();
         });
 
         it("twoStep must still be a boolean", async () => {
@@ -862,7 +857,6 @@ describe("Auth Routes", () => {
           .send({ username: "testuser", password });
 
       beforeEach(() => {
-        vi.mocked(storage.createUpgradePass).mockReset();
         vi.mocked(storage.createMfaChallenge).mockReset();
         vi.mocked(storage.createMfaChallenge).mockResolvedValue(undefined);
       });
@@ -880,7 +874,6 @@ describe("Auth Routes", () => {
           expect(res.status).toBe(200);
           expect(res.body.token).toBe("mock-jwt-token");
           expect(res.body.status).toBeUndefined();
-          expect(storage.createUpgradePass).not.toHaveBeenCalled();
         },
       );
 

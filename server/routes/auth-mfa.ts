@@ -7,15 +7,9 @@ import {
   invalidateTokenVersionCache,
   type AuthenticatedRequest,
 } from "../middleware/auth";
-import {
-  sendTwoFactorNotice,
-  sendPasswordChangedNotice,
-} from "../services/email";
+import { sendTwoFactorNotice } from "../services/email";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { passwordMatches } from "../lib/password-check";
-import { hashPassword } from "../lib/password-hash";
-import { PASSWORD_MIN_SINGLE_FACTOR } from "@shared/constants/password-policy";
-import { checkNewPassword } from "./_password-rules";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { handleRouteError, formatZodError } from "./_helpers";
@@ -428,7 +422,6 @@ export function register(app: Express): void {
   );
 
   // Turn off: password + factor. Every session ends; this one gets a new token.
-  // An optional newPassword changes the password in the same step.
   app.post(
     "/api/auth/mfa/disable",
     requireAuth,
@@ -442,36 +435,13 @@ export function register(app: Express): void {
         const user = await me(req);
         await requirePassword(user, body.password);
         requireEnabled(user);
-        // An optional newPassword is checked before the factor, so a policy
-        // rejection never spends a recovery code.
-        let newPasswordHash: string | undefined;
-        if (body.newPassword) {
-          const rejected = await checkNewPassword(
-            body.newPassword,
-            PASSWORD_MIN_SINGLE_FACTOR,
-            "single_factor",
-          );
-          // Answered here rather than thrown: the rejection is derived from
-          // the new password, and a thrown value can reach the error logger.
-          if (rejected) {
-            sendError(res, rejected.status, rejected.message, rejected.code);
-            return;
-          }
-          newPasswordHash = await hashPassword(body.newPassword);
-        }
         replacement = await requireFactor(user, body.secondFactor);
-        const version = await storage.disableMfa(user.id, { newPasswordHash });
+        const version = await storage.disableMfa(user.id);
         if (version === undefined) {
           throw new Reply(404, ErrorCode.NOT_FOUND, "User not found");
         }
         invalidateTokenVersionCache(user.id);
         notice(user, "disabled");
-        if (newPasswordHash) {
-          fireAndForget(
-            "password-changed-notice",
-            sendPasswordChangedNotice(user.email, user.username),
-          );
-        }
         // Only under the version this write set (auth audit L3, as L12).
         res.json(await issueSession(user.id, version));
       } catch (error) {

@@ -50,9 +50,8 @@ type Step = "add-key" | "enter-code" | "save-codes";
 
 /**
  * Add the key to an authenticator app → enter a code → save the recovery
- * codes. Shared by TwoStepSetupScreen (signed in) and PasswordUpgradeScreen
- * (a short password's pass), which pass their own API call as `confirm` and
- * own the navigation guard. The guard is reported from the event handlers
+ * codes. TwoStepSetupScreen passes its own API call as `confirm` and owns the
+ * navigation guard. The guard is reported from the event handlers
  * that change the step, never an effect: an effect lags a render, and the
  * host's usePreventRemove must never see "unguarded" with codes on screen.
  */

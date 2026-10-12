@@ -159,11 +159,9 @@ describe("checkPendingTotpCode", () => {
 describe("confirmFirstEnrollment", () => {
   const user = createMockUser({ id: "1", mfaEnabledAt: null });
 
-  it("through a pass: 10 codes, only hashes stored, the pass passed through, the sign-in notice", async () => {
+  it("10 codes, only hashes stored, the session's version returned, the 'enabled' notice", async () => {
     vi.mocked(storage.confirmTotpEnrollment).mockResolvedValue(1);
-    const enrolled = await confirmFirstEnrollment(user, 5, {
-      upgradePass: { idHash: "h", tokenVersion: 0 },
-    });
+    const enrolled = await confirmFirstEnrollment(user, 5);
     const codes = enrolled?.recoveryCodes;
     expect(codes).toHaveLength(10);
     // The version the enrolment bumped to, for the session (auth audit L1).
@@ -172,21 +170,8 @@ describe("confirmFirstEnrollment", () => {
       .calls[0];
     expect(userId).toBe("1");
     expect(opts.acceptedStep).toBe(5);
-    expect(opts.upgradePass).toEqual({ idHash: "h", tokenVersion: 0 });
     expect(opts.recoveryHashes).toHaveLength(10);
     expect(opts.recoveryHashes).not.toContain(codes![0]);
-    expect(sendTwoFactorNotice).toHaveBeenCalledWith(
-      user.email,
-      user.username,
-      "enabled_at_sign_in",
-    );
-  });
-
-  it("signed in (no pass): the ordinary 'enabled' notice, no upgradePass", async () => {
-    vi.mocked(storage.confirmTotpEnrollment).mockResolvedValue(1);
-    await confirmFirstEnrollment(user, 5);
-    const [, opts] = vi.mocked(storage.confirmTotpEnrollment).mock.calls[0];
-    expect(opts).not.toHaveProperty("upgradePass");
     expect(sendTwoFactorNotice).toHaveBeenCalledWith(
       user.email,
       user.username,

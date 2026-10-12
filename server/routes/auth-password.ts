@@ -8,7 +8,6 @@ import {
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { PASSWORD_MIN_SINGLE_FACTOR } from "@shared/constants/password-policy";
 import { handleRouteError, formatZodError } from "./_helpers";
 import { changePasswordCodeLimiter, reauthLimiter } from "./_rate-limiters";
 import { changePasswordSchema } from "./_schemas";
@@ -97,12 +96,8 @@ export function register(app: Express): void {
         }
 
         // Before any proof or factor, so a rejected new password never spends
-        // a recovery code or an emailed-code attempt (as /mfa/disable does).
-        const rejected = await checkNewPassword(
-          newPassword,
-          PASSWORD_MIN_SINGLE_FACTOR,
-          "single_factor",
-        );
+        // a recovery code or an emailed-code attempt.
+        const rejected = await checkNewPassword(newPassword);
         if (rejected) {
           return sendError(
             res,

@@ -100,9 +100,6 @@ const { register: registerAuth } = await import("../../server/routes/auth");
 const { register: registerAuthMfa } = await import(
   "../../server/routes/auth-mfa"
 );
-const { register: registerAuthUpgrade } = await import(
-  "../../server/routes/auth-upgrade"
-);
 const { hashPassword } = await import("../../server/lib/password-hash");
 const { base32Decode, hotp, timeStep } = await import(
   "../../server/lib/mfa/totp"
@@ -116,7 +113,6 @@ function buildApp(): Express {
   app.use(express.json());
   registerAuth(app);
   registerAuthMfa(app);
-  registerAuthUpgrade(app);
   return app;
 }
 
@@ -412,7 +408,6 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
 
 describe("no forced stop at sign-in (owner ruling 2026-10-12) — real requireAuth, real DB", () => {
   const SHORT = "short-pass-12"; // 12
-  const LONGER = "a much longer password 2026";
 
   it("a no-two-step account with a 12-character password signs straight in", async () => {
     const user = await createTestUser(tx, {
@@ -427,24 +422,5 @@ describe("no forced stop at sign-in (owner ruling 2026-10-12) — real requireAu
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${login.body.token}`);
     expect(me.status).toBe(200);
-  });
-
-  it("a real JWT is refused by every upgrade route", async () => {
-    const creds = uniqueCredentials();
-    const reg = await request(buildApp())
-      .post("/api/auth/register")
-      .send(creds);
-    expect(reg.status).toBe(201);
-    for (const path of ["totp/setup", "totp/confirm", "password"]) {
-      const r = await request(buildApp())
-        .post(`/api/auth/upgrade/${path}`)
-        .set("Authorization", `Bearer ${reg.body.token}`)
-        .send({ code: "123456", newPassword: LONGER });
-      expect({ path, status: r.status, code: r.body.code }).toEqual({
-        path,
-        status: 401,
-        code: "UPGRADE_PASS_EXPIRED",
-      });
-    }
   });
 });
