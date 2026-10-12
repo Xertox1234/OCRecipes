@@ -387,7 +387,9 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    // Left-aligned: the Scan FAB floats over the bottom-right of the Home
+    // carousel and used to cover the dismiss button (QA sweep #35).
+    justifyContent: "flex-start",
     gap: Spacing.sm,
   },
   actionButton: {
