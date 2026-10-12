@@ -29,7 +29,7 @@ From #1106's triage (2026-09-26):
 - [x] Item 1: confirm nothing imports `expo-modules-core` directly (including config plugins and native code), then remove it if safe, or record why it stays.
 - [ ] PARTIAL — Item 2: `npm dedupe` (or an equivalent lockfile change) removes the `expo-image-loader` duplicate. Record the `expo-constants` nesting as a known consequence of the SDK-55 exclusion. **Not applied** — `npm dedupe` re-resolved 81 unrelated package versions instead of a pure hoist; reverted. The `expo-constants` nesting IS recorded as a known consequence (see Updates). See Updates below for the full reasoning.
 - [x] Item 3: for each skew, record "deliberate (why)" or align it. Any change that touches native modules must be flagged as needing a new build.
-- [ ] Item 4: the user decides between the CNG and bare workflow. Record the decision; this is not an executor call. **Split out** to `todos/P3-2026-09-29-expo-cng-vs-committed-native-folders-decision.md` (human-led; needs the user's ruling) — see Updates below.
+- [ ] Item 4: the user decides between the CNG and bare workflow. Record the decision; this is not an executor call. **Split out** to `todos/archive/P3-2026-09-29-expo-cng-vs-committed-native-folders-decision.md` (human-led; needs the user's ruling) — see Updates below.
 
 ## Implementation Notes
 
@@ -172,5 +172,5 @@ the decision not to.
 
 **AC #4 — split out**, per the orchestrator's explicit instruction (item 4 is the user's call, not
 an executor decision): moved to a new todo,
-`todos/P3-2026-09-29-expo-cng-vs-committed-native-folders-decision.md`, with `human_led: true`.
+`todos/archive/P3-2026-09-29-expo-cng-vs-committed-native-folders-decision.md`, with `human_led: true`.
 This todo is archived with items 1–3 resolved and item 4 pointing at that file.
