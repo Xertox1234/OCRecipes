@@ -1,6 +1,6 @@
 ---
 title: "Broken flows and premium gating: Profile rate-limit error, unreachable scan options, recipe-chat gating"
-status: in-progress
+status: done
 priority: high
 created: 2026-10-12
 updated: 2026-10-12
@@ -62,3 +62,8 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), groups C
 ### 2026-10-12
 
 - Filed from the visual QA sweep triage.
+
+### 2026-10-12 (executor)
+
+- Implemented all eight findings (#61, #84, #86, #59, #57, #65, #54, #10). #57: dropped the photo copy. #10: jump-with-working-Back (returnToTab) instead of registering the entry flow in the Profile/Coach stacks.
+- Root cause of #61: useRefreshOnFocus re-ran its focus effect on every re-render (inline callback in deps).
