@@ -28,7 +28,11 @@ const {
   mockChatMessagesData,
   mockSendMessageState,
   mockStreamSnapshot,
+  mockCanGenerate,
 } = vi.hoisted(() => ({
+  // usePremiumFeature("recipeGeneration") — premium by default; the lock
+  // tests flip it to false.
+  mockCanGenerate: { value: true },
   // What useSendMessage's getStreamSnapshot() returns: the real hook keeps
   // the last stream's content/recipe/finder until the next send. Empty by
   // default, so the bridge falls back to what renders captured.
@@ -146,7 +150,8 @@ vi.mock("@/hooks/useChat", () => ({
 }));
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
-  usePremiumFeature: () => true,
+  usePremiumFeature: (feature: string) =>
+    feature === "recipeGeneration" ? mockCanGenerate.value : true,
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
@@ -157,6 +162,7 @@ vi.mock("@/components/UpgradeModal", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mockCanGoBack.mockReturnValue(true);
+  mockCanGenerate.value = true;
   mockRouteParams.value = undefined;
   mockChatMessagesData.value = [];
   mockStreamSnapshot.value = { content: "", recipe: null, finder: null };
@@ -283,6 +289,51 @@ describe("RecipeChatScreen — initialMessage route param (Home's Generate Recip
 // view refetches the finished reply. useSendMessage owns the invalidation
 // (see useChat.test.ts); this screen's only responsibility is calling
 // abortStream() on unmount.
+describe("RecipeChatScreen — free user (QA sweep #59)", () => {
+  beforeEach(() => {
+    mockCanGenerate.value = false;
+  });
+
+  it("shows the lock banner, which opens the paywall", () => {
+    renderComponent(<RecipeChatScreen />);
+
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
+    fireEvent.click(
+      screen.getByLabelText(
+        "Recipe chat is a premium feature. Upgrade to unlock.",
+      ),
+    );
+    expect(screen.getByTestId("upgrade-modal")).toBeTruthy();
+  });
+
+  it("send opens the paywall, keeps the typed prompt, and creates nothing", async () => {
+    renderComponent(<RecipeChatScreen />);
+    fireEvent.change(screen.getByLabelText("Recipe request"), {
+      target: { value: "Give me a pasta recipe" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+
+    expect(screen.getByTestId("upgrade-modal")).toBeTruthy();
+    expect(
+      (screen.getByLabelText("Recipe request") as HTMLInputElement).value,
+    ).toBe("Give me a pasta recipe");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockCreateConversationMutateAsync).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("a premium user sees no lock banner", () => {
+    mockCanGenerate.value = true;
+    renderComponent(<RecipeChatScreen />);
+
+    expect(
+      screen.queryByLabelText(
+        "Recipe chat is a premium feature. Upgrade to unlock.",
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("RecipeChatScreen — aborts the stream on unmount", () => {
   it("calls abortStream when the screen unmounts", () => {
     const { unmount } = renderComponent(<RecipeChatScreen />);
