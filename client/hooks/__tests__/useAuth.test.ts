@@ -2058,6 +2058,77 @@ describe("useAuth", () => {
       expect(out?.replacementRecoveryCode).toBe("r-1");
     });
 
+    // A reset landed mid-request: signed out, but the spent code's replacement
+    // rides the refusal. Show it first; the session ends on "I've saved it".
+    const revokedWithReplacement = () =>
+      new ApiError(
+        `401: ${JSON.stringify({
+          error: "Please sign in again.",
+          code: "TOKEN_REVOKED",
+          replacementRecoveryCode: "r-1",
+        })}`,
+        "TOKEN_REVOKED",
+        401,
+      );
+
+    it("TOKEN_REVOKED with a replacement → resolves with the code; endSession signs out", async () => {
+      const { result } = await ready();
+      mockTokenStorage.get.mockResolvedValue("t-live");
+      mockApiRequest.mockRejectedValueOnce(revokedWithReplacement());
+      let out:
+        | {
+            done: boolean;
+            replacementRecoveryCode?: string;
+            endSession?: () => Promise<void>;
+          }
+        | undefined;
+      await act(async () => {
+        out = await result.current.changePassword({ password: "old" }, NEW, {
+          recoveryCode: "old-r",
+        });
+      });
+      expect(out?.done).toBe(true);
+      expect(out?.replacementRecoveryCode).toBe("r-1");
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      expect(mockNotifySessionExpired).not.toHaveBeenCalled();
+      await act(async () => {
+        await out?.endSession?.();
+      });
+      expect(mockNotifySessionExpired).toHaveBeenCalledTimes(1);
+    });
+
+    it("endSession does nothing once someone else has signed in here (audit L7)", async () => {
+      const { result } = await ready();
+      mockTokenStorage.get.mockResolvedValue("t-live");
+      mockApiRequest.mockRejectedValueOnce(revokedWithReplacement());
+      let out: { endSession?: () => Promise<void> } | undefined;
+      await act(async () => {
+        out = await result.current.changePassword({ password: "old" }, NEW, {
+          recoveryCode: "old-r",
+        });
+      });
+      mockTokenStorage.get.mockResolvedValue("t-other");
+      await act(async () => {
+        await out?.endSession?.();
+      });
+      expect(out?.endSession).toBeDefined();
+      expect(mockNotifySessionExpired).not.toHaveBeenCalled();
+    });
+
+    it("TOKEN_REVOKED without a replacement still rejects", async () => {
+      const { result } = await ready();
+      mockApiRequest.mockRejectedValueOnce(
+        new ApiError(
+          `401: ${JSON.stringify({ error: "x", code: "TOKEN_REVOKED" })}`,
+          "TOKEN_REVOKED",
+          401,
+        ),
+      );
+      await expect(
+        act(() => result.current.changePassword({ password: "old" }, NEW)),
+      ).rejects.toThrow(/^401:/);
+    });
+
     it("requestPasswordChangeCode posts to the code route", async () => {
       const { result } = await ready();
       jsonOnce({ status: "code_sent" });

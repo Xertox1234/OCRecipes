@@ -100,6 +100,48 @@ describe("session-expiry interceptor (real query-client module)", () => {
       expect(listener).not.toHaveBeenCalled();
     });
 
+    // Change password: a reset landing mid-request answers TOKEN_REVOKED WITH
+    // the spent recovery code's replacement. Signing out here would unmount
+    // the screen before the code is shown, so the caller ends the session.
+    it("does NOT fire when the 401 carries a replacement recovery code; the body still reaches the caller", async () => {
+      mockTokenStorage.get.mockResolvedValue("live-token");
+      mockFetch.mockResolvedValue(
+        mockResponse(401, {
+          error: "Please sign in again.",
+          code: "TOKEN_REVOKED",
+          replacementRecoveryCode: "r-1",
+        }),
+      );
+      const listener = vi.fn();
+      const unsub = subscribeToSessionExpiry(listener);
+
+      await expect(
+        apiRequest("POST", "/api/auth/change-password", {}),
+      ).rejects.toThrow(/"replacementRecoveryCode":"r-1"/);
+
+      unsub();
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("control: the same 401 without a replacement code still fires", async () => {
+      mockTokenStorage.get.mockResolvedValue("live-token");
+      mockFetch.mockResolvedValue(
+        mockResponse(401, {
+          error: "Please sign in again.",
+          code: "TOKEN_REVOKED",
+        }),
+      );
+      const listener = vi.fn();
+      const unsub = subscribeToSessionExpiry(listener);
+
+      await expect(
+        apiRequest("POST", "/api/auth/change-password", {}),
+      ).rejects.toThrow(/^401:/);
+
+      unsub();
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
     it("does NOT fire on a 401 when NO token was attached (e.g. wrong-password login)", async () => {
       mockTokenStorage.get.mockResolvedValue(null);
       mockFetch.mockResolvedValue(

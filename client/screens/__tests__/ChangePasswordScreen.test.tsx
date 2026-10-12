@@ -205,6 +205,26 @@ describe("ChangePasswordScreen", () => {
     expect(navigation.goBack).not.toHaveBeenCalled();
   });
 
+  // Signed out mid-request: the code shows first, and "I've saved it" ends
+  // the session instead of going back (the navigator swap does the leaving).
+  it("signed out mid-request: shows the code, then 'I've saved it' ends the session", async () => {
+    const endSession = vi.fn().mockResolvedValue(undefined);
+    auth.changePassword.mockResolvedValue({
+      done: true,
+      replacementRecoveryCode: "r-1",
+      endSession,
+    });
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "old-pass");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(screen.getByText("r-1")).toBeTruthy();
+    expect(endSession).not.toHaveBeenCalled();
+    await act(async () => tap("I've saved it"));
+    expect(endSession).toHaveBeenCalledTimes(1);
+    expect(navigation.goBack).not.toHaveBeenCalled();
+  });
+
   // Review (security): a spent recovery code then a refused change must not
   // look like success — the new code shows, AND the error and form stay.
   it("a refused change after a spent recovery code keeps the error and the form", async () => {

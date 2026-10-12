@@ -53,6 +53,19 @@ export function replacementFromError(err: unknown): string | undefined {
 }
 
 /**
+ * Change password: a reset landed mid-request (401 TOKEN_REVOKED), so this
+ * session is over — but the spent recovery code's replacement rides the
+ * refusal. Return it so it is shown before signing out. Anything else is
+ * re-thrown unchanged.
+ */
+export function revokedReplacementOrThrow(err: unknown): string {
+  const revoked = err instanceof ApiError && err.code === "TOKEN_REVOKED";
+  const code = revoked ? replacementFromError(err) : undefined;
+  if (code) return code;
+  throw err;
+}
+
+/**
  * Two-step went on and the server then refused the session (a reset landed
  * mid-request): the answer still carries the new recovery codes — the
  * account's only ones — so return them for the save step. Anything else is
