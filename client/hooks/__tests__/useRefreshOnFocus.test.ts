@@ -112,6 +112,26 @@ describe("useRefreshOnFocus", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("hands useFocusEffect a stable callback across re-renders with a new refetch identity, and calls the latest one (QA #61 burst source)", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = renderHook(
+      ({ fn }: { fn: () => void }) => useRefreshOnFocus(() => fn()),
+      { initialProps: { fn: first } },
+    );
+    const cbBefore = focus.cb;
+
+    rerender({ fn: second });
+    // A changed identity would make react-navigation re-run the effect (and
+    // refetch) on every re-render of the screen.
+    expect(focus.cb).toBe(cbBefore);
+
+    fireFocus(); // initial — skipped
+    fireFocus(); // refocus
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   it("uses a settle margin comfortably above the server's post-disconnect settle", () => {
     // Pins the evidence-derived floor documented on the constant: a sub-second
     // margin would land inside TCP-close propagation + the coach path's

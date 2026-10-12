@@ -7,9 +7,15 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { getProfileWidgets } from "../services/profile-hub";
 
+// Shared by both hub endpoints; each Profile refocus legitimately spends 2
+// requests (widgets + library-counts), so 15/min (7 refocuses) was tripped by
+// ordinary tab/tile use plus the client re-render burst (QA sweep #61). 60/min
+// = 30 refocuses; still bounded abuse protection.
+export const PROFILE_HUB_RATE_LIMIT_MAX = 60;
+
 const hubRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 15,
+  max: PROFILE_HUB_RATE_LIMIT_MAX,
   message: "Too many profile requests. Please wait.",
 });
 

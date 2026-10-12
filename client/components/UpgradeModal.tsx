@@ -202,6 +202,7 @@ export function UpgradeModal({
           </Pressable>
 
           <ScrollView
+            style={styles.scroll}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
           >
@@ -274,7 +275,12 @@ export function UpgradeModal({
                 </View>
               ))}
             </Card>
+          </ScrollView>
 
+          {/* Pinned footer: price, CTA, and the auto-renew/legal disclosure stay
+              visible on open instead of scrolling below the benefits (QA #54,
+              App Store guideline 3.1.2). */}
+          <View style={styles.footer}>
             {/* Price — from the store's live product, never a fixed string */}
             <ThemedText type="h4" style={styles.priceText}>
               {getPriceLine(product)}
@@ -391,7 +397,7 @@ export function UpgradeModal({
                 </ThemedText>
               </Pressable>
             </View>
-          </ScrollView>
+          </View>
         </View>
       </View>
     </Modal>
@@ -414,9 +420,15 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     padding: Spacing.xs,
   },
+  scroll: {
+    flexShrink: 1,
+  },
+  footer: {
+    alignItems: "center",
+  },
   scrollContent: {
     alignItems: "center",
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.sm,
   },
   iconContainer: {
     width: 64,

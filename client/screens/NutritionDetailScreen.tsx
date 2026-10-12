@@ -28,7 +28,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
+import {
+  getServingContextLabel,
+  isUnknownProduct,
+} from "@/screens/nutrition-detail-utils";
 import { partitionScanFlags } from "@/screens/nutrition-detail-flags-utils";
 import { frontLabelSavedKey } from "./FrontLabelConfirmScreen";
 import { ProductHero } from "@/components/nutrition/ProductHero";
@@ -37,6 +40,7 @@ import { NutritionSummaryCard } from "@/components/nutrition/NutritionSummaryCar
 import { NutritionPanel } from "@/components/nutrition/NutritionPanel";
 import { NoticeStack } from "@/components/nutrition/NoticeStack";
 import { LogActionBar } from "@/components/nutrition/LogActionBar";
+import { UnknownProductBar } from "@/components/nutrition/UnknownProductBar";
 import { buildPanelRows } from "@/components/nutrition/nutrition-band-source";
 import { pickStandouts } from "@shared/lib/nutrition-bands";
 import { CapturedPhotos } from "@/components/nutrition/CapturedPhotos";
@@ -292,6 +296,8 @@ export default function NutritionDetailScreen() {
   // lands on the summary card while the other two groups go to the flag
   // sections, so a second partition would be a second source of truth for the
   // same split.
+  const unknownProduct = isUnknownProduct(nutrition);
+
   const partition = partitionScanFlags(flags);
 
   // One derivation, two consumers — `rows` for the panel, `bands` for the
@@ -653,15 +659,27 @@ export default function NutritionDetailScreen() {
           reach it (Constraint 8). It reports its measured height back so the
           scroller can clear it — the bar occludes real content otherwise, at
           whichever of its three heights it is currently rendering. */}
-      <LogActionBar
-        logGate={logGate}
-        productName={nutrition?.productName}
-        isOffline={isOffline}
-        offlineLabel={offlineLabel}
-        isPending={addToLogMutation.isPending}
-        onAddToLog={handleAddToLog}
-        onLayout={setBarHeight}
-      />
+      {unknownProduct && barcode ? (
+        <UnknownProductBar
+          onScanLabel={() =>
+            navigation.navigate("Scan", {
+              mode: "label",
+              verifyBarcode: barcode,
+            })
+          }
+          onLayout={setBarHeight}
+        />
+      ) : (
+        <LogActionBar
+          logGate={logGate}
+          productName={nutrition?.productName}
+          isOffline={isOffline}
+          offlineLabel={offlineLabel}
+          isPending={addToLogMutation.isPending}
+          onAddToLog={handleAddToLog}
+          onLayout={setBarHeight}
+        />
+      )}
     </ThemedView>
   );
 }

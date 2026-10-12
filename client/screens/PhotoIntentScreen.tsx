@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { StyleSheet, View, Image } from "react-native";
+import { StyleSheet, View, Image, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -146,14 +146,17 @@ export default function PhotoIntentScreen() {
       <View style={headerPaddingStyle}>
         <ScanFlowStepIndicator currentStep={2} totalSteps={3} />
       </View>
-      <View
-        style={[
+      {/* ScrollView: 7 options + thumbnail overflow short screens (QA #84) */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
           styles.content,
           {
             paddingTop: Spacing.lg,
             paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}
+        showsVerticalScrollIndicator={false}
       >
         {/* Photo Thumbnail */}
         {imageUri && (
@@ -256,7 +259,7 @@ export default function PhotoIntentScreen() {
             );
           })}
         </View>
-      </View>
+      </ScrollView>
       <UpgradeModal
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
@@ -269,8 +272,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  scroll: {
     flex: 1,
+  },
+  content: {
     paddingHorizontal: Spacing.lg,
   },
   thumbnailContainer: {

@@ -32,6 +32,23 @@ export function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/**
+ * True when the lookup came back with only a placeholder name (barcode not in
+ * any database, or the lookup failed) and no calorie figure. Such a screen must
+ * not offer to log an empty "Unknown Product" — it offers a way to supply the
+ * data instead (QA sweep #86).
+ */
+export function isUnknownProduct(
+  nutrition: { productName?: string; calories?: number } | null | undefined,
+): boolean {
+  if (!nutrition) return false;
+  if (nutrition.calories !== undefined) return false;
+  return (
+    nutrition.productName === "Unknown Product" ||
+    nutrition.productName === "Product Not Found"
+  );
+}
+
 export type LogGate =
   | { kind: "open" }
   | { kind: "needsAcknowledgement"; buttonLabel: string };
