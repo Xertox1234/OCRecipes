@@ -18,6 +18,10 @@ import Animated, {
   FadeIn,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
+import { getInputBarBottomPadding } from "@/components/bottom-budget-utils";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -77,6 +81,9 @@ export default function WizardShell({
   const haptics = useHaptics();
   const toast = useToast();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useSafeTabBarHeight();
+  const keyboardVisible = useKeyboardVisible();
+  const headerInset = useHeaderContentInset();
   // Stable refs so useRecipeForm + handleSave always see the latest callbacks
   // without re-invoking their internal callbacks on every render.
   const onDirtyChangeRef = useRef(onDirtyChange);
@@ -355,7 +362,12 @@ export default function WizardShell({
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       {/* Progress Bar */}
-      <View style={styles.progressContainer}>
+      <View
+        style={[
+          styles.progressContainer,
+          { paddingTop: headerInset + Spacing.sm },
+        ]}
+      >
         <View style={styles.progressBar}>
           {Array.from({ length: TOTAL_STEPS }, (_, i) => (
             <View
@@ -419,7 +431,17 @@ export default function WizardShell({
       <View
         style={[
           styles.navContainer,
-          { paddingBottom: Math.max(insets.bottom, Spacing.md) },
+          {
+            paddingBottom: Math.max(
+              Spacing.md,
+              getInputBarBottomPadding({
+                keyboardVisible,
+                tabBarHeight,
+                insetBottom: insets.bottom,
+                restingGap: Spacing.md,
+              }),
+            ),
+          },
         ]}
       >
         {currentStep > STEP_TITLE && (
@@ -463,7 +485,7 @@ export default function WizardShell({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  progressContainer: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  progressContainer: { paddingHorizontal: Spacing.lg },
   progressBar: { flexDirection: "row", gap: 3 },
   progressSegment: { flex: 1, height: 4, borderRadius: 2 },
   stepLabel: {

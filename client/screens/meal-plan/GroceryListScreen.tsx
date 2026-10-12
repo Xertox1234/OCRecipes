@@ -17,7 +17,6 @@ import {
   type RouteProp,
 } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, {
@@ -33,6 +32,7 @@ import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { IngredientIcon } from "@/components/IngredientIcon";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { ApiError } from "@/lib/api-error";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -205,7 +205,7 @@ export default function GroceryListScreen() {
   const route = useRoute<GroceryListScreenRoute>();
   const { listId } = route.params;
   const headerHeight = useHeaderHeight();
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { features } = usePremiumContext();
@@ -457,7 +457,7 @@ export default function GroceryListScreen() {
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.md,
           paddingHorizontal: Spacing.lg,
-          paddingBottom: insets.bottom + Spacing.xl,
+          paddingBottom: bottomBudget + Spacing.xl,
         }}
         keyboardDismissMode="on-drag"
         refreshControl={
@@ -568,7 +568,7 @@ export default function GroceryListScreen() {
             styles.pantrySnackbar,
             {
               backgroundColor: theme.backgroundSecondary,
-              bottom: insets.bottom + Spacing.md,
+              bottom: bottomBudget + Spacing.md,
             },
           ]}
         >

@@ -6,7 +6,6 @@ import {
   FlatList,
   RefreshControl,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import {
@@ -23,6 +22,7 @@ import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox, SkeletonList } from "@/components/SkeletonLoader";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
@@ -106,7 +106,7 @@ function SavedItemsSkeleton() {
 }
 
 export default function SavedItemsScreen() {
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
   const headerHeight = useHeaderContentInset();
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -270,7 +270,7 @@ export default function SavedItemsScreen() {
           styles.listContent,
           {
             paddingTop: headerHeight + Spacing.lg,
-            paddingBottom: insets.bottom + Spacing.xl,
+            paddingBottom: bottomBudget + Spacing.xl,
           },
           !savedItems?.length && styles.emptyListContent,
         ]}

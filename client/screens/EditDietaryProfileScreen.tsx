@@ -10,6 +10,7 @@ import { InlineError } from "@/components/InlineError";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useDietaryProfileForm } from "@/hooks/useDietaryProfileForm";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
@@ -161,6 +162,7 @@ function DietaryProfileSkeleton() {
 
 export default function EditDietaryProfileScreen() {
   const insets = useSafeAreaInsets();
+  const headerInset = useHeaderContentInset(Spacing.lg);
   const { theme } = useTheme();
 
   const {
@@ -258,7 +260,7 @@ export default function EditDietaryProfileScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: insets.bottom + 100 },
+          { paddingTop: headerInset, paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
       >

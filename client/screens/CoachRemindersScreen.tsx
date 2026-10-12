@@ -8,10 +8,11 @@ import {
   Pressable,
   AccessibilityInfo,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { apiRequest } from "@/lib/query-client";
@@ -100,7 +101,8 @@ function useUpdateReminderMute() {
 export default function CoachRemindersScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
+  const headerInset = useHeaderContentInset(Spacing.lg);
   const { data, isLoading, isError, refetch } = useReminderMutes();
   const updateMute = useUpdateReminderMute();
 
@@ -128,7 +130,7 @@ export default function CoachRemindersScreen() {
       style={{ backgroundColor: theme.backgroundDefault }}
       contentContainerStyle={[
         styles.container,
-        { paddingBottom: insets.bottom + Spacing.lg },
+        { paddingTop: headerInset, paddingBottom: bottomBudget + Spacing.lg },
       ]}
     >
       <ThemedText style={[styles.subtitle, { color: theme.textSecondary }]}>

@@ -1,6 +1,5 @@
 import React from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, RouteProp } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -12,6 +11,7 @@ import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -127,7 +127,7 @@ function ItemDetailSkeleton() {
 }
 
 export default function ItemDetailScreen() {
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
   const headerHeight = useHeaderContentInset();
   const route = useRoute<ItemDetailRouteProp>();
   const { theme } = useTheme();
@@ -189,7 +189,7 @@ export default function ItemDetailScreen() {
       contentContainerStyle={[
         styles.container,
         {
-          paddingBottom: insets.bottom + Spacing.xl,
+          paddingBottom: bottomBudget + Spacing.xl,
         },
       ]}
     >

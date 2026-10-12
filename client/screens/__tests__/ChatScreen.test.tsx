@@ -113,6 +113,12 @@ vi.mock("@/hooks/useChat", () => ({
 
 const { mockImpact } = vi.hoisted(() => ({ mockImpact: vi.fn() }));
 
+// The shared react-native mock has no Keyboard; the keyboard-visibility hook
+// is covered by bottom-budget-utils.test.ts (pure math).
+vi.mock("@/hooks/useKeyboardVisible", () => ({
+  useKeyboardVisible: () => false,
+}));
+
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
     impact: mockImpact,
