@@ -34,7 +34,6 @@ import {
   Spacing,
   FontFamily,
   BorderRadius,
-  FAB_CLEARANCE,
   withOpacity,
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
@@ -369,7 +368,7 @@ export default function ChatListScreen() {
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={{
-          paddingBottom: tabBarHeight + FAB_CLEARANCE,
+          paddingBottom: tabBarHeight,
           flexGrow: 1,
         }}
         refreshControl={

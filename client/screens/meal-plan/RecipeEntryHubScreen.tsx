@@ -6,7 +6,6 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 
@@ -18,6 +17,7 @@ import {
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePressScale } from "@/hooks/usePressScale";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
@@ -138,7 +138,7 @@ export default function RecipeEntryHubScreen() {
   const navigation = useNavigation<EntryHubNavigationProp>();
   const route = useRoute<EntryHubRouteProp>();
   const { theme } = useTheme();
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
   const headerHeight = useHeaderHeight();
 
   const returnToMealPlan = route.params?.returnToMealPlan;
@@ -260,7 +260,7 @@ export default function RecipeEntryHubScreen() {
           styles.content,
           {
             paddingTop: headerHeight + Spacing.lg,
-            paddingBottom: insets.bottom + Spacing.xl,
+            paddingBottom: bottomBudget + Spacing.xl,
           },
         ]}
         showsVerticalScrollIndicator={false}

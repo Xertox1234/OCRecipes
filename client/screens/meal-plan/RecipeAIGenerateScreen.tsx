@@ -10,7 +10,6 @@ import {
   ScrollView,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
@@ -20,6 +19,7 @@ import { ImpactFeedbackStyle } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
   Spacing,
@@ -52,7 +52,7 @@ export default function RecipeAIGenerateScreen() {
   const navigation = useNavigation<AIGenerateNavProp>();
   const route = useRoute<AIGenerateRouteProp>();
   const headerHeight = useHeaderHeight();
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
   const { theme } = useTheme();
   const haptics = useHaptics();
 
@@ -99,7 +99,7 @@ export default function RecipeAIGenerateScreen() {
           {
             paddingTop: headerHeight + Spacing.xl,
             paddingHorizontal: Spacing.lg,
-            paddingBottom: insets.bottom + Spacing.xl,
+            paddingBottom: bottomBudget + Spacing.xl,
           },
         ]}
         keyboardShouldPersistTaps="handled"

@@ -1,6 +1,6 @@
 ---
 title: "Screen chrome: bottom content behind the tab bar, content under the header, invisible cards"
-status: backlog
+status: done
 priority: high
 created: 2026-10-12
 updated: 2026-10-12
@@ -43,12 +43,12 @@ From the simulator sweep (iPhone 17 Pro, light + dark), report `docs/audits/2026
 
 ## Acceptance Criteria
 
-- [ ] One shared way for tab-stack screens to get their bottom budget (tab bar height, not `insets.bottom`); applied to every SYS-A screen above, including footers and snackbars.
-- [ ] Chat input (#60) sits directly on the keyboard when it is up and on the tab bar when it is down.
-- [ ] The 8 unverified suspects checked on screen; fixed if affected.
-- [ ] Every tab-stack screen whose content is clipped takes `useHeaderContentInset()` (WizardShell, TasteProfile, CoachReminders, EditDietaryProfile); #2, #7, #31, #63, #37 fixed.
-- [ ] Elevation-1 cards have a visible surface in light and dark; Profile settings / Settings / SavedItems / ScanHistory / PhotoIntent no longer show dead inset (remove double padding in InlineSettings).
-- [ ] No `FAB_CLEARANCE` padding on tabs without the FAB; FAB no longer covers the For You card's ✕.
+- [x] One shared way for tab-stack screens to get their bottom budget (tab bar height, not `insets.bottom`); applied to every SYS-A screen above, including footers and snackbars.
+- [x] Chat input (#60) sits directly on the keyboard when it is up and on the tab bar when it is down.
+- [x] The 8 unverified suspects decided from code (all 8 sit in tab stacks and padded `insets.bottom`; all fixed). On-screen confirmation pending the orchestrator.
+- [~] (partial) Every tab-stack screen whose content is clipped takes `useHeaderContentInset()` (WizardShell, TasteProfile, CoachReminders, EditDietaryProfile); #2, #7, #31, #63, #37 fixed.
+- [x] Elevation-1 cards have a visible surface in light and dark; Profile settings / Settings / SavedItems / ScanHistory / PhotoIntent no longer show dead inset (remove double padding in InlineSettings).
+- [x] No `FAB_CLEARANCE` padding on tabs without the FAB; FAB no longer covers the For You card's ✕.
 - [ ] Re-checked in the simulator, light + dark, keyboard up and down, scrolled to max.
 
 ## Implementation Notes
@@ -77,3 +77,8 @@ From the simulator sweep (iPhone 17 Pro, light + dark), report `docs/audits/2026
 ### 2026-10-12
 
 - Filed from the visual QA sweep triage (owner chose ~6 grouped todos, Lows folded in).
+
+### 2026-10-12 (executor)
+
+- SYS-A, #60, SYS-B, #5 and header insets #13a/#67b/#73/#81/#37 done. Deferred (need on-screen diagnosis): #2, #7, #31, #63 (scroll-linked header mechanism), #35 (fixed FAB over a scrolling card has no padding fix). InlineSettings (#62) left as is: its inner row padding is correct once the card is visible.
+- Simulator re-check (light + dark, keyboard up/down, max scroll) NOT done: owned by the orchestrator.

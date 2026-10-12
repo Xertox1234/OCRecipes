@@ -34,6 +34,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
+import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
+import { getInputBarBottomPadding } from "@/components/bottom-budget-utils";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useToast } from "@/context/ToastContext";
 import {
   useChatMessages,
@@ -48,7 +52,6 @@ import {
   FontFamily,
   BorderRadius,
   withOpacity,
-  TAB_BAR_HEIGHT,
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -259,6 +262,9 @@ export default function ChatScreen() {
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute<ChatScreenRouteProp>();
   const headerInset = useHeaderContentInset(Spacing.md);
+  const tabBarHeight = useSafeTabBarHeight();
+  const keyboardVisible = useKeyboardVisible();
+  const insets = useSafeAreaInsets();
 
   const conversationId =
     route.params && "conversationId" in route.params
@@ -605,7 +611,6 @@ export default function ChatScreen() {
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       {isLoading ? (
         <ChatSkeleton />
@@ -653,7 +658,12 @@ export default function ChatScreen() {
           {
             backgroundColor: theme.backgroundRoot,
             borderTopColor: theme.border,
-            paddingBottom: TAB_BAR_HEIGHT,
+            paddingBottom: getInputBarBottomPadding({
+              keyboardVisible,
+              tabBarHeight,
+              insetBottom: insets.bottom,
+              restingGap: Spacing.sm,
+            }),
           },
         ]}
       >

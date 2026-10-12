@@ -32,7 +32,7 @@ export default function RecipeVariantsScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
-  const headerInset = useHeaderContentInset();
+  const headerInset = useHeaderContentInset(Spacing.lg);
   const { data, isPending, isError, refetch } = useRecipeVariants(
     params.recipeId,
   );

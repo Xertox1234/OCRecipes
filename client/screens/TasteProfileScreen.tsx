@@ -1,7 +1,6 @@
 // client/screens/TasteProfileScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
 import { View, StyleSheet, Pressable, AccessibilityInfo } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
@@ -9,6 +8,8 @@ import { TastePicksGrid } from "@/components/TastePicksGrid";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useNavigation } from "@react-navigation/native";
 import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
@@ -24,7 +25,8 @@ const PAGE_LIMIT = 30;
 
 export default function TasteProfileScreen() {
   const { theme } = useTheme();
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
+  const headerInset = useHeaderContentInset(Spacing.lg);
   const navigation = useNavigation<TasteProfileScreenNavigationProp>();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -163,7 +165,7 @@ export default function TasteProfileScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: headerInset }]}>
         <ThemedText type="body" style={{ color: theme.textSecondary }}>
           Recipes you love — used to personalise your feed.
         </ThemedText>
@@ -217,7 +219,7 @@ export default function TasteProfileScreen() {
       </View>
 
       <View
-        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
+        style={[styles.footer, { paddingBottom: bottomBudget + Spacing.xl }]}
       >
         <Button
           onPress={handleSave}
@@ -235,7 +237,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.lg,
     paddingBottom: Spacing.md,
     gap: Spacing.sm,
   },

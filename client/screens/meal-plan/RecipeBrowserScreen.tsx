@@ -11,7 +11,6 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
@@ -35,6 +34,7 @@ import {
 import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { useToast } from "@/context/ToastContext";
@@ -356,7 +356,7 @@ export default function RecipeBrowserScreen() {
   const navigation = useNavigation<RecipeBrowserScreenNavigationProp>();
   const route = useRoute<RecipeBrowserRouteProp>();
   const headerHeight = useHeaderHeight();
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
@@ -1015,7 +1015,7 @@ export default function RecipeBrowserScreen() {
                 },
               }));
           }}
-          contentBottomInset={insets.bottom}
+          contentBottomInset={bottomBudget}
         />
       ) : isLoading ? (
         <SkeletonProvider>
@@ -1114,7 +1114,7 @@ export default function RecipeBrowserScreen() {
           }
           contentContainerStyle={{
             paddingHorizontal: Spacing.lg,
-            paddingBottom: insets.bottom + Spacing.xl,
+            paddingBottom: bottomBudget + Spacing.xl,
           }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}

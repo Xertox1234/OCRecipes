@@ -9,13 +9,13 @@ import {
   ScrollView,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { RecipeExtractionReviewCard } from "@/components/meal-plan/RecipeExtractionReviewCard";
 import { useTheme } from "@/hooks/useTheme";
+import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
   Spacing,
@@ -40,7 +40,7 @@ export default function RecipeTextImportScreen() {
   const navigation = useNavigation<RecipeTextImportScreenNavigationProp>();
   const route = useRoute<RecipeTextImportRouteProp>();
   const headerHeight = useHeaderHeight();
-  const insets = useSafeAreaInsets();
+  const bottomBudget = useBottomBudget();
   const { theme } = useTheme();
   const haptics = useHaptics();
 
@@ -94,7 +94,7 @@ export default function RecipeTextImportScreen() {
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.xl,
           paddingHorizontal: Spacing.lg,
-          paddingBottom: insets.bottom + Spacing.xl,
+          paddingBottom: bottomBudget + Spacing.xl,
           flexGrow: 1,
         }}
         showsVerticalScrollIndicator={false}
