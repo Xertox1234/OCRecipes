@@ -870,9 +870,6 @@ export default function RecipeChatScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.chipsScrollContent}
               style={{ marginTop: Spacing.lg, alignSelf: "stretch" }}
-              accessible
-              accessibilityRole="none"
-              accessibilityLabel="Remix suggestions"
             >
               {remixChips.map((chip) => (
                 <Pressable
@@ -899,12 +896,7 @@ export default function RecipeChatScreen() {
             </ScrollView>
           ) : (
             /* Default: 2-column wrapping grid — all chips visible, no scroll */
-            <View
-              style={styles.chipsGrid}
-              accessible
-              accessibilityRole="none"
-              accessibilityLabel="Suggested prompts"
-            >
+            <View style={styles.chipsGrid}>
               {SUGGESTION_CHIPS.map((chip) => (
                 <Pressable
                   key={chip.label}

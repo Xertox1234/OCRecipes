@@ -35,6 +35,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { ApiError } from "@/lib/api-error";
+import { formatGroceryListTitle } from "@/lib/format";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -288,7 +289,7 @@ export default function GroceryListScreen() {
     if (!list) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
 
-    const lines: string[] = [list.title, ""];
+    const lines: string[] = [formatGroceryListTitle(list.title), ""];
     const grouped = new Map<string, GroceryListItem[]>();
     for (const item of list.items) {
       const cat = item.category || "other";
@@ -472,7 +473,7 @@ export default function GroceryListScreen() {
           <View style={styles.listHeader}>
             <View style={styles.titleRow}>
               <ThemedText style={styles.listTitle} numberOfLines={2}>
-                {list.title}
+                {formatGroceryListTitle(list.title)}
               </ThemedText>
               <Pressable
                 onPress={handleShare}
@@ -486,7 +487,7 @@ export default function GroceryListScreen() {
             <ThemedText
               style={[styles.itemCountText, { color: theme.textSecondary }]}
             >
-              {list.items.length} items -{" "}
+              {list.items.length} {list.items.length === 1 ? "item" : "items"} -{" "}
               {list.items.filter((i) => i.isChecked).length} checked
             </ThemedText>
           </View>
@@ -670,6 +671,8 @@ const styles = StyleSheet.create({
   },
   itemNameContainer: {
     position: "relative",
+    // Shrink-wrap the name so the strike-through spans the text, not the row.
+    alignSelf: "flex-start",
     justifyContent: "center",
   },
   itemName: {

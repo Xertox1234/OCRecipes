@@ -168,7 +168,7 @@ const HistoryItem = React.memo(function HistoryItem({
           }}
           leftAction={{
             icon: item.isFavourited ? "heart" : "heart",
-            label: item.isFavourited ? "Unfavorite" : "Favorite",
+            label: item.isFavourited ? "Unfavourite" : "Favourite",
             backgroundColor: theme.accentSolid,
             onAction: () => onFavourite(item.id),
           }}

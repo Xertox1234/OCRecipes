@@ -65,7 +65,7 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
   { id: "signInMethods", icon: "key", label: "Sign-in methods" },
   { id: "changeEmail", icon: "mail", label: "Change Email" },
   { id: "exportData", icon: "download", label: "Export My Data" },
-  { id: "signout", icon: "log-out", label: "Sign Out", danger: true },
+  { id: "signout", icon: "log-out", label: "Sign Out" },
   {
     id: "deleteAccount",
     icon: "trash-2",

@@ -68,3 +68,14 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), groups F
 ### 2026-10-12
 
 - Filed from the visual QA sweep triage.
+
+### 2026-10-12 (executor pass 1 - partial)
+
+Done in branch `todo/P2-2026-10-12-accessibility-layout-and-copy-polish` (finding IDs):
+
+- #32: all five listed surfaces (FeaturedRecipeDetail, UpgradeModal, GoalSetup, DailyNutritionDetail, SpeedDial) already set `accessibilityViewIsModal` on their root - no code change; needs on-device VoiceOver confirmation that the Scan FAB is actually hidden.
+- #58 chips: wrapper `accessible`/role-none removed so each chip is its own element. #83: flame glyph hidden from AT; macro rows say "No goal set" when goal is 0.
+- #30 step text `flex:1` removed (clip); #34 hint contrast (opacity removed). #26 CookbookDetail shows name + cover. #15 error buttons stretch inside gutter. #68 Age field min width; #69 "e.g." placeholders at lower contrast, "Still needed: ..." hint, drag-to-dismiss keyboard; #70 results grid two columns, lock glyph moved to a Premium note, auto-scroll to results.
+- Lows: #1 watermark line box; #21 strike-through spans text; #22 grocery title dates formatted (`formatGroceryListTitle`); #46 grocery "1 item"; #19 trims blank unit; "Favourite" spelling (HistoryScreen swipe action, Cookbook empty state); "Sign Out" no longer styled as danger.
+
+Not done (needs a device or a product call): #39/#39b VoiceOver device check; #34 tags dedupe; #6, #8, #33, #64 (what should Profile "Recipes" count?), #12/#17/#14/#29/#27/#3/#25/#23/#66/#80/#82 copy and consistency decisions; Favourites "Community" vs browser "Curated" label; light/dark re-check.

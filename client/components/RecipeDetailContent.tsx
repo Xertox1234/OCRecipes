@@ -600,7 +600,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stepText: {
-    flex: 1,
+    // No `flex: 1` here: stepBody is a column, so flex:1 collapses the text's
+    // height to its siblings' share and clips wrapped lines (QA #30).
+    flexShrink: 1,
     fontSize: 14,
     lineHeight: 20,
     paddingTop: 4,
@@ -613,7 +615,6 @@ const styles = StyleSheet.create({
   },
   stepHint: {
     fontSize: 12,
-    opacity: 0.5,
     marginTop: 4,
     fontStyle: "italic",
   },

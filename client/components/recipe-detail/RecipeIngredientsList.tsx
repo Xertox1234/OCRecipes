@@ -185,8 +185,8 @@ export function RecipeIngredientsList({
             <IngredientIcon name={ing.name} size={22} />
             <View style={{ flex: 1 }}>
               <ThemedText style={styles.ingredientText}>
-                {ing.quantity && ing.unit
-                  ? `${ing.quantity} ${ing.unit} `
+                {ing.quantity && ing.unit?.trim()
+                  ? `${ing.quantity} ${ing.unit.trim()} `
                   : ing.quantity
                     ? `${ing.quantity} `
                     : ""}

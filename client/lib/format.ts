@@ -53,3 +53,15 @@ export function formatDateRange(start: string, end: string): string {
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
   return `${s.toLocaleDateString("en-US", opts)} - ${e.toLocaleDateString("en-US", opts)}`;
 }
+
+/**
+ * Generated grocery-list titles embed raw ISO dates
+ * ("Grocery List 2024-01-05 to 2024-01-12", written by server/routes/grocery.ts).
+ * Render those as "Grocery List Jan 5 - Jan 12"; any other title passes through.
+ */
+export function formatGroceryListTitle(title: string): string {
+  const match =
+    /^Grocery List (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})$/.exec(title);
+  if (!match) return title;
+  return `Grocery List ${formatDateRange(match[1], match[2])}`;
+}
