@@ -1,12 +1,14 @@
-import React from "react";
+import React, { type ComponentType } from "react";
 import { View, StyleSheet } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
 import {
+  ONBOARDING_SCREENS,
   QUESTION_STEP_COUNT,
   getQuestionStep,
+  type OnboardingScreenName,
 } from "@/context/onboarding-steps";
 import { OnboardingProgressBar } from "@/components/OnboardingProgressBar";
 import { useTheme } from "@/hooks/useTheme";
@@ -19,32 +21,28 @@ import GoalsScreen from "@/screens/onboarding/GoalsScreen";
 import PreferencesScreen from "@/screens/onboarding/PreferencesScreen";
 import TastePicksScreen from "@/screens/onboarding/TastePicksScreen";
 
-export type OnboardingStackParamList = {
-  Welcome: undefined;
-  HealthDataConsent: undefined;
-  Allergies: undefined;
-  HealthConditions: undefined;
-  DietType: undefined;
-  Goals: undefined;
-  Preferences: undefined;
-  TastePicks: undefined;
-};
+export type OnboardingStackParamList = Record<OnboardingScreenName, undefined>;
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 
-const SCREENS = [
-  { name: "Welcome" as const, component: WelcomeScreen },
-  {
-    name: "HealthDataConsent" as const,
-    component: HealthDataConsentScreen,
-  },
-  { name: "Allergies" as const, component: AllergiesScreen },
-  { name: "HealthConditions" as const, component: HealthConditionsScreen },
-  { name: "DietType" as const, component: DietTypeScreen },
-  { name: "Goals" as const, component: GoalsScreen },
-  { name: "Preferences" as const, component: PreferencesScreen },
-  { name: "TastePicks" as const, component: TastePicksScreen },
-];
+// A Record over the screen names, so a name without a component (or a
+// component without a name) fails to compile. Order comes from
+// ONBOARDING_SCREENS, which the step counts derive from.
+const SCREEN_COMPONENTS: Record<OnboardingScreenName, ComponentType> = {
+  Welcome: WelcomeScreen,
+  HealthDataConsent: HealthDataConsentScreen,
+  Allergies: AllergiesScreen,
+  HealthConditions: HealthConditionsScreen,
+  DietType: DietTypeScreen,
+  Goals: GoalsScreen,
+  Preferences: PreferencesScreen,
+  TastePicks: TastePicksScreen,
+};
+
+const SCREENS = ONBOARDING_SCREENS.map((name) => ({
+  name,
+  component: SCREEN_COMPONENTS[name],
+}));
 
 function OnboardingStack() {
   const { currentStep } = useOnboarding();
