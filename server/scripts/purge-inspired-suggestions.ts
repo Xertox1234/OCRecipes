@@ -1,5 +1,5 @@
 // Unchosen idea cards expire after 24 h; their photos go with them. A made
-// card (madeRecipeId set) is never listed, so its photo — now the recipe's — stays.
+// card (madeRecipeId set) is never deleted, so its photo — now the recipe's — stays.
 import { storage } from "../storage";
 import { deleteImage } from "../lib/image-store";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -16,7 +16,14 @@ export async function purgeExpiredInspiredSuggestions(
   for (let i = 0; i < MAX_BATCHES; i++) {
     const batch = await storage.listExpiredUnmadeSuggestions(now, batchSize);
     if (batch.length === 0) break;
-    for (const row of batch) {
+    // Rows first: a card claimed (made) between list and delete is skipped by
+    // the delete, and its photo — now the recipe's — must survive. Only the
+    // photos of rows actually deleted are removed.
+    const deleted = await storage.deleteInspiredSuggestions(
+      batch.map((r) => r.id),
+    );
+    rows += deleted.length;
+    for (const row of deleted) {
       if (!row.imageUrl) continue;
       try {
         await deleteImage(row.imageUrl, "recipe");
@@ -28,7 +35,6 @@ export async function purgeExpiredInspiredSuggestions(
         );
       }
     }
-    rows += await storage.deleteInspiredSuggestions(batch.map((r) => r.id));
   }
   return { rows, images };
 }

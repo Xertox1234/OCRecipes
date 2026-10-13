@@ -194,7 +194,9 @@ describe("inspired suggestions storage", () => {
     await createInspiredSuggestions(a, [draft("Fresh")], tomorrow());
     const listed = await listExpiredUnmadeSuggestions(new Date(), 100);
     expect(listed.map((r) => r.id)).toEqual([expired.id]);
-    expect(await deleteInspiredSuggestions([expired.id])).toBe(1);
+    expect(
+      (await deleteInspiredSuggestions([expired.id])).map((r) => r.id),
+    ).toEqual([expired.id]);
   });
 
   it("never lists or deletes a claimed card, even if expired", async () => {
@@ -206,7 +208,7 @@ describe("inspired suggestions storage", () => {
     const recipe = await seedCommunityRecipe(a);
     await claimInspiredSuggestionMade(a, row.id, recipe.id);
     expect(await listExpiredUnmadeSuggestions(new Date(), 100)).toEqual([]);
-    expect(await deleteInspiredSuggestions([row.id])).toBe(0);
+    expect(await deleteInspiredSuggestions([row.id])).toEqual([]);
     expect(await getInspiredSuggestion(a, row.id)).toBeDefined();
   });
 });

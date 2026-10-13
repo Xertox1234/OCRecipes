@@ -11,7 +11,15 @@
 --     daily_logs.recipe_id
 --   No FK (polymorphic recipe_id + recipe_type = 'mealPlan'), deleted
 --   explicitly first: saved_items, favourite_recipes, cookbook_recipes.
+--   DATA LOSS TO ACCEPT BEFORE APPLYING: the daily_logs cascade DELETES the
+--   user's food-log entries that reference a catalog recipe. They cannot be
+--   nulled instead (CHECK scanned_item_id IS NOT NULL OR recipe_id IS NOT
+--   NULL). The owner must accept that loss before this is applied.
 --   (community-recipe tables reference community_recipes, not this table.)
+--
+-- AFTER APPLYING: restart the server (the in-memory recipe search index is
+-- built at boot). R2 images of the deleted recipes are not removed (SQL
+-- can't); orphans are acceptable.
 
 BEGIN;
 DELETE FROM saved_items

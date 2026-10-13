@@ -159,8 +159,8 @@ export async function listExpiredUnmadeSuggestions(
 
 export async function deleteInspiredSuggestions(
   ids: number[],
-): Promise<number> {
-  if (ids.length === 0) return 0;
+): Promise<{ id: number; imageUrl: string | null }[]> {
+  if (ids.length === 0) return [];
   const deleted = await db
     .delete(inspiredSuggestions)
     .where(
@@ -169,6 +169,9 @@ export async function deleteInspiredSuggestions(
         isNull(inspiredSuggestions.madeRecipeId),
       ),
     )
-    .returning({ id: inspiredSuggestions.id });
-  return deleted.length;
+    .returning({
+      id: inspiredSuggestions.id,
+      imageUrl: inspiredSuggestions.imageUrl,
+    });
+  return deleted;
 }
