@@ -86,7 +86,7 @@ export function useMakeSuggestion() {
       return makeResponseSchema.parse(await res.json());
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
     meta: { silentError: true },
   });
