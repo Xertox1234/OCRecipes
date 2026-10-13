@@ -1,28 +1,20 @@
 // @vitest-environment jsdom
 //
-// The free-user premium gate in handleFiltersChange must not tick a haptic of
-// its own: every SearchFilterSheet control that calls onFiltersChange has
-// already ticked (selectable Chips tick in Chip.handlePress, sliders tick in
-// onSlidingComplete), so a tick here was a double buzz.
-//
-// No sheet control can pick the "spoonacular" source today (its "Online" chip
-// was removed in #459), so this drives the handler directly through a
-// captured onFiltersChange rather than through a chip press.
+// "Ideas for you" is premium: a free user tapping the CTA gets the upgrade
+// prompt — with exactly one haptic tick — and no idea listing is requested.
+// (Replaces the old Spoonacular "Online" source gate, removed with the
+// Spoonacular browse path in the inspired-recipes work.)
 //
 // Mock harness trimmed from RecipeBrowserScreen.loading-skeleton.test.tsx.
 import React from "react";
-import { act } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import RecipeBrowserScreen from "../RecipeBrowserScreen";
-import type { SearchFilters } from "@/components/meal-plan/SearchFilterSheet";
 
-const { captured } = vi.hoisted(() => ({
-  captured: {
-    onFiltersChange: null as ((f: SearchFilters) => void) | null,
-    filters: null as SearchFilters | null,
-    upgradeVisible: false,
-  },
+const { captured, mutate } = vi.hoisted(() => ({
+  captured: { upgradeVisible: false },
+  mutate: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -31,7 +23,7 @@ vi.mock("@react-navigation/native", () => ({
     goBack: vi.fn(),
     setOptions: vi.fn(),
   }),
-  useRoute: () => ({ params: {} }),
+  useRoute: () => ({ params: { searchQuery: "tacos" } }),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -60,18 +52,23 @@ vi.mock("@/hooks/useRecipeSearch", () => ({
   }),
 }));
 
-vi.mock("@/hooks/useCatalogSearch", () => ({
-  useCatalogSearch: () => ({
+vi.mock("@/hooks/useInspiredSuggestions", () => {
+  // Stable identities, as TanStack's mutate/reset/mutateAsync are.
+  const listing = {
     data: undefined,
-    isLoading: false,
+    isPending: false,
     error: null,
-    refetch: vi.fn(),
-  }),
-}));
-
-vi.mock("@/hooks/useCatalogConfig", () => ({
-  useCatalogConfig: () => ({ data: { enabled: true } }),
-}));
+    mutate,
+    reset: vi.fn(),
+  };
+  const make = { mutateAsync: vi.fn() };
+  const photos = new Map<number, string | null>();
+  return {
+    useCreateSuggestionListing: () => listing,
+    useMakeSuggestion: () => make,
+    useSuggestionPhotos: () => photos,
+  };
+});
 
 vi.mock("@/hooks/useScrollLinkedHeader", () => ({
   useScrollLinkedHeader: () => ({
@@ -89,18 +86,7 @@ vi.mock("@/hooks/useSheetBackHandler", () => ({
 }));
 
 vi.mock("@/components/meal-plan/SearchFilterSheet", () => ({
-  SearchFilterSheet: (props: {
-    filters: SearchFilters;
-    onFiltersChange: (f: SearchFilters) => void;
-  }) => {
-    captured.onFiltersChange = props.onFiltersChange;
-    captured.filters = props.filters;
-    return null;
-  },
-}));
-
-vi.mock("@/components/meal-plan/OnlineSearchCta", () => ({
-  OnlineSearchCta: () => null,
+  SearchFilterSheet: () => null,
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
@@ -114,29 +100,20 @@ vi.mock("@/components/meal-plan/RecipeDiscoveryFeed", () => ({
   RecipeDiscoveryFeed: () => null,
 }));
 
-describe("RecipeBrowserScreen — premium source gate", () => {
+describe("RecipeBrowserScreen — Ideas for you premium gate", () => {
   beforeEach(() => {
-    captured.onFiltersChange = null;
-    captured.filters = null;
     captured.upgradeVisible = false;
+    mutate.mockClear();
   });
 
-  it("opens the upgrade prompt without a second haptic tick", () => {
+  it("opens the upgrade prompt with a single haptic tick", () => {
     renderComponent(<RecipeBrowserScreen />);
-    expect(captured.onFiltersChange).not.toBeNull();
     vi.mocked(Haptics.selectionAsync).mockClear();
 
-    act(() => {
-      captured.onFiltersChange!({
-        ...captured.filters!,
-        source: "spoonacular",
-      });
-    });
+    fireEvent.click(screen.getByText("Ideas for you · Premium"));
 
     expect(captured.upgradeVisible).toBe(true);
-    // The control that fired onFiltersChange already ticked.
-    expect(Haptics.selectionAsync).not.toHaveBeenCalled();
-    // The filter state stays honest: the gated source is not applied.
-    expect(captured.filters?.source).toBe("all");
+    expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+    expect(mutate).not.toHaveBeenCalled();
   });
 });

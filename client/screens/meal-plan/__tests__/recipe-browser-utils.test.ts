@@ -1,85 +1,33 @@
 import { describe, it, expect } from "vitest";
 import {
-  shouldGatePremiumSource,
-  isQuotaExceededError,
-  resolveOnlineCtaState,
+  resolveIdeasCtaState,
   computeActiveFilterCount,
   DEFAULT_FILTERS,
   detailParamsForSearchResult,
 } from "../recipe-browser-utils";
 import { ApiError } from "../../../lib/api-error";
 
-describe("shouldGatePremiumSource", () => {
-  it("gates a free user selecting the Online (spoonacular) source", () => {
-    expect(shouldGatePremiumSource("spoonacular", false)).toBe(true);
-  });
-
-  it("does not gate a premium user selecting the Online source", () => {
-    expect(shouldGatePremiumSource("spoonacular", true)).toBe(false);
-  });
-
-  it("does not gate a free user selecting a local source", () => {
-    expect(shouldGatePremiumSource("all", false)).toBe(false);
-    expect(shouldGatePremiumSource("personal", false)).toBe(false);
-    expect(shouldGatePremiumSource("community", false)).toBe(false);
-  });
-});
-
-describe("isQuotaExceededError", () => {
-  it("detects the catalog quota-exceeded ApiError", () => {
-    const error = new ApiError("402: quota", "CATALOG_QUOTA_EXCEEDED");
-    expect(isQuotaExceededError(error)).toBe(true);
-  });
-
-  it("returns false for an ApiError with a different code", () => {
-    const error = new ApiError("500: server error", "INTERNAL_ERROR");
-    expect(isQuotaExceededError(error)).toBe(false);
-  });
-
-  it("returns false for a non-ApiError value", () => {
-    expect(isQuotaExceededError(new Error("network"))).toBe(false);
-    expect(isQuotaExceededError(null)).toBe(false);
-    expect(isQuotaExceededError(undefined)).toBe(false);
-  });
-});
-
-describe("resolveOnlineCtaState", () => {
-  const d = {
-    catalogDisabled: false,
-    isPremium: false,
-    hasQuery: true,
-    onlineRequested: false,
-    onlineLoading: false,
-    quotaExhausted: false,
+describe("resolveIdeasCtaState", () => {
+  const base = {
+    isPremium: true,
+    pending: false,
+    error: null,
+    hasIdeas: false,
   };
-  it("hidden when catalog disabled or query empty", () => {
-    expect(resolveOnlineCtaState({ ...d, catalogDisabled: true })).toBe(
-      "hidden",
-    );
-    expect(resolveOnlineCtaState({ ...d, hasQuery: false })).toBe("hidden");
-  });
-  it("premium-locked for free users with a query", () => {
-    expect(resolveOnlineCtaState(d)).toBe("premium-locked");
-  });
-  it("premium flow: actionable → loading → quota-exhausted", () => {
-    expect(resolveOnlineCtaState({ ...d, isPremium: true })).toBe("actionable");
+  it("locked for free users", () =>
+    expect(resolveIdeasCtaState({ ...base, isPremium: false })).toBe("locked"));
+  it("loading while pending", () =>
+    expect(resolveIdeasCtaState({ ...base, pending: true })).toBe("loading"));
+  it("error after a failure", () =>
     expect(
-      resolveOnlineCtaState({
-        ...d,
-        isPremium: true,
-        onlineRequested: true,
-        onlineLoading: true,
+      resolveIdeasCtaState({
+        ...base,
+        error: new ApiError("502: AI unavailable", "AI_UNAVAILABLE", 502),
       }),
-    ).toBe("loading");
-    expect(
-      resolveOnlineCtaState({
-        ...d,
-        isPremium: true,
-        onlineRequested: true,
-        quotaExhausted: true,
-      }),
-    ).toBe("quota-exhausted");
-  });
+    ).toBe("error"));
+  it("hidden once ideas are showing", () =>
+    expect(resolveIdeasCtaState({ ...base, hasIdeas: true })).toBe("hidden"));
+  it("idle otherwise", () => expect(resolveIdeasCtaState(base)).toBe("idle"));
 });
 
 describe("computeActiveFilterCount", () => {
@@ -150,15 +98,6 @@ describe("computeActiveFilterCount", () => {
 });
 
 describe("detailParamsForSearchResult", () => {
-  it("opens a Spoonacular result as a catalog preview, not a community id", () => {
-    expect(
-      detailParamsForSearchResult({
-        id: "spoonacular:715538",
-        source: "spoonacular",
-      }),
-    ).toEqual({ recipeId: 715538, recipeType: "catalog" });
-  });
-
   it("opens a community result as community", () => {
     expect(
       detailParamsForSearchResult({ id: "community:17", source: "community" }),

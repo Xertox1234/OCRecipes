@@ -4,6 +4,7 @@ import type {
   RecipeResultsBlock,
 } from "@shared/schemas/recipe-finder";
 import {
+  FINDER_BUTTON_LABELS,
   formatItemMeta,
   itemAccessibilityLabel,
   resultsAnnouncement,
@@ -61,23 +62,41 @@ describe("recipe-finder-utils", () => {
   it("announces the list on arrival", () => {
     expect(resultsAnnouncement(block)).toBe("Found 2 community recipes");
     expect(
-      resultsAnnouncement({ ...block, source: "spoonacular", items: [item()] }),
-    ).toBe("Found 1 Spoonacular recipe");
+      resultsAnnouncement({
+        ...block,
+        source: "inspired",
+        items: [item({ source: "inspired" })],
+      }),
+    ).toBe("Found 1 idea for you");
+    expect(
+      resultsAnnouncement({
+        ...block,
+        source: "inspired",
+        items: [
+          item({ source: "inspired" }),
+          item({ id: 13, source: "inspired" }),
+        ],
+      }),
+    ).toBe("Found 2 ideas for you");
     expect(
       resultsAnnouncement({ ...block, items: [], notice: "no_matches" }),
     ).toBe("No community recipes matched.");
   });
 
   it("notice copy never reports 'unavailable' as no results", () => {
-    expect(noticeText("unavailable", "spoonacular")).toBe(
-      "Spoonacular isn't available right now. Try Generate or a community pick.",
+    expect(noticeText("unavailable", "inspired")).toBe(
+      "Ideas aren't available right now. Try Generate or a community pick.",
+    );
+    expect(noticeText("no_matches", "inspired")).toBe("No ideas came up.");
+    expect(noticeText("generate_limit", "inspired")).toBe(
+      "You've reached today's limit for generated recipes. Community picks and ideas for you still work.",
     );
     expect(noticeText(null, "community")).toBeNull();
   });
 
   it("headers", () => {
     expect(resultsHeader("community")).toBe("From the community");
-    expect(resultsHeader("spoonacular")).toBe("From Spoonacular");
+    expect(resultsHeader("inspired")).toBe("Ideas for you");
   });
 
   it("answers label is the visible user bubble text", () => {
@@ -89,14 +108,28 @@ describe("recipe-finder-utils", () => {
     ).toBe("Under 20 minutes, Vegan");
   });
 
-  it("a Spoonacular row opens the catalog preview; a community row opens community (R1)", () => {
-    expect(
-      finderItemNavParams(item({ id: 715538, source: "spoonacular" })),
-    ).toEqual({ recipeId: 715538, recipeType: "catalog" });
+  it("a community row opens the community recipe", () => {
     expect(finderItemNavParams(item())).toEqual({
       recipeId: 12,
       recipeType: "community",
     });
+  });
+
+  it("inspired items have no detail screen (they are made, not opened)", () => {
+    expect(
+      finderItemNavParams({
+        id: 4,
+        source: "inspired",
+        title: "T",
+        imageUrl: null,
+        readyInMinutes: 20,
+        calories: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("search_online button reads 'Get ideas for you'", () => {
+    expect(FINDER_BUTTON_LABELS.search_online).toBe("Get ideas for you");
   });
 
   it("reads a finder block from RecipeChef or Coach metadata", () => {

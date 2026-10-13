@@ -165,7 +165,6 @@ export const storage = {
   deleteSavedItem: nutrition.deleteSavedItem,
 
   // Meal plans (recipes and items)
-  findMealPlanRecipeByExternalId: mealPlans.findMealPlanRecipeByExternalId,
   getMealPlanRecipe: mealPlans.getMealPlanRecipe,
   getMealPlanRecipeWithIngredients: mealPlans.getMealPlanRecipeWithIngredients,
   getUserMealPlanRecipes: mealPlans.getUserMealPlanRecipes,
@@ -418,6 +417,7 @@ export const storage = {
 
   // Inspired recipes (suggestions)
   createInspiredSuggestions: inspired.createInspiredSuggestions,
+  countInspiredSuggestionsSince: inspired.countInspiredSuggestionsSince,
   getInspiredSuggestions: inspired.getInspiredSuggestions,
   getInspiredSuggestion: inspired.getInspiredSuggestion,
   setInspiredSuggestionImage: inspired.setInspiredSuggestionImage,

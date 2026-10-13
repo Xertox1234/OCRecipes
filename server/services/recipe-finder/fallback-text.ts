@@ -60,19 +60,19 @@ export function finderFallbackText(block: FinderBlock): string {
     case "recipe_results": {
       switch (block.notice) {
         case "generate_limit":
-          return "You've reached today's limit for generated recipes. Community and Spoonacular searches still work.";
+          return "You've reached today's limit for generated recipes. Community picks and ideas for you still work.";
         case "generate_premium":
           return "Generating recipes is a Premium feature. Try a community pick instead.";
         case "unavailable":
-          return `Spoonacular isn't available right now. Try Generate or a community pick.${footer(block)}`;
+          return `Ideas aren't available right now. Try Generate or a community pick.${footer(block)}`;
         case "no_matches":
-          return `${block.source === "community" ? "No community recipes matched." : "Spoonacular had no matches."}${footer(block)}`;
+          return `${block.source === "community" ? "No community recipes matched." : "No ideas came up."}${footer(block)}`;
         case null: {
           const n = block.items.length;
           const head =
             block.source === "community"
               ? `Here are ${n} community recipe${n === 1 ? "" : "s"}:`
-              : `Here are ${n} recipe${n === 1 ? "" : "s"} from Spoonacular:`;
+              : `Here are ${n} idea${n === 1 ? "" : "s"} for you:`;
           return `${head}\n${block.items.map(itemLine).join("\n")}${footer(block)}`;
         }
       }

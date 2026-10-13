@@ -1,9 +1,15 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { AccessibilityInfo, Pressable, StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { Button } from "@/components/Button";
 import { ThemedText } from "@/components/ThemedText";
 import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { useHaptics } from "@/hooks/useHaptics";
+import { useSuggestionPhotos } from "@/hooks/useInspiredSuggestions";
+import { resolveImageUrl } from "@/lib/query-client";
 import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
 import type {
   FinderButton,
@@ -32,10 +38,15 @@ export interface RecipeResultsListProps {
   lockedButtons?: FinderButton[];
   onButton: (button: FinderButton) => void;
   onOpenItem: (item: FinderItem) => void;
+  /** "Make this mine" on an inspired row (ideas have no detail screen). */
+  onMakeItem?: (item: FinderItem) => void;
+  /** The inspired row whose recipe is being made right now, if any. */
+  makingId?: number | null;
 }
 
 const THUMB = 48;
 const NO_LOCKS: FinderButton[] = [];
+const noop = () => {};
 
 export const RecipeResultsList = React.memo(function RecipeResultsList({
   block,
@@ -44,8 +55,19 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
   lockedButtons = NO_LOCKS,
   onButton,
   onOpenItem,
+  onMakeItem = noop,
+  makingId = null,
 }: RecipeResultsListProps) {
   const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
+  const haptics = useHaptics();
+  // Idea photos are generated after the listing; poll for them while this is
+  // the live list (an old list keeps whatever photo it already had).
+  const inspiredIds = useMemo(
+    () => block.items.filter((i) => i.source === "inspired").map((i) => i.id),
+    [block.items],
+  );
+  const photos = useSuggestionPhotos(inspiredIds, isActive);
   // No live region covers the list's arrival, so announce on both platforms,
   // once per flow, and only for the live (latest) list.
   const announcedFlowRef = useRef<string | null>(null);
@@ -82,6 +104,76 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
         <View accessibilityRole="list" accessibilityLabel={header}>
           {block.items.map((item) => {
             const meta = formatItemMeta(item);
+            if (item.source === "inspired") {
+              const uri = resolveImageUrl(photos.get(item.id) ?? item.imageUrl);
+              const making = makingId === item.id;
+              return (
+                <View
+                  key={`${item.source}:${item.id}`}
+                  style={[styles.row, styles.ideaRow]}
+                >
+                  {uri ? (
+                    <FallbackImage
+                      source={{ uri }}
+                      style={styles.thumb}
+                      fallbackIcon="book-open"
+                      fallbackIconSize={20}
+                      contentFit="cover"
+                      transition={reducedMotion ? 0 : 220}
+                      accessibilityIgnoresInvertColors
+                    />
+                  ) : (
+                    <View
+                      testID="finder-thumb-placeholder"
+                      style={[
+                        styles.thumb,
+                        styles.placeholder,
+                        { backgroundColor: withOpacity(theme.link, 0.1) },
+                      ]}
+                    >
+                      <Feather
+                        name="book-open"
+                        size={20}
+                        color={theme.link}
+                        accessible={false}
+                      />
+                    </View>
+                  )}
+                  <View style={styles.rowText}>
+                    <ThemedText numberOfLines={2} style={styles.title}>
+                      {item.title}
+                    </ThemedText>
+                    {item.description ? (
+                      <ThemedText
+                        style={[styles.meta, { color: theme.textSecondary }]}
+                      >
+                        {item.description}
+                      </ThemedText>
+                    ) : null}
+                    {meta ? (
+                      <ThemedText
+                        style={[styles.meta, { color: theme.textSecondary }]}
+                      >
+                        {meta}
+                      </ThemedText>
+                    ) : null}
+                    <Button
+                      onPress={() => {
+                        haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+                        onMakeItem(item);
+                      }}
+                      disabled={making}
+                      loading={making}
+                      loadingText="Making…"
+                      accessibilityLabel={`Make ${item.title} mine`}
+                      style={styles.makeButton}
+                    >
+                      Make this mine
+                    </Button>
+                  </View>
+                </View>
+              );
+            }
             return (
               <Pressable
                 key={`${item.source}:${item.id}`}
@@ -202,6 +294,8 @@ const styles = StyleSheet.create({
   thumb: { width: THUMB, height: THUMB, borderRadius: BorderRadius.xs },
   placeholder: { alignItems: "center", justifyContent: "center" },
   rowText: { flex: 1 },
+  ideaRow: { alignItems: "flex-start" },
+  makeButton: { marginTop: Spacing.sm, alignSelf: "flex-start" },
   title: { fontSize: 14, fontWeight: "600" },
   meta: { fontSize: 12, marginTop: 2 },
   buttons: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },

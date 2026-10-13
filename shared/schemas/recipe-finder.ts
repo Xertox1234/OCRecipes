@@ -25,8 +25,9 @@ export type RecipeQuery = z.infer<typeof recipeQuerySchema>;
 
 export const finderItemSchema = z.object({
   id: z.number().int().positive(),
-  source: z.enum(["community", "spoonacular"]),
+  source: z.enum(["community", "inspired"]),
   title: z.string().min(1).max(200),
+  description: z.string().max(140).optional(),
   imageUrl: z.string().nullable(),
   readyInMinutes: z.number().int().positive().nullable(),
   calories: z.number().nonnegative().nullable(),
@@ -70,7 +71,7 @@ export const finderFlowSchema = z.object({
   query: recipeQuerySchema,
   /** 0 before the clarifying round, 1 after it (spec §4: one round max). */
   round: z.union([z.literal(0), z.literal(1)]),
-  /** "community:12" / "spoonacular:715538" already shown in this flow. */
+  /** "community:12" / "inspired:44" already shown in this flow. */
   shownIds: z.array(z.string().max(40)).max(40),
   dish: z.string().trim().min(1).max(80).optional(),
   details: recipeDetailsSchema.optional(),
@@ -93,7 +94,7 @@ export type FinderNotice = z.infer<typeof finderNoticeSchema>;
 
 export const recipeResultsBlockSchema = z.object({
   type: z.literal("recipe_results"),
-  source: z.enum(["community", "spoonacular"]),
+  source: z.enum(["community", "inspired"]),
   items: z.array(finderItemSchema).max(FINDER_MAX_ITEMS),
   actions: z.array(finderButtonSchema).max(3),
   notice: finderNoticeSchema.nullable(),

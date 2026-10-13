@@ -8,7 +8,7 @@
 // docs/solutions/logic-errors/network-failure-rendered-as-wrong-credentials-2026-08-08.md).
 //
 // The error-branching suites exercise the `recipeType: "mealPlan"` branch
-// (the catalog preview has its own describe blocks at the end), which has an explicit `apiRequest`-backed queryFn that's easy to mock and
+// which has an explicit `apiRequest`-backed queryFn that's easy to mock and
 // reject with a real `ApiError`. The `community` branch uses the QueryClient's
 // default queryFn (`getQueryFn`), which `renderComponent`'s bare test
 // QueryClient does not register — the error-branching logic under test
@@ -29,7 +29,6 @@ import { renderComponent } from "../../../test/utils/render-component";
 import FeaturedRecipeDetailScreen from "../FeaturedRecipeDetailScreen";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 
 const {
   mockApiRequest,
@@ -38,10 +37,7 @@ const {
   mockReset,
   mockReplace,
   mockDetailProps,
-  mockToastError,
-  mockToastInfo,
 } = vi.hoisted(() => ({
-  mockToastInfo: vi.fn(),
   mockApiRequest: vi.fn(),
   mockRouteParams: {
     current: {
@@ -49,14 +45,13 @@ const {
       recipeType: "mealPlan",
     } as {
       recipeId: number;
-      recipeType: "mealPlan" | "community" | "catalog";
+      recipeType: "mealPlan" | "community";
     },
   },
   mockNavigate: vi.fn(),
   mockReset: vi.fn(),
   mockReplace: vi.fn(),
   mockDetailProps: { current: null as Record<string, unknown> | null },
-  mockToastError: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -74,12 +69,7 @@ vi.mock("@/lib/query-client", async (importOriginal) => ({
   shouldSurfaceQueryError: (
     await importOriginal<typeof import("@/lib/query-client")>()
   ).shouldSurfaceQueryError,
-  // The favourites list (read by the catalog heart) always answers with an
-  // empty list, so each test's mock stays about the recipe endpoints.
-  apiRequest: (...args: unknown[]) =>
-    args[1] === "/api/favourite-recipes/ids"
-      ? Promise.resolve({ json: async () => ({ ids: [] }) })
-      : mockApiRequest(...args),
+  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
   resolveImageUrl: (uri: string | null | undefined) => uri ?? null,
 }));
 
@@ -93,30 +83,6 @@ vi.mock("@/components/RecipeDetailContent", () => ({
   },
 }));
 
-vi.mock("@/components/UpgradeModal", () => ({
-  UpgradeModal: ({
-    visible,
-    onUpgrade,
-  }: {
-    visible: boolean;
-    onUpgrade?: () => void;
-  }) =>
-    visible ? (
-      <div data-testid="upgrade-modal">
-        <button onClick={() => onUpgrade?.()}>Complete purchase</button>
-      </div>
-    ) : null,
-}));
-
-vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({
-    success: vi.fn(),
-    error: mockToastError,
-    info: mockToastInfo,
-    dismiss: vi.fn(),
-  }),
-}));
-
 vi.mock("@/components/recipe-detail", () => ({
   RecipeDetailSkeleton: () => <div data-testid="recipe-detail-skeleton" />,
 }));
@@ -124,7 +90,6 @@ vi.mock("@/components/recipe-detail", () => ({
 beforeEach(() => {
   mockRouteParams.current = { recipeId: 42, recipeType: "mealPlan" };
   mockApiRequest.mockReset();
-  mockToastInfo.mockReset();
 });
 
 afterEach(() => {
@@ -330,436 +295,5 @@ describe("FeaturedRecipeDetailScreen — happy path is unaffected", () => {
     expect(await screen.findByText("Pancakes")).toBeDefined();
     expect(screen.queryByText("Recipe not found")).toBeNull();
     expect(screen.queryByText("Couldn't load this recipe")).toBeNull();
-  });
-});
-
-describe("FeaturedRecipeDetailScreen — catalog (Spoonacular) preview", () => {
-  const catalogDetail = {
-    recipe: {
-      title: "Spoonacular Chili",
-      description: "Warm",
-      servings: 4,
-      prepTimeMinutes: 10,
-      cookTimeMinutes: 30,
-      imageUrl: null,
-      instructions: ["Cook"],
-      dietTags: [],
-      caloriesPerServing: "420",
-      proteinPerServing: "30",
-      carbsPerServing: "40",
-      fatPerServing: "12",
-    },
-    ingredients: [{ name: "beans", quantity: "1", unit: "can" }],
-  };
-
-  beforeEach(() => {
-    mockRouteParams.current = { recipeId: 715538, recipeType: "catalog" };
-    mockDetailProps.current = null;
-  });
-
-  function mockCatalogApi(saveResult: unknown = { id: 901 }) {
-    mockApiRequest.mockImplementation(async (method: string, url: string) =>
-      method === "GET"
-        ? { json: async () => catalogDetail }
-        : url === FAVOURITE_TOGGLE_URL
-          ? { json: async () => ({ favourited: true }) }
-          : saveResult instanceof Error
-            ? Promise.reject(saveResult)
-            : { json: async () => saveResult },
-    );
-  }
-
-  const FAVOURITE_TOGGLE_URL = "/api/favourite-recipes/toggle";
-  const SAVE_URL = "/api/meal-plan/catalog/715538/save";
-  const callsTo = (url: string) =>
-    mockApiRequest.mock.calls.filter(([, u]) => u === url);
-
-  it("the heart on an unsaved preview saves the recipe, then favourites the saved copy", async () => {
-    mockCatalogApi({ id: 901 });
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    fireEvent.click(
-      await screen.findByLabelText("Add Spoonacular Chili to favourites"),
-    );
-
-    expect(await screen.findByText("Saved · View recipe")).toBeDefined();
-    await waitFor(() =>
-      expect(callsTo(FAVOURITE_TOGGLE_URL)).toEqual([
-        [
-          "POST",
-          FAVOURITE_TOGGLE_URL,
-          { recipeId: 901, recipeType: "mealPlan" },
-        ],
-      ]),
-    );
-    expect(callsTo(SAVE_URL)).toEqual([
-      ["POST", SAVE_URL, { addToSavedItems: true }],
-    ]);
-  });
-
-  it("once saved, the heart toggles the saved copy without saving again", async () => {
-    mockCatalogApi({ id: 901 });
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    fireEvent.click(
-      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
-    );
-    await screen.findByText("Saved · View recipe");
-
-    fireEvent.click(
-      screen.getByLabelText("Add Spoonacular Chili to favourites"),
-    );
-
-    await waitFor(() => expect(callsTo(FAVOURITE_TOGGLE_URL)).toHaveLength(1));
-    expect(callsTo(FAVOURITE_TOGGLE_URL)[0][2]).toEqual({
-      recipeId: 901,
-      recipeType: "mealPlan",
-    });
-    expect(callsTo(SAVE_URL)).toHaveLength(1);
-  });
-
-  it("a premium-denied save from the heart opens the upgrade sheet and favourites nothing", async () => {
-    mockCatalogApi(
-      new ApiError("403: Premium", ErrorCode.PREMIUM_REQUIRED, 403),
-    );
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    fireEvent.click(
-      await screen.findByLabelText("Add Spoonacular Chili to favourites"),
-    );
-
-    expect(await screen.findByTestId("upgrade-modal")).toBeDefined();
-    expect(callsTo(FAVOURITE_TOGGLE_URL)).toEqual([]);
-  });
-
-  it("fetches the preview from the catalog endpoint, not /api/recipes", async () => {
-    mockCatalogApi();
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    expect(await screen.findByText("Spoonacular Chili")).toBeDefined();
-    expect(mockApiRequest).toHaveBeenCalledWith(
-      "GET",
-      "/api/meal-plan/catalog/715538",
-    );
-  });
-
-  it("hands RecipeDetailContent recipeId 0 so favourite/cookbook/remix never touch a DB row", async () => {
-    mockCatalogApi();
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    await screen.findByText("Spoonacular Chili");
-    expect(mockDetailProps.current?.recipeId).toBe(0);
-    expect(mockDetailProps.current?.recipeType).toBe("mealPlan");
-  });
-
-  it("saves via the catalog save endpoint, shows the saved state, and opens the saved copy", async () => {
-    mockCatalogApi({ id: 901 });
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    fireEvent.click(
-      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
-    );
-    expect(await screen.findByText("Saved · View recipe")).toBeDefined();
-    // The preview's Save also lands in Profile > Saved Items (ruling 2026-09-29).
-    expect(mockApiRequest).toHaveBeenCalledWith(
-      "POST",
-      "/api/meal-plan/catalog/715538/save",
-      { addToSavedItems: true },
-    );
-    expect(mockToastInfo).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByLabelText("Saved. Open Spoonacular Chili in your recipes"),
-    );
-    expect(mockReplace).toHaveBeenCalledWith("FeaturedRecipeDetail", {
-      recipeId: 901,
-      recipeType: "mealPlan",
-    });
-  });
-
-  it("saves the recipe even when Saved Items is full, and says it isn't listed there", async () => {
-    mockCatalogApi({ id: 901, savedItemStatus: "limit_reached" });
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    fireEvent.click(
-      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
-    );
-    expect(await screen.findByText("Saved · View recipe")).toBeDefined();
-    expect(mockToastInfo).toHaveBeenCalledWith(SAVED_ITEMS_FULL_MESSAGE);
-  });
-
-  it("shows an inline error when Save fails", async () => {
-    mockCatalogApi(new TypeError("Network request failed"));
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    fireEvent.click(
-      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
-    );
-    expect(
-      await screen.findByText("Couldn't save this recipe. Try again."),
-    ).toBeDefined();
-  });
-
-  it("shows the Premium state for a 403 PREMIUM_REQUIRED", async () => {
-    mockApiRequest.mockRejectedValue(
-      new ApiError(
-        "403: Recipe catalog requires a premium subscription",
-        ErrorCode.PREMIUM_REQUIRED,
-        403,
-      ),
-    );
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    expect(
-      await screen.findByText("Online recipes are a Premium feature"),
-    ).toBeDefined();
-    expect(screen.queryByText("Try Again")).toBeNull();
-    fireEvent.click(screen.getByText("See Premium"));
-    expect(screen.getByTestId("upgrade-modal")).toBeDefined();
-  });
-
-  it("shows 'Recipe not found' for a catalog 404", async () => {
-    mockApiRequest.mockRejectedValue(
-      new ApiError(
-        "404: Recipe not found in catalog",
-        ErrorCode.NOT_FOUND,
-        404,
-      ),
-    );
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    expect(await screen.findByText("Recipe not found")).toBeDefined();
-    expect(screen.queryByText("Try Again")).toBeNull();
-    // The no-data fallback also reads "Recipe not found" — pin that this is
-    // the catalog request's 404, not a branch that never fetched.
-    expect(mockApiRequest).toHaveBeenCalledWith(
-      "GET",
-      "/api/meal-plan/catalog/715538",
-    );
-  });
-
-  it("shows the unavailable state for a 402 quota error", async () => {
-    mockApiRequest.mockRejectedValue(
-      new ApiError(
-        "402: Spoonacular API quota exceeded",
-        ErrorCode.CATALOG_QUOTA_EXCEEDED,
-        402,
-      ),
-    );
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    expect(
-      await screen.findByText("Spoonacular isn't available right now"),
-    ).toBeDefined();
-  });
-});
-
-describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 review)", () => {
-  const catalogDetail = {
-    recipe: {
-      title: "Spoonacular Chili",
-      instructions: ["Cook"],
-      caloriesPerServing: "420",
-    },
-    ingredients: [{ name: "beans", quantity: "1", unit: "can" }],
-  };
-  let announceSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    mockRouteParams.current = { recipeId: 715538, recipeType: "catalog" };
-    mockToastError.mockReset();
-    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
-  });
-
-  afterEach(() => {
-    announceSpy.mockRestore();
-  });
-
-  function mockSaveRejects(err: Error) {
-    mockApiRequest.mockImplementation(async (method: string, url: string) =>
-      method === "GET"
-        ? { json: async () => catalogDetail }
-        : Promise.reject(err),
-    );
-  }
-
-  it("a Save that finds Saved Items full makes one announcement, not two", async () => {
-    mockApiRequest.mockImplementation(async (method: string, url: string) =>
-      method === "GET"
-        ? { json: async () => catalogDetail }
-        : { json: async () => ({ id: 901, savedItemStatus: "limit_reached" }) },
-    );
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    await pressSave();
-
-    await waitFor(() =>
-      expect(mockToastInfo).toHaveBeenCalledWith(SAVED_ITEMS_FULL_MESSAGE),
-    );
-    // The toast announces itself; a second imperative announce in the same
-    // commit can be dropped on iOS and is heard twice on TalkBack.
-    expect(announceSpy).not.toHaveBeenCalledWith("Recipe saved");
-  });
-
-  async function pressSave() {
-    fireEvent.click(
-      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
-    );
-  }
-
-  it("announces a failed Save for VoiceOver, not only through an Android live region", async () => {
-    mockSaveRejects(new TypeError("Network request failed"));
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    await pressSave();
-    await screen.findByText("Couldn't save this recipe. Try again.");
-    expect(
-      announceSpy.mock.calls.filter(
-        ([m]: unknown[]) => m === "Couldn't save this recipe. Try again.",
-      ),
-    ).toHaveLength(1);
-    // Still mounted: the inline error is the one surface, no toast.
-    expect(mockToastError).not.toHaveBeenCalled();
-  });
-
-  it("opens the upgrade modal when Save is premium-denied, with no inline error", async () => {
-    mockSaveRejects(
-      new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403),
-    );
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    await pressSave();
-    expect(await screen.findByTestId("upgrade-modal")).toBeDefined();
-    expect(
-      screen.queryByText("Couldn't save this recipe. Try again."),
-    ).toBeNull();
-  });
-
-  it("shows the quota copy when Save hits the Spoonacular quota", async () => {
-    mockSaveRejects(
-      new ApiError("402: quota", ErrorCode.CATALOG_QUOTA_EXCEEDED, 402),
-    );
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    await pressSave();
-    expect(
-      await screen.findByText(
-        "Spoonacular isn't available right now. Try again later.",
-      ),
-    ).toBeDefined();
-  });
-
-  it.each([
-    [
-      "a 404 (gone from the catalog)",
-      new ApiError("404: gone", ErrorCode.NOT_FOUND, 404),
-      "This recipe is no longer available.",
-    ],
-    [
-      "a 422 (fails the quality gate)",
-      new ApiError("422: empty", ErrorCode.VALIDATION_ERROR, 422),
-      "This recipe has no ingredients or steps, so it can't be saved.",
-    ],
-  ])(
-    "does not ask the user to retry a permanent Save failure: %s",
-    async (_label, err, copy) => {
-      mockSaveRejects(err);
-      renderComponent(<FeaturedRecipeDetailScreen />);
-      await pressSave();
-      expect(await screen.findByText(copy)).toBeDefined();
-      expect(
-        screen.queryByText("Couldn't save this recipe. Try again."),
-      ).toBeNull();
-    },
-  );
-
-  it("refetches the preview after the user upgrades from the Premium wall", async () => {
-    mockApiRequest
-      .mockRejectedValueOnce(
-        new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403),
-      )
-      .mockResolvedValue({ json: async () => catalogDetail });
-    renderComponent(<FeaturedRecipeDetailScreen />);
-    fireEvent.click(await screen.findByText("See Premium"));
-    fireEvent.click(screen.getByText("Complete purchase"));
-    expect(await screen.findByText("Spoonacular Chili")).toBeDefined();
-    expect(
-      screen.queryByText("Online recipes are a Premium feature"),
-    ).toBeNull();
-  });
-
-  it.each([
-    [
-      "402 quota",
-      new ApiError("402: quota", ErrorCode.CATALOG_QUOTA_EXCEEDED, 402),
-      "Spoonacular isn't available right now",
-    ],
-    [
-      "403 premium",
-      new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403),
-      "Online recipes are a Premium feature",
-    ],
-  ])(
-    "keeps the cached preview (and its Save bar) when a refetch fails with %s",
-    async (_label, err, wallTitle) => {
-      const key = ["/api/meal-plan/catalog", 715538];
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false } },
-      });
-      queryClient.setQueryData(key, catalogDetail);
-      mockApiRequest.mockRejectedValue(err);
-      render(
-        <QueryClientProvider client={queryClient}>
-          <FeaturedRecipeDetailScreen />
-        </QueryClientProvider>,
-      );
-      // Stale-on-mount refetch fails; the cached data survives in the cache.
-      await waitFor(() =>
-        expect(queryClient.getQueryState(key)?.status).toBe("error"),
-      );
-      expect(screen.getByText("Spoonacular Chili")).toBeDefined();
-      expect(screen.queryByText(wallTitle)).toBeNull();
-      expect(
-        screen.getByLabelText("Save Spoonacular Chili to your recipes"),
-      ).toBeDefined();
-    },
-  );
-
-  it("toasts a Save failure that lands after the user closed the preview", async () => {
-    let rejectSave: (e: Error) => void = () => {};
-    mockApiRequest.mockImplementation(async (method: string) =>
-      method === "GET"
-        ? { json: async () => catalogDetail }
-        : new Promise((_resolve, reject) => {
-            rejectSave = reject;
-          }),
-    );
-    const { unmount } = renderComponent(<FeaturedRecipeDetailScreen />);
-    await pressSave();
-    await waitFor(() =>
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "/api/meal-plan/catalog/715538/save",
-        { addToSavedItems: true },
-      ),
-    );
-    unmount();
-    rejectSave(new TypeError("Network request failed"));
-    await waitFor(() =>
-      expect(mockToastError).toHaveBeenCalledWith(
-        "Couldn't save Spoonacular Chili. Try again.",
-      ),
-    );
-  });
-
-  it("toasts a premium-denied Save failure that lands after the user closed the preview", async () => {
-    let rejectSave: (e: Error) => void = () => {};
-    mockApiRequest.mockImplementation(async (method: string) =>
-      method === "GET"
-        ? { json: async () => catalogDetail }
-        : new Promise((_resolve, reject) => {
-            rejectSave = reject;
-          }),
-    );
-    const { unmount } = renderComponent(<FeaturedRecipeDetailScreen />);
-    await pressSave();
-    await waitFor(() =>
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "/api/meal-plan/catalog/715538/save",
-        { addToSavedItems: true },
-      ),
-    );
-    unmount();
-    rejectSave(new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403));
-    await waitFor(() =>
-      expect(mockToastError).toHaveBeenCalledWith(
-        "Couldn't save Spoonacular Chili. Online recipes need Premium.",
-      ),
-    );
   });
 });

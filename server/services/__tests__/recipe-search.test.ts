@@ -32,7 +32,6 @@ vi.mock("../../services/recipe-catalog", () => ({
     number: 0,
     totalResults: 0,
   }),
-  getCatalogRecipeDetail: vi.fn().mockResolvedValue(null),
 }));
 
 // Base fixtures

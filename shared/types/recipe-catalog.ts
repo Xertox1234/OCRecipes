@@ -1,10 +1,8 @@
 import { z } from "zod";
 
 /**
- * Runtime schemas for the Spoonacular catalog search response. Shared between
- * the server (`server/services/recipe-catalog.ts`, which validates the raw
- * Spoonacular payload) and the client hook `useCatalogSearch`, which validates
- * the GET /api/meal-plan/catalog/search response at the network boundary.
+ * Runtime schemas for the Spoonacular catalog search response, used by
+ * `server/services/recipe-catalog.ts` to validate the raw Spoonacular payload.
  */
 export const catalogSearchResultSchema = z.object({
   id: z.number(),
@@ -34,9 +32,3 @@ export interface CatalogSearchParams {
   offset?: number;
   number?: number;
 }
-
-/** Response of GET /api/meal-plan/catalog/config — reports whether this
- *  deployment has the online catalog configured (SPOONACULAR_API_KEY present).
- *  Capability probe only; does not affect the premium gate. */
-export const catalogConfigResponseSchema = z.object({ enabled: z.boolean() });
-export type CatalogConfigResponse = z.infer<typeof catalogConfigResponseSchema>;

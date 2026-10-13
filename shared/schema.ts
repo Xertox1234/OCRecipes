@@ -1399,7 +1399,9 @@ export const recipeFinderClaims = pgTable(
  * AI-written recipe ideas (inspired-recipes spec 2026-10-12). Spoonacular
  * titles may have inspired them, but nothing from Spoonacular is stored here.
  * Rows expire after 24 h; `madeRecipeId` marks the one the user made, whose
- * image is now the recipe's and must not be deleted with the row.
+ * image (if it had one when made) is now the recipe's and must not be deleted
+ * with the row. A photo that finishes after the card was made is never written
+ * to the row — `setInspiredSuggestionImage` refuses and the caller deletes it.
  */
 export const inspiredSuggestions = pgTable(
   "inspired_suggestions",

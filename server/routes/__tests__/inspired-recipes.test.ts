@@ -28,6 +28,7 @@ vi.mock("../../storage", () => ({
     getEffectiveTierForUser: vi.fn(),
     getUserVerificationStats: vi.fn(),
     getUserProfile: vi.fn(),
+    countInspiredSuggestionsSince: vi.fn(),
     getInspiredSuggestions: vi.fn(),
     getInspiredSuggestion: vi.fn(),
     startMakingSuggestion: vi.fn(),
@@ -91,6 +92,7 @@ beforeEach(() => {
     streak: 0,
   });
   vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+  vi.mocked(storage.countInspiredSuggestionsSince).mockResolvedValue(0);
   vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
   vi.mocked(storage.startMakingSuggestion).mockResolvedValue(token);
   vi.mocked(storage.abandonMakingSuggestion).mockResolvedValue(undefined);
@@ -119,6 +121,19 @@ describe("POST /api/inspired/suggestions", () => {
       .set(auth)
       .send({ query: "tacos" });
     expect(res.status).toBe(403);
+    expect(createSuggestionListing).not.toHaveBeenCalled();
+  });
+  it("429s at the daily card cap without calling the AI", async () => {
+    vi.mocked(storage.countInspiredSuggestionsSince).mockResolvedValue(80);
+    const res = await request(app())
+      .post("/api/inspired/suggestions")
+      .set(auth)
+      .send({ query: "tacos" });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
+    expect(res.body.error).toBe(
+      "You've reached today's limit for recipe ideas.",
+    );
     expect(createSuggestionListing).not.toHaveBeenCalled();
   });
   it("400s on a bad body", async () => {

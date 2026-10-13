@@ -103,10 +103,6 @@ describe("DISCOVERY_PRESETS", () => {
     expect(
       DISCOVERY_PRESETS.find((p) => p.key === "featured")!.params.curatedOnly,
     ).toBe(true);
-    // No preset targets the Spoonacular source (discovery is local-only by construction).
-    expect(
-      DISCOVERY_PRESETS.every((p) => p.params.source !== "spoonacular"),
-    ).toBe(true);
   });
 
   it("uses a 5-minute stale time", () => {

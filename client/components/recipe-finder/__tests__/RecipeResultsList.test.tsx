@@ -4,7 +4,15 @@ import * as RN from "react-native";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { RecipeResultsList } from "../RecipeResultsList";
-import type { RecipeResultsBlock } from "@shared/schemas/recipe-finder";
+import type {
+  FinderItem,
+  RecipeResultsBlock,
+} from "@shared/schemas/recipe-finder";
+
+const mockPhotos = vi.hoisted(() => ({ current: new Map<number, string>() }));
+vi.mock("@/hooks/useInspiredSuggestions", () => ({
+  useSuggestionPhotos: () => mockPhotos.current,
+}));
 
 const block: RecipeResultsBlock = {
   type: "recipe_results",
@@ -39,6 +47,16 @@ const block: RecipeResultsBlock = {
   },
 };
 
+const inspiredItem: FinderItem = {
+  id: 44,
+  source: "inspired",
+  title: "Smoky Chickpea Tacos",
+  description: "Charred chickpeas, lime slaw, warm tortillas.",
+  imageUrl: null,
+  readyInMinutes: 25,
+  calories: null,
+};
+
 describe("RecipeResultsList", () => {
   it("renders the header, rows with meta, and the three buttons", () => {
     renderComponent(
@@ -52,7 +70,7 @@ describe("RecipeResultsList", () => {
     expect(screen.getByText("From the community")).toBeDefined();
     expect(screen.getByText("20 min · 350 cal")).toBeDefined();
     expect(screen.getByRole("list")).toBeDefined();
-    for (const name of ["Search Spoonacular", "Generate", "None of these"]) {
+    for (const name of ["Get ideas for you", "Generate", "None of these"]) {
       expect(screen.getByRole("button", { name })).toBeDefined();
     }
   });
@@ -134,7 +152,7 @@ describe("RecipeResultsList", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "Search Spoonacular. Premium feature",
+        name: "Get ideas for you. Premium feature",
       }),
     ).toBeDefined();
   });
@@ -144,7 +162,7 @@ describe("RecipeResultsList", () => {
       <RecipeResultsList
         block={{
           ...block,
-          source: "spoonacular",
+          source: "inspired",
           items: [],
           notice: "unavailable",
           actions: ["generate", "none_of_these"],
@@ -156,7 +174,7 @@ describe("RecipeResultsList", () => {
     );
     expect(
       screen.getByText(
-        "Spoonacular isn't available right now. Try Generate or a community pick.",
+        "Ideas aren't available right now. Try Generate or a community pick.",
       ),
     ).toBeDefined();
   });
@@ -196,5 +214,61 @@ describe("RecipeResultsList", () => {
     );
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+
+  it("inspired rows show Make this mine and call onMakeItem", () => {
+    const onMakeItem = vi.fn();
+    const onOpenItem = vi.fn();
+    renderComponent(
+      <RecipeResultsList
+        block={{ ...block, source: "inspired", items: [inspiredItem] }}
+        isActive
+        onButton={vi.fn()}
+        onOpenItem={onOpenItem}
+        onMakeItem={onMakeItem}
+        makingId={null}
+        lockedButtons={[]}
+        announceArrival={false}
+      />,
+    );
+    expect(screen.getByText("Ideas for you")).toBeDefined();
+    expect(screen.getByText(inspiredItem.description!)).toBeDefined();
+    fireEvent.click(screen.getByLabelText(`Make ${inspiredItem.title} mine`));
+    expect(onMakeItem).toHaveBeenCalledWith(inspiredItem);
+    // An idea has no detail screen — the row itself never opens anything.
+    expect(screen.queryByRole("button", { name: /Opens recipe/ })).toBeNull();
+    expect(onOpenItem).not.toHaveBeenCalled();
+  });
+
+  it("an idea being made shows its button busy and ignores taps", () => {
+    const onMakeItem = vi.fn();
+    renderComponent(
+      <RecipeResultsList
+        block={{ ...block, source: "inspired", items: [inspiredItem] }}
+        isActive
+        onButton={vi.fn()}
+        onOpenItem={vi.fn()}
+        onMakeItem={onMakeItem}
+        makingId={inspiredItem.id}
+      />,
+    );
+    const button = screen.getByLabelText(`Make ${inspiredItem.title} mine`);
+    fireEvent.click(button);
+    expect(onMakeItem).not.toHaveBeenCalled();
+  });
+
+  it("an idea's photo comes from the polled suggestion photos", () => {
+    mockPhotos.current = new Map([[inspiredItem.id, "https://img/taco.jpg"]]);
+    renderComponent(
+      <RecipeResultsList
+        block={{ ...block, source: "inspired", items: [inspiredItem] }}
+        isActive
+        onButton={vi.fn()}
+        onOpenItem={vi.fn()}
+        onMakeItem={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("finder-thumb-placeholder")).toBeNull();
+    mockPhotos.current = new Map();
   });
 });

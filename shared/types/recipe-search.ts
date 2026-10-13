@@ -5,8 +5,8 @@ import {
 } from "@shared/constants/allergens";
 
 export interface SearchableRecipe {
-  id: string; // "personal:42", "community:17", "spoonacular:654321"
-  source: "personal" | "community" | "spoonacular";
+  id: string; // "personal:42", "community:17"
+  source: "personal" | "community";
   userId: string | null; // owner ID for personal recipes (IDOR protection)
   title: string;
   description: string | null;
@@ -50,7 +50,7 @@ export interface RecipeSearchParams {
   /** Exclude recipes unsafe for the user's declared allergies. */
   safeForMe?: boolean;
   sort?: "relevance" | "newest" | "quickest" | "calories_asc" | "popular";
-  source?: "all" | "personal" | "community" | "spoonacular";
+  source?: "all" | "personal" | "community";
   limit?: number;
   offset?: number;
 }
@@ -79,7 +79,7 @@ const derivedRecipeAllergenSchema = z.object({
 
 const searchableRecipeSchema = z.object({
   id: z.string(),
-  source: z.enum(["personal", "community", "spoonacular"]),
+  source: z.enum(["personal", "community"]),
   userId: z.string().nullable(),
   title: z.string(),
   description: z.string().nullable(),

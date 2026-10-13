@@ -67,6 +67,7 @@ vi.mock("../../storage", () => ({
     deleteChatMessage: vi.fn(),
     claimRecipeGeneration: vi.fn(),
     claimSpoonacularSearch: vi.fn(),
+    countInspiredSuggestionsSince: vi.fn().mockResolvedValue(0),
   },
 }));
 
@@ -106,7 +107,7 @@ vi.mock("../recipe-finder/coach-turn", async () => {
   };
 });
 vi.mock("../recipe-finder/find-community", () => ({ findCommunity: vi.fn() }));
-vi.mock("../recipe-finder/find-online", () => ({ findOnline: vi.fn() }));
+vi.mock("../recipe-finder/find-inspired", () => ({ findInspired: vi.fn() }));
 vi.mock("../recipe-finder/ask-clarifying", () => ({ askClarifying: vi.fn() }));
 vi.mock("../recipe-finder/classify-turn", () => ({ classifyTurn: vi.fn() }));
 

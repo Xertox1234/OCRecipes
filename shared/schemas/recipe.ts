@@ -5,19 +5,6 @@
 // inference without duplicating schema definitions in each route file.
 import { z } from "zod";
 
-/** Schema for the recipe-catalog Spoonacular search endpoint. */
-export const catalogSearchSchema = z.object({
-  query: z.string().min(1).max(200),
-  cuisine: z.string().max(100).optional(),
-  diet: z.string().max(100).optional(),
-  type: z.string().max(100).optional(),
-  maxReadyTime: z.coerce.number().int().min(1).max(1440).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
-  number: z.coerce.number().int().min(1).max(50).optional(),
-});
-
-export type CatalogSearchParams = z.infer<typeof catalogSearchSchema>;
-
 /**
  * Schema for URL import / parse-url endpoints.
  * 1024 matches typical browser/proxy URL limits (Chrome/IE are ~2KB total,

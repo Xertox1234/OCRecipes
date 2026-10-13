@@ -6,8 +6,9 @@ import type { InspiredSuggestionRow } from "@shared/schema";
 export const CARD_IMAGE_WIDTH = 768;
 export const CARD_IMAGE_HEIGHT = 576;
 
-/** Fire-and-forget per card. A late image for a row that already has one
- * (or was made with another) is deleted, never left orphaned. */
+/** Fire-and-forget per card. A late image for a row that already has one, or
+ * whose card was already made (made rows are never purged), is deleted,
+ * never left orphaned. */
 export async function generateSuggestionImage(
   row: Pick<InspiredSuggestionRow, "id" | "title" | "tags">,
 ): Promise<void> {

@@ -25,7 +25,9 @@ import {
 } from "./_helpers";
 import {
   createListingBodySchema,
+  INSPIRED_DAILY_CARD_CAP,
   INSPIRED_LISTING_SIZE,
+  SUGGESTION_TTL_MS,
   toSuggestion,
 } from "@shared/schemas/inspired-recipes";
 
@@ -62,6 +64,19 @@ export function register(app: Express): void {
             400,
             formatZodError(parsed.error),
             ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const todayCount = await storage.countInspiredSuggestionsSince(
+          req.userId,
+          new Date(Date.now() - SUGGESTION_TTL_MS),
+        );
+        if (todayCount >= INSPIRED_DAILY_CARD_CAP) {
+          sendError(
+            res,
+            429,
+            "You've reached today's limit for recipe ideas.",
+            ErrorCode.DAILY_LIMIT_REACHED,
           );
           return;
         }

@@ -11,6 +11,7 @@
  *   - `chat_conversations` — coach/recipe chat threads, messages cascade
  *     via FK (retention: 180d, scoped by `updatedAt`)
  *   - `daily_logs` — daily nutrition log rows (retention: 730d)
+ *   - `inspired_suggestions` — expired unchosen idea cards + photos (24h TTL)
  *
  * Safety:
  *   - In `NODE_ENV=production`, the job refuses to run unless
@@ -45,6 +46,7 @@ import "dotenv/config";
 import { sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { createServiceLogger, toError } from "../lib/logger";
+import { purgeExpiredInspiredSuggestions } from "./purge-inspired-suggestions";
 import {
   ACTIVE_USER_WINDOW_DAYS,
   BATCH_SIZE,
@@ -399,6 +401,19 @@ export async function runRetentionCleanup(
 
     // Expired 2FA rows: auth bookkeeping too — no exemption.
     results.push(...(await purgeExpiredMfaRows(database, now)));
+
+    // Expired unchosen idea cards + their photos. Not part of `results`
+    // (storage-layer purge, not a retention-window domain), and isolated so a
+    // failure here never masks the purges above.
+    try {
+      const inspired = await purgeExpiredInspiredSuggestions(now);
+      log.info(inspired, "retention cleanup: expired idea cards purged");
+    } catch (error) {
+      log.error(
+        { err: toError(error) },
+        "retention cleanup: idea card purge failed",
+      );
+    }
 
     return results;
   } finally {

@@ -1,5 +1,5 @@
 // server/storage/inspired-suggestions.ts
-import { and, eq, inArray, isNull, lt, lte, or } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import { db } from "../db";
 import {
   inspiredSuggestions,
@@ -17,6 +17,23 @@ export async function createInspiredSuggestions(
     .insert(inspiredSuggestions)
     .values(drafts.map((d) => ({ ...d, userId, expiresAt })))
     .returning();
+}
+
+/** Cards created for this user since `since` (rolling daily cap). */
+export async function countInspiredSuggestionsSince(
+  userId: string,
+  since: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(inspiredSuggestions)
+    .where(
+      and(
+        eq(inspiredSuggestions.userId, userId),
+        gte(inspiredSuggestions.createdAt, since),
+      ),
+    );
+  return row?.n ?? 0;
 }
 
 export async function getInspiredSuggestions(
@@ -51,7 +68,11 @@ export async function setInspiredSuggestionImage( // idor-safe: callers must pre
     .update(inspiredSuggestions)
     .set({ imageUrl })
     .where(
-      and(eq(inspiredSuggestions.id, id), isNull(inspiredSuggestions.imageUrl)),
+      and(
+        eq(inspiredSuggestions.id, id),
+        isNull(inspiredSuggestions.imageUrl),
+        isNull(inspiredSuggestions.madeRecipeId),
+      ),
     )
     .returning({ id: inspiredSuggestions.id });
   return updated.length > 0;
@@ -138,8 +159,8 @@ export async function listExpiredUnmadeSuggestions(
 
 export async function deleteInspiredSuggestions(
   ids: number[],
-): Promise<number> {
-  if (ids.length === 0) return 0;
+): Promise<{ id: number; imageUrl: string | null }[]> {
+  if (ids.length === 0) return [];
   const deleted = await db
     .delete(inspiredSuggestions)
     .where(
@@ -148,6 +169,9 @@ export async function deleteInspiredSuggestions(
         isNull(inspiredSuggestions.madeRecipeId),
       ),
     )
-    .returning({ id: inspiredSuggestions.id });
-  return deleted.length;
+    .returning({
+      id: inspiredSuggestions.id,
+      imageUrl: inspiredSuggestions.imageUrl,
+    });
+  return deleted;
 }

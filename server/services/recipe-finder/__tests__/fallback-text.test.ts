@@ -60,16 +60,16 @@ describe("finderFallbackText", () => {
     ).toMatch(/^No community recipes matched\./);
   });
 
-  it("Spoonacular unavailable never reads as 'no results'", () => {
+  it("Inspired ideas unavailable never reads as 'no results'", () => {
     const text = finderFallbackText({
       ...list,
-      source: "spoonacular",
+      source: "inspired",
       items: [],
       notice: "unavailable",
       actions: ["generate", "none_of_these"],
     });
     expect(text).toMatch(
-      /^Spoonacular isn't available right now\. Try Generate or a community pick\./,
+      /^Ideas aren't available right now\. Try Generate or a community pick\./,
     );
     expect(text).not.toMatch(/no matches|no results/i);
   });
@@ -83,7 +83,7 @@ describe("finderFallbackText", () => {
         actions: ["search_online"],
       }),
     ).toBe(
-      "You've reached today's limit for generated recipes. Community and Spoonacular searches still work.",
+      "You've reached today's limit for generated recipes. Community picks and ideas for you still work.",
     );
   });
 

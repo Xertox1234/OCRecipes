@@ -56,28 +56,25 @@ const state = vi.hoisted(() => ({
     stopListening: vi.fn(),
   },
   // premium — "coachPro" (mic) stays on the pre-existing `hasVoice` flag;
-  // "catalogSave" (add_recipe_to_plan gate) is independent so existing
-  // hasVoice-driven tests are unaffected.
+  // "catalogSave" (the finder's "Get ideas for you" lock) is independent so
+  // existing hasVoice-driven tests are unaffected.
   hasVoice: false,
-  canSaveCatalog: true,
+  canSearchOnline: true,
   // navigation
   navigate: vi.fn(),
   // apiRequest (commitment accept)
   apiRequest: vi.fn().mockResolvedValue(undefined),
-  // add_recipe_to_plan: captured from the mocked BlockRenderer's onAction prop
-  // so tests can fire an arbitrary action without a canned block.action.
+  // Captured from the mocked BlockRenderer's onAction prop so tests can fire
+  // an arbitrary action without a canned block.action.
   onAction: null as ((action: Record<string, unknown>) => void) | null,
   // Recipe finder: captured from the mocked BlockRenderer's onFinderAction.
   onFinderAction: null as ((a: unknown, label: string) => void) | null,
+  // Finder idea cards: captured from the mocked BlockRenderer.
+  onOpenFinderItem: null as ((item: unknown) => void) | null,
+  onMakeFinderItem: null as ((item: unknown) => void) | null,
+  makingFinderItemId: null as number | null | undefined,
+  makeSuggestion: vi.fn(),
   saveRecipe: vi.fn().mockResolvedValue({ id: 5 }),
-  // useMealPlanRecipes / useMealPlan
-  saveCatalog: vi.fn().mockResolvedValue({ id: 99 }),
-  addItem: vi.fn().mockResolvedValue({}),
-  mealPlanItems: [] as { plannedDate: string }[],
-  // Captures the args CoachChat passed on the most recent useMealPlanItems
-  // call — the query itself is mocked, so this is the only observable
-  // surface for what CoachChat asked for (start/end window, enabled gate).
-  useMealPlanItemsArgs: [] as unknown[],
   // ToastContext / useHaptics
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -87,19 +84,6 @@ const state = vi.hoisted(() => ({
   toggleFavourite: vi.fn(),
   addFavourite: vi.fn(),
 }));
-
-/** Adjust a single premium feature flag for the next render. */
-function setPremiumFeatures(overrides: {
-  catalogSave?: boolean;
-  coachPro?: boolean;
-}) {
-  if (overrides.catalogSave !== undefined) {
-    state.canSaveCatalog = overrides.catalogSave;
-  }
-  if (overrides.coachPro !== undefined) {
-    state.hasVoice = overrides.coachPro;
-  }
-}
 
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: (opts: {
@@ -146,7 +130,7 @@ vi.mock("@/hooks/useTTS", () => ({
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: (feature: string) =>
-    feature === "catalogSave" ? state.canSaveCatalog : state.hasVoice,
+    feature === "catalogSave" ? state.canSearchOnline : state.hasVoice,
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -157,22 +141,8 @@ vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => state.apiRequest(...args),
 }));
 
-vi.mock("@/hooks/useMealPlanRecipes", () => ({
-  useSaveCatalogRecipe: () => ({
-    mutateAsync: state.saveCatalog,
-    isPending: false,
-  }),
-}));
-
-vi.mock("@/hooks/useMealPlan", () => ({
-  useMealPlanItems: (...args: unknown[]) => {
-    state.useMealPlanItemsArgs = args;
-    return { data: state.mealPlanItems };
-  },
-  useAddMealPlanItem: () => ({
-    mutateAsync: state.addItem,
-    isPending: false,
-  }),
+vi.mock("@/hooks/useInspiredSuggestions", () => ({
+  useMakeSuggestion: () => ({ mutateAsync: state.makeSuggestion }),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -248,10 +218,16 @@ vi.mock("@/components/coach/blocks", () => ({
     onQuickReply,
     onCommitmentAccept,
     onFinderAction,
+    onOpenFinderItem,
+    onMakeFinderItem,
+    makingFinderItemId,
     isActive,
   }: {
     block: { type: string; [k: string]: unknown };
     onFinderAction?: (a: unknown, label: string) => void;
+    onOpenFinderItem?: (item: unknown) => void;
+    onMakeFinderItem?: (item: unknown) => void;
+    makingFinderItemId?: number | null;
     isActive?: boolean;
     onAction?: (action: Record<string, unknown>) => void;
     onQuickReply?: (message: string, blockKey?: string) => void;
@@ -265,6 +241,9 @@ vi.mock("@/components/coach/blocks", () => ({
     // block.action a given render was mounted with) via `state.onAction?.(...)`.
     state.onAction = onAction ?? null;
     state.onFinderAction = onFinderAction ?? null;
+    state.onOpenFinderItem = onOpenFinderItem ?? null;
+    state.onMakeFinderItem = onMakeFinderItem ?? null;
+    state.makingFinderItemId = makingFinderItemId;
     return (
       <div data-testid={`block-${block.type}`} data-active={String(isActive)}>
         <button
@@ -421,16 +400,16 @@ function resetState() {
     stopListening: vi.fn(),
   };
   state.hasVoice = false;
-  state.canSaveCatalog = true;
+  state.canSearchOnline = true;
   state.navigate = vi.fn();
   state.apiRequest = vi.fn().mockResolvedValue(undefined);
   state.onAction = null;
   state.onFinderAction = null;
   state.saveRecipe = vi.fn().mockResolvedValue({ id: 5 });
-  state.saveCatalog = vi.fn().mockResolvedValue({ id: 99 });
-  state.addItem = vi.fn().mockResolvedValue({});
-  state.mealPlanItems = [];
-  state.useMealPlanItemsArgs = [];
+  state.onOpenFinderItem = null;
+  state.onMakeFinderItem = null;
+  state.makingFinderItemId = undefined;
+  state.makeSuggestion = vi.fn();
   state.toastSuccess = vi.fn();
   state.toastError = vi.fn();
   state.toastInfo = vi.fn();
@@ -1022,572 +1001,6 @@ describe("CoachChat — cleanup", () => {
   });
 });
 
-// ── meal-plan items query: premium gate + window freshness (P3-2026-08-30) ──
-// useMealPlanItems is module-mocked here, so these tests can only observe
-// what CoachChat PASSES to the hook (start/end window, enabled gate) — never
-// whether a network request actually fired. See
-// docs/solutions/code-quality/a-test-comment-must-claim-only-what-its-own-harness-can-observe-2026-08-06.md.
-describe("CoachChat — meal plan items query", () => {
-  it("passes catalogSave as the query's enabled gate when the user is not premium", () => {
-    setPremiumFeatures({ catalogSave: false });
-    renderCoachChat();
-    expect(state.useMealPlanItemsArgs[2]).toBe(false);
-  });
-
-  it("passes catalogSave as the query's enabled gate when the user is premium", () => {
-    setPremiumFeatures({ catalogSave: true });
-    renderCoachChat();
-    expect(state.useMealPlanItemsArgs[2]).toBe(true);
-  });
-
-  // Mirrors the TZ/fake-timer pattern in
-  // MealPlanHomeScreen.test.tsx ("planned_date is keyed to the local
-  // calendar day") rather than reading ambient system state — a
-  // midnight-rollover test that doesn't control the clock and timezone
-  // explicitly would pass by agreeing with whatever the test machine's own
-  // clock says.
-  describe("window freshness across a date rollover", () => {
-    const originalTz = process.env.TZ;
-
-    beforeAll(() => {
-      process.env.TZ = "Europe/Berlin";
-      vi.useFakeTimers({ toFake: ["Date"] });
-    });
-
-    afterAll(() => {
-      vi.useRealTimers();
-      if (originalTz === undefined) delete process.env.TZ;
-      else process.env.TZ = originalTz;
-    });
-
-    it("recomputes the fetch window when the sheet is reopened after midnight, not the window pinned at mount", () => {
-      // 20:00 Sep 1 in Berlin (UTC+2 in September) — the mount happens here.
-      vi.setSystemTime(new Date("2026-09-01T18:00:00Z"));
-      state.messages = [
-        makeMessage({
-          id: 20,
-          role: "assistant",
-          content: "here's a recipe",
-          metadata: {
-            blocks: [
-              {
-                type: "recipe_card",
-                recipe: {
-                  title: "Lemon Chicken",
-                  calories: 520,
-                  protein: 42,
-                  prepTime: "25 min",
-                  imageUrl: null,
-                  recipeId: 715538,
-                  source: "spoonacular",
-                },
-              },
-            ],
-          } as unknown as ChatMessage["metadata"],
-        }),
-      ];
-      renderCoachChat({ conversationId: 7 });
-      // PLAN_SLOT_DAY_COUNT is 7 — a 7-day window starting Sep 1 ends Sep 7.
-      expect(state.useMealPlanItemsArgs[0]).toBe("2026-09-01");
-      expect(state.useMealPlanItemsArgs[1]).toBe("2026-09-07");
-
-      // Roll the clock past midnight Berlin time — 01:00 Sep 2 local.
-      vi.setSystemTime(new Date("2026-09-01T23:00:00Z"));
-
-      // Opening the sheet (a fresh "Add to Plan" tap) is the same trigger
-      // PlanSlotPickerSheet itself uses to recompute its own days.
-      act(() => {
-        state.onAction?.({
-          type: "add_recipe_to_plan",
-          recipeId: 715538,
-          recipeTitle: "Lemon Chicken",
-        });
-      });
-
-      // The fetched window must start AND end on the new current week (Sep
-      // 2 - Sep 8), not the week pinned at mount (Sep 1 - Sep 7) — the
-      // todo's stated symptom is specifically that the LAST chip's dot goes
-      // missing, i.e. the end of the window, not just its start.
-      expect(state.useMealPlanItemsArgs[0]).toBe("2026-09-02");
-      expect(state.useMealPlanItemsArgs[1]).toBe("2026-09-08");
-    });
-  });
-});
-
-// ── add_recipe_to_plan (client-local action; never enters blockActionSchema) ─
-describe("add_recipe_to_plan", () => {
-  // Mounts a real recipe_card block so the mocked BlockRenderer renders and
-  // captures its onAction prop onto state.onAction — tests then fire an
-  // arbitrary action through it rather than a canned block.action.
-  function renderWithRecipeCardBlock() {
-    state.messages = [
-      makeMessage({
-        id: 20,
-        role: "assistant",
-        content: "here's a recipe",
-        metadata: {
-          blocks: [
-            {
-              type: "recipe_card",
-              recipe: {
-                title: "Lemon Chicken",
-                calories: 520,
-                protein: 42,
-                prepTime: "25 min",
-                imageUrl: null,
-                recipeId: 715538,
-                source: "spoonacular",
-              },
-            },
-          ],
-        } as unknown as ChatMessage["metadata"],
-      }),
-    ];
-    renderCoachChat({ conversationId: 7 });
-  }
-
-  it("opens the slot picker instead of navigating away", () => {
-    renderWithRecipeCardBlock();
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 715538,
-        recipeTitle: "Lemon Chicken",
-      });
-    });
-    expect(state.navigate).not.toHaveBeenCalled();
-    expect(screen.getByText("Lemon Chicken")).toBeTruthy();
-  });
-
-  it("saves the catalog recipe then adds the item for the chosen slot", async () => {
-    renderWithRecipeCardBlock();
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 715538,
-        recipeTitle: "Lemon Chicken",
-      });
-    });
-    // Capture the default-selected chip's (today's) own accessible label
-    // BEFORE confirming — used below to cross-check the toast's day word
-    // without recomputing a weekday from any date math of this test's own.
-    const chipLabel =
-      screen
-        .getAllByRole("button", { name: /day-slot/i })[0]
-        .getAttribute("aria-label") ?? "";
-    fireEvent.click(screen.getByText("Dinner"));
-    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-
-    await waitFor(() => {
-      expect(state.saveCatalog).toHaveBeenCalledWith(715538);
-      expect(state.addItem).toHaveBeenCalledWith(
-        expect.objectContaining({
-          recipeId: 99,
-          mealType: "dinner",
-          // plan-slot-picker-utils.ts carries a load-bearing UTC comment on
-          // this shape — pin it here (not recompute the expected ISO date,
-          // which would duplicate that production logic) so an absent or
-          // malformed plannedDate reaching the mutation fails this test.
-          plannedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        }),
-      );
-    });
-    // save must resolve BEFORE the add — the add needs the user-owned recipe id
-    expect(state.saveCatalog.mock.invocationCallOrder[0]).toBeLessThan(
-      state.addItem.mock.invocationCallOrder[0],
-    );
-
-    await waitFor(() => {
-      expect(state.toastSuccess).toHaveBeenCalledTimes(1);
-    });
-    const toastMessage = state.toastSuccess.mock.calls[0][0] as string;
-    expect(toastMessage).toMatch(/^Added to [A-Za-z]+ Dinner$/);
-    // The discriminator: the toast's day word must be the TAPPED chip's own
-    // weekday (sourced from PlanSlotPickerSheet's onConfirm third arg), not
-    // a weekday re-derived from `plannedDate` — plannedDate is a UTC-shifted
-    // key (see PlanSlotDay.iso's doc-comment) and re-parsing it disagrees
-    // with the chip's own label for any UTC-positive host TZ. A shape-only
-    // match above would not catch that regression; this cross-check does.
-    const dayWord = toastMessage
-      .replace(/^Added to /, "")
-      .replace(/ Dinner$/, "");
-    expect(chipLabel).toContain(dayWord);
-  });
-
-  it.each([
-    [402, "CATALOG_QUOTA_EXCEEDED"],
-    [422, "VALIDATION_ERROR"],
-    [404, "NOT_FOUND"],
-  ])(
-    "closes the sheet with an accurate message on a terminal %i save failure",
-    async (status, code) => {
-      state.saveCatalog.mockRejectedValueOnce(
-        new ApiError(`${status}: failed`, code, status),
-      );
-      renderWithRecipeCardBlock();
-      act(() => {
-        state.onAction?.({
-          type: "add_recipe_to_plan",
-          recipeId: 715538,
-          recipeTitle: "Lemon Chicken",
-        });
-      });
-      fireEvent.click(screen.getByText("Dinner"));
-      fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-
-      await waitFor(() => {
-        expect(state.toastError).toHaveBeenCalledTimes(1);
-      });
-      // Never the generic "please try again" — retrying a 402/422/404 can
-      // only reproduce the same failure.
-      expect(state.toastError).not.toHaveBeenCalledWith(
-        "Couldn't add the recipe to your plan. Please try again.",
-      );
-      // toast.error fires the Error haptic itself — a second one here would
-      // double-buzz.
-      expect(state.hapticsNotification).not.toHaveBeenCalled();
-      expect(state.addItem).not.toHaveBeenCalled();
-      expect(state.toastSuccess).not.toHaveBeenCalled();
-
-      // The mocked Modal unmounts its children once `visible` goes false
-      // (test/mocks/react-native.ts) — a terminal failure must close the
-      // sheet, so its contents (including this button) are gone. A
-      // regression that keeps the sheet open on a terminal failure leaves
-      // this button in the DOM and the query below finds it.
-      expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
-    },
-  );
-
-  it("keeps the sheet open and lets the user retry after a rejected save", async () => {
-    // Only overrides the FIRST call — the retry below falls through to the
-    // default mockResolvedValue({ id: 99 }) set in beforeEach.
-    state.saveCatalog.mockRejectedValueOnce(new Error("network down"));
-    renderWithRecipeCardBlock();
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 715538,
-        recipeTitle: "Lemon Chicken",
-      });
-    });
-    fireEvent.click(screen.getByText("Dinner"));
-    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-
-    await waitFor(() => {
-      expect(state.toastError).toHaveBeenCalledWith(
-        "Couldn't add the recipe to your plan. Please try again.",
-      );
-    });
-    // toast.error fires the Error haptic itself — a second one here would
-    // double-buzz.
-    expect(state.hapticsNotification).not.toHaveBeenCalled();
-    expect(state.addItem).not.toHaveBeenCalled();
-    expect(state.toastSuccess).not.toHaveBeenCalled();
-
-    // The mocked Modal unmounts its children outright once `visible` goes
-    // false (test/mocks/react-native.ts), so this also proves the sheet
-    // never closed on failure: a regression that moves setPlanTarget(null)
-    // from the try into the catch removes this button from the DOM and
-    // getByRole below throws.
-    const confirmButton = screen.getByRole("button", { name: /add to plan/i });
-    fireEvent.click(confirmButton);
-
-    // Pins the finally-based release (not next-open) of isSavingPlanRef —
-    // the second confirm must reach saveCatalog rather than silently
-    // no-op against a guard still stuck true from the failed first attempt.
-    await waitFor(() => {
-      expect(state.saveCatalog).toHaveBeenCalledTimes(2);
-      expect(state.addItem).toHaveBeenCalledWith(
-        expect.objectContaining({ recipeId: 99, mealType: "dinner" }),
-      );
-    });
-  });
-
-  it("shows the upgrade modal and calls neither mutation for a free user", () => {
-    setPremiumFeatures({ catalogSave: false });
-    renderWithRecipeCardBlock();
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 715538,
-        recipeTitle: "Lemon Chicken",
-      });
-    });
-    expect(state.saveCatalog).not.toHaveBeenCalled();
-    expect(state.addItem).not.toHaveBeenCalled();
-    expect(screen.getByTestId("upgrade-modal")).toBeTruthy();
-  });
-
-  it("guards against a rapid double-tap firing the save mutation twice", async () => {
-    // The sheet's own isSubmitting-based guard reads THIS render's prop, which
-    // is still false here (the mocked useSaveCatalogRecipe/useAddMealPlanItem
-    // hooks return a static isPending: false — it never flips true) — so if
-    // CoachChat relied only on that prop, a second synchronous tap before the
-    // mutation settles would double-fire. Hold the save pending to force two
-    // taps to land while it's still in flight.
-    let resolveSave: ((value: { id: number }) => void) | undefined;
-    state.saveCatalog.mockImplementation(
-      () =>
-        new Promise<{ id: number }>((resolve) => {
-          resolveSave = resolve;
-        }),
-    );
-    renderWithRecipeCardBlock();
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 715538,
-        recipeTitle: "Lemon Chicken",
-      });
-    });
-    fireEvent.click(screen.getByText("Dinner"));
-    const confirmButton = screen.getByRole("button", { name: /add to plan/i });
-
-    fireEvent.click(confirmButton);
-    fireEvent.click(confirmButton);
-
-    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
-
-    // Let the in-flight save resolve so the effect cleanup doesn't warn about
-    // a state update outside act().
-    await act(async () => {
-      resolveSave?.({ id: 99 });
-    });
-  });
-
-  it("keeps a later flow's guard held (and its sheet open) after an abandoned earlier flow resolves", async () => {
-    // A is confirmed, then abandoned via dismissal while still in-flight; B
-    // is confirmed next and is itself still in-flight when A's save finally
-    // resolves. Drives the exact interleaving P2-2026-08-30 describes: A's
-    // `finally` must not clear B's guard, and A's success path must not null
-    // out B's still-open sheet out from under it.
-    let resolveA: ((value: { id: number }) => void) | undefined;
-    let resolveB: ((value: { id: number }) => void) | undefined;
-    state.saveCatalog
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ id: number }>((resolve) => {
-            resolveA = resolve;
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ id: number }>((resolve) => {
-            resolveB = resolve;
-          }),
-      );
-
-    renderWithRecipeCardBlock();
-
-    // Confirm A — leave its saveCatalogRecipe call pending.
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 715538,
-        recipeTitle: "Lemon Chicken",
-      });
-    });
-    fireEvent.click(screen.getByText("Dinner"));
-    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
-
-    // Dismiss mid-save via the visible Close button — one of the three
-    // unconditional dismissal routes named in the todo's Background. A's
-    // saveCatalogRecipe call is still pending underneath.
-    fireEvent.click(
-      screen.getByRole("button", { name: /close plan slot picker/i }),
-    );
-
-    // Reopen for a different recipe (B) and confirm — also left pending.
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 42,
-        recipeTitle: "Other Recipe",
-      });
-    });
-    fireEvent.click(screen.getByText("Dinner"));
-    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-    expect(state.saveCatalog).toHaveBeenCalledTimes(2);
-
-    // A's abandoned save now resolves. Its completion must not clear B's
-    // guard, close B's sheet, or otherwise disturb B's in-flight state.
-    await act(async () => {
-      resolveA?.({ id: 99 });
-    });
-    await waitFor(() => {
-      // A's own chain completes independently (fire-and-forget) — this is
-      // A's write, not B's.
-      expect(state.addItem).toHaveBeenCalledTimes(1);
-    });
-    expect(state.toastSuccess).toHaveBeenCalledTimes(1);
-
-    // B's sheet must still be open and its Confirm button reachable — proof
-    // A's completion did not null out planTarget out from under B.
-    const confirmButton = screen.getByRole("button", {
-      name: /add to plan/i,
-    });
-
-    // A second confirm on B, while B's own save is still pending, must not
-    // reach saveCatalog a third time — proving B's guard survived A's
-    // finally.
-    fireEvent.click(confirmButton);
-    expect(state.saveCatalog).toHaveBeenCalledTimes(2);
-    expect(state.addItem).toHaveBeenCalledTimes(1);
-
-    // Let B settle — and assert its OWN completion succeeds, not just that
-    // no further saveCatalog call happened. A same-count assertion alone
-    // can't distinguish a correctly-released guard from one stuck true
-    // forever (B's write already happened in the `try` block regardless of
-    // the `finally` guard's correctness) — driving B to a real close proves
-    // the release/close guards fire for B's own matching token, not just
-    // fail to fire for A's stale one.
-    await act(async () => {
-      resolveB?.({ id: 100 });
-    });
-    await waitFor(() => {
-      expect(state.addItem).toHaveBeenCalledTimes(2);
-    });
-    expect(state.toastSuccess).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
-  });
-
-  it("keeps a reopened-but-not-yet-confirmed sheet open when an abandoned earlier flow resolves", async () => {
-    // Narrower than the interleaving test above: B is reopened but NEVER
-    // confirmed (the user is still picking a day/meal) when A's abandoned
-    // save resolves. The reset effect clears isSavingPlanRef on reopen, but
-    // must also invalidate A's token immediately — otherwise A's completion
-    // still matches the token it acquired and can close B's sheet before
-    // the user ever taps Confirm.
-    let resolveA: ((value: { id: number }) => void) | undefined;
-    state.saveCatalog.mockImplementationOnce(
-      () =>
-        new Promise<{ id: number }>((resolve) => {
-          resolveA = resolve;
-        }),
-    );
-
-    renderWithRecipeCardBlock();
-
-    // Confirm A — leave its saveCatalogRecipe call pending.
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 715538,
-        recipeTitle: "Lemon Chicken",
-      });
-    });
-    fireEvent.click(screen.getByText("Dinner"));
-    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
-
-    // Dismiss mid-save, then reopen for a different recipe (B) — but do NOT
-    // confirm B yet.
-    fireEvent.click(
-      screen.getByRole("button", { name: /close plan slot picker/i }),
-    );
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 42,
-        recipeTitle: "Other Recipe",
-      });
-    });
-
-    // A's abandoned save now resolves while B's sheet is open and idle
-    // (unconfirmed). It must not close B's sheet.
-    await act(async () => {
-      resolveA?.({ id: 99 });
-    });
-    await waitFor(() => {
-      expect(state.addItem).toHaveBeenCalledTimes(1);
-    });
-
-    // B's sheet is still open and showing B's own title, not A's.
-    expect(screen.getByText("Other Recipe")).toBeTruthy();
-    expect(screen.queryByText("Lemon Chicken")).toBeNull();
-  });
-
-  it("does not let an abandoned flow's terminal-failure close reach a later flow's sheet", async () => {
-    // Mirrors the success-path interleaving test above, but A settles via a
-    // terminal failure (402/422/404) instead of success — the terminal
-    // branch has its own, separately-guarded setPlanTarget(null) call.
-    let rejectA: ((error: unknown) => void) | undefined;
-    let resolveB: ((value: { id: number }) => void) | undefined;
-    state.saveCatalog
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ id: number }>((_resolve, reject) => {
-            rejectA = reject;
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ id: number }>((resolve) => {
-            resolveB = resolve;
-          }),
-      );
-
-    renderWithRecipeCardBlock();
-
-    // Confirm A — leave its saveCatalogRecipe call pending.
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 715538,
-        recipeTitle: "Lemon Chicken",
-      });
-    });
-    fireEvent.click(screen.getByText("Dinner"));
-    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
-
-    // Dismiss mid-save, reopen for B, and confirm B — also left pending.
-    fireEvent.click(
-      screen.getByRole("button", { name: /close plan slot picker/i }),
-    );
-    act(() => {
-      state.onAction?.({
-        type: "add_recipe_to_plan",
-        recipeId: 42,
-        recipeTitle: "Other Recipe",
-      });
-    });
-    fireEvent.click(screen.getByText("Dinner"));
-    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-    expect(state.saveCatalog).toHaveBeenCalledTimes(2);
-
-    // A's abandoned save now settles as a terminal failure. Its own
-    // guarded setPlanTarget(null) must not close B's still-open sheet.
-    await act(async () => {
-      rejectA?.(new ApiError("402: failed", "CATALOG_QUOTA_EXCEEDED", 402));
-    });
-    await waitFor(() => {
-      expect(state.toastError).toHaveBeenCalledTimes(1);
-    });
-
-    // B's sheet is still open and reachable — proof A's terminal-failure
-    // close guard held.
-    const confirmButton = screen.getByRole("button", {
-      name: /add to plan/i,
-    });
-    fireEvent.click(confirmButton);
-    expect(state.saveCatalog).toHaveBeenCalledTimes(2);
-
-    // Let B settle — and assert its OWN completion succeeds, discriminating
-    // a correctly-released guard from one stuck true forever (see the same
-    // rationale in the success-path interleaving test above).
-    await act(async () => {
-      resolveB?.({ id: 100 });
-    });
-    await waitFor(() => {
-      expect(state.addItem).toHaveBeenCalledTimes(1);
-    });
-    expect(state.toastSuccess).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
-  });
-});
-
 describe("CoachChat — recipe finder", () => {
   const FLOW = "11111111-1111-4111-8111-111111111111";
   const finderBlock = {
@@ -1838,5 +1251,90 @@ describe("CoachChat — recipe finder", () => {
     expect(
       screen.getByTestId("streaming-bubble").getAttribute("data-blocks"),
     ).toBe("1");
+  });
+
+  describe("idea cards (Make this mine)", () => {
+    const idea = {
+      id: 44,
+      source: "inspired",
+      title: "Smoky Chickpea Tacos",
+      imageUrl: null,
+      readyInMinutes: 25,
+      calories: null,
+    };
+    const ideasBlock = { ...finderBlock, source: "inspired", items: [idea] };
+
+    function renderWithIdeas() {
+      state.messages = [
+        makeMessage({
+          id: 2,
+          role: "assistant",
+          content: "Here are ideas for you:",
+          metadata: { blocks: [ideasBlock] },
+        }),
+      ];
+      renderCoachChat({ conversationId: 1 });
+    }
+
+    it("makes the recipe, then opens it as a community recipe", async () => {
+      state.makeSuggestion = vi.fn().mockResolvedValue({ recipeId: 901 });
+      renderWithIdeas();
+      act(() => {
+        state.onMakeFinderItem?.(idea);
+      });
+      expect(state.makingFinderItemId).toBe(44);
+      expect(state.makeSuggestion).toHaveBeenCalledWith(44);
+      await waitFor(() =>
+        expect(state.navigate).toHaveBeenCalledWith("FeaturedRecipeDetail", {
+          recipeId: 901,
+          recipeType: "community",
+        }),
+      );
+      await waitFor(() => expect(state.makingFinderItemId).toBeNull());
+    });
+
+    it("ignores a second card's tap while one is being made", () => {
+      state.makeSuggestion = vi.fn(() => new Promise(() => {}));
+      renderWithIdeas();
+      act(() => {
+        state.onMakeFinderItem?.(idea);
+      });
+      act(() => {
+        state.onMakeFinderItem?.({ ...idea, id: 45 });
+      });
+      expect(state.makeSuggestion).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [429, "You've reached today's recipe limit."],
+      [410, "These ideas expired — search again."],
+      [500, "Couldn't make this recipe. Try again."],
+    ])(
+      "a %i make failure toasts its copy and frees the card",
+      async (status, copy) => {
+        state.makeSuggestion = vi
+          .fn()
+          .mockRejectedValue(
+            new ApiError(`${status}: failed`, undefined, status),
+          );
+        renderWithIdeas();
+        act(() => {
+          state.onMakeFinderItem?.(idea);
+        });
+        await waitFor(() =>
+          expect(state.toastError).toHaveBeenCalledWith(copy),
+        );
+        expect(state.navigate).not.toHaveBeenCalled();
+        await waitFor(() => expect(state.makingFinderItemId).toBeNull());
+      },
+    );
+
+    it("an idea row never opens a detail screen", () => {
+      renderWithIdeas();
+      act(() => {
+        state.onOpenFinderItem?.(idea);
+      });
+      expect(state.navigate).not.toHaveBeenCalled();
+    });
   });
 });

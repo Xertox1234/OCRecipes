@@ -61,18 +61,23 @@ vi.mock("@/hooks/useRecipeSearch", () => ({
   useRecipeSearch: () => mockSearchState.value,
 }));
 
-vi.mock("@/hooks/useCatalogSearch", () => ({
-  useCatalogSearch: () => ({
+vi.mock("@/hooks/useInspiredSuggestions", () => {
+  // Stable identities, as TanStack's mutate/reset/mutateAsync are.
+  const listing = {
     data: undefined,
-    isLoading: false,
+    isPending: false,
     error: null,
-    refetch: vi.fn(),
-  }),
-}));
-
-vi.mock("@/hooks/useCatalogConfig", () => ({
-  useCatalogConfig: () => ({ data: { enabled: true } }),
-}));
+    mutate: vi.fn(),
+    reset: vi.fn(),
+  };
+  const make = { mutateAsync: vi.fn() };
+  const photos = new Map<number, string | null>();
+  return {
+    useCreateSuggestionListing: () => listing,
+    useMakeSuggestion: () => make,
+    useSuggestionPhotos: () => photos,
+  };
+});
 
 vi.mock("@/hooks/useScrollLinkedHeader", () => ({
   useScrollLinkedHeader: () => ({
