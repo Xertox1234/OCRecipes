@@ -13,6 +13,10 @@ import { buildDietaryContext } from "../../lib/dietary-context";
 import { createServiceLogger, toError } from "../../lib/logger";
 import type { UserProfile } from "@shared/schema";
 import {
+  detectAllergens,
+  normalizeAllergenId,
+} from "@shared/constants/allergens";
+import {
   suggestionDraftSchema,
   type SuggestionDraft,
 } from "@shared/schemas/inspired-recipes";
@@ -30,30 +34,51 @@ export function buildProfileBrief(
   const parts: string[] = [];
   const dietary = buildDietaryContext(profile, { allergenDetail: "basic" });
   if (dietary) parts.push(dietary);
-  if (profile.householdSize) parts.push(`Household: ${profile.householdSize}`);
-  if (profile.primaryGoal) parts.push(`Goal: ${profile.primaryGoal}`);
+  const household = Number(profile.householdSize);
+  if (Number.isInteger(household) && household > 0) {
+    parts.push(`Household: ${household}`);
+  }
+  if (profile.primaryGoal) {
+    // Free text: sanitise and flatten to one short line.
+    const goal = sanitizeContextField(profile.primaryGoal, 80)
+      .replace(/\s+/g, " ")
+      .trim();
+    if (goal) parts.push(`Goal: ${goal}`);
+  }
   return parts.length > 0 ? parts.join("\n") : "No profile.";
 }
 
-function allergenNames(profile: UserProfile | null | undefined): string[] {
+function allergyNames(profile: UserProfile | null | undefined): string[] {
   const list = (profile?.allergies as { name?: string }[] | null) ?? [];
   return list
-    .map((a) => a?.name?.trim().toLowerCase())
-    .filter((n): n is string => Boolean(n));
+    .map((a) => (typeof a?.name === "string" ? a.name.trim() : ""))
+    .filter((n) => n.length > 0);
 }
 
-/** Safety net over the prompt: a card naming a listed allergen is dropped. */
+/** Safety net over the prompt: a card naming a listed allergen is dropped.
+ * Canonical ids go through the shared matcher (direct + derived keywords,
+ * always at the strictest tier); names it cannot map fall back to a literal
+ * word match. */
 export function dropAllergenConflicts(
   drafts: SuggestionDraft[],
   profile: UserProfile | null | undefined,
 ): SuggestionDraft[] {
-  const names = allergenNames(profile);
+  const names = allergyNames(profile);
   if (names.length === 0) return drafts;
+  const mapped = names
+    .filter((n) => normalizeAllergenId(n) !== null)
+    .map((name) => ({ name, severity: "severe" as const }));
+  const literal = names
+    .filter((n) => normalizeAllergenId(n) === null)
+    .map((n) => n.toLowerCase().replace(/s$/, ""))
+    .filter((n) => n.length > 0);
   return drafts.filter((d) => {
-    const text =
-      `${d.title} ${d.description} ${d.tags.join(" ")}`.toLowerCase();
-    // "peanuts" should also catch "peanut"
-    return !names.some((n) => text.includes(n.replace(/s$/, "")));
+    const fields = [d.title, d.description, ...d.tags];
+    if (mapped.length > 0 && detectAllergens(fields, mapped).length > 0) {
+      return false;
+    }
+    const text = fields.join(" ").toLowerCase();
+    return !literal.some((n) => text.includes(n));
   });
 }
 
@@ -75,7 +100,7 @@ export async function suggestListing(input: {
       "inspired-suggestions",
       {
         temperature: 0.8,
-        max_completion_tokens: 900,
+        max_completion_tokens: 1400,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -104,6 +129,9 @@ ${titles || "(none)"}`,
       { timeout: OPENAI_TIMEOUT_FAST_MS },
     );
     content = response.choices[0]?.message?.content;
+    if (response.choices[0]?.finish_reason === "length") {
+      log.warn({}, "suggestListing response truncated (finish_reason=length)");
+    }
   } catch (error) {
     log.warn({ err: toError(error) }, "suggestListing AI call failed");
     return null;
