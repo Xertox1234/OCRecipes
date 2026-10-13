@@ -125,6 +125,30 @@ describe("dropAllergenConflicts (canonical ids)", () => {
     );
   });
 
+  it("matches an allergen that ends the description before punctuation", () => {
+    expect(
+      dropAllergenConflicts(
+        [card2("Noodle Bowl", "Tossed with crunchy peanuts.")],
+        withAllergy("peanuts"),
+      ),
+    ).toEqual([]);
+    expect(
+      dropAllergenConflicts(
+        [card2("Toast", "Finished with butter!")],
+        withAllergy("milk"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps a safe card that ends with a period", () => {
+    expect(
+      dropAllergenConflicts(
+        [card2("Carrot Soup", "Silky and warm.")],
+        withAllergy("peanuts"),
+      ),
+    ).toHaveLength(1);
+  });
+
   it("keeps a safe card", () => {
     const out = dropAllergenConflicts(
       [card2("Roasted Carrot Salad")],
