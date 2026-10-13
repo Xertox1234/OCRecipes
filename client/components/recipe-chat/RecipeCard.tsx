@@ -22,6 +22,7 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { RecipeDietTags } from "@/components/recipe-detail/RecipeDietTags";
 import type { StreamingRecipe } from "@/hooks/useChat";
+import { formatIngredientLine } from "@/lib/format";
 
 // Enable LayoutAnimation on Android
 if (
@@ -222,7 +223,7 @@ function RecipeCardInner({
               type="body"
               style={styles.ingredientRow}
             >
-              {ing.quantity} {ing.unit} {ing.name}
+              {formatIngredientLine(ing.quantity, ing.unit, ing.name)}
             </ThemedText>
           ))}
         </View>

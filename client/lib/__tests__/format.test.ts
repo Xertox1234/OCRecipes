@@ -4,6 +4,7 @@ import {
   formatDuration,
   formatDateRange,
   formatGroceryListTitle,
+  formatIngredientLine,
 } from "../format";
 
 describe("Format Utilities", () => {
@@ -76,6 +77,26 @@ describe("Format Utilities", () => {
 
     it("leaves a user-chosen title untouched", () => {
       expect(formatGroceryListTitle("Party shopping")).toBe("Party shopping");
+    });
+  });
+
+  // QA #19: JSX `{quantity} {unit} {name}` printed "1  lemon" for a blank unit.
+  describe("formatIngredientLine", () => {
+    it("joins quantity, unit and name with single spaces", () => {
+      expect(formatIngredientLine("200", "g", "spaghetti")).toBe(
+        "200 g spaghetti",
+      );
+    });
+
+    it("drops a blank or missing unit without a double space", () => {
+      expect(formatIngredientLine("1", "", "lemon")).toBe("1 lemon");
+      expect(formatIngredientLine("1", "  ", "lemon")).toBe("1 lemon");
+      expect(formatIngredientLine(1, null, "lemon")).toBe("1 lemon");
+    });
+
+    it("drops a missing quantity without a leading space", () => {
+      expect(formatIngredientLine(undefined, undefined, "salt")).toBe("salt");
+      expect(formatIngredientLine("", "pinch", "salt")).toBe("pinch salt");
     });
   });
 });

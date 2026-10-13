@@ -73,6 +73,9 @@ function GroceryItemRow({
 
   // Strikethrough animation: progress 0 → 1 draws a line across the name
   const strikeProgress = useSharedValue(item.isChecked ? 1 : 0);
+  // The name's measured width, in points. A percentage width on the absolute
+  // line resolved against the whole row, not the shrink-wrapped name (QA #21).
+  const [nameWidth, setNameWidth] = useState(0);
 
   const handleToggle = useCallback(() => {
     const willBeChecked = !item.isChecked;
@@ -118,7 +121,7 @@ function GroceryItemRow({
   ]);
 
   const strikethroughStyle = useAnimatedStyle(() => ({
-    width: `${strikeProgress.value * 100}%` as unknown as number,
+    width: strikeProgress.value * nameWidth,
   }));
 
   const quantityStr = item.quantity
@@ -154,7 +157,11 @@ function GroceryItemRow({
         size={24}
       />
       <View style={styles.itemContent}>
-        <View style={styles.itemNameContainer}>
+        <View
+          style={styles.itemNameContainer}
+          onLayout={(e) => setNameWidth(e.nativeEvent.layout.width)}
+          testID={`grocery-item-name-${item.id}`}
+        >
           <ThemedText
             style={[
               styles.itemName,
@@ -171,6 +178,7 @@ function GroceryItemRow({
               strikethroughStyle,
             ]}
             pointerEvents="none"
+            testID={`grocery-item-strike-${item.id}`}
           />
         </View>
         {quantityStr ? (

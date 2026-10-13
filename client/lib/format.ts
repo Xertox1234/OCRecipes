@@ -65,3 +65,18 @@ export function formatGroceryListTitle(title: string): string {
   if (!match) return title;
   return `Grocery List ${formatDateRange(match[1], match[2])}`;
 }
+
+/**
+ * "200 g spaghetti" from an ingredient's parts. A blank unit or quantity is
+ * dropped with its space, so a unitless "1 lemon" never prints "1  lemon".
+ */
+export function formatIngredientLine(
+  quantity: string | number | null | undefined,
+  unit: string | null | undefined,
+  name: string,
+): string {
+  return [quantity, unit, name]
+    .map((part) => (part == null ? "" : String(part).trim()))
+    .filter(Boolean)
+    .join(" ");
+}

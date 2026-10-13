@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { AccessibilityInfo } from "react-native";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import GroceryListScreen from "../GroceryListScreen";
@@ -118,5 +118,40 @@ describe("GroceryListScreen — checking off the last item", () => {
 
     expect(mockSelection).toHaveBeenCalledOnce();
     expect(mockNotification).not.toHaveBeenCalled();
+  });
+});
+
+function reactProps(node: Element): Record<string, unknown> {
+  const key = Object.keys(node).find((k) => k.startsWith("__reactProps$"));
+  if (!key) throw new Error("React's internal props key was not on the node");
+  return (node as unknown as Record<string, Record<string, unknown>>)[key];
+}
+
+function flattenStyle(style: unknown): Record<string, unknown> {
+  const parts = (Array.isArray(style) ? style.flat(Infinity) : [style]).filter(
+    Boolean,
+  );
+  return Object.assign({}, ...parts);
+}
+
+// QA #21: a percentage width on the absolute line resolved against the whole
+// row (~296pt on device), not the shrink-wrapped name (~45pt for "Garlic"), so
+// the line ran to the screen edge. The line's width must come from the name's
+// measured width, in points.
+describe("GroceryListScreen — strike-through", () => {
+  it("spans the measured name width once the item is checked", async () => {
+    listItems.value = [
+      { id: 1, name: "Garlic", isChecked: true, category: "produce" },
+    ];
+    renderComponent(<GroceryListScreen />);
+
+    const name = screen.getByTestId("grocery-item-name-1");
+    const onLayout = reactProps(name).onLayout as (e: unknown) => void;
+    await act(async () => {
+      onLayout({ nativeEvent: { layout: { width: 44.5, height: 22 } } });
+    });
+
+    const line = screen.getByTestId("grocery-item-strike-1");
+    expect(flattenStyle(reactProps(line).style).width).toBe(44.5);
   });
 });

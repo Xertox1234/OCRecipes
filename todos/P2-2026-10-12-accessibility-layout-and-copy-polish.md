@@ -79,3 +79,16 @@ Done in branch `todo/P2-2026-10-12-accessibility-layout-and-copy-polish` (findin
 - Lows: #1 watermark line box; #21 strike-through spans text; #22 grocery title dates formatted (`formatGroceryListTitle`); #46 grocery "1 item"; #19 trims blank unit; "Favourite" spelling (HistoryScreen swipe action, Cookbook empty state); "Sign Out" no longer styled as danger.
 
 Not done (needs a device or a product call): #39/#39b VoiceOver device check; #34 tags dedupe; #6, #8, #33, #64 (what should Profile "Recipes" count?), #12/#17/#14/#29/#27/#3/#25/#23/#66/#80/#82 copy and consistency decisions; Favourites "Community" vs browser "Curated" label; light/dark re-check.
+
+### 2026-10-12 (simulator check of the #1417 fixes)
+
+Checked on the iOS 26.5 simulator, light mode (grocery row also dark), against main plus this branch:
+
+- #15 RecipeImport error buttons: pass. Both buttons span the gutter with centred labels.
+- #22 grocery title: pass ("Grocery List Oct 12 - Oct 18"). #46 "1 item": pass.
+- #21 strike-through: **was not fixed by #1417.** The name container did shrink-wrap (measured 44.67pt for "Garlic"), but the line's `width: "100%"` resolved against the whole row (~296pt) and still ran to the screen edge. Fixed on `fix/qa-sweep-ingredient-spacing-strikethrough`: the line's width now comes from the name's measured `onLayout` width, in points. Checked static and animated (uncheck, re-check), light and dark.
+- #19 "1 lemon": **#1417 fixed the recipe detail list only** (passes on recipe 269551, "4 red bell peppers"). The sweep saw it on the import result card, which builds `{quantity} {unit} {name}` in JSX, as do four other components. Fixed on the same branch with `formatIngredientLine` in `client/lib/format.ts`, used by all five. The import card itself is unit-tested only; reaching it on the simulator needs an AI import.
+- #26 cookbook name and cover: pass (verified with #1421).
+- Side finding, filed: `todos/P3-2026-10-12-recipe-import-every-failure-says-no-recipe-data.md`.
+
+Still open in this todo: #32 and #39/#39b need VoiceOver on a real device. The Lows and copy items marked "needs a product call" in pass 1 (#6, #8, #33, #34 tags, #64, #12, #17, #14, #29, #27, #3, #25, #23, #66, #80, #82, Community vs Curated) are still undecided.
