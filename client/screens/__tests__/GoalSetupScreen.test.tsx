@@ -202,3 +202,29 @@ describe("GoalSetupScreen — one selection tick per pick", () => {
     expect(mockImpact).not.toHaveBeenCalled();
   });
 });
+
+// The line under Calculate must keep its place when the last field is
+// filled: removing it shortened the page, and at the bottom of the scroll
+// that moved the button out from under the finger.
+describe("GoalSetupScreen — calculate hint keeps its space", () => {
+  it("swaps 'Still needed' for a ready line instead of removing it", () => {
+    renderComponent(<GoalSetupScreen />);
+    expect(screen.getByText(/^Still needed: /)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Age"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText("Weight"), {
+      target: { value: "70" },
+    });
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "170" },
+    });
+    fireEvent.click(screen.getByLabelText("Male"));
+    fireEvent.click(screen.getByLabelText("Sedentary"));
+    fireEvent.click(screen.getByLabelText("Lose Weight"));
+
+    expect(screen.queryByText(/^Still needed: /)).toBeNull();
+    expect(screen.getByText("Ready to calculate")).toBeTruthy();
+  });
+});

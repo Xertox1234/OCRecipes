@@ -1,6 +1,6 @@
 ---
 title: "GoalSetup Calculate button jumps when the 'Still needed' hint disappears"
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
 updated: 2026-10-12
@@ -21,8 +21,8 @@ Seen in the simulator check of PR #1417. The last choice ("Maintain Weight") was
 
 ## Acceptance Criteria
 
-- [ ] Completing the form does not move the Calculate button. Either the hint keeps its space (for example, replaced by an empty line of the same height) or its removal no longer shifts the button.
-- [ ] Checked in the simulator.
+- [x] Completing the form does not move the Calculate button. Either the hint keeps its space (for example, replaced by an empty line of the same height) or its removal no longer shifts the button.
+- [x] Checked in the simulator.
 
 ## Implementation Notes
 
@@ -43,3 +43,8 @@ Seen in the simulator check of PR #1417. The last choice ("Maintain Weight") was
 ### 2026-10-12
 
 - Filed while reviewing PR #1417.
+
+### 2026-10-12 (fixed)
+
+- Cause: the hint sits below the button, so removing it only moved the button through the scroll position. At the bottom of the scroll, the shorter page made the ScrollView clamp its offset, and everything shifted down (about 40px in the simulator).
+- Fix: the line is always rendered and reads "Ready to calculate" once the form is complete. Measured with accessibility frames at the bottom of the scroll, the button stays at y 712.0 before and after the last pick.
