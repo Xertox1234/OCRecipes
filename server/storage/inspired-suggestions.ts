@@ -1,5 +1,5 @@
 // server/storage/inspired-suggestions.ts
-import { and, eq, inArray, isNull, lt, lte, or } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import { db } from "../db";
 import {
   inspiredSuggestions,
@@ -17,6 +17,23 @@ export async function createInspiredSuggestions(
     .insert(inspiredSuggestions)
     .values(drafts.map((d) => ({ ...d, userId, expiresAt })))
     .returning();
+}
+
+/** Cards created for this user since `since` (rolling daily cap). */
+export async function countInspiredSuggestionsSince(
+  userId: string,
+  since: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(inspiredSuggestions)
+    .where(
+      and(
+        eq(inspiredSuggestions.userId, userId),
+        gte(inspiredSuggestions.createdAt, since),
+      ),
+    );
+  return row?.n ?? 0;
 }
 
 export async function getInspiredSuggestions(

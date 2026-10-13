@@ -5,6 +5,11 @@ import type { InspiredSuggestionRow } from "../schema";
 
 export const INSPIRED_LISTING_SIZE = 8;
 export const SUGGESTION_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Rolling-24h cap on idea cards per user, across Recipe Browser + Recipe
+ * Finder. Cost guard: roughly 10 Browser listings.
+ */
+export const INSPIRED_DAILY_CARD_CAP = 80;
 
 /** What the AI returns for one card. */
 export const suggestionDraftSchema = z.object({

@@ -21,7 +21,8 @@ export async function findInspired(args: {
 }): Promise<FindOnlineResult> {
   const cards = await createSuggestionListing({
     userId: args.userId,
-    request: args.request,
+    // Short request keeps the Spoonacular query and the prompt small.
+    request: args.query.q || args.request.slice(0, 200),
     filters: {
       cuisine: args.query.cuisine,
       diet: args.query.diet,

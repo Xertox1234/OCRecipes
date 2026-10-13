@@ -1,6 +1,10 @@
 // server/services/recipe-finder/run-turn.ts
 import { randomUUID } from "node:crypto";
 import type { ChatMessage, UserProfile } from "@shared/schema";
+import {
+  INSPIRED_DAILY_CARD_CAP,
+  SUGGESTION_TTL_MS,
+} from "@shared/schemas/inspired-recipes";
 import type { FinderBlock, FinderFlow } from "@shared/schemas/recipe-finder";
 import type { PremiumFeatures } from "@shared/types/premium";
 import { storage } from "../../storage";
@@ -188,6 +192,15 @@ export async function executeFinderStep(
       // Spoonacular titles inspire the listing; past it, the listing comes
       // from the request + profile alone (inspired spec §4.1).
       if (!finderCtx.canSearchOnline) {
+        result = { kind: "online", result: { status: "unavailable" } };
+        break;
+      }
+      // Daily card cap (cost guard) — checked before any paid call.
+      const cardsToday = await storage.countInspiredSuggestionsSince(
+        ctx.userId,
+        new Date(Date.now() - SUGGESTION_TTL_MS),
+      );
+      if (cardsToday >= INSPIRED_DAILY_CARD_CAP) {
         result = { kind: "online", result: { status: "unavailable" } };
         break;
       }

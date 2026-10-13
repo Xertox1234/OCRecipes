@@ -60,6 +60,7 @@ vi.mock("../../storage", () => ({
     createFinderUserMessage: vi.fn(),
     claimRecipeGeneration: vi.fn(),
     claimSpoonacularSearch: vi.fn(),
+    countInspiredSuggestionsSince: vi.fn().mockResolvedValue(0),
   },
 }));
 

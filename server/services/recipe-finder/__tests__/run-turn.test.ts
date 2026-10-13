@@ -19,7 +19,11 @@ import { askClarifying } from "../ask-clarifying";
 import { askDishFollowUps } from "../ask-follow-ups";
 
 vi.mock("../../../storage", () => ({
-  storage: { claimRecipeGeneration: vi.fn(), claimSpoonacularSearch: vi.fn() },
+  storage: {
+    claimRecipeGeneration: vi.fn(),
+    claimSpoonacularSearch: vi.fn(),
+    countInspiredSuggestionsSince: vi.fn(),
+  },
 }));
 vi.mock("../extract-query", () => ({
   extractQuery: vi.fn(),
@@ -55,6 +59,7 @@ const ctx = (over: Partial<FinderTurnContext> = {}): FinderTurnContext => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(storage.countInspiredSuggestionsSince).mockResolvedValue(0);
   vi.stubEnv("SPOONACULAR_API_KEY", "k");
   vi.stubEnv("RECIPE_FINDER_SPOONACULAR_DAILY_CAP", "10");
 });
@@ -133,6 +138,17 @@ describe("executeFinderStep", () => {
         },
       }),
     );
+    expect(storage.claimSpoonacularSearch).not.toHaveBeenCalled();
+    expect(findInspired).not.toHaveBeenCalled();
+    if (out.kind !== "message" || out.block.type !== "recipe_results") {
+      throw new Error("expected results");
+    }
+    expect(out.block.notice).toBe("unavailable");
+  });
+
+  it("online at the daily card cap → 'unavailable' with no claim and no listing", async () => {
+    vi.mocked(storage.countInspiredSuggestionsSince).mockResolvedValue(80);
+    const out = await executeFinderStep({ kind: "search_online", flow }, ctx());
     expect(storage.claimSpoonacularSearch).not.toHaveBeenCalled();
     expect(findInspired).not.toHaveBeenCalled();
     if (out.kind !== "message" || out.block.type !== "recipe_results") {

@@ -14,7 +14,8 @@ import {
   createTestUser,
   getTestTx,
 } from "../../../test/db-test-utils";
-import { communityRecipes } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { communityRecipes, inspiredSuggestions } from "@shared/schema";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 
@@ -26,6 +27,7 @@ vi.mock("../../db", () => ({
 
 const {
   createInspiredSuggestions,
+  countInspiredSuggestionsSince,
   getInspiredSuggestions,
   getInspiredSuggestion,
   setInspiredSuggestionImage,
@@ -88,6 +90,22 @@ describe("inspired suggestions storage", () => {
     expect(await getInspiredSuggestions(a, ids)).toHaveLength(2);
     expect(await getInspiredSuggestions(b, ids)).toHaveLength(0);
     expect(await getInspiredSuggestion(b, ids[0])).toBeUndefined();
+  });
+
+  it("counts only the user's own rows created since the cutoff", async () => {
+    const mine = await createInspiredSuggestions(
+      a,
+      [draft("One"), draft("Two"), draft("Old")],
+      tomorrow(),
+    );
+    await createInspiredSuggestions(b, [draft("Theirs")], tomorrow());
+    await tx
+      .update(inspiredSuggestions)
+      .set({ createdAt: new Date(Date.now() - 2 * 86_400_000) })
+      .where(eq(inspiredSuggestions.id, mine[2].id));
+    const since = new Date(Date.now() - 86_400_000);
+    expect(await countInspiredSuggestionsSince(a, since)).toBe(2);
+    expect(await countInspiredSuggestionsSince(b, since)).toBe(1);
   });
 
   it("sets the image only once", async () => {

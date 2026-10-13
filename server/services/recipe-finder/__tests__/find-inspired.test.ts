@@ -47,6 +47,17 @@ describe("findInspired", () => {
       filters: { mealType: "dinner" },
     });
   });
+  it("passes a short request: query.q, else the flow request cut to 200", async () => {
+    vi.mocked(createSuggestionListing).mockResolvedValue([card]);
+    await findInspired({ ...args, request: "x".repeat(500) });
+    expect(vi.mocked(createSuggestionListing).mock.calls[0][0].request).toBe(
+      "tacos",
+    );
+    await findInspired({ ...args, query: { q: "" }, request: "y".repeat(500) });
+    expect(vi.mocked(createSuggestionListing).mock.calls[1][0].request).toBe(
+      "y".repeat(200),
+    );
+  });
   it("is unavailable when no listing could be made", async () => {
     vi.mocked(createSuggestionListing).mockResolvedValue(null);
     expect(await findInspired(args)).toEqual({ status: "unavailable" });

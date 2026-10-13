@@ -418,6 +418,7 @@ export const storage = {
 
   // Inspired recipes (suggestions)
   createInspiredSuggestions: inspired.createInspiredSuggestions,
+  countInspiredSuggestionsSince: inspired.countInspiredSuggestionsSince,
   getInspiredSuggestions: inspired.getInspiredSuggestions,
   getInspiredSuggestion: inspired.getInspiredSuggestion,
   setInspiredSuggestionImage: inspired.setInspiredSuggestionImage,

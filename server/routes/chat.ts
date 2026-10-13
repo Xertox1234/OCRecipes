@@ -640,7 +640,7 @@ export function register(app: Express): void {
                   );
                 }
               } else if (turn.kind === "ignored") {
-                // e.g. Search Spoonacular on a Spoonacular list — nothing to
+                // e.g. Find ideas on an inspired-ideas list — nothing to
                 // answer, so don't leave a dangling user bubble.
                 await storage.deleteChatMessage(userMessage.id, req.userId);
               } else if (turn.kind === "generate") {
