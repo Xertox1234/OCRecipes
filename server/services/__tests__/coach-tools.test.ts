@@ -412,7 +412,7 @@ describe("Coach Tools Service", () => {
     ]);
     const out = await executeToolCall(
       "search_recipes",
-      { query: "soup", cuisine: "italian", maxReadyTime: 40 },
+      { query: "soup", cuisine: "italian" },
       "user-1",
     );
     expect(searchCatalogRecipes).not.toHaveBeenCalled();
@@ -420,10 +420,21 @@ describe("Coach Tools Service", () => {
       expect.objectContaining({
         q: "soup",
         cuisine: "italian",
-        maxPrepTime: 40,
       }),
       "user-1",
       [],
+    );
+    // Community rows have no prep time, so no time filter is advertised/passed.
+    expect(vi.mocked(findCommunity).mock.calls[0][0]).not.toHaveProperty(
+      "maxPrepTime",
+    );
+    const searchTool = getToolDefinitions().find(
+      (t) =>
+        (t as { function: { name: string } }).function.name ===
+        "search_recipes",
+    ) as unknown as { function: { parameters: { properties: object } } };
+    expect(searchTool.function.parameters.properties).not.toHaveProperty(
+      "maxReadyTime",
     );
     expect(out).toEqual({
       results: [

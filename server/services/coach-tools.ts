@@ -71,7 +71,6 @@ const searchRecipesSchema = z.object({
   query: z.string().min(1),
   diet: z.string().optional(),
   cuisine: z.string().optional(),
-  maxReadyTime: z.number().optional(),
 });
 
 const isoDateSchema = z
@@ -281,10 +280,6 @@ export function getToolDefinitions(): ChatCompletionTool[] {
               type: "string",
               description:
                 "Optional cuisine filter, e.g. 'italian', 'mexican', 'asian'.",
-            },
-            maxReadyTime: {
-              type: "number",
-              description: "Optional maximum preparation time in minutes.",
             },
           },
           required: ["query"],
@@ -558,7 +553,6 @@ export async function executeToolCall(
           q: parsed.data.query,
           diet: parsed.data.diet,
           cuisine: parsed.data.cuisine,
-          maxPrepTime: parsed.data.maxReadyTime,
         },
         userId,
         [],
