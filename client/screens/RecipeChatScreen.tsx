@@ -68,6 +68,8 @@ import {
 } from "@/components/recipe-finder/recipe-finder-utils";
 import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { useMakeSuggestion } from "@/hooks/useInspiredSuggestions";
+import { ApiError } from "@/lib/api-error";
 import type {
   FinderAction,
   FinderBlock,
@@ -521,9 +523,50 @@ export default function RecipeChatScreen() {
 
   const handleOpenFinderItem = useCallback(
     (item: FinderItem) => {
-      navigation.navigate("FeaturedRecipeDetail", finderItemNavParams(item));
+      // Ideas have no detail screen — they are made ("Make this mine").
+      const params = finderItemNavParams(item);
+      if (!params) return;
+      navigation.navigate("FeaturedRecipeDetail", params);
     },
     [navigation],
+  );
+
+  const { mutateAsync: makeSuggestion } = useMakeSuggestion();
+  // The idea card whose recipe is being made; one make at a time.
+  const [makingFinderItemId, setMakingFinderItemId] = useState<number | null>(
+    null,
+  );
+  // "Make this mine" on an idea card: generate the recipe, then open it.
+  const handleMakeFinderItem = useCallback(
+    (item: FinderItem) => {
+      // One make at a time — a second card's tap is ignored while one runs.
+      if (makingFinderItemId !== null) return;
+      setMakingFinderItemId(item.id);
+      makeSuggestion(item.id)
+        .then(({ recipeId }) => {
+          navigation.navigate("FeaturedRecipeDetail", {
+            recipeId,
+            recipeType: "community",
+          });
+        })
+        .catch((error: unknown) => {
+          // The toast announces itself for screen readers.
+          const status = error instanceof ApiError ? error.status : undefined;
+          if (status === 429) {
+            toast.error("You've reached today's recipe limit.");
+          } else if (status === 410) {
+            toast.error("These ideas expired — search again.");
+          } else {
+            toast.error("Couldn't make this recipe. Try again.");
+          }
+        })
+        .finally(() =>
+          setMakingFinderItemId((current) =>
+            current === item.id ? null : current,
+          ),
+        );
+    },
+    [makingFinderItemId, makeSuggestion, navigation, toast],
   );
 
   const openUpgrade = useCallback(() => setShowUpgrade(true), []);
@@ -759,6 +802,8 @@ export default function RecipeChatScreen() {
               onAction={handleFinderAction}
               onLockedButton={openUpgrade}
               onOpenItem={handleOpenFinderItem}
+              onMakeItem={handleMakeFinderItem}
+              makingId={makingFinderItemId}
               adjustChoices={adjustChoices}
             />
           ) : null}
@@ -777,6 +822,8 @@ export default function RecipeChatScreen() {
       handleFinderAction,
       openUpgrade,
       handleOpenFinderItem,
+      handleMakeFinderItem,
+      makingFinderItemId,
       adjustChoices,
     ],
   );

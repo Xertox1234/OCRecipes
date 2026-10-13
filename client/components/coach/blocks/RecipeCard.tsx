@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import { PressableScale } from "@/components/PressableScale";
 import type { RecipeCard as RecipeCardType } from "@shared/schemas/coach-blocks";
@@ -45,14 +45,9 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
             onAction?.({
               type: "navigate",
               screen: "FeaturedRecipeDetail",
-              // A Spoonacular id previews through the catalog endpoint; the
-              // old `source` param was never read, so every card opened as a
-              // community id (R1).
-              params: {
-                recipeId: recipe.recipeId,
-                recipeType:
-                  recipe.source === "spoonacular" ? "catalog" : "community",
-              },
+              // Every card source ("community" and "generated") is a
+              // community recipe id.
+              params: { recipeId: recipe.recipeId, recipeType: "community" },
             })
           }
           accessibilityRole="button"
@@ -61,32 +56,6 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
         >
           <Text style={styles.primaryBtnText}>View</Text>
         </PressableScale>
-        {/* Only a `spoonacular` card carries a Spoonacular catalog id — the add
-            flow goes through POST /api/meal-plan/catalog/:id/save, which
-            requires that id. `community`/`generated` recipes have no catalog
-            id to save, so they keep "View" alone. */}
-        {recipe.source === "spoonacular" && (
-          <Pressable
-            style={({ pressed }) => [
-              styles.secondaryBtn,
-              pressed && { opacity: 0.7 },
-            ]}
-            onPress={() =>
-              onAction?.({
-                type: "add_recipe_to_plan",
-                recipeId: recipe.recipeId,
-                recipeTitle: recipe.title,
-              })
-            }
-            accessibilityRole="button"
-            accessibilityLabel="Add to Plan"
-            hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
-          >
-            <Text style={[styles.secondaryText, { color: theme.link }]}>
-              Add to Plan
-            </Text>
-          </Pressable>
-        )}
       </View>
     </View>
   );
@@ -109,12 +78,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   primaryBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" }, // hardcoded
-  secondaryBtn: {
-    minHeight: 44,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  secondaryText: { fontSize: 13 },
 });

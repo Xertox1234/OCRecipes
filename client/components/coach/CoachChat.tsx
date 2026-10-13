@@ -28,11 +28,6 @@ import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { UpgradeModal } from "@/components/UpgradeModal";
-import { PlanSlotPickerSheet } from "@/components/coach/PlanSlotPickerSheet";
-import {
-  buildPlanSlotDays,
-  toPlannedDateSet,
-} from "@/components/coach/plan-slot-picker-utils";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useChatMessages,
@@ -55,8 +50,7 @@ import {
 } from "@shared/schemas/recipe-finder";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
-import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
-import { useAddMealPlanItem, useMealPlanItems } from "@/hooks/useMealPlan";
+import { useMakeSuggestion } from "@/hooks/useInspiredSuggestions";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -68,20 +62,18 @@ import {
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
 import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe-utils";
-import type { MealType } from "@/screens/meal-plan/meal-plan-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import {
   parsePlanDays,
   filterValidBlocks,
-  describePlanSaveFailure,
-  formatPlanSaveSuccess,
 } from "@/components/coach/coach-chat-utils";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import StreamingBubble from "@/components/coach/StreamingBubble";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
@@ -128,10 +120,10 @@ export default function CoachChat({
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
   const hasVoice = usePremiumFeature("coachPro");
-  // Catalog save is premium-gated server-side (checkPremiumFeature
-  // "catalogSave" on POST /api/meal-plan/catalog/:id/save) — gate here too so
-  // a free user gets the upgrade path instead of a failed request.
-  const canSaveCatalog = usePremiumFeature("catalogSave");
+  // The finder's "Get ideas for you" is premium-gated server-side on the
+  // "catalogSave" feature — lock it here too so a free user gets the upgrade
+  // path instead of a failed turn.
+  const canSearchOnline = usePremiumFeature("catalogSave");
   const queryClient = useQueryClient();
   const toast = useToast();
   const haptics = useHaptics();
@@ -140,18 +132,19 @@ export default function CoachChat({
   // useMutation returns a new object identity every render, which would
   // make every useCallback below that depends on it re-create every render.
   const { mutateAsync: deleteChatMessage } = useDeleteChatMessageForRetry();
-  const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
-    useSaveCatalogRecipe();
-  const { mutateAsync: addMealPlanItem, isPending: isAddingPlanItem } =
-    useAddMealPlanItem();
+  const { mutateAsync: makeSuggestion } = useMakeSuggestion();
+  // The idea card whose recipe is being made; one make at a time.
+  const [makingFinderItemId, setMakingFinderItemId] = useState<number | null>(
+    null,
+  );
   const canGenerateRecipes = usePremiumFeature("recipeGeneration");
   const finderLocks = useMemo(
     () =>
       lockedFinderButtons({
-        canSearchOnline: canSaveCatalog,
+        canSearchOnline,
         canGenerate: canGenerateRecipes,
       }),
-    [canSaveCatalog, canGenerateRecipes],
+    [canSearchOnline, canGenerateRecipes],
   );
   const { mutateAsync: saveRecipeFromChat } = useSaveRecipeFromChat();
   // messageId → the community recipe id it was saved as (this session).
@@ -173,8 +166,9 @@ export default function CoachChat({
   // render body: a render-phase `ref.current =` write is a React Compiler
   // CompileError ("Cannot access refs during render"), and writing here also
   // keeps the ref current before the re-render. (This file is compiler-exempt
-  // anyway — see the CORRECTION note on handleConfirmPlanSlot's `finally` —
-  // so this avoids adding a second bailout, it doesn't restore coverage.)
+  // anyway — handleSaveGeneratedRecipe's try/`finally` opts the component
+  // out — so this avoids adding a second bailout, it doesn't restore
+  // coverage.)
   // Every write to inputText must go through setInputText (the raw state
   // setter is not used elsewhere).
   const inputTextRef = useRef(inputText);
@@ -211,15 +205,6 @@ export default function CoachChat({
   } | null>(null);
   // Bumped on every send, so a late refetch cannot clear a newer question.
   const turnEpochRef = useRef(0);
-  const [planTarget, setPlanTarget] = useState<{
-    recipeId: number;
-    recipeTitle: string;
-  } | null>(null);
-  // Recompute trigger for the meal-plan items window below (see the
-  // planWeek effect for why this must be an effect trigger, not a useMemo
-  // dep). Derived boolean, not `planTarget` itself, so a *different* recipe
-  // opened while the sheet is already up does not re-trigger the fetch.
-  const isPlanSheetOpen = planTarget !== null;
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
   const prevStreamingRef = useRef(false);
@@ -229,85 +214,6 @@ export default function CoachChat({
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
   const acceptedCommitmentsRef = useRef<Set<number | string>>(new Set());
   const [commitmentVersion, setCommitmentVersion] = useState(0);
-  // Ref-based (not prop-based) double-submit guard: PlanSlotPickerSheet's own
-  // `isSubmitting`-prop guard reads the CURRENT render's props, which lags a
-  // rapid double-tap on Confirm — two synchronous taps can both fire
-  // onConfirm before React re-renders with the mutation's in-flight state.
-  // This ref is set synchronously at the top of handleConfirmPlanSlot (before
-  // any await), so a second synchronous call sees it immediately and bails —
-  // a prop can never do that. Mirrors the isActioning.current pattern in
-  // AddItemMenuSheet.tsx, adapted to release in `finally` (not on next open)
-  // so a retry after a failed save is never permanently blocked.
-  const isSavingPlanRef = useRef(false);
-  // Per-flow token paired with isSavingPlanRef above: the boolean alone
-  // can't tell WHICH confirm's `finally`/completion is running. Dismissing
-  // the sheet mid-save (backdrop tap / Close button / onRequestClose — all
-  // unconditional, see PlanSlotPickerSheet.tsx) does not cancel the
-  // in-flight mutation; if the user then reopens and confirms a different
-  // recipe, the reset effect below lets that second flow acquire
-  // isSavingPlanRef while the first is still running. Without this token,
-  // the first (abandoned) flow's eventual completion would unconditionally
-  // clear isSavingPlanRef AND null out planTarget — reopening the
-  // double-write window for the second flow, and yanking its still-open
-  // sheet out from under it. Each confirm bumps and captures the token; the
-  // guarded release/close calls below only act when their captured token is
-  // still current — a stale flow's completion is a no-op against a later
-  // flow's state. See P2-2026-08-30-coach-plan-slot-guard-survives-sheet-dismissal.
-  const planSaveTokenRef = useRef(0);
-
-  // This CANNOT be `useMemo(() => buildPlanSlotDays(new Date()), [isPlanSheetOpen])`:
-  // React Compiler (app.json `experiments.reactCompiler`, wired for all
-  // client code via babel-preset-expo) ELIMINATES a useMemo call entirely
-  // and re-derives its own reactivity from what the callback body actually
-  // READS — `buildPlanSlotDays(new Date())` reads no reactive value, so the
-  // compiler discards the manual `[isPlanSheetOpen]` dependency and
-  // compiles it to a compute-once-forever cache, silently reintroducing the
-  // "pinned at mount" bug this todo exists to fix (confirmed by compiling
-  // this exact shape IN ISOLATION with the project's pinned
-  // babel-plugin-react-compiler; Vitest doesn't run that plugin, so a naive
-  // test would pass while a compiler-covered build stays broken).
-  //
-  // CORRECTION 2026-09-03: THIS FILE is not compiler-covered. Compiling the
-  // real CoachChat.tsx emits `(BuildHIR::lowerStatement) Handle TryStatement
-  // with a finalizer ('finally') clause` and produces no transformation —
-  // handleConfirmPlanSlot's pre-existing `finally` opts the WHOLE component
-  // out. So a naive useMemo would in fact have worked here, because real
-  // React honours the literal array whenever the compiler never runs. The
-  // shape below is still the right thing to write (correct with or without
-  // coverage), but do not read this comment as evidence the compiler was
-  // observed discarding the dep in THIS file. Corollary worth knowing: every
-  // other manual useMemo/useCallback in this file is load-bearing today, not
-  // compiler-backstopped. Full write-up in the solution doc referenced below.
-  //
-  // A `useEffect` call is different: the compiler
-  // PRESERVES it with its own real, separately-tracked deps array (real
-  // React then does the runtime comparison), so `[isPlanSheetOpen]` here is
-  // actually honored regardless of what the body reads — mirrors
-  // PlanSlotPickerSheet's own false->true `visible` recompute
-  // (prevVisibleRef effect). The body still reads `isPlanSheetOpen` because
-  // the transition logic below needs its value, not because that's what
-  // makes the effect re-fire.
-  const [planWeek, setPlanWeek] = useState(() => buildPlanSlotDays(new Date()));
-  const prevPlanSheetOpenRef = useRef(isPlanSheetOpen);
-  useEffect(() => {
-    const opened = isPlanSheetOpen && !prevPlanSheetOpenRef.current;
-    prevPlanSheetOpenRef.current = isPlanSheetOpen;
-    if (opened) {
-      setPlanWeek(buildPlanSlotDays(new Date()));
-    }
-  }, [isPlanSheetOpen]);
-  const { data: planItems } = useMealPlanItems(
-    planWeek[0].iso,
-    planWeek[planWeek.length - 1].iso,
-    // The slot picker sheet (and this dot data) is only reachable when
-    // canSaveCatalog is true — see the handleBlockAction gate below. Free
-    // users never see the sheet, so the request should never fire for them.
-    canSaveCatalog,
-  );
-  const datesWithItems = useMemo(
-    () => toPlannedDateSet(planItems),
-    [planItems],
-  );
   // extraData must be treated immutably (FlatList is a PureComponent and
   // React Compiler does not protect its internal class-component compare) —
   // an inline array literal would re-render every visible cell per keystroke.
@@ -693,18 +599,6 @@ export default function CoachChat({
     (action: Record<string, unknown>) => {
       if (action.type === "log_food") {
         void handleSend(`Please log: ${action.description as string}`);
-      } else if (action.type === "add_recipe_to_plan") {
-        // Client-local action — never enters blockActionSchema, so the AI
-        // gains no new capability. Only RecipeCard's "spoonacular" branch
-        // emits this.
-        if (!canSaveCatalog) {
-          setShowUpgrade(true);
-          return;
-        }
-        setPlanTarget({
-          recipeId: action.recipeId as number,
-          recipeTitle: action.recipeTitle as string,
-        });
       } else if (action.type === "navigate") {
         const screen = action.screen as string;
         const params = action.params as Record<string, unknown> | undefined;
@@ -782,96 +676,7 @@ export default function CoachChat({
         navigation.navigate("GoalSetup");
       }
     },
-    [handleSend, navigation, canSaveCatalog],
-  );
-
-  // Reachable today, not hypothetical: PlanSlotPickerSheet's dismissal paths
-  // (backdrop tap, Close button, onRequestClose) are all unconditional — none
-  // of them check isSubmitting — so a user can dismiss the sheet while
-  // saveCatalogRecipe (a slow server-side Spoonacular fetch) is still
-  // in-flight for a prior confirm. Without this reset, reopening the sheet
-  // and tapping Confirm again would silently no-op: isSavingPlanRef is still
-  // true from the still-running earlier call, handleConfirmPlanSlot's guard
-  // returns immediately, and the sheet has already fired its "Add to Plan"
-  // haptic — tactile feedback for a tap that did nothing. Resetting on every
-  // null->non-null planTarget transition (a fresh "Add to Plan" tap) closes
-  // that gap.
-  //
-  // AC #4 (P2-2026-08-30): still needed after adding planSaveTokenRef above,
-  // and NOT redundant with it — the two guard opposite sides of the same
-  // problem. This effect is what lets a LATER flow ACQUIRE isSavingPlanRef
-  // despite an abandoned earlier flow still holding it; the token only
-  // governs whether a flow's own RELEASE (finally) and completion
-  // (setPlanTarget(null)) still apply once acquired. Deleting this effect
-  // changes behavior, not just performance: a second confirm would bail at
-  // the isSavingPlanRef.current check above before ever assigning a token,
-  // so the token logic would never run for it. Pinned incidentally by the
-  // three interleaving tests in CoachChat.branches.test.tsx below: deleting
-  // this effect fails their saveCatalog call-count assertions, since the
-  // second flow's confirm would bail before ever reaching saveCatalog.
-  //
-  // Also bump planSaveTokenRef here, not only on the next confirm: without
-  // this, a fresh open (this effect) resets isSavingPlanRef but leaves the
-  // token untouched, so an abandoned flow's still-current token can settle
-  // and close/release AFTER the sheet is reopened but BEFORE the user
-  // re-confirms — yanking a not-yet-confirmed sheet shut mid-selection.
-  // Bumping here closes that window the instant a new flow can be entered,
-  // not only once one actually is.
-  useEffect(() => {
-    if (planTarget) {
-      isSavingPlanRef.current = false;
-      planSaveTokenRef.current++;
-    }
-  }, [planTarget]);
-
-  const handleConfirmPlanSlot = useCallback(
-    async (plannedDate: string, mealType: MealType, dayLabel: string) => {
-      if (!planTarget || isSavingPlanRef.current) return;
-      isSavingPlanRef.current = true;
-      const savingToken = ++planSaveTokenRef.current;
-      try {
-        // Two steps are required: /api/meal-plan/items enforces IDOR ownership
-        // and takes only a user-owned recipe id, while a coach card carries a
-        // Spoonacular catalog id. The save is idempotent — it returns the
-        // existing row when the recipe was saved before.
-        const saved = await saveCatalogRecipe(planTarget.recipeId);
-        await addMealPlanItem({
-          recipeId: saved.id,
-          plannedDate,
-          mealType,
-        });
-        toast.success(formatPlanSaveSuccess(dayLabel, mealType));
-        // Only this flow's own completion may close the sheet — a flow
-        // superseded by a later confirm (dismissed mid-save, then a
-        // different recipe confirmed) must not yank a later flow's
-        // still-open sheet out from under it. See planSaveTokenRef's
-        // comment above.
-        if (planSaveTokenRef.current === savingToken) {
-          setPlanTarget(null);
-        }
-      } catch (error) {
-        const failure = describePlanSaveFailure(error);
-        toast.error(failure.message);
-        // Terminal failures (402 quota, 422 unusable recipe, 404 catalog
-        // miss) reproduce identically on every retry — close the sheet
-        // instead of leaving it open for a retry that can only fail again.
-        // Anything else is presumed transient: keep the sheet open so the
-        // user can retry. Same token guard as the success path above.
-        if (failure.terminal && planSaveTokenRef.current === savingToken) {
-          setPlanTarget(null);
-        }
-      } finally {
-        // Only release the guard if this flow is still the active one —
-        // see planSaveTokenRef's comment above. A save abandoned by
-        // dismissing the sheet can settle after a LATER flow has already
-        // acquired the guard; its `finally` must not clear that later
-        // flow's guard out from under it.
-        if (planSaveTokenRef.current === savingToken) {
-          isSavingPlanRef.current = false;
-        }
-      }
-    },
-    [planTarget, saveCatalogRecipe, addMealPlanItem, toast],
+    [handleSend, navigation],
   );
 
   const handleCommitmentAccept = useCallback(
@@ -942,9 +747,45 @@ export default function CoachChat({
 
   const handleOpenFinderItem = useCallback(
     (item: FinderItem) => {
-      navigation.navigate("FeaturedRecipeDetail", finderItemNavParams(item));
+      // Ideas have no detail screen — they are made ("Make this mine").
+      const params = finderItemNavParams(item);
+      if (!params) return;
+      navigation.navigate("FeaturedRecipeDetail", params);
     },
     [navigation],
+  );
+
+  // "Make this mine" on an idea card: generate the recipe, then open it.
+  const handleMakeFinderItem = useCallback(
+    (item: FinderItem) => {
+      // One make at a time — a second card's tap is ignored while one runs.
+      if (makingFinderItemId !== null) return;
+      setMakingFinderItemId(item.id);
+      makeSuggestion(item.id)
+        .then(({ recipeId }) => {
+          navigation.navigate("FeaturedRecipeDetail", {
+            recipeId,
+            recipeType: "community",
+          });
+        })
+        .catch((error: unknown) => {
+          // The toast announces itself for screen readers.
+          const status = error instanceof ApiError ? error.status : undefined;
+          if (status === 429) {
+            toast.error("You've reached today's recipe limit.");
+          } else if (status === 410) {
+            toast.error("These ideas expired — search again.");
+          } else {
+            toast.error("Couldn't make this recipe. Try again.");
+          }
+        })
+        .finally(() =>
+          setMakingFinderItemId((current) =>
+            current === item.id ? null : current,
+          ),
+        );
+    },
+    [makingFinderItemId, makeSuggestion, navigation, toast],
   );
 
   const openUpgrade = useCallback(() => setShowUpgrade(true), []);
@@ -1016,7 +857,7 @@ export default function CoachChat({
           ? savedBlocks?.filter((b) => isFinderBlockType(b.type))
           : savedBlocks;
         // No Regenerate under a finder message: handleRetry re-sends the
-        // last user text without its finderAction, so a "Search Spoonacular"
+        // last user text without its finderAction, so a "Get ideas for you"
         // tap would come back as a community search for that label. The
         // finder message's own buttons are the next step.
         const isRetryTarget =
@@ -1067,6 +908,8 @@ export default function CoachChat({
                   onFinderAction={handleFinderAction}
                   onLockedFinderButton={openUpgrade}
                   onOpenFinderItem={handleOpenFinderItem}
+                  onMakeFinderItem={handleMakeFinderItem}
+                  makingFinderItemId={makingFinderItemId}
                   messageContent={msg.content}
                   adjustChoices={adjustChoices}
                 />
@@ -1136,6 +979,8 @@ export default function CoachChat({
       handleFinderAction,
       openUpgrade,
       handleOpenFinderItem,
+      handleMakeFinderItem,
+      makingFinderItemId,
       adjustChoices,
       generatedRecipes,
       savingRecipeMessageId,
@@ -1331,14 +1176,6 @@ export default function CoachChat({
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
         onUpgrade={() => setIsAtDailyLimit(false)}
-      />
-      <PlanSlotPickerSheet
-        visible={planTarget !== null}
-        recipeTitle={planTarget?.recipeTitle ?? ""}
-        datesWithItems={datesWithItems}
-        isSubmitting={isSavingCatalog || isAddingPlanItem}
-        onConfirm={handleConfirmPlanSlot}
-        onDismiss={() => setPlanTarget(null)}
       />
     </CoachChatBase>
   );

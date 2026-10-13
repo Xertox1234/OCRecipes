@@ -36,6 +36,10 @@ interface BlockRendererProps {
   onFinderAction?: (action: FinderAction, label: string) => void;
   onLockedFinderButton?: (button: FinderButton) => void;
   onOpenFinderItem?: (item: FinderItem) => void;
+  /** "Make this mine" on a finder idea card. */
+  onMakeFinderItem?: (item: FinderItem) => void;
+  /** The idea card being made right now, if any. */
+  makingFinderItemId?: number | null;
   /** The message's text — the recipe offer shows it (the chat hides the
    *  bubble under a finder block). */
   messageContent?: string;
@@ -82,6 +86,8 @@ function renderBlock({
   onFinderAction,
   onLockedFinderButton,
   onOpenFinderItem,
+  onMakeFinderItem,
+  makingFinderItemId,
   messageContent,
   adjustChoices,
 }: Omit<BlockRendererProps, "animateEntry">) {
@@ -127,6 +133,8 @@ function renderBlock({
           onAction={onFinderAction ?? noop}
           onLockedButton={onLockedFinderButton ?? noop}
           onOpenItem={onOpenFinderItem ?? noop}
+          onMakeItem={onMakeFinderItem}
+          makingId={makingFinderItemId}
         />
       );
     default:

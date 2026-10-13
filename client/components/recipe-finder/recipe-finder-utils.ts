@@ -10,13 +10,13 @@ import {
 } from "@shared/schemas/recipe-finder";
 
 export const FINDER_BUTTON_LABELS: Record<FinderButton, string> = {
-  search_online: "Search Spoonacular",
+  search_online: "Get ideas for you",
   generate: "Generate",
   none_of_these: "None of these",
 };
 
 export function resultsHeader(source: RecipeResultsBlock["source"]): string {
-  return source === "community" ? "From the community" : "From Spoonacular";
+  return source === "community" ? "From the community" : "Ideas for you";
 }
 
 export function formatItemMeta(item: FinderItem): string {
@@ -43,11 +43,11 @@ export function noticeText(
     case "no_matches":
       return source === "community"
         ? "No community recipes matched."
-        : "Spoonacular had no matches.";
+        : "No ideas came up.";
     case "unavailable":
-      return "Spoonacular isn't available right now. Try Generate or a community pick.";
+      return "Ideas aren't available right now. Try Generate or a community pick.";
     case "generate_limit":
-      return "You've reached today's limit for generated recipes. Community and Spoonacular searches still work.";
+      return "You've reached today's limit for generated recipes. Community picks and ideas for you still work.";
     case "generate_premium":
       return "Generating recipes is a Premium feature.";
     default:
@@ -60,22 +60,24 @@ export function resultsAnnouncement(block: RecipeResultsBlock): string {
   if (n === 0) {
     return noticeText(block.notice, block.source) ?? "No recipes found";
   }
-  const where = block.source === "community" ? "community" : "Spoonacular";
-  return `Found ${n} ${where} recipe${n === 1 ? "" : "s"}`;
+  if (block.source === "inspired") {
+    return `Found ${n} idea${n === 1 ? "" : "s"} for you`;
+  }
+  return `Found ${n} community recipe${n === 1 ? "" : "s"}`;
 }
 
 export function answersLabel(answers: FinderAnswer[]): string {
   return answers.map((a) => a.answer).join(", ");
 }
 
-export function finderItemNavParams(item: FinderItem): {
-  recipeId: number;
-  recipeType: "community" | "catalog";
-} {
-  return {
-    recipeId: item.id,
-    recipeType: item.source === "spoonacular" ? "catalog" : "community",
-  };
+/** Inspired items have no detail screen: they are made ("Make this mine"),
+ *  not opened, so they get no nav params. */
+export function finderItemNavParams(
+  item: FinderItem,
+): { recipeId: number; recipeType: "community" } | null {
+  return item.source === "inspired"
+    ? null
+    : { recipeId: item.id, recipeType: "community" };
 }
 
 /** RecipeChef stores `{metadataVersion, finder}`; Coach stores `{blocks:[…]}`. */

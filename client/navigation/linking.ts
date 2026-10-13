@@ -228,8 +228,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
           recipeId: parseIntOrZero,
           type: (value: string) =>
             value === "mealPlan" ? "mealPlan" : "community",
-          // Same mapping for the recipeType alias: a link must never select
-          // "catalog" (a Spoonacular preview spends shared quota on open).
+          // Same mapping for the recipeType alias (an old "catalog" link,
+          // from before catalog previews were removed, opens as community).
           recipeType: (value: string) =>
             value === "mealPlan" ? "mealPlan" : "community",
         },

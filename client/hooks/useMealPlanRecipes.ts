@@ -6,34 +6,9 @@ import type {
   CommunityRecipe,
 } from "@shared/schema";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
-import type { SavedRecipeLinkStatus } from "@shared/schemas/saved-items";
 
 type RecipeWithIngredients = MealPlanRecipe & {
   ingredients: RecipeIngredient[];
-};
-
-export type CatalogSearchResult = {
-  id: number;
-  title: string;
-  image?: string;
-  readyInMinutes?: number;
-};
-
-type CatalogSearchResponse = {
-  results: CatalogSearchResult[];
-  offset: number;
-  number: number;
-  totalResults: number;
-};
-
-export type CatalogSearchParams = {
-  query: string;
-  cuisine?: string;
-  diet?: string;
-  type?: string;
-  maxReadyTime?: number;
-  offset?: number;
-  number?: number;
 };
 
 type UnifiedRecipesResponse = {
@@ -119,67 +94,6 @@ export function useCreateMealPlanRecipe() {
     },
     // Every call site (MealPlanHomeScreen, WizardShell, SimpleEntrySheet)
     // already toasts/alerts on failure via a shared try/catch.
-    meta: { silentError: true },
-  });
-}
-
-export function useCatalogSearch(params: CatalogSearchParams | null) {
-  const qs = params
-    ? new URLSearchParams(
-        Object.entries(params)
-          .filter(([, v]) => v !== undefined && v !== "")
-          .map(([k, v]) => [k, String(v)]),
-      ).toString()
-    : "";
-
-  return useQuery<CatalogSearchResponse>({
-    queryKey: ["/api/meal-plan/catalog/search", params],
-    queryFn: async () => {
-      const res = await apiRequest(
-        "GET",
-        `/api/meal-plan/catalog/search?${qs}`,
-      );
-      return res.json();
-    },
-    enabled: !!params && !!params.query,
-  });
-}
-
-/**
- * `addToSavedItems` is the preview's Save (user ruling 2026-09-29: a Save also
- * lands in Profile > Saved Items). Coach's meal-plan slot saves without it.
- */
-export function useSaveCatalogRecipe(options?: { addToSavedItems?: boolean }) {
-  const queryClient = useQueryClient();
-  const addToSavedItems = options?.addToSavedItems === true;
-
-  return useMutation({
-    mutationFn: async (
-      spoonacularId: number,
-    ): Promise<
-      MealPlanRecipe & { savedItemStatus?: SavedRecipeLinkStatus }
-    > => {
-      const url = `/api/meal-plan/catalog/${spoonacularId}/save`;
-      const res = addToSavedItems
-        ? await apiRequest("POST", url, { addToSavedItems: true })
-        : await apiRequest("POST", url);
-      return res.json();
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["/api/meal-plan/recipes"],
-      });
-      void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
-      if (addToSavedItems) {
-        void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
-        void queryClient.invalidateQueries({
-          queryKey: ["/api/saved-items/count"],
-        });
-      }
-    },
-    // Both call sites surface failures themselves: CoachChat's
-    // handleConfirmPlanSlot toast.error()s, and FeaturedRecipeDetailScreen's
-    // catalog Save shows an InlineError (or a toast once it has unmounted).
     meta: { silentError: true },
   });
 }

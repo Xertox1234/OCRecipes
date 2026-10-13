@@ -63,7 +63,7 @@ describe("RecipeFinderMessage", () => {
     });
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Search Spoonacular. Premium feature",
+        name: "Get ideas for you. Premium feature",
       }),
     );
     expect(onAction).not.toHaveBeenCalled();

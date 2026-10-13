@@ -5,8 +5,6 @@ import {
   useUnifiedRecipes,
   useMealPlanRecipeDetail,
   useCreateMealPlanRecipe,
-  useCatalogSearch,
-  useSaveCatalogRecipe,
   useImportRecipeFromUrl,
 } from "../useMealPlanRecipes";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
@@ -93,54 +91,6 @@ describe("useMealPlanRecipes", () => {
     });
   });
 
-  describe("useCatalogSearch", () => {
-    it("is disabled when params is null", () => {
-      const { wrapper } = createQueryWrapper();
-      const { result } = renderHook(() => useCatalogSearch(null), { wrapper });
-      expect(result.current.fetchStatus).toBe("idle");
-    });
-
-    it("is disabled when query is empty", () => {
-      const { wrapper } = createQueryWrapper();
-      const { result } = renderHook(() => useCatalogSearch({ query: "" }), {
-        wrapper,
-      });
-      expect(result.current.fetchStatus).toBe("idle");
-    });
-
-    it("fetches with correct query params", async () => {
-      const { wrapper } = createQueryWrapper();
-      mockApiRequest.mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            results: [],
-            offset: 0,
-            number: 10,
-            totalResults: 0,
-          }),
-      });
-
-      const { result } = renderHook(
-        () => useCatalogSearch({ query: "chicken", cuisine: "Mexican" }),
-        { wrapper },
-      );
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "GET",
-        expect.stringContaining("query=chicken"),
-      );
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "GET",
-        expect.stringContaining("cuisine=Mexican"),
-      );
-    });
-  });
-
   describe("useCreateMealPlanRecipe", () => {
     it("calls POST endpoint with recipe data", async () => {
       const { wrapper } = createQueryWrapper();
@@ -220,75 +170,6 @@ describe("useMealPlanRecipes", () => {
       });
 
       expect(result.current.error?.message).toBe("422: Title is required");
-    });
-  });
-
-  describe("useSaveCatalogRecipe", () => {
-    it("calls correct endpoint with spoonacular ID and invalidates queries", async () => {
-      const { wrapper, queryClient } = createQueryWrapper();
-
-      mockApiRequest.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ id: 5, title: "Saved Recipe" }),
-      });
-
-      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-      const { result } = renderHook(() => useSaveCatalogRecipe(), { wrapper });
-
-      await act(async () => {
-        result.current.mutate(12345);
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "/api/meal-plan/catalog/12345/save",
-      );
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: ["/api/meal-plan/recipes"],
-      });
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: ["/api/recipes/browse"],
-      });
-    });
-  });
-
-  describe("useSaveCatalogRecipe({ addToSavedItems: true }) — the preview's Save", () => {
-    it("asks the server for a Saved Items row and refreshes Saved Items", async () => {
-      const { wrapper, queryClient } = createQueryWrapper();
-      mockApiRequest.mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({ id: 5, title: "Saved", savedItemStatus: "linked" }),
-      });
-      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-      const { result } = renderHook(
-        () => useSaveCatalogRecipe({ addToSavedItems: true }),
-        { wrapper },
-      );
-
-      await act(async () => {
-        result.current.mutate(12345);
-      });
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(mockApiRequest).toHaveBeenCalledWith(
-        "POST",
-        "/api/meal-plan/catalog/12345/save",
-        { addToSavedItems: true },
-      );
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: ["/api/saved-items"],
-      });
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: ["/api/saved-items/count"],
-      });
-      expect(result.current.data?.savedItemStatus).toBe("linked");
     });
   });
 
