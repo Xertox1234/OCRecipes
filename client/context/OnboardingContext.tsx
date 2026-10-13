@@ -9,6 +9,7 @@ import React, {
 import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import { useAuthContext } from "@/context/AuthContext";
+import { ONBOARDING_SCREENS } from "@/context/onboarding-steps";
 
 export interface Allergy {
   name: string;
@@ -61,7 +62,7 @@ const defaultData: OnboardingData = {
   healthDataConsent: false,
 };
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = ONBOARDING_SCREENS.length;
 
 const OnboardingContext = createContext<OnboardingContextType | null>(null);
 

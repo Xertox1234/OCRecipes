@@ -248,7 +248,10 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   dietItem: {
-    width: "47%",
+    // Two per row that fill it exactly with the grid's gap. A fixed 47% width
+    // left the spare width on the right, so the grid sat off-centre (QA #51).
+    flexBasis: "40%",
+    flexGrow: 1,
     padding: Spacing.lg,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
