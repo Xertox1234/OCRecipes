@@ -11,6 +11,7 @@
 // useMutation would surface them.
 import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { AccessibilityInfo } from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
 import RecipeBrowserScreen from "../RecipeBrowserScreen";
 import { ApiError } from "@/lib/api-error";
@@ -35,6 +36,8 @@ const card: Suggestion = {
   madeRecipeId: null,
 };
 
+const card2: Suggestion = { ...card, id: 8, title: "Fish Tacos" };
+
 vi.mock("@/hooks/useInspiredSuggestions", async () => {
   const ReactActual = await import("react");
   const EMPTY_PHOTOS = new Map<number, string | null>();
@@ -45,14 +48,29 @@ vi.mock("@/hooks/useInspiredSuggestions", async () => {
       );
       const [error, setError] = ReactActual.useState<ApiError | null>(null);
       const [isPending, setIsPending] = ReactActual.useState(false);
-      const mutate = ReactActual.useCallback((body: unknown) => {
-        setIsPending(true);
-        setError(null);
-        Promise.resolve(mutateAsync(body))
-          .then((result: Suggestion[]) => setData(result))
-          .catch((e: ApiError) => setError(e))
-          .finally(() => setIsPending(false));
-      }, []);
+      const mutate = ReactActual.useCallback(
+        (
+          body: unknown,
+          options?: {
+            onSuccess?: (data: Suggestion[]) => void;
+            onError?: (error: ApiError) => void;
+          },
+        ) => {
+          setIsPending(true);
+          setError(null);
+          Promise.resolve(mutateAsync(body))
+            .then((result: Suggestion[]) => {
+              setData(result);
+              options?.onSuccess?.(result);
+            })
+            .catch((e: ApiError) => {
+              setError(e);
+              options?.onError?.(e);
+            })
+            .finally(() => setIsPending(false));
+        },
+        [],
+      );
       const reset = ReactActual.useCallback(() => {
         setData(undefined);
         setError(null);
@@ -177,7 +195,7 @@ describe("RecipeBrowserScreen — Ideas for you", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("the daily idea cap shows the limit copy on the CTA", async () => {
+  it("the daily idea cap shows the limit copy on a CTA that no longer retries", async () => {
     mutateAsync.mockRejectedValue(
       new ApiError("429: limit", "DAILY_LIMIT_REACHED", 429),
     );
@@ -188,6 +206,57 @@ describe("RecipeBrowserScreen — Ideas for you", () => {
     expect(
       await screen.findByText("You've reached today's limit for recipe ideas."),
     ).toBeTruthy();
+    const cta = screen.getByLabelText(
+      "You've reached today's limit for recipe ideas.",
+    );
+    expect(cta.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(cta);
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces the request starting and how many ideas came back", async () => {
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    mutateAsync.mockResolvedValue([card, card2]);
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(screen.getByText("Get ideas made for you"));
+
+    expect(announce).toHaveBeenCalledWith("Finding ideas for you");
+    await waitFor(() =>
+      expect(announce).toHaveBeenCalledWith("2 recipe ideas"),
+    );
+    announce.mockRestore();
+  });
+
+  it("announces when no ideas came back", async () => {
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    mutateAsync.mockResolvedValue([]);
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(screen.getByText("Get ideas made for you"));
+
+    await waitFor(() =>
+      expect(announce).toHaveBeenCalledWith("No ideas found"),
+    );
+    announce.mockRestore();
+  });
+
+  it("ignores a second Make this mine while one is in flight", async () => {
+    mutateAsync.mockResolvedValue([card, card2]);
+    makeMutateAsync.mockReturnValue(new Promise(() => {}));
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(screen.getByText("Get ideas made for you"));
+    await screen.findByText("Fish Tacos");
+    fireEvent.click(screen.getByLabelText("Make Bean Tacos mine"));
+    fireEvent.click(screen.getByLabelText("Make Fish Tacos mine"));
+
+    expect(makeMutateAsync).toHaveBeenCalledTimes(1);
+    expect(makeMutateAsync).toHaveBeenCalledWith(7);
   });
 
   it("a generic listing failure offers a retry", async () => {

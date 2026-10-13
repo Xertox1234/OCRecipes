@@ -529,10 +529,10 @@ export default function RecipeBrowserScreen() {
   // Ideas are written for a query — nothing to ask for without one.
   const showIdeasCta = debouncedQuery.length > 0 && ideasCtaState !== "hidden";
   // The daily idea cap can't be retried today, so say so instead of "retry".
-  const ideasErrorText =
-    ideasError?.status === 429
-      ? "You've reached today's limit for recipe ideas."
-      : undefined;
+  const ideasLimitReached = ideasError?.status === 429;
+  const ideasErrorText = ideasLimitReached
+    ? "You've reached today's limit for recipe ideas."
+    : undefined;
 
   // Tell screen-reader users the local search results are loading. Delayed
   // 500ms to match the modal-safe pattern (docs/solutions/conventions/on-open-
@@ -548,9 +548,19 @@ export default function RecipeBrowserScreen() {
       setShowUpgradeModal(true);
       return;
     }
+    // The focused CTA swaps to a spinner and then unmounts when the cards
+    // land, so screen-reader users need both edges spoken.
+    AccessibilityInfo.announceForAccessibility("Finding ideas for you");
     requestIdeas(
       { query: debouncedQuery },
       {
+        onSuccess: (suggestions) => {
+          AccessibilityInfo.announceForAccessibility(
+            suggestions.length === 0
+              ? "No ideas found"
+              : `${suggestions.length} recipe idea${suggestions.length === 1 ? "" : "s"}`,
+          );
+        },
         // Announced here (once per failure) rather than from an effect.
         onError: (error) => {
           AccessibilityInfo.announceForAccessibility(
@@ -565,6 +575,8 @@ export default function RecipeBrowserScreen() {
 
   const handleMakeIdea = useCallback(
     (suggestion: Suggestion) => {
+      // One make at a time — a second card's tap is ignored while one runs.
+      if (makingId !== null) return;
       setMakingId(suggestion.id);
       makeSuggestion(suggestion.id)
         .then(({ recipeId }) => {
@@ -584,9 +596,13 @@ export default function RecipeBrowserScreen() {
             toast.error("Couldn't make this recipe. Try again.");
           }
         })
-        .finally(() => setMakingId(null));
+        .finally(() =>
+          setMakingId((current) =>
+            current === suggestion.id ? null : current,
+          ),
+        );
     },
-    [makeSuggestion, navigation, toast, resetIdeas],
+    [makingId, makeSuggestion, navigation, toast, resetIdeas],
   );
 
   const handleRecipePress = useCallback(
@@ -1082,6 +1098,7 @@ export default function RecipeBrowserScreen() {
               state={ideasCtaState}
               onPress={onPressIdeasCta}
               errorText={ideasErrorText}
+              retryable={!ideasLimitReached}
             />
           )}
         </View>
@@ -1117,6 +1134,7 @@ export default function RecipeBrowserScreen() {
                 state={ideasCtaState}
                 onPress={onPressIdeasCta}
                 errorText={ideasErrorText}
+                retryable={!ideasLimitReached}
               />
             ) : null
           }

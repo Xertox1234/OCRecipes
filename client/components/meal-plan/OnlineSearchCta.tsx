@@ -19,6 +19,8 @@ interface OnlineSearchCtaProps {
   onPress: () => void;
   /** Overrides the error copy, e.g. when the daily idea cap is reached. */
   errorText?: string;
+  /** False when retrying can't help (daily cap) — the error is shown, not tappable. */
+  retryable?: boolean;
 }
 
 /** The "Ideas for you" call to action under the Recipe Browser's results. */
@@ -26,6 +28,7 @@ export function OnlineSearchCta({
   state,
   onPress,
   errorText,
+  retryable = true,
 }: OnlineSearchCtaProps) {
   const { theme } = useTheme();
   // Brand accent for text/icons/tints is `theme.link` (terracotta; see
@@ -54,7 +57,9 @@ export function OnlineSearchCta({
     return (
       <Pressable
         onPress={onPress}
+        disabled={!retryable}
         accessibilityRole="button"
+        accessibilityState={{ disabled: !retryable }}
         accessibilityLabel={message}
         style={({ pressed }) => [
           styles.card,
