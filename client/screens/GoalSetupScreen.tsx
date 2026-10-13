@@ -507,14 +507,17 @@ export default function GoalSetupScreen() {
             >
               Calculate My Goals
             </Button>
-            {missingFields.length > 0 ? (
-              <ThemedText
-                type="small"
-                style={[styles.calculateHint, { color: theme.textSecondary }]}
-              >
-                {`Still needed: ${missingFields.join(", ")}`}
-              </ThemedText>
-            ) : null}
+            {/* Always rendered: removing the line when the form completes
+                shortened the page and, at the bottom of the scroll, moved
+                the button out from under the finger. */}
+            <ThemedText
+              type="small"
+              style={[styles.calculateHint, { color: theme.textSecondary }]}
+            >
+              {missingFields.length > 0
+                ? `Still needed: ${missingFields.join(", ")}`
+                : "Ready to calculate"}
+            </ThemedText>
             <InlineError
               message={
                 calculateMutation.isError
