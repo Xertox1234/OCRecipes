@@ -34,6 +34,7 @@ import { AskCoachSection } from "@/components/AskCoachSection";
 import { RecipeCommunityStats } from "@/components/RecipeCommunityStats";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
+import { STEP_TEXT_LINE_HEIGHT } from "@/components/recipe-detail/recipe-detail-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAllergenCheck } from "@/hooks/useAllergenCheck";
@@ -600,11 +601,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stepText: {
-    // No `flex: 1` here: stepBody is a column, so flex:1 collapses the text's
-    // height to its siblings' share and clips wrapped lines (QA #30).
     flexShrink: 1,
     fontSize: 14,
-    lineHeight: 20,
+    // Not a plain 20: see STEP_TEXT_LINE_HEIGHT for why (QA #30).
+    lineHeight: STEP_TEXT_LINE_HEIGHT,
     paddingTop: 4,
   },
   stepDetail: {

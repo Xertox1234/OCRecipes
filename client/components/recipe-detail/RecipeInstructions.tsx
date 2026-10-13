@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { STEP_TEXT_LINE_HEIGHT } from "./recipe-detail-utils";
 
 export function RecipeInstructions({
   instructions,
@@ -82,7 +83,8 @@ const styles = StyleSheet.create({
   stepText: {
     flex: 1,
     fontSize: 14,
-    lineHeight: 20,
+    // Not a plain 20: see STEP_TEXT_LINE_HEIGHT for why (QA #30).
+    lineHeight: STEP_TEXT_LINE_HEIGHT,
     paddingTop: 4,
   },
 });

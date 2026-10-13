@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   formatTimeDisplay,
   parseNutritionData,
+  STEP_TEXT_LINE_HEIGHT,
 } from "../recipe-detail/recipe-detail-utils";
 
 describe("formatTimeDisplay", () => {
@@ -88,5 +89,30 @@ describe("parseNutritionData", () => {
       carbs: undefined,
       fat: undefined,
     });
+  });
+});
+
+describe("STEP_TEXT_LINE_HEIGHT", () => {
+  // iOS draws a Text into a container exactly its frame's size, and with no
+  // numberOfLines the last line that fits is clipped instead of wrapped. Deep
+  // in a long scroll the frame comes back a hair short (43.99988 for a
+  // 2-line step, measured on the simulator), so a line height whose N-line
+  // total sits exactly on the 1/3-pt pixel grid leaves zero slack and drops
+  // the last line. Every realistic step must measure a little taller than
+  // its lines need.
+  const PIXEL = 1 / 3;
+  const FLOAT_NOISE = 0.001;
+
+  it.each(Array.from({ length: 40 }, (_, i) => i + 1))(
+    "leaves slack above the pixel grid for %i lines",
+    (lines) => {
+      const needed = lines * STEP_TEXT_LINE_HEIGHT;
+      const measured = Math.ceil(needed / PIXEL - 1e-9) * PIXEL;
+      expect(measured - needed).toBeGreaterThan(FLOAT_NOISE);
+    },
+  );
+
+  it("stays visually 20pt", () => {
+    expect(Math.abs(STEP_TEXT_LINE_HEIGHT - 20)).toBeLessThan(0.01);
   });
 });
