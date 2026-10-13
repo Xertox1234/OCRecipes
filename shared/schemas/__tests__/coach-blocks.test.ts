@@ -445,10 +445,10 @@ describe("validateNavigateParams stripping", () => {
     });
   });
 
-  it("keeps recipeType catalog on a FeaturedRecipeDetail navigate action", () => {
+  it("drops recipeType catalog (Spoonacular content is never shown)", () => {
     const card = {
       type: "action_card",
-      title: "Spoonacular Chili",
+      title: "Chili",
       subtitle: "Preview",
       action: {
         type: "navigate",
@@ -461,10 +461,24 @@ describe("validateNavigateParams stripping", () => {
     if (parsed.action.type !== "navigate") {
       throw new Error("expected a navigate action");
     }
-    expect(parsed.action.params).toEqual({
-      recipeId: 715538,
-      recipeType: "catalog",
-    });
+    expect(parsed.action.params).toEqual({ recipeId: 715538 });
+  });
+
+  it("rejects a recipe_card with source spoonacular", () => {
+    expect(
+      recipeCardSchema.safeParse({
+        type: "recipe_card",
+        recipe: {
+          title: "x",
+          calories: 1,
+          protein: 1,
+          prepTime: "5 min",
+          imageUrl: null,
+          recipeId: 1,
+          source: "spoonacular",
+        },
+      }).success,
+    ).toBe(false);
   });
 });
 
