@@ -12,6 +12,11 @@ import {
 } from "../../services/recipe-generation";
 import { createMockCommunityRecipe } from "../../__tests__/factories";
 import { register } from "../inspired-recipes";
+import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
+import {
+  listingResponseSchema,
+  makeResponseSchema,
+} from "@shared/schemas/inspired-recipes";
 
 vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
@@ -107,6 +112,7 @@ describe("POST /api/inspired/suggestions", () => {
       .send({ query: "tacos" });
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ suggestions: [card] });
+    expectResponseToMatch(res.body, listingResponseSchema);
     expect(vi.mocked(createSuggestionListing).mock.calls[0][0]).toMatchObject({
       userId: "1",
       request: "tacos",
@@ -166,6 +172,7 @@ describe("GET /api/inspired/suggestions", () => {
       [5, 6],
     );
     expect(res.body.suggestions[0]).toEqual(card);
+    expectResponseToMatch(res.body, listingResponseSchema);
     expect(JSON.stringify(res.body)).not.toMatch(/userId|spoonacular/i);
   });
   it("400s on bad ids", async () => {
@@ -201,6 +208,7 @@ describe("POST /api/inspired/suggestions/:id/make", () => {
     const res = await make();
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ recipeId: 77 });
+    expectResponseToMatch(res.body, makeResponseSchema);
     expect(generateFullRecipe).not.toHaveBeenCalled();
   });
   it("410s when expired", async () => {
@@ -223,6 +231,7 @@ describe("POST /api/inspired/suggestions/:id/make", () => {
     const res = await make();
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ recipeId: 88 });
+    expectResponseToMatch(res.body, makeResponseSchema);
     const data = vi.mocked(storage.createRecipeWithLimitCheck).mock.calls[0][2];
     expect(data).toMatchObject({
       authorId: "1",
