@@ -165,7 +165,6 @@ export const storage = {
   deleteSavedItem: nutrition.deleteSavedItem,
 
   // Meal plans (recipes and items)
-  findMealPlanRecipeByExternalId: mealPlans.findMealPlanRecipeByExternalId,
   getMealPlanRecipe: mealPlans.getMealPlanRecipe,
   getMealPlanRecipeWithIngredients: mealPlans.getMealPlanRecipeWithIngredients,
   getUserMealPlanRecipes: mealPlans.getUserMealPlanRecipes,
