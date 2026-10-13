@@ -119,12 +119,43 @@ describe("inspired suggestions storage", () => {
       [draft("One")],
       tomorrow(),
     );
-    expect(await startMakingSuggestion(b, row.id, 120_000)).toBe(false);
-    expect(await startMakingSuggestion(a, row.id, 120_000)).toBe(true);
-    expect(await startMakingSuggestion(a, row.id, 120_000)).toBe(false);
-    expect(await startMakingSuggestion(a, row.id, 0)).toBe(true); // stale after 0 ms
-    await abandonMakingSuggestion(row.id);
-    expect(await startMakingSuggestion(a, row.id, 120_000)).toBe(true);
+    expect(await startMakingSuggestion(b, row.id, 120_000)).toBeNull();
+    const first = await startMakingSuggestion(a, row.id, 120_000);
+    expect(first).toBeInstanceOf(Date);
+    expect(await startMakingSuggestion(a, row.id, 120_000)).toBeNull();
+    const second = await startMakingSuggestion(a, row.id, 0); // stale after 0 ms
+    expect(second).toBeInstanceOf(Date);
+    // the correct holder's abandon DOES clear (proves timestamp equality matches)
+    await abandonMakingSuggestion(row.id, second!);
+    expect(await startMakingSuggestion(a, row.id, 120_000)).toBeInstanceOf(
+      Date,
+    );
+  });
+
+  it("a displaced holder's abandon does not clear the new holder's lock", async () => {
+    const [row] = await createInspiredSuggestions(
+      a,
+      [draft("One")],
+      tomorrow(),
+    );
+    const first = await startMakingSuggestion(a, row.id, 120_000);
+    await new Promise((r) => setTimeout(r, 5));
+    const second = await startMakingSuggestion(a, row.id, 0);
+    expect(second).not.toBeNull();
+    expect(second!.getTime()).not.toBe(first!.getTime());
+    await abandonMakingSuggestion(row.id, first!);
+    expect(await startMakingSuggestion(a, row.id, 120_000)).toBeNull();
+  });
+
+  it("does not start making once the card is made, even with staleAfterMs 0", async () => {
+    const [row] = await createInspiredSuggestions(
+      a,
+      [draft("One")],
+      tomorrow(),
+    );
+    const recipe = await seedCommunityRecipe(a);
+    await claimInspiredSuggestionMade(a, row.id, recipe.id);
+    expect(await startMakingSuggestion(a, row.id, 0)).toBeNull();
   });
 
   it("lists only expired, unmade rows", async () => {
@@ -134,5 +165,18 @@ describe("inspired suggestions storage", () => {
     const listed = await listExpiredUnmadeSuggestions(new Date(), 100);
     expect(listed.map((r) => r.id)).toEqual([expired.id]);
     expect(await deleteInspiredSuggestions([expired.id])).toBe(1);
+  });
+
+  it("never lists or deletes a claimed card, even if expired", async () => {
+    const [row] = await createInspiredSuggestions(
+      a,
+      [draft("Old")],
+      new Date(Date.now() - 1000),
+    );
+    const recipe = await seedCommunityRecipe(a);
+    await claimInspiredSuggestionMade(a, row.id, recipe.id);
+    expect(await listExpiredUnmadeSuggestions(new Date(), 100)).toEqual([]);
+    expect(await deleteInspiredSuggestions([row.id])).toBe(0);
+    expect(await getInspiredSuggestion(a, row.id)).toBeDefined();
   });
 });

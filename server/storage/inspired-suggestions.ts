@@ -57,15 +57,21 @@ export async function setInspiredSuggestionImage( // idor-safe: callers must pre
   return updated.length > 0;
 }
 
+/**
+ * Takes the single-make lock. Returns the exact `makingStartedAt` written (the
+ * holder's token for `abandonMakingSuggestion`), or null if the lock was not
+ * taken (not the owner, already made, or held and not yet stale).
+ */
 export async function startMakingSuggestion(
   userId: string,
   id: number,
   staleAfterMs: number,
-): Promise<boolean> {
-  const staleBefore = new Date(Date.now() - staleAfterMs);
+): Promise<Date | null> {
+  const now = new Date();
+  const staleBefore = new Date(now.getTime() - staleAfterMs);
   const updated = await db
     .update(inspiredSuggestions)
-    .set({ makingStartedAt: new Date() })
+    .set({ makingStartedAt: now })
     .where(
       and(
         eq(inspiredSuggestions.id, id),
@@ -77,16 +83,22 @@ export async function startMakingSuggestion(
         ),
       ),
     )
-    .returning({ id: inspiredSuggestions.id });
-  return updated.length > 0;
+    .returning({ makingStartedAt: inspiredSuggestions.makingStartedAt });
+  return updated[0]?.makingStartedAt ?? null;
 }
 
 // prettier-ignore
-export async function abandonMakingSuggestion(id: number): Promise<void> { // idor-safe: callers must pre-verify ownership via startMakingSuggestion(userId, id)
+export async function abandonMakingSuggestion(id: number, startedAt: Date): Promise<void> { // idor-safe: callers must pre-verify ownership via startMakingSuggestion(userId, id); startedAt is that call's lock token
   await db
     .update(inspiredSuggestions)
     .set({ makingStartedAt: null })
-    .where(eq(inspiredSuggestions.id, id));
+    .where(
+      and(
+        eq(inspiredSuggestions.id, id),
+        eq(inspiredSuggestions.makingStartedAt, startedAt),
+        isNull(inspiredSuggestions.madeRecipeId),
+      ),
+    );
 }
 
 export async function claimInspiredSuggestionMade(
@@ -130,7 +142,12 @@ export async function deleteInspiredSuggestions(
   if (ids.length === 0) return 0;
   const deleted = await db
     .delete(inspiredSuggestions)
-    .where(inArray(inspiredSuggestions.id, ids))
+    .where(
+      and(
+        inArray(inspiredSuggestions.id, ids),
+        isNull(inspiredSuggestions.madeRecipeId),
+      ),
+    )
     .returning({ id: inspiredSuggestions.id });
   return deleted.length;
 }
