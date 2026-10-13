@@ -24,7 +24,7 @@ export function getSpoonacularDailyCap(): number {
   return Number.isInteger(n) && n >= 0 ? n : DEFAULT_SPOONACULAR_DAILY_CAP;
 }
 
-/** Same check as GET /api/meal-plan/catalog/config (§6: hide the button). */
+/** True when SPOONACULAR_API_KEY is set (§6: hide the button otherwise). */
 export function isOnlineCatalogConfigured(): boolean {
   return Boolean(process.env.SPOONACULAR_API_KEY);
 }

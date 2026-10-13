@@ -23,10 +23,6 @@ if (!SPOONACULAR_API_KEY && process.env.NODE_ENV !== "test") {
   log.warn("SPOONACULAR_API_KEY is not set — catalog search will be disabled");
 }
 
-// `catalogSearchResponseSchema` is imported from `@shared/types/recipe-catalog`
-// so the server and the client hook `useCatalogSearch` validate against one
-// shared contract.
-
 // ── Types ────────────────────────────────────────────────────────────
 
 export type { CatalogSearchResult, CatalogSearchResponse };

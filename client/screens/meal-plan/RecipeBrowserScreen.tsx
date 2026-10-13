@@ -51,22 +51,24 @@ import {
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
 import { useRecipeSearch } from "@/hooks/useRecipeSearch";
-import { useCatalogSearch } from "@/hooks/useCatalogSearch";
-import { useCatalogConfig } from "@/hooks/useCatalogConfig";
+import {
+  useCreateSuggestionListing,
+  useMakeSuggestion,
+  useSuggestionPhotos,
+} from "@/hooks/useInspiredSuggestions";
 import {
   SearchFilterSheet,
   type SearchFilters,
 } from "@/components/meal-plan/SearchFilterSheet";
 import { OnlineSearchCta } from "@/components/meal-plan/OnlineSearchCta";
+import { SuggestionCard } from "@/components/inspired/SuggestionCard";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { RecipeDiscoveryFeed } from "@/components/meal-plan/RecipeDiscoveryFeed";
 import { isBlankBrowseState } from "@/components/meal-plan/recipe-discovery-utils";
 import { getSourceTab } from "./source-tab-utils";
 import {
-  shouldGatePremiumSource,
-  isQuotaExceededError,
-  resolveOnlineCtaState,
+  resolveIdeasCtaState,
   computeActiveFilterCount,
   DEFAULT_FILTERS,
   detailParamsForSearchResult,
@@ -76,6 +78,8 @@ import type {
   SearchableRecipe,
   RecipeSearchParams,
 } from "@shared/types/recipe-search";
+import type { Suggestion } from "@shared/schemas/inspired-recipes";
+import { ApiError } from "@/lib/api-error";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
@@ -167,18 +171,13 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
   // stays the single focus stop while the favourite toggle is still
   // independently activatable via the screen reader's actions/rotor.
   const accessibilityActions = useMemo(
-    () =>
-      item.source === "spoonacular"
-        ? undefined
-        : [
-            {
-              name: "toggleFavourite",
-              label: isFavourited
-                ? "Remove from favourites"
-                : "Add to favourites",
-            },
-          ],
-    [item.source, isFavourited],
+    () => [
+      {
+        name: "toggleFavourite",
+        label: isFavourited ? "Remove from favourites" : "Add to favourites",
+      },
+    ],
+    [isFavourited],
   );
 
   const handleAccessibilityAction = useCallback(
@@ -191,7 +190,6 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
   );
 
   const isCommunity = item.source === "community";
-  const isOnline = item.source === "spoonacular";
 
   // Time display
   const timeText = item.totalTimeMinutes
@@ -203,23 +201,16 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
     ? `${Math.round(item.caloriesPerServing)} cal`
     : null;
 
-  // Button icon: community/online always browse, personal depends on mode
-  const iconName =
-    isCommunity || isOnline || browseOnly ? "chevron-right" : "plus";
+  // Button icon: community always browses, personal depends on mode
+  const iconName = isCommunity || browseOnly ? "chevron-right" : "plus";
 
   const imageUri = resolveImageUrl(item.imageUrl);
 
   // Source badge label
-  const sourceBadgeLabel = isOnline
-    ? "Online"
-    : isCommunity
-      ? "Community"
-      : "My Recipe";
-  const sourceBadgeColor = isOnline
-    ? theme.textSecondary
-    : isCommunity
-      ? theme.link
-      : (theme.success ?? theme.link);
+  const sourceBadgeLabel = isCommunity ? "Community" : "My Recipe";
+  const sourceBadgeColor = isCommunity
+    ? theme.link
+    : (theme.success ?? theme.link);
 
   // The card Pressable is accessible={true}, which collapses its whole subtree
   // into a single focus stop — the nested RecipeAllergenLabel's own container
@@ -229,7 +220,7 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
   // visible chips (RecipeAllergenLabel below) remain for sighted users.
   const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.allergens);
   const baseA11yLabel =
-    isCommunity || isOnline || browseOnly
+    isCommunity || browseOnly
       ? `View ${item.title}`
       : `Add ${item.title} to meal plan`;
 
@@ -305,33 +296,31 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
           </View>
         </View>
       </View>
-      {item.source !== "spoonacular" && (
-        <Pressable
-          onPress={handleFavourite}
-          accessibilityRole="button"
-          accessibilityLabel={
-            isFavourited ? "Remove from favourites" : "Add to favourites"
-          }
-          style={({ pressed }) => [
-            {
-              width: 44,
-              height: 44,
-              justifyContent: "center",
-              alignItems: "center",
-              marginRight: Spacing.sm,
-            },
-            pressed && { opacity: 0.7 },
-          ]}
-        >
-          <Animated.View style={heartPopStyle}>
-            <Ionicons
-              name={isFavourited ? "heart" : "heart-outline"}
-              size={20}
-              color={isFavourited ? theme.error : theme.textSecondary}
-            />
-          </Animated.View>
-        </Pressable>
-      )}
+      <Pressable
+        onPress={handleFavourite}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isFavourited ? "Remove from favourites" : "Add to favourites"
+        }
+        style={({ pressed }) => [
+          {
+            width: 44,
+            height: 44,
+            justifyContent: "center",
+            alignItems: "center",
+            marginRight: Spacing.sm,
+          },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <Animated.View style={heartPopStyle}>
+          <Ionicons
+            name={isFavourited ? "heart" : "heart-outline"}
+            size={20}
+            color={isFavourited ? theme.error : theme.textSecondary}
+          />
+        </Animated.View>
+      </Pressable>
       <View style={[styles.addButton, { backgroundColor: theme.accentSolid }]}>
         {adding ? (
           <ActivityIndicator size="small" color={theme.buttonText} />
@@ -493,25 +482,31 @@ export default function RecipeBrowserScreen() {
     activeFilterCount,
   });
 
-  const catalogConfig = useCatalogConfig();
-  // Only treat the catalog as disabled once the probe has confirmed it (avoid
-  // hiding the CTA during the initial load); undefined while loading → shown.
-  const catalogDisabled = catalogConfig.data?.enabled === false;
-
-  const [onlineRequested, setOnlineRequested] = useState(false);
-  // A new query starts local-first — reset any prior online request.
-  useEffect(() => {
-    setOnlineRequested(false);
-  }, [debouncedQuery]);
-
   // Local search is always primary (still suppressed by the Phase-1 discovery feed).
   const localSearch = useRecipeSearch(showDiscovery ? null : searchParams);
-  const catalogEnabled =
-    onlineRequested &&
-    isPremium &&
-    !catalogDisabled &&
-    debouncedQuery.length > 0;
-  const catalogSearch = useCatalogSearch(searchParams, catalogEnabled);
+
+  // "Ideas for you": AI-written idea cards for the current query, requested on
+  // demand from the CTA under the local results. Destructured for the same
+  // reason as useAddMealPlanItem above — mutate/reset/mutateAsync are stable,
+  // the wrapper object is not.
+  const {
+    data: ideasData,
+    isPending: ideasPending,
+    error: ideasError,
+    mutate: requestIdeas,
+    reset: resetIdeas,
+  } = useCreateSuggestionListing();
+  const { mutateAsync: makeSuggestion } = useMakeSuggestion();
+  const [makingId, setMakingId] = useState<number | null>(null);
+
+  const ideas: Suggestion[] = useMemo(() => ideasData ?? [], [ideasData]);
+  const ideaIds = useMemo(() => ideas.map((s) => s.id), [ideas]);
+  const photos = useSuggestionPhotos(ideaIds, ideas.length > 0);
+
+  // A new query starts local-first — drop any ideas for the previous one.
+  useEffect(() => {
+    resetIdeas();
+  }, [debouncedQuery, resetIdeas]);
 
   const {
     data: searchData,
@@ -524,37 +519,20 @@ export default function RecipeBrowserScreen() {
     () => searchData?.results ?? [],
     [searchData],
   );
-  const onlineResults: SearchableRecipe[] = useMemo(
-    () => catalogSearch.data?.results ?? [],
-    [catalogSearch.data],
-  );
-  const quotaExhausted = isQuotaExceededError(catalogSearch.error);
 
-  const ctaState = resolveOnlineCtaState({
-    catalogDisabled,
+  const ideasCtaState = resolveIdeasCtaState({
     isPremium,
-    hasQuery: debouncedQuery.length > 0,
-    onlineRequested,
-    onlineLoading: catalogSearch.isLoading,
-    quotaExhausted,
+    pending: ideasPending,
+    error: ideasError,
+    hasIdeas: ideas.length > 0,
   });
-
-  // Announce the online-search error to screen readers (restores the a11y
-  // announcement removed with the old source-toggle branch). Imperative + ref-
-  // guarded so it fires once per transition into the error state — works on iOS
-  // and Android, and avoids the accessibilityLiveRegion double-announce gotcha.
-  const announcedOnlineErrorRef = React.useRef(false);
-  useEffect(() => {
-    if (ctaState !== "quota-exhausted") {
-      announcedOnlineErrorRef.current = false;
-      return;
-    }
-    if (announcedOnlineErrorRef.current) return;
-    AccessibilityInfo.announceForAccessibility(
-      "Online search is temporarily unavailable",
-    );
-    announcedOnlineErrorRef.current = true;
-  }, [ctaState]);
+  // Ideas are written for a query — nothing to ask for without one.
+  const showIdeasCta = debouncedQuery.length > 0 && ideasCtaState !== "hidden";
+  // The daily idea cap can't be retried today, so say so instead of "retry".
+  const ideasErrorText =
+    ideasError?.status === 429
+      ? "You've reached today's limit for recipe ideas."
+      : undefined;
 
   // Tell screen-reader users the local search results are loading. Delayed
   // 500ms to match the modal-safe pattern (docs/solutions/conventions/on-open-
@@ -563,15 +541,53 @@ export default function RecipeBrowserScreen() {
   // where the delay is harmless.
   useDelayedLoadingAnnouncement(isLoading);
 
-  const onPressOnlineCta = useCallback(() => {
+  const onPressIdeasCta = useCallback(() => {
     haptics.selection();
-    // Reuse the shared premium gate (spec §5.4) — free users get the upgrade hook.
-    if (shouldGatePremiumSource("spoonacular", isPremium)) {
+    // Ideas are premium — free users get the upgrade hook.
+    if (!isPremium) {
       setShowUpgradeModal(true);
       return;
     }
-    setOnlineRequested(true);
-  }, [haptics, isPremium]);
+    requestIdeas(
+      { query: debouncedQuery },
+      {
+        // Announced here (once per failure) rather than from an effect.
+        onError: (error) => {
+          AccessibilityInfo.announceForAccessibility(
+            error.status === 429
+              ? "You've reached today's limit for recipe ideas."
+              : "Couldn't come up with ideas.",
+          );
+        },
+      },
+    );
+  }, [haptics, isPremium, requestIdeas, debouncedQuery]);
+
+  const handleMakeIdea = useCallback(
+    (suggestion: Suggestion) => {
+      setMakingId(suggestion.id);
+      makeSuggestion(suggestion.id)
+        .then(({ recipeId }) => {
+          navigation.navigate("FeaturedRecipeDetail", {
+            recipeId,
+            recipeType: "community",
+          });
+        })
+        .catch((error: unknown) => {
+          const status = error instanceof ApiError ? error.status : undefined;
+          if (status === 429) {
+            toast.error("You've reached today's recipe limit.");
+          } else if (status === 410) {
+            toast.error("These ideas expired — search again.");
+            resetIdeas();
+          } else {
+            toast.error("Couldn't make this recipe. Try again.");
+          }
+        })
+        .finally(() => setMakingId(null));
+    },
+    [makeSuggestion, navigation, toast, resetIdeas],
+  );
 
   const handleRecipePress = useCallback(
     async (item: SearchableRecipe) => {
@@ -579,7 +595,7 @@ export default function RecipeBrowserScreen() {
       const detailParams = detailParamsForSearchResult(item);
       const numericId = detailParams.recipeId;
 
-      if (item.source === "community" || item.source === "spoonacular") {
+      if (item.source === "community") {
         navigation.navigate("FeaturedRecipeDetail", detailParams);
         return;
       }
@@ -624,21 +640,11 @@ export default function RecipeBrowserScreen() {
     [toggleFavourite],
   );
 
-  // Gate the "Online" (Spoonacular) source behind premium. When a free user
-  // selects it, surface the upgrade prompt and keep the source unchanged so
-  // the filter state stays honest. Premium users proceed normally. No haptic
-  // here: every sheet control that calls this has already ticked (Chip on a
-  // selectable press, the sliders on release).
-  const handleFiltersChange = useCallback(
-    (next: SearchFilters) => {
-      if (shouldGatePremiumSource(next.source, isPremium)) {
-        setShowUpgradeModal(true);
-        return;
-      }
-      setFilters((prev) => ({ ...prev, advanced: next }));
-    },
-    [isPremium],
-  );
+  // No haptic here: every sheet control that calls this has already ticked
+  // (Chip on a selectable press, the sliders on release).
+  const handleFiltersChange = useCallback((next: SearchFilters) => {
+    setFilters((prev) => ({ ...prev, advanced: next }));
+  }, []);
 
   const handleToggleCuisine = useCallback((cuisine: string) => {
     setFilters((prev) => ({
@@ -662,17 +668,26 @@ export default function RecipeBrowserScreen() {
   }, [haptics]);
 
   const renderItem = useCallback(
-    ({ item }: { item: SearchableRecipe }) => {
+    ({ item }: { item: SearchableRecipe | Suggestion }) => {
+      // Idea cards ("Ideas for you" section) carry no `source`.
+      if (!("source" in item)) {
+        return (
+          <SuggestionCard
+            suggestion={item}
+            imageUrl={photos.get(item.id) ?? item.imageUrl}
+            making={makingId === item.id}
+            onMake={() => handleMakeIdea(item)}
+          />
+        );
+      }
       const recipeKey =
         item.source === "personal"
           ? `mealPlan:${item.id.split(":")[1]}`
-          : item.source === "community"
-            ? `community:${item.id.split(":")[1]}`
-            : null;
+          : `community:${item.id.split(":")[1]}`;
       return (
         <UnifiedRecipeCard
           item={item}
-          isFavourited={recipeKey !== null && favouriteIdSet.has(recipeKey)}
+          isFavourited={favouriteIdSet.has(recipeKey)}
           onPress={handleRecipePress}
           onFavourite={handleFavourite}
           adding={addingId === item.id}
@@ -686,6 +701,9 @@ export default function RecipeBrowserScreen() {
       addingId,
       isBrowseOnly,
       favouriteIdSet,
+      photos,
+      makingId,
+      handleMakeIdea,
     ],
   );
 
@@ -1033,7 +1051,7 @@ export default function RecipeBrowserScreen() {
             <SkeletonBox width="100%" height={64} borderRadius={12} />
           </SkeletonLoadingRegion>
         </SkeletonProvider>
-      ) : localResults.length === 0 && onlineResults.length === 0 ? (
+      ) : localResults.length === 0 && ideas.length === 0 ? (
         <View style={styles.emptyContainer}>
           {debouncedQuery ||
           filters.activeCuisine ||
@@ -1059,11 +1077,11 @@ export default function RecipeBrowserScreen() {
               description="Create or import a recipe to get started."
             />
           )}
-          {ctaState !== "hidden" && (
+          {showIdeasCta && (
             <OnlineSearchCta
-              state={ctaState}
-              onPress={onPressOnlineCta}
-              onRetry={() => void catalogSearch.refetch()}
+              state={ideasCtaState}
+              onPress={onPressIdeasCta}
+              errorText={ideasErrorText}
             />
           )}
         </View>
@@ -1071,20 +1089,19 @@ export default function RecipeBrowserScreen() {
         <AnimatedSectionList
           {...FLATLIST_DEFAULTS}
           sections={[
-            { key: "local", title: "From OCRecipes", data: localResults },
-            ...(onlineResults.length > 0
-              ? [
-                  {
-                    key: "web",
-                    title: "From the web · Spoonacular",
-                    data: onlineResults,
-                  },
-                ]
+            ...(localResults.length > 0
+              ? [{ key: "local", title: "From OCRecipes", data: localResults }]
+              : []),
+            ...(ideas.length > 0
+              ? [{ key: "ideas", title: "Ideas for you", data: ideas }]
               : []),
           ]}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
-          keyExtractor={(item) => (item as SearchableRecipe).id}
+          keyExtractor={(item) => {
+            const row = item as SearchableRecipe | Suggestion;
+            return "source" in row ? row.id : `idea:${row.id}`;
+          }}
           renderItem={renderItem}
           renderSectionHeader={({ section }) => (
             <ThemedText
@@ -1095,12 +1112,11 @@ export default function RecipeBrowserScreen() {
             </ThemedText>
           )}
           renderSectionFooter={({ section }) =>
-            (section as { key: string }).key === "local" &&
-            ctaState !== "hidden" ? (
+            (section as { key: string }).key === "local" && showIdeasCta ? (
               <OnlineSearchCta
-                state={ctaState}
-                onPress={onPressOnlineCta}
-                onRetry={() => void catalogSearch.refetch()}
+                state={ideasCtaState}
+                onPress={onPressIdeasCta}
+                errorText={ideasErrorText}
               />
             ) : null
           }

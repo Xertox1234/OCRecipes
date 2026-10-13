@@ -11,18 +11,21 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import type { OnlineCtaState } from "@/screens/meal-plan/recipe-browser-utils";
+import type { IdeasCtaState } from "@/screens/meal-plan/recipe-browser-utils";
 
 interface OnlineSearchCtaProps {
-  state: OnlineCtaState; // caller guarantees !== "hidden"
+  state: IdeasCtaState;
+  /** Requests ideas (idle/error) or opens the upgrade prompt (locked). */
   onPress: () => void;
-  onRetry: () => void;
+  /** Overrides the error copy, e.g. when the daily idea cap is reached. */
+  errorText?: string;
 }
 
+/** The "Ideas for you" call to action under the Recipe Browser's results. */
 export function OnlineSearchCta({
   state,
   onPress,
-  onRetry,
+  errorText,
 }: OnlineSearchCtaProps) {
   const { theme } = useTheme();
   // Brand accent for text/icons/tints is `theme.link` (terracotta; see
@@ -40,18 +43,19 @@ export function OnlineSearchCta({
       >
         <ActivityIndicator color={accent} />
         <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-          Searching online…
+          Finding ideas for you…
         </ThemedText>
       </View>
     );
   }
 
-  if (state === "quota-exhausted") {
+  if (state === "error") {
+    const message = errorText ?? "Couldn't come up with ideas. Tap to retry.";
     return (
       <Pressable
-        onPress={onRetry}
+        onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel="Retry online search"
+        accessibilityLabel={message}
         style={({ pressed }) => [
           styles.card,
           {
@@ -67,21 +71,19 @@ export function OnlineSearchCta({
           accessible={false}
         />
         <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-          Online search is temporarily unavailable. Tap to retry.
+          {message}
         </ThemedText>
       </Pressable>
     );
   }
 
-  const locked = state === "premium-locked";
+  const locked = state === "locked";
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={
-        locked
-          ? "Search online for more recipes, Premium"
-          : "Search online for more recipes"
+        locked ? "Get ideas made for you, Premium" : "Get ideas made for you"
       }
       style={({ pressed }) => [
         styles.card,
@@ -89,7 +91,7 @@ export function OnlineSearchCta({
       ]}
     >
       <Feather
-        name={locked ? "lock" : "globe"}
+        name={locked ? "lock" : "zap"}
         size={16}
         color={accent}
         accessible={false}
@@ -98,7 +100,7 @@ export function OnlineSearchCta({
         type="body"
         style={{ color: accent, fontFamily: FontFamily.semiBold }}
       >
-        {locked ? "Search online · Premium" : "Search online for more"}
+        {locked ? "Ideas for you · Premium" : "Get ideas made for you"}
       </ThemedText>
     </Pressable>
   );
