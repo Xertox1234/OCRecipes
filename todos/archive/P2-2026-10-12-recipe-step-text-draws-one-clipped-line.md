@@ -1,6 +1,6 @@
 ---
 title: "Recipe step text draws on one clipped line inside a two-line card"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-12
 updated: 2026-10-12
@@ -23,9 +23,9 @@ The card's height fits two lines while the text draws one. So the text is measur
 
 ## Acceptance Criteria
 
-- [ ] The cause is found and stated in the PR, with a string that reproduces it.
-- [ ] Step 9 of recipe 269362 wraps onto two lines, checked in the simulator in light and dark mode.
-- [ ] No other step regresses (check one recipe with long steps).
+- [x] The cause is found and stated in the PR. It is the step's position, not its string: slot 8 of local recipe 269557 measured 43.99988 instead of 44.
+- [x] The clipping step wraps, checked in the simulator in light and dark mode. (Recipe 269362 no longer exists after a re-seed; checked on the slot that reproduced it.)
+- [x] No other step regresses: a 40-step local recipe (1 to 8 lines per step) has 0 short text boxes, minimum slack 0.325pt.
 
 ## Implementation Notes
 
@@ -49,3 +49,9 @@ The card's height fits two lines while the text draws one. So the text is measur
 ### 2026-10-12
 
 - Filed while reviewing PR #1417. That PR's todo Updates section lists #30 as done; this todo replaces that line.
+
+### 2026-10-12 (fixed)
+
+- Cause: iOS draws a Text into a container exactly its frame's size, and with no `numberOfLines` the last line that fits is clipped (`NSLineBreakByClipping`, RN `RCTTextLayoutManager.mm` `drawAttributedString`). Far down a long scroll, 32-bit float rounding returned a text frame 0.00012pt short (43.99988 for a 2-line step). A whole-number `lineHeight: 20` leaves no slack, so the last line was dropped. It follows the position: swapping the clipped string into slot 1 and a working string into slot 8 moved the clip with the slot. The hyphen and `flex` were not involved.
+- Fix: `STEP_TEXT_LINE_HEIGHT = 20.001` in `client/components/recipe-detail/recipe-detail-utils.ts`, used by both step renderers. Every step now measures up to the next pixel (about 0.33pt of slack).
+- Same mechanism applies to any whole-number `lineHeight` text, `Typography.body` included. Not changed here; raised in the PR.
