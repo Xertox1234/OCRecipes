@@ -1395,6 +1395,45 @@ export const recipeFinderClaims = pgTable(
   ],
 );
 
+/**
+ * AI-written recipe ideas (inspired-recipes spec 2026-10-12). Spoonacular
+ * titles may have inspired them, but nothing from Spoonacular is stored here.
+ * Rows expire after 24 h; `madeRecipeId` marks the one the user made, whose
+ * image is now the recipe's and must not be deleted with the row.
+ */
+export const inspiredSuggestions = pgTable(
+  "inspired_suggestions",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    totalMinutes: integer("total_minutes").notNull(),
+    tags: jsonb("tags").$type<string[]>().default([]).notNull(),
+    imageUrl: text("image_url"),
+    /** Set before generation starts so a second tap can't start a second one. */
+    makingStartedAt: timestamp("making_started_at", { withTimezone: true }),
+    madeRecipeId: integer("made_recipe_id").references(
+      () => communityRecipes.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("inspired_suggestions_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    index("inspired_suggestions_expires_idx").on(table.expiresAt),
+  ],
+);
+export type InspiredSuggestionRow = typeof inspiredSuggestions.$inferSelect;
+
 export const chatConversationsRelations = relations(
   chatConversations,
   ({ one, many }) => ({
