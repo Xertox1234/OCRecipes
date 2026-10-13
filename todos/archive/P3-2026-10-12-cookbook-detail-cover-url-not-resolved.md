@@ -1,6 +1,6 @@
 ---
 title: "Cookbook detail cover image skips resolveImageUrl"
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
 updated: 2026-10-12
@@ -21,9 +21,9 @@ Found by the orchestrator while reviewing PR #1417 (QA sweep #26). `saveCookbook
 
 ## Acceptance Criteria
 
-- [ ] CookbookDetail's cover uses `resolveImageUrl(cookbook.coverImageUrl)`.
-- [ ] The cover sets `accessibilityIgnoresInvertColors`, like the recipe thumbnails on the same screen.
-- [ ] A test covers a relative cover path.
+- [x] CookbookDetail's cover uses `resolveImageUrl(cookbook.coverImageUrl)`.
+- [x] The cover sets `accessibilityIgnoresInvertColors`, like the recipe thumbnails on the same screen.
+- [x] A test covers a relative cover path.
 
 ## Implementation Notes
 
@@ -45,3 +45,8 @@ Found by the orchestrator while reviewing PR #1417 (QA sweep #26). `saveCookbook
 ### 2026-10-12
 
 - Filed while reviewing PR #1417.
+
+### 2026-10-12 (fixed)
+
+- The cover goes through `resolveImageUrl` and sets `accessibilityIgnoresInvertColors`; a test renders a relative cover path and expects the absolute URL.
+- Also fixed on the same screen: the recipe thumbnails passed `item.imageUrl` raw too (the server returns it unchanged, and recipe images can be relative). They now use `resolveImageUrl`, with a test.
