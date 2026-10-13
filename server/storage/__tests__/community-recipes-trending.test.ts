@@ -1,12 +1,20 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { randomUUID } from "node:crypto";
 import { db } from "../../db";
 import { communityRecipes } from "@shared/schema";
 import { getTrendingSearchTerms } from "../community-recipes";
-import { sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+
+// Tests run against the local dev database, so this file must not touch rows
+// it didn't create. Fixtures use terms unique to this run and scores far above
+// any real recipe, so they rank first without a table-wide DELETE. Only this
+// run's rows are deleted afterwards.
+const RUN = `trending-test-${randomUUID()}`;
+const term = (name: string) => `${RUN}-${name}`;
 
 async function insertRecipe(over: Record<string, unknown>) {
   await db.insert(communityRecipes).values({
-    normalizedProductName: "t",
+    normalizedProductName: RUN,
     title: "t",
     instructions: ["x"],
     isPublic: true,
@@ -15,30 +23,35 @@ async function insertRecipe(over: Record<string, unknown>) {
 }
 
 describe("getTrendingSearchTerms", () => {
-  beforeEach(async () => {
-    await db.execute(sql`DELETE FROM community_recipes`);
+  afterEach(async () => {
+    await db
+      .delete(communityRecipes)
+      .where(eq(communityRecipes.normalizedProductName, RUN));
   });
 
   it("ranks diet-tag + cuisine terms by summed popularity, public only", async () => {
     await insertRecipe({
-      dietTags: ["vegan"],
-      cuisineOrigin: "Italian",
-      popularityScore: 100,
+      dietTags: [term("vegan")],
+      cuisineOrigin: term("Italian"),
+      popularityScore: 100_000_000,
     });
     await insertRecipe({
-      dietTags: ["vegan", "high-protein"],
-      popularityScore: 50,
+      dietTags: [term("vegan"), term("high-protein")],
+      popularityScore: 50_000_000,
     });
+    // Private, with the highest score of all: it would rank first if the
+    // public-only filter were dropped.
     await insertRecipe({
-      dietTags: ["keto"],
-      popularityScore: 5,
+      dietTags: [term("keto")],
+      popularityScore: 1_000_000_000,
       isPublic: false,
-    }); // excluded
+    });
 
-    const terms = await getTrendingSearchTerms(5);
-    expect(terms[0]).toBe("vegan"); // 150 total
-    expect(terms).toContain("Italian");
-    expect(terms).toContain("high-protein");
-    expect(terms).not.toContain("keto"); // private
+    const terms = await getTrendingSearchTerms(3);
+    expect(terms).toEqual([
+      term("vegan"), // 150M total
+      term("Italian"), // 100M
+      term("high-protein"), // 50M
+    ]);
   });
 });

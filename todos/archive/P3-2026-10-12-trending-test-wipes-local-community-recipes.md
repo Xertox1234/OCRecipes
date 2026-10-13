@@ -1,6 +1,6 @@
 ---
 title: "The trending-terms test deletes every local community recipe on each test run"
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
 updated: 2026-10-12
@@ -26,9 +26,9 @@ The fix for now is `SEED_DEMO_PASSWORD=demo-password-2026 npm run seed:recipes` 
 
 ## Acceptance Criteria
 
-- [ ] A full test run leaves existing local `community_recipes` rows in place.
-- [ ] The trending test still tests ranking without depending on rows it didn't create. For example, scope its fixtures with a unique `normalizedProductName` and delete only those, or run it in a transaction that is rolled back.
-- [ ] No fixture rows are left behind after the test file finishes.
+- [x] A full test run leaves existing local `community_recipes` rows in place.
+- [x] The trending test still tests ranking without depending on rows it didn't create. For example, scope its fixtures with a unique `normalizedProductName` and delete only those, or run it in a transaction that is rolled back.
+- [x] No fixture rows are left behind after the test file finishes.
 
 ## Implementation Notes
 
@@ -53,3 +53,10 @@ The fix for now is `SEED_DEMO_PASSWORD=demo-password-2026 npm run seed:recipes` 
 ### 2026-10-12
 
 - Filed while checking PR #1408 in the simulator.
+
+### 2026-10-12 (done)
+
+- Fixtures now use terms unique to the run (`trending-test-<uuid>-…`) and scores of 50M–1B, far above any real recipe (local max is 100). `afterEach` deletes only rows with this run's `normalizedProductName`. The table-wide `DELETE` is gone.
+- The private fixture has the highest score, so it would rank first if the public-only filter broke. The test asserts the exact top three.
+- Evidence (local DB): 28 rows before and 28 after a run, 0 leftover fixtures. Control: with `is_public = true` removed from the diet-tag branch, the test fails with the private term in the result, and still leaves 0 rows behind.
+- No other table-wide `DELETE FROM` in server or test `*.test.ts` files.
