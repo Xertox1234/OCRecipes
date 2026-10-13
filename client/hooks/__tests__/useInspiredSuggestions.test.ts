@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
+import { ApiError } from "@/lib/api-error";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 import {
@@ -60,5 +61,71 @@ describe("useMakeSuggestion", () => {
       "/api/inspired/suggestions/1/make",
     );
     await waitFor(() => expect(result.current.data).toEqual({ recipeId: 88 }));
+  });
+});
+
+describe("useMakeSuggestion 409 wait", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const conflict = () => new ApiError("busy", "MAKING_IN_PROGRESS", 409);
+
+  it("polls after a 409 and resolves once madeRecipeId appears", async () => {
+    apiRequest
+      .mockRejectedValueOnce(conflict())
+      .mockResolvedValueOnce(json({ suggestions: [card] }))
+      .mockResolvedValueOnce(
+        json({ suggestions: [{ ...card, madeRecipeId: 55 }] }),
+      );
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useMakeSuggestion(), { wrapper });
+    let out: unknown;
+    await act(async () => {
+      const p = result.current.mutateAsync(1).then((v) => (out = v));
+      await vi.advanceTimersByTimeAsync(4000);
+      await p;
+    });
+    expect(out).toEqual({ recipeId: 55 });
+    expect(apiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/inspired/suggestions?ids=1",
+    );
+  });
+
+  it("rejects with the original 409 after the bounded attempts", async () => {
+    const err = conflict();
+    apiRequest.mockImplementation(async (method: string) => {
+      if (method === "POST") throw err;
+      return json({ suggestions: [card] });
+    });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useMakeSuggestion(), { wrapper });
+    let caught: unknown;
+    await act(async () => {
+      const p = result.current.mutateAsync(1).catch((e) => (caught = e));
+      await vi.advanceTimersByTimeAsync(31 * 2000);
+      await p;
+    });
+    expect(caught).toBe(err);
+    const gets = apiRequest.mock.calls.filter((c) => c[0] === "GET");
+    expect(gets).toHaveLength(30);
+  });
+
+  it("rethrows a non-409 error immediately without polling", async () => {
+    const err = new ApiError("limit", "DAILY_LIMIT_REACHED", 429);
+    apiRequest.mockImplementation(async (method: string) => {
+      if (method === "POST") throw err;
+      return json({ suggestions: [card] });
+    });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useMakeSuggestion(), { wrapper });
+    let caught: unknown;
+    await act(async () => {
+      const p = result.current.mutateAsync(1).catch((e) => (caught = e));
+      await vi.advanceTimersByTimeAsync(5000);
+      await p;
+    });
+    expect(caught).toBe(err);
+    expect(apiRequest.mock.calls.filter((c) => c[0] === "GET")).toHaveLength(0);
   });
 });

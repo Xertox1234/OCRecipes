@@ -4,6 +4,7 @@ import { apiRequest } from "@/lib/query-client";
 import type { ApiError } from "@/lib/api-error";
 import {
   listingResponseSchema,
+  makeResponseSchema,
   type CreateListingBody,
   type Suggestion,
 } from "@shared/schemas/inspired-recipes";
@@ -82,7 +83,7 @@ export function useMakeSuggestion() {
         if (made === null) throw error;
         return { recipeId: made };
       }
-      return (await res.json()) as { recipeId: number };
+      return makeResponseSchema.parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });

@@ -42,6 +42,11 @@ export const listingResponseSchema = z.object({
 });
 export type ListingResponse = z.infer<typeof listingResponseSchema>;
 
+export const makeResponseSchema = z.object({
+  recipeId: z.number().int().positive(),
+});
+export type MakeResponse = z.infer<typeof makeResponseSchema>;
+
 export function toSuggestion(row: InspiredSuggestionRow): Suggestion {
   return {
     id: row.id,
