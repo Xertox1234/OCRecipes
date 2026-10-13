@@ -67,6 +67,13 @@ export const ErrorCode = {
   MFA_NEEDS_PASSWORD: "MFA_NEEDS_PASSWORD",
   /** Two-step by email: the account's 10 codes for today are used up. */
   MFA_EMAIL_DAILY_LIMIT: "MFA_EMAIL_DAILY_LIMIT",
+  // Inspired recipes
+  /** The AI could not produce a listing (retryable). */
+  AI_UNAVAILABLE: "AI_UNAVAILABLE",
+  /** The suggestion card is past its expiry — refresh the listing. */
+  SUGGESTION_EXPIRED: "SUGGESTION_EXPIRED",
+  /** Another request is already turning this card into a recipe. */
+  MAKING_IN_PROGRESS: "MAKING_IN_PROGRESS",
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- intentional: merging value + type
