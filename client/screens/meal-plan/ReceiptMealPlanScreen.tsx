@@ -31,6 +31,7 @@ import {
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { toLocalDateString } from "@shared/lib/date";
+import { formatIngredientLine } from "@/lib/format";
 
 const DAY_OPTIONS = [3, 5, 7] as const;
 
@@ -528,7 +529,7 @@ function MealCard({
                   { color: theme.textSecondary, flex: 1 },
                 ]}
               >
-                {ing.quantity} {ing.unit} {ing.name}
+                {formatIngredientLine(ing.quantity, ing.unit, ing.name)}
               </ThemedText>
             </View>
           ))}

@@ -33,6 +33,7 @@ import {
 } from "@/constants/theme";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 import type { HomeAction } from "./action-config";
+import { formatIngredientLine } from "@/lib/format";
 
 /** Shown/announced when parsed items first appear (see the success-announce effect). */
 function foundItemsMessage(count: number) {
@@ -96,7 +97,7 @@ const ParsedItemRow = React.memo(function ParsedItemRow({
         style={[styles.parsedItemName, { color: theme.text }]}
         numberOfLines={1}
       >
-        {item.quantity} {item.unit} {item.name}
+        {formatIngredientLine(item.quantity, item.unit, item.name)}
       </ThemedText>
       <View style={styles.parsedItemRight}>
         {item.calories !== null && (

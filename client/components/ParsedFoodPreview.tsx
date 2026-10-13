@@ -7,6 +7,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { formatMacroLine } from "./parsed-food-preview-utils";
 import type { ParsedFoodItem } from "@/hooks/useFoodParse";
+import { formatIngredientLine } from "@/lib/format";
 
 interface ParsedFoodPreviewProps {
   items: ParsedFoodItem[];
@@ -41,7 +42,7 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
         >
           <View style={styles.itemInfo}>
             <ThemedText style={styles.itemName}>
-              {item.quantity} {item.unit} {item.name}
+              {formatIngredientLine(item.quantity, item.unit, item.name)}
             </ThemedText>
             {item.calories != null && (
               <ThemedText type="caption" style={{ color: theme.textSecondary }}>

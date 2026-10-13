@@ -11,6 +11,7 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import type { RecipePhotoResult } from "@/lib/photo-upload";
+import { formatIngredientLine } from "@/lib/format";
 
 interface RecipeExtractionReviewCardProps {
   result: RecipePhotoResult;
@@ -162,7 +163,7 @@ export function RecipeExtractionReviewCard({
                   ]}
                   numberOfLines={1}
                 >
-                  {ing.quantity} {ing.unit} {ing.name}
+                  {formatIngredientLine(ing.quantity, ing.unit, ing.name)}
                 </ThemedText>
               </View>
             ))}
