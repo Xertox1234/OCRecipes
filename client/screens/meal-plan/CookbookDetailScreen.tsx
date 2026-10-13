@@ -15,6 +15,7 @@ import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-u
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
+import { resolveImageUrl } from "@/lib/query-client";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -182,7 +183,7 @@ export default function CookbookDetailScreen() {
               accessibilityHint="Swipe left to remove from cookbook"
             >
               <FallbackImage
-                source={{ uri: item.imageUrl ?? undefined }}
+                source={{ uri: resolveImageUrl(item.imageUrl) ?? undefined }}
                 style={styles.recipeImage}
                 fallbackStyle={{
                   ...styles.recipePlaceholder,
@@ -301,9 +302,12 @@ export default function CookbookDetailScreen() {
           <View style={styles.header}>
             {cookbook?.coverImageUrl ? (
               <FallbackImage
-                source={{ uri: cookbook.coverImageUrl }}
+                source={{
+                  uri: resolveImageUrl(cookbook.coverImageUrl) ?? undefined,
+                }}
                 style={styles.coverImage}
                 contentFit="cover"
+                accessibilityIgnoresInvertColors
               />
             ) : null}
             {cookbook?.name ? (

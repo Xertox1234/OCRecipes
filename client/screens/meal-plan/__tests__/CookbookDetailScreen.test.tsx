@@ -15,6 +15,7 @@ import CookbookDetailScreen from "../CookbookDetailScreen";
 import type { ResolvedCookbookRecipe } from "@shared/schema";
 import { FadeInDown } from "react-native-reanimated";
 import { listStaggerMaxIndex, listStaggerStep } from "@/constants/animations";
+import { resolveImageUrl } from "@/lib/query-client";
 
 const { mockUseCookbookDetail } = vi.hoisted(() => ({
   mockUseCookbookDetail: vi.fn(),
@@ -110,5 +111,36 @@ describe("CookbookDetailScreen row entrance", () => {
       ),
     );
     delaySpy.mockRestore();
+  });
+});
+
+describe("CookbookDetailScreen cover image", () => {
+  it("resolves a server-relative cover path against the API base", () => {
+    mockUseCookbookDetail.mockReturnValue({
+      data: {
+        id: 1,
+        userId: "user-1",
+        name: "Sunday Bakes",
+        description: null,
+        coverImageUrl: "/api/cookbook-covers/1.jpg",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        recipes: [],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const { container } = renderComponent(<CookbookDetailScreen />);
+    const src = container.querySelector("img")?.getAttribute("src");
+    expect(src).toBe(resolveImageUrl("/api/cookbook-covers/1.jpg"));
+    expect(src).toMatch(/^https?:\/\/.+\/api\/cookbook-covers\/1\.jpg$/);
+  });
+
+  it("resolves a server-relative recipe thumbnail against the API base", () => {
+    mockCookbook([{ ...baseRecipe, imageUrl: "/api/recipe-images/42.jpg" }]);
+    const { container } = renderComponent(<CookbookDetailScreen />);
+    const src = container.querySelector("img")?.getAttribute("src");
+    expect(src).toBe(resolveImageUrl("/api/recipe-images/42.jpg"));
   });
 });
