@@ -66,7 +66,7 @@ export function withLead(leadText: string | undefined, text: string): string {
 }
 
 const LIMIT_TEXT =
-  "You've reached today's limit for generated recipes. Community and Spoonacular searches still work.";
+  "You've reached today's limit for generated recipes. Community picks and ideas for you still work.";
 const PREMIUM_TEXT = "Generating recipes is a Premium feature.";
 
 /** Saves once per turnKey; returns the already-saved row on a turnKey hit. */

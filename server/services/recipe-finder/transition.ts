@@ -14,7 +14,7 @@ import type {
   RecipeQuery,
   RecipeResultsBlock,
 } from "@shared/schemas/recipe-finder";
-import type { FindOnlineResult } from "./find-online";
+import type { FindOnlineResult } from "./find-inspired";
 
 export interface PlanOptions {
   /** RECIPE_OFFER_ENABLED: offer/adjust stages replace direct generation. */
@@ -38,7 +38,7 @@ export type FinderInput =
     };
 
 export interface FinderCtx {
-  /** SPOONACULAR_API_KEY set — else Search Spoonacular is hidden (§6). */
+  /** SPOONACULAR_API_KEY set — else the listing is not Spoonacular-inspired. */
   onlineConfigured: boolean;
   /** Premium `catalogSave` (§6 premium). */
   canSearchOnline: boolean;
@@ -345,7 +345,7 @@ function mergeShown(prior: string[], items: FinderItem[]): string[] {
 }
 
 export function communityActions(ctx: FinderCtx): FinderButton[] {
-  return ctx.onlineConfigured
+  return ctx.canSearchOnline
     ? ["search_online", "generate", "none_of_these"]
     : ["generate", "none_of_these"];
 }
@@ -360,7 +360,7 @@ export function blockedGenerateBlock(
     type: "recipe_results",
     source: "community",
     items: [],
-    actions: ctx.onlineConfigured ? ["search_online"] : [],
+    actions: ctx.canSearchOnline ? ["search_online"] : [],
     notice,
     flow: { ...flow, flowId: ctx.nextFlowId, stage: "results" },
   };
@@ -431,7 +431,7 @@ export function finderOutcome(
         kind: "message",
         block: {
           type: "recipe_results",
-          source: "spoonacular",
+          source: "inspired",
           items,
           actions: ["generate", "none_of_these"],
           notice:
@@ -471,7 +471,7 @@ export function finderStatusLabel(step: FinderStep): string | null {
     case "search_community":
       return "Searching community recipes…";
     case "search_online":
-      return "Searching Spoonacular…";
+      return "Finding ideas for you…";
     case "ask_clarifying":
       return "Thinking of a few questions…";
     case "generate":

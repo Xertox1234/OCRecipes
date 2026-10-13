@@ -9,7 +9,7 @@ import { askDishFollowUps } from "./ask-follow-ups";
 import { buildAdjustBlock, validateAdjustAnswers } from "./adjust";
 import { buildOfferBlock } from "./offer";
 import { findCommunity } from "./find-community";
-import { findOnline } from "./find-online";
+import { findInspired } from "./find-inspired";
 import { askClarifying } from "./ask-clarifying";
 import { getSpoonacularDailyCap, isOnlineCatalogConfigured } from "./config";
 import { getLatestFinderBlock } from "./entry";
@@ -184,11 +184,15 @@ export async function executeFinderStep(
       break;
     }
     case "search_online": {
-      // Premium, configuration and the DB-backed cap all resolve to the same
-      // "not available right now" (§6) — never "no results".
-      const allowed =
+      // Premium gates the step. The DB-backed cap only decides whether
+      // Spoonacular titles inspire the listing; past it, the listing comes
+      // from the request + profile alone (inspired spec §4.1).
+      if (!finderCtx.canSearchOnline) {
+        result = { kind: "online", result: { status: "unavailable" } };
+        break;
+      }
+      const useSpoonacular =
         finderCtx.onlineConfigured &&
-        finderCtx.canSearchOnline &&
         (await storage.claimSpoonacularSearch(
           ctx.userId,
           ctx.userMessageId,
@@ -196,9 +200,13 @@ export async function executeFinderStep(
         ));
       result = {
         kind: "online",
-        result: allowed
-          ? await findOnline(step.flow.query, ctx.profile?.allergies)
-          : { status: "unavailable" },
+        result: await findInspired({
+          userId: ctx.userId,
+          request: step.flow.request,
+          query: step.flow.query,
+          profile: ctx.profile,
+          useSpoonacular,
+        }),
       };
       break;
     }

@@ -14,7 +14,7 @@ import { buildFinderGenerationMessages } from "../generate";
 import { storage } from "../../../storage";
 import { extractQuery, extractOfferDetails } from "../extract-query";
 import { findCommunity } from "../find-community";
-import { findOnline } from "../find-online";
+import { findInspired } from "../find-inspired";
 import { askClarifying } from "../ask-clarifying";
 import { askDishFollowUps } from "../ask-follow-ups";
 
@@ -27,7 +27,7 @@ vi.mock("../extract-query", () => ({
 }));
 vi.mock("../ask-follow-ups", () => ({ askDishFollowUps: vi.fn() }));
 vi.mock("../find-community", () => ({ findCommunity: vi.fn() }));
-vi.mock("../find-online", () => ({ findOnline: vi.fn() }));
+vi.mock("../find-inspired", () => ({ findInspired: vi.fn() }));
 vi.mock("../ask-clarifying", () => ({ askClarifying: vi.fn() }));
 
 const NEXT = "11111111-1111-4111-8111-111111111111";
@@ -98,22 +98,28 @@ describe("executeFinderStep", () => {
     );
   });
 
-  it("online: claims a cap slot before calling Spoonacular", async () => {
+  it("online: claims a cap slot, then lists with Spoonacular titles allowed", async () => {
     vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(true);
-    vi.mocked(findOnline).mockResolvedValue({ status: "ok", items: [] });
+    vi.mocked(findInspired).mockResolvedValue({ status: "ok", items: [] });
     await executeFinderStep({ kind: "search_online", flow }, ctx());
     expect(storage.claimSpoonacularSearch).toHaveBeenCalledWith("u1", 50, 10);
-    expect(findOnline).toHaveBeenCalledWith({ q: "mediterranean" }, undefined);
+    expect(findInspired).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "u1",
+        request: "Mediterranean",
+        query: { q: "mediterranean" },
+        useSpoonacular: true,
+      }),
+    );
   });
 
-  it("online at the per-user cap → 'unavailable', Spoonacular never called", async () => {
+  it("online past the per-user cap → still lists, without Spoonacular titles", async () => {
     vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(false);
-    const out = await executeFinderStep({ kind: "search_online", flow }, ctx());
-    expect(findOnline).not.toHaveBeenCalled();
-    if (out.kind !== "message" || out.block.type !== "recipe_results") {
-      throw new Error("expected results");
-    }
-    expect(out.block.notice).toBe("unavailable");
+    vi.mocked(findInspired).mockResolvedValue({ status: "ok", items: [] });
+    await executeFinderStep({ kind: "search_online", flow }, ctx());
+    expect(findInspired).toHaveBeenCalledWith(
+      expect.objectContaining({ useSpoonacular: false }),
+    );
   });
 
   it("online without catalogSave (premium deny) → 'unavailable' with no claim", async () => {
@@ -128,10 +134,21 @@ describe("executeFinderStep", () => {
       }),
     );
     expect(storage.claimSpoonacularSearch).not.toHaveBeenCalled();
+    expect(findInspired).not.toHaveBeenCalled();
     if (out.kind !== "message" || out.block.type !== "recipe_results") {
       throw new Error("expected results");
     }
     expect(out.block.notice).toBe("unavailable");
+  });
+
+  it("online with Spoonacular unconfigured → lists without a claim", async () => {
+    vi.stubEnv("SPOONACULAR_API_KEY", "");
+    vi.mocked(findInspired).mockResolvedValue({ status: "ok", items: [] });
+    await executeFinderStep({ kind: "search_online", flow }, ctx());
+    expect(storage.claimSpoonacularSearch).not.toHaveBeenCalled();
+    expect(findInspired).toHaveBeenCalledWith(
+      expect.objectContaining({ useSpoonacular: false }),
+    );
   });
 
   it("clarifying: returns a questions block", async () => {
