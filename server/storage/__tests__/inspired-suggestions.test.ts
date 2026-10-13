@@ -119,6 +119,18 @@ describe("inspired suggestions storage", () => {
     expect((await getInspiredSuggestion(a, row.id))?.imageUrl).toBe("u1");
   });
 
+  it("never attaches a late image to a made card", async () => {
+    const [row] = await createInspiredSuggestions(
+      a,
+      [draft("One")],
+      tomorrow(),
+    );
+    const recipe = await seedCommunityRecipe(a);
+    expect(await claimInspiredSuggestionMade(a, row.id, recipe.id)).toBe(true);
+    expect(await setInspiredSuggestionImage(row.id, "late")).toBe(false);
+    expect((await getInspiredSuggestion(a, row.id))?.imageUrl).toBeNull();
+  });
+
   it("claims made only once, and only for the owner", async () => {
     const [row] = await createInspiredSuggestions(
       a,

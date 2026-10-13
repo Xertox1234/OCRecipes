@@ -68,7 +68,11 @@ export async function setInspiredSuggestionImage( // idor-safe: callers must pre
     .update(inspiredSuggestions)
     .set({ imageUrl })
     .where(
-      and(eq(inspiredSuggestions.id, id), isNull(inspiredSuggestions.imageUrl)),
+      and(
+        eq(inspiredSuggestions.id, id),
+        isNull(inspiredSuggestions.imageUrl),
+        isNull(inspiredSuggestions.madeRecipeId),
+      ),
     )
     .returning({ id: inspiredSuggestions.id });
   return updated.length > 0;
