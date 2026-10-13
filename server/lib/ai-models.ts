@@ -67,6 +67,8 @@ export const AI_FEATURES = {
   "finder-extract-query": { ...FAST, json: true, vision: false }, // recipe-finder/extract-query
   "finder-extract-offer": { ...FAST, json: true, vision: false }, // recipe-finder/extract-query extractOfferDetails
   "finder-dish-follow-ups": { ...FAST, json: true, vision: false }, // recipe-finder/ask-follow-ups
+  // Inspired recipes
+  "inspired-suggestions": { ...FAST, json: true, vision: false }, // inspired-recipes/suggest-listing
   // Images / covers
   "image-art-direction": { ...FAST, json: true, vision: false }, // image-art-direction resolveArtDirection
   "cookbook-cover-subject": { ...FAST, json: true, vision: false }, // cookbook-cover deriveCoverSubject

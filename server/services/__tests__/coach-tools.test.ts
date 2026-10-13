@@ -6,6 +6,8 @@ import {
 } from "../coach-tools";
 import { storage } from "../../storage";
 import { actionCardSchema } from "@shared/schemas/coach-blocks";
+import { findCommunity } from "../recipe-finder/find-community";
+import { searchCatalogRecipes } from "../recipe-catalog";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -49,6 +51,10 @@ vi.mock("../recipe-catalog", () => ({
       { id: 1, title: "Test Recipe", image: "url", readyInMinutes: 30 },
     ],
   }),
+}));
+
+vi.mock("../recipe-finder/find-community", () => ({
+  findCommunity: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../lib/logger", () => ({
@@ -117,7 +123,7 @@ describe("Coach Tools Service", () => {
         return [fn.name, fn.description] as const;
       }),
     );
-    // The server filters the user's allergens via intolerances — the model
+    // The server filters the user's allergens (safeForMe) — the model
     // should not waste words re-checking results for allergy conflicts.
     expect(byName.get("search_recipes")).toMatch(/allergen/i);
   });
@@ -393,13 +399,53 @@ describe("Coach Tools Service", () => {
     });
   });
 
-  it("executes search_recipes tool", async () => {
-    const result = (await executeToolCall(
+  it("search_recipes searches community recipes and never calls Spoonacular", async () => {
+    vi.mocked(findCommunity).mockResolvedValueOnce([
+      {
+        id: 12,
+        source: "community",
+        title: "Lentil Soup",
+        imageUrl: "/img/l.jpg",
+        readyInMinutes: 30,
+        calories: 300,
+      },
+    ]);
+    const out = await executeToolCall(
       "search_recipes",
-      { query: "healthy lunch" },
+      { query: "soup", cuisine: "italian" },
       "user-1",
-    )) as { results: unknown[] };
-    expect(result.results).toHaveLength(1);
+    );
+    expect(searchCatalogRecipes).not.toHaveBeenCalled();
+    expect(findCommunity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        q: "soup",
+        cuisine: "italian",
+      }),
+      "user-1",
+      [],
+    );
+    // Community rows have no prep time, so no time filter is advertised/passed.
+    expect(vi.mocked(findCommunity).mock.calls[0][0]).not.toHaveProperty(
+      "maxPrepTime",
+    );
+    const searchTool = getToolDefinitions().find(
+      (t) =>
+        (t as { function: { name: string } }).function.name ===
+        "search_recipes",
+    ) as unknown as { function: { parameters: { properties: object } } };
+    expect(searchTool.function.parameters.properties).not.toHaveProperty(
+      "maxReadyTime",
+    );
+    expect(out).toEqual({
+      results: [
+        {
+          id: 12,
+          title: "Lentil Soup",
+          imageUrl: "/img/l.jpg",
+          readyInMinutes: 30,
+        },
+      ],
+    });
   });
 
   it("rejects unknown tool name", async () => {

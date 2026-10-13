@@ -30,22 +30,6 @@ import {
 // MEAL PLAN RECIPES (CRUD)
 // ============================================================================
 
-export async function findMealPlanRecipeByExternalId(
-  userId: string,
-  externalId: string,
-): Promise<MealPlanRecipe | undefined> {
-  const [recipe] = await db
-    .select()
-    .from(mealPlanRecipes)
-    .where(
-      and(
-        eq(mealPlanRecipes.userId, userId),
-        eq(mealPlanRecipes.externalId, externalId),
-      ),
-    );
-  return recipe || undefined;
-}
-
 export async function getMealPlanRecipe(
   id: number,
   userId: string,

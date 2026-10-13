@@ -1,6 +1,6 @@
 /**
  * Helpers shared across the split recipe route modules
- * (`recipes.ts`, `recipe-search.ts`, `recipe-catalog.ts`, `recipe-import.ts`).
+ * (`recipes.ts`, `recipe-search.ts`, `recipe-import.ts`).
  */
 
 /** Strip authorId from public-facing community recipe responses. */

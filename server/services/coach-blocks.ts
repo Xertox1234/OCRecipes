@@ -86,7 +86,7 @@ Available block types:
 - inline_chart: { type: "inline_chart", chartType: "bar"|"progress"|"stat_row", title, data: [{ label, value, target?, hit? }], summary? }
 - commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }
 - quick_replies: { type: "quick_replies", options: [{ label, message }] }
-- recipe_card: { type: "recipe_card", recipe: { title, calories, protein, prepTime, imageUrl, recipeId, source: "community"|"spoonacular"|"generated" } }
+- recipe_card: { type: "recipe_card", recipe: { title, calories, protein, prepTime, imageUrl, recipeId, source: "community"|"generated" } }
 - meal_plan_card: { type: "meal_plan_card", title, days: [{ label, meals: [{ type, title, calories, protein }], totals: { calories, protein } }] }
 
 Rules:

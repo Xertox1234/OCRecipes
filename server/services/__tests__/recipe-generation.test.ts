@@ -450,6 +450,19 @@ describe("Recipe Generation", () => {
         expect(promptArg).not.toMatch(/no text|watermark/i);
       });
 
+      it("passes width/height through to Runware", async () => {
+        mockRunwareGenerate.mockResolvedValue(Buffer.from("fake-image-data"));
+
+        await generateRecipeImage(
+          { title: "Tacos" },
+          { skipLLM: true, width: 768, height: 576 },
+        );
+
+        expect(mockRunwareGenerate).toHaveBeenCalledWith(
+          expect.objectContaining({ width: 768, height: 576 }),
+        );
+      });
+
       it("falls back to DALL-E when Runware returns null", async () => {
         mockRunwareGenerate.mockResolvedValue(null);
         mockImageGenerate.mockResolvedValue({

@@ -19,7 +19,7 @@ type SortOption =
   | "quickest"
   | "calories_asc"
   | "popular";
-type SourceOption = "all" | "personal" | "community" | "spoonacular";
+type SourceOption = "all" | "personal" | "community";
 
 export interface SearchFilters {
   sort: SortOption;

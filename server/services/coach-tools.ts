@@ -6,7 +6,7 @@
  *
  * Tools available to the coach AI:
  *   1. lookup_nutrition      — look up macros for any food
- *   2. search_recipes        — search the recipe catalog
+ *   2. search_recipes        — search OCRecipes community recipes
  *   3. get_daily_log_details — fetch today's food log + totals
  *   4. log_food_item         — add a food item to today's log
  *   5. get_pantry_items      — list pantry items (optionally expiring soon)
@@ -22,7 +22,7 @@ import { createHash } from "crypto";
 import { storage } from "../storage";
 import { civilDateString, civilDateToInstant } from "../lib/civil-date";
 import { lookupNutrition } from "./nutrition-lookup";
-import { searchCatalogRecipes } from "./recipe-catalog";
+import { findCommunity } from "./recipe-finder/find-community";
 import { logger } from "../lib/logger";
 import { isValidCalendarDate } from "../utils/date-validation";
 import type { UserProfile } from "@shared/schema";
@@ -71,7 +71,6 @@ const searchRecipesSchema = z.object({
   query: z.string().min(1),
   diet: z.string().optional(),
   cuisine: z.string().optional(),
-  maxReadyTime: z.number().optional(),
 });
 
 const isoDateSchema = z
@@ -263,7 +262,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "search_recipes",
         description:
-          "Search the recipe catalog for healthy meal ideas. Use this when the user asks for recipe suggestions, meal ideas, or specific dish types. Results are already filtered server-side to exclude the user's allergens — do not re-check or veto results for allergy reasons.",
+          "Search OCRecipes community recipes for healthy meal ideas. Use this when the user asks for recipe suggestions, meal ideas, or specific dish types. Results are already filtered server-side to exclude the user's allergens — do not re-check or veto results for allergy reasons.",
         parameters: {
           type: "object",
           properties: {
@@ -281,10 +280,6 @@ export function getToolDefinitions(): ChatCompletionTool[] {
               type: "string",
               description:
                 "Optional cuisine filter, e.g. 'italian', 'mexican', 'asian'.",
-            },
-            maxReadyTime: {
-              type: "number",
-              description: "Optional maximum preparation time in minutes.",
             },
           },
           required: ["query"],
@@ -519,7 +514,8 @@ export async function executeToolCall(
   toolName: string,
   args: ToolArgs,
   userId: string,
-  preloadedProfile?: UserProfile | null,
+  /** Kept for caller compatibility; search_recipes no longer needs the profile. */
+  _preloadedProfile?: UserProfile | null,
   /** IANA timezone of the requesting user — day-buckets "today" tool data. */
   tz: string = "UTC",
 ): Promise<ToolErrorResult | object> {
@@ -549,28 +545,26 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("search_recipes", parsed.error.message);
       }
-      // M2: resolve user allergens and pass as intolerances so Spoonacular
-      // filters them out — AI exclusion prompts are insufficient alone.
-      // Use pre-fetched profile when available to avoid a redundant DB call.
-      const profile =
-        preloadedProfile !== undefined
-          ? preloadedProfile
-          : await storage.getUserProfile(userId);
-      const allergyNames = (
-        (profile?.allergies as { name: string }[] | null) ?? []
-      )
-        .map((a) => a?.name)
-        .filter(Boolean);
-      const result = await searchCatalogRecipes({
-        query: parsed.data.query,
-        diet: parsed.data.diet,
-        cuisine: parsed.data.cuisine,
-        maxReadyTime: parsed.data.maxReadyTime,
-        intolerances:
-          allergyNames.length > 0 ? allergyNames.join(",") : undefined,
-        number: 5,
-      });
-      return { results: result.results };
+      // Community recipes only — Spoonacular content is never shown
+      // (inspired-recipes spec 2026-10-12). findCommunity searches with
+      // safeForMe, so the user's allergens/diet are filtered server-side.
+      const items = await findCommunity(
+        {
+          q: parsed.data.query,
+          diet: parsed.data.diet,
+          cuisine: parsed.data.cuisine,
+        },
+        userId,
+        [],
+      );
+      return {
+        results: items.map(({ id, title, imageUrl, readyInMinutes }) => ({
+          id,
+          title,
+          imageUrl,
+          readyInMinutes,
+        })),
+      };
     }
 
     case "get_daily_log_details": {

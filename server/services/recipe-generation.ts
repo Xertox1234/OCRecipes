@@ -305,13 +305,19 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
  */
 export async function generateRecipeImage(
   ctx: RecipeImageContext,
-  opts?: { skipLLM?: boolean },
+  opts?: { skipLLM?: boolean; width?: number; height?: number },
 ): Promise<string | null> {
-  const prompt = await buildImagePrompt(ctx, "hero", opts);
+  const prompt = await buildImagePrompt(ctx, "hero", {
+    skipLLM: opts?.skipLLM,
+  });
 
   if (isRunwareConfigured) {
     try {
-      const buffer = await runwareGenerateImage({ prompt });
+      const buffer = await runwareGenerateImage({
+        prompt,
+        ...(opts?.width && { width: opts.width }),
+        ...(opts?.height && { height: opts.height }),
+      });
       // Runware returns JPEG (no outputFormat requested) — label it to match.
       if (buffer) return await saveRecipeImage(buffer, "jpg");
       log.warn("Runware returned no image, falling back to DALL-E");

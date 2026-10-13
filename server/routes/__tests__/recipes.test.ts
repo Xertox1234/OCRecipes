@@ -7,15 +7,10 @@ import {
   generateFullRecipe,
   generateAndPatchRecipeImage,
 } from "../../services/recipe-generation";
-import {
-  searchCatalogRecipes,
-  getCatalogRecipeDetail,
-} from "../../services/recipe-catalog";
 import { importRecipeFromUrl } from "../../services/recipe-import";
 import { searchRecipes } from "../../services/recipe-search";
 import { register as registerRecipes } from "../recipes";
 import { register as registerRecipeSearch } from "../recipe-search";
-import { register as registerRecipeCatalog } from "../recipe-catalog";
 import { register as registerRecipeImport } from "../recipe-import";
 
 import {
@@ -39,7 +34,6 @@ vi.mock("../../storage", () => ({
     getUserRecipes: vi.fn(),
     getCommunityRecipe: vi.fn(),
     deleteCommunityRecipe: vi.fn(),
-    findMealPlanRecipeByExternalId: vi.fn(),
     createMealPlanRecipe: vi.fn(),
     getFrequentRecipesForMealType: vi.fn(),
     getRecipeSharePayload: vi.fn(),
@@ -54,17 +48,6 @@ vi.mock("../../services/recipe-generation", () => ({
   generateAndPatchRecipeImage: vi.fn().mockResolvedValue(undefined),
   normalizeProductName: vi.fn((name: string) => name.toLowerCase()),
 }));
-
-vi.mock("../../services/recipe-catalog", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../services/recipe-catalog")
-  >("../../services/recipe-catalog");
-  return {
-    ...actual,
-    searchCatalogRecipes: vi.fn(),
-    getCatalogRecipeDetail: vi.fn(),
-  };
-});
 
 vi.mock("../../services/recipe-import", () => ({
   importRecipeFromUrl: vi.fn(),
@@ -88,15 +71,14 @@ vi.mock("express-rate-limit");
 function createApp() {
   const app = express();
   app.use(express.json());
-  // Register all four split recipe route modules so tests cover the full
+  // Register the split recipe route modules so tests cover the full
   // surface after the route split (recipes.ts, recipe-search.ts,
-  // recipe-catalog.ts, recipe-import.ts).
+  // recipe-import.ts).
   // Register recipe-search BEFORE recipes — the `/api/recipes/search` and
   // `/api/recipes/browse` routes must be matched before `/api/recipes/:id`,
   // otherwise Express will try to parse "search"/"browse" as an int id.
   registerRecipeSearch(app);
   registerRecipes(app);
-  registerRecipeCatalog(app);
   registerRecipeImport(app);
   return app;
 }
@@ -518,212 +500,6 @@ describe("Recipes Routes", () => {
     });
   });
 
-  describe("GET /api/meal-plan/catalog/search", () => {
-    beforeEach(() => {
-      // Catalog search requires premium as of H7 — 2026-04-18.
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "premium",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-    });
-
-    it("searches catalog recipes", async () => {
-      vi.mocked(searchCatalogRecipes).mockResolvedValue({
-        results: [],
-        offset: 0,
-        number: 10,
-        totalResults: 0,
-      });
-
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/search?query=chicken")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(200);
-    });
-
-    it("returns 400 for missing query", async () => {
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/search")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(400);
-    });
-
-    it("returns 403 for non-premium users (H7 — 2026-04-18)", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "free",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
-
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/search?query=chicken")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(403);
-      // Service must not be called — free users never hit Spoonacular quota.
-      expect(searchCatalogRecipes).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("GET /api/meal-plan/catalog/:id", () => {
-    beforeEach(() => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "premium",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-    });
-
-    it("returns catalog recipe detail", async () => {
-      vi.mocked(getCatalogRecipeDetail).mockResolvedValue({
-        recipe: createMockMealPlanRecipe({ title: "Chicken" }),
-        ingredients: [],
-      });
-
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/123")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(200);
-    });
-
-    it("returns 404 when not found", async () => {
-      vi.mocked(getCatalogRecipeDetail).mockResolvedValue(null);
-
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/999")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(404);
-    });
-
-    it("returns 403 for non-premium users (H7 — 2026-04-18)", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "free",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
-
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/123")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(403);
-      expect(getCatalogRecipeDetail).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("POST /api/meal-plan/catalog/:id/save", () => {
-    beforeEach(() => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "premium",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-    });
-
-    it("saves a catalog recipe", async () => {
-      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
-        undefined,
-      );
-      vi.mocked(getCatalogRecipeDetail).mockResolvedValue({
-        recipe: createMockMealPlanRecipe({ title: "Chicken" }),
-        ingredients: [],
-      });
-      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
-        createMockMealPlanRecipe({ id: 1, title: "Chicken" }),
-      );
-
-      const res = await request(app)
-        .post("/api/meal-plan/catalog/123/save")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(201);
-    });
-
-    it("returns 403 for free tier (does not call Spoonacular)", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "free",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
-
-      const res = await request(app)
-        .post("/api/meal-plan/catalog/123/save")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(403);
-      expect(getCatalogRecipeDetail).not.toHaveBeenCalled();
-    });
-
-    it("returns 422 for recipe with no instructions and no ingredients", async () => {
-      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
-        undefined,
-      );
-      vi.mocked(getCatalogRecipeDetail).mockResolvedValue({
-        recipe: createMockMealPlanRecipe({
-          title: "Empty Recipe",
-          instructions: [],
-        }),
-        ingredients: [],
-      });
-
-      const res = await request(app)
-        .post("/api/meal-plan/catalog/123/save")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(422);
-      expect(res.body.error).toMatch(/no instructions or ingredients/);
-    });
-
-    it("saves recipe with ingredients but no instructions", async () => {
-      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
-        undefined,
-      );
-      vi.mocked(getCatalogRecipeDetail).mockResolvedValue({
-        recipe: createMockMealPlanRecipe({
-          title: "Ingredient-Only Recipe",
-          instructions: [],
-        }),
-        ingredients: [
-          {
-            recipeId: 0,
-            name: "Flour",
-            quantity: "2",
-            unit: "cups",
-            category: "other",
-            displayOrder: 0,
-          },
-        ],
-      });
-      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
-        createMockMealPlanRecipe({ id: 2, title: "Ingredient-Only Recipe" }),
-      );
-
-      const res = await request(app)
-        .post("/api/meal-plan/catalog/123/save")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(201);
-    });
-
-    it("returns existing recipe if already saved", async () => {
-      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
-        createMockMealPlanRecipe({ id: 1, title: "Chicken" }),
-      );
-
-      const res = await request(app)
-        .post("/api/meal-plan/catalog/123/save")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(200);
-      expect(res.body.id).toBe(1);
-    });
-  });
-
   describe("Error paths", () => {
     it("GET /api/recipes/featured returns 500 on storage error", async () => {
       vi.mocked(storage.getFeaturedRecipes).mockRejectedValue(
@@ -884,93 +660,6 @@ describe("Recipes Routes", () => {
 
       const res = await request(app)
         .delete("/api/recipes/1")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(500);
-    });
-
-    it("GET /api/meal-plan/catalog/search returns 500 on service error", async () => {
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(searchCatalogRecipes).mockRejectedValue(
-        new Error("Service error"),
-      );
-
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/search?query=chicken")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(500);
-    });
-
-    it("GET /api/meal-plan/catalog/:id returns 400 for invalid ID", async () => {
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/abc")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(400);
-    });
-
-    it("GET /api/meal-plan/catalog/:id returns 500 on service error", async () => {
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(getCatalogRecipeDetail).mockRejectedValue(
-        new Error("Service error"),
-      );
-
-      const res = await request(app)
-        .get("/api/meal-plan/catalog/123")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(500);
-    });
-
-    it("POST /api/meal-plan/catalog/:id/save returns 400 for invalid ID", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "premium",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-
-      const res = await request(app)
-        .post("/api/meal-plan/catalog/abc/save")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(400);
-    });
-
-    it("POST /api/meal-plan/catalog/:id/save returns 404 when not found in catalog", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "premium",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
-        undefined,
-      );
-      vi.mocked(getCatalogRecipeDetail).mockResolvedValue(null);
-
-      const res = await request(app)
-        .post("/api/meal-plan/catalog/999/save")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(404);
-    });
-
-    it("POST /api/meal-plan/catalog/:id/save returns 500 on service error", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "premium",
-        expiresAt: null,
-      });
-      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
-      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
-        undefined,
-      );
-      vi.mocked(getCatalogRecipeDetail).mockRejectedValue(
-        new Error("Service error"),
-      );
-
-      const res = await request(app)
-        .post("/api/meal-plan/catalog/123/save")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(500);

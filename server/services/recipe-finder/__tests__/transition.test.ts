@@ -116,15 +116,15 @@ describe("planFinderStep — stage × input", () => {
       expected: { kind: "ignore", reason: "stale_flow" },
     },
     {
-      name: "results + Search Spoonacular → online",
+      name: "results + Find ideas → online",
       latest: results(),
       input: act("search_online"),
       expected: { kind: "search_online", flow: flow() },
     },
     {
-      name: "Search Spoonacular on a Spoonacular list (button absent) → ignore",
+      name: "Find ideas on an inspired list (button absent) → ignore",
       latest: results({
-        source: "spoonacular",
+        source: "inspired",
         actions: ["generate", "none_of_these"],
       }),
       input: act("search_online"),
@@ -308,36 +308,45 @@ describe("finderOutcome — step × result", () => {
     });
   });
 
-  it("Search Spoonacular hidden when the catalog is not configured (§6)", () => {
-    expect(communityActions({ ...ctx, onlineConfigured: false })).toEqual([
+  it("Find ideas offered without premium (locked client-side, denied by run-turn)", () => {
+    const out = finderOutcome(search(1), community([item(1)]), {
+      ...ctx,
+      canSearchOnline: false,
+    });
+    expect(out).toMatchObject({
+      kind: "message",
+      block: { actions: ["search_online", "generate", "none_of_these"] },
+    });
+  });
+
+  it("Find ideas still offered when Spoonacular is not configured", () => {
+    expect(communityActions()).toEqual([
+      "search_online",
       "generate",
       "none_of_these",
     ]);
   });
 
   const online: FinderStep = { kind: "search_online", flow: flow() };
-  it("Spoonacular results → list with Generate + None of these", () => {
+  it("Inspired results → list with Generate + None of these", () => {
     const out = finderOutcome(
       online,
       {
         kind: "online",
-        result: { status: "ok", items: [item(715538, "spoonacular")] },
+        result: { status: "ok", items: [item(44, "inspired")] },
       },
       ctx,
     );
     if (out.kind !== "message" || out.block.type !== "recipe_results") {
       throw new Error("expected results");
     }
-    expect(out.block.source).toBe("spoonacular");
+    expect(out.block.source).toBe("inspired");
     expect(out.block.actions).toEqual(["generate", "none_of_these"]);
     expect(out.block.notice).toBeNull();
-    expect(out.block.flow.shownIds).toEqual([
-      "community:1",
-      "spoonacular:715538",
-    ]);
+    expect(out.block.flow.shownIds).toEqual(["community:1", "inspired:44"]);
   });
 
-  it("Spoonacular unavailable (402/error/cap) → 'unavailable', never 'no matches'", () => {
+  it("Inspired unavailable (error/no listing) → 'unavailable', never 'no matches'", () => {
     const out = finderOutcome(
       online,
       { kind: "online", result: { status: "unavailable" } },
@@ -350,7 +359,7 @@ describe("finderOutcome — step × result", () => {
     expect(out.block.actions).toEqual(["generate", "none_of_these"]);
   });
 
-  it("Spoonacular genuinely empty → 'no matches'", () => {
+  it("Inspired genuinely empty → 'no matches'", () => {
     const out = finderOutcome(
       online,
       { kind: "online", result: { status: "ok", items: [] } },
@@ -405,6 +414,14 @@ describe("finderOutcome — step × result", () => {
       flow: flow({ round: 1, flowId: NEXT, stage: "results" }),
     });
   });
+
+  it("a blocked Generate still offers Find ideas to a free user (the upsell)", () => {
+    const block = blockedGenerateBlock(flow({ round: 1 }), "generate_premium", {
+      ...ctx,
+      canSearchOnline: false,
+    });
+    expect(block.actions).toEqual(["search_online"]);
+  });
 });
 
 describe("helpers", () => {
@@ -428,7 +445,7 @@ describe("helpers", () => {
       },
       "Searching community recipes…",
     ],
-    [{ kind: "search_online", flow: flow() }, "Searching Spoonacular…"],
+    [{ kind: "search_online", flow: flow() }, "Finding ideas for you…"],
     [{ kind: "ask_clarifying", flow: flow() }, "Thinking of a few questions…"],
     [{ kind: "generate", request: "x", flow: flow() }, "Creating your recipe…"],
     [{ kind: "ignore", reason: "stale_flow" }, null],

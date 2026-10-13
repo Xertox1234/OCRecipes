@@ -13,7 +13,7 @@ import { register as registerSuggestions } from "./routes/suggestions";
 import { register as registerSavedItems } from "./routes/saved-items";
 import { register as registerRecipes } from "./routes/recipes";
 import { register as registerRecipeSearch } from "./routes/recipe-search";
-import { register as registerRecipeCatalog } from "./routes/recipe-catalog";
+import { register as registerInspiredRecipes } from "./routes/inspired-recipes";
 import { register as registerRecipeImport } from "./routes/recipe-import";
 import { register as registerMealPlan } from "./routes/meal-plan";
 import { register as registerRecipeGenerate } from "./routes/recipe-generate";
@@ -79,7 +79,7 @@ export function registerRoutes(app: Express): Server {
   // otherwise Express will try to parse "search"/"browse" as an int id.
   registerRecipeSearch(app);
   registerRecipes(app);
-  registerRecipeCatalog(app);
+  registerInspiredRecipes(app);
   registerRecipeImport(app);
   registerMealPlan(app);
   registerRecipeGenerate(app);

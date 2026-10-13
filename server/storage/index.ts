@@ -43,6 +43,7 @@ import * as canonicalRecipesStorage from "./canonical-recipes";
 import * as tastePicksStorage from "./taste-picks";
 import * as recipeTriesStorage from "./recipe-tries";
 import * as exportStorage from "./export";
+import * as inspired from "./inspired-suggestions";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -164,7 +165,6 @@ export const storage = {
   deleteSavedItem: nutrition.deleteSavedItem,
 
   // Meal plans (recipes and items)
-  findMealPlanRecipeByExternalId: mealPlans.findMealPlanRecipeByExternalId,
   getMealPlanRecipe: mealPlans.getMealPlanRecipe,
   getMealPlanRecipeWithIngredients: mealPlans.getMealPlanRecipeWithIngredients,
   getUserMealPlanRecipes: mealPlans.getUserMealPlanRecipes,
@@ -414,4 +414,16 @@ export const storage = {
 
   // Data export (CCPA/PIPEDA portability)
   getUserDataExport: exportStorage.getUserDataExport,
+
+  // Inspired recipes (suggestions)
+  createInspiredSuggestions: inspired.createInspiredSuggestions,
+  countInspiredSuggestionsSince: inspired.countInspiredSuggestionsSince,
+  getInspiredSuggestions: inspired.getInspiredSuggestions,
+  getInspiredSuggestion: inspired.getInspiredSuggestion,
+  setInspiredSuggestionImage: inspired.setInspiredSuggestionImage,
+  startMakingSuggestion: inspired.startMakingSuggestion,
+  abandonMakingSuggestion: inspired.abandonMakingSuggestion,
+  claimInspiredSuggestionMade: inspired.claimInspiredSuggestionMade,
+  listExpiredUnmadeSuggestions: inspired.listExpiredUnmadeSuggestions,
+  deleteInspiredSuggestions: inspired.deleteInspiredSuggestions,
 };

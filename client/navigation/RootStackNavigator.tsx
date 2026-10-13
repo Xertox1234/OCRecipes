@@ -170,10 +170,9 @@ export type RootStackParamList = {
     recipeId: number;
     /**
      * "community" (default) fetches /api/recipes/:id; "mealPlan" fetches
-     * /api/meal-plan/recipes/:id; "catalog" previews a Spoonacular recipe via
-     * /api/meal-plan/catalog/:id (in-app only — linking.ts never produces it).
+     * /api/meal-plan/recipes/:id.
      */
-    recipeType?: "community" | "mealPlan" | "catalog";
+    recipeType?: "community" | "mealPlan";
     /** Deep link query param — alias for recipeType */
     type?: "community" | "mealPlan";
   };

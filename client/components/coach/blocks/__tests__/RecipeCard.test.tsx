@@ -19,19 +19,6 @@ const block: RecipeCardType = {
   },
 };
 
-const spoonacularBlock: RecipeCardType = {
-  type: "recipe_card",
-  recipe: {
-    title: "Lemon Chicken",
-    calories: 520,
-    protein: 42,
-    prepTime: "25 min",
-    imageUrl: null,
-    recipeId: 715538,
-    source: "spoonacular",
-  },
-};
-
 describe("RecipeCard", () => {
   it("renders the recipe title and macro meta", () => {
     renderComponent(<RecipeCard block={block} />);
@@ -49,43 +36,33 @@ describe("RecipeCard", () => {
     });
   });
 
-  it("opens a Spoonacular card as a catalog preview", () => {
+  it("opens a generated card as a community recipe", () => {
     const onAction = vi.fn();
     renderComponent(
-      <RecipeCard block={spoonacularBlock} onAction={onAction} />,
+      <RecipeCard
+        block={{ ...block, recipe: { ...block.recipe, source: "generated" } }}
+        onAction={onAction}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: /view recipe/i }));
     expect(onAction).toHaveBeenCalledWith({
       type: "navigate",
       screen: "FeaturedRecipeDetail",
-      params: { recipeId: 715538, recipeType: "catalog" },
+      params: { recipeId: 88, recipeType: "community" },
     });
   });
 
-  it("fires an add_recipe_to_plan action carrying the recipe", () => {
-    const onAction = vi.fn();
+  it("has no spoonacular Add-to-Plan button", () => {
     renderComponent(
-      <RecipeCard block={spoonacularBlock} onAction={onAction} />,
+      <RecipeCard
+        block={{
+          type: "recipe_card",
+          recipe: { ...block.recipe, source: "community" },
+        }}
+        onAction={vi.fn()}
+      />,
     );
-
-    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
-
-    expect(onAction).toHaveBeenCalledWith({
-      type: "add_recipe_to_plan",
-      recipeId: spoonacularBlock.recipe.recipeId,
-      recipeTitle: spoonacularBlock.recipe.title,
-    });
-  });
-
-  it("hides Add to Plan for non-catalog sources", () => {
-    const onAction = vi.fn();
-    const generated = {
-      ...spoonacularBlock,
-      recipe: { ...spoonacularBlock.recipe, source: "generated" as const },
-    };
-    renderComponent(<RecipeCard block={generated} onAction={onAction} />);
-
+    expect(screen.queryByText("Add to Plan")).toBeNull();
     expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
-    expect(screen.getByRole("button", { name: /view recipe/i })).toBeTruthy();
   });
 });

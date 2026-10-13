@@ -170,6 +170,40 @@ export const recipeGenCaseSchema = z.object({
 export const recipeGenCasesSchema = z.array(recipeGenCaseSchema);
 export type RecipeGenInput = z.infer<typeof recipeGenCaseSchema>["input"];
 
+// ─── Inspired Suggestions ────────────────────────────────────────────────────
+
+export const inspiredSuggestionCaseSchema = z.object({
+  id: z.string().min(1),
+  category: z.enum([
+    "safety",
+    "accuracy",
+    "helpfulness",
+    "personalization",
+    "creativity",
+    "edge-case",
+  ]),
+  description: z.string(),
+  request: z.string(),
+  inspirationTitles: z.array(z.string()),
+  profile: z.object({
+    dietType: z.string().optional(),
+    allergies: z
+      .array(z.object({ name: z.string(), severity: z.string() }))
+      .optional(),
+    cookingTimeAvailable: z.string().optional(),
+    cookingSkillLevel: z.string().optional(),
+    householdSize: z.number().optional(),
+  }),
+  mustAvoid: z.array(z.string()).default([]),
+});
+
+export const inspiredSuggestionCasesSchema = z.array(
+  inspiredSuggestionCaseSchema,
+);
+export type InspiredSuggestionCase = z.infer<
+  typeof inspiredSuggestionCaseSchema
+>;
+
 // ─── Photo Analysis ───────────────────────────────────────────────────────────
 //
 // Fixture strategy: stable public URLs (Unsplash / Wikimedia Commons).

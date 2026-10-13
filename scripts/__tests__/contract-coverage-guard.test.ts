@@ -34,7 +34,10 @@ const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set<string>([]);
  * or local-state validation). Add with a one-line reason; never add a
  * response schema here to silence the guard.
  */
-const NON_RESPONSE_SCHEMAS: ReadonlySet<string> = new Set<string>([]);
+const NON_RESPONSE_SCHEMAS: ReadonlySet<string> = new Set<string>([
+  // Client reads .shape.mealType to validate a local UI value; not a response.
+  "createListingBodySchema",
+]);
 
 const EXCLUDED_DIRS = new Set([
   "node_modules",

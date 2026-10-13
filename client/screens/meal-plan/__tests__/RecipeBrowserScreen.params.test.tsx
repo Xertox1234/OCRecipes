@@ -59,8 +59,8 @@ const {
     id: "mealPlan:42",
     // NOTE: the task brief's draft test described this as
     // `source: "mealPlan"`, but SearchableRecipe's actual `source` union
-    // (shared/types/recipe-search.ts) is "personal" | "community" |
-    // "spoonacular" — "personal" is what routes handleRecipePress into the
+    // (shared/types/recipe-search.ts) is "personal" | "community" —
+    // "personal" is what routes handleRecipePress into the
     // add-to-plan / browse-only branch this test targets. The `id` prefix
     // itself is not read for that branching (only `.split(":")[1]` is
     // parsed as the numeric recipe id), so "mealPlan:42" is kept verbatim.
@@ -216,18 +216,23 @@ vi.mock("@/hooks/useRecipeSearch", () => ({
   useRecipeSearch: () => mockSearchState.value,
 }));
 
-vi.mock("@/hooks/useCatalogSearch", () => ({
-  useCatalogSearch: () => ({
+vi.mock("@/hooks/useInspiredSuggestions", () => {
+  // Stable identities, as TanStack's mutate/reset/mutateAsync are.
+  const listing = {
     data: undefined,
-    isLoading: false,
+    isPending: false,
     error: null,
-    refetch: vi.fn(),
-  }),
-}));
-
-vi.mock("@/hooks/useCatalogConfig", () => ({
-  useCatalogConfig: () => ({ data: { enabled: true } }),
-}));
+    mutate: vi.fn(),
+    reset: vi.fn(),
+  };
+  const make = { mutateAsync: vi.fn() };
+  const photos = new Map<number, string | null>();
+  return {
+    useCreateSuggestionListing: () => listing,
+    useMakeSuggestion: () => make,
+    useSuggestionPhotos: () => photos,
+  };
+});
 
 // `useAnimatedScrollHandler` isn't exported by test/mocks/react-native-reanimated.ts
 // (only useSharedValue/useAnimatedStyle/etc are) — the real hook crashes

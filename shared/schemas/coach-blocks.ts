@@ -75,16 +75,13 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   // recipeType/type: real, tolerated fields on
   // RootStackParamList["FeaturedRecipeDetail"] — widened here so the
   // stripping fix in validateNavigateParams doesn't delete them.
-  // `.catch(undefined)`: an out-of-vocabulary value (e.g. an LLM reusing
-  // "spoonacular" from recipeCardSchema.source below) must degrade to
+  // `.catch(undefined)`: an out-of-vocabulary value (e.g. a retired "catalog"
+  // or "spoonacular" an LLM still emits) must degrade to
   // "field absent", not fail the whole action/block — a typed field is
   // stricter than an unlisted one, which safeParse always tolerated.
   FeaturedRecipeDetail: z.object({
     recipeId: z.number(),
-    recipeType: z
-      .enum(["community", "mealPlan", "catalog"])
-      .optional()
-      .catch(undefined),
+    recipeType: z.enum(["community", "mealPlan"]).optional().catch(undefined),
     type: z.enum(["community", "mealPlan"]).optional().catch(undefined),
   }),
   // initialMessage/remixSourceRecipeId/remixSourceRecipeTitle: real,
@@ -281,7 +278,7 @@ export const recipeCardSchema = z.object({
     prepTime: z.string(),
     imageUrl: z.string().nullable(),
     recipeId: z.number(),
-    source: z.enum(["community", "spoonacular", "generated"]),
+    source: z.enum(["community", "generated"]),
   }),
 });
 

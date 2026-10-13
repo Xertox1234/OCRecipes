@@ -89,7 +89,7 @@ const CARDS: CardDef[] = [
     icon: "search",
     accent: "accentPink",
     title: "Browse recipes",
-    description: "Search community & catalog recipes",
+    description: "Search community recipes & get ideas",
   },
 ];
 

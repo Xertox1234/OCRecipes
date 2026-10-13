@@ -32,7 +32,6 @@ vi.mock("../../db", () => ({
 
 // Import after mocking
 const {
-  findMealPlanRecipeByExternalId,
   getMealPlanRecipe,
   getMealPlanRecipeWithIngredients,
   getUserMealPlanRecipes,
@@ -141,42 +140,6 @@ describe("meal-plans storage", () => {
   // ==========================================================================
   // MEAL PLAN RECIPES
   // ==========================================================================
-
-  describe("findMealPlanRecipeByExternalId", () => {
-    it("returns a recipe matching the userId and externalId", async () => {
-      await createTestMealPlanRecipe(testUser.id, {
-        externalId: "spoon-123",
-      });
-
-      const found = await findMealPlanRecipeByExternalId(
-        testUser.id,
-        "spoon-123",
-      );
-      expect(found).toBeDefined();
-      expect(found!.externalId).toBe("spoon-123");
-    });
-
-    it("returns undefined when externalId does not exist", async () => {
-      const found = await findMealPlanRecipeByExternalId(
-        testUser.id,
-        "nonexistent",
-      );
-      expect(found).toBeUndefined();
-    });
-
-    it("does not return recipe belonging to a different user", async () => {
-      const otherUser = await createTestUser(tx);
-      await createTestMealPlanRecipe(otherUser.id, {
-        externalId: "ext-999",
-      });
-
-      const found = await findMealPlanRecipeByExternalId(
-        testUser.id,
-        "ext-999",
-      );
-      expect(found).toBeUndefined();
-    });
-  });
 
   describe("getMealPlanRecipe", () => {
     it("returns the recipe by id", async () => {

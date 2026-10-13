@@ -53,7 +53,6 @@ vi.mock("../../lib/search-index", () => ({
 
 // Import after mocking.
 const {
-  findMealPlanRecipeByExternalId,
   getMealPlanRecipe,
   getMealPlanRecipeWithIngredients,
   getUserMealPlanRecipes,
@@ -155,40 +154,6 @@ describe("meal-plan-recipes storage", () => {
 
   afterAll(async () => {
     await closeTestPool();
-  });
-
-  // ==========================================================================
-  // findMealPlanRecipeByExternalId
-  // ==========================================================================
-  describe("findMealPlanRecipeByExternalId", () => {
-    it("returns the recipe matching userId + externalId", async () => {
-      const recipe = await seedRecipe(testUser.id, { externalId: "ext-123" });
-      const result = await findMealPlanRecipeByExternalId(
-        testUser.id,
-        "ext-123",
-      );
-      expect(result).toBeDefined();
-      expect(result!.id).toBe(recipe.id);
-    });
-
-    it("returns undefined when externalId does not match", async () => {
-      await seedRecipe(testUser.id, { externalId: "ext-123" });
-      const result = await findMealPlanRecipeByExternalId(
-        testUser.id,
-        "ext-999",
-      );
-      expect(result).toBeUndefined();
-    });
-
-    it("does not return a recipe owned by a different user (IDOR scoping)", async () => {
-      const otherUser = await createTestUser(tx);
-      await seedRecipe(otherUser.id, { externalId: "ext-shared" });
-      const result = await findMealPlanRecipeByExternalId(
-        testUser.id,
-        "ext-shared",
-      );
-      expect(result).toBeUndefined();
-    });
   });
 
   // ==========================================================================

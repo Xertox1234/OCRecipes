@@ -7,6 +7,7 @@ import {
   mealSuggestionCasesSchema,
   recipeGenCasesSchema,
   photoAnalysisCasesSchema,
+  inspiredSuggestionCasesSchema,
   recipeChatCaseSchema,
   mealSuggestionCaseSchema,
   recipeGenCaseSchema,
@@ -55,6 +56,13 @@ describe("dataset validation — all five suites", () => {
 
   it("validates photo-analysis-cases.json against photoAnalysisCasesSchema", () => {
     assertDataset(photoAnalysisCasesSchema, "photo-analysis-cases.json");
+  });
+
+  it("validates inspired-suggestions-cases.json against inspiredSuggestionCasesSchema", () => {
+    assertDataset(
+      inspiredSuggestionCasesSchema,
+      "inspired-suggestions-cases.json",
+    );
   });
 });
 

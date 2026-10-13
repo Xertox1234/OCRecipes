@@ -15,7 +15,7 @@ import { generateRecipeChatResponse } from "../../services/recipe-chat";
 import { STANDARD_SAFETY_MESSAGE } from "../../services/coach-pro-chat";
 import { register } from "../chat";
 import { findCommunity } from "../../services/recipe-finder/find-community";
-import { findOnline } from "../../services/recipe-finder/find-online";
+import { findInspired } from "../../services/recipe-finder/find-inspired";
 import { classifyTurn } from "../../services/recipe-finder/classify-turn";
 import { extractOfferDetails } from "../../services/recipe-finder/extract-query";
 import type {
@@ -60,6 +60,7 @@ vi.mock("../../storage", () => ({
     createFinderUserMessage: vi.fn(),
     claimRecipeGeneration: vi.fn(),
     claimSpoonacularSearch: vi.fn(),
+    countInspiredSuggestionsSince: vi.fn().mockResolvedValue(0),
   },
 }));
 
@@ -125,8 +126,8 @@ vi.mock("../../services/recipe-finder/ask-follow-ups", () => ({
 vi.mock("../../services/recipe-finder/find-community", () => ({
   findCommunity: vi.fn(),
 }));
-vi.mock("../../services/recipe-finder/find-online", () => ({
-  findOnline: vi.fn(),
+vi.mock("../../services/recipe-finder/find-inspired", () => ({
+  findInspired: vi.fn(),
 }));
 vi.mock("../../services/recipe-finder/ask-clarifying", () => ({
   askClarifying: vi.fn(),
@@ -1231,7 +1232,7 @@ describe("Chat Routes", () => {
         vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(true);
         vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(true);
         vi.mocked(findCommunity).mockResolvedValue(listBlock.items);
-        vi.mocked(findOnline).mockResolvedValue({ status: "ok", items: [] });
+        vi.mocked(findInspired).mockResolvedValue({ status: "ok", items: [] });
         vi.mocked(classifyTurn).mockResolvedValue("new_request");
         vi.mocked(generateRecipeChatResponse).mockImplementation(
           async function* () {
@@ -1379,15 +1380,17 @@ describe("Chat Routes", () => {
         expect(generateRecipeChatResponse).not.toHaveBeenCalled();
       });
 
-      it("search_online at the per-user cap reports unavailable and never calls Spoonacular", async () => {
+      it("search_online past the per-user cap still lists, without Spoonacular titles", async () => {
         vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
         vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(false);
         const res = await send({
           content: "Search Spoonacular",
           finderAction: { type: "search_online", flowId: FLOW },
         });
-        expect(findOnline).not.toHaveBeenCalled();
-        expect(res.text).toContain('"notice":"unavailable"');
+        expect(findInspired).toHaveBeenCalledWith(
+          expect.objectContaining({ useSpoonacular: false }),
+        );
+        expect(res.text).toContain('"source":"inspired"');
       });
 
       it("routes a refine_current follow-up to the legacy recipe path", async () => {
@@ -1892,9 +1895,9 @@ describe("Chat Routes", () => {
             coachDailyLimit: expect.any(Number),
           },
         );
-        expect(res.text).toContain('data: {"status":"Searching Spoonacular…"}');
+        expect(res.text).toContain('data: {"status":"Finding ideas for you…"}');
         expect(res.text).toContain(
-          '"blocks":[{"type":"recipe_results","source":"spoonacular"',
+          '"blocks":[{"type":"recipe_results","source":"inspired"',
         );
         expect(generateCoachProResponse).not.toHaveBeenCalled();
       });

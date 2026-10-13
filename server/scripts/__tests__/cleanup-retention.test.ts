@@ -7,6 +7,7 @@ import {
   runRetentionCleanup,
   type RetentionDb,
 } from "../cleanup-retention";
+import { purgeExpiredInspiredSuggestions } from "../purge-inspired-suggestions";
 import {
   ACTIVE_USER_WINDOW_DAYS,
   CHAT_RETENTION_DAYS,
@@ -22,6 +23,12 @@ import {
 vi.mock("../../db", () => ({
   db: {},
   pool: { end: vi.fn().mockResolvedValue(undefined) },
+}));
+
+vi.mock("../purge-inspired-suggestions", () => ({
+  purgeExpiredInspiredSuggestions: vi
+    .fn()
+    .mockResolvedValue({ rows: 0, images: 0 }),
 }));
 
 // Mock the logger so tests don't emit noise. createServiceLogger must return
@@ -220,6 +227,25 @@ describe("runRetentionCleanup", () => {
 
     // Active-user query + 3 single-batch deletes + 2 2FA steps.
     expect(execute).toHaveBeenCalledTimes(6);
+  });
+
+  it("purges expired idea cards after the retention domains", async () => {
+    const { db } = makeFakeDb([{ rows: [] }]);
+    const now = new Date("2026-05-11T00:00:00Z");
+    await runRetentionCleanup(db, now);
+    expect(purgeExpiredInspiredSuggestions).toHaveBeenCalledWith(now);
+  });
+
+  it("a failing idea-card purge does not fail the run or drop results", async () => {
+    vi.mocked(purgeExpiredInspiredSuggestions).mockRejectedValueOnce(
+      new Error("r2 down"),
+    );
+    const { db } = makeFakeDb([{ rows: [] }]);
+    const results = await runRetentionCleanup(
+      db,
+      new Date("2026-05-11T00:00:00Z"),
+    );
+    expect(results).toHaveLength(5);
   });
 
   it("loops until a batch returns fewer rows than BATCH_SIZE", async () => {
