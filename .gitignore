@@ -1,7 +1,6 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # Claude Code instructions (local only)
-CLAUDE.md
 
 # Superpowers brainstorm sessions (visual companion server)
 .superpowers/
@@ -101,7 +100,8 @@ docs/plans/
 
 # AI-workflow history: kept locally, not synced to GitHub.
 # (todos/ stays tracked on purpose — it feeds Copilot work assignment.)
-docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/specs/
 docs/audits/
 docs/research/
 docs/LEARNINGS.md
