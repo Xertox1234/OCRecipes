@@ -78,7 +78,10 @@ import type {
   SearchableRecipe,
   RecipeSearchParams,
 } from "@shared/types/recipe-search";
-import type { Suggestion } from "@shared/schemas/inspired-recipes";
+import {
+  createListingBodySchema,
+  type Suggestion,
+} from "@shared/schemas/inspired-recipes";
 import { ApiError } from "@/lib/api-error";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
@@ -503,10 +506,18 @@ export default function RecipeBrowserScreen() {
   const ideaIds = useMemo(() => ideas.map((s) => s.id), [ideas]);
   const photos = useSuggestionPhotos(ideaIds, ideas.length > 0);
 
-  // A new query starts local-first — drop any ideas for the previous one.
+  // A new query or filter starts local-first — drop ideas written for the
+  // previous one.
   useEffect(() => {
     resetIdeas();
-  }, [debouncedQuery, resetIdeas]);
+  }, [
+    debouncedQuery,
+    filters.activeCuisine,
+    filters.activeDiet,
+    filters.advanced.maxPrepTime,
+    mealType,
+    resetIdeas,
+  ]);
 
   const {
     data: searchData,
@@ -551,8 +562,24 @@ export default function RecipeBrowserScreen() {
     // The focused CTA swaps to a spinner and then unmounts when the cards
     // land, so screen-reader users need both edges spoken.
     AccessibilityInfo.announceForAccessibility("Finding ideas for you");
+    // Ideas honour the same filters as the local search. Empty values are
+    // left out (the body's strings are min(1)); a meal type the listing
+    // doesn't know is dropped rather than failing the request.
+    const ideasMealType = createListingBodySchema.shape.mealType.safeParse(
+      mealType || undefined,
+    );
     requestIdeas(
-      { query: debouncedQuery },
+      {
+        query: debouncedQuery,
+        ...(filters.activeCuisine ? { cuisine: filters.activeCuisine } : {}),
+        ...(filters.activeDiet ? { diet: filters.activeDiet } : {}),
+        ...(ideasMealType.success && ideasMealType.data
+          ? { mealType: ideasMealType.data }
+          : {}),
+        ...(filters.advanced.maxPrepTime
+          ? { maxReadyTime: filters.advanced.maxPrepTime }
+          : {}),
+      },
       {
         onSuccess: (suggestions) => {
           AccessibilityInfo.announceForAccessibility(
@@ -571,7 +598,16 @@ export default function RecipeBrowserScreen() {
         },
       },
     );
-  }, [haptics, isPremium, requestIdeas, debouncedQuery]);
+  }, [
+    haptics,
+    isPremium,
+    requestIdeas,
+    debouncedQuery,
+    filters.activeCuisine,
+    filters.activeDiet,
+    filters.advanced.maxPrepTime,
+    mealType,
+  ]);
 
   const handleMakeIdea = useCallback(
     (suggestion: Suggestion) => {

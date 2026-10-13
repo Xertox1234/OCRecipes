@@ -16,6 +16,7 @@ import {
 } from "../../../test/db-test-utils";
 import { eq } from "drizzle-orm";
 import { communityRecipes, inspiredSuggestions } from "@shared/schema";
+import { MAKING_STALE_MS } from "@shared/schemas/inspired-recipes";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 
@@ -210,5 +211,29 @@ describe("inspired suggestions storage", () => {
     expect(await listExpiredUnmadeSuggestions(new Date(), 100)).toEqual([]);
     expect(await deleteInspiredSuggestions([row.id])).toEqual([]);
     expect(await getInspiredSuggestion(a, row.id)).toBeDefined();
+  });
+
+  it("skips an expired card whose make lock is live; a stale lock is purged", async () => {
+    const past = new Date(Date.now() - 1000);
+    const [live, stale] = await createInspiredSuggestions(
+      a,
+      [draft("Making now"), draft("Crashed make")],
+      past,
+    );
+    await tx
+      .update(inspiredSuggestions)
+      .set({ makingStartedAt: new Date() })
+      .where(eq(inspiredSuggestions.id, live.id));
+    await tx
+      .update(inspiredSuggestions)
+      .set({ makingStartedAt: new Date(Date.now() - MAKING_STALE_MS - 1000) })
+      .where(eq(inspiredSuggestions.id, stale.id));
+
+    const listed = await listExpiredUnmadeSuggestions(new Date(), 100);
+    expect(listed.map((r) => r.id)).toEqual([stale.id]);
+    expect(
+      (await deleteInspiredSuggestions([live.id, stale.id])).map((r) => r.id),
+    ).toEqual([stale.id]);
+    expect(await getInspiredSuggestion(a, live.id)).toBeDefined();
   });
 });

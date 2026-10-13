@@ -27,12 +27,10 @@ import {
   createListingBodySchema,
   INSPIRED_DAILY_CARD_CAP,
   INSPIRED_LISTING_SIZE,
+  MAKING_STALE_MS,
   SUGGESTION_TTL_MS,
   toSuggestion,
 } from "@shared/schemas/inspired-recipes";
-
-/** A start older than this is treated as a crashed request and can be retaken. */
-const MAKING_STALE_MS = 2 * 60 * 1000;
 
 const idsQuerySchema = z.object({
   ids: z

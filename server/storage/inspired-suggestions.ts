@@ -5,7 +5,10 @@ import {
   inspiredSuggestions,
   type InspiredSuggestionRow,
 } from "@shared/schema";
-import type { SuggestionDraft } from "@shared/schemas/inspired-recipes";
+import {
+  MAKING_STALE_MS,
+  type SuggestionDraft,
+} from "@shared/schemas/inspired-recipes";
 
 export async function createInspiredSuggestions(
   userId: string,
@@ -141,6 +144,17 @@ export async function claimInspiredSuggestionMade(
   return updated.length > 0;
 }
 
+/** Not mid-make: no lock, or a lock old enough to be a crashed request. */
+function noLiveMakeLock(now: Date) {
+  return or(
+    isNull(inspiredSuggestions.makingStartedAt),
+    lte(
+      inspiredSuggestions.makingStartedAt,
+      new Date(now.getTime() - MAKING_STALE_MS),
+    ),
+  );
+}
+
 export async function listExpiredUnmadeSuggestions(
   now: Date,
   limit: number,
@@ -152,6 +166,7 @@ export async function listExpiredUnmadeSuggestions(
       and(
         lt(inspiredSuggestions.expiresAt, now),
         isNull(inspiredSuggestions.madeRecipeId),
+        noLiveMakeLock(now),
       ),
     )
     .limit(limit);
@@ -167,6 +182,7 @@ export async function deleteInspiredSuggestions(
       and(
         inArray(inspiredSuggestions.id, ids),
         isNull(inspiredSuggestions.madeRecipeId),
+        noLiveMakeLock(new Date()),
       ),
     )
     .returning({

@@ -29,7 +29,10 @@ const {
   mockSendMessageState,
   mockStreamSnapshot,
   mockCanGenerate,
+  mockCanSearchOnline,
 } = vi.hoisted(() => ({
+  // usePremiumFeature("catalogSave") — the finder's "Get ideas for you" lock.
+  mockCanSearchOnline: { value: true },
   // usePremiumFeature("recipeGeneration") — premium by default; the lock
   // tests flip it to false.
   mockCanGenerate: { value: true },
@@ -151,7 +154,11 @@ vi.mock("@/hooks/useChat", () => ({
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: (feature: string) =>
-    feature === "recipeGeneration" ? mockCanGenerate.value : true,
+    feature === "recipeGeneration"
+      ? mockCanGenerate.value
+      : feature === "catalogSave"
+        ? mockCanSearchOnline.value
+        : true,
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
@@ -163,6 +170,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCanGoBack.mockReturnValue(true);
   mockCanGenerate.value = true;
+  mockCanSearchOnline.value = true;
   mockRouteParams.value = undefined;
   mockChatMessagesData.value = [];
   mockStreamSnapshot.value = { content: "", recipe: null, finder: null };
@@ -921,6 +929,21 @@ describe("RecipeChatScreen — recipe finder", () => {
     renderComponent(<RecipeChatScreen />);
     expect(screen.getByText("From the community")).toBeDefined();
     expect(screen.queryByText(/Here are 1 community recipe/)).toBeNull();
+  });
+
+  it("a free user's Get ideas for you is locked and opens the upgrade modal", () => {
+    mockCanSearchOnline.value = false;
+    mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
+    renderComponent(<RecipeChatScreen />);
+
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Get ideas for you. Premium feature",
+      }),
+    );
+    expect(screen.getByTestId("upgrade-modal")).toBeTruthy();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("a button tap sends its label with the finderAction", () => {

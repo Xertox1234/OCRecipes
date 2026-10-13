@@ -344,10 +344,13 @@ function mergeShown(prior: string[], items: FinderItem[]): string[] {
   return merged.slice(-MAX_SHOWN_IDS);
 }
 
-export function communityActions(ctx: FinderCtx): FinderButton[] {
-  return ctx.canSearchOnline
-    ? ["search_online", "generate", "none_of_these"]
-    : ["generate", "none_of_these"];
+/**
+ * "Get ideas for you" is offered to everyone: the listing no longer needs
+ * Spoonacular, and a free user sees it locked (lockedFinderButtons) with the
+ * upgrade path. Premium is enforced in executeFinderStep, not by hiding it.
+ */
+export function communityActions(): FinderButton[] {
+  return ["search_online", "generate", "none_of_these"];
 }
 
 /** Generate refused (limit or premium): keep the flow alive, minus Generate. */
@@ -360,7 +363,7 @@ export function blockedGenerateBlock(
     type: "recipe_results",
     source: "community",
     items: [],
-    actions: ctx.canSearchOnline ? ["search_online"] : [],
+    actions: ["search_online"],
     notice,
     flow: { ...flow, flowId: ctx.nextFlowId, stage: "results" },
   };
@@ -416,7 +419,7 @@ export function finderOutcome(
           type: "recipe_results",
           source: "community",
           items: result.items,
-          actions: communityActions(ctx),
+          actions: communityActions(),
           notice: result.items.length === 0 ? "no_matches" : null,
           flow,
         },

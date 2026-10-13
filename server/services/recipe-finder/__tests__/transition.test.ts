@@ -308,15 +308,19 @@ describe("finderOutcome — step × result", () => {
     });
   });
 
-  it("Find ideas hidden without premium (canSearchOnline)", () => {
-    expect(communityActions({ ...ctx, canSearchOnline: false })).toEqual([
-      "generate",
-      "none_of_these",
-    ]);
+  it("Find ideas offered without premium (locked client-side, denied by run-turn)", () => {
+    const out = finderOutcome(search(1), community([item(1)]), {
+      ...ctx,
+      canSearchOnline: false,
+    });
+    expect(out).toMatchObject({
+      kind: "message",
+      block: { actions: ["search_online", "generate", "none_of_these"] },
+    });
   });
 
   it("Find ideas still offered when Spoonacular is not configured", () => {
-    expect(communityActions({ ...ctx, onlineConfigured: false })).toEqual([
+    expect(communityActions()).toEqual([
       "search_online",
       "generate",
       "none_of_these",
@@ -409,6 +413,14 @@ describe("finderOutcome — step × result", () => {
       notice: "generate_limit",
       flow: flow({ round: 1, flowId: NEXT, stage: "results" }),
     });
+  });
+
+  it("a blocked Generate still offers Find ideas to a free user (the upsell)", () => {
+    const block = blockedGenerateBlock(flow({ round: 1 }), "generate_premium", {
+      ...ctx,
+      canSearchOnline: false,
+    });
+    expect(block.actions).toEqual(["search_online"]);
   });
 });
 

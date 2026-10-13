@@ -10,6 +10,11 @@ export const SUGGESTION_TTL_MS = 24 * 60 * 60 * 1000;
  * Finder. Cost guard: roughly 10 Browser listings.
  */
 export const INSPIRED_DAILY_CARD_CAP = 80;
+/**
+ * A make started longer ago than this is treated as a crashed request: the
+ * lock can be retaken, and the expiry purge may delete the card.
+ */
+export const MAKING_STALE_MS = 2 * 60 * 1000;
 
 /** What the AI returns for one card. */
 export const suggestionDraftSchema = z.object({

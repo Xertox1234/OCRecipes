@@ -17,14 +17,21 @@ import RecipeBrowserScreen from "../RecipeBrowserScreen";
 import { ApiError } from "@/lib/api-error";
 import type { Suggestion } from "@shared/schemas/inspired-recipes";
 
-const { mutateAsync, makeMutateAsync, navigate, toastError, premium } =
-  vi.hoisted(() => ({
-    mutateAsync: vi.fn(),
-    makeMutateAsync: vi.fn(),
-    navigate: vi.fn(),
-    toastError: vi.fn(),
-    premium: { value: true },
-  }));
+const {
+  mutateAsync,
+  makeMutateAsync,
+  navigate,
+  toastError,
+  premium,
+  routeParams,
+} = vi.hoisted(() => ({
+  mutateAsync: vi.fn(),
+  makeMutateAsync: vi.fn(),
+  navigate: vi.fn(),
+  toastError: vi.fn(),
+  premium: { value: true },
+  routeParams: { value: { searchQuery: "tacos" } as Record<string, string> },
+}));
 
 const card: Suggestion = {
   id: 7,
@@ -84,7 +91,7 @@ vi.mock("@/hooks/useInspiredSuggestions", async () => {
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate, goBack: vi.fn(), setOptions: vi.fn() }),
-  useRoute: () => ({ params: { searchQuery: "tacos" } }),
+  useRoute: () => ({ params: routeParams.value }),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -144,6 +151,7 @@ describe("RecipeBrowserScreen — Ideas for you", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     premium.value = true;
+    routeParams.value = { searchQuery: "tacos" };
   });
 
   it("tapping the CTA requests ideas for the current query and renders the cards", async () => {
@@ -270,5 +278,47 @@ describe("RecipeBrowserScreen — Ideas for you", () => {
     expect(
       await screen.findByText("Couldn't come up with ideas. Tap to retry."),
     ).toBeTruthy();
+  });
+
+  it("forwards the active cuisine, diet, meal type and quick-meal filters", async () => {
+    routeParams.value = { searchQuery: "tacos", mealType: "dinner" };
+    mutateAsync.mockResolvedValue([card]);
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(screen.getByLabelText("Filter by Mexican"));
+    fireEvent.click(screen.getByLabelText("Filter by Vegetarian"));
+    fireEvent.click(
+      screen.getByLabelText("Filter quick meals under 30 minutes"),
+    );
+    fireEvent.click(screen.getByText("Get ideas made for you"));
+
+    expect(mutateAsync).toHaveBeenCalledWith({
+      query: "tacos",
+      cuisine: "Mexican",
+      diet: "Vegetarian",
+      mealType: "dinner",
+      maxReadyTime: 30,
+    });
+  });
+
+  it("drops a meal type the listing doesn't accept", () => {
+    routeParams.value = { searchQuery: "tacos", mealType: "brunch" };
+    mutateAsync.mockResolvedValue([card]);
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(screen.getByText("Get ideas made for you"));
+
+    expect(mutateAsync).toHaveBeenCalledWith({ query: "tacos" });
+  });
+
+  it("changing a filter clears the shown ideas", async () => {
+    mutateAsync.mockResolvedValue([card]);
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(screen.getByText("Get ideas made for you"));
+    await screen.findByText("Bean Tacos");
+    fireEvent.click(screen.getByLabelText("Filter by Italian"));
+
+    await waitFor(() => expect(screen.queryByText("Bean Tacos")).toBeNull());
   });
 });
