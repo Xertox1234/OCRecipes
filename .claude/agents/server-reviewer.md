@@ -103,6 +103,9 @@ ALL image upload endpoints use `createImageUpload()` from `server/routes/_helper
 - Any endpoint creating unbounded user-owned items (pantry, saved items, bookmarks) must enforce a per-user count limit BEFORE insert (audit #6 M9).
 - For mutation endpoints (PUT/PATCH/DELETE), use a lightweight ownership query — a `verifyXOwnership(id, userId)` existence check selecting only `{ id }` — not a full-entity fetch with relations, unless the handler needs the data (audit #6 H3).
 
+- A row lock taken by a conditional `UPDATE … WHERE lock IS NULL OR lock <= now − stale RETURNING` must hand the holder its written value as a token, and the release must match it (`WHERE id = ? AND lock = $token`) — a release keyed only on the id lets a displaced holder's cleanup free a newer holder's lock. Every other writer of that row (cleanup purge, background media writer) must also skip rows whose lock is live (`docs/solutions/logic-errors/conditional-update-lock-release-must-compare-its-own-token-2026-10-13.md`).
+- A cleanup that removes rows and their stored objects deletes the rows first (guarded, `RETURNING` the object keys) and deletes only the objects of rows actually removed — never objects for every listed row (`docs/solutions/design-patterns/delete-db-rows-before-blobs-and-respect-in-flight-work-2026-10-13.md`).
+
 ---
 
 # Part 2 — Architecture & Layering
