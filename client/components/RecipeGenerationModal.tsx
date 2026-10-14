@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -68,6 +68,8 @@ export function RecipeGenerationModal({
   const accentColor = theme.link;
   const accentBg = useMemo(() => withOpacity(accentColor, 0.12), [accentColor]);
 
+  const queryClient = useQueryClient();
+
   // Generate recipe mutation
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -87,6 +89,11 @@ export function RecipeGenerationModal({
     },
     onSuccess: (recipe) => {
       haptics.notification(Haptics.NotificationFeedbackType.Success);
+      // The server added the recipe to Saved items.
+      void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/saved-items/count"],
+      });
       // Reset form state so re-opening the modal starts fresh (not inheriting previous generation's preferences)
       setServings(2);
       setSelectedDiets([]);

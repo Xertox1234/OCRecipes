@@ -41,6 +41,8 @@ vi.mock("../../storage", () => ({
     claimInspiredSuggestionMade: vi.fn(),
     getDailyRecipeGenerationCount: vi.fn(),
     createRecipeWithLimitCheck: vi.fn(),
+    getCommunityRecipe: vi.fn(),
+    saveRecipeToSavedItems: vi.fn(),
   },
 }));
 
@@ -101,6 +103,7 @@ beforeEach(() => {
   vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
   vi.mocked(storage.startMakingSuggestion).mockResolvedValue(token);
   vi.mocked(storage.abandonMakingSuggestion).mockResolvedValue(undefined);
+  vi.mocked(storage.saveRecipeToSavedItems).mockResolvedValue("linked");
 });
 
 describe("POST /api/inspired/suggestions", () => {
@@ -216,6 +219,68 @@ describe("POST /api/inspired/suggestions/:id/make", () => {
     expect(res.body).toEqual({ recipeId: 77 });
     expectResponseToMatch(res.body, makeResponseSchema);
     expect(generateFullRecipe).not.toHaveBeenCalled();
+  });
+  it("adds an already-made recipe to Saved items (backfills older makes)", async () => {
+    vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(
+      row({ madeRecipeId: 77 }),
+    );
+    vi.mocked(storage.getCommunityRecipe).mockResolvedValue(
+      createMockCommunityRecipe({ id: 77, title: "Smoky Bean Tacos" }),
+    );
+    const res = await make();
+    expect(res.status).toBe(200);
+    expect(storage.getCommunityRecipe).toHaveBeenCalledWith(77, "1");
+    expect(storage.saveRecipeToSavedItems).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({
+        recipeId: 77,
+        recipeType: "community",
+        title: "Smoky Bean Tacos",
+      }),
+    );
+  });
+  it("skips Saved items when the already-made recipe is gone", async () => {
+    vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(
+      row({ madeRecipeId: 77 }),
+    );
+    vi.mocked(storage.getCommunityRecipe).mockResolvedValue(undefined);
+    const res = await make();
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ recipeId: 77 });
+    expect(storage.saveRecipeToSavedItems).not.toHaveBeenCalled();
+  });
+  it("adds a newly made recipe to Saved items", async () => {
+    vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(row());
+    vi.mocked(generateFullRecipe).mockResolvedValue(generated);
+    vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
+      createMockCommunityRecipe({ id: 88, title: "Bean Tacos" }),
+    );
+    vi.mocked(storage.claimInspiredSuggestionMade).mockResolvedValue(true);
+    const res = await make();
+    expect(res.status).toBe(201);
+    expect(storage.saveRecipeToSavedItems).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({
+        recipeId: 88,
+        recipeType: "community",
+        title: "Bean Tacos",
+      }),
+    );
+  });
+  it("still returns the made recipe when adding to Saved items fails", async () => {
+    vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(row());
+    vi.mocked(generateFullRecipe).mockResolvedValue(generated);
+    vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
+      createMockCommunityRecipe({ id: 88, title: "Bean Tacos" }),
+    );
+    vi.mocked(storage.claimInspiredSuggestionMade).mockResolvedValue(true);
+    vi.mocked(storage.saveRecipeToSavedItems).mockRejectedValue(
+      new Error("db down"),
+    );
+    const res = await make();
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ recipeId: 88 });
+    expect(storage.abandonMakingSuggestion).not.toHaveBeenCalled();
   });
   it("410s when expired", async () => {
     vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(
