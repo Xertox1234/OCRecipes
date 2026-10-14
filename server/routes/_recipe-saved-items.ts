@@ -31,3 +31,24 @@ export async function addMadeRecipeToSavedItems(
     );
   }
 }
+
+/**
+ * Same, for a recipe known only by id (an already-made inspired card).
+ * Skipped when the recipe is gone; a failed lookup is logged, never thrown.
+ */
+export async function addMadeRecipeIdToSavedItems(
+  userId: string,
+  recipeId: number,
+): Promise<void> {
+  let recipe;
+  try {
+    recipe = await storage.getCommunityRecipe(recipeId, userId);
+  } catch (err) {
+    logger.error(
+      { err: toError(err), recipeId },
+      "look up made recipe for saved items failed",
+    );
+    return;
+  }
+  if (recipe) await addMadeRecipeToSavedItems(userId, recipe);
+}

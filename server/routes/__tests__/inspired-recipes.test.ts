@@ -249,6 +249,18 @@ describe("POST /api/inspired/suggestions/:id/make", () => {
     expect(res.body).toEqual({ recipeId: 77 });
     expect(storage.saveRecipeToSavedItems).not.toHaveBeenCalled();
   });
+  it("still returns an already-made recipe when its lookup fails", async () => {
+    vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(
+      row({ madeRecipeId: 77 }),
+    );
+    vi.mocked(storage.getCommunityRecipe).mockRejectedValue(
+      new Error("db down"),
+    );
+    const res = await make();
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ recipeId: 77 });
+    expect(storage.saveRecipeToSavedItems).not.toHaveBeenCalled();
+  });
   it("adds a newly made recipe to Saved items", async () => {
     vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(row());
     vi.mocked(generateFullRecipe).mockResolvedValue(generated);
