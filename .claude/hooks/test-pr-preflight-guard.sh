@@ -441,10 +441,19 @@ PRB="pr-guard-test-$$"
 PRB_SHA=$(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
   git commit-tree "HEAD^{tree}" -m "pr-guard head-branch test" 2>/dev/null || echo "")
 if [ -n "$PRB_SHA" ] && git update-ref "refs/heads/$PRB" "$PRB_SHA" 2>/dev/null; then
-  trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}"; git update-ref -d "refs/heads/'"$PRB"'" 2>/dev/null' EXIT
+  # Extends (never replaces) the earlier EXIT traps' cleanup list, plus the temp ref.
+  trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}" "${AWKSTUB:-}" "${DREPO:-}" "${DORIGIN:-}" "${DCLONE:-}"; git update-ref -d "refs/heads/'"$PRB"'" 2>/dev/null' EXIT
   run_mcp_head() { printf '{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"x","body":"y","head":%s,"base":"main"}}' "$(jq -Rn --arg h "$1" '$h')" | bash "$HOOK"; }
 
   echo "$PRB_SHA" > "$STAMP_FILE"
+  # Quoted text must never pick the head: a body/title that QUOTES a --head flag naming the
+  # stamped branch must not let the stamp cover a different (unstamped) PR branch.
+  OUT=$(run_hook "gh pr create --head no-such-branch-$$ --title x --body \"see --head $PRB\"")
+  assert_contains "gh: a --head quoted in --body cannot override the real --head" '"permissionDecision": "deny"' "$OUT"
+  OUT=$(run_hook "gh pr create --title x --body \"see --head $PRB\"")
+  assert_contains "gh: a --head that exists only inside quotes is ignored (cwd HEAD checked)" '"permissionDecision": "deny"' "$OUT"
+  OUT=$(run_hook "gh pr create --head $PRB --head no-such-branch-$$ --title x --body y")
+  assert_contains "gh: two --head flags are ambiguous, fall back to cwd HEAD (deny)" '"permissionDecision": "deny"' "$OUT"
   OUT=$(run_mcp_head "$PRB")
   assert_empty "MCP: stamp for the named head branch allows (cwd HEAD differs)" "" "$OUT"
   OUT=$(run_mcp_head "Xertox1234:$PRB")

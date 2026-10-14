@@ -120,7 +120,16 @@ HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
 # commit has no stamp still denies, so this only changes WHICH commit must be stamped.
 HEAD_REF=""
 case "$TOOL" in
-  Bash) HEAD_REF=$(printf '%s' "${CMD:-}" | sed -nE 's/.*(--head[= ]+|-H +)([^ "'"'"';&|)]+).*/\2/p') ;;
+  Bash)
+    # Quoted text (a --title/--body that QUOTES a --head flag) must never pick the head, or a
+    # stamp for one branch could cover a PR from another: drop quoted spans first, then accept
+    # exactly ONE --head/-H. Zero or several → no head named → cwd HEAD (the fail-closed side).
+    UNQUOTED=$(printf '%s' "${CMD:-}" | sed -E "s/\"[^\"]*\"//g; s/'[^']*'//g")
+    HEAD_FLAGS=$(printf '%s\n' "$UNQUOTED" | grep -oE '(^|[[:space:]])(--head[= ]+|-H +)[^[:space:];&|)]+' || true)
+    if [ -n "$HEAD_FLAGS" ] && [ "$(printf '%s\n' "$HEAD_FLAGS" | wc -l | tr -d ' ')" = 1 ]; then
+      HEAD_REF=$(printf '%s' "$HEAD_FLAGS" | sed -E 's/^[[:space:]]*(--head[= ]+|-H +)//')
+    fi
+    ;;
   *) HEAD_REF=$(printf '%s' "$INPUT" | jq -r '.tool_input.head // empty' 2>/dev/null || echo "") ;;
 esac
 HEAD_REF="${HEAD_REF##*:}"
