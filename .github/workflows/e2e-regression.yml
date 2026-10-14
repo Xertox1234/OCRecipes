@@ -92,7 +92,7 @@ env:
   # Credentials consumed by the Maestro flows (see e2e/README.md) and by
   # scripts/ci/seed-e2e-user.sh, which provisions this account.
   USERNAME: testuser
-  PASSWORD: testpass123
+  PASSWORD: ocr-e2e-maestro-Kq7v2x
 
 jobs:
   e2e-ios:
