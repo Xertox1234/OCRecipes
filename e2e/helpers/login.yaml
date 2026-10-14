@@ -2,7 +2,7 @@ appId: com.ocrecipes.app
 
 # Reusable login helper — call with `runFlow` and provide env vars:
 #   USERNAME (default: testuser)
-#   PASSWORD (default: testpass123)
+#   PASSWORD (default: ocr-e2e-maestro-Kq7v2x)
 #
 # State-aware since 2026-08-30 (evidence: dispatch-9 artifacts — see
 # todos/archive/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):

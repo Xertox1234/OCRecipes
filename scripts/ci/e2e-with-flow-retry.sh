@@ -19,7 +19,7 @@
 set -uo pipefail
 
 USERNAME="${USERNAME:-testuser}"
-PASSWORD="${PASSWORD:-testpass123}"
+PASSWORD="${PASSWORD:-ocr-e2e-maestro-Kq7v2x}"
 FLOWS_DIR="e2e"
 DEBUG_OUT="e2e/maestro-output"
 LOG="$(mktemp -t e2e-suite.XXXXXX)"
