@@ -35,7 +35,10 @@ import {
 import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
 import { useRecipeCommunityStats } from "@/hooks/useRecipeCommunity";
-import { resolveFeaturedRecipeType } from "@/screens/featured-recipe-detail-utils";
+import {
+  freshRecipePhotoPollInterval,
+  resolveFeaturedRecipeType,
+} from "@/screens/featured-recipe-detail-utils";
 import { Spacing, withOpacity } from "@/constants/theme";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -111,6 +114,9 @@ export default function FeaturedRecipeDetailScreen() {
   } = useQuery<CommunityRecipe>({
     queryKey: [`/api/recipes/${recipeId}`],
     enabled: resolvedRecipeType === "community" && recipeId > 0,
+    // A just-made recipe's photo lands after it opens; pick it up.
+    refetchInterval: (query) =>
+      freshRecipePhotoPollInterval(query.state.data, Date.now()),
   });
 
   // "I tried it" bar: public community recipes only. Shares the stats cache
