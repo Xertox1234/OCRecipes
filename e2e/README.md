@@ -13,13 +13,13 @@ All flows that require authentication use these env vars:
 | Variable   | Description           | Default       |
 | ---------- | --------------------- | ------------- |
 | `USERNAME` | Test account username | `testuser`    |
-| `PASSWORD` | Test account password | `testpass123` |
+| `PASSWORD` | Test account password | `ocr-e2e-maestro-Kq7v2x` |
 
 Set them before running:
 
 ```bash
 export USERNAME=testuser
-export PASSWORD=testpass123
+export PASSWORD=ocr-e2e-maestro-Kq7v2x
 ```
 
 ## Running Tests

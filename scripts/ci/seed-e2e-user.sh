@@ -14,7 +14,7 @@
 set -uo pipefail
 
 USERNAME="${USERNAME:-testuser}"
-PASSWORD="${PASSWORD:-testpass123}"
+PASSWORD="${PASSWORD:-ocr-e2e-maestro-Kq7v2x}"
 BACKEND_URL="${BACKEND_URL:-http://localhost:3000}"
 
 # Fail LOUD: this script runs under `set -uo pipefail` (no `-e`), so a
