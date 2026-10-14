@@ -10,7 +10,7 @@ Google MLKit (pulled in via `react-native-vision-camera-ocr-plus`) ships old-sty
 
 ## Solution
 
-Two changes in `ios/Podfile` post_install hook + a Python script:
+Two changes in the Podfile `post_install` hook + a Python script. `ios/` is generated (Expo CNG), so the hook lives in `plugins/ios/ocrecipes_post_install.rb`, and `plugins/ios-podfile-fixes.js` wires it into every generated Podfile:
 
 ### 1. Strip `EXCLUDED_ARCHS` (restores simulator discovery)
 
@@ -49,7 +49,7 @@ MLKitTranslate.framework and MLKitTextRecognitionCommon.framework are also patch
 
 - Building for iOS 26+ simulator on Apple Silicon
 - Any time `pod install` runs (the hook re-patches automatically)
-- After `expo prebuild --clean` (regenerates the Podfile — make sure the post_install hook is preserved)
+- After `expo prebuild --clean` (the config plugin re-inserts the hook into the regenerated Podfile)
 
 ## When This Fix Can Be Removed
 
@@ -57,13 +57,11 @@ When Google ships MLKit as XCFrameworks (with separate arm64 device and arm64 si
 
 ## Files
 
-- `ios/Podfile` — post_install hook (strips EXCLUDED_ARCHS + calls patch script)
+- `plugins/ios/ocrecipes_post_install.rb` — post_install hook (strips EXCLUDED_ARCHS + adds the patch-script build phase)
+- `plugins/ios-podfile-fixes.js` — config plugin that calls the hook from the generated `ios/Podfile`
 - `scripts/patch-mlkit-simulator.py` — binary patching script
 
 ## Troubleshooting
-
-**`expo prebuild --clean` broke the simulator build**  
-The `--clean` flag regenerates the entire `ios/` directory from the Expo template, which produces a default Podfile without the MLKit fix. Run `expo prebuild` (without `--clean`) to preserve Podfile customizations.
 
 **Build fails with "building for iOS-simulator but linking object built for iOS"**  
 The patch script didn't run or missed a framework. Run manually:
@@ -75,4 +73,4 @@ python3 scripts/patch-mlkit-simulator.py ios/Pods
 Then rebuild with `npx expo run:ios`.
 
 **`xcodebuild` shows no simulators in destination list**  
-The `EXCLUDED_ARCHS` stripping didn't take effect. Check that the Podfile post_install hook is present and run `pod install` again.
+The `EXCLUDED_ARCHS` stripping didn't take effect. Check that `ios/Podfile` calls `ocrecipes_post_install(installer)` (if not, run `npx expo prebuild --clean`) and run `pod install` again.

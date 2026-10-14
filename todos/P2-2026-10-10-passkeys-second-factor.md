@@ -39,7 +39,7 @@ Human-led: auth is high-risk in this codebase.
 
 - Part 1's server pieces to extend: `server/lib/mfa/verify-second-factor.ts`, `server/lib/mfa/challenge.ts`, `server/routes/auth-mfa.ts`, `server/storage/mfa.ts`. Client: `client/screens/TwoStepSetupScreen.tsx`, `client/screens/TwoStepCodeScreen.tsx`, `client/components/SecondFactorField.tsx`.
 - Session model: JWT with `tokenVersion` revocation (`server/middleware/auth.ts`, 60s version cache) — bump on enrol/remove like part 1 does.
-- Native change (entitlements + a passkey module) ⇒ a new EAS build and a runtime-version bump; can't ship by OTA. The repo keeps committed `ios/`/`android/` (no CNG), so entitlements are hand-edited.
+- Native change (entitlements + a passkey module) ⇒ a new EAS build and a runtime-version bump; can't ship by OTA. The native folders are generated (Expo CNG, 2026-10), so entitlements go in `app.json` (`ios.entitlements`) or a config plugin — never hand-edited into `ios/`.
 
 ## Dependencies
 

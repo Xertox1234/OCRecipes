@@ -29,7 +29,7 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
 
 ## Project facts (hard-coded)
 
-- Xcode workspace: `ios/OCRecipes.xcworkspace` · build scheme: `OCRecipes`
+- Xcode workspace: `ios/OCRecipes.xcworkspace` (generated — run `npx expo prebuild` if `ios/` is missing) · build scheme: `OCRecipes`
 - Bundle id: `com.williamtower.ocrecipes`
 - Deep-link URL scheme: `ocrecipes://` (distinct from the Xcode build scheme)
 - Test account for auth-gated screens: `demo` / `demo-password-2026` (15+ since password policy part 2 — a shorter one stops at the upgrade screen)

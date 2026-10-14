@@ -1,6 +1,6 @@
 // Google OAuth client IDs. Public identifiers, not secrets: the reversed iOS
-// one is also committed in ios/OCRecipes/Info.plist (kept in step by
-// native-config.test.ts). Committed constants, not EXPO_PUBLIC_* env, so a
+// one is also passed to the google-sign-in config plugin in app.json (kept in
+// step by native-config.test.ts). Committed constants, not EXPO_PUBLIC_* env, so a
 // missed build profile can't silently hide the button (spec 2026-10-09 §3.4).
 // The Android client ID is never used here — Credential Manager matches it by
 // package name + signing SHA-1.

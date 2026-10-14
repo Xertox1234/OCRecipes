@@ -132,3 +132,9 @@ Sentry, `plugins/strip-push-entitlement.js`. Android diff was cosmetic in the 20
 - Local Debug/Release simulator build of the generated project could NOT run (disk full: 2.6 GB
   free). Real-build proof therefore rests on PR 2's `e2e-regression` dispatch (builds the generated
   projects from scratch) and the owner's EAS Release build — both already gate PR 2's merge.
+- PR 2 (`feat/expo-cng-untrack`): ios/ + android/ untracked and ignored; runtime-version parity
+  test deleted (app.json is the only copy); native-config.test.ts asserts sources instead of
+  generated files; e2e-regression prebuilds explicitly (iOS BEFORE the Pods cache restore) and keys
+  Pods on the generated Podfile + properties + package-lock; DEV_SETUP / ios-26-simulator-fix /
+  verify-ui / passkeys todo updated. `npx expo-doctor --verbose`: "app config fields that may not
+  be synced in a non-CNG project" ✔ (16/18; the 2 failures are the pre-existing dependency pins).
