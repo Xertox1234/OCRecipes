@@ -15,7 +15,10 @@ import {
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { addMadeRecipeToSavedItems } from "./_recipe-saved-items";
+import {
+  addMadeRecipeIdToSavedItems,
+  addMadeRecipeToSavedItems,
+} from "./_recipe-saved-items";
 import { mealPlanRateLimit, recipeGenerationRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
@@ -166,11 +169,10 @@ export function register(app: Express): void {
         if (suggestion.madeRecipeId) {
           // Idempotent: also adds a recipe made before made recipes went
           // into Saved items. Skipped when the recipe has since been deleted.
-          const made = await storage.getCommunityRecipe(
-            suggestion.madeRecipeId,
+          await addMadeRecipeIdToSavedItems(
             req.userId,
+            suggestion.madeRecipeId,
           );
-          if (made) await addMadeRecipeToSavedItems(req.userId, made);
           res.status(200).json({ recipeId: suggestion.madeRecipeId });
           return;
         }
