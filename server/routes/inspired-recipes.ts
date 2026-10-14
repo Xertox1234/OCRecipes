@@ -35,7 +35,7 @@ import {
 const idsQuerySchema = z.object({
   ids: z
     .string()
-    .regex(/^\d+(,\d+){0,19}$/)
+    .regex(/^\d{1,9}(,\d{1,9}){0,19}$/)
     .transform((s) => s.split(",").map(Number)),
 });
 

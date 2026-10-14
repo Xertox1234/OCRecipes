@@ -140,6 +140,40 @@ describe("dropAllergenConflicts (canonical ids)", () => {
     ).toEqual([]);
   });
 
+  it.each([
+    ["em dash", "Thai Satay\u2014Peanut Noodles"],
+    ["en dash", "Thai Satay\u2013Peanut Noodles"],
+    ["ampersand", "Rice&Peanut Bowl"],
+    ["underscore", "Satay_Peanut_Noodles"],
+    ["ellipsis", "Satay\u2026Peanut Noodles"],
+    ["plus", "Rice+Peanut Bowl"],
+  ])("drops an allergen joined by an unspaced %s", (_label, title) => {
+    expect(
+      dropAllergenConflicts([card2(title)], withAllergy("peanuts")),
+    ).toEqual([]);
+    expect(
+      dropAllergenConflicts([card2(title)], withAllergy("kiwi")),
+    ).toHaveLength(1);
+  });
+
+  it("literal fallback also sees through unspaced dashes", () => {
+    expect(
+      dropAllergenConflicts(
+        [card2("Salsa\u2014Kiwi Bowl")],
+        withAllergy("kiwi"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps a safe card that uses dashes", () => {
+    expect(
+      dropAllergenConflicts(
+        [card2("Carrot\u2014Ginger Soup", "Warm \u2013 silky & bright.")],
+        withAllergy("peanuts"),
+      ),
+    ).toHaveLength(1);
+  });
+
   it("keeps a safe card that ends with a period", () => {
     expect(
       dropAllergenConflicts(

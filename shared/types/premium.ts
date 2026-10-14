@@ -41,8 +41,8 @@ export interface PremiumFeatures {
   cookAndTrack: boolean;
   maxFavouriteRecipes: number;
   /**
-   * Save a Spoonacular catalog recipe (costs 1 quota unit per save). Also gates
-   * Inspired recipe ideas (Recipe Browser + Recipe Finder).
+   * Premium gate for AI-written recipe ideas (Recipe Browser + Recipe Finder).
+   * Historical name: it once gated saving Spoonacular catalog recipes.
    */
   catalogSave: boolean;
   /** Import a recipe from an arbitrary URL (triggers AI image generation). */

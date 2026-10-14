@@ -63,10 +63,14 @@ export async function getInspiredSuggestion(
   return row;
 }
 
-export async function setInspiredSuggestionImage( // idor-safe: callers must pre-verify ownership via getInspiredSuggestion(userId, id)
+// prettier-ignore
+export async function setInspiredSuggestionImage( // idor-safe: only caller passes ids of rows createInspiredSuggestions just inserted for the user
   id: number,
   imageUrl: string,
 ): Promise<boolean> {
+  // Refused while a live make lock is held: the make route copies the card's
+  // imageUrl before its long generation, so a photo landing mid-make would be
+  // orphaned on the card. The caller deletes a refused photo.
   const updated = await db
     .update(inspiredSuggestions)
     .set({ imageUrl })
@@ -75,6 +79,7 @@ export async function setInspiredSuggestionImage( // idor-safe: callers must pre
         eq(inspiredSuggestions.id, id),
         isNull(inspiredSuggestions.imageUrl),
         isNull(inspiredSuggestions.madeRecipeId),
+        noLiveMakeLock(new Date()),
       ),
     )
     .returning({ id: inspiredSuggestions.id });

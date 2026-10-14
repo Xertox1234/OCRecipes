@@ -73,10 +73,11 @@ export function dropAllergenConflicts(
     .map((n) => n.toLowerCase().replace(/s$/, ""))
     .filter((n) => n.length > 0);
   return drafts.filter((d) => {
-    // The shared matcher's word boundaries exclude sentence punctuation, so
-    // "...crunchy peanuts." would be missed; blank it out first.
+    // The shared matcher's boundary class is only whitespace , ; / ( ) -, so
+    // "peanuts." or "Satay—Peanut" would be missed; blank every run of
+    // non-letter, non-digit characters first.
     const fields = [d.title, d.description, ...d.tags].map((f) =>
-      f.replace(/[.!?:"'’“”]/g, " "),
+      f.replace(/[^\p{L}\p{N}]+/gu, " "),
     );
     if (mapped.length > 0 && detectAllergens(fields, mapped).length > 0) {
       return false;

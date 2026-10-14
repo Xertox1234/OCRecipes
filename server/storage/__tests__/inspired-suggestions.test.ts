@@ -120,6 +120,25 @@ describe("inspired suggestions storage", () => {
     expect((await getInspiredSuggestion(a, row.id))?.imageUrl).toBe("u1");
   });
 
+  it("refuses a late image while a live make lock is held; a stale lock writes", async () => {
+    const [live, stale] = await createInspiredSuggestions(
+      a,
+      [draft("Making now"), draft("Crashed make")],
+      tomorrow(),
+    );
+    await tx
+      .update(inspiredSuggestions)
+      .set({ makingStartedAt: new Date() })
+      .where(eq(inspiredSuggestions.id, live.id));
+    await tx
+      .update(inspiredSuggestions)
+      .set({ makingStartedAt: new Date(Date.now() - MAKING_STALE_MS - 1000) })
+      .where(eq(inspiredSuggestions.id, stale.id));
+    expect(await setInspiredSuggestionImage(live.id, "late")).toBe(false);
+    expect((await getInspiredSuggestion(a, live.id))?.imageUrl).toBeNull();
+    expect(await setInspiredSuggestionImage(stale.id, "ok")).toBe(true);
+  });
+
   it("never attaches a late image to a made card", async () => {
     const [row] = await createInspiredSuggestions(
       a,
