@@ -111,6 +111,25 @@ esac
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
 
+# Check the PR's OWN branch, not whatever the cwd has checked out (2026-10-13). Work happens in
+# linked worktrees while the session's cwd stays on the main checkout, so reading cwd HEAD denied
+# every worktree PR. When the call names a head branch — MCP `tool_input.head` (optionally
+# "owner:branch"), or `--head <b>` / `--head=<b>` / `-H <b>` on the gh CLI — resolve THAT branch
+# (local ref first, then origin/<b>; worktree branches are local refs in the shared repo). No head
+# named, or an unresolvable one → keep cwd HEAD, the previous behaviour. A named branch whose
+# commit has no stamp still denies, so this only changes WHICH commit must be stamped.
+HEAD_REF=""
+case "$TOOL" in
+  Bash) HEAD_REF=$(printf '%s' "${CMD:-}" | sed -nE 's/.*(--head[= ]+|-H +)([^ "'"'"';&|)]+).*/\2/p') ;;
+  *) HEAD_REF=$(printf '%s' "$INPUT" | jq -r '.tool_input.head // empty' 2>/dev/null || echo "") ;;
+esac
+HEAD_REF="${HEAD_REF##*:}"
+if [ -n "$HEAD_REF" ]; then
+  REF_SHA=$(git rev-parse -q --verify "refs/heads/${HEAD_REF}^{commit}" 2>/dev/null ||
+    git rev-parse -q --verify "refs/remotes/origin/${HEAD_REF}^{commit}" 2>/dev/null || echo "")
+  [ -n "$REF_SHA" ] && HEAD="$REF_SHA"
+fi
+
 # Resolve the stamp path from the SAME helper the writer uses (no drift). If the
 # helper can't be located, STAMP stays empty → we fall through to DENY: the safe
 # direction for a gate, never a silent allow on a path mismatch.
@@ -171,9 +190,9 @@ if [ -z "${SKIP_PR_DRIFT_CHECK:-}" ]; then
   git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
     origin "refs/heads/${BASE}:refs/remotes/origin/${BASE}" 2>/dev/null
   if git rev-parse -q --verify "origin/${BASE}" >/dev/null 2>&1; then
-    MISSED=$(git diff --name-only "HEAD...origin/${BASE}" 2>/dev/null || echo "")
+    MISSED=$(git diff --name-only "${HEAD}...origin/${BASE}" 2>/dev/null || echo "")
     if [ -n "$MISSED" ]; then
-      MINE=$(git diff --name-only "origin/${BASE}...HEAD" 2>/dev/null || echo "")
+      MINE=$(git diff --name-only "origin/${BASE}...${HEAD}" 2>/dev/null || echo "")
       OVERLAP=$(comm -12 <(printf '%s\n' "$MISSED" | sort) <(printf '%s\n' "$MINE" | sort))
       if [ -n "$OVERLAP" ]; then
         FIRST=$(printf '%s\n' "$OVERLAP" | head -1)
