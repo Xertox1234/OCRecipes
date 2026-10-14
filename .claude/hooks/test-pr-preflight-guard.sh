@@ -435,7 +435,11 @@ rm -f "$STAMP_FILE"
 # resolves THAT branch's commit (local ref first, then origin/<b>). With no head named, or an
 # unresolvable one, it keeps using HEAD.
 PRB="pr-guard-test-$$"
-PRB_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+# A fresh parentless commit of HEAD's tree: a sha that differs from HEAD without needing any
+# history (CI checks out depth 1, so HEAD~1 does not exist there). Identity is set inline so
+# commit-tree works on a runner with no git user configured.
+PRB_SHA=$(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+  git commit-tree "HEAD^{tree}" -m "pr-guard head-branch test" 2>/dev/null || echo "")
 if [ -n "$PRB_SHA" ] && git update-ref "refs/heads/$PRB" "$PRB_SHA" 2>/dev/null; then
   trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}"; git update-ref -d "refs/heads/'"$PRB"'" 2>/dev/null' EXIT
   run_mcp_head() { printf '{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"x","body":"y","head":%s,"base":"main"}}' "$(jq -Rn --arg h "$1" '$h')" | bash "$HOOK"; }
