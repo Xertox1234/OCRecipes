@@ -3,6 +3,7 @@
 // RecipeChef (message metadata `finder`) and Coach Pro (a `blocks[]` entry).
 import { z } from "zod";
 import { COOKING_TIME_IDS } from "../constants/cooking-times";
+import { SUGGESTION_DESCRIPTION_MAX } from "./inspired-recipes";
 
 /** Max rows in one finder list (D3: 3–5 close matches). */
 export const FINDER_MAX_ITEMS = 5;
@@ -27,7 +28,7 @@ export const finderItemSchema = z.object({
   id: z.number().int().positive(),
   source: z.enum(["community", "inspired"]),
   title: z.string().min(1).max(200),
-  description: z.string().max(140).optional(),
+  description: z.string().max(SUGGESTION_DESCRIPTION_MAX).optional(),
   imageUrl: z.string().nullable(),
   readyInMinutes: z.number().int().positive().nullable(),
   calories: z.number().nonnegative().nullable(),

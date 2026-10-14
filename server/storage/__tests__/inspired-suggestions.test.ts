@@ -31,7 +31,6 @@ const {
   countInspiredSuggestionsSince,
   getInspiredSuggestions,
   getInspiredSuggestion,
-  setInspiredSuggestionImage,
   startMakingSuggestion,
   abandonMakingSuggestion,
   claimInspiredSuggestionMade,
@@ -107,48 +106,6 @@ describe("inspired suggestions storage", () => {
     const since = new Date(Date.now() - 86_400_000);
     expect(await countInspiredSuggestionsSince(a, since)).toBe(2);
     expect(await countInspiredSuggestionsSince(b, since)).toBe(1);
-  });
-
-  it("sets the image only once", async () => {
-    const [row] = await createInspiredSuggestions(
-      a,
-      [draft("One")],
-      tomorrow(),
-    );
-    expect(await setInspiredSuggestionImage(row.id, "u1")).toBe(true);
-    expect(await setInspiredSuggestionImage(row.id, "u2")).toBe(false);
-    expect((await getInspiredSuggestion(a, row.id))?.imageUrl).toBe("u1");
-  });
-
-  it("refuses a late image while a live make lock is held; a stale lock writes", async () => {
-    const [live, stale] = await createInspiredSuggestions(
-      a,
-      [draft("Making now"), draft("Crashed make")],
-      tomorrow(),
-    );
-    await tx
-      .update(inspiredSuggestions)
-      .set({ makingStartedAt: new Date() })
-      .where(eq(inspiredSuggestions.id, live.id));
-    await tx
-      .update(inspiredSuggestions)
-      .set({ makingStartedAt: new Date(Date.now() - MAKING_STALE_MS - 1000) })
-      .where(eq(inspiredSuggestions.id, stale.id));
-    expect(await setInspiredSuggestionImage(live.id, "late")).toBe(false);
-    expect((await getInspiredSuggestion(a, live.id))?.imageUrl).toBeNull();
-    expect(await setInspiredSuggestionImage(stale.id, "ok")).toBe(true);
-  });
-
-  it("never attaches a late image to a made card", async () => {
-    const [row] = await createInspiredSuggestions(
-      a,
-      [draft("One")],
-      tomorrow(),
-    );
-    const recipe = await seedCommunityRecipe(a);
-    expect(await claimInspiredSuggestionMade(a, row.id, recipe.id)).toBe(true);
-    expect(await setInspiredSuggestionImage(row.id, "late")).toBe(false);
-    expect((await getInspiredSuggestion(a, row.id))?.imageUrl).toBeNull();
   });
 
   it("claims made only once, and only for the owner", async () => {

@@ -15,11 +15,14 @@ export const INSPIRED_DAILY_CARD_CAP = 80;
  * lock can be retaken, and the expiry purge may delete the card.
  */
 export const MAKING_STALE_MS = 2 * 60 * 1000;
+/** A card's pitch: up to two short sentences. Recipe Finder rows carry the
+ * same text, so their schema uses this limit too. */
+export const SUGGESTION_DESCRIPTION_MAX = 280;
 
 /** What the AI returns for one card. */
 export const suggestionDraftSchema = z.object({
   title: z.string().trim().min(3).max(80),
-  description: z.string().trim().min(10).max(140),
+  description: z.string().trim().min(10).max(SUGGESTION_DESCRIPTION_MAX),
   totalMinutes: z.number().int().min(5).max(240),
   tags: z.array(z.string().trim().min(1).max(24)).max(5),
 });
@@ -28,6 +31,8 @@ export type SuggestionDraft = z.infer<typeof suggestionDraftSchema>;
 /** What the client sees for one card. */
 export const suggestionSchema = suggestionDraftSchema.extend({
   id: z.number().int().positive(),
+  /** Always null: cards are text-only and only a made recipe gets a photo.
+   * Kept so app builds from before that change still parse the response. */
   imageUrl: z.string().nullable(),
   madeRecipeId: z.number().int().positive().nullable(),
 });

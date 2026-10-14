@@ -11,6 +11,7 @@ import {
   buildProfileBrief,
   dropAllergenConflicts,
 } from "../suggest-listing";
+import { SUGGESTION_DESCRIPTION_MAX } from "@shared/schemas/inspired-recipes";
 
 vi.mock("../../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../../lib/openai", () => ({ OPENAI_TIMEOUT_FAST_MS: 15_000 }));
@@ -57,6 +58,14 @@ describe("suggestListing", () => {
     expect(body).toContain("Diet type: vegetarian");
     expect(body).toContain("Household: 3");
     expect(body).not.toContain("SECRET_CONDITION_XYZ");
+  });
+
+  it("asks for an appetising pitch within the schema's description limit", async () => {
+    mockAi.mockResolvedValue(reply({ suggestions: [card("Bean Tacos")] }));
+    await suggestListing(args());
+    const system = String(mockAi.mock.calls[0][1].messages[0].content);
+    expect(system).toContain(`max ${SUGGESTION_DESCRIPTION_MAX} chars`);
+    expect(system).toMatch(/flavou?rs?/i);
   });
 
   it("works with zero inspiration titles", async () => {

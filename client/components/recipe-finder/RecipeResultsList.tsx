@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { AccessibilityInfo, Pressable, StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -6,10 +6,7 @@ import { Button } from "@/components/Button";
 import { ThemedText } from "@/components/ThemedText";
 import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
-import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useSuggestionPhotos } from "@/hooks/useInspiredSuggestions";
-import { resolveImageUrl } from "@/lib/query-client";
 import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
 import type {
   FinderButton,
@@ -59,15 +56,7 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
   makingId = null,
 }: RecipeResultsListProps) {
   const { theme } = useTheme();
-  const { reducedMotion } = useAccessibility();
   const haptics = useHaptics();
-  // Idea photos are generated after the listing; poll for them while this is
-  // the live list (an old list keeps whatever photo it already had).
-  const inspiredIds = useMemo(
-    () => block.items.filter((i) => i.source === "inspired").map((i) => i.id),
-    [block.items],
-  );
-  const photos = useSuggestionPhotos(inspiredIds, isActive);
   // No live region covers the list's arrival, so announce on both platforms,
   // once per flow, and only for the live (latest) list.
   const announcedFlowRef = useRef<string | null>(null);
@@ -105,40 +94,29 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
           {block.items.map((item) => {
             const meta = formatItemMeta(item);
             if (item.source === "inspired") {
-              const uri = resolveImageUrl(photos.get(item.id) ?? item.imageUrl);
               const making = makingId === item.id;
               return (
                 <View
                   key={`${item.source}:${item.id}`}
                   style={[styles.row, styles.ideaRow]}
                 >
-                  {uri ? (
-                    <FallbackImage
-                      source={{ uri }}
-                      style={styles.thumb}
-                      fallbackIcon="book-open"
-                      fallbackIconSize={20}
-                      contentFit="cover"
-                      transition={reducedMotion ? 0 : 220}
-                      accessibilityIgnoresInvertColors
+                  {/* Ideas are text-only (an old message may still carry a
+                      photo URL whose card has since been purged). */}
+                  <View
+                    testID="finder-thumb-placeholder"
+                    style={[
+                      styles.thumb,
+                      styles.placeholder,
+                      { backgroundColor: withOpacity(theme.link, 0.1) },
+                    ]}
+                  >
+                    <Feather
+                      name="book-open"
+                      size={20}
+                      color={theme.link}
+                      accessible={false}
                     />
-                  ) : (
-                    <View
-                      testID="finder-thumb-placeholder"
-                      style={[
-                        styles.thumb,
-                        styles.placeholder,
-                        { backgroundColor: withOpacity(theme.link, 0.1) },
-                      ]}
-                    >
-                      <Feather
-                        name="book-open"
-                        size={20}
-                        color={theme.link}
-                        accessible={false}
-                      />
-                    </View>
-                  )}
+                  </View>
                   <View style={styles.rowText}>
                     <ThemedText numberOfLines={2} style={styles.title}>
                       {item.title}

@@ -62,11 +62,9 @@ vi.mock("@/hooks/useInspiredSuggestions", () => {
     reset: vi.fn(),
   };
   const make = { mutateAsync: vi.fn() };
-  const photos = new Map<number, string | null>();
   return {
     useCreateSuggestionListing: () => listing,
     useMakeSuggestion: () => make,
-    useSuggestionPhotos: () => photos,
   };
 });
 
