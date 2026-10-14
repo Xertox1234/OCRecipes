@@ -64,6 +64,20 @@ describe("useMakeSuggestion", () => {
   });
 });
 
+describe("useMakeSuggestion refreshes Saved items", () => {
+  it("invalidates the saved-items list and count on success", async () => {
+    apiRequest.mockResolvedValue(json({ recipeId: 88 }));
+    const { wrapper, queryClient } = createQueryWrapper();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useMakeSuggestion(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync(1);
+    });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["/api/saved-items"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["/api/saved-items/count"] });
+  });
+});
+
 describe("useMakeSuggestion 409 wait", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

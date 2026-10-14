@@ -15,6 +15,7 @@ import {
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { addMadeRecipeToSavedItems } from "./_recipe-saved-items";
 import { mealPlanRateLimit, recipeGenerationRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
@@ -163,6 +164,13 @@ export function register(app: Express): void {
           return;
         }
         if (suggestion.madeRecipeId) {
+          // Idempotent: also adds a recipe made before made recipes went
+          // into Saved items. Skipped when the recipe has since been deleted.
+          const made = await storage.getCommunityRecipe(
+            suggestion.madeRecipeId,
+            req.userId,
+          );
+          if (made) await addMadeRecipeToSavedItems(req.userId, made);
           res.status(200).json({ recipeId: suggestion.madeRecipeId });
           return;
         }
@@ -290,6 +298,7 @@ export function register(app: Express): void {
           }
         }
 
+        await addMadeRecipeToSavedItems(req.userId, recipe);
         res.status(201).json({ recipeId: recipe.id });
         fireAndForget(
           "inspired recipe image",

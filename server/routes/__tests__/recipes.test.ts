@@ -38,6 +38,7 @@ vi.mock("../../storage", () => ({
     getFrequentRecipesForMealType: vi.fn(),
     getRecipeSharePayload: vi.fn(),
     getUserVerificationStats: vi.fn(),
+    saveRecipeToSavedItems: vi.fn(),
   },
 }));
 
@@ -344,6 +345,64 @@ describe("Recipes Routes", () => {
       expect(res.status).toBe(201);
       // Image generation is kicked off via fireAndForget after responding.
       expect(vi.mocked(generateAndPatchRecipeImage)).toHaveBeenCalled();
+    });
+
+    function setUpPremiumGenerate() {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(generateFullRecipe).mockResolvedValue({
+        title: "Pasta Bowl",
+        description: "Delicious",
+        difficulty: "Easy",
+        timeEstimate: "30 min",
+        ingredients: [{ name: "pasta", quantity: "200", unit: "g" }],
+        dietTags: [],
+        instructions: ["Cook pasta..."],
+        imageUrl: null,
+      });
+      vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
+        createMockCommunityRecipe({ id: 2, title: "Pasta Bowl" }),
+      );
+    }
+
+    it("adds the generated recipe to Saved items", async () => {
+      setUpPremiumGenerate();
+      vi.mocked(storage.saveRecipeToSavedItems).mockResolvedValue("linked");
+
+      const res = await request(app)
+        .post("/api/recipes/generate")
+        .set("Authorization", "Bearer token")
+        .send({ productName: "Pasta" });
+
+      expect(res.status).toBe(201);
+      expect(storage.saveRecipeToSavedItems).toHaveBeenCalledWith(
+        "1",
+        expect.objectContaining({
+          recipeId: 2,
+          recipeType: "community",
+          title: "Pasta Bowl",
+        }),
+      );
+    });
+
+    it("still returns the recipe when adding to Saved items fails", async () => {
+      setUpPremiumGenerate();
+      vi.mocked(storage.saveRecipeToSavedItems).mockRejectedValue(
+        new Error("db down"),
+      );
+
+      const res = await request(app)
+        .post("/api/recipes/generate")
+        .set("Authorization", "Bearer token")
+        .send({ productName: "Pasta" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe(2);
     });
 
     it("returns 403 for free tier", async () => {

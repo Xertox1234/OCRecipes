@@ -47,6 +47,11 @@ export function useMakeSuggestion() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
+      // The server added the recipe to Saved items.
+      void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/saved-items/count"],
+      });
     },
     meta: { silentError: true },
   });
