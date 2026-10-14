@@ -7,6 +7,7 @@ import {
   FINDER_MAX_ITEMS,
 } from "../recipe-finder";
 import { coachBlockSchema } from "../coach-blocks";
+import { SUGGESTION_DESCRIPTION_MAX } from "../inspired-recipes";
 
 const FLOW_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -64,6 +65,29 @@ describe("finderBlockSchema", () => {
       flow: { ...resultsBlock.flow, stage: "clarifying" },
     };
     expect(finderBlockSchema.safeParse(q).success).toBe(true);
+  });
+
+  it("carries an idea card's full description (same limit as the card)", () => {
+    const withDescription = (length: number) => ({
+      ...resultsBlock,
+      source: "inspired" as const,
+      items: [
+        {
+          ...resultsBlock.items[0],
+          source: "inspired" as const,
+          description: "a".repeat(length),
+        },
+      ],
+    });
+    expect(
+      finderBlockSchema.safeParse(withDescription(SUGGESTION_DESCRIPTION_MAX))
+        .success,
+    ).toBe(true);
+    expect(
+      finderBlockSchema.safeParse(
+        withDescription(SUGGESTION_DESCRIPTION_MAX + 1),
+      ).success,
+    ).toBe(false);
   });
 });
 

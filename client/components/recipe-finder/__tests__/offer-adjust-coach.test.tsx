@@ -55,10 +55,8 @@ vi.mock("@react-navigation/native", () => ({
 // Thin stub to satisfy render; "Make this mine" is not under test here.
 // One stable mutateAsync, like useMutation's, so callback identities hold.
 const mockMakeSuggestion = vi.hoisted(() => ({ mutateAsync: vi.fn() }));
-const mockSuggestionPhotos = vi.hoisted(() => new Map<number, string>());
 vi.mock("@/hooks/useInspiredSuggestions", () => ({
   useMakeSuggestion: () => mockMakeSuggestion,
-  useSuggestionPhotos: () => mockSuggestionPhotos,
 }));
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),

@@ -44,7 +44,7 @@ export function register(app: Express): void {
   app.post(
     "/api/inspired/suggestions",
     requireAuth,
-    recipeGenerationRateLimit, // 1 search + 1 AI call + 8 images per request
+    recipeGenerationRateLimit, // 1 search + 1 AI call per request
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
@@ -250,7 +250,8 @@ export function register(app: Express): void {
               mealTypes,
               instructions: generated.instructions,
               ingredients: generated.ingredients,
-              imageUrl: suggestion.imageUrl,
+              // Cards are text-only; the recipe gets its own photo below.
+              imageUrl: null,
               isPublic: false,
             },
             tz,
@@ -288,15 +289,13 @@ export function register(app: Express): void {
         }
 
         res.status(201).json({ recipeId: recipe.id });
-        if (!suggestion.imageUrl) {
-          fireAndForget(
-            "inspired recipe image",
-            generateAndPatchRecipeImage(recipe.id, {
-              title: recipe.title,
-              mealTypes: recipe.mealTypes,
-            }),
-          );
-        }
+        fireAndForget(
+          "inspired recipe image",
+          generateAndPatchRecipeImage(recipe.id, {
+            title: recipe.title,
+            mealTypes: recipe.mealTypes,
+          }),
+        );
       } catch (error) {
         handleRouteError(res, error, "make inspired recipe");
       }

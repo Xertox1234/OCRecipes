@@ -63,29 +63,6 @@ export async function getInspiredSuggestion(
   return row;
 }
 
-// prettier-ignore
-export async function setInspiredSuggestionImage( // idor-safe: only caller passes ids of rows createInspiredSuggestions just inserted for the user
-  id: number,
-  imageUrl: string,
-): Promise<boolean> {
-  // Refused while a live make lock is held: the make route copies the card's
-  // imageUrl before its long generation, so a photo landing mid-make would be
-  // orphaned on the card. The caller deletes a refused photo.
-  const updated = await db
-    .update(inspiredSuggestions)
-    .set({ imageUrl })
-    .where(
-      and(
-        eq(inspiredSuggestions.id, id),
-        isNull(inspiredSuggestions.imageUrl),
-        isNull(inspiredSuggestions.madeRecipeId),
-        noLiveMakeLock(new Date()),
-      ),
-    )
-    .returning({ id: inspiredSuggestions.id });
-  return updated.length > 0;
-}
-
 /**
  * Takes the single-make lock. Returns the exact `makingStartedAt` written (the
  * holder's token for `abandonMakingSuggestion`), or null if the lock was not

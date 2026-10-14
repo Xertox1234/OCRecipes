@@ -225,7 +225,7 @@ describe("POST /api/inspired/suggestions/:id/make", () => {
     expect(res.status).toBe(410);
     expect(res.body.code).toBe("SUGGESTION_EXPIRED");
   });
-  it("creates a private recipe with the card photo and claims the card", async () => {
+  it("creates a private recipe with its own photo and claims the card", async () => {
     vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(
       row({ imageUrl: "https://img/card.jpg" }),
     );
@@ -242,28 +242,18 @@ describe("POST /api/inspired/suggestions/:id/make", () => {
     expect(data).toMatchObject({
       authorId: "1",
       isPublic: false,
-      imageUrl: "https://img/card.jpg",
+      imageUrl: null,
     });
     expect(storage.claimInspiredSuggestionMade).toHaveBeenCalledWith(
       "1",
       5,
       88,
     );
-    expect(generateAndPatchRecipeImage).not.toHaveBeenCalled();
-    expect(storage.abandonMakingSuggestion).not.toHaveBeenCalled();
-  });
-  it("generates a recipe photo when the card photo is not ready", async () => {
-    vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(row());
-    vi.mocked(generateFullRecipe).mockResolvedValue(generated);
-    vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
-      createMockCommunityRecipe({ id: 88, title: "Bean Tacos" }),
-    );
-    vi.mocked(storage.claimInspiredSuggestionMade).mockResolvedValue(true);
-    await make();
     expect(generateAndPatchRecipeImage).toHaveBeenCalledWith(
       88,
       expect.objectContaining({ title: "Bean Tacos" }),
     );
+    expect(storage.abandonMakingSuggestion).not.toHaveBeenCalled();
   });
   it("409s when another tap is already making it, and never generates twice", async () => {
     vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(row());

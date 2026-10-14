@@ -47,7 +47,6 @@ const card2: Suggestion = { ...card, id: 8, title: "Fish Tacos" };
 
 vi.mock("@/hooks/useInspiredSuggestions", async () => {
   const ReactActual = await import("react");
-  const EMPTY_PHOTOS = new Map<number, string | null>();
   return {
     useCreateSuggestionListing: () => {
       const [data, setData] = ReactActual.useState<Suggestion[] | undefined>(
@@ -84,7 +83,6 @@ vi.mock("@/hooks/useInspiredSuggestions", async () => {
       }, []);
       return { data, error, isPending, mutate, reset };
     },
-    useSuggestionPhotos: () => EMPTY_PHOTOS,
     useMakeSuggestion: () => ({ mutateAsync: makeMutateAsync }),
   };
 });

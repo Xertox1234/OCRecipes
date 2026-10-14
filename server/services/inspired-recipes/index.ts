@@ -1,12 +1,11 @@
-// Spec 2026-10-12 §3: search (titles only) → AI listing → store → photos.
+// Spec 2026-10-12 §3: search (titles only) → AI listing → store. Cards are
+// text-only; a photo is generated only when a card is made into a recipe.
 import {
   searchCatalogRecipes,
   buildIntolerancesParam,
 } from "../recipe-catalog";
 import { suggestListing } from "./suggest-listing";
-import { generateSuggestionImage } from "./suggestion-image";
 import { storage } from "../../storage";
-import { fireAndForget } from "../../lib/fire-and-forget";
 import { createServiceLogger, toError } from "../../lib/logger";
 import type { UserProfile } from "@shared/schema";
 import {
@@ -71,8 +70,5 @@ export async function createSuggestionListing(args: {
     drafts,
     new Date(Date.now() + SUGGESTION_TTL_MS),
   );
-  for (const row of rows) {
-    fireAndForget("inspired card image", generateSuggestionImage(row));
-  }
   return rows.map(toSuggestion);
 }
