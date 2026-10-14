@@ -250,7 +250,9 @@ export function register(app: Express): void {
               mealTypes,
               instructions: generated.instructions,
               ingredients: generated.ingredients,
-              // Cards are text-only; the recipe gets its own photo below.
+              // Cards are text-only; the recipe gets its own photo below. A
+              // card from before that change may still hold a photo, which is
+              // left unused once the card is made (a one-off, accepted).
               imageUrl: null,
               isPublic: false,
             },

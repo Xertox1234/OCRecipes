@@ -31,8 +31,10 @@ export type SuggestionDraft = z.infer<typeof suggestionDraftSchema>;
 /** What the client sees for one card. */
 export const suggestionSchema = suggestionDraftSchema.extend({
   id: z.number().int().positive(),
-  /** Always null: cards are text-only and only a made recipe gets a photo.
-   * Kept so app builds from before that change still parse the response. */
+  /** Null for new cards: cards are text-only and only a made recipe gets a
+   * photo. Rows from before that change may hold a photo until they expire.
+   * The field stays so older app builds keep their response shape (those builds
+   * still cap descriptions at 140, so they need the OTA to read new cards). */
   imageUrl: z.string().nullable(),
   madeRecipeId: z.number().int().positive().nullable(),
 });
