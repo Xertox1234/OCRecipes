@@ -1,5 +1,7 @@
 // Unchosen idea cards expire after 24 h; their photos go with them. A made
 // card (madeRecipeId set) is never deleted, so its photo — now the recipe's — stays.
+// A card mid-make (live make lock) is skipped until the lock goes stale; a photo
+// that lands during a make is refused at write time and deleted by its generator.
 import { storage } from "../storage";
 import { deleteImage } from "../lib/image-store";
 import { createServiceLogger, toError } from "../lib/logger";

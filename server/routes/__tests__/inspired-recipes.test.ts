@@ -181,6 +181,12 @@ describe("GET /api/inspired/suggestions", () => {
       .set(auth);
     expect(res.status).toBe(400);
   });
+  it("400s on an id beyond int4", async () => {
+    const res = await request(app())
+      .get("/api/inspired/suggestions?ids=99999999999")
+      .set(auth);
+    expect(res.status).toBe(400);
+  });
   it("400s on more than 20 ids", async () => {
     const ids = Array.from({ length: 21 }, (_, i) => i + 1).join(",");
     const res = await request(app())
