@@ -3,10 +3,10 @@
 ---
 
 title: "Migrate to Expo CNG: port the hand-made native fixes into app.json/config plugins, then stop committing android/ios"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-11
-updated: 2026-10-11
+updated: 2026-10-13
 assignee:
 labels: [architecture, ios, build]
 github_issue:
@@ -115,3 +115,20 @@ Sentry, `plugins/strip-push-entitlement.js`. Android diff was cosmetic in the 20
 
 - Created from the CNG decision todo after the owner chose to adopt CNG. Items 6–8 found by
   reading `git log --since=2026-09-30 -- ios android`, not by a prebuild run.
+
+### 2026-10-13
+
+- PR 1 (config port, folders still committed): probe re-run. Items 1–2 + the pod deployment-target
+  sweep → `plugins/ios/ocrecipes_post_install.rb` (moved verbatim), wired by
+  `plugins/ios-podfile-fixes.js`; item 7 → same plugin; items 3–4 → `expo-build-properties`;
+  item 5 → `ios.privacyManifests`; item 6 → `modules/google-sign-in/app.plugin.js` (appends — an
+  `ios.infoPlist.CFBundleURLTypes` entry REPLACES the array and dropped `ocrecipes://`); item 8
+  needs nothing (`expo-apple-authentication` already writes the entitlement). New: `ios.appleTeamId`
+  (pbxproj `DEVELOPMENT_TEAM`, local device builds only).
+- PR 2 (owner ruling 2026-10-13): does NOT merge until the owner has built it with EAS and
+  smoke-tested on the phone. Note for its body: untracking `Podfile.lock` means pods resolve fresh
+  per build — a clean resolve on 2026-10-13 already drifted patch versions (GoogleUtilities
+  8.1.2→8.1.3, libwebp 1.5→1.6, SDWebImage 5.21.5→5.21.7, libavif 0.11→1.0).
+- Local Debug/Release simulator build of the generated project could NOT run (disk full: 2.6 GB
+  free). Real-build proof therefore rests on PR 2's `e2e-regression` dispatch (builds the generated
+  projects from scratch) and the owner's EAS Release build — both already gate PR 2's merge.

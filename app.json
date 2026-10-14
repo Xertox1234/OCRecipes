@@ -11,12 +11,143 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.williamtower.ocrecipes",
+      "appleTeamId": "3442937R38",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "OCRecipes needs camera access to scan barcodes and nutrition labels.",
         "NSMicrophoneUsageDescription": "OCRecipes uses the microphone for voice food logging.",
         "NSPhotoLibraryUsageDescription": "OCRecipes uses photos you choose to find ingredients, read receipts, import recipes, and set your profile picture and cookbook covers.",
         "NSSpeechRecognitionUsageDescription": "OCRecipes uses speech recognition for voice food logging."
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1", "0A2A.1", "3B52.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1", "C56D.1", "1C8F.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": ["E174.1", "85F4.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": ["35F9.1"]
+          }
+        ],
+        "NSPrivacyCollectedDataTypes": [
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeName"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeUserID"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeHealth"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeFitness"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePhotosorVideos"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeAudioData"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+              "NSPrivacyCollectedDataTypePurposeProductPersonalization"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeOtherUserContent"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePurchaseHistory"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeDeviceID"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeProductInteraction"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeOtherDiagnosticData"
+          },
+          {
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ],
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData"
+          }
+        ],
+        "NSPrivacyTracking": false
       }
     },
     "android": {
@@ -58,8 +189,29 @@
         }
       ],
       "./plugins/strip-push-entitlement",
+      "./plugins/ios-podfile-fixes",
+      [
+        "./modules/google-sign-in/app.plugin.js",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.302305066915-i735f5tb3i1udb23fduorkuludvgp8cr"
+        }
+      ],
       "expo-apple-authentication",
-      ["expo-secure-store", { "faceIDPermission": false }]
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.0",
+            "buildReactNativeFromSource": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": true

@@ -60,10 +60,53 @@ describe("native sign-in config", () => {
   });
 
   // Google's iOS SDK closes the app if this scheme is missing (spec §3.2).
+  // app.json is the source `expo prebuild` generates Info.plist from (CNG).
+  it("passes the reversed iOS client ID to the google-sign-in config plugin", () => {
+    const entry = (appJson.expo.plugins as unknown[]).find(
+      (p): p is [string, { iosUrlScheme: string }] =>
+        Array.isArray(p) && p[0] === "./modules/google-sign-in/app.plugin.js",
+    );
+    expect(entry?.[1].iosUrlScheme).toBe(
+      reversedIosClientId(GOOGLE_IOS_CLIENT_ID),
+    );
+  });
+
   it("registers the reversed iOS client ID as a URL scheme in Info.plist", () => {
     const plist = fs.readFileSync("ios/OCRecipes/Info.plist", "utf8");
     expect(plist).toContain(
       `<string>${reversedIosClientId(GOOGLE_IOS_CLIENT_ID)}</string>`,
     );
+  });
+});
+
+// Native settings that used to be hand-edited into ios/ and that a clean
+// `expo prebuild` would otherwise reset (CNG migration, 2026-10-13).
+describe("native build config survives prebuild", () => {
+  const plugins = appJson.expo.plugins as unknown[];
+
+  it("keeps the iOS 16.0 floor and the from-source React Native build", () => {
+    const entry = plugins.find(
+      (p): p is [string, { ios: Record<string, unknown> }] =>
+        Array.isArray(p) && p[0] === "expo-build-properties",
+    );
+    expect(entry?.[1].ios).toMatchObject({
+      deploymentTarget: "16.0",
+      buildReactNativeFromSource: true,
+    });
+  });
+
+  it("runs the Podfile fixes plugin", () => {
+    expect(plugins).toContain("./plugins/ios-podfile-fixes");
+  });
+
+  it("signs local device builds with the team", () => {
+    expect(appJson.expo.ios.appleTeamId).toBe("3442937R38");
+  });
+
+  it("declares the App Store privacy manifest", () => {
+    const manifest = appJson.expo.ios.privacyManifests;
+    expect(manifest.NSPrivacyTracking).toBe(false);
+    expect(manifest.NSPrivacyAccessedAPITypes.length).toBeGreaterThan(0);
+    expect(manifest.NSPrivacyCollectedDataTypes.length).toBeGreaterThan(0);
   });
 });
