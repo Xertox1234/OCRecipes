@@ -428,4 +428,57 @@ else
 fi
 rm -f "$STAMP_FILE"
 
+# --- The stamp is checked against the PR's OWN branch, not the cwd's HEAD (2026-10-13) ---
+# Work happens in linked worktrees while the session's cwd is the main checkout, so the gate
+# read the wrong commit and denied every worktree PR. When the call names a head branch
+# (MCP tool_input.head, or `gh pr create --head <b>` / `--head=<b>` / `-H <b>`), the gate
+# resolves THAT branch's commit (local ref first, then origin/<b>). With no head named, or an
+# unresolvable one, it keeps using HEAD.
+PRB="pr-guard-test-$$"
+# A fresh parentless commit of HEAD's tree: a sha that differs from HEAD without needing any
+# history (CI checks out depth 1, so HEAD~1 does not exist there). Identity is set inline so
+# commit-tree works on a runner with no git user configured.
+PRB_SHA=$(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+  git commit-tree "HEAD^{tree}" -m "pr-guard head-branch test" 2>/dev/null || echo "")
+if [ -n "$PRB_SHA" ] && git update-ref "refs/heads/$PRB" "$PRB_SHA" 2>/dev/null; then
+  # Extends (never replaces) the earlier EXIT traps' cleanup list, plus the temp ref.
+  trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}" "${AWKSTUB:-}" "${DREPO:-}" "${DORIGIN:-}" "${DCLONE:-}"; git update-ref -d "refs/heads/'"$PRB"'" 2>/dev/null' EXIT
+  run_mcp_head() { printf '{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"x","body":"y","head":%s,"base":"main"}}' "$(jq -Rn --arg h "$1" '$h')" | bash "$HOOK"; }
+
+  echo "$PRB_SHA" > "$STAMP_FILE"
+  # Quoted text must never pick the head: a body/title that QUOTES a --head flag naming the
+  # stamped branch must not let the stamp cover a different (unstamped) PR branch.
+  OUT=$(run_hook "gh pr create --head no-such-branch-$$ --title x --body \"see --head $PRB\"")
+  assert_contains "gh: a --head quoted in --body cannot override the real --head" '"permissionDecision": "deny"' "$OUT"
+  OUT=$(run_hook "gh pr create --title x --body \"see --head $PRB\"")
+  assert_contains "gh: a --head that exists only inside quotes is ignored (cwd HEAD checked)" '"permissionDecision": "deny"' "$OUT"
+  OUT=$(run_hook "gh pr create --head $PRB --head no-such-branch-$$ --title x --body y")
+  assert_contains "gh: two --head flags are ambiguous, fall back to cwd HEAD (deny)" '"permissionDecision": "deny"' "$OUT"
+  OUT=$(run_mcp_head "$PRB")
+  assert_empty "MCP: stamp for the named head branch allows (cwd HEAD differs)" "" "$OUT"
+  OUT=$(run_mcp_head "Xertox1234:$PRB")
+  assert_empty "MCP: owner:branch head form resolves too" "" "$OUT"
+  OUT=$(run_hook "gh pr create --head $PRB --base main --title x --body y")
+  assert_empty "gh --head <b>: stamp for that branch allows" "" "$OUT"
+  OUT=$(run_hook "gh pr create --head=$PRB --title x --body y")
+  assert_empty "gh --head=<b>: stamp for that branch allows" "" "$OUT"
+  OUT=$(run_hook "gh pr create -H $PRB --title x --body y")
+  assert_empty "gh -H <b>: stamp for that branch allows" "" "$OUT"
+
+  echo "$HEAD" > "$STAMP_FILE"
+  OUT=$(run_mcp_head "$PRB")
+  assert_contains "MCP: a stamp for cwd HEAD does NOT cover a different named branch" '"permissionDecision": "deny"' "$OUT"
+  OUT=$(run_hook "gh pr create --head $PRB --title x --body y")
+  assert_contains "gh --head: a stamp for cwd HEAD does NOT cover a different named branch" '"permissionDecision": "deny"' "$OUT"
+
+  OUT=$(run_mcp_head "no-such-branch-$$")
+  assert_empty "MCP: unresolvable head falls back to cwd HEAD (stamp == HEAD allows)" "" "$OUT"
+  rm -f "$STAMP_FILE"
+  OUT=$(run_mcp_head "$PRB")
+  assert_contains "MCP: named branch with no stamp still denies" '"permissionDecision": "deny"' "$OUT"
+  git update-ref -d "refs/heads/$PRB" 2>/dev/null
+else
+  echo "FAIL: could not create the temp branch ref for the head-branch tests"; FAIL=1
+fi
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
