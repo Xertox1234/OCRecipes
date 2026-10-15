@@ -313,6 +313,30 @@ npm run server:dev
 npx expo start --dev-client --lan
 ```
 
+## External Drive (U34Bolt)
+
+The internal disk is small; build output, ad-hoc worktrees and package caches live on the U34Bolt
+Thunderbolt SSD. Layout and rules: `/Volumes/U34Bolt/README.md`. Design:
+`docs/superpowers/specs/2026-10-14-external-drive-design.md`.
+
+- **Ad-hoc worktrees:** `bash scripts/oc-worktree.sh <branch>` creates one under
+  `/Volumes/U34Bolt/OCRecipes/worktrees/`, runs `npm ci`, and — inside Claude Code — declares a worktree
+  contract for the session, which then blocks edits outside that worktree. Release it with
+  `bash scripts/declare-worktree.sh --remove <path>` if you keep working in the main checkout. The script refuses
+  when the drive is not mounted. `/todo` worktrees are unaffected — they stay under `.claude/worktrees/`.
+- **Xcode / `expo run:ios`** build into `/Volumes/U34Bolt/_shared/caches/DerivedData/<Project>-<hash>/`
+  (`defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation`).
+- **XcodeBuildMCP** builds into `/Volumes/U34Bolt/OCRecipes/build/xcodebuildmcp`, set in the local, untracked
+  `.xcodebuildmcp/config.yaml` (`sessionDefaults.derivedDataPath`; takes effect on a Claude Code restart).
+- **npm and CocoaPods caches** are redirected by a block in `~/.zshenv` that applies only while the drive is
+  mounted (`npm_config_cache`, `CP_CACHE_DIR`).
+- **Big native builds:** set `TMPDIR=/Volumes/U34Bolt/OCRecipes/tmp` on the command only; never export it.
+- **Stays internal on purpose:** the main checkout (hooks and Claude memory are keyed to its path), Postgres
+  (preflight refuses its stamp without it), and `~/.claude`.
+- **Drive unplugged:** everything still works and the caches fall back to their defaults. Xcode and XcodeBuildMCP
+  builds recreate `/Volumes/U34Bolt` on the internal disk instead; new shells warn — delete that folder before
+  plugging the drive back in.
+
 ## Testing Your Setup
 
 1. Start the backend server and verify it's running: `curl http://localhost:3000/api/health`
