@@ -335,8 +335,8 @@ Thunderbolt SSD. Layout and rules: `/Volumes/U34Bolt/README.md`. Design:
   (preflight refuses its stamp without it), and `~/.claude`.
 - **Drive unplugged:** the repo, tests and caches still work (the caches fall back to their defaults). Xcode and
   XcodeBuildMCP builds **fail** with "You don't have permission": their build paths point at the drive, and a normal
-  user cannot create folders in `/Volumes`. Plug the drive in, or build to the laptop temporarily with
-  `defaults delete com.apple.dt.Xcode IDECustomDerivedDataLocation` (re-set it afterwards).
+  user cannot create folders in `/Volumes`. Plug the drive in, or build to the laptop temporarily and restore afterwards:
+  for Xcode / `expo run:ios`, `defaults delete com.apple.dt.Xcode IDECustomDerivedDataLocation`; for XcodeBuildMCP, remove `sessionDefaults.derivedDataPath` from `.xcodebuildmcp/config.yaml` and restart Claude Code (XcodeBuildMCP passes its own `-derivedDataPath`, so the Xcode key does not affect it).
 
 ## Testing Your Setup
 
