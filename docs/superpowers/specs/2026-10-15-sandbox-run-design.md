@@ -94,14 +94,14 @@ holds app sign-in data.) Adding a root is a one-line change to the script.
 
 **Mounts — the only things from the host the box sees:**
 
-| In the box           | From                                                    | Mode                                                                       |
-| -------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `/work`              | `--dir`                                                 | read-only                                                                  |
-| `/work/node_modules` | volume `sandbox-deps-<name>` (only with `--keep-deps`)  | read-write; covers the host's macOS `node_modules`, which is never touched |
-| `/out`               | the run's folder on the drive                           | read-write                                                                 |
-| `/home/sandbox/.npm` | volume `sandbox-npm-cache` (shared by all runs)         | read-write; npm's download cache                                           |
-| `/tmp`               | memory (`tmpfs`, 1 GB, owned by uid 1000, exec allowed) | read-write, gone after the run                                             |
-| `/home/sandbox`      | memory (`tmpfs`, 256 MB, owned by uid 1000)             | read-write, gone after the run                                             |
+| In the box           | From                                                    | Mode                                                                         |
+| -------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `/work`              | `--dir`                                                 | read-only                                                                    |
+| `/work/node_modules` | volume `sandbox-deps-<name>` (only with `--keep-deps`)  | read-write; covers the host's macOS `node_modules`, which is never touched   |
+| `/out`               | the run's folder on the drive                           | read-write                                                                   |
+| `/npm-cache`         | volume `sandbox-npm-cache` (shared by all runs)         | read-only in `sandbox-run`, read-write in `sandbox-net` (`npm_config_cache`) |
+| `/tmp`               | memory (`tmpfs`, 1 GB, owned by uid 1000, exec allowed) | read-write, gone after the run                                               |
+| `/home/sandbox`      | memory (`tmpfs`, 256 MB, owned by uid 1000)             | read-write, gone after the run                                               |
 
 The npm cache is a volume, not memory, because memory-backed space counts against the box's memory limit and npm's cache
 for a project like OCRecipes is hundreds of MB. `/tmp` allows running programs because many installs and test tools
@@ -140,7 +140,8 @@ they cannot reach the laptop. This is one more reason `sandbox-net` always asks.
 
 - `permissions.allow`: `Bash(sandbox-run:*)` — offline runs only.
 - `permissions.ask`: `Bash(sandbox-net:*)`, `Bash(sandbox-build:*)` — listed for clarity; unlisted commands ask anyway.
-- `autoMode.allow`: `Bash(sandbox-run *)` only, since auto mode has its own classifier layer.
+- `autoMode.allow`: one plain-English rule permitting `sandbox-run` only (and saying `sandbox-net`/`sandbox-build` are
+  not covered), since auto mode has its own classifier layer and its allow list is written as sentences.
 
 Claude Code blocks edits to its own settings, so the finished file is staged, validated with `json.load`, and handed to
 the owner as one `cp` command.
@@ -204,3 +205,13 @@ Docker from Resource Saver.
 - Global `~/.claude/CLAUDE.md`: a short "sandbox-run" section (the three commands, `sandbox-net` asks, the `sandbox-net`
   laptop-services limit, no database tests).
 - Memory: a project entry once the real-life checks pass.
+
+## Changes from the final review (2026-10-15)
+
+- The box carries its own time limit (5 s after the script's) and is created with `--rm`, so it ends and removes
+  itself even if the script is killed outright.
+- The box marks that it started (in the run folder's `state/`); a box that never starts is a runner failure (125).
+- A path with a newline or other control character is refused, like commas and double quotes.
+- A dependency volume belongs to the folder that created it (a Docker label); offline runs mount the npm cache
+  read-only, so untrusted code cannot plant packages a later run would use.
+- Lock takeover: one waiter decides at a time; a lock with no pid over 10 s old is stale; a stale lock's box is removed.
