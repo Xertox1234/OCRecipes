@@ -329,11 +329,17 @@ Thunderbolt SSD. Layout and rules: `/Volumes/U34Bolt/README.md`. Design:
 - **XcodeBuildMCP** builds into `/Volumes/U34Bolt/OCRecipes/build/xcodebuildmcp`, set in the local, untracked
   `.xcodebuildmcp/config.yaml` (`sessionDefaults.derivedDataPath`; takes effect on a Claude Code restart).
 - **npm and CocoaPods caches** are redirected by a block in `~/.zshenv` that applies only while the drive is
-  mounted (`npm_config_cache`, `CP_CACHE_DIR`).
+  mounted (`npm_config_cache`, `CP_CACHE_DIR`). npm's **logs** stay on the laptop (`npm_config_logs_dir=~/.npm/_logs`):
+  npm holds its log open for a process's whole life, and the XcodeBuildMCP launcher in every Claude Code session is
+  such a process, so a log on the drive blocks ejecting it. If an eject fails or Finder says "Code" is using the
+  drive, `lsof +f -- /Volumes/U34Bolt` names the holder.
 - **Big native builds:** set `TMPDIR=/Volumes/U34Bolt/OCRecipes/tmp` on the command only; never export it.
 - **Stays internal on purpose:** the main checkout (hooks and Claude memory are keyed to its path), Postgres
   (preflight refuses its stamp without it), and `~/.claude`.
-- **Drive unplugged:** the repo, tests and caches still work (the caches fall back to their defaults). Xcode and
+- **Drive unplugged:** the repo, tests and caches still work — the caches fall back to their defaults in any
+  **new** shell (a second `~/.zshenv` block also drops cache paths inherited from a shell opened while the drive was
+  mounted). A terminal tab that was already open keeps the drive paths, so after unplugging, start Claude Code from a
+  new tab; otherwise npm fails with `EACCES: mkdir '/Volumes/U34Bolt'` and XcodeBuildMCP does not start. Xcode and
   XcodeBuildMCP builds **fail** with "You don't have permission": their build paths point at the drive, and a normal
   user cannot create folders in `/Volumes`. Plug the drive in, or build to the laptop temporarily and restore afterwards:
   for Xcode / `expo run:ios`, `defaults delete com.apple.dt.Xcode IDECustomDerivedDataLocation`; for XcodeBuildMCP, remove `sessionDefaults.derivedDataPath` from `.xcodebuildmcp/config.yaml` and restart Claude Code (XcodeBuildMCP passes its own `-derivedDataPath`, so the Xcode key does not affect it).
