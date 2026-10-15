@@ -13,8 +13,8 @@ laptop-wide caches**, and redirect the tools that refill the disk so the space s
 - Roughly 46 GB freed (11 GB → ~57 GB free), measured with `df -h /System/Volumes/Data` before and after each phase.
 - New Xcode builds, npm/CocoaPods cache writes and ad-hoc OCRecipes worktrees land on the drive by default.
 - With the drive unplugged, the laptop still opens the repo and runs tests, and nothing writes onto the internal
-  disk in the drive's place. Xcode and XcodeBuildMCP builds fail fast instead (§9) — plug the drive in, or unset
-  the Xcode key to build locally.
+  disk in the drive's place. Xcode and XcodeBuildMCP builds fail fast instead (§9) — plug the drive in, or build
+  locally by unsetting each tool's path (§9).
 - A Claude session in any other project can discover the drive layout without this session's memory.
 
 ## 2. Scope
@@ -154,7 +154,7 @@ machine configuration (`~/.zshenv`, `defaults`, `.xcodebuildmcp/config.yaml`, th
   immediately before erasing, and confirming `ocrecipes-build/src` is a git-less build copy. Erasing is an
   owner-run step.
 - **Xcode's setting is not mount-aware** — with the drive ejected, Xcode and XcodeBuildMCP builds fail fast (measured 2026-10-14: `/Volumes` is `root:wheel 755`, so a normal user cannot create folders in it — `xcodebuild -derivedDataPath /Volumes/Nope/dd build` exits 65 with "You don't have permission" and creates nothing).
-  Plug the drive in, or `defaults delete com.apple.dt.Xcode IDECustomDerivedDataLocation` to build locally and
-  re-set it afterwards. Only a root process could create a phantom `/Volumes/U34Bolt`; the §4.1 predicate keeps
-  every redirect off one, and new shells warn if one exists.
+  Plug the drive in, or build locally and restore afterwards: for Xcode / `expo run:ios`, `defaults delete com.apple.dt.Xcode IDECustomDerivedDataLocation`; for
+  XcodeBuildMCP, remove `sessionDefaults.derivedDataPath` from `.xcodebuildmcp/config.yaml` and restart Claude Code (XcodeBuildMCP passes its own `-derivedDataPath`, so the Xcode key does not affect it). Only a root process could create a phantom `/Volumes/U34Bolt`; the §4.1 predicate
+  keeps every other redirect (npm, CocoaPods, `oc-worktree`) off one, and new shells warn if one exists.
 - **Moved data leaves Time Machine** — only regenerable data and pushed worktrees move, so nothing unique is affected.
