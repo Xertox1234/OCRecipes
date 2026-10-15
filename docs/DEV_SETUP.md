@@ -333,9 +333,10 @@ Thunderbolt SSD. Layout and rules: `/Volumes/U34Bolt/README.md`. Design:
 - **Big native builds:** set `TMPDIR=/Volumes/U34Bolt/OCRecipes/tmp` on the command only; never export it.
 - **Stays internal on purpose:** the main checkout (hooks and Claude memory are keyed to its path), Postgres
   (preflight refuses its stamp without it), and `~/.claude`.
-- **Drive unplugged:** everything still works and the caches fall back to their defaults. Xcode and XcodeBuildMCP
-  builds recreate `/Volumes/U34Bolt` on the internal disk instead; new shells warn — delete that folder before
-  plugging the drive back in.
+- **Drive unplugged:** the repo, tests and caches still work (the caches fall back to their defaults). Xcode and
+  XcodeBuildMCP builds **fail** with "You don't have permission": their build paths point at the drive, and a normal
+  user cannot create folders in `/Volumes`. Plug the drive in, or build to the laptop temporarily with
+  `defaults delete com.apple.dt.Xcode IDECustomDerivedDataLocation` (re-set it afterwards).
 
 ## Testing Your Setup
 
