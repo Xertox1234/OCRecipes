@@ -62,7 +62,7 @@ the gate lives in the script, not in how Claude Code matches text.
   which is already on the drive.
 
 **Image** (`image/Dockerfile`): `node:24-bookworm-slim` **pinned by digest** (so a rebuild is reproducible) plus
-`python3`, `git`, `curl`, `ca-certificates`, `netcat-openbsd`; a non-root user `sandbox` (uid 1000); no `sudo`.
+`python3`, `git`, `curl`, `ca-certificates`, `netcat-openbsd`, `iproute2`; a non-root user `sandbox` (uid 1000); no `sudo`.
 
 **Usage** (same for `sandbox-run` and `sandbox-net`):
 
@@ -92,16 +92,17 @@ Anything else is refused with the reason, including the home folder, `~/Library`
 `~/.aws`, `~/.gnupg`, `~/.config`, `/` and the drive's top level. (A denylist would leave holes like `~/Library`, which
 holds app sign-in data.) Adding a root is a one-line change to the script.
 
-**Mounts — the only things from the host the box sees:**
+**Mounts — the only things from the host the box sees** (plus an empty read-only file over each hidden secret, below):
 
-| In the box           | From                                                    | Mode                                                                         |
-| -------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `/work`              | `--dir`                                                 | read-only                                                                    |
-| `/work/node_modules` | volume `sandbox-deps-<name>` (only with `--keep-deps`)  | read-write; covers the host's macOS `node_modules`, which is never touched   |
-| `/out`               | the run's folder on the drive                           | read-write                                                                   |
-| `/npm-cache`         | volume `sandbox-npm-cache` (shared by all runs)         | read-only in `sandbox-run`, read-write in `sandbox-net` (`npm_config_cache`) |
-| `/tmp`               | memory (`tmpfs`, 1 GB, owned by uid 1000, exec allowed) | read-write, gone after the run                                               |
-| `/home/sandbox`      | memory (`tmpfs`, 256 MB, owned by uid 1000)             | read-write, gone after the run                                               |
+| In the box           | From                                                           | Mode                                                                         |
+| -------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `/work`              | `--dir`                                                        | read-only                                                                    |
+| `/work/node_modules` | volume `sandbox-deps-<name>` (only with `--keep-deps`)         | read-write; covers the host's macOS `node_modules`, which is never touched   |
+| `/out`               | the run's folder on the drive                                  | read-write                                                                   |
+| `/npm-cache`         | volume `sandbox-npm-cache` (shared by all runs)                | read-only in `sandbox-run`, read-write in `sandbox-net` (`npm_config_cache`) |
+| `/tmp`               | memory (`tmpfs`, 1 GB, world-writable mode 1777, exec allowed) | read-write, gone after the run                                               |
+| `/sandbox-state`     | the run folder's `state/` on the drive                         | read-write; the box marks that it started                                    |
+| `/home/sandbox`      | memory (`tmpfs`, 256 MB, owned by uid 1000)                    | read-write, gone after the run                                               |
 
 The npm cache is a volume, not memory, because memory-backed space counts against the box's memory limit and npm's cache
 for a project like OCRecipes is hundreds of MB. `/tmp` allows running programs because many installs and test tools
@@ -119,11 +120,12 @@ short root-only container that hands the volume to uid 1000; every later run is 
   for more with `--memory`, and contention between parallel runs is accepted.
 - `--init` and `--name sandbox-<run id>`, so a timeout can `docker kill` the box by name.
 - `--rm` — the box is deleted after every run.
-- Environment: nothing from the host. Only `HOME`, `PATH`, `TERM`, `CI=1` and `PYTHONDONTWRITEBYTECODE=1` are set.
+- Environment: nothing from the host. The script sets only `HOME`, `TERM`, `CI=1`, `PYTHONDONTWRITEBYTECODE=1`,
+  `npm_config_cache=/npm-cache` and `npm_config_logs_dir=/tmp/npm-logs` (the image adds `PATH`; Docker adds `HOSTNAME`).
 - Never mounted: the Docker socket, `~/.ssh`, shell config files, the home folder.
 
 **Secret files are hidden.** Before each run the script finds, **at any depth** under `--dir` (skipping
-`node_modules`): `.env*`, `*.pem`, `*.key`, `*.p8`, `*.p12`, `.npmrc`, `.netrc`, `mcp.json`, `.mcp.json`,
+`node_modules` and `.git/objects`; files and symlinks): `.env*`, `*.env`, `*.pem`, `*.key`, `*.p8`, `*.p12`, `.npmrc`, `.netrc`, `mcp.json`, `.mcp.json`,
 `settings.local.json`, and `.git/config` (which may carry credential URLs). Each is covered by an empty read-only file
 mounted at the same path. `run.log` lists every hidden path. Git commands that read the remote config therefore do not
 work inside the box; that is accepted.
