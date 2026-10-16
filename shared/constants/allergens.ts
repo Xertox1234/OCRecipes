@@ -281,6 +281,15 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "malt flavoring",
       "maltodextrin",
       "triticale",
+      // Oats carry no gluten of their own but are routinely cross-contaminated
+      // with wheat, so they count as a gluten risk everywhere (owner ruling
+      // 2026-10-16). Derived tier: flagged for moderate/severe, not mild.
+      // Single-word keywords match whole words only, so compounds are listed.
+      "oat",
+      "oats",
+      "oatmeal",
+      "oatcake",
+      "oatcakes",
     ],
   },
 
@@ -714,12 +723,13 @@ const MODIFIER_SENSITIVE_KEYWORDS = new Set([
  * the dairy/wheat allergen; the substitute's OWN allergen still matches via its
  * own keyword (e.g. "almond milk" loses dairy but keeps tree_nut via "almond").
  *
- * Gluten-free flour bases (oat, rice, corn, buckwheat, …) suppress the *wheat*
- * keyword by ingredient-text semantics: "oat flour" does not assert wheat in the
- * ingredient string. Cross-contamination ("may contain wheat") is a separate
- * advisory channel, not derivable from the ingredient name. Gluten-containing
- * grains (wheat/spelt/rye/barley) are intentionally NOT in this list, so
- * "spelt flour"/"rye flour" still flag.
+ * Gluten-free flour bases (oat, rice, corn, buckwheat, …) suppress the bare
+ * *flour* keyword: "rice flour" does not assert wheat in the ingredient string.
+ * Oats are the exception in effect, not in this list: "oat flour"/"oat milk"
+ * still lose the bare flour/milk match, but "oat" is itself a derived wheat
+ * keyword (cross-contact risk, owner ruling 2026-10-16), so wheat flags through
+ * it. Gluten-containing grains (wheat/spelt/rye/barley) are intentionally NOT
+ * in this list, so "spelt flour"/"rye flour" still flag.
  */
 const SUBSTITUTE_MODIFIERS = [
   "almond",

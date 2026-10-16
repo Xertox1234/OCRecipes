@@ -477,7 +477,6 @@ describe("detectAllergens", () => {
       ["almond milks", "milk"],
       ["coconut creams", "milk"],
       ["shea butters", "milk"],
-      ["oat flours", "wheat"],
     ];
     for (const [ingredient, allergenId] of suppressed) {
       const matches = detectAllergens(
@@ -698,9 +697,83 @@ describe("deriveRecipeAllergens", () => {
     expect(
       deriveRecipeAllergens(["coconut creams"]).map((a) => a.id),
     ).not.toContain("milk");
+    // Oats are a gluten cross-contact risk (owner ruling 2026-10-16): the bare
+    // "flours" is still suppressed, but "oat" carries wheat on its own.
+    expect(deriveRecipeAllergens(["oat flours"])).toContainEqual({
+      id: "wheat",
+      viaDerived: true,
+    });
+  });
+});
+
+describe("oats as a gluten cross-contact risk (owner ruling 2026-10-16)", () => {
+  const oatIngredients = [
+    "oat",
+    "oats",
+    "rolled oats",
+    "steel-cut oats",
+    "oatmeal",
+    "oat flour",
+    "oat bran",
+    "unsweetened oat milk",
+    "oat-milk",
+    "oatcakes",
+  ];
+
+  it("flags wheat for a moderate or severe wheat/gluten allergy", () => {
+    for (const severity of ["moderate", "severe"] as const) {
+      for (const ingredient of oatIngredients) {
+        const matches = detectAllergens(
+          [ingredient],
+          [{ name: "gluten", severity }],
+        );
+        expect(
+          matches.some((m) => m.allergenId === "wheat" && m.isDerived),
+          `${ingredient} @ ${severity}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("does not flag oats for a mild allergy (derived tier)", () => {
+    const matches = detectAllergens(oatIngredients, [
+      { name: "wheat", severity: "mild" },
+    ]);
+    expect(matches).toEqual([]);
+  });
+
+  it("does not match words that merely contain the letters o-a-t", () => {
+    const lookalikes = [
+      "goat cheese",
+      "goat milk",
+      "coated chicken",
+      "boat",
+      "float",
+      "oatly",
+    ];
+    for (const ingredient of lookalikes) {
+      const matches = detectAllergens(
+        [ingredient],
+        [{ name: "wheat", severity: "severe" }],
+      );
+      expect(
+        matches.some((m) => m.allergenId === "wheat"),
+        ingredient,
+      ).toBe(false);
+    }
+  });
+
+  it("marks an oat-only recipe as carrying wheat via the derived tier", () => {
+    expect(deriveRecipeAllergens(["rolled oats", "honey"])).toEqual([
+      { id: "wheat", viaDerived: true },
+    ]);
+  });
+
+  it("an oat recipe is unsafe for a severe gluten allergy", () => {
+    const cache = deriveRecipeAllergens(["rolled oats", "apples", "butter"]);
     expect(
-      deriveRecipeAllergens(["oat flours"]).map((a) => a.id),
-    ).not.toContain("wheat");
+      isRecipeSafeForAllergies(cache, [{ name: "gluten", severity: "severe" }]),
+    ).toBe(false);
   });
 });
 
