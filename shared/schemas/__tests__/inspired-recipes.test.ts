@@ -3,6 +3,7 @@ import {
   suggestionDraftSchema,
   createListingBodySchema,
   toSuggestion,
+  SUGGESTION_DESCRIPTION_MAX,
 } from "../inspired-recipes";
 
 describe("suggestionDraftSchema", () => {
@@ -17,14 +18,32 @@ describe("suggestionDraftSchema", () => {
       }).success,
     ).toBe(true);
   });
-  it("rejects an overlong description and out-of-range minutes", () => {
+  const draft = {
+    title: "X tacos",
+    description: "Charred corn tortillas with chipotle beans.",
+    totalMinutes: 25,
+    tags: [],
+  };
+  it("allows a two-sentence pitch up to 280 characters", () => {
+    expect(SUGGESTION_DESCRIPTION_MAX).toBe(280);
     expect(
       suggestionDraftSchema.safeParse({
-        title: "X tacos",
-        description: "a".repeat(141),
-        totalMinutes: 3,
-        tags: [],
+        ...draft,
+        description: "a".repeat(280),
       }).success,
+    ).toBe(true);
+  });
+  it("rejects a description over 280 characters", () => {
+    expect(
+      suggestionDraftSchema.safeParse({
+        ...draft,
+        description: "a".repeat(281),
+      }).success,
+    ).toBe(false);
+  });
+  it("rejects out-of-range minutes", () => {
+    expect(
+      suggestionDraftSchema.safeParse({ ...draft, totalMinutes: 3 }).success,
     ).toBe(false);
   });
 });

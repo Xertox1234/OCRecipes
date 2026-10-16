@@ -15,6 +15,10 @@ import {
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { fireAndForget } from "../lib/fire-and-forget";
+import {
+  addMadeRecipeIdToSavedItems,
+  addMadeRecipeToSavedItems,
+} from "./_recipe-saved-items";
 import { mealPlanRateLimit, recipeGenerationRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
@@ -44,7 +48,7 @@ export function register(app: Express): void {
   app.post(
     "/api/inspired/suggestions",
     requireAuth,
-    recipeGenerationRateLimit, // 1 search + 1 AI call + 8 images per request
+    recipeGenerationRateLimit, // 1 search + 1 AI call per request
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
@@ -163,6 +167,12 @@ export function register(app: Express): void {
           return;
         }
         if (suggestion.madeRecipeId) {
+          // Idempotent: also adds a recipe made before made recipes went
+          // into Saved items. Skipped when the recipe has since been deleted.
+          await addMadeRecipeIdToSavedItems(
+            req.userId,
+            suggestion.madeRecipeId,
+          );
           res.status(200).json({ recipeId: suggestion.madeRecipeId });
           return;
         }
@@ -250,7 +260,10 @@ export function register(app: Express): void {
               mealTypes,
               instructions: generated.instructions,
               ingredients: generated.ingredients,
-              imageUrl: suggestion.imageUrl,
+              // Cards are text-only; the recipe gets its own photo below. A
+              // card from before that change may still hold a photo, which is
+              // left unused once the card is made (a one-off, accepted).
+              imageUrl: null,
               isPublic: false,
             },
             tz,
@@ -287,16 +300,15 @@ export function register(app: Express): void {
           }
         }
 
+        await addMadeRecipeToSavedItems(req.userId, recipe);
         res.status(201).json({ recipeId: recipe.id });
-        if (!suggestion.imageUrl) {
-          fireAndForget(
-            "inspired recipe image",
-            generateAndPatchRecipeImage(recipe.id, {
-              title: recipe.title,
-              mealTypes: recipe.mealTypes,
-            }),
-          );
-        }
+        fireAndForget(
+          "inspired recipe image",
+          generateAndPatchRecipeImage(recipe.id, {
+            title: recipe.title,
+            mealTypes: recipe.mealTypes,
+          }),
+        );
       } catch (error) {
         handleRouteError(res, error, "make inspired recipe");
       }

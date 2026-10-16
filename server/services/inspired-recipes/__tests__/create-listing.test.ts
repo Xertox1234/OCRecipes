@@ -4,7 +4,6 @@ import type { InspiredSuggestionRow } from "@shared/schema";
 
 import { searchCatalogRecipes } from "../../recipe-catalog";
 import { suggestListing } from "../suggest-listing";
-import { generateSuggestionImage } from "../suggestion-image";
 import { storage } from "../../../storage";
 import { createSuggestionListing } from "../index";
 
@@ -13,9 +12,6 @@ vi.mock("../../recipe-catalog", () => ({
   buildIntolerancesParam: vi.fn(() => "peanut"),
 }));
 vi.mock("../suggest-listing", () => ({ suggestListing: vi.fn() }));
-vi.mock("../suggestion-image", () => ({
-  generateSuggestionImage: vi.fn(() => Promise.resolve()),
-}));
 vi.mock("../../../storage", () => ({
   storage: { createInspiredSuggestions: vi.fn() },
 }));
@@ -73,7 +69,6 @@ describe("createSuggestionListing", () => {
     expect(out).toEqual([
       { id: 1, ...draft, imageUrl: null, madeRecipeId: null },
     ]);
-    expect(generateSuggestionImage).toHaveBeenCalledTimes(1);
   });
 
   it("maps filters onto the catalog search", async () => {
@@ -114,16 +109,6 @@ describe("createSuggestionListing", () => {
   it("skips Spoonacular when useSpoonacular is false", async () => {
     await createSuggestionListing({ ...base, useSpoonacular: false });
     expect(searchCatalogRecipes).not.toHaveBeenCalled();
-  });
-
-  it("does not fail the listing when a card photo rejects", async () => {
-    vi.mocked(generateSuggestionImage).mockRejectedValueOnce(new Error("boom"));
-    const out = await createSuggestionListing({
-      ...base,
-      useSpoonacular: false,
-    });
-    expect(out).toHaveLength(1);
-    await new Promise((r) => setImmediate(r));
   });
 
   it("retries the AI once, then returns null and stores nothing", async () => {

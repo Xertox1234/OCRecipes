@@ -39,7 +39,9 @@ for (const row of deleted) {
 }
 ```
 
-The same rule applies to the **writer** side. A background photo generator must refuse to attach a late photo to a row that is made, or that is mid-make. When it is refused, it deletes the object it just uploaded (`setInspiredSuggestionImage` returns false → `deleteImage`).
+The same rule applies to the **writer** side. A background photo generator must refuse to attach a late photo to a row that is made, or that is mid-make. When it is refused, it deletes the object it just uploaded.
+
+(Inspired cards became text-only on 2026-10-14, so their card-photo writer, `setInspiredSuggestionImage` + `suggestion-image.ts`, was removed. The purge still deletes the photos of rows from before that change. The writer rule still holds for any other background uploader.)
 
 ## Exceptions
 
@@ -49,8 +51,7 @@ The same rule applies to the **writer** side. A background photo generator must 
 ## Related Files
 
 - `server/scripts/purge-inspired-suggestions.ts`
-- `server/storage/inspired-suggestions.ts` — `deleteInspiredSuggestions`, `setInspiredSuggestionImage`, `noLiveMakeLock`
-- `server/services/inspired-recipes/suggestion-image.ts`
+- `server/storage/inspired-suggestions.ts` — `deleteInspiredSuggestions`, `noLiveMakeLock`
 
 ## See Also
 

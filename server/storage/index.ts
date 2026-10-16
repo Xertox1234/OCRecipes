@@ -420,7 +420,6 @@ export const storage = {
   countInspiredSuggestionsSince: inspired.countInspiredSuggestionsSince,
   getInspiredSuggestions: inspired.getInspiredSuggestions,
   getInspiredSuggestion: inspired.getInspiredSuggestion,
-  setInspiredSuggestionImage: inspired.setInspiredSuggestionImage,
   startMakingSuggestion: inspired.startMakingSuggestion,
   abandonMakingSuggestion: inspired.abandonMakingSuggestion,
   claimInspiredSuggestionMade: inspired.claimInspiredSuggestionMade,

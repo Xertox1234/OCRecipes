@@ -9,11 +9,6 @@ import type {
   RecipeResultsBlock,
 } from "@shared/schemas/recipe-finder";
 
-const mockPhotos = vi.hoisted(() => ({ current: new Map<number, string>() }));
-vi.mock("@/hooks/useInspiredSuggestions", () => ({
-  useSuggestionPhotos: () => mockPhotos.current,
-}));
-
 const block: RecipeResultsBlock = {
   type: "recipe_results",
   source: "community",
@@ -257,18 +252,20 @@ describe("RecipeResultsList", () => {
     expect(onMakeItem).not.toHaveBeenCalled();
   });
 
-  it("an idea's photo comes from the polled suggestion photos", () => {
-    mockPhotos.current = new Map([[inspiredItem.id, "https://img/taco.jpg"]]);
+  it("an idea row is text-only, even when an old message still carries a photo", () => {
     renderComponent(
       <RecipeResultsList
-        block={{ ...block, source: "inspired", items: [inspiredItem] }}
+        block={{
+          ...block,
+          source: "inspired",
+          items: [{ ...inspiredItem, imageUrl: "https://img/taco.jpg" }],
+        }}
         isActive
         onButton={vi.fn()}
         onOpenItem={vi.fn()}
         onMakeItem={vi.fn()}
       />,
     );
-    expect(screen.queryByTestId("finder-thumb-placeholder")).toBeNull();
-    mockPhotos.current = new Map();
+    expect(screen.getAllByTestId("finder-thumb-placeholder")).toHaveLength(1);
   });
 });

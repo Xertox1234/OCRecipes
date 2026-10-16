@@ -54,7 +54,6 @@ import { useRecipeSearch } from "@/hooks/useRecipeSearch";
 import {
   useCreateSuggestionListing,
   useMakeSuggestion,
-  useSuggestionPhotos,
 } from "@/hooks/useInspiredSuggestions";
 import {
   SearchFilterSheet,
@@ -503,8 +502,6 @@ export default function RecipeBrowserScreen() {
   const [makingId, setMakingId] = useState<number | null>(null);
 
   const ideas: Suggestion[] = useMemo(() => ideasData ?? [], [ideasData]);
-  const ideaIds = useMemo(() => ideas.map((s) => s.id), [ideas]);
-  const photos = useSuggestionPhotos(ideaIds, ideas.length > 0);
 
   // A new query or filter starts local-first — drop ideas written for the
   // previous one.
@@ -726,7 +723,6 @@ export default function RecipeBrowserScreen() {
         return (
           <SuggestionCard
             suggestion={item}
-            imageUrl={photos.get(item.id) ?? item.imageUrl}
             making={makingId === item.id}
             onMake={() => handleMakeIdea(item)}
           />
@@ -753,7 +749,6 @@ export default function RecipeBrowserScreen() {
       addingId,
       isBrowseOnly,
       favouriteIdSet,
-      photos,
       makingId,
       handleMakeIdea,
     ],

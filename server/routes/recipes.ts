@@ -26,6 +26,7 @@ import { recipeGenerationSchema } from "@shared/schemas/recipe";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { resolveSubscriptionTierFeatures } from "../services/subscription-tier-cache";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { addMadeRecipeToSavedItems } from "./_recipe-saved-items";
 
 const recipeShareSchema = z.object({
   isPublic: z.boolean(),
@@ -236,6 +237,7 @@ export function register(app: Express): void {
           return;
         }
 
+        await addMadeRecipeToSavedItems(req.userId, recipe);
         res.status(201).json(recipe);
 
         // Kick off image generation after responding — adds 5-30s if awaited here.
