@@ -244,7 +244,12 @@ laptop. `sandbox-run` stays the sealed, offline box for code from outside; a fou
   uid 1000, capabilities dropped, the run folder and its `run.log`.
 - Approval: no permission rule. In auto mode the checker judges each run like any other shell command; outside auto
   mode it asks.
-- Not included: publishing ports to the laptop, so the simulator cannot reach a dev server started in the box.
+- `--port <n>` (repeatable, `sandbox-dev` only — the other modes refuse it) publishes a port on all the laptop's
+  addresses, like the dev server here: the simulator reaches it at the Mac's network IP, a phone on the same wifi too.
+  A port the laptop already uses is refused up front ("already in use") rather than failing as a box that could not
+  start. The server must listen on `0.0.0.0`, which OCRecipes' does. Measured: `npm run server:dev` in the box
+  answers `/api/health` with 200 on `localhost:3000` and on the network IP. Tests: a box server answers on both,
+  a busy port is refused, `sandbox-run --port` is refused, and `abc`, `0` and `70000` are refused.
 - Tests (each failed first): the folder is writable and files are owned by the Mac user, `.env` is readable and
   nothing is passed in except `PGUSER`, `localhost:5432` reaches the laptop's Postgres while port 3000 stays free, a
   query runs through the unchanged `.env`, the Mac `node_modules` is untouched after an install in the box, the
