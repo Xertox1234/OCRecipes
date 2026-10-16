@@ -183,7 +183,16 @@
         }
       ]
     },
-    "mustAvoid": ["wheat", "barley", "rye", "couscous", "semolina"]
+    "mustAvoid": [
+      "wheat",
+      "barley",
+      "rye",
+      "couscous",
+      "semolina",
+      "oat",
+      "oats",
+      "oatmeal"
+    ]
   },
   {
     "id": "insp-keto-01",
