@@ -68,6 +68,16 @@ describe("suggestListing", () => {
     expect(system).toMatch(/flavou?rs?/i);
   });
 
+  it("tells the model to skip dishes whose classic version relies on a listed allergen", async () => {
+    mockAi.mockResolvedValue(reply({ suggestions: [card("Bean Tacos")] }));
+    await suggestListing(args());
+    const system = String(mockAi.mock.calls[0][1].messages[0].content);
+    expect(system).toMatch(/classic (version|recipe)/i);
+    expect(system).toMatch(/pad thai/i);
+    // The existing "no X-free naming" rule must survive alongside it.
+    expect(system).toContain("gluten-free pasta");
+  });
+
   it("works with zero inspiration titles", async () => {
     mockAi.mockResolvedValue(reply({ suggestions: [card("Bean Tacos")] }));
     const out = await suggestListing(args({ request: "tacos" }));
