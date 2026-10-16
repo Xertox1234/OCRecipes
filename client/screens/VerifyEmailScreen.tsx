@@ -145,7 +145,9 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               {exitLabel}
             </Button>
           </>
-        ) : status === "failed" && isAuthenticated ? (
+        ) : isAuthenticated ? (
+          // Failed, or no token at all ("pending" — a hand-made or broken
+          // link): signed in, both are just an invalid link.
           <>
             <ThemedText type="h2">Link expired or invalid</ThemedText>
             {/* No resend here: it looks up the verified email only, so it can

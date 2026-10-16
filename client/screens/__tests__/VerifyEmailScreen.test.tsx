@@ -261,6 +261,24 @@ describe("VerifyEmailScreen — signed in", () => {
     expect(auth.checkAuth).not.toHaveBeenCalled();
   });
 
+  // A hand-made or broken link with no token (or `?token=`) lands on the
+  // no-token branch; signed in, its "Back to sign in" pointed at a route that
+  // stack doesn't have.
+  it("a link without a token is treated as invalid, with Done", () => {
+    const { goBack, navigate } = renderScreen({});
+
+    expect(screen.getByText("Link expired or invalid")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Back to sign in" }),
+    ).toBeNull();
+    expect(screen.queryByTestId("input-resend-email")).toBeNull();
+    expect(mockVerifyEmailRequest).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(goBack).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("offers Done while the link is still confirming", () => {
     mockVerifyEmailRequest.mockReturnValue(new Promise(() => {}));
     const { goBack } = renderScreen({ token: "tok-pending" });
