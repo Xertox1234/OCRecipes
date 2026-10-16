@@ -83,6 +83,30 @@ describe("TwoStepSetupScreen — turning it on (email)", () => {
     expect(h.toastSuccess).toHaveBeenCalledWith("Two-step verification is on");
   });
 
+  // #79: the success toast already buzzes and (iOS) announces itself — the
+  // screen doing both too gave a double buzz and a doubled VoiceOver line.
+  it("leaves the success buzz and announcement to the toast", async () => {
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    const Haptics = await import("expo-haptics");
+    h.startEmailTwoStep.mockResolvedValue(sent);
+    h.confirmEmailTwoStep.mockResolvedValue(undefined);
+    const navigation = renderScreen("setup");
+    type("Password", "pw-1");
+    press("Continue");
+    await screen.findByText(
+      "We emailed a 6-digit code to w•••@gmail.com. Enter it below.",
+    );
+    type("6-digit code", "123456");
+    await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
+
+    expect(h.toastSuccess).toHaveBeenCalledWith("Two-step verification is on");
+    expect(announce).not.toHaveBeenCalledWith("Two-step verification is on");
+    expect(Haptics.notificationAsync).not.toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Success,
+    );
+    announce.mockRestore();
+  });
+
   it("tells screen readers the first code went out, once", async () => {
     const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
     h.startEmailTwoStep.mockResolvedValue(sent);

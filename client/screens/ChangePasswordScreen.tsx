@@ -115,8 +115,28 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     navigation.goBack();
   };
 
+  // An empty field would go to the server and come back as a bare 400 that
+  // reads "Something went wrong" — say which field instead. A Google/Apple
+  // proof needs only the new password, so this also keeps that sheet shut.
+  const missingField = (
+    provider?: SocialProvider,
+  ): { field: ErrorField; message: string } | null => {
+    if (!provider && mode === "current" && !current)
+      return { field: "current", message: "Enter your current password." };
+    if (!provider && mode === "code" && !emailCode)
+      return { field: "code", message: "Enter the code from the email." };
+    if (!newPassword) return { field: "new", message: "Enter a new password." };
+    return null;
+  };
+
   const save = async (provider?: SocialProvider) => {
     if (busyRef.current) return;
+    const missing = missingField(provider);
+    if (missing) {
+      setErrorField(missing.field);
+      setError(missing.message);
+      return;
+    }
     // Never send without the two-step code once it's asked for: the server
     // would refuse, and a guess at the code would be spent on it.
     if (!provider && factorNeeded && !factor) {
@@ -174,7 +194,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           <View style={styles.group}>
             <TextInput
               accessibilityLabel="Current password"
-              placeholder="Current password"
+              label="Current password"
               value={current}
               onChangeText={setCurrent}
               error={errorField === "current"}
@@ -199,6 +219,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           <View style={styles.group}>
             <TextInput
               accessibilityLabel="Code from the email"
+              label="Code from the email"
               placeholder="6-digit code"
               value={emailCode}
               onChangeText={(t) => setEmailCode(normalizeCodeInput(t))}
@@ -221,7 +242,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
 
         <TextInput
           accessibilityLabel="New password"
-          placeholder="New password"
+          label="New password"
           value={newPassword}
           onChangeText={setNewPassword}
           error={errorField === "new"}

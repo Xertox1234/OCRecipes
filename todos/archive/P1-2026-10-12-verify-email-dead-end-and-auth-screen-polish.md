@@ -1,9 +1,9 @@
 ---
 title: "Verify-email expired link is a dead end; signed-in verify link does nothing; auth screen polish"
-status: backlog
+status: done
 priority: high
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-16
 assignee:
 labels: [qa-sweep, auth, ui]
 github_issue:
@@ -60,3 +60,9 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), groups C
 ### 2026-10-12
 
 - Filed from the visual QA sweep triage.
+
+### 2026-10-16
+
+- Done via /todo-fast (in-session, auth not delegated). Owner ruling for #55: a signed-in link opens the same VerifyEmail screen as a modal; Done returns to the app.
+- #74, #55, a11y labels, #43, #44 (stale error), #45, #72 fixed. Declined: #44's colour difference (Login's terracotta is the focus border, not an error state); #79's monospace codes and stacked primaries (obsolete since #1410) and toast-over-header (app-wide by design, no offset option). Fixed instead: #79's double buzz and double VoiceOver line.
+- Simulator-checked signed in (bogus + real token) and signed out (bogus token). #45's iOS save prompt needs iCloud Keychain, so it is unit-tested only.

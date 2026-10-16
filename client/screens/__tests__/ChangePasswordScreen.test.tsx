@@ -77,6 +77,58 @@ describe("ChangePasswordScreen", () => {
     expect(navigation.goBack).toHaveBeenCalled();
   });
 
+  // #72: an empty submit went to the server, whose 400 surfaced as "Something
+  // went wrong" with no field marked.
+  it("an empty submit sends nothing and marks the current-password field", async () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    await act(async () => tap("Save new password"));
+    expect(auth.changePassword).not.toHaveBeenCalled();
+    expect(screen.getByText("Enter your current password.")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Current password").getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(screen.queryByText(/Something went wrong/)).toBeNull();
+  });
+
+  it("a missing new password sends nothing and marks that field", async () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "old-pass");
+    await act(async () => tap("Save new password"));
+    expect(auth.changePassword).not.toHaveBeenCalled();
+    expect(screen.getByText("Enter a new password.")).toBeTruthy();
+    expect(
+      screen.getByLabelText("New password").getAttribute("aria-invalid"),
+    ).toBe("true");
+  });
+
+  it("a missing emailed code sends nothing and marks the code field", async () => {
+    auth.requestPasswordChangeCode.mockResolvedValue(undefined);
+    renderScreen({ hasPassword: true, providers: [] });
+    tap("I forgot it");
+    await act(async () => tap("Email me a code"));
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(auth.changePassword).not.toHaveBeenCalled();
+    expect(screen.getByText("Enter the code from the email.")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Code from the email").getAttribute("aria-invalid"),
+    ).toBe("true");
+  });
+
+  it("Confirm with Google without a new password opens no sheet", async () => {
+    renderScreen({ hasPassword: false, providers: ["google"] });
+    await act(async () => tap("Confirm with Google"));
+    expect(auth.changePassword).not.toHaveBeenCalled();
+    expect(screen.getByText("Enter a new password.")).toBeTruthy();
+  });
+
+  // #72: placeholders were the only visible labels — gone once you type.
+  it("shows visible labels, not just placeholders", () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    expect(screen.getByText("Current password")).toBeTruthy();
+    expect(screen.getByText("New password")).toBeTruthy();
+  });
+
   it("Confirm with Google saves with the provider proof", async () => {
     auth.changePassword.mockResolvedValue({ done: true });
     renderScreen({ hasPassword: false, providers: ["google"] });

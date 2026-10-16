@@ -96,7 +96,11 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
             leftIcon="mail"
             placeholder="Email"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(text) => {
+              setEmail(text);
+              // Editing is the fix — drop the stale red border and message.
+              setError("");
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}

@@ -55,6 +55,16 @@ vi.mock("@react-navigation/native", () => ({
     setParams: mockSetParams,
   }),
   useRoute: () => ({ params: mockRoute.params }),
+  useIsFocused: () => mockFocus.isFocused,
+}));
+
+const mockFocus = vi.hoisted(() => ({ isFocused: true }));
+
+// Render the requested status-bar style as a marker so the test can read it.
+vi.mock("expo-status-bar", () => ({
+  StatusBar: ({ style }: { style: string }) => (
+    <div data-testid="status-bar" data-style={style} />
+  ),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -474,5 +484,62 @@ describe("LoginScreen — two-step verification", () => {
         purpose: "login",
       }),
     );
+  });
+});
+
+// #45: a failed sign-in left the wrong password in the field, so leaving the
+// screen made iOS offer to save it. (The prompt itself needs iCloud Keychain,
+// which the simulator lacks — this pins the clear that prevents it.)
+describe("LoginScreen — failed sign-in clears the password", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("empties the password field after wrong credentials", async () => {
+    mockLogin.mockRejectedValue(new Error("401: invalid_credentials"));
+    renderComponent(<LoginScreen />);
+
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "wrongpass" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    await screen.findByText(
+      "Incorrect username or password. Please try again.",
+    );
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
+      "",
+    );
+    // The identifier stays — only the secret was wrong.
+    expect(
+      (screen.getByLabelText("Username or email") as HTMLInputElement).value,
+    ).toBe("demo");
+  });
+});
+
+// #43: the hero photo is dark, so dark status-bar content vanished over it.
+describe("LoginScreen — status bar over the hero photo", () => {
+  beforeEach(() => {
+    mockFocus.isFocused = true;
+  });
+
+  it("asks for light status-bar content while focused", () => {
+    renderComponent(<LoginScreen />);
+
+    expect(screen.getByTestId("status-bar").getAttribute("data-style")).toBe(
+      "light",
+    );
+  });
+
+  // Login stays mounted under VerifyEmail / ForgotPassword; the last-mounted
+  // StatusBar wins, so an always-on one would leak light content onto them.
+  it("drops its status-bar override when another screen is on top", () => {
+    mockFocus.isFocused = false;
+    renderComponent(<LoginScreen />);
+
+    expect(screen.queryByTestId("status-bar")).toBeNull();
   });
 });
