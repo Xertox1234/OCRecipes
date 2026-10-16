@@ -220,3 +220,34 @@ Docker from Resource Saver.
 - A dependency volume belongs to the folder that created it (a Docker label); offline runs mount the npm cache
   read-only, so untrusted code cannot plant packages a later run would use.
 - Lock takeover: one waiter decides at a time; a lock with no pid over 10 s old is stale; a stale lock's box is removed.
+
+## Addition: `sandbox-dev`, the open box (owner, 2026-10-16)
+
+The owner does not need every box sealed off: they want somewhere to run things that is on par with running on the
+laptop. `sandbox-run` stays the sealed, offline box for code from outside; a fourth name for the same script,
+`sandbox-dev`, opens the box up. Owner decisions: the box edits the real folder, and it gets the real `.env`.
+
+- `/work` is mounted read-write. Files the box writes land in the folder at once, owned by the Mac user (measured).
+  When another session works in the same checkout, point `sandbox-dev` at a worktree instead.
+- No secret file is hidden; the app loads `.env` itself and nothing in it is rewritten.
+- Internet on (the default bridge network); the npm cache is writable.
+- Laptop Postgres: Docker's host network does not reach the laptop's `localhost` (measured), and rewriting
+  `DATABASE_URL` to `host.docker.internal` reached the database but failed OCRecipes' own test guard ("Refusing to run
+  tests against a non-local database"). So for each `postgres://`/`postgresql://` URL in `.env` that names `localhost`
+  or `127.0.0.1`, a relay (`image/relay.js`, mounted read-only) listens on that port inside the box and forwards it to
+  the laptop through `host.docker.internal`; the command starts once the relay listens. The app and its guards see
+  `localhost`, as on the laptop. Other localhost ports (such as 3000) are not relayed, so a server the box starts
+  keeps its port. `PGUSER` is set to the Mac user name, which a URL without a user falls back to.
+- `node_modules` is always a dependency volume (named after the folder unless `--keep-deps <name>` is given): a Linux
+  install straight into the Mac's `node_modules` would break the laptop's own setup.
+- Default time limit 1 hour. Kept from `sandbox-run`: the folder allowlist (including the `_shared/` refusal), `--rm`,
+  uid 1000, capabilities dropped, the run folder and its `run.log`.
+- Approval: no permission rule. In auto mode the checker judges each run like any other shell command; outside auto
+  mode it asks.
+- Not included: publishing ports to the laptop, so the simulator cannot reach a dev server started in the box.
+- Tests (each failed first): the folder is writable and files are owned by the Mac user, `.env` is readable and
+  nothing is passed in except `PGUSER`, `localhost:5432` reaches the laptop's Postgres while port 3000 stays free, a
+  query runs through the unchanged `.env`, the Mac `node_modules` is untouched after an install in the box, the
+  allowlist and `_shared/` refusal still hold, and `sandbox-run` stays read-only with `.env` hidden. Real-life check:
+  OCRecipes' `server/storage/__tests__/nutrition.concurrent.test.ts` (a real-database test) passes inside
+  `sandbox-dev`, 1/1.
