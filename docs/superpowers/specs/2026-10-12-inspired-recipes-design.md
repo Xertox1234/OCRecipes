@@ -1,7 +1,7 @@
 # Inspired recipes (Spoonacular as invisible inspiration) — design
 
 > **Date:** 2026-10-12 · **Status:** approved in conversation, awaiting spec review
-> **Origin:** the web cookbook brainstorm (`2026-10-12-web-cookbook-studio-design.md` §14.6). Checking whether Spoonacular recipes could go into printed cookbooks surfaced a licensing gap in a **live** feature; the owner chose to replace Spoonacular-as-content with Spoonacular-as-inspiration.
+> **Origin:** the web cookbook brainstorm (`2026-10-12-web-cookbook-studio-design.md` §14.7). Checking whether Spoonacular recipes could go into printed cookbooks surfaced a licensing gap in a **live** feature; the owner chose to replace Spoonacular-as-content with Spoonacular-as-inspiration.
 > **Prerequisite for:** cookbooks accepting OCRecipes-authored recipes.
 > **Risk classes:** AI prompt (new), live premium feature change, data deletion — TDD, ai-reviewer + server-reviewer + mobile-reviewer, owner yes before merge.
 
