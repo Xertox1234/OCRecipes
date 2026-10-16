@@ -48,6 +48,7 @@ Test what each branch registers (`client/navigation/__tests__/RootStackNavigator
 ## Exceptions
 
 - `needsOnboarding` mounts only `Onboarding`. A link tapped there stays unhandled and replays into the main branch once onboarding finishes, which is acceptable for VerifyEmail, so it is not registered there.
+- A link opened from OUTSIDE the app (an email, a browser page's button) can't know the auth state. Point it at a route every branch registers, or at the bare `ocrecipes://`, which reopens the app where it was. The verify-email browser page's button went to `ocrecipes://login`: a signed-in user confirming a change-email got nothing, and the stored link replayed onto Login at their next sign-out. Since #1460 it uses the bare scheme.
 - Replay (`lastUnhandled`) is router behaviour a unit test can't observe. Check it on the simulator with `xcrun simctl openurl <udid> "ocrecipes://<path>"` in each auth state.
 
 ## Related Files
