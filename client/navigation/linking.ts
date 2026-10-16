@@ -261,8 +261,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
         path: "scan",
         parse: { verifyBarcode: () => undefined },
       },
-      // Drives the verify-email landing's success CTA (ocrecipes://login) to the
-      // sign-in screen — pure navigation, no auth side effect.
+      // ocrecipes://login opens the sign-in screen — pure navigation, no auth
+      // side effect. Signed-out stack only: while signed in it goes unhandled.
       Login: "login",
       // ?token=… maps to route.params.token automatically (no positional param).
       VerifyEmail: "verify-email",

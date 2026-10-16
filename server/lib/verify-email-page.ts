@@ -9,7 +9,7 @@
  * identically regardless of network/CDN state.
  *
  * SECURITY: `renderVerifyEmailPage` interpolates ZERO request input — only
- * static copy and fixed, state-keyed `ocrecipes://` deep links. The one exception
+ * static copy and one fixed `ocrecipes://` deep link. The one exception
  * is `renderVerifyEmailConfirmPage`, which must carry the token into its form: it
  * accepts only the JWT charset (base64url segments) and HTML-escapes it anyway.
  */
