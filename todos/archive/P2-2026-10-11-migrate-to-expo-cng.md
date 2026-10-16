@@ -3,7 +3,7 @@
 ---
 
 title: "Migrate to Expo CNG: port the hand-made native fixes into app.json/config plugins, then stop committing android/ios"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-11
 updated: 2026-10-13
@@ -61,19 +61,19 @@ Sentry, `plugins/strip-push-entitlement.js`. Android diff was cosmetic in the 20
 
 ## Acceptance Criteria
 
-- [ ] Re-run `npx expo prebuild --clean --no-install` in a throwaway worktree, diff against main,
+- [x] Re-run `npx expo prebuild --clean --no-install` in a throwaway worktree, diff against main,
       and reconcile the result with items 1–8 above (add anything new).
-- [ ] Items 3–5 and 8 expressed via `expo-build-properties` / `ios.privacyManifests` /
+- [x] Items 3–5 and 8 expressed via `expo-build-properties` / `ios.privacyManifests` /
       `ios.usesAppleSignIn` (or the nearest supported config).
-- [ ] Items 1, 2, 6, 7 expressed via local config plugin(s) under `plugins/` (or the Google
+- [x] Items 1, 2, 6, 7 expressed via local config plugin(s) under `plugins/` (or the Google
       module's own `app.plugin.js` for 6–7), each with a unit test of the plugin's mod output.
-- [ ] A second clean prebuild produces native projects with no functional diff vs the committed
+- [x] A second clean prebuild produces native projects with no functional diff vs the committed
       folders (cosmetic/ordering diffs listed in the PR body).
-- [ ] `android/` and `ios/` removed from git and added to `.gitignore`; `npx expo-doctor` passes
+- [x] `android/` and `ios/` removed from git and added to `.gitignore`; `npx expo-doctor` passes (its non-CNG sync check ✔; 2 pre-existing dependency-pin checks still fail, unrelated)
       the non-CNG sync check.
-- [ ] Docs/scripts that assume committed native folders updated (e.g. `docs/DEV_SETUP.md`,
+- [x] Docs/scripts that assume committed native folders updated (e.g. `docs/DEV_SETUP.md`,
       any script or CI step reading `ios/`/`android/` paths; runtimeVersion bump procedure).
-- [ ] **Owner step:** new EAS/dev-client build from the generated projects, installed and smoke-
+- [x] **Owner step:** new EAS/dev-client build from the generated projects, installed and smoke-
       tested on the device (camera scan, Apple + Google sign-in, IAP sandbox, push off). An agent
       does not run the EAS build.
 
@@ -138,3 +138,11 @@ Sentry, `plugins/strip-push-entitlement.js`. Android diff was cosmetic in the 20
   Pods on the generated Podfile + properties + package-lock; DEV_SETUP / ios-26-simulator-fix /
   verify-ui / passkeys todo updated. `npx expo-doctor --verbose`: "app config fields that may not
   be synced in a non-CNG project" ✔ (16/18; the 2 failures are the pre-existing dependency pins).
+
+## Outcome (2026-10-16)
+
+Done in #1435 (hand fixes → `app.json` + `plugins/`) and #1438 (untrack `ios/`/`android/`).
+Along the way #1439 fixed the nightly e2e seed (breached test password), which had masked e2e for
+four nights. Verified: both reviewer passes clean, e2e-regression green on iOS + Android from the
+generated projects (run 38567407937), owner EAS build + phone test passed (camera barcode + label
+scan, Apple + Google sign-in, IAP sandbox).
