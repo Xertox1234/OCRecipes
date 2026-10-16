@@ -131,6 +131,7 @@ export const storage = {
   getUserProfile: users.getUserProfile,
   createUserProfile: users.createUserProfile,
   updateUserProfile: users.updateUserProfile,
+  saveReminderMutes: users.saveReminderMutes,
   upsertProfileWithOnboarding: users.upsertProfileWithOnboarding,
   updateUserGoalsAndProfile: users.updateUserGoalsAndProfile,
   getSubscriptionStatus: users.getSubscriptionStatus,

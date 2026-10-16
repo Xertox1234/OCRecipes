@@ -1,9 +1,9 @@
 ---
 title: "Coach Reminders shows a load error for a user with no dietary profile"
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-16
 assignee:
 labels: [deferred, ui]
 github_issue:
@@ -23,9 +23,9 @@ Real users normally get a profile at onboarding, so this mostly hits seeded/test
 
 ## Acceptance Criteria
 
-- [ ] With a `null` dietary profile the screen shows the reminder switches (all on) instead of an error.
-- [ ] A test covers the `null` response.
-- [ ] Muting a category for a user with no profile either works or explains why — check what `PATCH /api/reminders/mutes` does without a profile row.
+- [x] With a `null` dietary profile the screen shows the reminder switches (all on) instead of an error.
+- [x] A test covers the `null` response.
+- [x] Muting a category for a user with no profile either works or explains why — check what `PATCH /api/reminders/mutes` does without a profile row.
 
 ## Implementation Notes
 
@@ -36,6 +36,7 @@ Real users normally get a profile at onboarding, so this mostly hits seeded/test
 ## Scope Contract
 
 - **Files in scope:** `client/screens/CoachRemindersScreen.tsx`, its `__tests__`, and the reminders-mutes route only if it also fails without a profile.
+- **Widened 2026-10-16 (owner ruling "make it work"):** `server/routes/reminders.ts` + its test, `server/storage/users.ts` (`saveReminderMutes`), `server/storage/index.ts`, `server/storage/__tests__/users.test.ts`.
 
 ## Dependencies
 
@@ -50,3 +51,9 @@ Real users normally get a profile at onboarding, so this mostly hits seeded/test
 ### 2026-10-12
 
 - Filed while verifying PR #1401 (screen chrome).
+
+### 2026-10-16
+
+- The mute route did fail without a profile: `updateUserProfile` is a plain UPDATE, so it matched no row and the route still answered `200` with the request echoed back (a route test locked that in). Owner chose "make it work".
+- New `saveReminderMutes` does one `INSERT … ON CONFLICT (user_id) DO UPDATE` that merges with jsonb `||`, creating a bare profile row when missing. The route returns what was stored.
+- Screen `select` accepts `null`. New `CoachRemindersScreen.test.tsx` covers the `null` profile and a muted category.
