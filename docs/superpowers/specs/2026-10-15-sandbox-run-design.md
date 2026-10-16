@@ -77,7 +77,7 @@ sandbox-build
   folder's basename plus a short hash of its real path. It is refused, with a message, when `--dir` has no
   `node_modules` folder (a read-only folder cannot gain the mount point).
 - `--timeout` defaults to `10m`; the clock starts when the box has started, not when the command is typed.
-- `--prune` deletes `runs/` folders older than 14 days. Nothing is ever deleted automatically.
+- `--prune` deletes `runs/` folders older than 14 days, and takes no other options. Nothing is ever deleted automatically.
 
 ## 2. What one run can and cannot do
 
@@ -85,7 +85,9 @@ sandbox-build
 
 - `~/projects/`
 - `~/Downloads/`
-- `/Volumes/U34Bolt/<something>/` — any folder below the drive's top level
+- `/Volumes/U34Bolt/<something>/` — any folder below the drive's top level, except `_shared/` (Docker's disk image,
+  other runs' output, the locks). The path is resolved with `/bin/pwd -P`, which returns the on-disk spelling; bash's
+  own `pwd -P` keeps the typed case, and the drive is case-insensitive, so `_SHARED` would slip past a prefix check
 - Claude Code's scratchpad, `/private/tmp/claude-501/`
 
 Anything else is refused with the reason, including the home folder, `~/Library`, `~/.ssh`, `~/.claude`, `~/.docker`,
@@ -94,15 +96,15 @@ holds app sign-in data.) Adding a root is a one-line change to the script.
 
 **Mounts — the only things from the host the box sees** (plus an empty read-only file over each hidden secret, below):
 
-| In the box           | From                                                           | Mode                                                                         |
-| -------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `/work`              | `--dir`                                                        | read-only                                                                    |
-| `/work/node_modules` | volume `sandbox-deps-<name>` (only with `--keep-deps`)         | read-write; covers the host's macOS `node_modules`, which is never touched   |
-| `/out`               | the run's folder on the drive                                  | read-write                                                                   |
-| `/npm-cache`         | volume `sandbox-npm-cache` (shared by all runs)                | read-only in `sandbox-run`, read-write in `sandbox-net` (`npm_config_cache`) |
-| `/tmp`               | memory (`tmpfs`, 1 GB, world-writable mode 1777, exec allowed) | read-write, gone after the run                                               |
-| `/sandbox-state`     | the run folder's `state/` on the drive                         | read-write; the box marks that it started                                    |
-| `/home/sandbox`      | memory (`tmpfs`, 256 MB, owned by uid 1000)                    | read-write, gone after the run                                               |
+| In the box           | From                                                           | Mode                                                                                                     |
+| -------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `/work`              | `--dir`                                                        | read-only                                                                                                |
+| `/work/node_modules` | volume `sandbox-deps-<name>` (only with `--keep-deps`)         | read-write; covers the host's macOS `node_modules`, which is never touched                               |
+| `/out`               | the run's folder on the drive                                  | read-write, up to `--out-max` (default 4 GB, checked every second; past it the box is stopped, exit 125) |
+| `/npm-cache`         | volume `sandbox-npm-cache` (shared by all runs)                | read-only in `sandbox-run`, read-write in `sandbox-net` (`npm_config_cache`)                             |
+| `/tmp`               | memory (`tmpfs`, 1 GB, world-writable mode 1777, exec allowed) | read-write, gone after the run                                                                           |
+| `/sandbox-state`     | the run folder's `state/` on the drive                         | read-write; the box marks that it started                                                                |
+| `/home/sandbox`      | memory (`tmpfs`, 256 MB, owned by uid 1000)                    | read-write, gone after the run                                                                           |
 
 The npm cache is a volume, not memory, because memory-backed space counts against the box's memory limit and npm's cache
 for a project like OCRecipes is hundreds of MB. `/tmp` allows running programs because many installs and test tools
@@ -116,12 +118,13 @@ short root-only container that hands the volume to uid 1000; every later run is 
 - `--network none`; `sandbox-net` uses the default bridge network.
 - `--user 1000:1000`, `--cap-drop ALL`, `--security-opt no-new-privileges`.
 - `--read-only` root filesystem.
-- `--memory 2g`, `--cpus 4`, `--pids-limit 512`. 2 GB so four parallel agents fit in Docker's ~8 GB; one run can ask
+- `--memory 2g` with `--memory-swap` equal to it (no swap on top), `--cpus 4`, `--pids-limit 512`. 2 GB so four parallel agents fit in Docker's ~8 GB; one run can ask
   for more with `--memory`, and contention between parallel runs is accepted.
 - `--init` and `--name sandbox-<run id>`, so a timeout can `docker kill` the box by name.
 - `--rm` — the box is deleted after every run.
 - Environment: nothing from the host. The script sets only `HOME`, `TERM`, `CI=1`, `PYTHONDONTWRITEBYTECODE=1`,
   `npm_config_cache=/npm-cache` and `npm_config_logs_dir=/tmp/npm-logs` (the image adds `PATH`; Docker adds `HOSTNAME`).
+  `TERM` is passed through only when it is a plain terminal name (letters, digits, `.`, `_`, `+`, `-`); otherwise `dumb`.
 - Never mounted: the Docker socket, `~/.ssh`, shell config files, the home folder.
 
 **Secret files are hidden.** Before each run the script finds, **at any depth** under `--dir` (skipping
