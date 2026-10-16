@@ -1,6 +1,6 @@
 ---
 title: "Idea cards: a gluten allergy asking for pasta/baked goods gets no cards (every card dropped)"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-16
 updated: 2026-10-16
