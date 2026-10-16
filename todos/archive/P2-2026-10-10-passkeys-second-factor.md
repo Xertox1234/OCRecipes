@@ -1,9 +1,9 @@
 ---
 title: "Passkeys as a second factor (MFA part 2)"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-16
 assignee:
 labels: [security, api, react-native]
 github_issue:
@@ -56,3 +56,7 @@ Human-led: auth is high-risk in this codebase.
 ### 2026-10-10
 
 - Split out of the MFA todo after part 1 went live.
+
+### 2026-10-16
+
+- Closed without building (owner decision). Superseded by the 2026-10-12 auth rulings: two-step is an emailed 6-digit code only — the owner chose it over passkeys — and #1410 removed authenticator apps and recovery codes, so this todo's premise (a passkey next to TOTP, recovery codes, the 15+ password rule) no longer exists. Reopen only on a new owner request, rewritten around email two-step.
