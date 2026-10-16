@@ -10,7 +10,6 @@ import {
   remindersAcknowledgeRateLimit,
   remindersMutesRateLimit,
 } from "./_rate-limiters";
-import type { ReminderMutes } from "@shared/types/reminders";
 
 const mutesSchema = z
   .object({
@@ -68,14 +67,11 @@ export function register(app: Express): void {
           );
         }
 
-        const profile = await storage.getUserProfile(req.userId);
-        const existing = (profile?.reminderMutes ?? {}) as ReminderMutes;
-        const updated: ReminderMutes = { ...existing, ...parsed.data };
-
-        await storage.updateUserProfile(req.userId, {
-          reminderMutes: updated,
-        });
-        res.json({ reminderMutes: updated });
+        const reminderMutes = await storage.saveReminderMutes(
+          req.userId,
+          parsed.data,
+        );
+        res.json({ reminderMutes });
       } catch (error) {
         handleRouteError(res, error, "update reminder mutes");
       }

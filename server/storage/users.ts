@@ -18,6 +18,7 @@ import {
   subscriptionTierSchema,
   type SubscriptionTier,
 } from "@shared/types/premium";
+import type { ReminderMutes } from "@shared/types/reminders";
 import { db } from "../db";
 import {
   eq,
@@ -642,6 +643,30 @@ export async function updateUserProfile(
     .where(eq(userProfiles.userId, userId))
     .returning();
   return profile || undefined;
+}
+
+/**
+ * Merges reminder mutes into the user's profile, creating a bare profile row
+ * (every other column defaults) when none exists yet — a plain UPDATE would
+ * match nothing for a profile-less account and silently drop the change.
+ * Returns the stored mutes after the merge.
+ */
+export async function saveReminderMutes(
+  userId: string,
+  mutes: Partial<ReminderMutes>,
+): Promise<ReminderMutes> {
+  const [row] = await db
+    .insert(userProfiles)
+    .values({ userId, reminderMutes: mutes })
+    .onConflictDoUpdate({
+      target: userProfiles.userId,
+      set: {
+        reminderMutes: sql`${userProfiles.reminderMutes} || excluded.reminder_mutes`,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ reminderMutes: userProfiles.reminderMutes });
+  return row.reminderMutes;
 }
 
 /**

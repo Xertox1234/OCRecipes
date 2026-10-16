@@ -59,8 +59,9 @@ function useReminderMutes() {
       const res = await apiRequest("GET", "/api/user/dietary-profile");
       return res.json();
     },
-    select: (profile: { reminderMutes?: ReminderMutes }) => ({
-      reminderMutes: (profile.reminderMutes ?? {}) as ReminderMutes,
+    // The server answers `null` for a user with no profile row yet.
+    select: (profile: { reminderMutes?: ReminderMutes } | null) => ({
+      reminderMutes: (profile?.reminderMutes ?? {}) as ReminderMutes,
     }),
     // Intentionally NO meta.silentError here: this query shares
     // QUERY_KEYS.dietaryProfile with RecipeChatScreen and useDietaryProfileForm,

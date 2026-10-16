@@ -4,15 +4,13 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../reminders";
-import { createMockUserProfile } from "../../__tests__/factories";
 import type { CoachContextItem } from "@shared/types/reminders";
 
 vi.mock("../../storage", () => ({
   storage: {
     hasPendingReminders: vi.fn(),
     acknowledgeReminders: vi.fn(),
-    getUserProfile: vi.fn(),
-    updateUserProfile: vi.fn(),
+    saveReminderMutes: vi.fn(),
   },
 }));
 
@@ -87,12 +85,11 @@ describe("Reminders Routes", () => {
   });
 
   describe("PATCH /api/reminders/mutes", () => {
-    it("merges incoming mutes with existing and saves merged result", async () => {
-      const existingProfile = createMockUserProfile({
-        reminderMutes: { "meal-log": true },
+    it("saves the incoming mutes and returns what storage stored", async () => {
+      vi.mocked(storage.saveReminderMutes).mockResolvedValue({
+        "meal-log": true,
+        commitment: true,
       });
-      vi.mocked(storage.getUserProfile).mockResolvedValue(existingProfile);
-      vi.mocked(storage.updateUserProfile).mockResolvedValue(existingProfile);
 
       const res = await request(app)
         .patch("/api/reminders/mutes")
@@ -104,9 +101,9 @@ describe("Reminders Routes", () => {
         "meal-log": true,
         commitment: true,
       });
-      expect(storage.updateUserProfile).toHaveBeenCalledWith(
+      expect(storage.saveReminderMutes).toHaveBeenCalledWith(
         expect.any(String),
-        { reminderMutes: { "meal-log": true, commitment: true } },
+        { commitment: true },
       );
     });
 
@@ -119,21 +116,26 @@ describe("Reminders Routes", () => {
       expect(res.status).toBe(400);
     });
 
-    it("returns 200 with incoming mutes when no profile exists yet", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(storage.updateUserProfile).mockResolvedValue(undefined);
+    it("does not save when the body is invalid", async () => {
+      await request(app)
+        .patch("/api/reminders/mutes")
+        .set("Authorization", "Bearer token")
+        .send({ commitment: "yes" });
+
+      expect(storage.saveReminderMutes).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 when the save fails", async () => {
+      vi.mocked(storage.saveReminderMutes).mockRejectedValue(
+        new Error("db down"),
+      );
 
       const res = await request(app)
         .patch("/api/reminders/mutes")
         .set("Authorization", "Bearer token")
         .send({ commitment: true });
 
-      expect(res.status).toBe(200);
-      expect(res.body.reminderMutes).toEqual({ commitment: true });
-      expect(storage.updateUserProfile).toHaveBeenCalledWith(
-        expect.any(String),
-        { reminderMutes: { commitment: true } },
-      );
+      expect(res.status).toBe(500);
     });
   });
 });

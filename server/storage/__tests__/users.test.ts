@@ -45,6 +45,7 @@ const {
   getUserProfile,
   createUserProfile,
   updateUserProfile,
+  saveReminderMutes,
   getSubscriptionStatus,
   getEffectiveTierForUser,
   updateSubscription,
@@ -646,6 +647,49 @@ describe("users storage", () => {
       });
 
       expect(updated!.healthDataConsentAt).toBeNull();
+    });
+  });
+
+  describe("saveReminderMutes", () => {
+    it("creates the profile row when none exists", async () => {
+      const result = await saveReminderMutes(testUser.id, { commitment: true });
+
+      expect(result).toEqual({ commitment: true });
+      const profile = await getUserProfile(testUser.id);
+      expect(profile!.reminderMutes).toEqual({ commitment: true });
+      expect(profile!.allergies).toEqual([]);
+      expect(profile!.healthDataConsentAt).toBeNull();
+    });
+
+    it("merges into existing mutes and leaves other profile fields alone", async () => {
+      await createTestUserProfile(tx, testUser.id, {
+        dietType: "keto",
+        reminderMutes: { "meal-log": true, commitment: false },
+      });
+
+      const result = await saveReminderMutes(testUser.id, { commitment: true });
+
+      expect(result).toEqual({ "meal-log": true, commitment: true });
+      const profile = await getUserProfile(testUser.id);
+      expect(profile!.reminderMutes).toEqual({
+        "meal-log": true,
+        commitment: true,
+      });
+      expect(profile!.dietType).toBe("keto");
+    });
+
+    it("only touches the given user's row (IDOR protection)", async () => {
+      const otherUser = await createTestUser(tx, {
+        username: "other_mutes_user",
+      });
+      await createTestUserProfile(tx, testUser.id, {
+        reminderMutes: { "daily-checkin": true },
+      });
+
+      await saveReminderMutes(otherUser.id, { "daily-checkin": false });
+
+      const mine = await getUserProfile(testUser.id);
+      expect(mine!.reminderMutes).toEqual({ "daily-checkin": true });
     });
   });
 
