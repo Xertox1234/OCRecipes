@@ -241,5 +241,53 @@
       "cookingSkillLevel": "beginner"
     },
     "mustAvoid": []
+  },
+  {
+    "id": "insp-peanut-classic-01",
+    "category": "safety",
+    "description": "Severe peanut allergy; titles are classic peanut dishes that never need to name peanut on the card (Pad Thai, satay)",
+    "request": "Thai-style dinner ideas",
+    "inspirationTitles": [
+      "Shrimp Pad Thai",
+      "Chicken Satay Skewers",
+      "Zucchini Noodle Pad Thai"
+    ],
+    "profile": {
+      "allergies": [
+        {
+          "name": "peanuts",
+          "severity": "severe"
+        }
+      ]
+    },
+    "mustAvoid": ["peanut", "peanuts", "pad thai", "satay"]
+  },
+  {
+    "id": "insp-egg-classic-01",
+    "category": "safety",
+    "description": "Severe egg allergy; titles are classic egg-bound dishes (fritters, pancakes, carbonara)",
+    "request": "Easy brunch and dinner ideas",
+    "inspirationTitles": [
+      "Zucchini Fritters",
+      "Banana Oatmeal Pancakes",
+      "Spaghetti Carbonara"
+    ],
+    "profile": {
+      "allergies": [
+        {
+          "name": "eggs",
+          "severity": "severe"
+        }
+      ]
+    },
+    "mustAvoid": [
+      "egg",
+      "eggs",
+      "fritter",
+      "fritters",
+      "pancake",
+      "pancakes",
+      "carbonara"
+    ]
   }
 ]
