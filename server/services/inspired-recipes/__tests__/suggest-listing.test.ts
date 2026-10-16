@@ -78,6 +78,14 @@ describe("suggestListing", () => {
     expect(system).toContain("gluten-free pasta");
   });
 
+  it("forbids announcing the allergen in tags (a 'gluten-free' tag got every card dropped)", async () => {
+    mockAi.mockResolvedValue(reply({ suggestions: [card("Bean Tacos")] }));
+    await suggestListing(args());
+    const system = String(mockAi.mock.calls[0][1].messages[0].content);
+    expect(system).toMatch(/tags included/i);
+    expect(system).toMatch(/"gluten-free", "wheat-free"/);
+  });
+
   it("works with zero inspiration titles", async () => {
     mockAi.mockResolvedValue(reply({ suggestions: [card("Bean Tacos")] }));
     const out = await suggestListing(args({ request: "tacos" }));
@@ -200,6 +208,25 @@ describe("dropAllergenConflicts (canonical ids)", () => {
         withAllergy("peanuts"),
       ),
     ).toHaveLength(1);
+  });
+
+  it("a gluten allergy fails closed on a 'gluten-free' tag and on wheat staples, but keeps a clean card", () => {
+    const celiac = createMockUserProfile({
+      allergies: [
+        { name: "gluten", severity: "severe" },
+        { name: "wheat", severity: "severe" },
+      ],
+    });
+    const tagged = {
+      ...card2("Creamy Mushroom Risotto"),
+      tags: ["comfort food", "gluten-free"],
+    };
+    const wheat = card2("Roasted Vegetable Couscous");
+    const clean = card2("Creamy Mushroom Risotto");
+    expect(
+      dropAllergenConflicts([tagged, wheat, clean], celiac).map((c) => c.title),
+    ).toEqual(["Creamy Mushroom Risotto"]);
+    expect(dropAllergenConflicts([tagged], celiac)).toEqual([]);
   });
 
   it("keeps a safe card", () => {
