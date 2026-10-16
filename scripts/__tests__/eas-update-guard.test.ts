@@ -7,8 +7,7 @@ import { spawnSync } from "child_process";
 /**
  * The OTA publish guards live INLINE in package.json (`update:preview` /
  * `update:production` are `sh -c` one-liners) — there is no script file to
- * import. Layer A asserts the committed config text (precedent:
- * runtime-version-parity.test.ts); Layer B executes the real fragment against
+ * import. Layer A asserts the committed config text; Layer B executes the real fragment against
  * a fake `eas` binary on PATH, so the guard behavior itself is pinned and the
  * riskiest edit in the repo (an inline shell string) is also its best-tested.
  */

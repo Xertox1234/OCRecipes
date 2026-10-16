@@ -194,19 +194,25 @@ jobs:
       - name: Select Xcode 26.3
         run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
-      # Compute the Pods cache key ONCE, from the committed lockfile, before
-      # `pod install` (invoked inside "Build and install iOS app" below) can
-      # touch it. Verified locally: even a same-lockfile `pod install`
-      # rewrites `ios/Podfile.lock` and `ios/*.xcodeproj/project.pbxproj` in
-      # place (CocoaPods re-resolves any loosely-pinned transitive dep
-      # against whatever the spec repo currently has — running `pod install`
-      # twice back-to-back locally modified both tracked files both times,
-      # even with Pods already populated from the first run). If the save
-      # step below re-hashed those paths AFTER the build instead of reusing
-      # this captured key, the save key would drift from the key any future
-      # restore computes and the cache would never hit again — capturing the
-      # key here makes key equality structural instead of contingent on
-      # `pod install` being idempotent, which it measurably isn't.
+      # ios/ is not committed (Expo CNG) — generate it from app.json +
+      # plugins/ BEFORE the Pods cache restore below. Restoring first would
+      # create an ios/ holding only Pods/, and `expo run:ios` must not be left
+      # to guess whether that half-folder is a real native project.
+      # --no-install: `pod install` runs inside "Build and install iOS app".
+      - name: Generate native iOS project (CNG)
+        run: npx expo prebuild --platform ios --no-install
+
+      # Compute the Pods cache key ONCE, from the GENERATED Podfile inputs,
+      # before `pod install` (invoked inside "Build and install iOS app"
+      # below) can touch anything. There is no committed Podfile.lock any
+      # more: the Podfile + Podfile.properties.json that prebuild writes
+      # (deterministic from app.json + plugins/) plus package-lock.json
+      # (which native modules autolink) are the inputs that decide the Pods
+      # sandbox. `pod install` also rewrites ios/*.xcodeproj/project.pbxproj
+      # in place, so if the save step below re-hashed AFTER the build instead
+      # of reusing this captured key, the save key could drift from the key
+      # any future restore computes and the cache would never hit again —
+      # capturing the key here makes key equality structural.
       # `$GITHUB_ENV` mirrors the existing "Boot iOS simulator" step's own
       # IOS_SIMULATOR_UDID pattern. See docs/solutions/conventions/
       # ci-cache-key-inputs-must-precede-mutating-step-2026-09-02.md.
@@ -238,16 +244,16 @@ jobs:
           # pinned to the old version, restoring an old-toolchain Pods
           # sandbox against the new one.
           XCODE_VERSION="$(xcodebuild -version | head -1 | awk '{print $2}')"
-          echo "PODS_CACHE_KEY=pods-${{ runner.os }}-xcode${XCODE_VERSION}-${{ hashFiles('ios/Podfile.lock', 'package-lock.json') }}" >> "$GITHUB_ENV"
+          echo "PODS_CACHE_KEY=pods-${{ runner.os }}-xcode${XCODE_VERSION}-${{ hashFiles('ios/Podfile', 'ios/Podfile.properties.json', 'package-lock.json') }}" >> "$GITHUB_ENV"
 
       # Restored here, saved (gated on success) right after "Build and
       # install iOS app" below — see that step's comment for why the gate
       # exists. A MISS just means `pod install` runs cold, same as today.
       #
       # Exact-match only (no restore-keys): a Pods sandbox built from a
-      # DIFFERENT Podfile.lock is a correctness risk, so a lockfile change
-      # must miss cleanly and fall through to a real `pod install` in the
-      # build step below — same as today. Safe to warm-start from an exact
+      # DIFFERENT Podfile is a correctness risk, so a Podfile/dependency
+      # change must miss cleanly and fall through to a real `pod install` in
+      # the build step below. Safe to warm-start from an exact
       # hit: CocoaPods only re-extracts a pod whose spec checksum changed
       # (confirmed locally — a same-lockfile `pod install` against an
       # already-populated Pods dir re-applies nothing and prints no
@@ -628,6 +634,11 @@ jobs:
             sleep 2
           done
           curl -sf http://localhost:8081/status >/dev/null 2>&1 || { echo "::error::Metro did not become ready within 60s"; cat metro.log; exit 1; }
+
+      # android/ is not committed (Expo CNG) — generate it explicitly rather
+      # than relying on `expo run:android` to notice the folder is missing.
+      - name: Generate native Android project (CNG)
+        run: npx expo prebuild --platform android --no-install
 
       # Boots the emulator, then builds + installs the app and runs the flows
       # against it. Same regression tag set and retry policy as the iOS job.

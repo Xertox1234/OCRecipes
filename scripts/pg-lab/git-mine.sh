@@ -155,7 +155,8 @@ parse_git_log() {
 #   - the native build-artifact globs (ios/**/build/, android/**/.cxx/, …) are harmless:
 #     those paths are git-ignored, so they never enter git history and there is nothing
 #     here to exclude in the first place;
-#   - ios/**/Contents.json is NOT harmless — those 4 Xcode asset manifests are tracked.
+#   - ios/**/Contents.json is NOT harmless — those 4 Xcode asset manifests sit in git
+#     history (tracked until the 2026-10 Expo CNG migration untracked ios/).
 #     It is covered instead by the literal `Contents.json` basename in `extra` below
 #     (safe against over-exclusion: every Contents.json ever committed lives under ios/).
 # So when you add a glob to .prettierignore that matches TRACKED files, add a matching
