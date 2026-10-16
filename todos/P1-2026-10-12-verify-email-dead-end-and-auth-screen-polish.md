@@ -1,6 +1,6 @@
 ---
 title: "Verify-email expired link is a dead end; signed-in verify link does nothing; auth screen polish"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-10-12
 updated: 2026-10-12

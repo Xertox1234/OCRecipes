@@ -269,8 +269,12 @@ export default function RootStackNavigator() {
             component={LoginScreen}
             options={{ headerShown: false }}
           />
+          {/* Also registered signed in (below). Distinct navigationKeys make an
+              auth flip drop the route — otherwise the router keeps a same-named
+              route and a session ending on it leaves no Login underneath. */}
           <Stack.Screen
             name="VerifyEmail"
+            navigationKey="signed-out"
             component={VerifyEmailScreen}
             options={{ headerShown: false }}
           />
@@ -312,6 +316,15 @@ export default function RootStackNavigator() {
             name="Main"
             component={MainTabNavigator}
             options={{ headerShown: false }}
+          />
+          {/* A verify link tapped while signed in — change-email mails one to
+              the new address. Same screen and linking path as signed out; its
+              exits become Done. */}
+          <Stack.Screen
+            name="VerifyEmail"
+            navigationKey="signed-in"
+            component={VerifyEmailScreen}
+            options={{ headerShown: false, presentation: "modal" }}
           />
           <Stack.Screen
             name="Scan"

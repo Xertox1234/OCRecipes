@@ -75,8 +75,8 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   };
 
   const finish = (message: string) => {
-    haptics.notification(Haptics.NotificationFeedbackType.Success);
-    AccessibilityInfo.announceForAccessibility(message);
+    // The toast owns the feedback: it buzzes Success, announces on iOS, and is
+    // a live region on Android — doing either here too doubled both.
     toast.success(message);
     void queryClient.invalidateQueries({ queryKey: ME_KEY });
     navigation.goBack();

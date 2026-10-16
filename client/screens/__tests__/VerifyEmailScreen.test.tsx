@@ -54,21 +54,43 @@ vi.mock("../VerifyEmailScreen-utils", async (importOriginal) => {
   };
 });
 
+// Signed-out by default — the screen's original audience. The signed-in tests
+// flip `isAuthenticated` (a verify link tapped after changing email, #55).
+const auth = vi.hoisted(() => ({
+  isAuthenticated: false,
+  checkAuth: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("@/context/AuthContext", () => ({ useAuthContext: () => auth }));
+
 /**
  * Build the route/navigation props the screen receives directly (it does NOT
  * use useNavigation). The localized `as unknown as` casts construct the minimal
  * props the screen actually reads; the project's "never cast navigation types"
  * rule targets production usage, not test prop construction.
  */
-function renderScreen(params?: RootStackParamList["VerifyEmail"]) {
+function renderScreen(
+  params?: RootStackParamList["VerifyEmail"],
+  { canGoBack = true }: { canGoBack?: boolean } = {},
+) {
   const navigate = vi.fn();
+  const goBack = vi.fn();
+  const reset = vi.fn();
   const route = { params } as unknown as Props["route"];
-  const navigation = { navigate } as unknown as Props["navigation"];
+  const navigation = {
+    navigate,
+    goBack,
+    reset,
+    canGoBack: () => canGoBack,
+  } as unknown as Props["navigation"];
   const utils = renderComponent(
     <VerifyEmailScreen route={route} navigation={navigation} />,
   );
-  return { ...utils, navigate };
+  return { ...utils, navigate, goBack, reset };
 }
+
+beforeEach(() => {
+  auth.isAuthenticated = false;
+});
 
 describe("VerifyEmailScreen — confirm-on-mount transitions", () => {
   let announceSpy: ReturnType<typeof vi.spyOn>;
@@ -130,11 +152,121 @@ describe("VerifyEmailScreen — confirmed navigation", () => {
     mockVerifyEmailRequest.mockResolvedValue(undefined);
     const { navigate } = renderScreen({ token: "tok-123" });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Back to sign in" }),
-    );
+    // Wait for the settled state: the confirming state has its own same-named
+    // exit, which unmounts when the confirm resolves.
+    await screen.findByText("Email verified ✓");
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
 
     expect(navigate).toHaveBeenCalledWith("Login");
+  });
+});
+
+// #74: a signed-out user on an expired link (or a slow confirm) had no way out
+// — headerShown is false and edge-swipe does nothing, so force-quit was it.
+describe("VerifyEmailScreen — every signed-out state has a way back", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("navigates to Login from the failed state", async () => {
+    mockVerifyEmailRequest.mockRejectedValue(new Error("expired"));
+    const { navigate } = renderScreen({ token: "tok-expired" });
+
+    await screen.findByText("Link expired or invalid");
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    expect(navigate).toHaveBeenCalledWith("Login");
+  });
+
+  it("offers Back to sign in while the link is still confirming", () => {
+    mockVerifyEmailRequest.mockReturnValue(new Promise(() => {}));
+    const { navigate } = renderScreen({ token: "tok-pending" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    expect(navigate).toHaveBeenCalledWith("Login");
+  });
+
+  it("labels the resend email field for screen readers", async () => {
+    mockVerifyEmailRequest.mockRejectedValue(new Error("expired"));
+    renderScreen({ token: "tok-expired" });
+
+    await screen.findByText("Link expired or invalid");
+    expect(screen.getByLabelText("Email address")).toBeTruthy();
+  });
+
+  it("labels the pending-state email field for screen readers", () => {
+    renderScreen(undefined);
+
+    expect(screen.getByLabelText("Email address")).toBeTruthy();
+  });
+});
+
+// #55: a signed-in user taps a verify link — the change-email flow mails one to
+// the new address while the user stays signed in. There is no Login route in
+// the signed-in stack, so every exit is Done back into the app.
+describe("VerifyEmailScreen — signed in", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    auth.isAuthenticated = true;
+  });
+
+  it("confirms, refreshes the account, and Done goes back", async () => {
+    mockVerifyEmailRequest.mockResolvedValue(undefined);
+    const { goBack, navigate } = renderScreen({ token: "tok-123" });
+
+    expect(await screen.findByText("Email verified ✓")).toBeTruthy();
+    // The token names its own user, so the copy never claims "your".
+    expect(screen.getByText("That email address is confirmed.")).toBeTruthy();
+    expect(screen.queryByText("You can now sign in.")).toBeNull();
+    expect(auth.checkAuth).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(goBack).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalledWith("Login");
+  });
+
+  it("Done resets to Main when the link cold-started the app", async () => {
+    mockVerifyEmailRequest.mockResolvedValue(undefined);
+    const { goBack, reset } = renderScreen(
+      { token: "tok-123" },
+      { canGoBack: false },
+    );
+
+    await screen.findByText("Email verified ✓");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    expect(goBack).not.toHaveBeenCalled();
+    expect(reset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main" }],
+    });
+  });
+
+  it("failed: points to Settings instead of a resend that cannot work", async () => {
+    // Resend looks up the verified email only, so it can never re-send a
+    // pending change-email link — offering it would silently do nothing.
+    mockVerifyEmailRequest.mockRejectedValue(new Error("expired"));
+    const { goBack } = renderScreen({ token: "tok-expired" });
+
+    expect(await screen.findByText("Link expired or invalid")).toBeTruthy();
+    expect(screen.getByText(/Settings/)).toBeTruthy();
+    expect(screen.queryByTestId("input-resend-email")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Resend verification email" }),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(goBack).toHaveBeenCalled();
+    expect(auth.checkAuth).not.toHaveBeenCalled();
+  });
+
+  it("offers Done while the link is still confirming", () => {
+    mockVerifyEmailRequest.mockReturnValue(new Promise(() => {}));
+    const { goBack } = renderScreen({ token: "tok-pending" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(goBack).toHaveBeenCalled();
   });
 });
 

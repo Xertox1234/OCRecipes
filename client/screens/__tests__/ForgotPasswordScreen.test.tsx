@@ -74,6 +74,30 @@ describe("ForgotPasswordScreen", () => {
     ).toBeGreaterThan(0);
   });
 
+  // #44: the red border and message used to stay after the email was fixed,
+  // until the next tap of Send code.
+  it("clears the error as soon as the email is edited", () => {
+    renderScreen();
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "nope" },
+    });
+    fireEvent.click(screen.getByText("Send code"));
+    expect(screen.getByLabelText("Email").getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "nope@example.com" },
+    });
+
+    expect(
+      screen.queryAllByText("Please enter a valid email address."),
+    ).toHaveLength(0);
+    expect(
+      screen.getByLabelText("Email").getAttribute("aria-invalid"),
+    ).not.toBe("true");
+  });
+
   it("on success moves to ResetPassword with the trimmed email", async () => {
     mockRequestResetCode.mockResolvedValue(undefined);
     const { replace } = renderScreen();

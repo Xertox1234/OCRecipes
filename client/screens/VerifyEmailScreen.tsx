@@ -11,6 +11,8 @@ import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing } from "@/constants/theme";
+import { useAuthContext } from "@/context/AuthContext";
+import { safeGoBack } from "@/navigation/safeGoBack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
   isValidEmailShape,
@@ -25,6 +27,10 @@ type Status = "confirming" | "confirmed" | "failed" | "pending";
 export default function VerifyEmailScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  // Signed in = a verify link tapped from inside the app — the change-email flow
+  // mails one to the new address while the session stays live. That stack has
+  // no Login route, so every exit is Done back into the app instead.
+  const { isAuthenticated, checkAuth } = useAuthContext();
   const tokenParam = route.params?.token;
   const [status, setStatus] = useState<Status>(
     tokenParam ? "confirming" : "pending",
@@ -55,8 +61,13 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
           // Async state transition → announce for screen readers (both
           // platforms; no live region present, so no double-announce risk).
           AccessibilityInfo.announceForAccessibility(
-            "Your email is verified. You can now sign in.",
+            isAuthenticated
+              ? "That email address is verified."
+              : "Your email is verified. You can now sign in.",
           );
+          // A confirmed change-email link swaps the account's address
+          // server-side — refetch so Settings shows the new one.
+          if (isAuthenticated) void checkAuth();
         }
       } catch {
         if (!cancelled) {
@@ -70,7 +81,9 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [tokenParam]);
+    // checkAuth is a stable useCallback, and an auth flip removes this screen
+    // (navigationKey in RootStackNavigator), so this still runs once per token.
+  }, [tokenParam, isAuthenticated, checkAuth]);
 
   const onResend = async () => {
     setError("");
@@ -98,22 +111,50 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
     }
   };
 
+  // Signed in, the screen is a modal over the app; a cold-start link leaves it
+  // alone in the stack, so goBack would be a silent no-op without the fallback.
+  const exit = () =>
+    isAuthenticated
+      ? safeGoBack(navigation, () =>
+          navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
+        )
+      : navigation.navigate("Login");
+  const exitLabel = isAuthenticated ? "Done" : "Back to sign in";
+
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} accessibilityViewIsModal={true}>
       <View style={styles.content}>
         {status === "confirming" ? (
-          <ThemedText type="h2">Verifying your email…</ThemedText>
+          <>
+            <ThemedText type="h2">Verifying your email…</ThemedText>
+            <Button variant="ghost" onPress={exit} style={styles.button}>
+              {exitLabel}
+            </Button>
+          </>
         ) : status === "confirmed" ? (
           <>
             <ThemedText type="h2">Email verified ✓</ThemedText>
+            {/* The token names its own user, so signed in the screen can't tell
+                whose address it confirmed — never claim "your". */}
             <ThemedText type="body" style={{ color: theme.textSecondary }}>
-              You can now sign in.
+              {isAuthenticated
+                ? "That email address is confirmed."
+                : "You can now sign in."}
             </ThemedText>
-            <Button
-              onPress={() => navigation.navigate("Login")}
-              style={styles.button}
-            >
-              Back to sign in
+            <Button onPress={exit} style={styles.button}>
+              {exitLabel}
+            </Button>
+          </>
+        ) : status === "failed" && isAuthenticated ? (
+          <>
+            <ThemedText type="h2">Link expired or invalid</ThemedText>
+            {/* No resend here: it looks up the verified email only, so it can
+                never re-send a pending change-email link. */}
+            <ThemedText type="body" style={{ color: theme.textSecondary }}>
+              To get a new link, change your email again in Settings.
+            </ThemedText>
+            <Button onPress={exit} style={styles.button}>
+              Done
             </Button>
           </>
         ) : status === "failed" ? (
@@ -125,6 +166,7 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
             <TextInput
               leftIcon="mail"
               placeholder="Email"
+              accessibilityLabel="Email address"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -137,6 +179,9 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
             <InlineError message={error} shakeKey={shakeKey} />
             <Button onPress={onResend} loading={busy} style={styles.button}>
               Resend verification email
+            </Button>
+            <Button variant="ghost" onPress={exit} style={styles.button}>
+              Back to sign in
             </Button>
           </>
         ) : (
@@ -152,6 +197,7 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
             <TextInput
               leftIcon="mail"
               placeholder="Email"
+              accessibilityLabel="Email address"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"

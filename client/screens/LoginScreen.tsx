@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { StyleSheet, View, Pressable, Image, Dimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
 import { Feather } from "@expo/vector-icons";
 
@@ -26,6 +27,7 @@ import {
   registerPasswordRules,
 } from "./LoginScreen-utils";
 import {
+  useIsFocused,
   useNavigation,
   useRoute,
   type RouteProp,
@@ -48,6 +50,7 @@ export default function LoginScreen() {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "Login">>();
   const toast = useToast();
+  const isFocused = useIsFocused();
 
   const [mode, setMode] = useState<Mode>("login");
   // Prefilled with the email after a password reset (ResetPasswordScreen).
@@ -157,6 +160,9 @@ export default function LoginScreen() {
         return;
       }
       setError(getAuthErrorMessage(err, mode));
+      // A rejected password left in the field is what iOS offers to save when
+      // the user leaves. Register keeps it: a taken username isn't a bad password.
+      if (mode === "login") setPassword("");
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsLoading(false);
@@ -175,6 +181,10 @@ export default function LoginScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Light content over the dark hero photo. Focus-gated: Login stays
+          mounted under the other auth screens and the last-mounted StatusBar
+          wins, so unmounting hands control back to App.tsx's global one. */}
+      {isFocused && <StatusBar style="light" />}
       {/* Hero Image with Gradient Fade */}
       <View style={styles.heroContainer} accessibilityElementsHidden={true}>
         <Image
