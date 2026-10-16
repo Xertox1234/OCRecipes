@@ -5,23 +5,38 @@ import {
   type VerifyEmailState,
 } from "../verify-email-page";
 
-describe("renderVerifyEmailPage — success CTA hand-off to Login", () => {
-  it("points the success-state button at the ocrecipes://login deep link", () => {
-    const html = renderVerifyEmailPage("success");
-    // The login deep link routes the app straight to the sign-in screen
-    // instead of foregrounding it onto the "Check your inbox" dead-end.
-    expect(html).toContain('href="ocrecipes://login"');
-    // And must NOT fall back to the bare scheme (which just foregrounds the app).
-    expect(html).not.toContain('href="ocrecipes://"');
-  });
+const STATES: VerifyEmailState[] = ["success", "invalid", "error"];
 
-  it("keeps the bare ocrecipes:// scheme on the invalid and error states", () => {
-    // invalid/error tell the user to request a new link in-app, so they should
-    // foreground the app (landing on the resend form), not jump to Login.
-    for (const state of ["invalid", "error"] as VerifyEmailState[]) {
+describe("renderVerifyEmailPage — the button just opens the app", () => {
+  it("points every state's button at the bare ocrecipes:// scheme", () => {
+    // A change-email link is confirmed by a SIGNED-IN user, where the signed-in
+    // stack has no Login route: ocrecipes://login goes unhandled and is replayed
+    // later, on sign-out. The bare scheme reopens the app where the user was —
+    // every screen it can be on (incl. "Check your inbox") has its own exit.
+    for (const state of STATES) {
       const html = renderVerifyEmailPage(state);
       expect(html).toContain('href="ocrecipes://"');
       expect(html).not.toContain("ocrecipes://login");
+    }
+  });
+
+  it("doesn't tell the user to log in after a confirm — they may be signed in", () => {
+    expect(renderVerifyEmailPage("success")).not.toMatch(/log ?in/i);
+  });
+});
+
+describe("page styles — dark mode", () => {
+  // Same specificity, so the LATER rule wins: a dark `.card` override placed
+  // before the base `.card` rule is dead, leaving light text on a white card.
+  it("puts the dark-mode overrides after the base rules they override", () => {
+    for (const html of [
+      renderVerifyEmailPage("invalid"),
+      renderVerifyEmailConfirmPage("aaa.bbb.ccc"),
+    ]) {
+      const dark = html.indexOf("@media (prefers-color-scheme: dark)");
+      expect(dark).toBeGreaterThan(-1);
+      expect(dark).toBeGreaterThan(html.indexOf(".card {"));
+      expect(dark).toBeGreaterThan(html.indexOf("body {"));
     }
   });
 });
@@ -67,13 +82,13 @@ describe("renderVerifyEmailPage — security regression guard", () => {
   // reach the HTML today. This pins that property — if someone later threads a
   // value through, these assertions break before a reflected-XSS surface ships.
   it("renders deterministically from state alone with no interpolated input", () => {
-    for (const state of ["success", "invalid", "error"] as VerifyEmailState[]) {
+    for (const state of STATES) {
       expect(renderVerifyEmailPage(state)).toBe(renderVerifyEmailPage(state));
     }
-    // The only deep links present are the two fixed scheme strings — never a
+    // The only deep link present is the fixed scheme string — never a
     // templated token or query value.
     const success = renderVerifyEmailPage("success");
     const schemeMatches = success.match(/ocrecipes:\/\/[^"]*/g) ?? [];
-    expect(schemeMatches).toEqual(["ocrecipes://login"]);
+    expect(schemeMatches).toEqual(["ocrecipes://"]);
   });
 });

@@ -24,7 +24,7 @@ const COPY: Record<
   success: {
     title: "Email verified",
     heading: "Email verified",
-    body: "Your OCRecipes account is confirmed. Return to the app and log in.",
+    body: "That email address is confirmed. You can return to OCRecipes.",
     icon: "✓",
   },
   invalid: {
@@ -47,19 +47,15 @@ const ACCENT: Record<VerifyEmailState, string> = {
   error: "#6b7280",
 };
 
-// Per-state CTA target. `success` hands the verified user straight to the in-app
-// sign-in screen (ocrecipes://login) instead of the bare scheme, which would just
-// foreground the app onto the "Check your inbox" dead-end. This is pure
-// navigation — verifying proves address ownership, NOT password possession, so no
-// session token is issued here. `invalid`/`error` keep the bare scheme so the app
-// opens on its last screen (the resend form). All values are static, keyed by the
-// server-determined state — never request input — so the zero-reflection property
-// above holds.
-const CTA_HREF: Record<VerifyEmailState, string> = {
-  success: "ocrecipes://login",
-  invalid: "ocrecipes://",
-  error: "ocrecipes://",
-};
+// Every state's CTA is the bare scheme: it reopens the app where the user left
+// it. Not ocrecipes://login — a change-email link is confirmed by a SIGNED-IN
+// user, whose stack has no Login route, so that link goes unhandled and is
+// replayed on their next sign-out. Every screen the app can reopen on, incl.
+// "Check your inbox", has its own way out. This is pure navigation — verifying
+// proves address ownership, NOT password possession, so no session token is
+// issued here. A static string — never request input — so the zero-reflection
+// property above holds.
+const CTA_HREF = "ocrecipes://";
 
 export function renderVerifyEmailPage(state: VerifyEmailState): string {
   const c = COPY[state];
@@ -69,7 +65,7 @@ export function renderVerifyEmailPage(state: VerifyEmailState): string {
     body: c.body,
     icon: c.icon,
     accent: ACCENT[state],
-    action: `<a class="btn" href="${CTA_HREF[state]}">Open OCRecipes</a>`,
+    action: `<a class="btn" href="${CTA_HREF}">Open OCRecipes</a>`,
   });
 }
 
@@ -124,7 +120,6 @@ function page(p: {
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     background:#f5f5f7; color:#1d1d1f; padding:24px; }
-  @media (prefers-color-scheme: dark){ body{ background:#000; color:#f5f5f7; } .card{ background:#1c1c1e; } }
   .card { background:#fff; border-radius:20px; padding:40px 28px; max-width:380px; width:100%;
     text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.08); }
   .icon { width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center;
@@ -134,6 +129,8 @@ function page(p: {
   form { margin:0; }
   .btn { display:inline-block; background:${p.accent}; color:#fff; text-decoration:none; border:0;
     font:inherit; font-weight:600; font-size:16px; padding:14px 28px; border-radius:12px; cursor:pointer; }
+  /* Last: same specificity as the rules above, so only a later rule overrides them. */
+  @media (prefers-color-scheme: dark){ body{ background:#000; color:#f5f5f7; } .card{ background:#1c1c1e; } }
 </style>
 </head>
 <body>
