@@ -1,9 +1,9 @@
 ---
 title: "Debug build crashes when a link opens a modal while a sheet is closing after a dark/light switch"
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-16
 assignee:
 labels: [deferred, navigation]
 github_issue:
@@ -72,3 +72,7 @@ xcrun simctl openurl $U ocrecipes://recipe-chat
 ### 2026-10-12
 
 - Isolated and filed. Owner ruling: note it and move on (it can't be reached by users).
+
+### 2026-10-16
+
+- Re-checked every re-open condition on `/todo`: none met. All `Linking.openURL` calls target external https pages; no `setNotificationHandler` in `client/`; the only listener is the notification-tap handler in `client/navigation/linking.ts`, which runs after foregrounding; react-native-screens still 4.16.0. Owner chose to archive so backlog sweeps stop re-picking it. Re-open from `todos/archive/` if a condition above becomes true.
