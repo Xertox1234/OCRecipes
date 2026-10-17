@@ -811,6 +811,47 @@ assert_deny "ALLOW_OUTWARD_CLI=1 NOT at the start does not bypass" \
   "$(json 'echo x && ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')" \
   "eas update/publish/submit"
 
+# ---------- bypass after ONE leading `cd <folder>` (owner decision 2026-10-16) ----------
+# Only a single `cd` to a literal folder, joined by `&&` or `;`, may come before the bypass.
+# The folder may not hold `$`, a backtick or `(` (not even inside double quotes): when the
+# bypass is honored the WHOLE string runs, so the part before it must be unable to run anything.
+# Twin of git-safety.sh's INLINE_BYPASS rows in test-git-safety.sh.
+assert_allow "bypass after a leading cd <folder> && allows" \
+  "$(jsonc 'cd /repo && ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')"
+assert_allow "bypass after a leading cd <folder>; allows" \
+  "$(jsonc 'cd /repo; ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')"
+assert_allow "bypass after cd to a single-quoted folder allows" \
+  "$(jsonc "cd '/a b' && ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all")"
+assert_allow "bypass after cd to a double-quoted folder allows" \
+  "$(jsonc 'cd "/a b" && ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')"
+# Negative control for the rows above: the same cd prefix with NO bypass denies.
+assert_deny "cd <folder> && outward command with no bypass still denies" \
+  "$(jsonc 'cd /repo && eas update --branch preview --platform all')" \
+  "eas update/publish/submit"
+assert_deny "a second step between the cd and the bypass does not bypass" \
+  "$(jsonc 'cd /repo && git log -1 && ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')" \
+  "eas update/publish/submit"
+assert_deny "cd \$(...) before the bypass does not bypass" \
+  "$(jsonc 'cd $(echo /repo) && ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')" \
+  "eas update/publish/submit"
+assert_deny "cd \"\$(...)\" before the bypass does not bypass" \
+  "$(jsonc 'cd "$(echo /repo)" && ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')" \
+  "eas update/publish/submit"
+assert_deny "cd \"\$VAR\" before the bypass does not bypass" \
+  "$(jsonc 'cd "$WT" && ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')" \
+  "eas update/publish/submit"
+assert_deny "cd <folder> || bypass does not bypass" \
+  "$(jsonc 'cd /repo || ALLOW_OUTWARD_CLI=1 eas update --branch preview --platform all')" \
+  "eas update/publish/submit"
+# Quoted decoy: the bypass text sits INSIDE the quoted folder name, and nothing after it.
+assert_deny "bypass text inside a quoted cd folder does not bypass" \
+  "$(jsonc 'cd "/x && ALLOW_OUTWARD_CLI=1 y" && eas update --branch preview --platform all')" \
+  "eas update/publish/submit"
+# PINNED (owner decision 2026-10-16): a bypass at the front unlocks every later step in the
+# same command. This is the existing behaviour, kept on purpose; the row stops it changing silently.
+assert_allow "bypass at the front also unlocks a later outward step (pinned)" \
+  "$(jsonc 'ALLOW_OUTWARD_CLI=1 git status && eas update --branch preview --platform all')"
+
 # ---------- ROUND-3 W4: a jq EXTRACTION failure must fail CLOSED ----------
 # `TOOL=$(… jq -re '.tool_name') || exit 0` allowed on malformed JSON, an
 # absent tool_name, or a renamed envelope field — while the no-jq path fails
@@ -3304,6 +3345,10 @@ check "no-jq: eas channel:edit fails closed"  deny "$(nojq_hook "$(json 'eas cha
 check "no-jq: EAS update (uppercase) closed"  deny "$(nojq_hook "$(json 'EAS update')")"
 check "no-jq: benign command stays allowed"   allow "$(nojq_hook "$(json 'ls -la')")"
 check "no-jq: inline bypass prefix allows"    allow "$(nojq_hook "$(json 'ALLOW_OUTWARD_CLI=1 eas update')")"
+check "no-jq: bypass after cd <folder> && allows" allow "$(nojq_hook "$(json 'cd /repo && ALLOW_OUTWARD_CLI=1 eas update')")"
+check "no-jq: bypass after cd <folder>; allows"   allow "$(nojq_hook "$(json 'cd /repo; ALLOW_OUTWARD_CLI=1 eas update')")"
+check "no-jq: second step before bypass denies"   deny  "$(nojq_hook "$(json 'cd /repo && git log && ALLOW_OUTWARD_CLI=1 eas update')")"
+check "no-jq: cd \$(...) before bypass denies"    deny  "$(nojq_hook "$(json 'cd $(pwd) && ALLOW_OUTWARD_CLI=1 eas update')")"
 # C3 on the crude path: the raw envelope encodes the newline as the two-char
 # escape `\n`, whose literal `n` is a LETTER and broke `[^a-zA-Z]+`.
 check "no-jq: line-continuation eas update closed"  deny "$(nojq_hook "$LC_EAS")"
@@ -6004,7 +6049,10 @@ assert_allow "two path-qualified read-only gh api calls allow" \
 # 1207 -> 1224 (2026-10-11, gh api occurrences checked one by one): +18 rows in the 2026-10-11
 # block (8 allow, 10 deny) - 1 row moved there (the path-qualified gh api pair, now an allow +
 # deny pair). Three existing deny rows kept their command and changed only the reason they pin.
-EXPECTED_TOTAL=1224
+# 1224 -> 1240 (2026-10-16, bypass after one leading cd): +16 = 12 in the jq block (4 cd
+# allows, 1 no-bypass control, 6 deny shapes, 1 pinned front-bypass-unlocks-later allow) and
+# 4 in the no-jq block (2 allow, 2 deny).
+EXPECTED_TOTAL=1240
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

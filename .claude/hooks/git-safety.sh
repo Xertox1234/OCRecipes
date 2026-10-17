@@ -514,7 +514,7 @@ check_repo_target() {
   allowlisted "$e" || in_registered "$e" || return 0
   return 1
 }
-ESCAPES="Escapes: SKIP_WORKTREE_CONTRACT=1 (one command) or scripts/declare-worktree.sh --remove/--clear (assignment ended)."
+ESCAPES="Escapes: SKIP_WORKTREE_CONTRACT=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&) or scripts/declare-worktree.sh --remove/--clear (assignment ended)."
 
 # ============ A) CONTRACT branch ============
 MUTATING_GIT_VERBS='commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset|rebase|merge|cherry-pick|apply|am|clean'
@@ -545,8 +545,14 @@ MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:
 # The hook process does not inherit inline assignments from the tool command, so
 # a leading SKIP_WORKTREE_CONTRACT=1 in the command string is recognized here as
 # the sanctioned one-shot bypass (otherwise the documented escape would be a no-op).
+# It may also follow ONE leading `cd <folder>` joined by `&&` or `;` (owner decision
+# 2026-10-16) and nothing else; the folder may not contain `$`, a backtick or `(`,
+# because an honored bypass lets the whole string run. TWIN of guard-outward-cli.sh's
+# _OUT_CD_BYPASS_RE — the reasoning for each character class is written there.
 INLINE_BYPASS=""
+_GS_CD_BYPASS_RE='^cd[[:blank:]]+('"'"'[^'"'"']*'"'"'|"[^"$`\]*"|[^[:space:];&|<>()$`'"'"'"\]+)[[:blank:]]*(&&|;)[[:blank:]]*SKIP_WORKTREE_CONTRACT=1 '
 case "$CMD" in "SKIP_WORKTREE_CONTRACT=1 "*) INLINE_BYPASS=1 ;; esac
+[[ "$CMD" =~ $_GS_CD_BYPASS_RE ]] && INLINE_BYPASS=1
 
 if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_active; then
   # --- mutating git: EVERY mutating segment's effective repo must be a registered
