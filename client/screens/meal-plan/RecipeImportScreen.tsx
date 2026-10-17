@@ -29,6 +29,7 @@ import { useParseRecipeFromUrl } from "@/hooks/useMealPlanRecipes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeImportScreenNavigationProp } from "@/types/navigation";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
+import { urlImportErrorCopy } from "./recipe-import-utils";
 
 type ImportState = "idle" | "loading" | "error";
 
@@ -81,17 +82,7 @@ export default function RecipeImportScreen() {
     } catch (error) {
       setState("error");
       haptics.notification(NotificationFeedbackType.Error);
-      const msg =
-        error instanceof Error ? error.message : "Failed to import recipe";
-      if (msg.includes("422") || msg.includes("NO_RECIPE_DATA")) {
-        setErrorMessage("No recipe data found on this page.");
-      } else if (msg.includes("FETCH_FAILED")) {
-        setErrorMessage(
-          "Could not fetch the URL. Check the link and try again.",
-        );
-      } else {
-        setErrorMessage("Something went wrong. Please try again.");
-      }
+      setErrorMessage(urlImportErrorCopy(error));
     }
   }, [url, haptics, parseMutation, returnToMealPlan, fromHome, navigation]);
 
