@@ -514,7 +514,11 @@ export async function executeToolCall(
   toolName: string,
   args: ToolArgs,
   userId: string,
-  /** Kept for caller compatibility; search_recipes no longer needs the profile. */
+  /**
+   * Unused (search_recipes no longer needs the profile). Deliberately kept:
+   * removing it shifts every later positional arg of this function and of
+   * generateCoachProResponse, which tests pin by index (mock.calls[0][5]/[7]).
+   */
   _preloadedProfile?: UserProfile | null,
   /** IANA timezone of the requesting user — day-buckets "today" tool data. */
   tz: string = "UTC",

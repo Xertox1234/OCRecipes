@@ -1,6 +1,6 @@
 ---
 title: "Inspired recipes — server loose ends (lost-claim orphan recipe, wasted profile read, :id parse)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-13
 updated: 2026-10-13

@@ -277,15 +277,32 @@ export function register(app: Express): void {
             );
             return;
           }
-          const claimed = await storage.claimInspiredSuggestionMade(
-            req.userId,
-            id,
-            recipe.id,
-          );
+          let claimed: boolean;
+          try {
+            claimed = await storage.claimInspiredSuggestionMade(
+              req.userId,
+              id,
+              recipe.id,
+            );
+          } catch (claimError) {
+            // The recipe is already inserted but the card never points at it:
+            // drop it (best effort) so it does not linger as a duplicate.
+            await storage
+              .deleteCommunityRecipe(recipe.id, req.userId)
+              .catch(() => undefined);
+            throw claimError;
+          }
           settled = true;
           if (!claimed) {
-            // A concurrent tap won the claim: hand back the winner's recipe.
+            // A concurrent tap won the claim (only possible after a stale-lock
+            // takeover): hand back the winner's recipe and drop ours, which
+            // would otherwise sit in the user's recipes as a duplicate.
             const winner = await storage.getInspiredSuggestion(req.userId, id);
+            if (winner?.madeRecipeId && winner.madeRecipeId !== recipe.id) {
+              await storage
+                .deleteCommunityRecipe(recipe.id, req.userId)
+                .catch(() => undefined);
+            }
             res
               .status(200)
               .json({ recipeId: winner?.madeRecipeId ?? recipe.id });
