@@ -157,6 +157,17 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/nudge-dependency-add.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking for external HEAD drift..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-preflight-guard.sh\"",
             "timeout": 10,
             "statusMessage": "Checking PR preflight stamp..."

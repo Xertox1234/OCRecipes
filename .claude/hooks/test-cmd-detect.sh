@@ -1042,15 +1042,16 @@ assert_wired drift-detect-update.sh "'*git*'"
 assert_wired guard-outward-cli.sh   "'*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'"
 assert_wired pr-preflight-guard.sh  "'*gh*pr*create*'"
 assert_wired merge-review-guard.sh  "'*gh*pr*merge*'"
+assert_wired nudge-dependency-add.sh "'*npm*' '*expo*' '*yarn*' '*pnpm*'"
 
-# Non-vacuity control: exactly the 8 target hooks must call cmd_fastpath_has — neither fewer
+# Non-vacuity control: exactly the 9 target hooks must call cmd_fastpath_has — neither fewer
 # (a hook silently reverted to an inline copy) nor more (a wiring assertion above is now
 # missing for a new caller).
 WIRED_COUNT=$(grep -l 'cmd_fastpath_has "\$CMD"' "$HOOKDIR"/*.sh 2>/dev/null | grep -vc '/test-')
-if [ "${WIRED_COUNT:-0}" -eq 8 ]; then
-  echo "PASS: control — exactly 8 hooks call cmd_fastpath_has"; PASS=$((PASS+1))
+if [ "${WIRED_COUNT:-0}" -eq 9 ]; then
+  echo "PASS: control — exactly 9 hooks call cmd_fastpath_has"; PASS=$((PASS+1))
 else
-  echo "FAIL: control — $WIRED_COUNT hook(s) call cmd_fastpath_has, expected 8"
+  echo "FAIL: control — $WIRED_COUNT hook(s) call cmd_fastpath_has, expected 9"
   FAIL=$((FAIL+1))
 fi
 
@@ -2191,7 +2192,9 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # 658 -> 659: +1 for the no-retarget row that must RESOLVE, making the retarget family
 # two-sided. Without it every row in that family wants a refusal, and a change that refused
 # everything large would keep them all green.
-EXPECTED_TOTAL=659
+# 659 -> 660: +1 for the nudge-dependency-add.sh assert_wired row (2026-10-17) — the ninth
+# cmd_fastpath_has caller; the non-vacuity control moved 8 -> 9 with it.
+EXPECTED_TOTAL=660
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

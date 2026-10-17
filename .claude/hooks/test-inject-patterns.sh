@@ -476,6 +476,39 @@ else
   echo "FAIL: preamble dedup → repeat edit emits a one-line pointer, not the full preamble"; FAIL=$((FAIL + 1))
 fi
 
+# --- Reuse-ladder nudges (2026-10-17) ---
+# A Write that CREATES a file gets a one-line "[NEW FILE]" nudge to search for an existing
+# equivalent first (ladder rung 2); a Write to an existing file and an Edit do not (Edit cannot
+# create). A package.json edit gets a one-line "[DEPENDENCY]" nudge asking for the rung-3/4
+# justification. Two-sided: the negative controls pin that the nudges fire only on their shape.
+NF_PATH="docs/__itest_does_not_exist_$$.md"
+nf_write=$(inline_ctx "$(jq -n --arg p "$NF_PATH" '{"tool_name":"Write","tool_input":{"file_path":$p}}')")
+nf_edit=$(inline_ctx "$(jq -n --arg p "$NF_PATH" '{"tool_name":"Edit","tool_input":{"file_path":$p}}')")
+ex_write=$(inline_ctx '{"tool_name":"Write","tool_input":{"file_path":"README.md"}}')
+if echo "$nf_write" | grep -qF "[NEW FILE]"; then
+  echo "PASS: new-file nudge → Write to a path that does not exist carries [NEW FILE]"; PASS=$((PASS + 1))
+else
+  echo "FAIL: new-file nudge → Write to a path that does not exist carries [NEW FILE]"; FAIL=$((FAIL + 1))
+fi
+if ! echo "$ex_write" | grep -qF "[NEW FILE]" && ! echo "$nf_edit" | grep -qF "[NEW FILE]"; then
+  echo "PASS: new-file nudge → Write to an existing file and Edit do not carry [NEW FILE]"; PASS=$((PASS + 1))
+else
+  echo "FAIL: new-file nudge → Write to an existing file and Edit do not carry [NEW FILE]"; FAIL=$((FAIL + 1))
+fi
+out_write=$(inline_ctx "$(jq -n --arg p "/tmp/itest-outside-root-$$/new.md" '{"tool_name":"Write","tool_input":{"file_path":$p}}')")
+abs_new=$(inline_ctx "$(jq -n --arg p "$PWD/$NF_PATH" '{"tool_name":"Write","tool_input":{"file_path":$p}}')")
+if ! echo "$out_write" | grep -qF "[NEW FILE]" && echo "$abs_new" | grep -qF "[NEW FILE]"; then
+  echo "PASS: new-file nudge → an absolute path outside the project is silent; one inside it fires"; PASS=$((PASS + 1))
+else
+  echo "FAIL: new-file nudge → an absolute path outside the project is silent; one inside it fires"; FAIL=$((FAIL + 1))
+fi
+pkg_edit=$(inline_ctx '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}')
+if echo "$pkg_edit" | grep -qF "[DEPENDENCY]" && ! echo "$ex_write" | grep -qF "[DEPENDENCY]"; then
+  echo "PASS: dependency nudge → package.json edit carries [DEPENDENCY]; README.md does not"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dependency nudge → package.json edit carries [DEPENDENCY]; README.md does not"; FAIL=$((FAIL + 1))
+fi
+
 # --- Reuse ladder (2026-10-16) ---
 # The full preamble carries the reuse ladder ("stop at the first step that holds"), and the
 # one-line reminder names it so a later edit in the same session still sees the decision order.
