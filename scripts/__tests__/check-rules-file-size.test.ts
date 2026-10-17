@@ -79,10 +79,10 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("names the remaining headroom in the advisory so the reader can act on it", () => {
-    // Fixture is 5300, not 5400, and the assertion is anchored to ", N B left".
-    // A bare toContain("500 B") against a 5400 B fixture passes on a coincidence:
+    // Fixture is 5300, not 5000, and the assertion is anchored to ", N B left".
+    // A bare toContain("900 B") against a 5000 B fixture passes on a coincidence:
     // the same line prints "the 5900 B cap", and "5900 B" contains "900 B" — so a
-    // mutant printing a WRONG headroom could still pass. 5900-5300=600 is not a
+    // mutant printing a WRONG headroom would still pass. 5900-5300=600 is not a
     // suffix of the cap, and the anchor pins the computed value either way.
     const root = makeRepo({ "warm.md": 5300 });
     const { out } = run(root);

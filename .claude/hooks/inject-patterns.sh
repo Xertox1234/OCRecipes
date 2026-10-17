@@ -441,7 +441,7 @@ domain_rank() {
     # `*) echo 75` would place it ahead of both and invert those orderings.
     # MEASURED CONSEQUENCE (2026-08, first touch, dedup ON): on a scripts test file, testing
     # emits inline (~5.9 KB) and harness then DEFERS — preamble ~1.9 KB + testing ~3.4 KB +
-    # harness rules 6.5 KB + refs ~0.4 KB ≈ 12 KB, over DOMAIN_BUDGET. No truncation, no loss;
+    # harness rules 5.8 KB + refs ~0.4 KB ≈ 11.5 KB, over DOMAIN_BUDGET. No truncation, no loss;
     # the payload lands in the spill file and auto-injects on the session's next edit. Accepted:
     # a test file's testing rules are the more directly binding of the two. The two levers if
     # that ever stops being true are trimming docs/rules/harness.md or lowering this rank.
