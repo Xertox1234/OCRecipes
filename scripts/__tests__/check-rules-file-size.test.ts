@@ -71,7 +71,7 @@ describe("check-rules-file-size.js", () => {
   it("ADVISES between the warn threshold and the cap — and must still exit 0", () => {
     // The whole point of the advisory: a warning that fails the build is just a
     // second wall 800 B earlier, which is the failure mode this replaces.
-    const root = makeRepo({ "warm.md": 6000 });
+    const root = makeRepo({ "warm.md": 5400 });
     const { status, out } = run(root);
     expect(status).toBe(0);
     expect(out).toMatch(/approaching/i);
@@ -79,18 +79,18 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("names the remaining headroom in the advisory so the reader can act on it", () => {
-    // Fixture is 5900, not 6000, and the assertion is anchored to ", N B left".
-    // A bare toContain("500 B") against a 6000 B fixture passes on a coincidence:
-    // the same line prints "the 6500 B cap", and "6500 B" contains "500 B" — so a
-    // mutant printing a WRONG headroom still passes. 6500-5900=600 shares no
-    // digits with the cap, and the anchor pins the computed value either way.
-    const root = makeRepo({ "warm.md": 5900 });
+    // Fixture is 5300, not 5400, and the assertion is anchored to ", N B left".
+    // A bare toContain("500 B") against a 5400 B fixture passes on a coincidence:
+    // the same line prints "the 5900 B cap", and "5900 B" contains "900 B" — so a
+    // mutant printing a WRONG headroom could still pass. 5900-5300=600 is not a
+    // suffix of the cap, and the anchor pins the computed value either way.
+    const root = makeRepo({ "warm.md": 5300 });
     const { out } = run(root);
     expect(out).toContain(", 600 B left");
   });
 
   it("does not advise at exactly the warn threshold — only above it", () => {
-    const root = makeRepo({ "edge.md": 5700 });
+    const root = makeRepo({ "edge.md": 5100 });
     const { status, out } = run(root);
     expect(status).toBe(0);
     expect(out).toContain("OK in 1 file(s)"); // not vacuous over an empty scan
@@ -98,7 +98,7 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("still FAILS over the hard cap", () => {
-    const root = makeRepo({ "big.md": 6501 });
+    const root = makeRepo({ "big.md": 5901 });
     const { status, out } = run(root);
     expect(status).toBe(1);
     expect(out).toContain("big.md");
@@ -106,7 +106,7 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("passes at exactly the cap, and advises with zero headroom left", () => {
-    const root = makeRepo({ "exact.md": 6500 });
+    const root = makeRepo({ "exact.md": 5900 });
     const { status, out } = run(root);
     expect(status).toBe(0);
     // The advisory boundary at the top of its window: still a pass, but the
@@ -125,7 +125,7 @@ describe("check-rules-file-size.js", () => {
       copied,
       fs
         .readFileSync(copied, "utf8")
-        .replace("const WARN_BYTES = 5700;", "const WARN_BYTES = 7000;"),
+        .replace("const WARN_BYTES = 5100;", "const WARN_BYTES = 7000;"),
     );
     const { status, out } = run(root);
     expect(status).not.toBe(0);
@@ -133,7 +133,7 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("an advisory on one file does not mask a hard failure on another", () => {
-    const root = makeRepo({ "warm.md": 6000, "big.md": 7000 });
+    const root = makeRepo({ "warm.md": 5400, "big.md": 7000 });
     const { status, out } = run(root);
     expect(status).toBe(1);
     expect(out).toMatch(/approaching/i);
@@ -141,7 +141,7 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("advises in lint-staged mode too (explicit file args, not just a full scan)", () => {
-    const root = makeRepo({ "warm.md": 6000 });
+    const root = makeRepo({ "warm.md": 5400 });
     const target = path.join(root, "docs", "rules", "warm.md");
     const { status, out } = run(root, [target]);
     expect(status).toBe(0);
@@ -154,7 +154,7 @@ describe("check-rules-file-size.js", () => {
     // coverage of its own, not just the advisory case above. Its scope filter
     // (`isInScope` + `existsSync`) is a second place a path can be silently
     // dropped, which would turn the commit-time guard into a no-op.
-    const root = makeRepo({ "big.md": 6501 });
+    const root = makeRepo({ "big.md": 5901 });
     const target = path.join(root, "docs", "rules", "big.md");
     const { status, out } = run(root, [target]);
     expect(status).toBe(1);

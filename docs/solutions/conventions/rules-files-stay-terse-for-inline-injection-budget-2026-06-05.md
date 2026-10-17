@@ -16,7 +16,7 @@ last_updated: '2026-08-07'
 Whenever you add to or edit a file under `docs/rules/`. These files are the **binding,
 inline** tier of the knowledge base: `inject-patterns.sh` `cat`s the *entire* matched
 `docs/rules/<domain>.md` into the PreToolUse `additionalContext` before every Edit/Write.
-That output shares a hard ~8800 B inline cap with the discipline preamble (~1005 B), the
+That output shares a hard ~8800 B inline cap with the discipline preamble (~1,610 B since 2026-10-16), the
 other matched domains, and solution references. Anything over the cap spills to a temp file
 the agent must choose to re-read.
 
@@ -128,9 +128,13 @@ exemptions); move the prose to a solution doc the hook auto-surfaces:
   in the dedup state) rather than spilled — spill remains the session-less backstop.
 - `docs/rules/security.md` — the file that drifted to 8 KB and was trimmed to ~4.8 KB.
 - `docs/rules/accessibility.md` — the announcement-family consolidation precedent (6.5 → 4.6 KB).
-- `scripts/check-rules-file-size.js` — since 2026-07-03 lint-staged ENFORCES a 6,500 B cap
-  on `docs/rules/*.md` (budget derivation in its header); regrowth now fails at commit time.
-  Its `GRANDFATHERED` exemption map is now EMPTY — every rules file fits the 6,500 B cap.
+- `scripts/check-rules-file-size.js` — since 2026-07-03 lint-staged ENFORCES a cap on
+  `docs/rules/*.md` (budget derivation in its header); regrowth now fails at commit time.
+  The cap was 6,500 B until 2026-10-16, when the DISCIPLINE preamble grew a reuse ladder
+  (~+600 B) and the cap dropped to 5,900 B (advisory at 5,100); the six files over it were
+  consolidated the same way (security 6,369 → 5,497, client-state 6,497 → 5,627, database
+  6,496 → 5,520, harness 6,488 → 5,761, react-native 6,017 → 5,485, accessibility 5,694 → 5,043).
+  Its `GRANDFATHERED` exemption map is EMPTY — every rules file fits the cap.
 - `docs/solutions/best-practices/security-rules-extended-rationale-2026-06-05.md` — the designated
   depth-home for `security.md`; named in that file's header so it is reachable without a ranking race.
 - `docs/rules/client-state.md` — trimmed 8.4 → 6.4 KB by consolidation (2026-07-03), the
