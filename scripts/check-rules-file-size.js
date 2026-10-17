@@ -7,13 +7,14 @@
  * context cost paid on every edit in that domain, and a file too large to fit
  * beside the DISCIPLINE preamble forces the spill/truncation path on every
  * first-touch edit (the 2026-07 deferral mechanism cannot shrink the FIRST
- * domain). Budget derivation: THRESHOLD 9000 − preamble ~1,290 − block header
- * + solution refs ~840 ≈ 6,850 max rules bytes for a single-domain first
- * touch to land inline; capped at 6,500 for margin.
+ * domain). Budget derivation (2026-10-16, reuse-ladder preamble): THRESHOLD
+ * 9000 − preamble ~1,900 − block header + solution refs ~840 ≈ 6,260 max rules
+ * bytes for a single-domain first touch to land inline; capped at 5,900 for
+ * margin. (Pre-ladder: preamble ~1,290 → cap 6,500.)
  *
  * TWO thresholds:
- *   WARN_BYTES 5,700 — advisory only, still exits 0. Prints remaining headroom.
- *   MAX_BYTES  6,500 — hard failure.
+ *   WARN_BYTES 5,100 — advisory only, still exits 0. Prints remaining headroom.
+ *   MAX_BYTES  5,900 — hard failure.
  * The advisory exists because the cap alone is a wall: a file sits under it for
  * months, then one codification lands on 6,501 B and the author must stop and
  * run a whole trim. Three such trims happened in three months.
@@ -21,7 +22,10 @@
  * The fix for an over-cap file is CONSOLIDATION, not deletion — rule families
  * restating shared exceptions are the dominant bloat mechanism. Precedent:
  * accessibility.md 6,547 → 4,582 B with zero binding rules lost (PR #492), and
- * security.md 6,491 → 5,698 B / accessibility.md 6,479 → 5,694 B (PR #776).
+ * security.md 6,491 → 5,698 B / accessibility.md 6,479 → 5,694 B (PR #776), and the
+ * six-file 2026-10-16 trim for the reuse-ladder preamble (security 6,369 → 5,497,
+ * client-state 6,497 → 5,627, database 6,496 → 5,520, harness 6,488 → 5,761,
+ * react-native 6,017 → 5,485, accessibility 5,694 → 5,043 B).
  * NOTE: moving detail out of a rules file into a per-bullet CITATION is a
  * reachability downgrade — a rules file is embedded whole on every domain edit,
  * while a solution must win one of ~4 date-ranked slots. Compress a bullet only
@@ -50,11 +54,11 @@ const colors = {
   bold: ESC + "1m",
 };
 
-const MAX_BYTES = 6500;
+const MAX_BYTES = 5900;
 
 // Advisory threshold — see the header for why. Deliberately non-failing: a
 // warning that fails the build is just a second wall 800 B earlier.
-const WARN_BYTES = 5700;
+const WARN_BYTES = 5100;
 
 // The advisory window is [WARN_BYTES, cap]. Inverting the constants would make
 // the advisory branch unreachable dead code — every byte count large enough to
