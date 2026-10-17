@@ -98,3 +98,4 @@ Simple CRUD storage functions where route-level tests already provide sufficient
 
 - [Dual-assertion IDOR test for storage functions](../best-practices/dual-assertion-idor-test-2026-05-13.md)
 - [`TIMESTAMP WITHOUT TIME ZONE` round-trip in real-DB tests](timestamp-without-tz-roundtrip-real-db-tests-2026-05-13.md)
+- [A rolled-back test transaction still sees rows already committed](../logic-errors/rolled-back-test-transaction-still-sees-committed-rows-2026-10-17.md) — rollback undoes only the test's own writes; scope whole-table reads to the test's rows
