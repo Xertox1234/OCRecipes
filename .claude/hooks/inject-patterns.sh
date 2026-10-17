@@ -120,6 +120,26 @@ trap 'rm -f "$TMPFILE" "$BLOCKFILE" "$DEFER_FILE"' EXIT
 
 printf '=== Pre-write context for %s ===\n' "$FILE_PATH" >> "$TMPFILE"
 
+# Reuse-ladder nudges (2026-10-17). Both are one-line, additive, never dedup'd — they key on the
+# SHAPE of this edit, not on the session. (1) A Write to a path that does not exist CREATES a
+# file: ask for the rung-2 search first. FILE_PATH may be absolute or project-relative; a
+# relative path is also tried against PROJECT_ROOT so a cwd elsewhere does not fake "new".
+# Edit/MultiEdit cannot create, so they never get it. Only paths INSIDE the project count: a
+# scratchpad or /tmp file is never a reuse candidate (caught live on the first scratch write
+# after this landed). (2) package.json is where a dependency lands (rung 4): ask for the
+# one-line justification the ladder wants.
+case "$FILE_PATH" in
+  /*) _NF_IN_ROOT=0; case "$FILE_PATH" in "$PROJECT_ROOT"/*) _NF_IN_ROOT=1 ;; esac ;;
+  *)  _NF_IN_ROOT=1 ;;
+esac
+if [ "$TOOL_NAME" = "Write" ] && [ "$_NF_IN_ROOT" = 1 ] && [ ! -e "$FILE_PATH" ] && [ ! -e "$PROJECT_ROOT/$FILE_PATH" ]; then
+  printf '[NEW FILE] %s does not exist yet. Before creating it, search for an existing equivalent (shared hook, component, util, service, test helper) and extend that the way the surrounding code does; create a new file only when nothing fits, and say which search came up empty.\n' "$FILE_PATH" >> "$TMPFILE"
+fi
+case "${FILE_PATH##*/}" in
+  package.json)
+    printf '[DEPENDENCY] editing package.json. If this adds a dependency, state in one line why no installed dependency (rung 4) or platform API (rung 3) already covers it; never add one for a few lines.\n' >> "$TMPFILE" ;;
+esac
+
 # PG Lab usage telemetry accumulator (see the tail block near the end of this file for the
 # single guarded log-injection.sh call). One line per (domain, action) outcome, fields
 # separated by \x1f (ASCII Unit Separator) — NOT \t: bash's `read` collapses runs of tab

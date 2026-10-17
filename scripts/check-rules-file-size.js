@@ -59,7 +59,7 @@ const colors = {
 const MAX_BYTES = 5900;
 
 // Advisory threshold — see the header for why. Deliberately non-failing: a
-// warning that fails the build is just a second wall 800 B earlier.
+// warning that fails the build is just a second wall 400 B earlier.
 const WARN_BYTES = 5500;
 
 // The advisory window is [WARN_BYTES, cap]. Inverting the constants would make
