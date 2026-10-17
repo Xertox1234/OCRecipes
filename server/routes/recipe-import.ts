@@ -63,7 +63,7 @@ export function register(app: Express): void {
             res,
             422,
             "This recipe has no instructions or ingredients and cannot be imported",
-            ErrorCode.VALIDATION_ERROR,
+            ErrorCode.NO_RECIPE_DATA,
           );
           return;
         }
@@ -143,7 +143,7 @@ export function register(app: Express): void {
             res,
             422,
             "This recipe has no instructions or ingredients and cannot be imported",
-            ErrorCode.VALIDATION_ERROR,
+            ErrorCode.NO_RECIPE_DATA,
           );
           return;
         }

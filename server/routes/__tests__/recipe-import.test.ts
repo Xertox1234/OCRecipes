@@ -185,6 +185,7 @@ describe("POST /api/meal-plan/recipes/parse-url (free preview)", () => {
 
     expect(res.status).toBe(422);
     expect(res.body.error).toMatch(/no instructions or ingredients/);
+    expect(res.body.code).toBe("NO_RECIPE_DATA");
   });
 
   it("returns 500 on unexpected service error", async () => {
@@ -265,6 +266,7 @@ describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
       .send({ url: "https://example.com/empty" });
 
     expect(res.status).toBe(422);
+    expect(res.body.code).toBe("NO_RECIPE_DATA");
   });
 
   it("returns 201 with saved recipe on happy path", async () => {
