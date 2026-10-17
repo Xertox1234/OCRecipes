@@ -42,6 +42,7 @@ export const ErrorCode = {
   // Recipe import error codes — mirror the ImportError union in recipe-import.ts
   FETCH_FAILED: "FETCH_FAILED",
   NO_RECIPE_DATA: "NO_RECIPE_DATA",
+  TIMEOUT: "TIMEOUT",
   PARSE_ERROR: "PARSE_ERROR",
   RESPONSE_TOO_LARGE: "RESPONSE_TOO_LARGE",
   // Subscription / IAP entitlement errors
