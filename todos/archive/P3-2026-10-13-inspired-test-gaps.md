@@ -1,6 +1,6 @@
 ---
 title: "Inspired recipes — close test gaps (listing schema case, leak checks, vegan eval terms)"
-status: in-progress
+status: done
 priority: low
 created: 2026-10-13
 updated: 2026-10-14
