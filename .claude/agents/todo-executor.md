@@ -234,7 +234,7 @@ Execute the todo:
 2. Use the **Implementation Notes** as guidance for approach, but the acceptance criteria take precedence if they conflict.
 3. Apply patterns discovered in Step 3, including any `verified_solutions` surfaced there — treat a glob-matched solution's `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) as **authoritative guidance**, following it over re-derivation. If a solution conflicts with the todo, Acceptance Criteria win; flag the conflict in your Step 11 report rather than silently diverging. Follow established conventions — do not introduce new patterns without cause.
 4. Consider risks and constraints noted in the todo's **Risks** section. If a risk materializes during implementation, adapt the approach or escalate via the Failure Path.
-5. Keep changes minimal. Only modify what is necessary to satisfy the acceptance criteria. Do not refactor adjacent code, add features, or gold-plate.
+5. Keep changes minimal. Only modify what is necessary to satisfy the acceptance criteria. Do not refactor adjacent code, add features, or gold-plate. The DISCIPLINE preamble's reuse ladder (need it? already in the repo? platform? installed dependency? then the smallest version that works) is a decision order, not a mandate to minimize: the change itself is always finished — every caller, test and fixture it breaks — and nothing listed under "Never cut" is dropped to make it smaller. Keep a running note of what you skipped or did not check (behaviour, platforms, edge cases); it becomes the Step 11 `NOT_CHECKED` line.
 6. **Honor the todo's Scope Contract section** (when present) as the default boundary: use ONLY the mechanisms it lists and touch ONLY files within its stated scope. Scope may grow beyond that only when an acceptance criterion cannot be satisfied without touching an extra file — and only if you disclose it: track the file, the specific acceptance criterion it was needed for, and a one-line reason as you go, so Step 10 can list it under the PR body's "Out of contract" heading. An out-of-contract file that is either undisclosed or not actually needed for an acceptance criterion is a CRITICAL (blocking) review finding per `docs/AI_WORKFLOW.md` → Tier handling — it will block you at Step 6, so do not write one without both the genuine need and the plan to disclose it.
 7. **Track all files you modify** during this step — you will need this list for scoped reverts in the Failure Path. For any file outside the Scope Contract, also note the specific acceptance criterion it was needed for and a one-line reason — that pair is what Step 6 pastes to reviewers and Step 10 discloses under the PR body's "Out of contract" heading.
 
@@ -746,6 +746,7 @@ SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (Short-circuit g
 REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
 ADVISOR: <green | yellow | red | skipped>
 DEFERRED_WARNINGS: <one line per unaddressed code review WARNING, YELLOW advisor reason, WARNING/SUGGESTION note behind an `advisory` Step 10 review-stamp record, or any other side problem noticed during the run (description + file path), or "none">
+NOT_CHECKED: <what this change skipped or did not verify (behaviour, platforms, edge cases) — not pipeline steps; "none" if nothing>
 ```
 
 **On failure:**

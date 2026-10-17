@@ -186,15 +186,22 @@ DEDUP_STATE="/tmp/ocrecipes-pattern-inject-${SESSION}${AGENT_ID:+-agent-$AGENT_I
 # `__` can never collide with a domain name). A missing/wiped state file fails OPEN to the
 # full preamble — more context, not less.
 if [ "$DEDUP" = "1" ] && grep -qxF "__preamble__" "$DEDUP_STATE" 2>/dev/null; then
-  printf '\n[DISCIPLINE] injected earlier this session — still binding: think before coding, simplest change that works, surgical diffs, LSP-first on shared symbols.\n' >> "$TMPFILE"
+  printf '\n[DISCIPLINE] injected earlier this session — still binding: think before coding, reuse ladder (need it? repo? platform? installed dep? then minimum), complete the change, surgical diffs, LSP-first on shared symbols, close by naming what you skipped.\n' >> "$TMPFILE"
 else
   cat >> "$TMPFILE" <<'EOF'
 
 [DISCIPLINE — applies before any edit]
-- Think before coding. State your assumptions out loud. If the request is ambiguous, ask. If a simpler approach exists, push back. Stop when you are confused, name what is unclear, do not just pick one interpretation and run.
-- Simplicity first. Write the minimum code that solves the problem. No speculative abstractions. No flexibility nobody asked for. The test: would a senior engineer call this overcomplicated.
-- Surgical changes. Touch only what the task requires. Do not improve neighboring code. Do not refactor what is not broken. Every changed line should trace back to the request.
-- Goal-driven execution. Turn vague instructions into verifiable targets before writing a line. "Add validation" becomes "write tests for invalid inputs, then make them pass."
+- Think before coding. State your assumptions. If the request is ambiguous, ask. If a simpler approach exists, push back. When confused, name what is unclear instead of picking one reading and running.
+- Reuse ladder. After reading what the change touches, stop at the first step that holds:
+  1. Does this need to exist? If not, say so and skip it.
+  2. Already in the repo (shared hooks, components, utils, services)? Reuse it the way the surrounding code does.
+  3. Does the platform do it (Expo SDK, React Native, native APIs)? Use that, unless it is known to fall short here (camera/OCR: check docs/rules and the VisionCamera patch first).
+  4. Does an installed dependency do it? Use it; never add a dependency for a few lines.
+  5. Otherwise, the smallest version that works.
+  Smallest solution, complete change: finish every caller, test and fixture it breaks; fix a shared bug once at its root. Never cut input validation, data-loss handling, security, accessibility, or the tests TDD requires.
+- Close by naming what you skipped or did not check.
+- Surgical changes. Touch only what the task requires. Do not improve neighbouring code or refactor what is not broken. Every changed line traces back to the request.
+- Goal-driven. Turn vague instructions into verifiable targets first: "add validation" becomes "write tests for invalid inputs, then make them pass."
 - LSP-first. Before editing a shared symbol, check its blast radius with the LSP tool (findReferences / call-hierarchy), not grep — it resolves @/ and @shared/ aliases. See docs/rules/lsp.md.
 EOF
   [ "$DEDUP" = "1" ] && printf '__preamble__\n' >> "$DEDUP_STATE"
@@ -433,8 +440,8 @@ domain_rank() {
     # precedes typescript, the generic fallback. An EXPLICIT rank is required: the default
     # `*) echo 75` would place it ahead of both and invert those orderings.
     # MEASURED CONSEQUENCE (2026-08, first touch, dedup ON): on a scripts test file, testing
-    # emits inline (~5.1 KB) and harness then DEFERS — preamble ~1.3 KB + testing ~3.4 KB +
-    # harness rules 4.2 KB + refs ~0.4 KB ≈ 9.4 KB, over DOMAIN_BUDGET. No truncation, no loss;
+    # emits inline (~5.9 KB) and harness then DEFERS — preamble ~1.9 KB + testing ~3.4 KB +
+    # harness rules 6.5 KB + refs ~0.4 KB ≈ 12 KB, over DOMAIN_BUDGET. No truncation, no loss;
     # the payload lands in the spill file and auto-injects on the session's next edit. Accepted:
     # a test file's testing rules are the more directly binding of the two. The two levers if
     # that ever stops being true are trimming docs/rules/harness.md or lowering this rank.

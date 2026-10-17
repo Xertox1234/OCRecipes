@@ -454,7 +454,7 @@ fi
 rm -f /tmp/ocrecipes-pattern-inject-itest-agentid-pre /tmp/ocrecipes-pattern-inject-itest-agentid-pre-agent-itest-sub-pre
 
 # --- Preamble session dedup ---
-# The ~1.1KB DISCIPLINE preamble is injected in full at most once per session (marker
+# The ~1.7KB DISCIPLINE preamble is injected in full at most once per session (marker
 # `__preamble__` in the dedup state file); later edits get a one-line pointer. A wiped
 # state file fails OPEN to the full preamble. README.md maps to no domain, isolating
 # the preamble from domain payloads. "Surgical changes" is a preamble-body sentinel.
@@ -474,6 +474,20 @@ if echo "$p2" | grep -qF "[DISCIPLINE] injected earlier" && ! echo "$p2" | grep 
   echo "PASS: preamble dedup → repeat edit emits a one-line pointer, not the full preamble"; PASS=$((PASS + 1))
 else
   echo "FAIL: preamble dedup → repeat edit emits a one-line pointer, not the full preamble"; FAIL=$((FAIL + 1))
+fi
+
+# --- Reuse ladder (2026-10-16) ---
+# The full preamble carries the reuse ladder ("stop at the first step that holds"), and the
+# one-line reminder names it so a later edit in the same session still sees the decision order.
+if echo "$p1" | grep -qF "first step that holds"; then
+  echo "PASS: reuse ladder → full preamble carries the ladder"; PASS=$((PASS + 1))
+else
+  echo "FAIL: reuse ladder → full preamble carries the ladder"; FAIL=$((FAIL + 1))
+fi
+if echo "$p2" | grep -qF "[DISCIPLINE] injected earlier this session —" && echo "$p2" | grep -qF "reuse ladder"; then
+  echo "PASS: reuse ladder → reminder line names the ladder"; PASS=$((PASS + 1))
+else
+  echo "FAIL: reuse ladder → reminder line names the ladder"; FAIL=$((FAIL + 1))
 fi
 
 rm -f "$PRE_STATE"
