@@ -54,6 +54,10 @@ expect_silent "npx expo install --check"     'npx expo install --check'
 expect_silent "npx --yes expo install --fix" 'npx --yes expo install --fix'
 expect_silent "npm --prefix x install (bare)" 'npm --prefix client install'
 expect_silent "sudo npm ci"                  'sudo npm ci'
+# A global flag BEFORE the verb (#1478 review): the pre-verb option loop must still see it.
+expect_silent "npm -g install <pkg>"         'npm -g install lodash'
+expect_silent "npm --global install <pkg>"   'npm --global install lodash'
+expect_silent "sudo npm -g install <pkg>"    'sudo npm -g install eas-cli'
 expect_silent "quoted mention in commit msg" 'git commit -m "docs: say npm install foo in README"'
 # Non-Bash tool name must exit silently even with a matching command.
 out=$(jq -n '{"tool_name":"Edit","tool_input":{"command":"npm install lodash"}}' | bash "$HOOK" 2>/dev/null)

@@ -8,6 +8,7 @@ tags: [bash, shell, read, ifs, delimiter, command-substitution, silent-failure, 
 symptoms: ['A while-read loop with IFS set to a literal tab silently misaligns every field after two adjacent empty tab-delimited fields', 'A single-record line built via command substitution and piped into a while-read loop is silently skipped — the loop body never runs for it, with no error anywhere', 'A multi-record accumulator built by repeated command-substitution concatenation collapses record boundaries because each capture loses its own trailing newline']
 applies_to: [scripts/pg-lab/**/*.sh, .claude/hooks/*.sh]
 created: '2026-07-06'
+last_updated: '2026-10-17'
 ---
 
 # bash `read` collapses tab-delimited empty fields and skips a final line with no trailing newline
@@ -72,6 +73,7 @@ time).
    newline). Use a delimiter bash's word-splitting never collapses: the ASCII Unit Separator
    (`\x1f`, `printf '\x1f'` or `$'\x1f'`) is the standard choice for exactly this — it never
    appears in real text and is a "hard" (non-whitespace) `IFS` character.
+   Recurred 2026-10-17 in `.claude/hooks/nudge-dependency-add.sh`: `done < <(printf '%s' "$line" | tr ';&|' '\n\n\n')` fed a last segment with no newline, `read` returned non-zero, and the loop body never ran for a single-command input — every positive self-test case went silent while the negatives passed vacuously. Fix on the PRODUCER side when you own it: `printf '%s\n'` so the final record is terminated; the `|| [ -n "$v1" ]` idiom below is the consumer-side belt.
 3. Make any `while read` loop that might see a final line without a trailing newline resilient
    with the standard idiom: `while IFS=... read -r v1 v2 ...|| [ -n "$v1" ]; do BODY; done` —
    the `|| [ -n "$v1" ]` clause runs `BODY` one more time when `read` failed at EOF but DID
