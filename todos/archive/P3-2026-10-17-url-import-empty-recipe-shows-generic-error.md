@@ -1,6 +1,6 @@
 ---
 title: "URL import: a recipe with no ingredients or instructions shows 'Something went wrong'"
-status: in-progress
+status: done
 priority: low
 created: 2026-10-17
 updated: 2026-10-17
@@ -23,9 +23,9 @@ Deferred instead of added to #1482 because that PR had already been reviewed and
 
 ## Acceptance Criteria
 
-- [ ] The empty-recipe check in both URL routes sends `ErrorCode.NO_RECIPE_DATA` (keep HTTP 422).
-- [ ] Importing such a page shows "No recipe data found on this page."
-- [ ] A route test asserts the `NO_RECIPE_DATA` code for a parsed recipe with no ingredients and no instructions.
+- [x] The empty-recipe check in both URL routes sends `ErrorCode.NO_RECIPE_DATA` (keep HTTP 422).
+- [x] Importing such a page shows "No recipe data found on this page."
+- [x] A route test asserts the `NO_RECIPE_DATA` code for a parsed recipe with no ingredients and no instructions.
 
 ## Implementation Notes
 
@@ -38,3 +38,7 @@ Deferred instead of added to #1482 because that PR had already been reviewed and
 ### 2026-10-17
 
 - Filed while reviewing #1482.
+
+### 2026-10-17
+
+- Done: both URL routes now send ErrorCode.NO_RECIPE_DATA (422) for the empty-recipe check; route tests assert the code.
