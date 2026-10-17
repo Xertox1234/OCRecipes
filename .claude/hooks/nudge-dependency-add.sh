@@ -46,14 +46,16 @@ while IFS= read -r line; do
     seg="${seg#"${seg%%[![:space:]]*}"}"
     # Strip leading env assignments / wrappers the shell would absorb.
     while [[ "$seg" =~ ^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|sudo|time)[[:space:]]+(.*)$ ]]; do seg="${BASH_REMATCH[2]}"; done
-    args=""
+    args=""; global=0
     case "$seg" in
       "npm "*)
         rest="${seg#npm }"
-        # npm's own options come before the verb; some take a value.
+        # npm's own options come before the verb; some take a value. A global flag here is
+        # still a global install (#1478 review: `npm -g install x` must stay silent).
         while [[ "$rest" == -* ]]; do
           opt="${rest%% *}"; [ "$opt" = "$rest" ] && { rest=""; break; }
           rest="${rest#* }"
+          case "$opt" in -g|--global) global=1 ;; esac
           if _npm_opt_takes_value "$opt" && [[ "$rest" != -* ]]; then rest="${rest#* }"; fi
         done
         case "$rest" in
@@ -74,7 +76,7 @@ while IFS= read -r line; do
       "pnpm add "*) args="${seg#pnpm add }" ;;
       *) continue ;;
     esac
-    pkg=0; global=0
+    pkg=0
     for w in $args; do
       case "$w" in
         -g|--global) global=1 ;;
