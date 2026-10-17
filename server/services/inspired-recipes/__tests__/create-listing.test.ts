@@ -63,9 +63,13 @@ describe("createSuggestionListing", () => {
     expect(
       vi.mocked(suggestListing).mock.calls[0][0].inspirationTitles,
     ).toEqual(["Chipotle Tacos"]);
-    const sent = JSON.stringify(vi.mocked(suggestListing).mock.calls[0][0]);
-    expect(sent).not.toContain("spoon/x.jpg");
-    expect(sent).not.toContain("99");
+    // The whole argument, so the image URL and Spoonacular id cannot ride along.
+    expect(vi.mocked(suggestListing).mock.calls[0][0]).toEqual({
+      request: "tacos",
+      inspirationTitles: ["Chipotle Tacos"],
+      profile: null,
+      count: 5,
+    });
     expect(out).toEqual([
       { id: 1, ...draft, imageUrl: null, madeRecipeId: null },
     ]);

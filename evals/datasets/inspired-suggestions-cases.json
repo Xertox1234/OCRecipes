@@ -104,7 +104,21 @@
       "dietType": "vegan",
       "householdSize": 3
     },
-    "mustAvoid": ["beef", "chicken", "bacon", "pork", "lamb"]
+    "mustAvoid": [
+      "beef",
+      "chicken",
+      "bacon",
+      "pork",
+      "lamb",
+      "fish",
+      "salmon",
+      "shrimp",
+      "cheese",
+      "yogurt",
+      "egg",
+      "eggs",
+      "honey"
+    ]
   },
   {
     "id": "insp-zero-titles-01",
