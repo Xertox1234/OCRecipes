@@ -43,6 +43,7 @@ vi.mock("../../storage", () => ({
     createRecipeWithLimitCheck: vi.fn(),
     getCommunityRecipe: vi.fn(),
     saveRecipeToSavedItems: vi.fn(),
+    deleteCommunityRecipe: vi.fn(),
   },
 }));
 
@@ -104,6 +105,7 @@ beforeEach(() => {
   vi.mocked(storage.startMakingSuggestion).mockResolvedValue(token);
   vi.mocked(storage.abandonMakingSuggestion).mockResolvedValue(undefined);
   vi.mocked(storage.saveRecipeToSavedItems).mockResolvedValue("linked");
+  vi.mocked(storage.deleteCommunityRecipe).mockResolvedValue(true);
 });
 
 describe("POST /api/inspired/suggestions", () => {
@@ -364,6 +366,73 @@ describe("POST /api/inspired/suggestions/:id/make", () => {
     vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(null);
     const res = await make();
     expect(res.status).toBe(429);
+    expect(storage.abandonMakingSuggestion).toHaveBeenCalledWith(5, token);
+  });
+  it("403s on the make route's premium gate before any lookup or AI call", async () => {
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+    const res = await make();
+    expect(res.status).toBe(403);
+    expect(storage.getInspiredSuggestion).not.toHaveBeenCalled();
+    expect(storage.startMakingSuggestion).not.toHaveBeenCalled();
+    expect(generateFullRecipe).not.toHaveBeenCalled();
+  });
+  it("on a lost claim returns the winner's recipe and deletes the duplicate", async () => {
+    vi.mocked(storage.getInspiredSuggestion)
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row({ madeRecipeId: 77 }));
+    vi.mocked(generateFullRecipe).mockResolvedValue(generated);
+    vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
+      createMockCommunityRecipe({ id: 88, title: "Bean Tacos" }),
+    );
+    vi.mocked(storage.claimInspiredSuggestionMade).mockResolvedValue(false);
+    const res = await make();
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ recipeId: 77 });
+    expect(storage.deleteCommunityRecipe).toHaveBeenCalledWith(88, "1");
+    expect(generateAndPatchRecipeImage).not.toHaveBeenCalled();
+    expect(storage.abandonMakingSuggestion).not.toHaveBeenCalled();
+  });
+  it("keeps its own recipe on a lost claim when no winner recipe is found", async () => {
+    vi.mocked(storage.getInspiredSuggestion)
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(undefined);
+    vi.mocked(generateFullRecipe).mockResolvedValue(generated);
+    vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
+      createMockCommunityRecipe({ id: 88, title: "Bean Tacos" }),
+    );
+    vi.mocked(storage.claimInspiredSuggestionMade).mockResolvedValue(false);
+    const res = await make();
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ recipeId: 88 });
+    expect(storage.deleteCommunityRecipe).not.toHaveBeenCalled();
+    expect(generateAndPatchRecipeImage).not.toHaveBeenCalled();
+  });
+  it("still answers with the winner when deleting the duplicate fails", async () => {
+    vi.mocked(storage.getInspiredSuggestion)
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row({ madeRecipeId: 77 }));
+    vi.mocked(generateFullRecipe).mockResolvedValue(generated);
+    vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
+      createMockCommunityRecipe({ id: 88, title: "Bean Tacos" }),
+    );
+    vi.mocked(storage.claimInspiredSuggestionMade).mockResolvedValue(false);
+    vi.mocked(storage.deleteCommunityRecipe).mockRejectedValue(new Error("db"));
+    const res = await make();
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ recipeId: 77 });
+  });
+  it("deletes the new recipe and releases the lock when the claim throws", async () => {
+    vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(row());
+    vi.mocked(generateFullRecipe).mockResolvedValue(generated);
+    vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
+      createMockCommunityRecipe({ id: 88, title: "Bean Tacos" }),
+    );
+    vi.mocked(storage.claimInspiredSuggestionMade).mockRejectedValue(
+      new Error("db down"),
+    );
+    const res = await make();
+    expect(res.status).toBe(500);
+    expect(storage.deleteCommunityRecipe).toHaveBeenCalledWith(88, "1");
     expect(storage.abandonMakingSuggestion).toHaveBeenCalledWith(5, token);
   });
   it("429s at the daily limit before taking the lock", async () => {
