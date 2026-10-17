@@ -390,6 +390,31 @@ assert_deny "registry: mutating git with empty cwd fails closed" \
 assert_allow "registry: inline SKIP_WORKTREE_CONTRACT=1 prefix bypasses" \
   "$(json "$SESSION" "$MAIN" 'SKIP_WORKTREE_CONTRACT=1 git commit -m x')"
 
+# Bypass after ONE leading `cd <folder>` (owner decision 2026-10-16). Only a single cd to a
+# literal folder, joined by && or ;, may precede it; the folder may not hold $, a backtick or
+# `(`. Twin of the outward guard's rows in test-guard-outward-cli.sh.
+assert_allow "registry: bypass after cd <folder> && bypasses" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $MAIN && SKIP_WORKTREE_CONTRACT=1 git commit -m x")"
+assert_allow "registry: bypass after cd <folder>; bypasses" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $MAIN; SKIP_WORKTREE_CONTRACT=1 git commit -m x")"
+assert_allow "registry: bypass after cd to a quoted folder bypasses" \
+  "$(jsonc "$SESSION" "$MAIN" "cd \"$MAIN\" && SKIP_WORKTREE_CONTRACT=1 git commit -m x")"
+assert_deny "registry: cd <folder> && git commit with no bypass still denied (control)" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $MAIN && git commit -m x")"
+assert_deny "registry: a second step between cd and the bypass does not bypass" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $MAIN && git status && SKIP_WORKTREE_CONTRACT=1 git commit -m x")"
+assert_deny "registry: cd \$(...) before the bypass does not bypass" \
+  "$(jsonc "$SESSION" "$MAIN" 'cd $(pwd) && SKIP_WORKTREE_CONTRACT=1 git commit -m x')"
+assert_deny "registry: cd \"\$VAR\" before the bypass does not bypass" \
+  "$(jsonc "$SESSION" "$MAIN" 'cd "$WT" && SKIP_WORKTREE_CONTRACT=1 git commit -m x')"
+assert_deny "registry: cd <folder> || bypass does not bypass" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $MAIN || SKIP_WORKTREE_CONTRACT=1 git commit -m x")"
+assert_deny "registry: bypass text inside a quoted cd folder does not bypass" \
+  "$(jsonc "$SESSION" "$MAIN" 'cd "/x && SKIP_WORKTREE_CONTRACT=1 y" && git commit -m x')"
+# PINNED (owner decision 2026-10-16): a bypass at the front unlocks every later step.
+assert_allow "registry: bypass at the front also unlocks a later git commit (pinned)" \
+  "$(json "$SESSION" "$MAIN" 'SKIP_WORKTREE_CONTRACT=1 git status && git commit -m x')"
+
 # Bypass.
 out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | SKIP_WORKTREE_CONTRACT=1 bash "$HOOK" 2>/dev/null)
 if [ -z "$out" ]; then echo "PASS: SKIP_WORKTREE_CONTRACT=1 bypasses contract branch"; PASS=$((PASS+1));
@@ -1596,7 +1621,9 @@ fi
 # is the allow-side control proving the repair is one-directional. None of these existed
 # before because the 884-row grid that cleared the reorder had NO quoting/escaping dimension
 # -- an axis not varied is an axis where a defect is invisible, which is how it shipped.
-EXPECTED_TOTAL=270
+# 270 -> 280 (2026-10-16, bypass after one leading cd): +10 = 3 cd allows, 1 no-bypass
+# control, 5 deny shapes, 1 pinned front-bypass-unlocks-later allow.
+EXPECTED_TOTAL=280
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

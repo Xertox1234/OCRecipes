@@ -1432,7 +1432,8 @@
 # Escape: `ALLOW_OUTWARD_CLI=1 <command>` as an INLINE prefix on the one Bash
 # command (recognized from the command string itself — see the case
 # statement below the CMD extraction for why this differs from an exported
-# env var), OR export `ALLOW_OUTWARD_CLI=1` ambiently for the rest of the
+# env var; it may follow one leading `cd <folder> &&` and nothing else),
+# OR export `ALLOW_OUTWARD_CLI=1` ambiently for the rest of the
 # session (broader-scoped; prefer the inline form).
 # Tests: .claude/hooks/test-guard-outward-cli.sh
 set -uo pipefail
@@ -2013,8 +2014,13 @@ $_OUT_CRUDE_VANISHED"
 
 # Raw-envelope form of the inline "ALLOW_OUTWARD_CLI=1 <command>" bypass, for
 # the paths that never obtain a decoded $CMD (no-jq; jq-extraction failure).
+# The leading-cd form (see _OUT_CD_BYPASS_RE below) is accepted here only for an
+# UNQUOTED literal folder: the folder class excludes `"` and `\`, so the raw JSON
+# text and the decoded command are the same characters and no unescaping is needed.
+_OUT_RAW_CD_BYPASS_RE='"command":"cd[[:blank:]]+[^[:space:];&|<>()$`'"'"'"\]+[[:blank:]]*(&&|;)[[:blank:]]*ALLOW_OUTWARD_CLI=1 '
 raw_inline_bypass() {
   case "$1" in *'"command":"ALLOW_OUTWARD_CLI=1 '*) return 0 ;; esac
+  [[ "$1" =~ $_OUT_RAW_CD_BYPASS_RE ]] && return 0
   return 1
 }
 
@@ -2052,7 +2058,7 @@ INPUT=$(cat)
 if ! TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null); then
   raw_inline_bypass "$INPUT" && exit 0
   if crude_smells_outward "$INPUT"; then
-    deny "guard-outward-cli: the hook envelope's .tool_name could not be read (malformed JSON or a changed envelope shape) - failing closed via the crude smell test for a payload that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: the hook envelope's .tool_name could not be read (malformed JSON or a changed envelope shape) - failing closed via the crude smell test for a payload that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   exit 0
 fi
@@ -2060,7 +2066,7 @@ fi
 if ! CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null); then
   raw_inline_bypass "$INPUT" && exit 0
   if crude_smells_outward "$INPUT"; then
-    deny "guard-outward-cli: the hook envelope's .tool_input.command could not be read (malformed JSON or a changed envelope shape) - failing closed via the crude smell test for a payload that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: the hook envelope's .tool_input.command could not be read (malformed JSON or a changed envelope shape) - failing closed via the crude smell test for a payload that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   exit 0
 fi
@@ -2075,7 +2081,22 @@ fi
 # Recognizing the literal prefix in the command STRING is the only way to
 # honor it as "one command" (mirrors git-safety.sh's INLINE_BYPASS pattern
 # for SKIP_WORKTREE_CONTRACT=1).
+#
+# It may also come right after ONE leading `cd <folder>` joined by `&&` or `;`
+# (owner decision 2026-10-16; `cd /repo && ALLOW_OUTWARD_CLI=1 …` was the shape
+# that kept getting denied). Nothing else may precede it. The folder is a single
+# word: single-quoted, double-quoted without `$`/backtick/`\`, or bare without
+# shell metacharacters. That restriction is the whole safety argument: an honored
+# bypass lets the ENTIRE string run, so the text before it must be unable to run
+# anything — `cd $(eas update …) && ALLOW_OUTWARD_CLI=1 true` must not pass, and
+# `cd "$WT" && …` is refused for the same reason (use the literal path). A
+# character missing from the folder class only keeps a deny, never adds an allow.
+# `[[:blank:]]` (space/tab), never `[[:space:]]`: a newline after `cd` would end
+# the cd and turn the "folder" into a command. Builtin `[[ =~ ]]`, no fork: this
+# runs on every Bash call, ahead of the fast path. TWIN: git-safety.sh INLINE_BYPASS.
+_OUT_CD_BYPASS_RE='^cd[[:blank:]]+('"'"'[^'"'"']*'"'"'|"[^"$`\]*"|[^[:space:];&|<>()$`'"'"'"\]+)[[:blank:]]*(&&|;)[[:blank:]]*ALLOW_OUTWARD_CLI=1 '
 case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) exit 0 ;; esac
+[[ "$CMD" =~ $_OUT_CD_BYPASS_RE ]] && exit 0
 
 # Fork-free: a $(cd ...) subshell here would be the ENTIRE added cost of reaching the shared
 # fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this HERE now runs
@@ -2264,7 +2285,7 @@ fi
 # DIFFERENT condition the no-jq branch never runs for, so nothing covered it.)
 if ! . "$HERE/lib/cmd-detect.sh" 2>/dev/null || ! declare -F cmd_bare >/dev/null; then
   if crude_smells_outward "$CMD"; then
-    deny "guard-outward-cli: lib/cmd-detect.sh is unsourceable (broken install) - failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: lib/cmd-detect.sh is unsourceable (broken install) - failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   exit 0
 fi
@@ -3313,7 +3334,7 @@ if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_SEPSAFE_TAKES_VALUE" != yes ] \
    || [ "$_OUT_SEPSAFE_SPANS" = yes ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
-  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has been widened to span a separator, the wide form has lost the separate-arg value arm that closes unnamed root flags (or the grant form has gained it), _OUT_GH_GLOBALS_SEPSAFE has lost its value arm or gained the ability to span a separator (which silently un-does the gh api occurrence refusal), or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has been widened to span a separator, the wide form has lost the separate-arg value arm that closes unnamed root flags (or the grant form has gained it), _OUT_GH_GLOBALS_SEPSAFE has lost its value arm or gained the ability to span a separator (which silently un-does the gh api occurrence refusal), or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 BARE=$(printf '%s' "$CMD" | cmd_bare)
@@ -3355,7 +3376,7 @@ WORDS=$(printf '%s' "$CMD" | cmd_words)
 if { [[ ! "$BARE" =~ [^[:space:]] ]] || [[ ! "$WORDS" =~ [^[:space:]] ]]; } \
    && [[ "$CMD" =~ [^[:space:]] ]]; then
   if crude_smells_outward "$CMD"; then
-    deny "guard-outward-cli: the quote-aware rendering came back empty for a non-empty command - either its awk backend is missing/broken, or the command's entire text is quoted - so the precise matchers below cannot see it. Failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: the quote-aware rendering came back empty for a non-empty command - either its awk backend is missing/broken, or the command's entire text is quoted - so the precise matchers below cannot see it. Failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   exit 0
 fi
@@ -3554,21 +3575,21 @@ $WORDS_VANISHED_BLIND"; }
 # --- eas -------------------------------------------------------------------
 # eas update/publish/submit (space-separated subcommand).
 if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position 'eas update/publish/submit' publishes an OTA update or app-store submission — the exact class of the 2026-08-16 accidental-OTA incident. Read-only forms (eas update:list, eas update:view, eas whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position 'eas update/publish/submit' publishes an OTA update or app-store submission — the exact class of the 2026-08-16 accidental-OTA incident. Read-only forms (eas update:list, eas update:view, eas whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # eas update:* MUTATING colon subcommands — verified against `eas update
 # --help` (eas-cli 20.1.0); see the header's DOCUMENTED RESIDUALS entry for
 # the verified-read-only counterpart (update:list/view/insights, unaffected
 # by this pattern since the colon puts them outside this alternation).
 if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' mutates what OTA update end users receive — the same incident class as bare 'eas update'. Read-only colon forms (eas update:list, eas update:view, eas update:insights) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' mutates what OTA update end users receive — the same incident class as bare 'eas update'. Read-only colon forms (eas update:list, eas update:view, eas update:insights) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # eas channel:*/branch:* MUTATING colon subcommands — a channel repoint or a
 # branch delete changes which update end users receive, an effect identical to
 # the already-denied `eas update:*` forms (review round 3 found all of these
 # ALLOWED). Read-only `:list`/`:view` forms stay allowed.
 if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position 'eas channel:/branch: create/edit/delete/rename' repoints or deletes the channel/branch that decides which OTA update end users receive — the same effect class as 'eas update'. Read-only forms (eas channel:list, eas branch:view, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position 'eas channel:/branch: create/edit/delete/rename' repoints or deletes the channel/branch that decides which OTA update end users receive — the same effect class as 'eas update'. Read-only forms (eas channel:list, eas branch:view, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
 # resulting binary to the store as soon as the build finishes — a store
@@ -3580,7 +3601,7 @@ fi
 # (`${x:---auto-submit}`) cannot donate the flag's boundary.
 if grep -Eqi "${_OUT_POS_PREFIX_W}eas${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    && scan_renderings "${_OUT_FLAG_LEAD}"'--auto-submit'; then
-  deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- railway -----------------------------------------------------------------
@@ -3589,22 +3610,22 @@ fi
 # repo's own prod backfill/seed docs use exactly that shape), so it is at least
 # as outward as `railway up`.
 if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' mutates a live Railway service ('railway run' executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL). Read-only forms (railway status, railway logs, railway whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' mutates a live Railway service ('railway run' executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL). Read-only forms (railway status, railway logs, railway whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # railway variable set/delete (production secrets/env vars) and
 # service/environment delete — a level deeper than the top-level verbs
 # above, and at least as dangerous (an overwritten secret or a deleted
 # service/environment is not recoverable by a redeploy the way up/down are).
 if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position 'railway variable/vars/var set/delete' mutates a live service's environment variables (may include production secrets). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position 'railway variable/vars/var set/delete' mutates a live service's environment variables (may include production secrets). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_W}railway${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position 'railway service/environment delete' deletes a live Railway service or environment. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position 'railway service/environment delete' deletes a live Railway service or environment. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- npm publish -------------------------------------------------------------
 if grep -Eqi "${_OUT_POS_PREFIX_W}npm${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position 'npm publish' pushes a package to the registry. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position 'npm publish' pushes a package to the registry. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- this repo's OWN OTA publish scripts -------------------------------------
@@ -3691,7 +3712,7 @@ fi
 if grep -Eqi "${_OUT_POS_PREFIX_W}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})*(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX_W}(yarn|pnpm)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})*update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX_W}(node|bun|deno)${_OUT_FLAG_RUN}((run|task)${_OUT_FLAG_RUN}|--run=)?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
+  deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- narrow deny: a gated binary whose VERB is not literal text --------------
@@ -3739,7 +3760,7 @@ _OUT_GATED_VERB='(update|publish|submit|build|up|deploy|redeploy|restart|down|de
 if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
    || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
    || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- narrow deny: an INTERPRETER whose verb slot is an expansion, WITH the OTA script present -
@@ -3769,7 +3790,7 @@ fi
 # co-occurring script name.
 if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(node|bun|deno)${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
    && grep -Eqi 'update:(preview|production)' <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: an interpreter (node/bun/deno) sits in command position with an EXPANSION in its verb slot while 'update:preview/update:production' appears in the same command - that script execs 'eas update --branch production --platform all', a real OTA to real users. The expansion cannot be read, so the verb it supplies cannot be checked, and denying is the safe direction for the 2026-08-16 incident class. Ordinary interpreter use with an expansion is unaffected: this fires ONLY when the OTA script name co-occurs. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: an interpreter (node/bun/deno) sits in command position with an EXPANSION in its verb slot while 'update:preview/update:production' appears in the same command - that script execs 'eas update --branch production --platform all', a real OTA to real users. The expansion cannot be read, so the verb it supplies cannot be checked, and denying is the safe direction for the 2026-08-16 incident class. Ordinary interpreter use with an expansion is unaffected: this fires ONLY when the OTA script name co-occurs. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- narrow deny: a gated binary/verb glued to a brace RANGE ({X..Y}) --------
@@ -3926,7 +3947,7 @@ if [ -n "$_OUT_BR_OCC" ]; then
   done <<< "$_OUT_BR_OCC"
 fi
 if [ "$_OUT_BR_FIRE" = 1 ]; then
-  deny "guard-outward-cli: an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}), which real bash brace expansion resolves before this command runs — this hook cannot evaluate what the range expands to (single- or multi-value), so it cannot tell a read-only call from a mutating one. Denying, per the 2026-09-14 brace-range narrow-deny. A range glued only AFTER an intact literal verb (e.g. merge{1..3}) is unaffected — that already denies via the existing boundary check. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}), which real bash brace expansion resolves before this command runs — this hook cannot evaluate what the range expands to (single- or multi-value), so it cannot tell a read-only call from a mutating one. Denying, per the 2026-09-14 brace-range narrow-deny. A range glued only AFTER an intact literal verb (e.g. merge{1..3}) is unaffected — that already denies via the existing boundary check. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- narrow deny: a gated binary/verb glued to a brace LIST ({a,b}) ---------
@@ -4008,7 +4029,7 @@ if [ -n "$_OUT_BR_LIST_OCC" ]; then
   done <<< "$_OUT_BR_LIST_OCC"
 fi
 if [ "$_OUT_BR_LIST_FIRE" = 1 ]; then
-  deny "guard-outward-cli: an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}), which real bash brace expansion resolves into multiple words before this command runs — this hook cannot evaluate which alternative applies, so it cannot tell a read-only call from a mutating one. Denying, per the 2026-09-16 brace-list narrow-deny. A list glued only AFTER an intact literal verb (e.g. merge{1,3}) is unaffected — that already denies via the existing boundary check. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}), which real bash brace expansion resolves into multiple words before this command runs — this hook cannot evaluate which alternative applies, so it cannot tell a read-only call from a mutating one. Denying, per the 2026-09-16 brace-list narrow-deny. A list glued only AFTER an intact literal verb (e.g. merge{1,3}) is unaffected — that already denies via the existing boundary check. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -
@@ -4028,13 +4049,13 @@ GH_PR_MERGE_RE="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}
 # clauses, and read --auto out of the wrong one).
 GH_PR_MERGE_OCCURRENCES=$(_out_max_count "$GH_PR_MERGE_RE")
 if [ "${GH_PR_MERGE_OCCURRENCES:-0}" -gt 1 ]; then
-  deny "guard-outward-cli: more than one command-position 'gh pr merge' occurrence — ambiguous, cannot verify each carries --auto. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: more than one command-position 'gh pr merge' occurrence — ambiguous, cannot verify each carries --auto. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # `--repo`/`-R` retargets the merge at an ARBITRARY repository — the --auto
   # carve-out is scoped to THIS repo's own sanctioned automerge pipeline, which
   # never passes it. Checked FIRST so it wins regardless of --auto.
   if gh_pr_clause_has_repo 'merge'; then
-    deny "guard-outward-cli: 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with the user's PAT — outside the --auto carve-out, which exists only for this repo's own /todo automerge pipeline (it never passes --repo). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with the user's PAT — outside the --auto carve-out, which exists only for this repo's own /todo automerge pipeline (it never passes --repo). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   # DELIBERATELY reads plain $WORDS here, not $WORDS_DEEP, even though the
   # occurrence count just above is deep — this is the ONE grant-shaped read in
@@ -4455,7 +4476,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
       }' <<< "$CLAUSE")
   fi
   if [ "$HAS_REAL_AUTO" != "yes" ]; then
-    deny "guard-outward-cli: command-position 'gh pr merge' without a REAL --auto flag merges a PR immediately. A '--auto' token consumed as the VALUE of a preceding value-taking flag (--body/-b, --body-file/-F, --subject/-t, --author-email/-A, --match-head-commit/-c, --repo/-R, ...) does not count as --auto. 'gh pr merge --auto ...' (this repo's sanctioned /todo automerge mechanism) stays allowed — branch protection still gates the actual merge. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: command-position 'gh pr merge' without a REAL --auto flag merges a PR immediately. A '--auto' token consumed as the VALUE of a preceding value-taking flag (--body/-b, --body-file/-F, --subject/-t, --author-email/-A, --match-head-commit/-c, --repo/-R, ...) does not count as --auto. 'gh pr merge --auto ...' (this repo's sanctioned /todo automerge mechanism) stays allowed — branch protection still gates the actual merge. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   # --admin ("use administrator privileges to merge a PR that does not meet
   # requirements") contradicts the --auto carve-out's own premise (that branch
@@ -4504,7 +4525,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # reordering, which would move this file's most heavily pinned branch and
   # needs its own mutation evidence.
   if scan_renderings "${_OUT_FLAG_LEAD}"'--admin([^-A-Za-z0-9]|$)'; then
-    deny "guard-outward-cli: command-position 'gh pr merge --admin' uses administrator privileges to merge a PR that may not meet requirements — this contradicts the --auto carve-out's premise (branch protection gating). Denying regardless of --auto. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: command-position 'gh pr merge --admin' uses administrator privileges to merge a PR that may not meet requirements — this contradicts the --auto carve-out's premise (branch protection gating). Denying regardless of --auto. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
 fi
 
@@ -4512,7 +4533,7 @@ fi
 #     --repo/-R, see the header) -------------------------------------------
 GH_MUTATING_RE="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
 if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: command-position mutating 'gh pr/release/repo' subcommand. Read-only forms (gh pr view/checks/list, gh release view/list, gh repo view/list, ...) are unaffected; gh pr create/comment are deliberately allowed (routine PR workflow) unless retargeted with --repo/-R. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: command-position mutating 'gh pr/release/repo' subcommand. Read-only forms (gh pr view/checks/list, gh release view/list, gh repo view/list, ...) are unaffected; gh pr create/comment are deliberately allowed (routine PR workflow) unless retargeted with --repo/-R. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- gh pr create/comment: routine carve-out, but NOT at another repo --------
@@ -4532,9 +4553,9 @@ fi
 GH_PR_CREATE_RE="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}(create|comment)${_OUT_POS_SUFFIX}"
 GH_PR_CREATE_OCCURRENCES=$(_out_max_count "$GH_PR_CREATE_RE")
 if [ "${GH_PR_CREATE_OCCURRENCES:-0}" -gt 1 ]; then
-  deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 elif [ "${GH_PR_CREATE_OCCURRENCES:-0}" -eq 1 ] && gh_pr_clause_has_repo 'create|comment'; then
-  deny "guard-outward-cli: 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repository with the user's PAT — unbounded egress, outside the routine-workflow carve-out these two subcommands get. Without --repo/-R they stay allowed. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repository with the user's PAT — unbounded egress, outside the routine-workflow carve-out these two subcommands get. Without --repo/-R they stay allowed. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- gh api: mutating HTTP method -------------------------------------------
@@ -4591,7 +4612,7 @@ GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS_SEPSAFE}${_OUT_SEP_SE
 # silent-and-green degradation is this file's stated bar for adding an operand.
 case "$GH_API_RE_SEPSAFE" in
   *"$_OUT_GH_GLOBALS_SEPSAFE"*"$_OUT_SEP_SEPSAFE"*) : ;;
-  *) deny "guard-outward-cli: GH_API_RE_SEPSAFE is no longer built from BOTH _OUT_GH_GLOBALS_SEPSAFE and _OUT_SEP_SEPSAFE, so the gh api occurrence count has lost part of the separator-safe grammar that keeps a consumed value from swallowing a command boundary. Failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command)." ;;
+  *) deny "guard-outward-cli: GH_API_RE_SEPSAFE is no longer built from BOTH _OUT_GH_GLOBALS_SEPSAFE and _OUT_SEP_SEPSAFE, so the gh api occurrence count has lost part of the separator-safe grammar that keeps a consumed value from swallowing a command boundary. Failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)." ;;
 esac
 # Counted AND clause-scoped on $WORDS_DEEP (unlike the `gh pr merge` block
 # above, whose CLAUSE stays shallow — see that block's own comment for why).
@@ -4807,7 +4828,7 @@ if [ "${GH_API_OCCURRENCES:-0}" -ge 1 ]; then
     for _gh_api_re in "$GH_API_RE" "$GH_API_RE_SEPSAFE"; do
       _gh_api_seen=$(printf '%s' "$_gh_api_r" | grep -oiE "$_gh_api_re" | wc -l | tr -d '[:space:]')
       [ "${_gh_api_cut_n:-0}" -ge "${_gh_api_seen:-0}" ] || \
-        deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+        deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
     done
   done
   # $1 minus $2, line by line: each line of $2 cancels ONE equal line of $1. Pure bash -- the
@@ -4989,7 +5010,7 @@ if [ "${GH_API_OCCURRENCES:-0}" -ge 1 ]; then
   if grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' <<< "$GH_API_CLAUSE" \
      && { [ "$_GH_API_SPAN_DERIVED" = yes ] \
           || printf '%s' "$GH_API_CLAUSE" | grep -qE '[$`]'; }; then
-    deny "guard-outward-cli: command-position 'gh api' with a method flag (-X/--method) whose value is not literal text (an expansion or substitution, or a clause only readable after deleting one) cannot be verified read-only — denying, the same 'cannot verify -> deny' rule the 'gh pr merge' --auto check applies. Read-only 'gh api' with no -X/--method is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: command-position 'gh api' with a method flag (-X/--method) whose value is not literal text (an expansion or substitution, or a clause only readable after deleting one) cannot be verified read-only — denying, the same 'cannot verify -> deny' rule the 'gh pr merge' --auto check applies. Read-only 'gh api' with no -X/--method is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   # Matches BOTH the spaced/`=` form (-X POST, -X=POST, --method POST,
   # --method=POST) AND the glued short-flag form (-XPOST — the common
@@ -5101,7 +5122,7 @@ if [ "${GH_API_OCCURRENCES:-0}" -ge 1 ]; then
   [ -n "${_CMD_REDIR:-}" ] && _GH_API_ARGV=$(printf '%s' "$_GH_API_ARGV" | sed -E "s/(^|[[:space:]])${_CMD_REDIR}/\1 /g")
   if [ -n "$GH_API_CLAUSE" ] && grep -Eq "$_GH_API_FIELD" <<< "$GH_API_CLAUSE" \
      && ! grep -Eq "$_GH_API_ANYMETHOD" <<< "$_GH_API_ARGV"; then
-    deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected -- EXCEPT for 'gh api graphql', whose transport is always POST, so there is no explicit-read spelling of it and a graphql READ is denied here too; its only route is the bypass. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected -- EXCEPT for 'gh api graphql', whose transport is always POST, so there is no explicit-read spelling of it and a graphql READ is denied here too; its only route is the bypass. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   # FIXED 2026-09-05 (found by this task's own mandated finding-A
   # co-occurrence test; distinct from the unreadable-method check on
@@ -5150,7 +5171,7 @@ if [ "${GH_API_OCCURRENCES:-0}" -ge 1 ]; then
   # 2026-09-05; the SEPARATOR is what was missed. Third instance of the same
   # "a hand-spelled class lagged a widening" defect this file keeps paying for.
   if [ -n "$GH_API_CLAUSE" ] && grep -Eq "(^|[[:space:]])(-X${_GH_API_M}${_OUT_POS_SUFFIX}|(-X|--method)(${_OUT_SEP}|=)${_GH_API_M}${_OUT_POS_SUFFIX})" <<< "$GH_API_CLAUSE"; then
-    deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
   fi
   done <<< "$_GH_API_ITEMS"
 fi
@@ -5206,34 +5227,34 @@ fi
 # residual: `gh pr merge --auto` reached via `npx`/`npm exec`/a path DENIES,
 # where the bare-position form ALLOWS.
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: 'eas update/publish/submit' reached through a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) or a path-qualified invocation (incl. the 'eas-cli' package spelling) — npm's own resolution for 'npm exec'/'npx' never consults PATH, so a PATH-only wrapper cannot stop this. Same OTA-publish incident class as the bare-command check above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'eas update/publish/submit' reached through a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) or a path-qualified invocation (incl. the 'eas-cli' package spelling) — npm's own resolution for 'npm exec'/'npx' never consults PATH, so a PATH-only wrapper cannot stop this. Same OTA-publish incident class as the bare-command check above. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: 'eas channel:/branch: create/edit/delete/rename' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'eas channel:/branch: create/edit/delete/rename' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    && scan_renderings "${_OUT_FLAG_LEAD}"'--auto-submit'; then
-  deny "guard-outward-cli: 'eas build --auto-submit' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'eas build --auto-submit' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached through a launcher or a path-qualified invocation (incl. the '@railway/cli' package spelling). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached through a launcher or a path-qualified invocation (incl. the '@railway/cli' package spelling). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: 'railway variable/vars/var set/delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'railway variable/vars/var set/delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: 'railway service/environment delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'railway service/environment delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})*(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})*update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX_LP}(node|bun|deno)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}((run|task)${_OUT_FLAG_RUN}|--run=)?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
+  deny "guard-outward-cli: 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 # VERSION-PIN on `gh` itself (2026-09-16, round-2 review correction): the
 # header comment at GAP 3's definition above originally reasoned "no
@@ -5249,7 +5270,7 @@ fi
 # gh@latest api repos/o/r -X POST` — reaching the single highest-value sink
 # in this file (an unreviewed, branch-protection-bypassing admin merge).
 if grep -Eqi "${_OUT_POS_PREFIX_LP}gh${_OUT_PKG_VERSION_PIN}${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork)|api)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: a gated 'gh' subcommand reached through a launcher or a path-qualified invocation denies UNCONDITIONALLY — including a shape that carries a carve-out flag (--auto with no --admin/--repo, or pr create/comment with no --repo) in bare command position. This repo's own sanctioned gh usage (the /todo automerge pipeline, and PR creation via the GitHub MCP tools) never goes through a launcher or a path, so this is a deliberate over-denial, not an attempt to re-derive the bare-position carve-out logic against a second grammar. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: a gated 'gh' subcommand reached through a launcher or a path-qualified invocation denies UNCONDITIONALLY — including a shape that carries a carve-out flag (--auto with no --admin/--repo, or pr create/comment with no --repo) in bare command position. This repo's own sanctioned gh usage (the /todo automerge pipeline, and PR creation via the GitHub MCP tools) never goes through a launcher or a path, so this is a deliberate over-denial, not an attempt to re-derive the bare-position carve-out logic against a second grammar. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- Security-review round-1: ambiguous-target launcher flags (GAP 1) -------
@@ -5261,7 +5282,7 @@ fi
 # it is mandatory, because the check is about a launcher carrying an ambiguous target flag.
 # Substituting it would fire on any command-position invocation carrying --package/-p/-c/--call.
 if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})${_OUT_LAUNCHER_AMBIG_FLAG}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) combined with --package/-p/-c/--call denies UNCONDITIONALLY — the guard cannot verify the true target from text: --package/-p's value can name any gated package, and -c/--call's argument sits inside a quoted string this guard's own quote-blanking already treats as non-command prose everywhere else. Fail-closed, same as an unparseable .tool_input.command. This also over-denies a benign use (e.g. 'npx -p typescript tsc --version') — checked offline (grep, no network) for this repo's own usage of any of these four flags under a launcher: none found, so no reachable cost here, same 'deliberate, documented over-denial' choice as the gh-family block below. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) combined with --package/-p/-c/--call denies UNCONDITIONALLY — the guard cannot verify the true target from text: --package/-p's value can name any gated package, and -c/--call's argument sits inside a quoted string this guard's own quote-blanking already treats as non-command prose everywhere else. Fail-closed, same as an unparseable .tool_input.command. This also over-denies a benign use (e.g. 'npx -p typescript tsc --version') — checked offline (grep, no network) for this repo's own usage of any of these four flags under a launcher: none found, so no reachable cost here, same 'deliberate, documented over-denial' choice as the gh-family block below. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 # --- Security-review round-1: package-directory path invocation (GAP 2) -----
@@ -5274,10 +5295,10 @@ fi
 # optional bare interpreter word (node/bun/deno) is absorbed for free, but is
 # NOT required — the bare path alone is already the reachable exploit.
 if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: a direct path invocation of a script INSIDE the eas-cli npm package directory (e.g. node_modules/eas-cli/bin/run) reached 'update/publish/submit' — eas-cli's own package.json maps bin: {\"eas\": \"./bin/run\"}, so the real installed script's filename is 'run', never 'eas'/'eas-cli', and can't match a literal-binary-name path check. Same OTA-publish incident class as the checks above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: a direct path invocation of a script INSIDE the eas-cli npm package directory (e.g. node_modules/eas-cli/bin/run) reached 'update/publish/submit' — eas-cli's own package.json maps bin: {\"eas\": \"./bin/run\"}, so the real installed script's filename is 'run', never 'eas'/'eas-cli', and can't match a literal-binary-name path check. Same OTA-publish incident class as the checks above. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
-  deny "guard-outward-cli: a direct path invocation of a script INSIDE the @railway/cli npm package directory reached a gated railway verb, by the same package.json-bin-mapping gap as eas-cli above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: a direct path invocation of a script INSIDE the @railway/cli npm package directory reached a gated railway verb, by the same package.json-bin-mapping gap as eas-cli above. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
 exit 0

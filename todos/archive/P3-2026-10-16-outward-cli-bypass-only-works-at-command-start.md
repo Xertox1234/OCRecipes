@@ -1,6 +1,6 @@
 ---
 title: "Explore: the ALLOW_OUTWARD_CLI=1 bypass only works as the first text of a Bash command"
-status: backlog
+status: done
 priority: low
 created: 2026-10-16
 updated: 2026-10-16
@@ -39,13 +39,13 @@ The one-command bypass for the outward-CLI guard is honored only when the Bash c
 
 ## Acceptance Criteria
 
-- [ ] Findings written down: deliberate vs. accidental, and the compound-command risk of each alternative.
-- [ ] Owner decision recorded: keep as is, improve the deny message only, or change the matching.
-- [ ] If anything changes: a test row in `.claude/hooks/test-guard-outward-cli.sh` for each case below, all passing.
+- [x] Findings written down: deliberate vs. accidental, and the compound-command risk of each alternative.
+- [x] Owner decision recorded: keep as is, improve the deny message only, or change the matching.
+- [x] If anything changes: a test row in `.claude/hooks/test-guard-outward-cli.sh` for each case below, all passing.
   - Bypass first: allowed.
   - Bypass after `cd … &&`.
   - Bypass on a harmless segment while another segment is outward.
-- [ ] If nothing changes: an entry in `docs/harness-residuals.md`, and this todo archived.
+- [x] ~~If nothing changes: an entry in `docs/harness-residuals.md`~~ (n/a, the matching changed); this todo archived.
 
 ## Implementation Notes
 
@@ -72,3 +72,26 @@ The one-command bypass for the outward-CLI guard is honored only when the Bash c
 ### 2026-10-16
 
 - Filed at the owner's request after the production OTA command was denied for putting the bypass after `cd … &&`.
+
+### 2026-10-16 (findings and owner decision)
+
+**Findings** (measured by probing both hooks with every shape, not by reading):
+
+- Both inline bypasses are a literal prefix match on the command string, and that is the only thing that decides. `cd x &&`, `git log &&`, a leading space, `FOO=1` in front, `export`, `=true`, and a subshell all deny today. Neither hook's comments give a reason for first-position-only beyond "the hook cannot see shell assignments", so it reads as how it was implemented, not a deliberate safety choice.
+- A bypass at the front already unlocks every later step (`ALLOW_OUTWARD_CLI=1 git status && npm run update:production …` allows). No test covered this.
+- The outward guard has no segment splitter (only `git-safety.sh` has `split_segments`). Accepting the bypass after _any_ step would need one; accepting it after one leading `cd` does not.
+- 27 docs, skills and memory files mention a bypass, and none places it after `&&` or `;`.
+- Correction to the Background above: the 2026-10-16 OTA command had `git log … && git status … &&` in front of the bypass. It had no `cd`, and it still denies under the decision below.
+
+**Owner decisions:**
+
+1. Accept the bypass after a single leading `cd <folder>` joined by `&&` or `;`. Nothing else may come first, and the folder must not contain `$`, a backtick or `(`, because an honored bypass lets the whole string run.
+2. Keep the front bypass unlocking later steps, and pin it with a test row.
+3. Apply both to `git-safety.sh`'s `SKIP_WORKTREE_CONTRACT=1` too.
+
+**Done:**
+
+- Both guards accept the leading-cd form (inline twin regexes). The outward guard's no-jq path accepts it for an unquoted folder.
+- Deny messages now say where the bypass has to go.
+- New test rows: 16 in the outward suite, 10 in the git suite.
+- Old-vs-new comparison over 50 probe shapes: the only changes are `cd` forms going from deny to allow, and nothing went from allow to deny.
