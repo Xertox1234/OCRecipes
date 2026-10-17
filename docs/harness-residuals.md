@@ -131,3 +131,20 @@ on its own, so 16 two-call rows of a 2380-row generated probe (all in the
 `echo "$(<read>) $(<mutation>)"` shape) moved DENY -> ALLOW. No new route: each is beaten by
 the single-call spelling main already allowed. Fix shapes if reopened: keep the marker in the
 cut clause, or keep the group refusal when an occurrence sits inside a command substitution.
+
+`.claude/hooks/lib/write-targets.sh` unexpanded `$VAR/<file>` write target, found 2026-10-17 (a
+`/todo` run, no todo filed -- hook-lib finding): a redirect, `rm`, or `cat >` whose target is a
+shell variable spelled in the command text (`rm -f "${TODO_TMP:?}/open-prs.txt"`,
+`cat > "$TODO_TMP/scheduler-state.json"`) is emitted as the literal, unexpanded token. The header
+already notes `${…}` is unmodeled and that over-split is a false POSITIVE, not a bypass; this
+records the cost. `scripts/pg-lab/session-coord.sh` (record/consult) stores and matches that
+token as a file path, so two sessions whose commands carry the same `$TODO_TMP/<name>` text are
+read as editing ONE file -- even though `/todo` keys `TODO_TMP` by session id precisely so the
+real paths differ (#1485). Observed twice in one autonomous run: "Blocked once: another Claude
+session is working on this file. Session d8c6c4af … edited $TODO_TMP/open-prs.txt 8 min ago" and
+the same for `$TODO_TMP/scheduler-state.json`, each an "ask the user" stop with no user present;
+the other session had no `/tmp/todo-d8c6c4af\*`directory, so the retry was taken. Writing the
+expanded path literally avoids it. Fix shapes if reopened: drop a target whose first segment
+starts with`$` (git-safety.sh already does this for branch names -- "could not resolve a literal
+branch name … looks like an unexpanded shell variable"), or expand `$CLAUDE_CODE_SESSION_ID`-keyed
+spellings before storing. No new route: the real files were never shared.
