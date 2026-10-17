@@ -159,7 +159,7 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/nudge-dependency-add.sh\"",
             "timeout": 10,
-            "statusMessage": "Checking for external HEAD drift..."
+            "statusMessage": "Checking for a dependency add..."
           }
         ]
       },

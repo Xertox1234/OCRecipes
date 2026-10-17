@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash) — reuse-ladder nudge when a command ADDS a dependency.
 #
-# `npm install <pkg>` / `npm i` / `npm add`, `npx expo install <pkg>`, `yarn add`, `pnpm add`
+# `npm [opts] install|i|add <pkg>`, `npx [flags] expo install <pkg>`, `yarn add`, `pnpm add`
 # with at least one package argument get a one-line additionalContext asking for the ladder's
 # rung-3/4 justification. Lockfile installs (`npm install`, `npm ci`, flags-only), global
 # installs (`-g`/`--global`), `npm run`, and quoted mentions stay silent.
@@ -32,20 +32,46 @@ WORDS=$(cmd_words_deep "$CMD")
 # One invocation per line: the verb in command position, then its arguments up to the next
 # separator. A package argument is a word that is not a flag. Globals are excluded in the
 # flag scan, so `npm install -g eas-cli` never counts as a project dependency.
+# Shapes pinned by the #1476 review (2026-10-17): runs of blanks and tabs collapse to one
+# space first; `sudo`/`time` and brace groups are absorbed like `env`; flags may sit between
+# `npx` and `expo`; npm's own options may precede the verb (`npm --prefix client install x`).
+_npm_opt_takes_value() {
+  case "$1" in --prefix|--registry|--loglevel|--cache|--userconfig|--workspace|-w|-C|--cwd) return 0 ;; *) return 1 ;; esac
+}
 ADD_SEEN=0
 while IFS= read -r line; do
   [ -n "$line" ] || continue
-  # Split the line into simple commands on separators, then inspect each.
   while IFS= read -r seg; do
+    seg=$(printf '%s' "$seg" | tr -s '[:blank:]' ' ')
     seg="${seg#"${seg%%[![:space:]]*}"}"
     # Strip leading env assignments / wrappers the shell would absorb.
-    while [[ "$seg" =~ ^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+(.*)$ ]]; do seg="${BASH_REMATCH[2]}"; done
-    verb=""
+    while [[ "$seg" =~ ^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|sudo|time)[[:space:]]+(.*)$ ]]; do seg="${BASH_REMATCH[2]}"; done
+    args=""
     case "$seg" in
-      "npm install "*|"npm i "*|"npm add "*) verb=npm; args="${seg#npm * }" ;;
-      "npx expo install "*)                 verb=expo; args="${seg#npx expo install }" ;;
-      "yarn add "*)                         verb=yarn; args="${seg#yarn add }" ;;
-      "pnpm add "*)                         verb=pnpm; args="${seg#pnpm add }" ;;
+      "npm "*)
+        rest="${seg#npm }"
+        # npm's own options come before the verb; some take a value.
+        while [[ "$rest" == -* ]]; do
+          opt="${rest%% *}"; [ "$opt" = "$rest" ] && { rest=""; break; }
+          rest="${rest#* }"
+          if _npm_opt_takes_value "$opt" && [[ "$rest" != -* ]]; then rest="${rest#* }"; fi
+        done
+        case "$rest" in
+          "install "*|"i "*|"add "*) args="${rest#* }" ;;
+          *) continue ;;
+        esac ;;
+      "npx "*)
+        rest="${seg#npx }"
+        while [[ "$rest" == -* ]]; do
+          opt="${rest%% *}"; [ "$opt" = "$rest" ] && { rest=""; break; }
+          rest="${rest#* }"
+        done
+        case "$rest" in
+          "expo install "*) args="${rest#expo install }" ;;
+          *) continue ;;
+        esac ;;
+      "yarn add "*) args="${seg#yarn add }" ;;
+      "pnpm add "*) args="${seg#pnpm add }" ;;
       *) continue ;;
     esac
     pkg=0; global=0
@@ -57,7 +83,7 @@ while IFS= read -r line; do
       esac
     done
     if [ "$pkg" = 1 ] && [ "$global" = 0 ]; then ADD_SEEN=1; fi
-  done < <(printf '%s\n' "$line" | tr ';&|()`' '\n\n\n\n\n\n')
+  done < <(printf '%s\n' "$line" | tr ';&|(){}`' '\n\n\n\n\n\n\n\n')
 done <<< "$WORDS"
 
 [ "$ADD_SEEN" = 1 ] || exit 0

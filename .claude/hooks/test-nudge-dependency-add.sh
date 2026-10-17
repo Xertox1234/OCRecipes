@@ -32,6 +32,16 @@ expect_nudge "yarn add <pkg>"                'yarn add date-fns'
 expect_nudge "pnpm add <pkg>"                'pnpm add zod'
 expect_nudge "chained after cd"              'cd client && npm install react-native-svg'
 expect_nudge "inside a substitution"         'echo "$(npm install left-pad)"'
+# Shapes the #1476 review measured as silent (2026-10-17): whitespace runs, a tab, wrappers the
+# shell absorbs, flags between npx and expo, and an npm global option before the verb.
+expect_nudge "double spaces"                 'npm  install  lodash'
+expect_nudge "tab between words"             "$(printf 'npm install\tlodash')"
+expect_nudge "brace group"                   '{ npm install lodash; }'
+expect_nudge "sudo wrapper"                  'sudo npm install lodash'
+expect_nudge "time wrapper"                  'time npm install lodash'
+expect_nudge "npx --yes expo install"        'npx --yes expo install expo-camera'
+expect_nudge "npx -y expo install"           'npx -y expo install expo-camera'
+expect_nudge "npm --prefix x install"        'npm --prefix client install lodash'
 
 # Negative shapes — lockfile installs, global installs, unrelated commands, quoted mentions.
 expect_silent "bare npm install"             'npm install'
@@ -41,6 +51,9 @@ expect_silent "npm install -g"               'npm install -g eas-cli'
 expect_silent "npm install --global"         'npm install --global typescript'
 expect_silent "npm run script"               'npm run lint'
 expect_silent "npx expo install --check"     'npx expo install --check'
+expect_silent "npx --yes expo install --fix" 'npx --yes expo install --fix'
+expect_silent "npm --prefix x install (bare)" 'npm --prefix client install'
+expect_silent "sudo npm ci"                  'sudo npm ci'
 expect_silent "quoted mention in commit msg" 'git commit -m "docs: say npm install foo in README"'
 # Non-Bash tool name must exit silently even with a matching command.
 out=$(jq -n '{"tool_name":"Edit","tool_input":{"command":"npm install lodash"}}' | bash "$HOOK" 2>/dev/null)
