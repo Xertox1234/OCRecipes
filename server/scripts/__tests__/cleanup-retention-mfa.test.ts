@@ -17,6 +17,7 @@ import {
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 import { mfaChallenges, mfaTrustedDevices } from "@shared/schema";
+import { eq, ne } from "drizzle-orm";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -77,24 +78,71 @@ describe("purgeExpiredMfaRows (real DB)", () => {
         device("dev-1-hour", at(1)),
         device("dev-live", at(-24 * 20)),
       ]);
+    // Rows of another user, standing in for whatever the dev database already
+    // holds — the rolled-back transaction hides only this test's own writes.
+    const other = await createTestUser(tx);
+    await tx.insert(mfaChallenges).values([
+      { ...challenge("other-ch-old", at(48)), userId: other.id },
+      { ...challenge("other-ch-live", at(-0.1)), userId: other.id },
+    ]);
+    await tx
+      .insert(mfaTrustedDevices)
+      .values([{ ...device("other-dev-old", at(48)), userId: other.id }]);
+    // The purge is table-wide, so its counts include any foreign row it drops:
+    // measure those and add them to this user's expected deletions.
+    const foreignRows = async () => ({
+      challenges: (
+        await tx
+          .select({ id: mfaChallenges.tokenHash })
+          .from(mfaChallenges)
+          .where(ne(mfaChallenges.userId, a.id))
+      ).length,
+      devices: (
+        await tx
+          .select({ id: mfaTrustedDevices.keyHash })
+          .from(mfaTrustedDevices)
+          .where(ne(mfaTrustedDevices.userId, a.id))
+      ).length,
+    });
+    const before = await foreignRows();
     // Batch size 1 so the loop must run more than once to drain each table.
     const results = await purgeExpiredMfaRows(tx, now, 1);
+    const after = await foreignRows();
 
     expect(results).toEqual([
-      { domain: "mfa_challenges", rowsDeleted: 2, retentionDays: 1 },
-      { domain: "mfa_trusted_devices", rowsDeleted: 1, retentionDays: 1 },
+      {
+        domain: "mfa_challenges",
+        rowsDeleted: 2 + before.challenges - after.challenges,
+        retentionDays: 1,
+      },
+      {
+        domain: "mfa_trusted_devices",
+        rowsDeleted: 1 + before.devices - after.devices,
+        retentionDays: 1,
+      },
     ]);
-    const challenges = (
-      await tx.select({ id: mfaChallenges.tokenHash }).from(mfaChallenges)
-    )
-      .map((r) => r.id)
-      .sort();
-    expect(challenges).toEqual(["ch-1-hour", "ch-live"]);
-    const devices = (
-      await tx.select({ id: mfaTrustedDevices.keyHash }).from(mfaTrustedDevices)
-    )
-      .map((r) => r.id)
-      .sort();
-    expect(devices).toEqual(["dev-1-hour", "dev-live"]);
+    const challengesOf = async (userId: string) =>
+      (
+        await tx
+          .select({ id: mfaChallenges.tokenHash })
+          .from(mfaChallenges)
+          .where(eq(mfaChallenges.userId, userId))
+      )
+        .map((r) => r.id)
+        .sort();
+    const devicesOf = async (userId: string) =>
+      (
+        await tx
+          .select({ id: mfaTrustedDevices.keyHash })
+          .from(mfaTrustedDevices)
+          .where(eq(mfaTrustedDevices.userId, userId))
+      )
+        .map((r) => r.id)
+        .sort();
+    expect(await challengesOf(a.id)).toEqual(["ch-1-hour", "ch-live"]);
+    expect(await devicesOf(a.id)).toEqual(["dev-1-hour", "dev-live"]);
+    // The other user's rows follow the same rule.
+    expect(await challengesOf(other.id)).toEqual(["other-ch-live"]);
+    expect(await devicesOf(other.id)).toEqual([]);
   });
 });

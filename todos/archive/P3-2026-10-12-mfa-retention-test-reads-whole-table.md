@@ -1,9 +1,9 @@
 ---
 title: "MFA retention test fails when the local DB already has a challenge row"
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-17
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -23,9 +23,9 @@ The `rowsDeleted` counts at `:102-106` have the same weakness: a pre-existing ro
 
 ## Acceptance Criteria
 
-- [ ] The challenge and trusted-device assertions (`:107-118`) filter to the test's own users (`a`, `b`, `c`), not the whole table.
-- [ ] The `rowsDeleted` assertions can't be thrown off by older rows (e.g. count only the test's rows, or assert on the remaining rows per user instead).
-- [ ] The test passes with an unrelated expired and an unrelated live challenge row present in the database (add one in the test setup to prove it).
+- [x] The challenge and trusted-device assertions (`:107-118`) filter to the test's own users (`a`, `b`, `c`), not the whole table.
+- [x] The `rowsDeleted` assertions can't be thrown off by older rows (e.g. count only the test's rows, or assert on the remaining rows per user instead).
+- [x] The test passes with an unrelated expired and an unrelated live challenge row present in the database (add one in the test setup to prove it).
 
 ## Implementation Notes
 
@@ -50,3 +50,7 @@ The `rowsDeleted` counts at `:102-106` have the same weakness: a pre-existing ro
 ### 2026-10-12
 
 - Filed from the `/todo` baseline run.
+
+### 2026-10-17
+
+- Done. The line refs and users `b`/`c` were stale (#1410 removed the setup-secrets table), so the test has one user `a`. Added a second user with an old and a live challenge plus an old phone; the per-user selects filter on `userId`, and each `rowsDeleted` expectation adds the foreign rows the purge removed (counted before and after). Red with the extra rows before the change, green after.
