@@ -71,7 +71,7 @@ describe("check-rules-file-size.js", () => {
   it("ADVISES between the warn threshold and the cap — and must still exit 0", () => {
     // The whole point of the advisory: a warning that fails the build is just a
     // second wall 800 B earlier, which is the failure mode this replaces.
-    const root = makeRepo({ "warm.md": 5400 });
+    const root = makeRepo({ "warm.md": 5700 });
     const { status, out } = run(root);
     expect(status).toBe(0);
     expect(out).toMatch(/approaching/i);
@@ -79,18 +79,18 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("names the remaining headroom in the advisory so the reader can act on it", () => {
-    // Fixture is 5300, not 5000, and the assertion is anchored to ", N B left".
+    // Fixture is 5600, not 5000, and the assertion is anchored to ", N B left".
     // A bare toContain("900 B") against a 5000 B fixture passes on a coincidence:
     // the same line prints "the 5900 B cap", and "5900 B" contains "900 B" — so a
-    // mutant printing a WRONG headroom would still pass. 5900-5300=600 is not a
+    // mutant printing a WRONG headroom would still pass. 5900-5600=300 is not a
     // suffix of the cap, and the anchor pins the computed value either way.
-    const root = makeRepo({ "warm.md": 5300 });
+    const root = makeRepo({ "warm.md": 5600 });
     const { out } = run(root);
-    expect(out).toContain(", 600 B left");
+    expect(out).toContain(", 300 B left");
   });
 
   it("does not advise at exactly the warn threshold — only above it", () => {
-    const root = makeRepo({ "edge.md": 5100 });
+    const root = makeRepo({ "edge.md": 5500 });
     const { status, out } = run(root);
     expect(status).toBe(0);
     expect(out).toContain("OK in 1 file(s)"); // not vacuous over an empty scan
@@ -125,7 +125,7 @@ describe("check-rules-file-size.js", () => {
       copied,
       fs
         .readFileSync(copied, "utf8")
-        .replace("const WARN_BYTES = 5100;", "const WARN_BYTES = 7000;"),
+        .replace("const WARN_BYTES = 5500;", "const WARN_BYTES = 7000;"),
     );
     const { status, out } = run(root);
     expect(status).not.toBe(0);
@@ -133,7 +133,7 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("an advisory on one file does not mask a hard failure on another", () => {
-    const root = makeRepo({ "warm.md": 5400, "big.md": 7000 });
+    const root = makeRepo({ "warm.md": 5700, "big.md": 7000 });
     const { status, out } = run(root);
     expect(status).toBe(1);
     expect(out).toMatch(/approaching/i);
@@ -141,7 +141,7 @@ describe("check-rules-file-size.js", () => {
   });
 
   it("advises in lint-staged mode too (explicit file args, not just a full scan)", () => {
-    const root = makeRepo({ "warm.md": 5400 });
+    const root = makeRepo({ "warm.md": 5700 });
     const target = path.join(root, "docs", "rules", "warm.md");
     const { status, out } = run(root, [target]);
     expect(status).toBe(0);
