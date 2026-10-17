@@ -78,12 +78,14 @@ export async function disableMfa(
   opts: { clearPendingEmail?: boolean } = {},
 ): Promise<number | undefined> {
   return db.transaction(async (tx) => {
-    await Promise.all([
-      tx.delete(userMfa).where(eq(userMfa.userId, userId)),
-      tx.delete(mfaChallenges).where(eq(mfaChallenges.userId, userId)),
-      tx.delete(mfaTrustedDevices).where(eq(mfaTrustedDevices.userId, userId)),
-      tx.delete(mfaEmailCodes).where(eq(mfaEmailCodes.userId, userId)),
-    ]);
+    // One after another: a transaction has one connection, and pg@9 removes
+    // the queue that today lets Promise.all'd queries share it.
+    await tx.delete(userMfa).where(eq(userMfa.userId, userId));
+    await tx.delete(mfaChallenges).where(eq(mfaChallenges.userId, userId));
+    await tx
+      .delete(mfaTrustedDevices)
+      .where(eq(mfaTrustedDevices.userId, userId));
+    await tx.delete(mfaEmailCodes).where(eq(mfaEmailCodes.userId, userId));
     const [u] = await tx
       .update(users)
       .set({

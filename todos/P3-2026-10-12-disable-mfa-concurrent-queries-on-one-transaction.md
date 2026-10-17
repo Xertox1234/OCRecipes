@@ -1,6 +1,6 @@
 ---
 title: "Four storage functions run several queries at once on one transaction client — pg@9 will refuse it"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-12
 updated: 2026-10-12

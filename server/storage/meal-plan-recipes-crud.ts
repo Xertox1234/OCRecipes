@@ -358,33 +358,30 @@ export async function deleteMealPlanRecipe(
       });
     if (result.length === 0) return null;
 
-    // Clean up junction rows that referenced this recipe
-    await Promise.all([
-      tx
-        .delete(cookbookRecipes)
-        .where(
-          and(
-            eq(cookbookRecipes.recipeId, id),
-            eq(cookbookRecipes.recipeType, "mealPlan"),
-          ),
+    // Clean up junction rows that referenced this recipe — one query at a
+    // time: a transaction has one connection, and pg@9 removes the queue
+    // that today lets Promise.all'd queries share it.
+    await tx
+      .delete(cookbookRecipes)
+      .where(
+        and(
+          eq(cookbookRecipes.recipeId, id),
+          eq(cookbookRecipes.recipeType, "mealPlan"),
         ),
-      tx
-        .delete(favouriteRecipes)
-        .where(
-          and(
-            eq(favouriteRecipes.recipeId, id),
-            eq(favouriteRecipes.recipeType, "mealPlan"),
-          ),
+      );
+    await tx
+      .delete(favouriteRecipes)
+      .where(
+        and(
+          eq(favouriteRecipes.recipeId, id),
+          eq(favouriteRecipes.recipeType, "mealPlan"),
         ),
-      tx
-        .delete(savedItems)
-        .where(
-          and(
-            eq(savedItems.recipeId, id),
-            eq(savedItems.recipeType, "mealPlan"),
-          ),
-        ),
-    ]);
+      );
+    await tx
+      .delete(savedItems)
+      .where(
+        and(eq(savedItems.recipeId, id), eq(savedItems.recipeType, "mealPlan")),
+      );
     return result[0];
   });
 

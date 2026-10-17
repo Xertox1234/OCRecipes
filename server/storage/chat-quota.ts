@@ -43,40 +43,43 @@ export async function countRecipeGenerationsToday(
     gte(chatMessages.createdAt, startOfDay),
     lt(chatMessages.createdAt, endOfDay),
   );
-  const [legacyRecipeRows, claimedGenerations, remixConvCount] =
-    await Promise.all([
-      tx
-        .select({ count: sql<number>`count(*)` })
-        .from(chatMessages)
-        .innerJoin(
-          chatConversations,
-          eq(chatMessages.conversationId, chatConversations.id),
-        )
-        .where(
-          and(
-            today,
-            eq(chatConversations.type, "recipe"),
-            sql`coalesce(${chatMessages.metadata}->>'finderInput', 'false') <> 'true'`,
-          ),
-        ),
-      countClaimsToday(tx, userId, "recipe_generation"),
-      tx
-        .select({ count: sql<number>`count(DISTINCT ${chatConversations.id})` })
-        .from(chatConversations)
-        .innerJoin(
-          chatMessages,
-          eq(chatMessages.conversationId, chatConversations.id),
-        )
-        .where(
-          and(
-            eq(chatConversations.userId, userId),
-            eq(chatConversations.type, "remix"),
-            eq(chatMessages.role, "user"),
-            gte(chatConversations.createdAt, startOfDay),
-            lt(chatConversations.createdAt, endOfDay),
-          ),
-        ),
-    ]);
+  // One query at a time: a transaction has one connection, and pg@9 removes
+  // the queue that today lets Promise.all'd queries share it.
+  const legacyRecipeRows = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(chatMessages)
+    .innerJoin(
+      chatConversations,
+      eq(chatMessages.conversationId, chatConversations.id),
+    )
+    .where(
+      and(
+        today,
+        eq(chatConversations.type, "recipe"),
+        sql`coalesce(${chatMessages.metadata}->>'finderInput', 'false') <> 'true'`,
+      ),
+    );
+  const claimedGenerations = await countClaimsToday(
+    tx,
+    userId,
+    "recipe_generation",
+  );
+  const remixConvCount = await tx
+    .select({ count: sql<number>`count(DISTINCT ${chatConversations.id})` })
+    .from(chatConversations)
+    .innerJoin(
+      chatMessages,
+      eq(chatMessages.conversationId, chatConversations.id),
+    )
+    .where(
+      and(
+        eq(chatConversations.userId, userId),
+        eq(chatConversations.type, "remix"),
+        eq(chatMessages.role, "user"),
+        gte(chatConversations.createdAt, startOfDay),
+        lt(chatConversations.createdAt, endOfDay),
+      ),
+    );
   return (
     Number(legacyRecipeRows[0]?.count ?? 0) +
     claimedGenerations +
