@@ -62,9 +62,9 @@ that long conversations get summarized.
 
 `.claude/skills/todo/SKILL.md`'s "How dispatch actually resumes" note (Phase 4) states the
 mechanism directly rather than implying it, and the rolling loop persists
-`/tmp/todo-scheduler-state.json` (`{queue, running, results}`) on every change, re-reading it at
+`/tmp/todo-<session-id>/scheduler-state.json` (`{queue, running, results}`) on every change, re-reading it at
 the start of every turn rather than trusting remembered state — the same pattern Phase 0 already
-uses for its own cross-step state (`/tmp/todo-*.txt`), just as JSON instead of line-delimited
+uses for its own cross-step state (`/tmp/todo-<session-id>/*.txt`), just as JSON instead of line-delimited
 text.
 
 ## Exceptions

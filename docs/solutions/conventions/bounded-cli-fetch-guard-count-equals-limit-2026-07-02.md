@@ -29,8 +29,8 @@ At this repo's PR rate (~5.8/day at review time) the documented "comfortable" li
 
 ## Examples
 
-- `.claude/skills/todo/SKILL.md` Phase 0: one fetch to `/tmp/todo-all-prs.json`, then
-  `if [ "$(jq 'length' /tmp/todo-all-prs.json)" -eq 1000 ]` → skip branch deletion this
+- `.claude/skills/todo/SKILL.md` Phase 0: one fetch to `/tmp/todo-<session-id>/all-prs.json`, then
+  `if [ "$(jq 'length' /tmp/todo-<session-id>/all-prs.json)" -eq 1000 ]` → skip branch deletion this
   run and note it in the Phase 5 summary. The open-PR list (recent, unaffected by
   oldest-first truncation) is still kept as best-available data.
 
