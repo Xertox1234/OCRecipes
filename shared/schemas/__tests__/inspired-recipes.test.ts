@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   suggestionDraftSchema,
   createListingBodySchema,
+  listingResponseSchema,
   toSuggestion,
   SUGGESTION_DESCRIPTION_MAX,
 } from "../inspired-recipes";
@@ -56,6 +57,45 @@ describe("createListingBodySchema", () => {
     expect(createListingBodySchema.safeParse({ query: "tacos" }).success).toBe(
       true,
     );
+  });
+});
+
+describe("listingResponseSchema", () => {
+  const card = {
+    id: 7,
+    title: "Bean Tacos",
+    description: "Quick bright tacos tonight.",
+    totalMinutes: 20,
+    tags: ["quick"],
+    imageUrl: null,
+    madeRecipeId: null,
+  };
+  it("accepts a list of well-formed cards, including an empty list", () => {
+    expect(
+      listingResponseSchema.safeParse({ suggestions: [card] }).success,
+    ).toBe(true);
+    expect(listingResponseSchema.safeParse({ suggestions: [] }).success).toBe(
+      true,
+    );
+  });
+  it("rejects a missing suggestions array", () => {
+    expect(listingResponseSchema.safeParse({}).success).toBe(false);
+  });
+  it("rejects a card with a non-positive id", () => {
+    expect(
+      listingResponseSchema.safeParse({ suggestions: [{ ...card, id: 0 }] })
+        .success,
+    ).toBe(false);
+  });
+  it("rejects a card missing imageUrl or madeRecipeId", () => {
+    const { imageUrl: _i, ...noImage } = card;
+    const { madeRecipeId: _m, ...noMade } = card;
+    expect(
+      listingResponseSchema.safeParse({ suggestions: [noImage] }).success,
+    ).toBe(false);
+    expect(
+      listingResponseSchema.safeParse({ suggestions: [noMade] }).success,
+    ).toBe(false);
   });
 });
 
