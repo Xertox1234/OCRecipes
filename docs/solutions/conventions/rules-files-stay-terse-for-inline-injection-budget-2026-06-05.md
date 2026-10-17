@@ -133,8 +133,13 @@ exemptions); move the prose to a solution doc the hook auto-surfaces:
   The cap was 6,500 B until 2026-10-16, when the DISCIPLINE preamble grew a reuse ladder
   (~+600 B) and the cap dropped to 5,900 B (advisory at 5,100); the six files over it were
   consolidated the same way (security 6,369 → 5,497, client-state 6,497 → 5,627, database
-  6,496 → 5,520, harness 6,488 → 5,761, react-native 6,017 → 5,485, accessibility 5,694 → 5,043).
+  6,496 → 5,514, harness 6,488 → 5,761, react-native 6,017 → 5,485, accessibility 5,694 → 5,043).
   Its `GRANDFATHERED` exemption map is EMPTY — every rules file fits the cap.
+  Sizing fact behind that cap: the hook's deferral budget only ever applies to the SECOND and
+  later domains — the first matching domain always emits in full — so any preamble growth is
+  bounded by the largest security-/client-state-first file, never by the average edit. Measure
+  a change to the preamble against `server/routes/auth.ts` and `client/context/AuthContext.tsx`
+  (first-touch, dedup on), not against a scripts test file where the second domain already defers.
 - `docs/solutions/best-practices/security-rules-extended-rationale-2026-06-05.md` — the designated
   depth-home for `security.md`; named in that file's header so it is reachable without a ranking race.
 - `docs/rules/client-state.md` — trimmed 8.4 → 6.4 KB by consolidation (2026-07-03), the

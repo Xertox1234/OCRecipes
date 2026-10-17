@@ -24,7 +24,7 @@
  * accessibility.md 6,547 → 4,582 B with zero binding rules lost (PR #492), and
  * security.md 6,491 → 5,698 B / accessibility.md 6,479 → 5,694 B (PR #776), and the
  * six-file 2026-10-16 trim for the reuse-ladder preamble (security 6,369 → 5,497,
- * client-state 6,497 → 5,627, database 6,496 → 5,520, harness 6,488 → 5,761,
+ * client-state 6,497 → 5,627, database 6,496 → 5,514, harness 6,488 → 5,761,
  * react-native 6,017 → 5,485, accessibility 5,694 → 5,043 B).
  * NOTE: moving detail out of a rules file into a per-bullet CITATION is a
  * reachability downgrade — a rules file is embedded whole on every domain edit,
