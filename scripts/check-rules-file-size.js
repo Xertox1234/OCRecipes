@@ -10,10 +10,12 @@
  * domain). Budget derivation (2026-10-16, reuse-ladder preamble): THRESHOLD
  * 9000 − preamble ~1,900 − block header + solution refs ~840 ≈ 6,260 max rules
  * bytes for a single-domain first touch to land inline; capped at 5,900 for
- * margin. (Pre-ladder: preamble ~1,290 → cap 6,500.)
+ * margin. (Pre-ladder: preamble ~1,290 → cap 6,500.) The advisory sits 400 B
+ * under the cap: after the 2026-10-16 trim five files live at 5,0–5,8 KB by
+ * design, and an advisory that fires on every commit touching them is noise.
  *
  * TWO thresholds:
- *   WARN_BYTES 5,100 — advisory only, still exits 0. Prints remaining headroom.
+ *   WARN_BYTES 5,500 — advisory only, still exits 0. Prints remaining headroom.
  *   MAX_BYTES  5,900 — hard failure.
  * The advisory exists because the cap alone is a wall: a file sits under it for
  * months, then one codification lands on 6,501 B and the author must stop and
@@ -58,7 +60,7 @@ const MAX_BYTES = 5900;
 
 // Advisory threshold — see the header for why. Deliberately non-failing: a
 // warning that fails the build is just a second wall 800 B earlier.
-const WARN_BYTES = 5100;
+const WARN_BYTES = 5500;
 
 // The advisory window is [WARN_BYTES, cap]. Inverting the constants would make
 // the advisory branch unreachable dead code — every byte count large enough to
