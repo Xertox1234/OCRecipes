@@ -1,6 +1,6 @@
 ---
 title: "Two /todo orchestrators in parallel sessions overwrite each other's /tmp/todo-scheduler-state.json and Phase 0 lists"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-17
 updated: 2026-10-17
@@ -21,10 +21,10 @@ Phase 4 says: "Persist it instead: write `/tmp/todo-scheduler-state.json` … re
 
 ## Acceptance Criteria
 
-- [ ] Every `/tmp/todo-*` path the `/todo` skill writes is keyed by the session (e.g. `/tmp/todo-<CLAUDE_CODE_SESSION_ID>/…` or the session scratchpad directory), so two orchestrators never read or delete each other's files.
-- [ ] Phase 5's cleanup removes only this session's files.
-- [ ] `docs/todo-automation-runbook.md` and any other doc that names `/tmp/todo-scheduler-state.json` literally are updated to the new path form.
-- [ ] A short "two sessions at once" note in the skill explains that the Phase 0 worktree/branch sweep is still shared state by nature (git) and relies on `wt_in_use` + the fresh per-branch merge check — only the file-based bookkeeping moves.
+- [x] Every `/tmp/todo-*` path the `/todo` skill writes is keyed by the session (e.g. `/tmp/todo-<CLAUDE_CODE_SESSION_ID>/…` or the session scratchpad directory), so two orchestrators never read or delete each other's files.
+- [x] Phase 5's cleanup removes only this session's files.
+- [x] `docs/todo-automation-runbook.md` and any other doc that names `/tmp/todo-scheduler-state.json` literally are updated to the new path form.
+- [x] A short "two sessions at once" note in the skill explains that the Phase 0 worktree/branch sweep is still shared state by nature (git) and relies on `wt_in_use` + the fresh per-branch merge check — only the file-based bookkeeping moves.
 
 ## Implementation Notes
 
@@ -52,3 +52,7 @@ Phase 4 says: "Persist it instead: write `/tmp/todo-scheduler-state.json` … re
 ### 2026-10-17
 
 - Initial creation (deferred from the in-session run of `P3-2026-10-12-disable-mfa-concurrent-queries-on-one-transaction`, PR #1481, where the collision was observed).
+
+### 2026-10-17 (executed)
+
+- All `/tmp/todo-*` bookkeeping paths in `.claude/skills/todo/SKILL.md` now live in `$TODO_TMP=/tmp/todo-${CLAUDE_CODE_SESSION_ID}`; Phase 5 cleanup deletes only that dir's `.txt`/`.json` files. `docs/todo-automation-runbook.md` never named the path (nothing to change); two `docs/solutions/conventions/` files that did were updated.

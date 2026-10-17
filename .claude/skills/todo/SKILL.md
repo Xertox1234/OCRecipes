@@ -7,6 +7,8 @@ You are running the todo orchestrator. This workflow cleans up prior runs, triag
 
 ## Phase 0 — Cleanup Sweep
 
+> **Two `/todo` sessions at once.** File-based bookkeeping (`$TODO_TMP/…`, below and in Phases 2/4/5) is keyed by `CLAUDE_CODE_SESSION_ID`, so concurrent orchestrators never read or delete each other's lists or scheduler state. The sweep itself still acts on shared state by nature (git worktrees, branches, PRs); it stays safe via `wt_in_use` and the fresh per-branch merge check, not via the files.
+
 Before anything else, clear leftovers from previous `/todo` runs. This phase **always runs** and **never aborts** the workflow — if a step fails (e.g. `gh` is unauthenticated), report it and continue to Phase 1.
 
 1. **Force-remove leftover executor worktrees.** Executor worktrees are created _locked_, so `git worktree prune` alone silently skips them and they accumulate forever. Force-remove every one **that is not in use**: another terminal's `/todo` executor or `/todo-fast` run may be working in one right now, and `--force` would delete its uncommitted work (near-miss 2026-09-16, PR #980). `wt_in_use` below skips a worktree when ANY signal fires — (1) another session's `/tmp/claude-worktree-contracts-*/` registry lists its path and its files changed in the last 120 min, (2) its newest non-`node_modules` file changed in the last 30 min, (3) a process has its cwd inside it. It is fail-safe: a check that errors counts as in use. Do not use the worktree's `.git` file mtime or the index mtime — the first is written once at creation and git rewrites the second only on `add`/`commit`/`status`, so an agent that is editing or running tests looks idle. The process signal is a backup only: a live `Agent(isolation: "worktree")` subagent has no process between its Bash calls (each call spawns a fresh shell that exits), so the file and registry signals do the real work. Use the non-`--porcelain` form and expand a leading `~` manually — some environments proxy `git` (e.g. this project's `rtk` hook, see CLAUDE.md/RTK.md) and rewrite `--porcelain`'s output into a condensed, non-standard single-line format with `~`-shorthand paths, which breaks a `^worktree ` anchor silently (zero matches, no error) and which `read`-into-a-variable does not tilde-expand at use time:
@@ -62,11 +64,15 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    ```bash
    git fetch --prune --quiet
    CURRENT=$(git branch --show-current)
+   # Every /todo bookkeeping file lives in ONE session-keyed dir, so two orchestrators in
+   # parallel sessions never read or delete each other's files. The session id is stable
+   # across compaction. Re-declare this line in EVERY later Bash call that touches these files.
+   TODO_TMP="/tmp/todo-${CLAUDE_CODE_SESSION_ID:?CLAUDE_CODE_SESSION_ID unset}"; mkdir -p "$TODO_TMP"
    # Start clean: sweep outputs must never survive from a previous run — a skipped sweep
    # (gh failure / limit cap) would otherwise leave stale lists for later steps to trust.
-   rm -f /tmp/todo-open-prs.txt /tmp/todo-delete-branches.txt /tmp/todo-closed-unmerged-branches.txt \
-     /tmp/todo-local-branches.txt /tmp/todo-delete-local-branches.txt /tmp/todo-local-closed-unmerged-branches.txt \
-     /tmp/todo-local-no-pr-branches.txt /tmp/todo-delete-skipped.txt /tmp/todo-scheduler-state.json
+   rm -f "${TODO_TMP:?}/open-prs.txt" "${TODO_TMP:?}/delete-branches.txt" "${TODO_TMP:?}/closed-unmerged-branches.txt" \
+     "${TODO_TMP:?}/local-branches.txt" "${TODO_TMP:?}/delete-local-branches.txt" "${TODO_TMP:?}/local-closed-unmerged-branches.txt" \
+     "${TODO_TMP:?}/local-no-pr-branches.txt" "${TODO_TMP:?}/delete-skipped.txt" "${TODO_TMP:?}/scheduler-state.json"
    # ONE fetch of every todo/* PR; the open/merged/closed views below derive from it.
    # `head:todo/` matches head branches starting with "todo/" (measured 2026-09-28: 493
    # PRs, set-equal to a full `gh api --paginate` listing filtered to todo/). An unfiltered
@@ -75,80 +81,80 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    # the ones the sweep needs. If the returned count EQUALS the limit, treat the sweep as
    # unreliable: keep the open-PR list (best available data for Phase 2) but skip branch
    # deletion this run and note the skip in the Phase 5 summary.
-   gh pr list --state all --search "head:todo/" --limit 1000 --json headRefName,state > /tmp/todo-all-prs.json \
-     || { rm -f /tmp/todo-all-prs.json; echo "gh pr list failed — step SKIPPED"; }
-   if [ -s /tmp/todo-all-prs.json ]; then
-     jq -r '.[] | select(.state=="OPEN")   | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-open-prs.txt
-     if [ "$(jq 'length' /tmp/todo-all-prs.json)" -eq 1000 ]; then
+   gh pr list --state all --search "head:todo/" --limit 1000 --json headRefName,state > $TODO_TMP/all-prs.json \
+     || { rm -f "${TODO_TMP:?}/all-prs.json"; echo "gh pr list failed — step SKIPPED"; }
+   if [ -s $TODO_TMP/all-prs.json ]; then
+     jq -r '.[] | select(.state=="OPEN")   | .headRefName' $TODO_TMP/all-prs.json | sort -u > $TODO_TMP/open-prs.txt
+     if [ "$(jq 'length' $TODO_TMP/all-prs.json)" -eq 1000 ]; then
        echo "PR fetch hit the --limit cap — sweep unreliable; skipping branch deletion this run"
      else
-       jq -r '.[] | select(.state=="MERGED") | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-merged-prs.txt
-       jq -r '.[] | select(.state=="CLOSED") | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-closed-prs.txt
+       jq -r '.[] | select(.state=="MERGED") | .headRefName' $TODO_TMP/all-prs.json | sort -u > $TODO_TMP/merged-prs.txt
+       jq -r '.[] | select(.state=="CLOSED") | .headRefName' $TODO_TMP/all-prs.json | sort -u > $TODO_TMP/closed-prs.txt
        # Shared gate: given a sorted branch-list file, print only entries whose PRs are ALL
        # merged (no open PR, no closed-unmerged PR) — used for both remote and local refs
        # below so the two sweeps can't drift out of sync with each other.
        merged_only() {
-         comm -12 /tmp/todo-merged-prs.txt "$1" | comm -23 - /tmp/todo-open-prs.txt | comm -23 - /tmp/todo-closed-prs.txt
+         comm -12 $TODO_TMP/merged-prs.txt "$1" | comm -23 - $TODO_TMP/open-prs.txt | comm -23 - $TODO_TMP/closed-prs.txt
        }
        git branch -r --format='%(refname:short)' | sed 's#^origin/##' | grep '^todo/' \
-         | grep -vxE "HEAD|main|${CURRENT:-main}" | sort -u > /tmp/todo-remote-branches.txt
+         | grep -vxE "HEAD|main|${CURRENT:-main}" | sort -u > $TODO_TMP/remote-branches.txt
        # Delete only all-MERGED branches: ≥1 merged PR, no open PR, no closed-unmerged PR.
-       merged_only /tmp/todo-remote-branches.txt > /tmp/todo-delete-branches.txt
+       merged_only $TODO_TMP/remote-branches.txt > $TODO_TMP/delete-branches.txt
        # Closed WITHOUT merging and no open PR = a rejected implementation — never sweep
        # it silently; carry this list to the Phase 5 attention section.
-       comm -12 /tmp/todo-closed-prs.txt /tmp/todo-remote-branches.txt \
-         | comm -23 - /tmp/todo-open-prs.txt > /tmp/todo-closed-unmerged-branches.txt
-       if [ -s /tmp/todo-delete-branches.txt ]; then
+       comm -12 $TODO_TMP/closed-prs.txt $TODO_TMP/remote-branches.txt \
+         | comm -23 - $TODO_TMP/open-prs.txt > $TODO_TMP/closed-unmerged-branches.txt
+       if [ -s $TODO_TMP/delete-branches.txt ]; then
          # The snapshot only SELECTS candidates. A FRESH per-branch check gates each
          # actual delete — the snapshot can go stale mid-run (the PR #520 incident
          # class: a branch merged-in-snapshot can have a new open PR by delete time).
-         : > /tmp/todo-delete-skipped.txt
+         : > $TODO_TMP/delete-skipped.txt
          while read -r b; do
            if bash scripts/verify-branch-merged.sh "$b"; then
              git push origin --delete "$b"
            else
-             echo "$b" >> /tmp/todo-delete-skipped.txt
+             echo "$b" >> $TODO_TMP/delete-skipped.txt
            fi
-         done < /tmp/todo-delete-branches.txt
+         done < $TODO_TMP/delete-branches.txt
          git fetch --prune --quiet
        fi
        # Local branch cleanup — mirror the remote sweep for local todo/* refs. `git worktree
        # remove` (step 1) leaves the branch ref, and guard-eligible PRs auto-merge with
        # --delete-branch, so the local todo/<slug> is usually the SOLE survivor and is NOT in
-       # /tmp/todo-remote-branches.txt. Join LOCAL branches against MERGED PRs (PRs outlive
+       # $TODO_TMP/remote-branches.txt. Join LOCAL branches against MERGED PRs (PRs outlive
        # their deleted branches). Same gate as remote: all-MERGED only, never
        # current/open/closed-unmerged.
        git branch --list 'todo/*' --format='%(refname:short)' \
-         | grep -vxF "${CURRENT:-x}" | sort -u > /tmp/todo-local-branches.txt
-       merged_only /tmp/todo-local-branches.txt > /tmp/todo-delete-local-branches.txt
-       if [ -s /tmp/todo-delete-local-branches.txt ]; then
+         | grep -vxF "${CURRENT:-x}" | sort -u > $TODO_TMP/local-branches.txt
+       merged_only $TODO_TMP/local-branches.txt > $TODO_TMP/delete-local-branches.txt
+       if [ -s $TODO_TMP/delete-local-branches.txt ]; then
          while read -r b; do
            bash scripts/verify-branch-merged.sh "$b" \
-             || { echo "$b" >> /tmp/todo-delete-skipped.txt; continue; }
+             || { echo "$b" >> $TODO_TMP/delete-skipped.txt; continue; }
            out=$(git branch -D "$b" 2>&1) && echo "deleted local branch: $b" \
              || { echo "$out" | grep -qE "checked out at|used by worktree at" || echo "WARNING: could not delete local branch $b: $out"; }
-         done < /tmp/todo-delete-local-branches.txt
+         done < $TODO_TMP/delete-local-branches.txt
        fi
        # Local closed-unmerged (rejection signal) — mirrors the remote check above. Never
        # auto-delete it, but DO surface it in Phase 5, or a local-only rejection signal
        # (its remote branch may already be gone) silently vanishes with no trace at all.
-       comm -12 /tmp/todo-closed-prs.txt /tmp/todo-local-branches.txt \
-         | comm -23 - /tmp/todo-open-prs.txt > /tmp/todo-local-closed-unmerged-branches.txt
+       comm -12 $TODO_TMP/closed-prs.txt $TODO_TMP/local-branches.txt \
+         | comm -23 - $TODO_TMP/open-prs.txt > $TODO_TMP/local-closed-unmerged-branches.txt
        # No PR at all, in ANY state — a genuine orphan: the executor renamed its worktree
        # branch to todo/<slug> at Step 10, but the process crashed or the push/`gh pr
        # create` call failed before any PR ever existed. Never auto-delete or auto-push
        # it — it might be genuine in-flight work — only detect and surface in Phase 5.
-       sort -u /tmp/todo-merged-prs.txt /tmp/todo-open-prs.txt /tmp/todo-closed-prs.txt \
-         > /tmp/todo-all-pr-branches.txt
-       comm -23 /tmp/todo-local-branches.txt /tmp/todo-all-pr-branches.txt \
-         > /tmp/todo-local-no-pr-branches.txt
+       sort -u $TODO_TMP/merged-prs.txt $TODO_TMP/open-prs.txt $TODO_TMP/closed-prs.txt \
+         > $TODO_TMP/all-pr-branches.txt
+       comm -23 $TODO_TMP/local-branches.txt $TODO_TMP/all-pr-branches.txt \
+         > $TODO_TMP/local-no-pr-branches.txt
      fi
    fi
    ```
 
    If the `gh` call fails (unavailable, unauthenticated, network), the block above deletes the temp file and this step is **SKIPPED** — no stale `/tmp` lists survive for later phases to trust, no branch deletion happens, and Phase 2 fetches its own open-PR list (worktree cleanup in step 1 still ran). Continue.
 
-3. **Report** what was cleaned: count of worktrees removed, any `skipped worktree (in use)` lines verbatim, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `/tmp/todo-closed-unmerged-branches.txt`, `/tmp/todo-local-closed-unmerged-branches.txt`, `/tmp/todo-local-no-pr-branches.txt`, or `/tmp/todo-delete-skipped.txt` (branches whose FRESH merge-state check failed at delete time) is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
+3. **Report** what was cleaned: count of worktrees removed, any `skipped worktree (in use)` lines verbatim, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `$TODO_TMP/closed-unmerged-branches.txt`, `$TODO_TMP/local-closed-unmerged-branches.txt`, `$TODO_TMP/local-no-pr-branches.txt`, or `$TODO_TMP/delete-skipped.txt` (branches whose FRESH merge-state check failed at delete time) is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
 
 4. **Sync the local default branch (`main`).** PRs from prior runs land via auto-merge or the user's review (possibly from another session), so those todos may already be archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
 
@@ -246,7 +252,7 @@ Build the work queue from the `todos/` backlog.
 
    > **Stuck todos**: If any file has `status: in-progress`, it was left mid-run by a crashed executor and is being skipped. To re-queue it, manually edit its frontmatter to `status: backlog` and re-run `/todo`.
 
-   **Awaiting merge (skip).** A completed todo's archive move rides its unmerged PR branch, so the local `todos/*.md` still says `backlog` until that PR merges (auto-merge or the user's review) — triage must not re-pick it. Reuse **this run's** open-PR list from Phase 0 step 2 (`/tmp/todo-open-prs.txt`); only if Phase 0's gh step was skipped, fetch it now (`gh pr list --state open --limit 1000 --json headRefName --jq '.[].headRefName' | sort -u > /tmp/todo-open-prs.txt` — never trust a `/tmp` file left by a previous run; Phase 0 rewrites or deletes it every run precisely so this step can trust it). Skip any actionable todo whose slug (filename minus `.md`) **exactly matches** an open `todo/<branch-slug>` branch — executors are required to use the exact filename slug as the branch name, so exact match is the only join. A match means the todo is already implemented and its PR is awaiting merge; re-dispatching would re-implement it and collide with its own open PR. Carry the skipped set (with each todo's PR branch) in orchestrator state and list it in the Phase 5 summary under "Awaiting merge". If the list cannot be fetched at all, continue without this check (the executor's Step 2 remote-branch probe and Step 10 push-collision triage are the downstream backstops).
+   **Awaiting merge (skip).** A completed todo's archive move rides its unmerged PR branch, so the local `todos/*.md` still says `backlog` until that PR merges (auto-merge or the user's review) — triage must not re-pick it. Reuse **this run's** open-PR list from Phase 0 step 2 (`$TODO_TMP/open-prs.txt`, with `TODO_TMP="/tmp/todo-${CLAUDE_CODE_SESSION_ID:?}"` re-declared in that Bash call); only if Phase 0's gh step was skipped, fetch it now (`mkdir -p "$TODO_TMP"; gh pr list --state open --limit 1000 --json headRefName --jq '.[].headRefName' | sort -u > $TODO_TMP/open-prs.txt` — never trust a file left in the session dir by a previous run; Phase 0 rewrites or deletes it every run precisely so this step can trust it). Skip any actionable todo whose slug (filename minus `.md`) **exactly matches** an open `todo/<branch-slug>` branch — executors are required to use the exact filename slug as the branch name, so exact match is the only join. A match means the todo is already implemented and its PR is awaiting merge; re-dispatching would re-implement it and collide with its own open PR. Carry the skipped set (with each todo's PR branch) in orchestrator state and list it in the Phase 5 summary under "Awaiting merge". If the list cannot be fetched at all, continue without this check (the executor's Step 2 remote-branch probe and Step 10 push-collision triage are the downstream backstops).
 
 3a. **Gate check (date / human-led) — status-independent, no override in this path.** Run once for the whole backlog, in scan mode (no argument):
 
@@ -366,11 +372,11 @@ Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition
 
 Dispatched agents run in the **background**. Launching them does not block your current turn, and there is no in-turn way to wait for one to finish — do not poll, sleep, or reach for a scheduling tool to "wait." Instead: after dispatching, your turn simply ends (respond to the user, or just stop). Later, when ONE dispatched agent completes, the harness re-invokes you as a **new turn** carrying that agent's result — never when the whole running set finishes, only ever one at a time. The loop below is written around that: each numbered pass through step 2 is a separate turn, not a step inside one long turn.
 
-**Because the run now spans many turns instead of one barrier per batch, don't rely on conversational memory for the queue/running/results state — a long run can have its earlier context summarized away.** Persist it instead: write `/tmp/todo-scheduler-state.json` (`{"queue": [...], "running": [...], "results": [...]}`) every time any of the three changes, and re-read it at the start of each turn below rather than trusting what you remember — this applies as much to each completed todo's recorded outcome (needed for Phase 5's summary table) as it does to the queue and running set. This is the same pattern Phase 0 already uses for cross-step state (`/tmp/todo-*.txt`), just as JSON.
+**Because the run now spans many turns instead of one barrier per batch, don't rely on conversational memory for the queue/running/results state — a long run can have its earlier context summarized away.** Persist it instead: write `$TODO_TMP/scheduler-state.json` (`{"queue": [...], "running": [...], "results": [...]}`) every time any of the three changes, and re-read it at the start of each turn below rather than trusting what you remember — this applies as much to each completed todo's recorded outcome (needed for Phase 5's summary table) as it does to the queue and running set. This is the same pattern Phase 0 already uses for cross-step state (`$TODO_TMP/*.txt`), just as JSON. The path is session-keyed — `TODO_TMP="/tmp/todo-${CLAUDE_CODE_SESSION_ID:?}"`, re-declared (with `mkdir -p "$TODO_TMP"`) in every Bash call that touches it — so a second `/todo` run in another session cannot overwrite it; the session id survives compaction, so you always re-find your own file.
 
 ### The rolling loop
 
-1. **Seed dispatch.** Write the full queue (from Phase 3) and an empty running set to `/tmp/todo-scheduler-state.json`, then call the scheduler with that same state:
+1. **Seed dispatch.** Write the full queue (from Phase 3) and an empty running set to `$TODO_TMP/scheduler-state.json`, then call the scheduler with that same state:
 
    ```bash
    npx tsx scripts/todo-scheduler.ts <<'EOF'
@@ -378,9 +384,9 @@ Dispatched agents run in the **background**. Launching them does not block your 
    EOF
    ```
 
-   The script prints the JSON array of queue items eligible to dispatch now. Launch one `Agent()` call per item — all in the same message — using the dispatch block above, move each dispatched item from `queue` into `running` in `/tmp/todo-scheduler-state.json`, and save it. Then end your turn.
+   The script prints the JSON array of queue items eligible to dispatch now. Launch one `Agent()` call per item — all in the same message — using the dispatch block above, move each dispatched item from `queue` into `running` in `$TODO_TMP/scheduler-state.json`, and save it. Then end your turn.
 
-2. **On each wake-up** (a task-notification carrying one completed executor's result — see "How dispatch actually resumes" above): re-read `/tmp/todo-scheduler-state.json` first, don't assume your own memory of it is still accurate. Then:
+2. **On each wake-up** (a task-notification carrying one completed executor's result — see "How dispatch actually resumes" above): re-read `$TODO_TMP/scheduler-state.json` first, don't assume your own memory of it is still accurate. Then:
    a. **Record its result** exactly as described under "Recording results" below, appending it to `results` in the state file.
    b. **Remove that todo's worktree immediately**, using the `WORKTREE` path from its report (every report shape carries one — see `todo-executor.md` Step 11):
    ```bash
@@ -390,17 +396,17 @@ Dispatched agents run in the **background**. Launching them does not block your 
    Do this for every outcome — success, failed, blocked, and skipped all get their worktree torn down the same way, immediately, rather than waiting for Phase 5.
    c. Drop it from `running` in the state file.
    d. Call the scheduler again with the updated `running` and remaining `queue` from the state file (same shape as step 1); dispatch whatever it returns, move each newly-dispatched item from `queue` into `running`, save the state file, then end your turn again.
-3. **Repeat step 2** — each occurrence is a separate turn — until the state file shows both `queue` and `running` empty, then proceed to Phase 5. **Do not delete `/tmp/todo-scheduler-state.json` yet** — Phase 5 reads `results` from it first and deletes it as part of its own cleanup.
+3. **Repeat step 2** — each occurrence is a separate turn — until the state file shows both `queue` and `running` empty, then proceed to Phase 5. **Do not delete `$TODO_TMP/scheduler-state.json` yet** — Phase 5 reads `results` from it first and deletes it as part of its own cleanup.
 
 ### Recording results
 
-Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped; `lightweight — docs/config-only files` if the Lightweight path skipped it instead; else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), `DEFERRED_WARNINGS`, and `NOT_CHECKED` (what the change skipped or did not verify — behaviour, platforms, edge cases — or `none`). Keep the `DEFERRED_WARNINGS` and `NOT_CHECKED` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. These accumulate in `/tmp/todo-scheduler-state.json`'s `results` array as they arrive, rather than per batch — Phase 5 reads that array rather than relying on memory of the whole run.
+Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped; `lightweight — docs/config-only files` if the Lightweight path skipped it instead; else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), `DEFERRED_WARNINGS`, and `NOT_CHECKED` (what the change skipped or did not verify — behaviour, platforms, edge cases — or `none`). Keep the `DEFERRED_WARNINGS` and `NOT_CHECKED` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. These accumulate in `$TODO_TMP/scheduler-state.json`'s `results` array as they arrive, rather than per batch — Phase 5 reads that array rather than relying on memory of the whole run.
 
 ## Phase 5 — Session Summary
 
 **First, release all worktree contracts:** run `bash scripts/declare-worktree.sh --clear`. Executors declare their worktrees at Step 0 and remove them at Step 11, but a crashed executor leaves a stale registry entry — and while ANY entry exists, the PreToolUse guards deny YOUR main-checkout git operations (reconciliation, archiving, branch cleanup). `--clear` is idempotent and safe here: all executors have returned by Phase 5.
 
-**Then load the accumulated run results:** read `results` from `/tmp/todo-scheduler-state.json` (Phase 4) rather than relying on memory of the whole run — this is the authoritative per-todo outcome list for the summary table below. Once read, delete the file: `rm -f /tmp/todo-scheduler-state.json`.
+**Then load the accumulated run results:** read `results` from `$TODO_TMP/scheduler-state.json` (Phase 4) rather than relying on memory of the whole run — this is the authoritative per-todo outcome list for the summary table below. Once read, delete only this session's files: `TODO_TMP="/tmp/todo-${CLAUDE_CODE_SESSION_ID:?}"; find "${TODO_TMP:?}" -maxdepth 1 -type f \( -name '*.txt' -o -name '*.json' \) -delete; rmdir "${TODO_TMP:?}" 2>/dev/null` (`find`, not a `*.txt` glob: zsh aborts `rm` on a glob with no match) (never a bare `/tmp/todo-*` glob — that would hit another session's live state).
 
 After the queue is fully drained (or after early termination):
 
@@ -458,7 +464,7 @@ After the queue is fully drained (or after early termination):
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading. Append each executor's non-`none` `NOT_CHECKED` value to the SAME list as one line per todo, `<todo slug> — not checked: <value>` — under the same heading, never a new listing group (producer contract above).
 
-   Then **surface actionable blocks.** Dependency-blocks (`REASON_CODE: DEPENDENCY_GATED`) do NOT resolve on their own — route each into the gated listings above ("Gated on a pending PR" if the dependency's PR is open; "Gated on a dependency (not yet implemented)" if it has none). If a `blocked` result carries `REASON_CODE: ORPHAN_BRANCH`, `PR_CHECK_FAILED`, or `PR_CLOSED_UNMERGED` (legacy fallback: its REASON contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears it (the executor's reason includes the exact steps). Do NOT bury it as an ordinary dependency row. In the same section, also print any closed-unmerged `todo/*` branches Phase 0 found, both remote (`/tmp/todo-closed-unmerged-branches.txt`) and local (`/tmp/todo-local-closed-unmerged-branches.txt`) — each is a rejection signal (its PR was closed without merging); the user decides whether the todo is still wanted. Also print any local `todo/*` branches with NO PR in any state that Phase 0 found (`/tmp/todo-local-no-pr-branches.txt`) — each is a possible orphan from an interrupted executor run (the branch was renamed to `todo/<slug>` at Step 10 but the process crashed, or the push/`gh pr create` call failed, before any PR ever existed); Phase 0 never deletes or pushes these, so the user should inspect each one and either push it and open a PR manually, or delete the local branch if the work is abandoned. Also print any `WARNING:` line Phase 0 echoed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere) verbatim — the branch needs manual inspection. And note if Phase 0 skipped the branch sweep (gh failure or the `--limit` cap).
+   Then **surface actionable blocks.** Dependency-blocks (`REASON_CODE: DEPENDENCY_GATED`) do NOT resolve on their own — route each into the gated listings above ("Gated on a pending PR" if the dependency's PR is open; "Gated on a dependency (not yet implemented)" if it has none). If a `blocked` result carries `REASON_CODE: ORPHAN_BRANCH`, `PR_CHECK_FAILED`, or `PR_CLOSED_UNMERGED` (legacy fallback: its REASON contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears it (the executor's reason includes the exact steps). Do NOT bury it as an ordinary dependency row. In the same section, also print any closed-unmerged `todo/*` branches Phase 0 found, both remote (`$TODO_TMP/closed-unmerged-branches.txt`) and local (`$TODO_TMP/local-closed-unmerged-branches.txt`) — each is a rejection signal (its PR was closed without merging); the user decides whether the todo is still wanted. Also print any local `todo/*` branches with NO PR in any state that Phase 0 found (`$TODO_TMP/local-no-pr-branches.txt`) — each is a possible orphan from an interrupted executor run (the branch was renamed to `todo/<slug>` at Step 10 but the process crashed, or the push/`gh pr create` call failed, before any PR ever existed); Phase 0 never deletes or pushes these, so the user should inspect each one and either push it and open a PR manually, or delete the local branch if the work is abandoned. Also print any `WARNING:` line Phase 0 echoed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere) verbatim — the branch needs manual inspection. And note if Phase 0 skipped the branch sweep (gh failure or the `--limit` cap).
 
 5. **Print verification result:**
 
