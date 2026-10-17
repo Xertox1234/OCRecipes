@@ -378,41 +378,41 @@ export async function deleteCommunityRecipe(
       });
     if (result.length === 0) return null;
 
-    // Clean up junction rows that referenced this recipe
-    await Promise.all([
-      tx
-        .delete(cookbookRecipes)
-        .where(
-          and(
-            eq(cookbookRecipes.recipeId, recipeId),
-            eq(cookbookRecipes.recipeType, "community"),
-          ),
+    // Clean up junction rows that referenced this recipe — one query at a
+    // time: a transaction has one connection, and pg@9 removes the queue
+    // that today lets Promise.all'd queries share it.
+    await tx
+      .delete(cookbookRecipes)
+      .where(
+        and(
+          eq(cookbookRecipes.recipeId, recipeId),
+          eq(cookbookRecipes.recipeType, "community"),
         ),
-      tx
-        .delete(favouriteRecipes)
-        .where(
-          and(
-            eq(favouriteRecipes.recipeId, recipeId),
-            eq(favouriteRecipes.recipeType, "community"),
-          ),
+      );
+    await tx
+      .delete(favouriteRecipes)
+      .where(
+        and(
+          eq(favouriteRecipes.recipeId, recipeId),
+          eq(favouriteRecipes.recipeType, "community"),
         ),
-      tx
-        .delete(savedItems)
-        .where(
-          and(
-            eq(savedItems.recipeId, recipeId),
-            eq(savedItems.recipeType, "community"),
-          ),
+      );
+    await tx
+      .delete(savedItems)
+      .where(
+        and(
+          eq(savedItems.recipeId, recipeId),
+          eq(savedItems.recipeType, "community"),
         ),
-      tx
-        .delete(recipeDismissals)
-        .where(
-          and(
-            eq(recipeDismissals.recipeIdentifier, String(recipeId)),
-            eq(recipeDismissals.source, "community"),
-          ),
+      );
+    await tx
+      .delete(recipeDismissals)
+      .where(
+        and(
+          eq(recipeDismissals.recipeIdentifier, String(recipeId)),
+          eq(recipeDismissals.source, "community"),
         ),
-    ]);
+      );
     return result[0];
   });
 

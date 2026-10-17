@@ -1,9 +1,9 @@
 ---
 title: "Four storage functions run several queries at once on one transaction client — pg@9 will refuse it"
-status: backlog
+status: done
 priority: low
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-17
 assignee:
 labels: [deferred, database, auth]
 github_issue:
@@ -70,3 +70,7 @@ Deferred because it was out of scope: the session was recovering the owner's two
 
 - Initial creation
 - Widened from `disableMfa` alone to four sites after the PR #1397 review.
+
+### 2026-10-17
+
+- Done. All four sites now await their `tx` queries in turn; a new test (`server/storage/__tests__/tx-sequential-queries.test.ts`) counts in-flight fake queries and pins each function at one. The any-position re-scan of `server/` found no further site; `favourite-recipes.ts` (one `tx` + one `db`) stays as is. The `docs/rules/database.md` bullet that mandated `Promise.all` inside transactions was narrowed to pool `db` reads.

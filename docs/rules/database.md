@@ -6,7 +6,7 @@
 - Polymorphic FK always carries a discriminator column (e.g. `recipeType`) alongside the FK — never a bare `recipeId`. Polymorphic batch fetch: collect IDs first, batch with `.inArray()`, resolve with a `Map` — never loop-query
 - Never store large blobs (images, receipts > 1 KB) in DB columns — use object storage (Cloudflare R2)
 - Multi-phase background jobs: the eligibility query must catch phase-1-complete + phase-2-incomplete as a retriable state, not a dead end
-- Inside transactions run parallel queries with `Promise.all`, never sequential `await`. Never re-query after an insert to build the response — construct it from the insert params + returned id
+- On one transaction client (`tx`), `await` queries one after another — pg queues concurrent ones on its single connection and pg@9 removes the queue. `Promise.all` only across pool `db` reads. Never re-query after an insert to build the response — construct it from the insert params + returned id
 - Replace-by-DELETE-then-INSERT: dedupe the input with `[...new Set(ids)]` before insert when removing `onConflictDoNothing` — DELETE alone does not prevent duplicate-row failures on a `(userId, x)` unique constraint when caller-supplied ids repeat
 - Never accept a filter parameter in a storage function's signature that the SQL does not consume — a silently dropped filter causes downstream personalization/label bugs
 - Never interpolate a JS array into a raw `sql` template inside `ANY()`/`IN (...)` — it binds as a scalar and PG throws "malformed array literal"; use `inArray(col, arr)` from `drizzle-orm`
