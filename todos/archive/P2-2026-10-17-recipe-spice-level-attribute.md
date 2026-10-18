@@ -1,6 +1,6 @@
 ---
 title: "Spice level icon for recipes (mild / medium / hot)"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-17
 updated: 2026-10-17
