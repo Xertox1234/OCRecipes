@@ -826,7 +826,7 @@ function getSubstituteModifierPattern(keyword: string): RegExp {
  * of that allergen, so it does NOT match. The substitute's own allergen still
  * matches through its own keyword.
  */
-function ingredientContainsKeyword(
+export function ingredientContainsKeyword(
   lowerIngredient: string,
   keyword: string,
 ): boolean {
