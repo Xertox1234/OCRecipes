@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
@@ -27,8 +28,11 @@ import {
   useHasUnreadCoachReply,
 } from "@/hooks/useCoachUnreadReplies";
 import {
+  setHeldRecipeDraft,
   subscribeToGeneratedRecipeReady,
+  subscribeToRecipeDraftReady,
   useHasUnreadGeneratedRecipe,
+  type HeldRecipeDraft,
 } from "@/hooks/useGeneratedRecipeNotices";
 import { navigationRef } from "@/navigation/navigationRef";
 import {
@@ -183,6 +187,62 @@ function GeneratedRecipeToastBridge(): null {
         });
       }),
     [toast],
+  );
+
+  return null;
+}
+
+/**
+ * Open the recipe editor prefilled with a held meal-plan draft, from anywhere.
+ * `RecipeCreate` is NESTED (Main → MealPlanTab → RecipeCreate), so the route
+ * is spelled out with `pop: true` at both levels, exactly like
+ * `openCoachConversation` above. The held draft is released only once the
+ * navigation actually went out — a tap before the container is ready keeps
+ * it for the banner on the generate screen.
+ */
+export function openRecipeCreate(
+  queryClient: QueryClient,
+  draft: HeldRecipeDraft,
+): void {
+  if (!navigationRef.isReady()) return;
+  navigationRef.navigate(
+    "Main",
+    {
+      screen: "MealPlanTab",
+      params: {
+        screen: "RecipeCreate",
+        params: {
+          prefill: draft.prefill,
+          returnToMealPlan: draft.returnToMealPlan,
+        },
+        pop: true,
+      },
+    },
+    { pop: true },
+  );
+  setHeldRecipeDraft(queryClient, null);
+}
+
+/**
+ * "Your meal-plan draft is ready" → toast with a Review action. The draft is
+ * held on the device (nothing is saved server-side), so a missed toast is
+ * covered by the banner on RecipeAIGenerateScreen. Renders nothing.
+ */
+function RecipeDraftToastBridge(): null {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+
+  useEffect(
+    () =>
+      subscribeToRecipeDraftReady((draft) => {
+        toast.info("Recipe draft ready — tap to review", {
+          action: {
+            label: "Review",
+            onPress: () => openRecipeCreate(queryClient, draft),
+          },
+        });
+      }),
+    [toast, queryClient],
   );
 
   return null;
@@ -386,6 +446,7 @@ export default function MainTabNavigator() {
       </View>
       <CoachReplyToastBridge />
       <GeneratedRecipeToastBridge />
+      <RecipeDraftToastBridge />
       <ScanFAB menuOpen={menuOpen} onOpen={openMenu} onClose={closeMenu} />
     </View>
   );

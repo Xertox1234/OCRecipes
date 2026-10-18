@@ -21,9 +21,13 @@ import {
 } from "@/hooks/useCoachUnreadReplies";
 import {
   clearAllGeneratedRecipesUnread,
+  getHeldRecipeDraft,
   markGeneratedRecipeUnread,
   noteGeneratedRecipeReady,
+  noteRecipeDraftReady,
+  type HeldRecipeDraft,
 } from "@/hooks/useGeneratedRecipeNotices";
+import type { ImportedRecipeData } from "@shared/types/recipe-import";
 import MainTabNavigator from "../MainTabNavigator";
 import { getChatRouteId } from "../chatRouteId";
 
@@ -711,6 +715,93 @@ describe("MainTabNavigator — generated recipe toast bridge", () => {
     unmount();
 
     noteGeneratedRecipeReady(queryClient, 42);
+    await settle();
+
+    expect(mockToast.info).not.toHaveBeenCalled();
+  });
+});
+
+// A meal-plan draft generated in the background (spec §5b): the toast offers
+// Review, which opens RecipeCreate prefilled. RecipeCreate is NESTED (Main →
+// MealPlanTab → RecipeCreate), so the route is spelled out with pop at both
+// levels, like the Coach bridge above.
+describe("MainTabNavigator — recipe draft toast bridge", () => {
+  const MESSAGE = "Recipe draft ready — tap to review";
+  const draft: HeldRecipeDraft = {
+    prefill: { title: "Lemon Soup" } as unknown as ImportedRecipeData,
+    returnToMealPlan: { mealType: "dinner", plannedDate: "2026-10-20" },
+  };
+
+  function reviewAction() {
+    const [, options] = mockToast.info.mock.calls[0] as [
+      string,
+      { action: { label: string; onPress: () => void } },
+    ];
+    return options.action;
+  }
+
+  it("shows 'Recipe draft ready — tap to review' with a Review action when a draft lands", async () => {
+    const { queryClient } = renderWithClient();
+
+    act(() => {
+      noteRecipeDraftReady(queryClient, draft);
+    });
+    await settle();
+
+    expect(mockToast.info).toHaveBeenCalledOnce();
+    expect(mockToast.info).toHaveBeenCalledWith(MESSAGE, {
+      action: { label: "Review", onPress: expect.any(Function) },
+    });
+  });
+
+  it("Review spells out Main → MealPlanTab → RecipeCreate with pop at both levels and clears the held draft", async () => {
+    const { queryClient } = renderWithClient();
+    act(() => {
+      noteRecipeDraftReady(queryClient, draft);
+    });
+    await settle();
+    expect(getHeldRecipeDraft(queryClient)).toEqual(draft);
+
+    reviewAction().onPress();
+
+    expect(mockNavigationRef.navigate).toHaveBeenCalledOnce();
+    expect(mockNavigationRef.navigate).toHaveBeenCalledWith(
+      "Main",
+      {
+        screen: "MealPlanTab",
+        params: {
+          screen: "RecipeCreate",
+          params: {
+            prefill: draft.prefill,
+            returnToMealPlan: draft.returnToMealPlan,
+          },
+          pop: true,
+        },
+      },
+      { pop: true },
+    );
+    expect(getHeldRecipeDraft(queryClient)).toBeNull();
+  });
+
+  it("does not navigate (and keeps the draft) before the navigation container is ready", async () => {
+    mockNavigationRef.isReady.mockReturnValue(false);
+    const { queryClient } = renderWithClient();
+    act(() => {
+      noteRecipeDraftReady(queryClient, draft);
+    });
+    await settle();
+
+    reviewAction().onPress();
+
+    expect(mockNavigationRef.navigate).not.toHaveBeenCalled();
+    expect(getHeldRecipeDraft(queryClient)).toEqual(draft);
+  });
+
+  it("stops listening once the tab navigator unmounts", async () => {
+    const { queryClient, unmount } = renderWithClient();
+    unmount();
+
+    noteRecipeDraftReady(queryClient, draft);
     await settle();
 
     expect(mockToast.info).not.toHaveBeenCalled();
