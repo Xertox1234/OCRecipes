@@ -68,6 +68,11 @@ describe.each(DAIRY_CASES)("%s forbidden terms", (id) => {
     "2 tbsp butter",
     "100 g milk chocolate",
     "1 cup milk",
+    // Substring collisions: a plant word must match as a WORD, so "goat"
+    // does not borrow "oat", "doughnut" does not borrow "nut".
+    "1 cup goat milk",
+    "2 tbsp goat cream",
+    "1 doughnut milk glaze",
   ])("still fails a dairy ingredient: %s", (line) => {
     const result = runAssertions(recipeWith(line), assertions);
     expect(result.passed).toBe(false);

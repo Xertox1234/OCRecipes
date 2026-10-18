@@ -11,7 +11,7 @@
       "mustHaveMinIngredients": 3,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?(?!-free)\\b|(?<!almond |coconut |oat |soy |soya |cashew |rice |hemp |pea |plant |nut |dairy-free |non-dairy )\\bmilk\\b|(?<!peanut |almond |cashew |nut |seed |sunflower |cocoa |apple |shea )\\bbutter\\b|(?<!coconut |cashew |oat |soy |soya |plant |dairy-free |non-dairy )\\bcream\\b|\\bcheese\\b|honey|gelatin"
+        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?(?!-free)\\b|(?<!\\balmond |\\bcoconut |\\boat |\\bsoy |\\bsoya |\\bcashew |\\brice |\\bhemp |\\bpea |\\bplant |\\bnut |\\bdairy-free |\\bnon-dairy )\\bmilk\\b|(?<!\\bpeanut |\\balmond |\\bcashew |\\bnut |\\bseed |\\bsunflower |\\bcocoa |\\bapple |\\bshea )\\bbutter\\b|(?<!\\bcoconut |\\bcashew |\\boat |\\bsoy |\\bsoya |\\bplant |\\bdairy-free |\\bnon-dairy )\\bcream\\b|\\bcheese\\b|honey|gelatin"
       ]
     },
     "scoreDimensions": [
@@ -131,7 +131,7 @@
       "mustHaveMinIngredients": 3,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "(?<!peanut |almond |cashew |nut |seed |sunflower |cocoa |apple |shea )\\bbutter\\b|(?<!almond |coconut |oat |soy |soya |cashew |rice |hemp |pea |plant |nut |dairy-free |non-dairy )\\bmilk\\b|(?<!coconut |cashew |oat |soy |soya |plant |dairy-free |non-dairy )\\bcream\\b|\\bcheese\\b|yoghurt|yogurt|whey|casein|ghee"
+        "(?<!\\bpeanut |\\balmond |\\bcashew |\\bnut |\\bseed |\\bsunflower |\\bcocoa |\\bapple |\\bshea )\\bbutter\\b|(?<!\\balmond |\\bcoconut |\\boat |\\bsoy |\\bsoya |\\bcashew |\\brice |\\bhemp |\\bpea |\\bplant |\\bnut |\\bdairy-free |\\bnon-dairy )\\bmilk\\b|(?<!\\bcoconut |\\bcashew |\\boat |\\bsoy |\\bsoya |\\bplant |\\bdairy-free |\\bnon-dairy )\\bcream\\b|\\bcheese\\b|yoghurt|yogurt|whey|casein|ghee"
       ]
     },
     "scoreDimensions": [
@@ -183,7 +183,7 @@
       "mustHaveMinIngredients": 4,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "\\bbread\\b|\\bwheat\\b|pasta|\\bflour\\b|(?<!almond |coconut |oat |soy |soya |cashew |rice |hemp |pea |plant |nut |dairy-free |non-dairy )\\bmilk\\b|\\bcheese\\b|(?<!peanut |almond |cashew |nut |seed |sunflower |cocoa |apple |shea )\\bbutter\\b|(?<!coconut |cashew |oat |soy |soya |plant |dairy-free |non-dairy )\\bcream\\b|yoghurt|yogurt|\\beggs?(?!-free)\\b|omelette|mayonnaise"
+        "\\bbread\\b|\\bwheat\\b|pasta|\\bflour\\b|(?<!\\balmond |\\bcoconut |\\boat |\\bsoy |\\bsoya |\\bcashew |\\brice |\\bhemp |\\bpea |\\bplant |\\bnut |\\bdairy-free |\\bnon-dairy )\\bmilk\\b|\\bcheese\\b|(?<!\\bpeanut |\\balmond |\\bcashew |\\bnut |\\bseed |\\bsunflower |\\bcocoa |\\bapple |\\bshea )\\bbutter\\b|(?<!\\bcoconut |\\bcashew |\\boat |\\bsoy |\\bsoya |\\bplant |\\bdairy-free |\\bnon-dairy )\\bcream\\b|yoghurt|yogurt|\\beggs?(?!-free)\\b|omelette|mayonnaise"
       ]
     },
     "scoreDimensions": [
