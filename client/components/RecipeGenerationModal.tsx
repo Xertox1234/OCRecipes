@@ -423,7 +423,12 @@ export function RecipeGenerationModal({
                   : theme.accentSolid,
               },
             ]}
-            accessibilityLabel="Generate recipe"
+            // The label carries the pending copy too: a screen reader reads
+            // the label, not the visible text, and "Generate recipe, dimmed"
+            // never says why.
+            accessibilityLabel={
+              isPending ? "A recipe is on its way" : "Generate recipe"
+            }
             accessibilityRole="button"
             accessibilityState={{ disabled: isPending }}
           >

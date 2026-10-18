@@ -66,12 +66,31 @@ describe("RecipeGenerationModal — Generate lets go", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByLabelText("Generate recipe").getAttribute("aria-disabled"),
+        screen
+          .getByLabelText("A recipe is on its way")
+          .getAttribute("aria-disabled"),
       ).toBe("true"),
     );
     expect(screen.getByText("A recipe is on its way")).toBeDefined();
-    fireEvent.click(screen.getByLabelText("Generate recipe"));
+    fireEvent.click(screen.getByLabelText("A recipe is on its way"));
     expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  // A screen-reader user hears the label, not the visible text: "Generate
+  // recipe, dimmed" never says why. The pending copy is the label too.
+  it("names the pending state in the button's accessibility label", async () => {
+    const { queryClient, wrapper } = createQueryWrapper();
+    setPendingGeneration(queryClient, "photo", true);
+
+    render(
+      <RecipeGenerationModal visible onClose={vi.fn()} productName="Oats" />,
+      { wrapper },
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText("A recipe is on its way")).not.toBeNull(),
+    );
+    expect(screen.queryByLabelText("Generate recipe")).toBeNull();
   });
 
   it("re-enables Generate once the in-flight generation settles", async () => {
