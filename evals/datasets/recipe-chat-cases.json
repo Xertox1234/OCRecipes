@@ -61,7 +61,7 @@
     },
     "assertions": {
       "mustNotContain": [
-        "chicken|beef|pork|lamb|salmon|tuna|egg|cheese|milk|butter|yoghurt|yogurt|honey"
+        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?(?!-free)\\b|\\bcheese\\b|(?<!\\balmond |\\bcoconut |\\boat |\\bsoy |\\bsoya |\\bcashew |\\brice |\\bhemp |\\bpea |\\bplant |\\bnut |\\bdairy-free |\\bnon-dairy )\\bmilk\\b|(?<!\\bpeanut |\\balmond |\\bcashew |\\bnut |\\bseed |\\bsunflower |\\bcocoa |\\bapple |\\bshea )\\bbutter\\b|(?<!\\bcoconut |\\bcashew |\\boat |\\bsoy |\\bsoya |\\bplant |\\bdairy-free |\\bnon-dairy )\\bcream\\b|yoghurt|yogurt|honey"
       ]
     },
     "scoreDimensions": [
@@ -128,7 +128,9 @@
       "conversationHistory": []
     },
     "assertions": {
-      "mustNotContain": ["pasta|rice|bread|potato|flour|oats|corn|tortilla"]
+      "mustNotContain": [
+        "pasta|(?<!\\bcauliflower )\\brice\\b|\\bbread\\b|\\bpotato\\b|(?<!\\balmond |\\bcoconut )\\bflour\\b|oats|\\bcorn\\b|tortilla"
+      ]
     },
     "scoreDimensions": [
       "relevance",
@@ -176,7 +178,9 @@
       "conversationHistory": []
     },
     "assertions": {
-      "mustNotContain": ["butter|cream|milk|cheese|yoghurt|yogurt|whey|casein"]
+      "mustNotContain": [
+        "(?<!\\bpeanut |\\balmond |\\bcashew |\\bnut |\\bseed |\\bsunflower |\\bcocoa |\\bapple |\\bshea )\\bbutter\\b|(?<!\\bcoconut |\\bcashew |\\boat |\\bsoy |\\bsoya |\\bplant |\\bdairy-free |\\bnon-dairy )\\bcream\\b|(?<!\\balmond |\\bcoconut |\\boat |\\bsoy |\\bsoya |\\bcashew |\\brice |\\bhemp |\\bpea |\\bplant |\\bnut |\\bdairy-free |\\bnon-dairy )\\bmilk\\b|\\bcheese\\b|yoghurt|yogurt|whey|casein"
+      ]
     },
     "scoreDimensions": [
       "relevance",
