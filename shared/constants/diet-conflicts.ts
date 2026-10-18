@@ -82,8 +82,11 @@ const PLANT_QUALIFIERS = [
 /** Poultry followed by egg(s) is an egg, which the egg allergen covers. */
 const EGG_SUFFIX = /^[\s-]+eggs?(?:$|[\s,;/()-])/;
 
-/** "meat-free" / "meat free" names a substitute, not meat. */
-const MEAT_FREE_SUFFIX = /^[\s-]+free(?:$|[\s,;/()-])/;
+/**
+ * "meat-free" / "meat free" names a substitute, not meat. "meat free-range" /
+ * "meat free range" is real meat, so the lookahead refuses "free" + "range".
+ */
+const MEAT_FREE_SUFFIX = /^[\s-]+free(?![\s-]*range)(?:$|[\s,;/()-])/;
 
 const QUALIFIER_BEFORE = new RegExp(
   `(?:^|[\\s,;/()\\-])(?:${PLANT_QUALIFIERS.join("|")})[\\s\\-]$`,
