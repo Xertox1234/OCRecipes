@@ -11,7 +11,7 @@
       "mustHaveMinIngredients": 3,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?(?!-free)\\b|\\bmilk\\b|\\bbutter\\b|\\bcream\\b|\\bcheese\\b|honey|gelatin"
+        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?(?!-free)\\b|(?<!almond |coconut |oat |soy |soya |cashew |rice |hemp |pea |plant |nut |dairy-free |non-dairy )\\bmilk\\b|(?<!peanut |almond |cashew |nut |seed |sunflower |cocoa |apple |shea )\\bbutter\\b|(?<!coconut |cashew |oat |soy |soya |plant |dairy-free |non-dairy )\\bcream\\b|\\bcheese\\b|honey|gelatin"
       ]
     },
     "scoreDimensions": [
@@ -131,7 +131,7 @@
       "mustHaveMinIngredients": 3,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "\\bbutter\\b|\\bmilk\\b|\\bcream\\b|\\bcheese\\b|yoghurt|yogurt|whey|casein|ghee"
+        "(?<!peanut |almond |cashew |nut |seed |sunflower |cocoa |apple |shea )\\bbutter\\b|(?<!almond |coconut |oat |soy |soya |cashew |rice |hemp |pea |plant |nut |dairy-free |non-dairy )\\bmilk\\b|(?<!coconut |cashew |oat |soy |soya |plant |dairy-free |non-dairy )\\bcream\\b|\\bcheese\\b|yoghurt|yogurt|whey|casein|ghee"
       ]
     },
     "scoreDimensions": [
@@ -183,7 +183,7 @@
       "mustHaveMinIngredients": 4,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "\\bbread\\b|\\bwheat\\b|pasta|\\bflour\\b|\\bmilk\\b|\\bcheese\\b|\\bbutter\\b|\\bcream\\b|yoghurt|yogurt|\\beggs?(?!-free)\\b|omelette|mayonnaise"
+        "\\bbread\\b|\\bwheat\\b|pasta|\\bflour\\b|(?<!almond |coconut |oat |soy |soya |cashew |rice |hemp |pea |plant |nut |dairy-free |non-dairy )\\bmilk\\b|\\bcheese\\b|(?<!peanut |almond |cashew |nut |seed |sunflower |cocoa |apple |shea )\\bbutter\\b|(?<!coconut |cashew |oat |soy |soya |plant |dairy-free |non-dairy )\\bcream\\b|yoghurt|yogurt|\\beggs?(?!-free)\\b|omelette|mayonnaise"
       ]
     },
     "scoreDimensions": [
