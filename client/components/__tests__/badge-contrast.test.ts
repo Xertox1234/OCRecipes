@@ -30,6 +30,11 @@ import {
   NOTICE_TEXT_COLOR_KEY,
   type NoticeSeverity,
 } from "../nutrition/NoticeStack-utils";
+import {
+  ATTRIBUTE_CHIP_FILL_OPACITY,
+  CONTAINS_COLOR_KEY,
+  RECIPE_ATTRIBUTE_VISUALS,
+} from "../recipe-attribute-visuals";
 import { allergySeverities } from "@shared/constants/allergens";
 import { verificationLevels } from "@shared/types/verification";
 import type { ScanFlagSeverity } from "@shared/types/scan-flags";
@@ -131,6 +136,26 @@ function noticeCases(): Case[] {
   }));
 }
 
+/**
+ * The recipe attribute chips (diet, quick, and the "Contains:" allergen chips)
+ * are the same pill construction. Derived from the chips' own maps, like the
+ * cases above, so a token change in `recipe-attribute-visuals` is observed.
+ */
+function attributeCases(): Case[] {
+  return [
+    ...Object.entries(RECIPE_ATTRIBUTE_VISUALS).map(([id, { colorKey }]) => ({
+      label: `AttributeChip ${id}`,
+      colorKey,
+      opacity: ATTRIBUTE_CHIP_FILL_OPACITY,
+    })),
+    {
+      label: "AttributeChip contains (allergen)",
+      colorKey: CONTAINS_COLOR_KEY,
+      opacity: ATTRIBUTE_CHIP_FILL_OPACITY,
+    },
+  ];
+}
+
 describe("badge family WCAG AA contrast", () => {
   const allCases = [
     ...allergenCases(),
@@ -138,6 +163,7 @@ describe("badge family WCAG AA contrast", () => {
     ...verificationCases(),
     ...panelTagCases(),
     ...noticeCases(),
+    ...attributeCases(),
   ];
 
   for (const themeName of themeNames) {

@@ -2,10 +2,11 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/ThemedText";
-import { AllergenBadge } from "@/components/AllergenBadge";
+import { AttributeChip } from "@/components/AttributeChip";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, MAX_FONT_SCALE_CONSTRAINED } from "@/constants/theme";
 import { toRecipeAllergenLabels } from "./recipe-allergen-label-utils";
+import { ALLERGEN_ICON, CONTAINS_COLOR_KEY } from "./recipe-attribute-visuals";
 import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 
 interface RecipeAllergenLabelProps {
@@ -19,9 +20,9 @@ interface RecipeAllergenLabelProps {
 }
 
 /**
- * Universal, profile-independent "Contains: <allergens>" label. Reuses
- * `AllergenBadge` for the visual chips — no new allergen engine, no
- * re-derivation.
+ * Universal, profile-independent "Contains: <allergens>" label. Draws one
+ * icon + word `AttributeChip` per allergen (recipe attribute icons, spec
+ * 2026-10-17) — no new allergen engine, no re-derivation.
  *
  * Distinct from `AllergenWarningBanner` (which escalates only for allergens
  * the *viewer* has declared): this label is the calm, always-shown baseline
@@ -45,9 +46,9 @@ export const RecipeAllergenLabel = React.memo(function RecipeAllergenLabel({
       accessibilityLabel={composedLabel}
     >
       {/* Decorative — the parent View above carries the single composed
-          a11y label; hide the visible lead-in + badge chips from the a11y
-          tree so VoiceOver/TalkBack doesn't drill into AllergenBadge's own
-          announceable Text descendants and double-announce. */}
+          a11y label; hide the visible lead-in + chips from the a11y tree so
+          VoiceOver/TalkBack doesn't drill into the chips' own Text
+          descendants and double-announce. */}
       <View
         style={styles.row}
         accessible={false}
@@ -62,7 +63,12 @@ export const RecipeAllergenLabel = React.memo(function RecipeAllergenLabel({
           Contains:
         </ThemedText>
         {labels.map(({ id, label }) => (
-          <AllergenBadge key={id} allergenLabel={label} severity="mild" />
+          <AttributeChip
+            key={id}
+            icon={ALLERGEN_ICON[id]}
+            colorKey={CONTAINS_COLOR_KEY}
+            word={label}
+          />
         ))}
       </View>
     </View>
