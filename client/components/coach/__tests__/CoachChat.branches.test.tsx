@@ -71,8 +71,9 @@ const state = vi.hoisted(() => ({
   onFinderAction: null as ((a: unknown, label: string) => void) | null,
   // Finder idea cards: captured from the mocked BlockRenderer.
   onOpenFinderItem: null as ((item: unknown) => void) | null,
-  onMakeFinderItem: null as ((item: unknown) => void) | null,
+  onMakeFinderItem: null as ((item: unknown, flowId: string) => void) | null,
   makingFinderItemId: null as number | null | undefined,
+  expiredFinderFlowIds: undefined as ReadonlySet<string> | undefined,
   makeSuggestion: vi.fn(),
   saveRecipe: vi.fn().mockResolvedValue({ id: 5 }),
   // ToastContext / useHaptics
@@ -221,13 +222,15 @@ vi.mock("@/components/coach/blocks", () => ({
     onOpenFinderItem,
     onMakeFinderItem,
     makingFinderItemId,
+    expiredFinderFlowIds,
     isActive,
   }: {
     block: { type: string; [k: string]: unknown };
     onFinderAction?: (a: unknown, label: string) => void;
     onOpenFinderItem?: (item: unknown) => void;
-    onMakeFinderItem?: (item: unknown) => void;
+    onMakeFinderItem?: (item: unknown, flowId: string) => void;
     makingFinderItemId?: number | null;
+    expiredFinderFlowIds?: ReadonlySet<string>;
     isActive?: boolean;
     onAction?: (action: Record<string, unknown>) => void;
     onQuickReply?: (message: string, blockKey?: string) => void;
@@ -244,6 +247,7 @@ vi.mock("@/components/coach/blocks", () => ({
     state.onOpenFinderItem = onOpenFinderItem ?? null;
     state.onMakeFinderItem = onMakeFinderItem ?? null;
     state.makingFinderItemId = makingFinderItemId;
+    state.expiredFinderFlowIds = expiredFinderFlowIds;
     return (
       <div data-testid={`block-${block.type}`} data-active={String(isActive)}>
         <button
@@ -409,6 +413,7 @@ function resetState() {
   state.onOpenFinderItem = null;
   state.onMakeFinderItem = null;
   state.makingFinderItemId = undefined;
+  state.expiredFinderFlowIds = undefined;
   state.makeSuggestion = vi.fn();
   state.toastSuccess = vi.fn();
   state.toastError = vi.fn();
@@ -1262,6 +1267,7 @@ describe("CoachChat — recipe finder", () => {
       readyInMinutes: 25,
       calories: null,
     };
+    const FLOW_ID = "flow-1";
     const ideasBlock = { ...finderBlock, source: "inspired", items: [idea] };
 
     function renderWithIdeas() {
@@ -1280,7 +1286,7 @@ describe("CoachChat — recipe finder", () => {
       state.makeSuggestion = vi.fn().mockResolvedValue({ recipeId: 901 });
       renderWithIdeas();
       act(() => {
-        state.onMakeFinderItem?.(idea);
+        state.onMakeFinderItem?.(idea, FLOW_ID);
       });
       expect(state.makingFinderItemId).toBe(44);
       expect(state.makeSuggestion).toHaveBeenCalledWith(44);
@@ -1297,12 +1303,35 @@ describe("CoachChat — recipe finder", () => {
       state.makeSuggestion = vi.fn(() => new Promise(() => {}));
       renderWithIdeas();
       act(() => {
-        state.onMakeFinderItem?.(idea);
+        state.onMakeFinderItem?.(idea, FLOW_ID);
       });
       act(() => {
-        state.onMakeFinderItem?.({ ...idea, id: 45 });
+        state.onMakeFinderItem?.({ ...idea, id: 45 }, FLOW_ID);
       });
       expect(state.makeSuggestion).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores two taps landing in the same frame", () => {
+      state.makeSuggestion = vi.fn(() => new Promise(() => {}));
+      renderWithIdeas();
+      act(() => {
+        state.onMakeFinderItem?.(idea, FLOW_ID);
+        state.onMakeFinderItem?.({ ...idea, id: 45 }, FLOW_ID);
+      });
+      expect(state.makeSuggestion).toHaveBeenCalledTimes(1);
+    });
+
+    it("a 410 marks that flow's ideas expired", async () => {
+      state.makeSuggestion = vi
+        .fn()
+        .mockRejectedValue(new ApiError("410: gone", undefined, 410));
+      renderWithIdeas();
+      act(() => {
+        state.onMakeFinderItem?.(idea, FLOW_ID);
+      });
+      await waitFor(() =>
+        expect(state.expiredFinderFlowIds?.has(FLOW_ID)).toBe(true),
+      );
     });
 
     it.each([
@@ -1319,7 +1348,7 @@ describe("CoachChat — recipe finder", () => {
           );
         renderWithIdeas();
         act(() => {
-          state.onMakeFinderItem?.(idea);
+          state.onMakeFinderItem?.(idea, FLOW_ID);
         });
         await waitFor(() =>
           expect(state.toastError).toHaveBeenCalledWith(copy),
