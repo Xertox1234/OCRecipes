@@ -1,6 +1,6 @@
 ---
 title: "Diet conflicts: 'meat free-range' wrongly reads as 'meat-free'"
-status: backlog
+status: done
 priority: low
 created: 2026-10-17
 updated: 2026-10-17
@@ -21,10 +21,10 @@ Found by the code reviewer on PR #1491 (diet-conflict keyword gaps) and deferred
 
 ## Acceptance Criteria
 
-- [ ] "meat free-range" (and "meat free range") still flags `meat`
-- [ ] "meat-free", "meat free", "meat-free mince", "meat-free, vegan" still do NOT flag
-- [ ] Tests in `shared/constants/__tests__/diet-conflicts.test.ts` cover both lists
-- [ ] Note for the owner: after merge, re-run the prod allergen/diet backfill only if it already ran
+- [x] "meat free-range" (and "meat free range") still flags `meat`
+- [x] "meat-free", "meat free", "meat-free mince", "meat-free, vegan" still do NOT flag
+- [x] Tests in `shared/constants/__tests__/diet-conflicts.test.ts` cover both lists
+- [x] Note for the owner: after merge, re-run the prod allergen/diet backfill only if it already ran
 
 ## Implementation Notes
 
