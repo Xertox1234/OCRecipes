@@ -19,6 +19,7 @@ import {
   type SearchIndexableCommunityRecipe,
 } from "../lib/search-index";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
+import { deriveRecipeDietConflicts } from "@shared/constants/diet-conflicts";
 import { deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
@@ -66,14 +67,15 @@ export async function getCommunityRecipes(
 export async function createCommunityRecipe(
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
 ): Promise<CommunityRecipe> {
-  // Derive the `allergens` cache from the JSONB ingredient names so new
-  // recipes are searchable by the "Safe for me" filter without a backfill.
-  const allergens = deriveRecipeAllergens(
-    (data.ingredients ?? []).map((i) => i.name),
-  );
+  // Derive the `allergens` and `dietConflicts` caches from the JSONB
+  // ingredient names so new recipes are searchable by the "Safe for me"
+  // filter and show their diet icons without a backfill.
+  const names = (data.ingredients ?? []).map((i) => i.name);
+  const allergens = deriveRecipeAllergens(names);
+  const dietConflicts = deriveRecipeDietConflicts(names);
   const [recipe] = await db
     .insert(communityRecipes)
-    .values({ ...data, allergens })
+    .values({ ...data, allergens, dietConflicts })
     .returning();
   if (recipe.isPublic) {
     addToIndex(communityToSearchable(recipe));
@@ -144,13 +146,14 @@ export async function createRecipeWithLimitCheck(
 
     // Create recipe — callers must supply pre-computed mealTypes (storage-layer
     // purity). `allergens` is derived inline from ingredient names via the
-    // pure `deriveRecipeAllergens` shared function (no service deps).
-    const allergens = deriveRecipeAllergens(
-      (normalizedData.ingredients ?? []).map((i) => i.name),
-    );
+    // pure `deriveRecipeAllergens` shared function (no service deps), and
+    // `dietConflicts` the same way via `deriveRecipeDietConflicts`.
+    const names = (normalizedData.ingredients ?? []).map((i) => i.name);
+    const allergens = deriveRecipeAllergens(names);
+    const dietConflicts = deriveRecipeDietConflicts(names);
     const [created] = await tx
       .insert(communityRecipes)
-      .values({ ...normalizedData, allergens })
+      .values({ ...normalizedData, allergens, dietConflicts })
       .returning();
 
     // Log the generation
@@ -263,6 +266,7 @@ export const FEATURED_COLUMNS = {
   dietTags: communityRecipes.dietTags,
   mealTypes: communityRecipes.mealTypes,
   allergens: communityRecipes.allergens,
+  dietConflicts: communityRecipes.dietConflicts,
   ingredients: communityRecipes.ingredients,
   caloriesPerServing: communityRecipes.caloriesPerServing,
   proteinPerServing: communityRecipes.proteinPerServing,

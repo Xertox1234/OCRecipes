@@ -19,6 +19,7 @@ import {
   mealPlanToSearchable,
 } from "../lib/search-index";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
+import { deriveRecipeDietConflicts } from "@shared/constants/diet-conflicts";
 import { deleteImagesIfUnreferenced } from "./account-images";
 import { fireAndForget } from "../lib/fire-and-forget";
 import {
@@ -143,10 +144,11 @@ export async function createMealPlanRecipe(
   if (normalizedIngredients && normalizedIngredients.length > 0) {
     const ingredientNames = normalizedIngredients.map((i) => i.name);
     const allergens = deriveRecipeAllergens(ingredientNames);
+    const dietConflicts = deriveRecipeDietConflicts(ingredientNames);
     const created = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(mealPlanRecipes)
-        .values({ ...normalizedRecipe, allergens })
+        .values({ ...normalizedRecipe, allergens, dietConflicts })
         .returning();
       await tx.insert(recipeIngredients).values(
         normalizedIngredients.map((ing, idx) => ({
@@ -164,7 +166,8 @@ export async function createMealPlanRecipe(
 
   const [created] = await db
     .insert(mealPlanRecipes)
-    .values({ ...normalizedRecipe, allergens: [] })
+    // No ingredients: diet conflicts are unchecked (null), never "none found".
+    .values({ ...normalizedRecipe, allergens: [], dietConflicts: null })
     .returning();
   addToIndex(mealPlanToSearchable(created, []));
   return created;
@@ -210,15 +213,20 @@ export async function createMealPlanFromSuggestions(
   }));
 
   const result = await db.transaction(async (tx) => {
-    // Batch-insert all recipes at once, deriving each recipe's allergen cache
-    // from its ingredient names (pure shared function — no service deps).
+    // Batch-insert all recipes at once, deriving each recipe's allergen and
+    // diet-conflict caches from its ingredient names (pure shared functions —
+    // no service deps).
     const recipes = await tx
       .insert(mealPlanRecipes)
       .values(
-        normalizedMeals.map((m) => ({
-          ...m.recipe,
-          allergens: deriveRecipeAllergens(m.ingredients.map((i) => i.name)),
-        })),
+        normalizedMeals.map((m) => {
+          const names = m.ingredients.map((i) => i.name);
+          return {
+            ...m.recipe,
+            allergens: deriveRecipeAllergens(names),
+            dietConflicts: deriveRecipeDietConflicts(names),
+          };
+        }),
       )
       .returning();
 
@@ -307,6 +315,7 @@ export async function updateMealPlanRecipe(
     .where(eq(recipeIngredients.recipeId, id));
   const ingredientNames = ings.map((i) => i.name);
   const allergens = deriveRecipeAllergens(ingredientNames);
+  const dietConflicts = deriveRecipeDietConflicts(ingredientNames);
 
   // Capture the current imageUrl when it's being replaced so the old stored
   // object can be cleaned up — post-R2 these are durable, billed objects.
@@ -323,7 +332,12 @@ export async function updateMealPlanRecipe(
 
   const [recipe] = await db
     .update(mealPlanRecipes)
-    .set({ ...normalizedUpdates, allergens, updatedAt: new Date() })
+    .set({
+      ...normalizedUpdates,
+      allergens,
+      dietConflicts,
+      updatedAt: new Date(),
+    })
     .where(and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)))
     .returning();
   if (recipe) {

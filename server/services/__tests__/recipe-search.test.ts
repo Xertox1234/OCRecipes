@@ -53,6 +53,7 @@ const baseMealPlanRecipe: MealPlanRecipe = {
   dietTags: ["gluten free"],
   mealTypes: ["dinner"],
   allergens: [],
+  dietConflicts: null,
   caloriesPerServing: "450",
   proteinPerServing: "35",
   carbsPerServing: "20",
@@ -77,6 +78,7 @@ const baseCommunityRecipe: CommunityRecipe = {
   dietTags: ["vegetarian"],
   mealTypes: ["lunch"],
   allergens: [],
+  dietConflicts: null,
   instructions: ["Grill chicken", "Toss salad"],
   ingredients: [
     { name: "Chicken breast", quantity: "2", unit: "pieces" },

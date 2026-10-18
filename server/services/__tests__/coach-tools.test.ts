@@ -208,6 +208,7 @@ describe("Coach Tools Service", () => {
           dietTags: [],
           mealTypes: [],
           allergens: [],
+          dietConflicts: null,
           createdAt: new Date(),
           updatedAt: new Date(),
         },

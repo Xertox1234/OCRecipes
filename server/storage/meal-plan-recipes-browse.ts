@@ -38,6 +38,7 @@ const UNIFIED_PERSONAL_COLUMNS = {
   dietTags: mealPlanRecipes.dietTags,
   mealTypes: mealPlanRecipes.mealTypes,
   allergens: mealPlanRecipes.allergens,
+  dietConflicts: mealPlanRecipes.dietConflicts,
   caloriesPerServing: mealPlanRecipes.caloriesPerServing,
   proteinPerServing: mealPlanRecipes.proteinPerServing,
   carbsPerServing: mealPlanRecipes.carbsPerServing,

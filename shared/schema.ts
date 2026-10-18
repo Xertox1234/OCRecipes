@@ -20,6 +20,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 import type { DerivedRecipeAllergen } from "./constants/allergens";
+import type { DietConflictId } from "./constants/diet-conflicts";
 import type { MealSuggestion } from "./types/meal-suggestions";
 import type {
   ReminderMutes,
@@ -882,6 +883,9 @@ export const communityRecipes = pgTable(
     // allergens" = safe. Write paths always store a concrete array — `null`
     // only ever appears for rows predating the backfill.
     allergens: jsonb("allergens").$type<DerivedRecipeAllergen[] | null>(),
+    // Derived diet-conflict cache (`deriveRecipeDietConflicts`). `null` =
+    // "not checked" — diet icons stay hidden. Never coerce with `?? []`.
+    dietConflicts: jsonb("diet_conflicts").$type<DietConflictId[] | null>(),
     instructions: jsonb("instructions").$type<string[]>().notNull(),
     ingredients: jsonb("ingredients")
       .$type<{ name: string; quantity: string; unit: string }[]>()
@@ -1124,6 +1128,9 @@ export const mealPlanRecipes = pgTable(
     // allergens" = safe. Write paths always store a concrete array — `null`
     // only ever appears for rows predating the backfill.
     allergens: jsonb("allergens").$type<DerivedRecipeAllergen[] | null>(),
+    // Derived diet-conflict cache (`deriveRecipeDietConflicts`). `null` =
+    // "not checked" — diet icons stay hidden. Never coerce with `?? []`.
+    dietConflicts: jsonb("diet_conflicts").$type<DietConflictId[] | null>(),
     caloriesPerServing: decimal("calories_per_serving", {
       precision: 10,
       scale: 2,
