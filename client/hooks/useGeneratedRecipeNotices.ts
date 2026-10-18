@@ -1,4 +1,5 @@
 import { skipToken, useQuery, type QueryClient } from "@tanstack/react-query";
+import type { ImportedRecipeData } from "@shared/types/recipe-import";
 
 // ---- Background recipe generation: unread / pending / ready ----
 //
@@ -29,7 +30,19 @@ export const PENDING_RECIPE_GENERATION_KEY = [
   "__pendingRecipeGeneration",
 ] as const;
 
+/**
+ * The meal-plan draft the user has not reviewed yet, as `HeldRecipeDraft | null`.
+ * The meal-plan "generate with AI" request returns an UNSAVED draft (spec §5b),
+ * so the device holds it until RecipeCreate opens with it; one at a time.
+ */
+export const HELD_RECIPE_DRAFT_KEY = ["__heldRecipeDraft"] as const;
+
 export type GenerationEntry = "photo" | "mealPlan";
+
+export interface HeldRecipeDraft {
+  prefill: ImportedRecipeData;
+  returnToMealPlan?: { mealType: string; plannedDate: string };
+}
 
 type PendingGeneration = Partial<Record<GenerationEntry, boolean>>;
 
@@ -40,6 +53,7 @@ function pinSentinelKeys(queryClient: QueryClient): void {
   queryClient.setQueryDefaults(PENDING_RECIPE_GENERATION_KEY, {
     gcTime: Infinity,
   });
+  queryClient.setQueryDefaults(HELD_RECIPE_DRAFT_KEY, { gcTime: Infinity });
 }
 
 export function getUnreadGeneratedRecipeIds(
@@ -109,6 +123,27 @@ export function isPendingGeneration(
   return getPendingGeneration(queryClient)[entry] ?? false;
 }
 
+export function getHeldRecipeDraft(
+  queryClient: QueryClient,
+): HeldRecipeDraft | null {
+  return (
+    queryClient.getQueryData<HeldRecipeDraft | null>(HELD_RECIPE_DRAFT_KEY) ??
+    null
+  );
+}
+
+/** Hold a draft (replacing any earlier one) or, with `null`, release it. */
+export function setHeldRecipeDraft(
+  queryClient: QueryClient,
+  draft: HeldRecipeDraft | null,
+): void {
+  pinSentinelKeys(queryClient);
+  queryClient.setQueryData<HeldRecipeDraft | null>(
+    HELD_RECIPE_DRAFT_KEY,
+    draft,
+  );
+}
+
 type GeneratedRecipeReadyListener = (recipeId: number) => void;
 
 const generatedRecipeReadyListeners = new Set<GeneratedRecipeReadyListener>();
@@ -140,6 +175,32 @@ export function noteGeneratedRecipeReady(
 ): void {
   markGeneratedRecipeUnread(queryClient, recipeId);
   generatedRecipeReadyListeners.forEach((listener) => listener(recipeId));
+}
+
+type RecipeDraftReadyListener = (draft: HeldRecipeDraft) => void;
+
+const recipeDraftReadyListeners = new Set<RecipeDraftReadyListener>();
+
+/** Subscribe to "a meal-plan draft landed" events (same shape as above). */
+export function subscribeToRecipeDraftReady(
+  listener: RecipeDraftReadyListener,
+): () => void {
+  recipeDraftReadyListeners.add(listener);
+  return () => {
+    recipeDraftReadyListeners.delete(listener);
+  };
+}
+
+/**
+ * A meal-plan draft arrived: hold it on the device and tell subscribers
+ * (toast with "Review"). Same session caveat as `noteGeneratedRecipeReady`.
+ */
+export function noteRecipeDraftReady(
+  queryClient: QueryClient,
+  draft: HeldRecipeDraft,
+): void {
+  setHeldRecipeDraft(queryClient, draft);
+  recipeDraftReadyListeners.forEach((listener) => listener(draft));
 }
 
 // Module-level so `useQuery` keeps one `select` identity across renders.
@@ -178,4 +239,14 @@ export function usePendingGeneration(entry: GenerationEntry): boolean {
     select: selectPendingByEntry[entry],
   });
   return data ?? false;
+}
+
+/** The draft waiting for review, or null — drives the banner on the meal-plan generate screen. */
+export function useHeldRecipeDraft(): HeldRecipeDraft | null {
+  const { data } = useQuery<HeldRecipeDraft | null>({
+    queryKey: HELD_RECIPE_DRAFT_KEY,
+    queryFn: skipToken,
+    gcTime: Infinity,
+  });
+  return data ?? null;
 }

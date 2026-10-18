@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
@@ -28,8 +29,10 @@ import {
 } from "@/hooks/useCoachUnreadReplies";
 import {
   subscribeToGeneratedRecipeReady,
+  subscribeToRecipeDraftReady,
   useHasUnreadGeneratedRecipe,
 } from "@/hooks/useGeneratedRecipeNotices";
+import { openRecipeCreate } from "@/navigation/openRecipeCreate";
 import { navigationRef } from "@/navigation/navigationRef";
 import {
   FontFamily,
@@ -183,6 +186,31 @@ function GeneratedRecipeToastBridge(): null {
         });
       }),
     [toast],
+  );
+
+  return null;
+}
+
+/**
+ * "Your meal-plan draft is ready" → toast with a Review action. The draft is
+ * held on the device (nothing is saved server-side), so a missed toast is
+ * covered by the banner on RecipeAIGenerateScreen. Renders nothing.
+ */
+function RecipeDraftToastBridge(): null {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+
+  useEffect(
+    () =>
+      subscribeToRecipeDraftReady((draft) => {
+        toast.info("Recipe draft ready — tap to review", {
+          action: {
+            label: "Review",
+            onPress: () => openRecipeCreate(queryClient, draft),
+          },
+        });
+      }),
+    [toast, queryClient],
   );
 
   return null;
@@ -386,6 +414,7 @@ export default function MainTabNavigator() {
       </View>
       <CoachReplyToastBridge />
       <GeneratedRecipeToastBridge />
+      <RecipeDraftToastBridge />
       <ScanFAB menuOpen={menuOpen} onOpen={openMenu} onClose={closeMenu} />
     </View>
   );

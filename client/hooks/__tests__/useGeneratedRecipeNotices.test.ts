@@ -2,19 +2,27 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 import {
+  HELD_RECIPE_DRAFT_KEY,
   PENDING_RECIPE_GENERATION_KEY,
   UNREAD_GENERATED_RECIPES_KEY,
   clearAllGeneratedRecipesUnread,
   clearGeneratedRecipeUnread,
+  getHeldRecipeDraft,
   getUnreadGeneratedRecipeIds,
   isPendingGeneration,
   markGeneratedRecipeUnread,
   noteGeneratedRecipeReady,
+  noteRecipeDraftReady,
+  setHeldRecipeDraft,
   setPendingGeneration,
   subscribeToGeneratedRecipeReady,
+  subscribeToRecipeDraftReady,
   useHasUnreadGeneratedRecipe,
+  useHeldRecipeDraft,
   usePendingGeneration,
+  type HeldRecipeDraft,
 } from "../useGeneratedRecipeNotices";
+import type { ImportedRecipeData } from "@shared/types/recipe-import";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 // TanStack batches observer notifications onto a macrotask, so a cache write
@@ -225,5 +233,81 @@ describe("logout", () => {
     });
     expect(unread.result.current).toBe(false);
     expect(pending.result.current).toBe(false);
+  });
+});
+
+// ---- Meal-plan draft (spec §5b): the generated draft is held on the device
+// until the user reviews it; nothing is saved server-side.
+const draftOf = (title: string): HeldRecipeDraft => ({
+  prefill: { title } as unknown as ImportedRecipeData,
+  returnToMealPlan: { mealType: "dinner", plannedDate: "2026-10-20" },
+});
+
+describe("held recipe draft", () => {
+  it("holds one draft, replacing any earlier one", () => {
+    const { queryClient } = createQueryWrapper();
+    expect(getHeldRecipeDraft(queryClient)).toBeNull();
+
+    setHeldRecipeDraft(queryClient, draftOf("Soup"));
+    setHeldRecipeDraft(queryClient, draftOf("Salad"));
+
+    expect(getHeldRecipeDraft(queryClient)).toEqual(draftOf("Salad"));
+  });
+
+  it("noteRecipeDraftReady holds the draft and notifies subscribers", () => {
+    const { queryClient } = createQueryWrapper();
+    const listener = vi.fn();
+    const unsubscribe = subscribeToRecipeDraftReady(listener);
+
+    noteRecipeDraftReady(queryClient, draftOf("Soup"));
+
+    expect(getHeldRecipeDraft(queryClient)).toEqual(draftOf("Soup"));
+    expect(listener).toHaveBeenCalledExactlyOnceWith(draftOf("Soup"));
+    unsubscribe();
+    noteRecipeDraftReady(queryClient, draftOf("Salad"));
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it("useHeldRecipeDraft returns null after setHeldRecipeDraft(null)", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { result } = renderHook(() => useHeldRecipeDraft(), { wrapper });
+    expect(result.current).toBeNull();
+
+    act(() => {
+      setHeldRecipeDraft(queryClient, draftOf("Soup"));
+    });
+    await waitFor(() => expect(result.current).toEqual(draftOf("Soup")));
+
+    act(() => {
+      setHeldRecipeDraft(queryClient, null);
+    });
+    await waitFor(() => expect(result.current).toBeNull());
+    // Written as null, never undefined (setQueryData(key, undefined) is a no-op).
+    expect(queryClient.getQueryData(HELD_RECIPE_DRAFT_KEY)).toBeNull();
+  });
+
+  it("survives past the default gcTime with no observer mounted", () => {
+    vi.useFakeTimers();
+    try {
+      const { queryClient } = createQueryWrapper();
+      setHeldRecipeDraft(queryClient, draftOf("Soup"));
+      act(() => {
+        vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+      });
+      expect(getHeldRecipeDraft(queryClient)).toEqual(draftOf("Soup"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("queryClient.clear() drops the held draft", () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    setHeldRecipeDraft(queryClient, draftOf("Soup"));
+
+    queryClient.clear();
+
+    expect(getHeldRecipeDraft(queryClient)).toBeNull();
+    const { result } = renderHook(() => useHeldRecipeDraft(), { wrapper });
+    expect(result.current).toBeNull();
   });
 });
