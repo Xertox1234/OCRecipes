@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import RecipeChatScreen from "../RecipeChatScreen";
 import type { ChatMessage } from "@/hooks/useChat";
+import { ApiError } from "@/lib/api-error";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 
 const {
@@ -22,6 +23,8 @@ const {
   mockSaveRecipeMutateAsync,
   mockMarkPendingRecipeTurn,
   mockToastInfo,
+  mockToastError,
+  mockMakeMutateAsync,
   mockToggleFavourite,
   mockAddFavourite,
   mockFavouriteIds,
@@ -68,6 +71,9 @@ const {
   mockSaveRecipeMutateAsync: vi.fn(),
   mockMarkPendingRecipeTurn: vi.fn(),
   mockToastInfo: vi.fn(),
+  mockToastError: vi.fn(),
+  // useMakeSuggestion().mutateAsync — "Make this mine" on an idea card.
+  mockMakeMutateAsync: vi.fn(),
   mockToggleFavourite: vi.fn(),
   mockAddFavourite: vi.fn(),
   mockFavouriteIds: {
@@ -118,10 +124,14 @@ vi.mock("@/hooks/useFavouriteRecipes", () => ({
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
     success: vi.fn(),
-    error: vi.fn(),
+    error: mockToastError,
     info: mockToastInfo,
     dismiss: vi.fn(),
   }),
+}));
+
+vi.mock("@/hooks/useInspiredSuggestions", () => ({
+  useMakeSuggestion: () => ({ mutateAsync: mockMakeMutateAsync }),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -1174,5 +1184,120 @@ describe("RecipeChatScreen — recipe finder", () => {
         .getByRole("button", { name: "Generate" })
         .getAttribute("aria-disabled"),
     ).toBe("true");
+  });
+
+  // Idea cards ("Make this mine") — the same handler CoachChat has; see
+  // CoachChat.branches.test.tsx → "idea cards" for the toast-copy matrix.
+  describe("idea cards (Make this mine)", () => {
+    const idea = (id: number, title: string) => ({
+      id,
+      source: "inspired",
+      title,
+      imageUrl: null,
+      readyInMinutes: 25,
+      calories: null,
+    });
+    const ideasMessage = (
+      id: number,
+      flowId: string,
+      items: ReturnType<typeof idea>[],
+    ): ChatMessage => ({
+      ...finderMessage(id, flowId),
+      content: "Here are ideas for you:",
+      metadata: {
+        metadataVersion: 1,
+        finder: { ...block(flowId), source: "inspired", items },
+      },
+    });
+    const makeButton = (title: string) =>
+      screen.getByRole("button", { name: `Make ${title} mine` });
+
+    beforeEach(() => {
+      // clearAllMocks keeps implementations — a rejected value from one test
+      // would otherwise leak into the next.
+      mockMakeMutateAsync.mockReset();
+    });
+
+    it("makes the recipe, then opens it as a community recipe", async () => {
+      mockMakeMutateAsync.mockResolvedValue({ recipeId: 901 });
+      mockChatMessagesData.value = [
+        ideasMessage(2, FLOW_NEW, [idea(44, "Smoky Chickpea Tacos")]),
+      ];
+      renderComponent(<RecipeChatScreen />);
+
+      fireEvent.click(makeButton("Smoky Chickpea Tacos"));
+
+      expect(mockMakeMutateAsync).toHaveBeenCalledWith(44);
+      await waitFor(() =>
+        expect(mockNavigate).toHaveBeenCalledWith("FeaturedRecipeDetail", {
+          recipeId: 901,
+          recipeType: "community",
+        }),
+      );
+      // The card is free again once the make settles.
+      await waitFor(() =>
+        expect(
+          makeButton("Smoky Chickpea Tacos").getAttribute("aria-disabled"),
+        ).toBe("false"),
+      );
+    });
+
+    it("ignores two Make this mine taps landing in the same frame", () => {
+      mockMakeMutateAsync.mockReturnValue(new Promise(() => {}));
+      mockChatMessagesData.value = [
+        ideasMessage(2, FLOW_NEW, [
+          idea(44, "Smoky Chickpea Tacos"),
+          idea(45, "Lemon Orzo"),
+        ]),
+      ];
+      renderComponent(<RecipeChatScreen />);
+
+      // Both taps run before React re-renders the rows disabled, so only the
+      // ref guard in the handler can stop the second one.
+      const first = makeButton("Smoky Chickpea Tacos");
+      const second = makeButton("Lemon Orzo");
+      act(() => {
+        fireEvent.click(first);
+        fireEvent.click(second);
+      });
+
+      expect(mockMakeMutateAsync).toHaveBeenCalledTimes(1);
+      expect(mockMakeMutateAsync).toHaveBeenCalledWith(44);
+    });
+
+    it("a 410 toasts the expired copy and disables only that list's idea buttons", async () => {
+      mockMakeMutateAsync.mockRejectedValue(
+        new ApiError("410: expired", "SUGGESTION_EXPIRED", 410),
+      );
+      // Two finder lists from two flows: the 410 must expire the tapped list
+      // and leave the other one's ideas tappable.
+      mockChatMessagesData.value = [
+        ideasMessage(2, FLOW_OLD, [idea(31, "Lemon Orzo")]),
+        ideasMessage(4, FLOW_NEW, [idea(44, "Smoky Chickpea Tacos")]),
+      ];
+      renderComponent(<RecipeChatScreen />);
+
+      fireEvent.click(makeButton("Smoky Chickpea Tacos"));
+
+      await waitFor(() =>
+        expect(mockToastError).toHaveBeenCalledWith(
+          "These ideas expired — search again.",
+        ),
+      );
+      // The other list re-enables once the make settles — so the tapped
+      // list's button below is held by the expired flag, not by "making".
+      await waitFor(() =>
+        expect(makeButton("Lemon Orzo").getAttribute("aria-disabled")).toBe(
+          "false",
+        ),
+      );
+      expect(
+        makeButton("Smoky Chickpea Tacos").getAttribute("aria-disabled"),
+      ).toBe("true");
+      // A disabled button does not fire — the expired list stays inert.
+      fireEvent.click(makeButton("Smoky Chickpea Tacos"));
+      expect(mockMakeMutateAsync).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
   });
 });
