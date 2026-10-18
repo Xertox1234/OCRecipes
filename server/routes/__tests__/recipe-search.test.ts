@@ -143,6 +143,7 @@ describe("GET /api/recipes/search", () => {
           isCanonical: false,
           allergens: null,
           dietConflicts: null,
+          spiceLevel: null,
         },
       ],
       total: 1,

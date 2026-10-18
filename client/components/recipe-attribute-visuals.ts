@@ -23,6 +23,9 @@ export const RECIPE_ATTRIBUTE_VISUALS: Record<
   vegan: { icon: "sprout", colorKey: "badgeSuccessText" },
   gluten_free: { icon: "barley-off", colorKey: "badgeSuccessText" },
   dairy_free: { icon: "cheese-off", colorKey: "badgeSuccessText" },
+  spice_mild: { icon: "chili-mild", colorKey: "badgeWarningText" },
+  spice_medium: { icon: "chili-medium", colorKey: "badgeWarningText" },
+  spice_hot: { icon: "chili-hot", colorKey: "badgeErrorText" },
   quick: { icon: "timer-outline", colorKey: "badgeNeutralText" },
 };
 

@@ -497,6 +497,7 @@ async function seedOneRecipe(
         content.title,
         content.ingredients.map((i) => i.name),
       ),
+      spiceLevel: content.spiceLevel ?? null,
       instructions: content.instructions,
       ingredients: content.ingredients,
       ...(macros ?? {}),

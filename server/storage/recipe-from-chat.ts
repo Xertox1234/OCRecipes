@@ -139,6 +139,8 @@ export async function saveRecipeFromChat(
         mealTypes: mealTypes ?? [],
         allergens,
         dietConflicts,
+        // AI-set at chat time (metadata); old messages have none -> null.
+        spiceLevel: recipe.spiceLevel ?? null,
         instructions: normalized.instructions ?? recipe.instructions,
         ingredients: normalizedIngredients,
         imageUrl: parsed.data.imageUrl ?? null,

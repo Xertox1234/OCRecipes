@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { parseSpiceLevel } from "@shared/constants/recipe-attributes";
+import type { SpiceLevel } from "@shared/schemas/recipe-finder";
 import type { ChatMessage, UserProfile } from "@shared/schema";
 import {
   detectAllergens,
@@ -50,6 +52,7 @@ export interface RecipeChatRecipe {
   ingredients: { name: string; quantity: string; unit: string }[];
   instructions: string[];
   dietTags: string[];
+  spiceLevel: SpiceLevel | null;
 }
 
 // ============================================================================
@@ -102,6 +105,8 @@ const recipeResponseSchema = z.object({
     })
     .pipe(z.array(z.string()).min(1)),
   dietTags: z.array(z.string()).default([]),
+  // AI-set heat level; missing or invalid -> null (no icon), never a rejection.
+  spiceLevel: z.unknown().transform(parseSpiceLevel),
 });
 
 // Re-export shared schema for consumers that already import from this file
@@ -180,7 +185,8 @@ function buildSystemPrompt(
     '  "servings": number,',
     '  "ingredients": [{ "name": "string", "quantity": "string", "unit": "string" }],',
     '  "instructions": ["string"],',
-    '  "dietTags": ["string"]',
+    '  "dietTags": ["string"],',
+    '  "spiceLevel": "mild | medium | hot | null"',
     "}",
     "",
     "Guidelines:",
@@ -189,6 +195,7 @@ function buildSystemPrompt(
     "- Write 5-12 concise instruction steps",
     "- Include accurate prep + cook time in timeEstimate",
     "- Tag with applicable diet tags: vegetarian, vegan, gluten-free, dairy-free, low-carb, high-protein, quick, kid-friendly",
+    '- Set spiceLevel from the heat the finished dish actually has, going by the ingredients you listed (chilies, cayenne, chili flakes, hot sauce, harissa, curry paste, jalapeños): "mild" = gentle warmth, "medium" = clearly spicy, "hot" = very spicy. Use null when the dish has no meaningful heat or you are unsure — never guess.',
     "- Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not display them: images are dropped and links lose their URL.",
     "",
   ];
@@ -246,6 +253,7 @@ export function buildRemixSystemPrompt(
     "- Keep the same number of instruction steps when possible",
     "- Adjust quantities proportionally when swapping ingredients",
     "- Update dietTags to reflect the changes (e.g., add 'dairy-free' if dairy was removed)",
+    '- Re-judge spiceLevel for the modified recipe ("mild" | "medium" | "hot", or null when the dish has no meaningful heat or you are unsure — never guess)',
     "- Give the remix a new title that reflects the changes (e.g., 'Dairy-Free Chicken Alfredo')",
     "- Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not display them: images are dropped and links lose their URL.",
     "",
@@ -284,7 +292,8 @@ export function buildRemixSystemPrompt(
     '  "servings": number,',
     '  "ingredients": [{ "name": "string", "quantity": "string", "unit": "string" }],',
     '  "instructions": ["string"],',
-    '  "dietTags": ["string"]',
+    '  "dietTags": ["string"],',
+    '  "spiceLevel": "mild | medium | hot | null"',
     "}",
     "",
   ];

@@ -148,6 +148,52 @@ describe("Recipe Generation", () => {
       expect(mockCreate.mock.calls[0][0]).toBe("recipe-generate");
     });
 
+    describe("spiceLevel", () => {
+      const base = {
+        title: "Chili",
+        description: "Warm.",
+        difficulty: "Easy",
+        timeEstimate: "30 min",
+        ingredients: [{ name: "cayenne", quantity: "1", unit: "tsp" }],
+        instructions: ["Cook"],
+        dietTags: [],
+      };
+      const run = async (extra: Record<string, unknown>) => {
+        mockCreate.mockResolvedValue({
+          choices: [
+            { message: { content: JSON.stringify({ ...base, ...extra }) } },
+          ],
+        } as any);
+        return generateRecipeContent({ productName: "Chili" });
+      };
+
+      it.each(["mild", "medium", "hot"])(
+        "keeps a valid %s level",
+        async (l) => {
+          expect((await run({ spiceLevel: l })).spiceLevel).toBe(l);
+        },
+      );
+
+      it("turns missing, null and invalid values into null without rejecting the recipe", async () => {
+        for (const extra of [
+          {},
+          { spiceLevel: null },
+          { spiceLevel: "volcanic" },
+          { spiceLevel: 3 },
+        ]) {
+          const result = await run(extra);
+          expect(result.title).toBe("Chili");
+          expect(result.spiceLevel).toBeNull();
+        }
+      });
+
+      it("asks the AI for spiceLevel in the prompt schema", async () => {
+        await run({});
+        const system = JSON.stringify(mockCreate.mock.calls.at(-1)?.[1]);
+        expect(system).toContain("spiceLevel");
+      });
+    });
+
     it("handles instructions as array of strings", async () => {
       const mockRecipe = {
         title: "Simple Rice",

@@ -33,6 +33,7 @@ export function toCarouselCard(recipe: SearchableRecipe): CarouselRecipeCard {
     // Attribute-icon facts, threaded the same way (null conflicts stay null).
     dietTags: recipe.dietTags,
     dietConflicts: recipe.dietConflicts,
+    spiceLevel: recipe.spiceLevel,
     totalTimeMinutes: recipe.totalTimeMinutes,
   };
 }

@@ -76,6 +76,7 @@ export default function FavouriteRecipesScreen() {
         dietTags: item.dietTags,
         allergens: item.allergens,
         dietConflicts: item.dietConflicts,
+        spiceLevel: item.spiceLevel,
         totalTimeMinutes: item.totalTimeMinutes,
       };
       const attributeA11ySuffix = toRecipeAttributeA11ySuffix(attributeFacts);

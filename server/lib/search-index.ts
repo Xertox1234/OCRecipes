@@ -25,6 +25,7 @@ export type SearchIndexableMealPlanRecipe = Pick<
   | "mealTypes"
   | "allergens"
   | "dietConflicts"
+  | "spiceLevel"
   | "difficulty"
   | "prepTimeMinutes"
   | "cookTimeMinutes"
@@ -52,6 +53,7 @@ export type SearchIndexableCommunityRecipe = Pick<
   | "mealTypes"
   | "allergens"
   | "dietConflicts"
+  | "spiceLevel"
   | "difficulty"
   | "timeEstimate"
   | "servings"
@@ -99,6 +101,7 @@ export function mealPlanToSearchable(
     allergens: recipe.allergens ?? null,
     // Same contract as `allergens`: `null` = not checked.
     dietConflicts: recipe.dietConflicts ?? null,
+    spiceLevel: recipe.spiceLevel ?? null,
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: prep,
     cookTimeMinutes: cook,
@@ -138,6 +141,7 @@ export function communityToSearchable(
     allergens: recipe.allergens ?? null,
     // Same contract as `allergens`: `null` = not checked.
     dietConflicts: recipe.dietConflicts ?? null,
+    spiceLevel: recipe.spiceLevel ?? null,
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: null,
     cookTimeMinutes: null,

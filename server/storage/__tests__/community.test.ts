@@ -242,6 +242,25 @@ describe("community storage", () => {
     });
   });
 
+  describe("spice level", () => {
+    it("stores the AI-set level on the limit-checked create path", async () => {
+      const recipe = await createRecipeWithLimitCheck(testUser.id, 3, {
+        authorId: testUser.id,
+        title: "Fiery Curry",
+        normalizedProductName: "test-fiery-curry",
+        instructions: ["Simmer"],
+        isPublic: false,
+        spiceLevel: "hot",
+      });
+      expect(recipe!.spiceLevel).toBe("hot");
+    });
+
+    it("stays null when no level was set (imports, manual entry)", async () => {
+      const recipe = await createTestRecipe(testUser.id);
+      expect(recipe.spiceLevel).toBeNull();
+    });
+  });
+
   // --------------------------------------------------------------------------
   // createRecipeWithLimitCheck
   // --------------------------------------------------------------------------

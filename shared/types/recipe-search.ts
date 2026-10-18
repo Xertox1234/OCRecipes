@@ -7,6 +7,8 @@ import {
   parseDietConflicts,
   type DietConflictId,
 } from "@shared/constants/diet-conflicts";
+import { parseSpiceLevel } from "@shared/constants/recipe-attributes";
+import type { SpiceLevel } from "@shared/schemas/recipe-finder";
 
 export interface SearchableRecipe {
   id: string; // "personal:42", "community:17"
@@ -42,6 +44,8 @@ export interface SearchableRecipe {
    * contract as `allergens`: `null` = not checked, so no diet icon shows.
    */
   dietConflicts: DietConflictId[] | null;
+  /** AI-set heat level; `null` = not worked out, no icon. */
+  spiceLevel: SpiceLevel | null;
 }
 
 export interface RecipeSearchParams {
@@ -115,6 +119,8 @@ const searchableRecipeSchema = z.object({
   // icon only hides, the response never fails. Without this key Zod would
   // strip the field and no diet icon could ever show in the browser.
   dietConflicts: z.unknown().transform(parseDietConflicts),
+  // Same leniency: missing/unknown reads as null (no icon).
+  spiceLevel: z.unknown().transform(parseSpiceLevel),
 });
 
 export const recipeSearchResponseSchema = z.object({

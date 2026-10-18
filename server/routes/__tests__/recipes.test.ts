@@ -138,6 +138,7 @@ describe("Recipes Routes", () => {
             mealTypes: [],
             allergens: [],
             dietConflicts: null,
+            spiceLevel: null,
             difficulty: null,
             prepTimeMinutes: null,
             cookTimeMinutes: null,
@@ -332,6 +333,7 @@ describe("Recipes Routes", () => {
         ingredients: [{ name: "pasta", quantity: "200", unit: "g" }],
         dietTags: [],
         instructions: ["Cook pasta..."],
+        spiceLevel: "medium",
         imageUrl: null,
       });
       vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
@@ -344,6 +346,10 @@ describe("Recipes Routes", () => {
         .send({ productName: "Pasta" });
 
       expect(res.status).toBe(201);
+      // The AI-set spice level is handed to storage with the recipe.
+      expect(
+        vi.mocked(storage.createRecipeWithLimitCheck).mock.calls[0][2],
+      ).toMatchObject({ spiceLevel: "medium" });
       // Image generation is kicked off via fireAndForget after responding.
       expect(vi.mocked(generateAndPatchRecipeImage)).toHaveBeenCalled();
     });
