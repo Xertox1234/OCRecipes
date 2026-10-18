@@ -36,6 +36,14 @@ const CONFLICT_KEYWORDS: Record<DietConflictId, readonly string[]> = {
     "pancetta",
     "meatball",
     "meatballs",
+    // Bare "meat" covers "ground meat" / "meat sauce". Bare "goat" stays out
+    // ("goat cheese"). "meat-free" is skipped per occurrence (MEAT_FREE_SUFFIX).
+    "meat",
+    "mutton",
+    "rabbit",
+    "lardons",
+    "pastrami",
+    "guanciale",
   ],
   poultry: ["chicken", "turkey", "duck", "goose", "quail"],
   animal_derived: [
@@ -54,6 +62,10 @@ const CONFLICT_KEYWORDS: Record<DietConflictId, readonly string[]> = {
  * A plant word directly before the keyword (space or hyphen join only — the
  * same narrow join as the allergen plant-substitute guard, because suppression
  * is the dangerous direction) names a substitute: "veggie bacon".
+ *
+ * Only words that unambiguously name a substitute belong here. Mushroom, soy,
+ * tofu and vegetable are NOT listed: they also come before real meat
+ * ("vegetable beef soup", "mushroom beef", "soy chicken").
  */
 const PLANT_QUALIFIERS = [
   "vegan",
@@ -62,47 +74,61 @@ const PLANT_QUALIFIERS = [
   "plant-based",
   "meatless",
   "meat-free",
-  "tofu",
-  "soy",
   "seitan",
-  "mushroom",
   "jackfruit",
-  "vegetable",
   "microbial",
 ];
 
 /** Poultry followed by egg(s) is an egg, which the egg allergen covers. */
 const EGG_SUFFIX = /^[\s-]+eggs?(?:$|[\s,;/()-])/;
 
-const qualifierPatternCache = new Map<string, RegExp>();
+/** "meat-free" / "meat free" names a substitute, not meat. */
+const MEAT_FREE_SUFFIX = /^[\s-]+free(?:$|[\s,;/()-])/;
 
-function qualifiedPattern(keyword: string): RegExp {
-  let pattern = qualifierPatternCache.get(keyword);
+const QUALIFIER_BEFORE = new RegExp(
+  `(?:^|[\\s,;/()\\-])(?:${PLANT_QUALIFIERS.join("|")})[\\s\\-]$`,
+  "i",
+);
+
+const occurrencePatternCache = new Map<string, RegExp>();
+
+/** Every whole-word occurrence of `keyword` (lookarounds, so none is consumed). */
+function occurrencePattern(keyword: string): RegExp {
+  let pattern = occurrencePatternCache.get(keyword);
   if (!pattern) {
     const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     pattern = new RegExp(
-      `(?:^|[\\s,;/()\\-])(?:${PLANT_QUALIFIERS.join("|")})[\\s\\-]${escaped}(?:$|[\\s,;/()\\-])`,
-      "i",
+      `(?<=^|[\\s,;/()\\-])${escaped}(?=$|[\\s,;/()\\-])`,
+      "gi",
     );
-    qualifierPatternCache.set(keyword, pattern);
+    occurrencePatternCache.set(keyword, pattern);
   }
   return pattern;
 }
 
+/**
+ * Judges EACH occurrence: one unqualified occurrence flags, so "chicken egg
+ * noodles with chicken" is poultry even though the first "chicken" is an egg.
+ */
 function conflictKeywordHits(
   lower: string,
   keyword: string,
   id: DietConflictId,
 ): boolean {
   if (!ingredientContainsKeyword(lower, keyword)) return false;
-  if (qualifiedPattern(keyword).test(lower)) return false;
-  if (id === "poultry") {
-    const at = lower.indexOf(keyword);
-    if (at !== -1 && EGG_SUFFIX.test(lower.slice(at + keyword.length))) {
-      return false;
-    }
+  let sawOccurrence = false;
+  for (const m of lower.matchAll(occurrencePattern(keyword))) {
+    sawOccurrence = true;
+    const before = lower.slice(0, m.index);
+    const after = lower.slice(m.index + keyword.length);
+    if (QUALIFIER_BEFORE.test(before)) continue;
+    if (id === "poultry" && EGG_SUFFIX.test(after)) continue;
+    if (keyword === "meat" && MEAT_FREE_SUFFIX.test(after)) continue;
+    return true;
   }
-  return true;
+  // Contains-check passed but no whole-word occurrence (e.g. a multi-word
+  // substring): when in doubt, flag.
+  return !sawOccurrence;
 }
 
 /**

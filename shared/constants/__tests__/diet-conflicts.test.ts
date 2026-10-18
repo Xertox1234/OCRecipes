@@ -28,6 +28,18 @@ describe("deriveRecipeDietConflicts", () => {
     ["bone broth", "animal_derived"],
     ["rennet", "animal_derived"],
     ["runny honey", "honey"],
+    ["vegetable beef soup", "meat"],
+    ["mushroom beef", "meat"],
+    ["soy chicken", "poultry"],
+    ["vegetable chicken soup", "poultry"],
+    ["chicken egg noodles with chicken", "poultry"],
+    ["ground meat", "meat"],
+    ["meat sauce", "meat"],
+    ["mutton", "meat"],
+    ["rabbit", "meat"],
+    ["lardons", "meat"],
+    ["pastrami", "meat"],
+    ["guanciale", "meat"],
   ])("flags %s as %s", (ingredient, id) => {
     expect(deriveRecipeDietConflicts([ingredient])).toContain(id);
   });
@@ -48,6 +60,10 @@ describe("deriveRecipeDietConflicts", () => {
     "plant-based sausage",
     "vegetarian rennet",
     "microbial rennet",
+    "goat cheese",
+    "meat-free mince",
+    "plant-based meat",
+    "vegan chicken egg noodles",
   ])("does not flag %s", (ingredient) => {
     expect(deriveRecipeDietConflicts([ingredient])).toEqual([]);
   });

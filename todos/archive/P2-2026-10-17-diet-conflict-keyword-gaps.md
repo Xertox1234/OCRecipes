@@ -1,6 +1,6 @@
 ---
 title: "Diet conflict keywords: stop clearing real meat, add missing meat words, fix 'prep + cook' time text"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-17
 updated: 2026-10-17
@@ -47,3 +47,8 @@ Suppression is the dangerous direction for an absence claim: when in doubt, flag
 ### 2026-10-17
 
 - Filed from the attribute-icons PR review (baseline code-reviewer, advisory verdict).
+
+### 2026-10-17 (implemented)
+
+- PLANT_QUALIFIERS trimmed to unambiguous substitutes; qualifier/egg checks now judge each occurrence; added meat, mutton, rabbit, lardons, pastrami, guanciale; `parseTimeEstimateMinutes` sums listed parts and takes the larger end of a range.
+- Still to do after merge: re-run `server/scripts/backfill-recipe-allergens.ts` on prod (owner-run) to refresh `diet_conflicts`.
