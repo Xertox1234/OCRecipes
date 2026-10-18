@@ -53,7 +53,17 @@ export const AI_FEATURES = {
   "front-label-scan": { ...HEAVY, json: true, vision: true }, // front-label-analysis analyzeFrontLabel
   "cooking-ingredient-photo": { ...HEAVY, json: true, vision: true }, // cooking-session analyzeIngredientPhoto
   // Recipes & meals
-  "recipe-generate": { ...HEAVY, json: true, vision: false }, // recipe-generation generateRecipeContent
+  // Gemini 4 Argon (owner-approved 2026-10-17, paired eval +1.97 creativity vs
+  // gpt-4o, 0/36 assertion failures; spec 2026-10-17-recipe-generate-argon-
+  // background-completion §1). Direct-OpenAI fallback stays gpt-4o until nearer
+  // its 2027-01-14 retirement. Gemini keeps `temperature` and OpenRouter
+  // honours `max_completion_tokens` for it, so no adapt block.
+  "recipe-generate": {
+    model: "google/gemini-4-argon",
+    fallback: "gpt-4o",
+    json: true,
+    vision: false,
+  }, // recipe-generation generateRecipeContent
   "meal-suggestions": { ...HEAVY, json: true, vision: false }, // meal-suggestions generateMealSuggestions
   "pantry-meal-plan": { ...HEAVY, json: true, vision: false }, // pantry-meal-plan generateMealPlanFromPantry
   "ingredient-substitution": { ...HEAVY, json: true, vision: false }, // ingredient-substitution getAiSubstitutions
