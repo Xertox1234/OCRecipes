@@ -101,7 +101,12 @@ async function callRecipeChat(input: RecipeChatInput): Promise<string> {
       );
     }
     if (r.dietTags?.length) parts.push(`Tags: ${r.dietTags.join(", ")}`);
-    return parts.join("\n\n");
+    // The model's conversational text precedes the card and is where an
+    // allergen callout lives (the judge's SAFETY dimension and the safety
+    // cases' mustContain depend on it). Keep it, minus the raw JSON fence
+    // the service streamed as content.
+    const prose = text.replace(/```json[\s\S]*?(```|$)/, "").trim();
+    return [...(prose ? [prose] : []), ...parts].join("\n\n");
   }
 
   return text;

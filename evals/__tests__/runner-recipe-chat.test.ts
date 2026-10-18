@@ -23,7 +23,8 @@ vi.mock("../lib/runner-core", () => ({
 
 vi.mock("../../server/services/recipe-chat", () => ({
   generateRecipeChatResponse: async function* () {
-    yield { content: "Here is a quick idea." };
+    yield { content: "Since you can't have peanuts, here's a quick idea.\n" };
+    yield { content: '```json\n{"title": "Lemon Chicken"}\n```' };
     yield {
       content: "",
       recipe: {
@@ -59,6 +60,10 @@ describe("recipe-chat eval runner", () => {
       scoreDimensions: ["relevance"],
     } as unknown as EvalTestCase);
 
+    // The conversational text is where an allergen callout lives: keep it
+    // ahead of the card, without the raw JSON fence the service streamed.
+    expect(result.text.startsWith("Since you can't have peanuts")).toBe(true);
+    expect(result.text).not.toContain("```json");
     expect(result.text).toContain("Recipe: Lemon Chicken");
     expect(result.text).toContain("- 2 breasts chicken");
     expect(state.imageStepReached).toBe(false);
