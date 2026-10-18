@@ -9,7 +9,6 @@
   "client/components/CoachOverlayContent.tsx",
   "client/components/MealSuggestionsModal.tsx",
   "client/components/MicronutrientSection.tsx",
-  "client/components/RecipeGenerationModal.tsx",
   "client/components/SaveButton.tsx",
   "client/components/ScanFAB.tsx",
   "client/components/ServingControls.tsx",

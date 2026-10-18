@@ -1,6 +1,6 @@
 ---
 title: "Toasts render behind React Native `Modal` sheets — the recipe-ready toast is hidden while the generation sheet is reopened"
-status: in-progress
+status: done
 priority: low
 created: 2026-10-18
 updated: 2026-10-18
