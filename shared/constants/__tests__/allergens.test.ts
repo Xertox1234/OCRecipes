@@ -858,3 +858,40 @@ describe("isRecipeSafeForAllergies", () => {
     ).toBe(false);
   });
 });
+
+describe("gluten and dairy keyword gaps (owner ruling 2026-10-17)", () => {
+  it.each([
+    "barley",
+    "pearl barley",
+    "rye",
+    "rye flour",
+    "beer",
+    "lager",
+    "stout",
+    "soy sauce",
+    "teriyaki sauce",
+  ])("flags wheat for %s", (ingredient) => {
+    const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
+    expect(ids).toContain("wheat");
+  });
+
+  it("flags milk for pesto", () => {
+    expect(deriveRecipeAllergens(["basil pesto"]).map((a) => a.id)).toContain(
+      "milk",
+    );
+  });
+
+  it.each(["ginger ale", "buckwheat", "ryeless crispbread"])(
+    "does not flag wheat for %s",
+    (ingredient) => {
+      const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
+      expect(ids).not.toContain("wheat");
+    },
+  );
+
+  it("over-flags 'gluten-free soy sauce' (accepted, safe direction)", () => {
+    expect(
+      deriveRecipeAllergens(["gluten-free soy sauce"]).map((a) => a.id),
+    ).toContain("wheat");
+  });
+});

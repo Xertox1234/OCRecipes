@@ -1,9 +1,9 @@
 ---
 title: "Standard icons for recipe attributes (vegan, spice level, contains nuts …)"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-14
-updated: 2026-10-14
+updated: 2026-10-17
 assignee:
 labels: [feature, react-native, design]
 github_issue:
