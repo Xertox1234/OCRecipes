@@ -3,19 +3,28 @@
 // ruling 2026-09-29) opens that recipe; a snapshot item (a suggestion) has no
 // recipe to open and keeps today's behaviour.
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, render } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import SavedItemsScreen from "../SavedItemsScreen";
+import {
+  getUnreadGeneratedRecipeIds,
+  markGeneratedRecipeUnread,
+} from "@/hooks/useGeneratedRecipeNotices";
 import type { SavedItem } from "@shared/schema";
 
-const { mockNavigate, mockUseSavedItems } = vi.hoisted(() => ({
+const { mockNavigate, mockUseSavedItems, focusEffectCb } = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
   mockUseSavedItems: vi.fn(),
+  focusEffectCb: { current: null as (() => void) | null },
 }));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: mockNavigate, setOptions: vi.fn() }),
   useIsFocused: () => true,
+  useFocusEffect: (cb: () => void) => {
+    focusEffectCb.current = cb;
+  },
 }));
 vi.mock("@/hooks/useHeaderContentInset", () => ({
   useHeaderContentInset: () => 0,
@@ -103,5 +112,23 @@ describe("SavedItemsScreen — linked recipes", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
     // Card renders as a Pressable only with onPress: no button to announce.
     expect(screen.queryByLabelText("activity: Morning Walk")).toBeNull();
+  });
+});
+
+// A generated recipe lands in Saved items (under Profile); opening the list
+// is seeing them all, and a reply lost on the wire may have been saved anyway.
+describe("SavedItemsScreen — generated recipes", () => {
+  it("clears all unread generated recipes and refetches on focus", () => {
+    listOf([]);
+    const { queryClient, wrapper } = createQueryWrapper();
+    markGeneratedRecipeUnread(queryClient, 42);
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(<SavedItemsScreen />, { wrapper });
+    expect(focusEffectCb.current).not.toBeNull();
+    focusEffectCb.current?.();
+
+    expect(getUnreadGeneratedRecipeIds(queryClient)).toEqual([]);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["/api/saved-items"] });
   });
 });

@@ -9,9 +9,11 @@ import {
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import {
+  useFocusEffect,
   useNavigation,
   type CompositeNavigationProp,
 } from "@react-navigation/native";
+import { useQueryClient } from "@tanstack/react-query";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -31,6 +33,7 @@ import {
   useSavedItemCount,
   useDeleteSavedItem,
 } from "@/hooks/useSavedItems";
+import { clearAllGeneratedRecipesUnread } from "@/hooks/useGeneratedRecipeNotices";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
@@ -123,6 +126,17 @@ export default function SavedItemsScreen() {
       >
     >();
   const { mutate: deleteItem } = useDeleteSavedItem();
+  const queryClient = useQueryClient();
+
+  // A recipe generated in the background lands here. Opening this list is
+  // seeing every new one (the Profile dot goes), and the refetch picks up a
+  // recipe whose reply was lost on the wire after the server had saved it.
+  useFocusEffect(
+    useCallback(() => {
+      clearAllGeneratedRecipesUnread(queryClient);
+      void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+    }, [queryClient]),
+  );
 
   // The navigator renders the header as a sibling `behindContentA11yProps`
   // can't reach — hide its default back button while the sheet is presented

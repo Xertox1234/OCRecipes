@@ -29,6 +29,10 @@ import { renderComponent } from "../../../test/utils/render-component";
 import FeaturedRecipeDetailScreen from "../FeaturedRecipeDetailScreen";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
+import {
+  getUnreadGeneratedRecipeIds,
+  markGeneratedRecipeUnread,
+} from "@/hooks/useGeneratedRecipeNotices";
 
 const {
   mockApiRequest,
@@ -295,5 +299,56 @@ describe("FeaturedRecipeDetailScreen — happy path is unaffected", () => {
     expect(await screen.findByText("Pancakes")).toBeDefined();
     expect(screen.queryByText("Recipe not found")).toBeNull();
     expect(screen.queryByText("Couldn't load this recipe")).toBeNull();
+  });
+});
+
+// Opening a generated recipe (always a community recipe) is reading it: its
+// Profile-tab mark goes, and only its own.
+describe("FeaturedRecipeDetailScreen — generated recipe unread mark", () => {
+  afterEach(() => {
+    mockRouteParams.current = { recipeId: 42, recipeType: "mealPlan" };
+  });
+
+  it("clears this recipe's unread mark when opened as a community recipe", async () => {
+    mockRouteParams.current = { recipeId: 42, recipeType: "community" };
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          queryFn: () =>
+            Promise.resolve({ id: 42, title: "Pancakes", ingredients: [] }),
+        },
+      },
+    });
+    markGeneratedRecipeUnread(queryClient, 42);
+    markGeneratedRecipeUnread(queryClient, 43);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FeaturedRecipeDetailScreen />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Pancakes");
+
+    expect(getUnreadGeneratedRecipeIds(queryClient)).toEqual([43]);
+  });
+
+  it("leaves the marks alone for a meal-plan recipe with the same id", async () => {
+    mockApiRequest.mockResolvedValue({
+      json: async () => ({ id: 42, title: "Pancakes", ingredients: [] }),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    markGeneratedRecipeUnread(queryClient, 42);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FeaturedRecipeDetailScreen />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Pancakes");
+
+    expect(getUnreadGeneratedRecipeIds(queryClient)).toEqual([42]);
   });
 });
