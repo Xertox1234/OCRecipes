@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 
@@ -35,6 +35,7 @@ import {
 import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
 import { useRecipeCommunityStats } from "@/hooks/useRecipeCommunity";
+import { clearGeneratedRecipeUnread } from "@/hooks/useGeneratedRecipeNotices";
 import {
   freshRecipePhotoPollInterval,
   resolveFeaturedRecipeType,
@@ -101,6 +102,15 @@ export default function FeaturedRecipeDetailScreen() {
   const { recipeId, recipeType, type } = route.params;
   const resolvedRecipeType = resolveFeaturedRecipeType(recipeType, type);
   const navigation = useNavigation<FeaturedRecipeDetailScreenNavigationProp>();
+  const queryClient = useQueryClient();
+
+  // A background-generated recipe is a community recipe; opening it is
+  // reading it, so its Profile-tab mark goes (a no-op for any other recipe).
+  useEffect(() => {
+    if (resolvedRecipeType === "community") {
+      clearGeneratedRecipeUnread(queryClient, recipeId);
+    }
+  }, [queryClient, recipeId, resolvedRecipeType]);
   const insets = useSafeAreaInsets();
   const [isScrolled, setIsScrolled] = useState(false);
   const handleScrollOffset = useCallback((y: number) => {

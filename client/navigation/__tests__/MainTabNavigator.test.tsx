@@ -19,6 +19,11 @@ import {
   noteCoachReplyFinished,
   viewCoachConversation,
 } from "@/hooks/useCoachUnreadReplies";
+import {
+  clearAllGeneratedRecipesUnread,
+  markGeneratedRecipeUnread,
+  noteGeneratedRecipeReady,
+} from "@/hooks/useGeneratedRecipeNotices";
 import MainTabNavigator from "../MainTabNavigator";
 import { getChatRouteId } from "../chatRouteId";
 
@@ -75,8 +80,8 @@ vi.mock("@react-navigation/bottom-tabs", () => ({
         data-a11y-label={options?.tabBarAccessibilityLabel}
         data-button-testid={options?.tabBarButtonTestID}
       >
-        {/* Only the Coach tab's icon carries the dot under test. */}
-        {name === "CoachTab"
+        {/* Only the Coach and Profile tabs' icons carry a dot under test. */}
+        {name === "CoachTab" || name === "ProfileTab"
           ? options?.tabBarIcon?.({ color: "#000", size: 24, focused: false })
           : null}
       </div>
@@ -595,6 +600,117 @@ describe("MainTabNavigator — Coach reply ready toast", () => {
     unmount();
 
     noteCoachReplyFinished(queryClient, 5);
+    await settle();
+
+    expect(mockToast.info).not.toHaveBeenCalled();
+  });
+});
+
+// A recipe generated from the photo sheet lands after the sheet has closed
+// (spec 2026-10-17 recipe-generate-argon-background-completion §5): the
+// Profile tab carries the durable dot, the toast offers to open it.
+describe("MainTabNavigator — Profile tab dot", () => {
+  const profileTab = () => screen.getByTestId("tab-screen-ProfileTab");
+  const dots = () => screen.queryAllByTestId("profile-tab-dot");
+
+  it("shows no dot and the plain label by default", () => {
+    renderWithClient();
+
+    expect(dots()).toHaveLength(0);
+    expect(profileTab().getAttribute("data-a11y-label")).toBe("Profile");
+  });
+
+  it("shows the dot and says so in the label while a generated recipe is unread", async () => {
+    const { queryClient } = renderWithClient();
+
+    act(() => {
+      noteGeneratedRecipeReady(queryClient, 42);
+    });
+
+    await waitFor(() => expect(dots()).toHaveLength(1));
+    expect(profileTab().getAttribute("data-a11y-label")).toBe(
+      "Profile, new recipe",
+    );
+  });
+
+  it("drops the dot once all unread recipes are cleared", async () => {
+    const { queryClient } = renderWithClient();
+    act(() => {
+      markGeneratedRecipeUnread(queryClient, 42);
+      markGeneratedRecipeUnread(queryClient, 43);
+    });
+    await waitFor(() => expect(dots()).toHaveLength(1));
+
+    act(() => {
+      clearAllGeneratedRecipesUnread(queryClient);
+    });
+
+    await waitFor(() => expect(dots()).toHaveLength(0));
+    expect(profileTab().getAttribute("data-a11y-label")).toBe("Profile");
+  });
+});
+
+describe("MainTabNavigator — generated recipe toast bridge", () => {
+  const MESSAGE = "Recipe ready — tap to open";
+
+  function openAction() {
+    const [, options] = mockToast.info.mock.calls[0] as [
+      string,
+      { action: { label: string; onPress: () => void } },
+    ];
+    return options.action;
+  }
+
+  it("shows 'Recipe ready — tap to open' with an Open action when a recipe lands", async () => {
+    const { queryClient } = renderWithClient();
+
+    act(() => {
+      noteGeneratedRecipeReady(queryClient, 42);
+    });
+    await settle();
+
+    expect(mockToast.info).toHaveBeenCalledOnce();
+    expect(mockToast.info).toHaveBeenCalledWith(MESSAGE, {
+      action: { label: "Open", onPress: expect.any(Function) },
+    });
+  });
+
+  it("navigates to FeaturedRecipeDetail with the recipe id when Open is pressed", async () => {
+    const { queryClient } = renderWithClient();
+    act(() => {
+      noteGeneratedRecipeReady(queryClient, 42);
+    });
+    await settle();
+
+    openAction().onPress();
+
+    // FeaturedRecipeDetail is a ROOT-stack screen, so the bare form reaches
+    // it from anywhere — including from under the photo-analysis modal.
+    expect(mockNavigationRef.navigate).toHaveBeenCalledOnce();
+    expect(mockNavigationRef.navigate).toHaveBeenCalledWith(
+      "FeaturedRecipeDetail",
+      { recipeId: 42, recipeType: "community" },
+    );
+  });
+
+  it("does not navigate before the navigation container is ready", async () => {
+    mockNavigationRef.isReady.mockReturnValue(false);
+    const { queryClient } = renderWithClient();
+    act(() => {
+      noteGeneratedRecipeReady(queryClient, 42);
+    });
+    await settle();
+
+    openAction().onPress();
+
+    expect(mockNavigationRef.navigate).not.toHaveBeenCalled();
+  });
+
+  it("stops listening once the tab navigator unmounts (signing out drops the subscription)", async () => {
+    const { queryClient, unmount } = renderWithClient();
+    unmount();
+
+    noteGeneratedRecipeReady(queryClient, 42);
     await settle();
 
     expect(mockToast.info).not.toHaveBeenCalled();

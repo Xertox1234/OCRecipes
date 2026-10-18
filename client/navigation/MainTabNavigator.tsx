@@ -26,6 +26,10 @@ import {
   subscribeToCoachReplyReady,
   useHasUnreadCoachReply,
 } from "@/hooks/useCoachUnreadReplies";
+import {
+  subscribeToGeneratedRecipeReady,
+  useHasUnreadGeneratedRecipe,
+} from "@/hooks/useGeneratedRecipeNotices";
 import { navigationRef } from "@/navigation/navigationRef";
 import {
   FontFamily,
@@ -140,11 +144,56 @@ function CoachReplyToastBridge(): null {
   return null;
 }
 
+/**
+ * Open a generated recipe from anywhere. `FeaturedRecipeDetail` is a
+ * ROOT-stack screen, so the bare form reaches it from the tabs and from
+ * under the photo-analysis modal alike (a generated recipe is a community
+ * recipe — the same route Saved items uses).
+ */
+export function openGeneratedRecipe(recipeId: number): void {
+  if (!navigationRef.isReady()) return;
+  navigationRef.navigate("FeaturedRecipeDetail", {
+    recipeId,
+    recipeType: "community",
+  });
+}
+
+/**
+ * Turns "a recipe you asked for is ready" into a toast whose action opens
+ * it. The generation sheet closes as soon as Generate is tapped and the
+ * request completes in `useGenerateRecipeInBackground` after the sheet is
+ * gone, so it publishes to a module-level emitter and this component, inside
+ * the toast provider, listens — the same bridge pattern as
+ * `CoachReplyToastBridge` above. The Profile tab's dot is the durable signal;
+ * the toast is one replaceable slot.
+ *
+ * Renders nothing.
+ */
+function GeneratedRecipeToastBridge(): null {
+  const toast = useToast();
+
+  useEffect(
+    () =>
+      subscribeToGeneratedRecipeReady((recipeId) => {
+        toast.info("Recipe ready — tap to open", {
+          action: {
+            label: "Open",
+            onPress: () => openGeneratedRecipe(recipeId),
+          },
+        });
+      }),
+    [toast],
+  );
+
+  return null;
+}
+
 export default function MainTabNavigator() {
   const { theme, isDark } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { hasPending } = usePendingReminders();
   const hasUnreadCoachReply = useHasUnreadCoachReply();
+  const hasUnreadGeneratedRecipe = useHasUnreadGeneratedRecipe();
   const [menuOpen, setMenuOpen] = useState(false);
   const openMenu = useCallback(() => setMenuOpen(true), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -299,21 +348,44 @@ export default function MainTabNavigator() {
             component={ProfileStackNavigator}
             options={{
               title: "Profile",
-              tabBarAccessibilityLabel: "Profile",
+              // Same scheme as the Coach tab: the dot is visual only, the
+              // label carries the news, "Profile" stays the prefix.
+              tabBarAccessibilityLabel: hasUnreadGeneratedRecipe
+                ? "Profile, new recipe"
+                : "Profile",
               tabBarButtonTestID: "tab-profile",
               tabBarIcon: ({ color, size, focused }) => (
-                <AnimatedTabIcon
-                  name="user"
-                  size={size}
-                  color={color}
-                  focused={focused}
-                />
+                <View style={styles.iconWrapper}>
+                  <AnimatedTabIcon
+                    name="user"
+                    size={size}
+                    color={color}
+                    focused={focused}
+                  />
+                  {/* A generated recipe the user has not opened yet — it
+                      landed in Saved items, under Profile. */}
+                  {hasUnreadGeneratedRecipe && (
+                    <View
+                      testID="profile-tab-dot"
+                      accessible={false}
+                      importantForAccessibility="no"
+                      style={[
+                        styles.dot,
+                        {
+                          borderColor: theme.backgroundDefault,
+                          backgroundColor: theme.error,
+                        },
+                      ]}
+                    />
+                  )}
+                </View>
               ),
             }}
           />
         </Tab.Navigator>
       </View>
       <CoachReplyToastBridge />
+      <GeneratedRecipeToastBridge />
       <ScanFAB menuOpen={menuOpen} onOpen={openMenu} onClose={closeMenu} />
     </View>
   );
