@@ -23,6 +23,8 @@ import {
 import { buildDietaryContext } from "../lib/dietary-context";
 import { createServiceLogger, toError } from "../lib/logger";
 import { storage } from "../storage";
+import { parseSpiceLevel } from "@shared/constants/recipe-attributes";
+import type { SpiceLevel } from "@shared/schemas/recipe-finder";
 
 const log = createServiceLogger("recipe-generation");
 
@@ -74,6 +76,9 @@ const recipeContentSchema = z.object({
     })
     .pipe(z.array(z.string()).min(1)),
   dietTags: z.array(z.string()).default([]),
+  // AI-set heat level. A missing or invalid value becomes null (no icon) and
+  // never rejects an otherwise valid recipe — we do not guess a level.
+  spiceLevel: z.unknown().transform(parseSpiceLevel),
 });
 
 // RecipeContent type is defined in @shared/types/cook-session and re-exported here
@@ -96,6 +101,7 @@ export interface GeneratedRecipe {
   ingredients: GeneratedIngredient[];
   instructions: string[];
   dietTags: string[];
+  spiceLevel?: SpiceLevel | null;
   imageUrl: string | null;
 }
 
@@ -186,6 +192,7 @@ Guidelines:
 - Choose an accurate difficulty: Easy (≤ 5 ingredients, one-pot/no-cook), Medium (6–12 ingredients, standard techniques), Hard (12+ ingredients or advanced techniques).
 - Include accurate prep + cook time in the timeEstimate.
 - Tag with all applicable diet tags: "vegetarian", "vegan", "gluten-free", "dairy-free", "low-carb", "high-protein", "quick", "kid-friendly", etc.
+- Judge spiceLevel from the heat the finished dish actually has, going by the ingredients you listed (fresh or dried chilies, cayenne, chili flakes, hot sauce, harissa, curry paste, jalapeños, black pepper in large amounts): "mild" = a gentle warmth, "medium" = clearly spicy, "hot" = very spicy. Use null when the dish has no meaningful heat. Never guess: if unsure, use null.
 
 ALLERGY SAFETY: If the user has listed allergens, NEVER include ingredients containing those allergens. Double-check every ingredient against the allergen list. Allergies are safety-critical — treat them as absolute exclusions.
 Hidden allergen sources to watch for: soy sauce and most teriyaki sauces contain wheat/gluten (use tamari for gluten-free dishes); Parmesan and some aged cheeses may contain trace gluten; store-bought broths often contain allergens — specify allergen-free versions or use fresh alternatives when relevant.
@@ -198,7 +205,8 @@ Respond with a single JSON object matching this exact schema:
   "timeEstimate": "string (e.g. 30 min)",
   "ingredients": [{ "name": "string", "quantity": "string", "unit": "string" }],
   "instructions": ["string"],
-  "dietTags": ["string"]
+  "dietTags": ["string"],
+  "spiceLevel": "mild | medium | hot | null"
 }
 
 ${SYSTEM_PROMPT_BOUNDARY}`,

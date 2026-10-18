@@ -3,6 +3,7 @@
  * Used by both server storage (chat.ts) and service (recipe-chat.ts) layers.
  */
 import { z } from "zod";
+import { spiceLevelSchema } from "./recipe-finder";
 
 /** Metadata stored in chatMessages.metadata for recipe responses */
 export const recipeChatMetadataSchema = z.object({
@@ -22,6 +23,9 @@ export const recipeChatMetadataSchema = z.object({
     ),
     instructions: z.array(z.string()),
     dietTags: z.array(z.string()),
+    // AI-set heat level. Optional (metadata saved before this field exists)
+    // and lenient: a bad value reads as null, never rejects the recipe.
+    spiceLevel: spiceLevelSchema.nullable().optional().catch(null),
   }),
   allergenWarning: z.string().nullable(),
   imageUrl: z.string().nullable(),

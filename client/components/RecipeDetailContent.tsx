@@ -90,6 +90,8 @@ export interface RecipeDetailContentProps {
    * not checked, so no diet icon shows.
    */
   dietConflicts?: unknown;
+  /** AI-set heat level (stored text, read defensively); `null` = no icon. */
+  spiceLevel?: unknown;
   /** `toTotalTimeMinutes` of the recipe; drives the Quick icon. */
   totalTimeMinutes?: number | null;
   /** ID of the recipe this was remixed from (null if original was deleted) */
@@ -290,6 +292,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
               dietTags: props.dietTags,
               allergens: props.allergens,
               dietConflicts: props.dietConflicts,
+              spiceLevel: props.spiceLevel,
               totalTimeMinutes: props.totalTimeMinutes,
             }}
           />

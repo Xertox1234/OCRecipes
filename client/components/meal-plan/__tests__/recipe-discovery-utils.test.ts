@@ -33,6 +33,7 @@ const base: SearchableRecipe = {
   isCanonical: true,
   allergens: [],
   dietConflicts: [],
+  spiceLevel: null,
 };
 
 describe("parseSearchableRecipeNumericId", () => {
@@ -55,6 +56,7 @@ describe("toCarouselCard", () => {
       allergens: [],
       dietTags: [],
       dietConflicts: [],
+      spiceLevel: null,
       totalTimeMinutes: 30,
     });
   });
@@ -64,6 +66,7 @@ describe("toCarouselCard", () => {
       ...base,
       dietTags: ["vegan"],
       dietConflicts: null,
+      spiceLevel: null,
       totalTimeMinutes: 15,
     });
     expect(card.dietTags).toEqual(["vegan"]);

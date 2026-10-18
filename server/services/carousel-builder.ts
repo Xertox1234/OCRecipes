@@ -16,6 +16,7 @@ type CarouselRecipe = Pick<
   | "mealTypes"
   | "allergens"
   | "dietConflicts"
+  | "spiceLevel"
 >;
 
 // ── Normalization ────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ function normalizeCommunity(
     allergens: recipe.allergens,
     dietTags: recipe.dietTags ?? [],
     dietConflicts: recipe.dietConflicts ?? null,
+    spiceLevel: recipe.spiceLevel ?? null,
     totalTimeMinutes: toTotalTimeMinutes({ timeEstimate: recipe.timeEstimate }),
   };
 }

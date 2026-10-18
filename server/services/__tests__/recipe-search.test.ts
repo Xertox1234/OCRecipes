@@ -54,6 +54,7 @@ const baseMealPlanRecipe: MealPlanRecipe = {
   mealTypes: ["dinner"],
   allergens: [],
   dietConflicts: null,
+  spiceLevel: null,
   caloriesPerServing: "450",
   proteinPerServing: "35",
   carbsPerServing: "20",
@@ -79,6 +80,7 @@ const baseCommunityRecipe: CommunityRecipe = {
   mealTypes: ["lunch"],
   allergens: [],
   dietConflicts: null,
+  spiceLevel: null,
   instructions: ["Grill chicken", "Toss salad"],
   ingredients: [
     { name: "Chicken breast", quantity: "2", unit: "pieces" },
@@ -233,6 +235,7 @@ describe("communityToSearchable", () => {
       ...baseCommunityRecipe,
       timeEstimate: "40 minutes",
       dietConflicts: ["meat"],
+      spiceLevel: null,
     });
     expect(doc.totalTimeMinutes).toBe(40);
     expect(doc.dietConflicts).toEqual(["meat"]);

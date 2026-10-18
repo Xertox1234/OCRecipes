@@ -218,6 +218,7 @@ export function register(app: Express): void {
             timeEstimate: generatedRecipe.timeEstimate,
             servings: servings || 2,
             dietTags: generatedRecipe.dietTags,
+            spiceLevel: generatedRecipe.spiceLevel,
             mealTypes,
             instructions: generatedRecipe.instructions,
             ingredients: generatedRecipe.ingredients,

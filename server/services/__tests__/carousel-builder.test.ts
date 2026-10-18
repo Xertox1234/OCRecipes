@@ -64,6 +64,7 @@ const mockCommunityRecipes = [
     remixedFromTitle: null,
     allergens: null,
     dietConflicts: null,
+    spiceLevel: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   },
@@ -92,6 +93,7 @@ const mockCommunityRecipes = [
     remixedFromTitle: null,
     allergens: null,
     dietConflicts: null,
+    spiceLevel: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   },
@@ -150,6 +152,7 @@ describe("carousel-builder", () => {
         ...mockCommunityRecipes[0],
         dietTags: ["vegan"],
         dietConflicts: [],
+        spiceLevel: null,
         timeEstimate: "1 hr 15 min",
       },
     ]);

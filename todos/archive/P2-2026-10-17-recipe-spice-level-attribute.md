@@ -1,6 +1,6 @@
 ---
 title: "Spice level icon for recipes (mild / medium / hot)"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-17
 updated: 2026-10-17
@@ -21,12 +21,12 @@ This is the followup the owner split out of the recipe attribute icons work on 2
 
 ## Acceptance Criteria
 
-- [ ] A short design decides how spice is worked out per recipe: a keyword list over ingredient names, or the AI at generation time. The owner picks.
-- [ ] A nullable saved `spice_level` (`mild` / `medium` / `hot`, reusing `spiceLevelSchema` from `shared/schemas/recipe-finder.ts`) on `community_recipes` and `meal_plan_recipes`, via a new additive migration applied to prod before merge.
-- [ ] It is written at the same storage write points as `diet_conflicts`. `null` means "not worked out" and shows no icon.
-- [ ] The backfill (`server/scripts/backfill-recipe-allergens.ts`) fills it for existing rows.
-- [ ] `spice_*` attributes in `RECIPE_ATTRIBUTE_LABELS` and `RECIPE_ATTRIBUTE_VISUALS`, using `chili-mild`, `chili-medium` and `chili-hot` (all three exist in the MaterialCommunityIcons glyph map, checked 2026-10-17).
-- [ ] Tests: the derivation, `null` → no icon, the glyph-map check, and contrast coverage.
+- [x] A short design decides how spice is worked out per recipe: a keyword list over ingredient names, or the AI at generation time. The owner picks. (Owner picked "AI decides", 2026-10-17 — see Updates.)
+- [x] A nullable saved `spice_level` (`mild` / `medium` / `hot`, reusing `spiceLevelSchema` from `shared/schemas/recipe-finder.ts`) on `community_recipes` and `meal_plan_recipes`, via a new additive migration applied to prod before merge.
+- [x] It is written at the same storage write points as `diet_conflicts`. `null` means "not worked out" and shows no icon.
+- [x] The backfill (`server/scripts/backfill-recipe-allergens.ts`) fills it for existing rows.
+- [x] `spice_*` attributes in `RECIPE_ATTRIBUTE_LABELS` and `RECIPE_ATTRIBUTE_VISUALS`, using `chili-mild`, `chili-medium` and `chili-hot` (all three exist in the MaterialCommunityIcons glyph map, checked 2026-10-17).
+- [x] Tests: the derivation, `null` → no icon, the glyph-map check, and contrast coverage.
 
 ## Implementation Notes
 
@@ -50,3 +50,5 @@ This is the followup the owner split out of the recipe attribute icons work on 2
 ### 2026-10-17
 
 - Filed as the owner-chosen followup of the recipe attribute icons work.
+- OWNER DECISION (orchestrating session, 2026-10-17, settles the first acceptance criterion): the AI decides the spice level, not a keyword list. The AI sets `spice_level` (mild / medium / hot, `spiceLevelSchema`) when it writes a recipe (recipe generation + recipe chat); the value is validated with the shared Zod schema and anything missing or invalid becomes `null` (no icon) — a level is never guessed. Recipes not written by our AI (imports, manual entry, external sources) keep `null`. Existing rows are filled by a sibling backfill (`server/scripts/backfill-recipe-spice-level.ts`) that asks the AI only for rows whose `spice_level` is null. A dish with no meaningful heat is `null` (no icon), not "mild".
+- Implemented: migration 0029, `parseSpiceLevel`, `spice_mild|medium|hot` attributes (chili-mild/medium/hot), feeds, generation + chat prompts, backfill.

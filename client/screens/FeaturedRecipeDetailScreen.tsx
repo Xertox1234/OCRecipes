@@ -84,6 +84,7 @@ interface NormalizedRecipe {
   allergens?: DerivedRecipeAllergen[] | null;
   /** Stored jsonb; read defensively downstream (`parseDietConflicts`). */
   dietConflicts?: unknown;
+  spiceLevel?: unknown;
   totalTimeMinutes?: number | null;
   remixedFromId?: number | null;
   remixedFromTitle?: string | null;
@@ -183,6 +184,7 @@ export default function FeaturedRecipeDetailScreen() {
         nutrition: parseNutritionData(mealPlanRecipe),
         allergens: mealPlanRecipe.allergens,
         dietConflicts: mealPlanRecipe.dietConflicts,
+        spiceLevel: mealPlanRecipe.spiceLevel,
         totalTimeMinutes: toTotalTimeMinutes(mealPlanRecipe),
         isCanonical: false,
         canonicalImages: [],
@@ -206,6 +208,7 @@ export default function FeaturedRecipeDetailScreen() {
         imageUrl: communityRecipe.imageUrl,
         allergens: communityRecipe.allergens,
         dietConflicts: communityRecipe.dietConflicts,
+        spiceLevel: communityRecipe.spiceLevel,
         totalTimeMinutes: toTotalTimeMinutes(communityRecipe),
         remixedFromId: communityRecipe.remixedFromId,
         remixedFromTitle: communityRecipe.remixedFromTitle,
@@ -382,6 +385,7 @@ export default function FeaturedRecipeDetailScreen() {
           nutrition={normalized.nutrition ?? null}
           allergens={normalized.allergens}
           dietConflicts={normalized.dietConflicts}
+          spiceLevel={normalized.spiceLevel}
           totalTimeMinutes={normalized.totalTimeMinutes}
           ingredients={normalized.ingredients}
           instructions={normalized.instructions}
