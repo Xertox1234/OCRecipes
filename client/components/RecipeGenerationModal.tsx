@@ -1,18 +1,15 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useRef } from "react";
 import {
-  AccessibilityInfo,
   StyleSheet,
   View,
   Modal,
   Pressable,
   ScrollView,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -20,6 +17,8 @@ import { Card } from "@/components/Card";
 import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useGenerateRecipeInBackground } from "@/hooks/useGenerateRecipeInBackground";
+import { usePendingGeneration } from "@/hooks/useGeneratedRecipeNotices";
 import {
   Spacing,
   BorderRadius,
@@ -32,13 +31,10 @@ import {
   SERVING_OPTIONS,
   formatIngredientsContext,
 } from "./recipe-generation-utils";
-import { apiRequest } from "@/lib/query-client";
-import type { CommunityRecipe } from "@shared/schema";
 
 interface RecipeGenerationModalProps {
   visible: boolean;
   onClose: () => void;
-  onComplete: (recipe: CommunityRecipe) => void;
   productName: string;
   barcode?: string | null;
   /** Foods detected from photo scan - used as ingredients for recipe */
@@ -48,7 +44,6 @@ interface RecipeGenerationModalProps {
 export function RecipeGenerationModal({
   visible,
   onClose,
-  onComplete,
   productName,
   barcode,
   foods,
@@ -68,76 +63,57 @@ export function RecipeGenerationModal({
   const accentColor = theme.link;
   const accentBg = useMemo(() => withOpacity(accentColor, 0.12), [accentColor]);
 
-  const queryClient = useQueryClient();
-
-  // Generate recipe mutation
-  const generateMutation = useMutation({
-    mutationFn: async () => {
-      // If foods are provided from photo scan, format as ingredient list
-      const ingredientsContext =
-        foods && foods.length > 0 ? formatIngredientsContext(foods) : undefined;
-
-      const response = await apiRequest("POST", "/api/recipes/generate", {
-        productName: ingredientsContext || productName,
-        barcode,
-        servings,
-        dietPreferences: selectedDiets,
-        timeConstraint,
-        shareToPublic,
-      });
-      return response.json() as Promise<CommunityRecipe>;
-    },
-    onSuccess: (recipe) => {
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
-      // The server added the recipe to Saved items.
-      void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
-      void queryClient.invalidateQueries({
-        queryKey: ["/api/saved-items/count"],
-      });
-      // Reset form state so re-opening the modal starts fresh (not inheriting previous generation's preferences)
-      setServings(2);
-      setSelectedDiets([]);
-      setTimeConstraint(undefined);
-      setShareToPublic(false);
-      onComplete(recipe);
-    },
-    onError: (error) => {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
-      // The error banner below uses accessibilityLiveRegion="assertive", which
-      // only announces on Android. iOS VoiceOver ignores live regions, so
-      // announce explicitly on iOS only (gated to avoid double-announcing on
-      // Android). Tied to onError so it fires once per failure, not on every
-      // isError render.
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(
-          "Failed to generate recipe. Please try again.",
-        );
-      }
-    },
-    // The error banner below (driven by `generateMutation.isError`) already
-    // shows a visible error.
-    meta: { silentError: true },
-  });
+  // Generation runs in the background: `start` returns at once and the
+  // result arrives as a toast + Profile-tab dot (useGenerateRecipeInBackground).
+  const { start } = useGenerateRecipeInBackground();
+  const isPending = usePendingGeneration("photo");
+  // Same-frame double-tap guard: `isPending` only flips after the cache write
+  // reaches React, so two taps in one frame would both reach `start`.
+  const tappedRef = useRef(false);
 
   const handleGenerate = useCallback(() => {
+    if (tappedRef.current) return;
+    tappedRef.current = true;
+    requestAnimationFrame(() => {
+      tappedRef.current = false;
+    });
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    generateMutation.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- generateMutation.mutate is stable in TQ v5; including the full object causes unnecessary re-creation
-  }, [haptics, generateMutation.mutate]);
+    // If foods are provided from photo scan, format as ingredient list
+    const ingredientsContext =
+      foods && foods.length > 0 ? formatIngredientsContext(foods) : undefined;
+    start({
+      productName: ingredientsContext || productName,
+      barcode,
+      servings,
+      dietPreferences: selectedDiets,
+      timeConstraint,
+      shareToPublic,
+    });
+    // Reset form state so re-opening the modal starts fresh (not inheriting
+    // the previous generation's preferences).
+    setServings(2);
+    setSelectedDiets([]);
+    setTimeConstraint(undefined);
+    setShareToPublic(false);
+    onClose();
+  }, [
+    haptics,
+    start,
+    foods,
+    productName,
+    barcode,
+    servings,
+    selectedDiets,
+    timeConstraint,
+    shareToPublic,
+    onClose,
+  ]);
 
   const toggleDiet = useCallback((diet: string) => {
     setSelectedDiets((prev) =>
       prev.includes(diet) ? prev.filter((d) => d !== diet) : [...prev, diet],
     );
   }, []);
-
-  const handleClose = useCallback(() => {
-    if (!generateMutation.isPending) {
-      onClose();
-    }
-  }, [generateMutation.isPending, onClose]);
-
-  const isGenerating = generateMutation.isPending;
 
   const foodsLabel = useMemo(
     () => (foods?.length ? foods.map((f) => f.name).join(", ") : productName),
@@ -149,7 +125,7 @@ export function RecipeGenerationModal({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={handleClose}
+      onRequestClose={onClose}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -167,18 +143,13 @@ export function RecipeGenerationModal({
           ]}
         >
           <Pressable
-            onPress={handleClose}
-            disabled={isGenerating}
+            onPress={onClose}
             style={styles.closeButton}
             accessibilityLabel="Close"
             accessibilityRole="button"
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Feather
-              name="x"
-              size={24}
-              color={isGenerating ? theme.textSecondary : theme.text}
-            />
+            <Feather name="x" size={24} color={theme.text} />
           </Pressable>
           <ThemedText type="h4" style={styles.headerTitle}>
             Generate Recipe
@@ -244,7 +215,6 @@ export function RecipeGenerationModal({
                   key={option}
                   shape="chip"
                   onPress={() => setServings(option)}
-                  disabled={isGenerating}
                   style={[
                     styles.optionChip,
                     {
@@ -292,7 +262,6 @@ export function RecipeGenerationModal({
                   key={option.label}
                   shape="chip"
                   onPress={() => setTimeConstraint(option.value)}
-                  disabled={isGenerating}
                   style={[
                     styles.optionChip,
                     {
@@ -345,7 +314,6 @@ export function RecipeGenerationModal({
                     key={diet}
                     shape="chip"
                     onPress={() => toggleDiet(diet)}
-                    disabled={isGenerating}
                     style={[
                       styles.dietChip,
                       {
@@ -391,7 +359,6 @@ export function RecipeGenerationModal({
                 haptics.selection();
                 setShareToPublic(!shareToPublic);
               }}
-              disabled={isGenerating}
               style={[
                 styles.shareToggle,
                 { backgroundColor: theme.backgroundSecondary },
@@ -441,56 +408,35 @@ export function RecipeGenerationModal({
             </Pressable>
           </View>
 
-          {/* Error Message */}
-          {generateMutation.isError && (
-            <View
-              accessibilityRole="alert"
-              accessibilityLiveRegion="assertive"
-              style={[
-                styles.errorBanner,
-                { backgroundColor: withOpacity(theme.error, 0.12) },
-              ]}
-            >
-              <Feather name="alert-circle" size={16} color={theme.error} />
-              <ThemedText
-                type="small"
-                style={{ color: theme.error, marginLeft: Spacing.sm, flex: 1 }}
-              >
-                Failed to generate recipe. Please try again.
-              </ThemedText>
-            </View>
-          )}
-
           {/* Generate Button */}
+          {/* One generation at a time for this sheet (owner ruling
+              2026-10-17): while one is in flight the button says so instead
+              of starting another. */}
           <Pressable
             onPress={handleGenerate}
-            disabled={isGenerating}
+            disabled={isPending}
             style={[
               styles.generateButton,
               {
-                backgroundColor: isGenerating
+                backgroundColor: isPending
                   ? theme.backgroundSecondary
                   : theme.accentSolid,
               },
             ]}
             accessibilityLabel="Generate recipe"
             accessibilityRole="button"
-            accessibilityState={{ disabled: isGenerating }}
+            accessibilityState={{ disabled: isPending }}
           >
-            {isGenerating ? (
-              <>
-                <ActivityIndicator size="small" color={theme.textSecondary} />
-                <ThemedText
-                  type="body"
-                  style={{
-                    color: theme.textSecondary,
-                    marginLeft: Spacing.md,
-                    fontFamily: FontFamily.semiBold,
-                  }}
-                >
-                  Generating...
-                </ThemedText>
-              </>
+            {isPending ? (
+              <ThemedText
+                type="body"
+                style={{
+                  color: theme.textSecondary,
+                  fontFamily: FontFamily.semiBold,
+                }}
+              >
+                A recipe is on its way
+              </ThemedText>
             ) : (
               <>
                 <Feather name="zap" size={20} color={theme.buttonText} />
@@ -507,20 +453,6 @@ export function RecipeGenerationModal({
               </>
             )}
           </Pressable>
-
-          {/* Generating Status */}
-          {isGenerating && (
-            <ThemedText
-              type="caption"
-              style={{
-                color: theme.textSecondary,
-                textAlign: "center",
-                marginTop: Spacing.md,
-              }}
-            >
-              This may take a few seconds while we create your recipe...
-            </ThemedText>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
@@ -636,13 +568,6 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     backgroundColor: "#FFFFFF", // hardcoded: toggle thumb requires static white in StyleSheet.create
-  },
-  errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.lg,
   },
   generateButton: {
     flexDirection: "row",

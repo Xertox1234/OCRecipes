@@ -5,7 +5,11 @@ import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
 import { RecipeGenerationModal } from "../RecipeGenerationModal";
 
-vi.mock("@/lib/query-client", () => ({ apiRequest: vi.fn() }));
+// The sheet hands generation to a background hook that needs the toast
+// provider; this suite is about the tiles, so the hook is a stub.
+vi.mock("@/hooks/useGenerateRecipeInBackground", () => ({
+  useGenerateRecipeInBackground: () => ({ start: vi.fn() }),
+}));
 
 function tiles() {
   return [
@@ -19,12 +23,7 @@ function tiles() {
 describe("RecipeGenerationModal — one selection tick per pick", () => {
   it("every servings, time and diet option ticks once", () => {
     renderComponent(
-      <RecipeGenerationModal
-        visible
-        onClose={vi.fn()}
-        onComplete={vi.fn()}
-        productName="Oats"
-      />,
+      <RecipeGenerationModal visible onClose={vi.fn()} productName="Oats" />,
     );
     const count = tiles().length;
     // Denominator: the modal must actually render its options.

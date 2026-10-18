@@ -30,6 +30,13 @@ vi.mock("@react-navigation/native", () => ({
   }),
 }));
 
+// RecipeGenerationModal is mounted unconditionally and its background
+// generation hook needs the toast provider; stub it (the sheet has its own
+// tests).
+vi.mock("@/hooks/useGenerateRecipeInBackground", () => ({
+  useGenerateRecipeInBackground: () => ({ start: vi.fn() }),
+}));
+
 vi.mock("@/hooks/usePhotoAnalysis", () => ({
   usePhotoAnalysis: mockUsePhotoAnalysis,
 }));

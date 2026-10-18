@@ -13,7 +13,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import Animated, { FadeInUp, FadeIn } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -398,7 +397,6 @@ export default function PhotoAnalysisScreen() {
     showLogButton,
     showPrepPicker,
     loadingText,
-    haptics,
   } = usePhotoAnalysis(imageUri, intent);
 
   // Tell screen-reader users the photo is being analyzed. Delayed 500ms
@@ -778,10 +776,6 @@ export default function PhotoAnalysisScreen() {
       <RecipeGenerationModal
         visible={showRecipeModal}
         onClose={() => setShowRecipeModal(false)}
-        onComplete={() => {
-          setShowRecipeModal(false);
-          haptics.notification(Haptics.NotificationFeedbackType.Success);
-        }}
         productName={foods.map((f) => f.name).join(", ")}
         foods={selectedFoods.map((f) => ({
           name: f.name,
