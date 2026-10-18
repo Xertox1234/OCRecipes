@@ -4,7 +4,6 @@ import {
   View,
   TextInput,
   Pressable,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,7 +13,6 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import Animated, { FadeIn } from "react-native-reanimated";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -27,7 +25,14 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { useQueryClient } from "@tanstack/react-query";
+import { Card } from "@/components/Card";
 import { useRecipeGenerate } from "@/hooks/useRecipeGenerate";
+import {
+  useHeldRecipeDraft,
+  usePendingGeneration,
+} from "@/hooks/useGeneratedRecipeNotices";
+import { openRecipeCreate } from "@/navigation/openRecipeCreate";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 
 type AIGenerateNavProp = NativeStackNavigationProp<
@@ -57,7 +62,15 @@ export default function RecipeAIGenerateScreen() {
   const haptics = useHaptics();
 
   const returnToMealPlan = route.params?.returnToMealPlan;
-  const generateMutation = useRecipeGenerate();
+  const queryClient = useQueryClient();
+  // Generation runs in the background: `start` returns at once and the draft
+  // arrives as a toast (or, if missed, the banner below).
+  const { start } = useRecipeGenerate();
+  const isPending = usePendingGeneration("mealPlan");
+  const heldDraft = useHeldRecipeDraft();
+  // Same-frame double-tap guard: `isPending` only flips after the cache write
+  // reaches React.
+  const tappedRef = useRef(false);
 
   const [prompt, setPrompt] = useState("");
   const inputRef = useRef<TextInput>(null);
@@ -71,21 +84,25 @@ export default function RecipeAIGenerateScreen() {
     [haptics],
   );
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(() => {
     const trimmed = prompt.trim();
     if (trimmed.length < 3) return;
+    if (tappedRef.current) return;
+    tappedRef.current = true;
+    requestAnimationFrame(() => {
+      tappedRef.current = false;
+    });
 
     haptics.selection();
+    start(trimmed, returnToMealPlan);
+    navigation.goBack();
+  }, [prompt, haptics, start, returnToMealPlan, navigation]);
 
-    try {
-      const result = await generateMutation.mutateAsync(trimmed);
-      navigation.replace("RecipeCreate", { prefill: result, returnToMealPlan });
-    } catch {
-      // Error is shown via generateMutation.isError
-    }
-  }, [prompt, haptics, generateMutation, navigation, returnToMealPlan]);
+  const handleReview = useCallback(() => {
+    if (heldDraft) openRecipeCreate(queryClient, heldDraft);
+  }, [heldDraft, queryClient]);
 
-  const isDisabled = prompt.trim().length < 3 || generateMutation.isPending;
+  const isDisabled = prompt.trim().length < 3 || isPending;
 
   return (
     <KeyboardAvoidingView
@@ -117,6 +134,33 @@ export default function RecipeAIGenerateScreen() {
             <Feather name="zap" size={32} color={theme.badgeWarningText} />
           </View>
         </View>
+
+        {/* A draft that landed while the toast was missed (spec §5b). */}
+        {heldDraft && (
+          <Card
+            title="Your draft is ready"
+            description="Review it to make changes and save it to your plan."
+          >
+            <Pressable
+              onPress={handleReview}
+              style={[
+                styles.reviewButton,
+                {
+                  backgroundColor: theme.accentSolid,
+                  borderRadius: BorderRadius.sm,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Review"
+            >
+              <ThemedText
+                style={[styles.buttonText, { color: theme.buttonText }]}
+              >
+                Review
+              </ThemedText>
+            </Pressable>
+          </Card>
+        )}
 
         {/* Prompt input */}
         <TextInput
@@ -168,15 +212,6 @@ export default function RecipeAIGenerateScreen() {
           ))}
         </View>
 
-        {/* Error message */}
-        {generateMutation.isError && (
-          <Animated.View entering={FadeIn.duration(250)}>
-            <ThemedText style={[styles.errorText, { color: theme.error }]}>
-              Something went wrong. Please try again.
-            </ThemedText>
-          </Animated.View>
-        )}
-
         {/* Generate button */}
         <Pressable
           onPress={handleGenerate}
@@ -191,24 +226,16 @@ export default function RecipeAIGenerateScreen() {
           ]}
           accessibilityRole="button"
           accessibilityLabel={
-            generateMutation.isPending
-              ? "Creating your recipe..."
-              : "Generate Recipe"
+            isPending ? "A recipe is on its way" : "Generate Recipe"
           }
+          accessibilityState={{ disabled: isDisabled }}
         >
-          {generateMutation.isPending ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator
-                size="small"
-                color={theme.buttonText}
-                style={styles.loadingIndicator}
-              />
-              <ThemedText
-                style={[styles.buttonText, { color: theme.buttonText }]}
-              >
-                Creating your recipe...
-              </ThemedText>
-            </View>
+          {isPending ? (
+            <ThemedText
+              style={[styles.buttonText, { color: theme.buttonText }]}
+            >
+              A recipe is on its way
+            </ThemedText>
           ) : (
             <ThemedText
               style={[styles.buttonText, { color: theme.buttonText }]}
@@ -271,23 +298,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FontFamily.regular,
   },
-  errorText: {
-    fontSize: 13,
-    fontFamily: FontFamily.regular,
-    textAlign: "center",
-    marginBottom: Spacing.md,
+  reviewButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.sm,
   },
   generateButton: {
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
-  },
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  loadingIndicator: {
-    marginRight: Spacing.sm,
   },
   buttonText: {
     fontSize: 16,
