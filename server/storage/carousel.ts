@@ -25,6 +25,7 @@ const CAROUSEL_COLUMNS = {
   // Read with `allergens` and `dietTags` by the attribute icons (spec
   // 2026-10-17).
   dietConflicts: communityRecipes.dietConflicts,
+  spiceLevel: communityRecipes.spiceLevel,
 } as const;
 
 // ============================================================================

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SpiceLevel } from "../schemas/recipe-finder";
 import { foodCategorySchema } from "@shared/constants/preparation";
 
 // ============================================================================
@@ -21,6 +22,8 @@ export interface RecipeContent {
   ingredients: GeneratedIngredient[];
   instructions: string[];
   dietTags: string[];
+  /** AI-set heat level; `null` = no meaningful heat / not worked out. */
+  spiceLevel?: SpiceLevel | null;
 }
 
 /** Signed calorie/macro difference (can be negative for reductions). */

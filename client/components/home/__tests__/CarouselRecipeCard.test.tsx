@@ -48,6 +48,7 @@ const baseCard: CarouselCardType = {
   allergens: null,
   dietTags: [],
   dietConflicts: null,
+  spiceLevel: null,
   totalTimeMinutes: null,
 };
 
@@ -286,6 +287,7 @@ describe("CarouselRecipeCard attribute icons", () => {
           ...baseCard,
           dietTags: ["vegan"],
           dietConflicts: [],
+          spiceLevel: null,
           allergens: [{ id: "soy", viaDerived: false }],
           totalTimeMinutes: 20,
         }}
@@ -307,6 +309,7 @@ describe("CarouselRecipeCard attribute icons", () => {
           ...baseCard,
           dietTags: ["vegan"],
           dietConflicts: null,
+          spiceLevel: null,
           allergens: [],
         }}
         onPress={vi.fn()}

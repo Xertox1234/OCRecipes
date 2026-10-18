@@ -50,6 +50,11 @@ const draft = (title: string) => ({
 });
 const tomorrow = () => new Date(Date.now() + 86_400_000);
 
+// The shared dev DB can hold real expired cards committed outside this test's
+// transaction, so assert only on the rows the test created.
+const ownIds = (rows: { id: number }[], ids: number[]) =>
+  rows.map((r) => r.id).filter((id) => ids.includes(id));
+
 async function seedCommunityRecipe(authorId: string) {
   const [recipe] = await tx
     .insert(communityRecipes)
@@ -168,9 +173,13 @@ describe("inspired suggestions storage", () => {
   it("lists only expired, unmade rows", async () => {
     const past = new Date(Date.now() - 1000);
     const [expired] = await createInspiredSuggestions(a, [draft("Old")], past);
-    await createInspiredSuggestions(a, [draft("Fresh")], tomorrow());
+    const [fresh] = await createInspiredSuggestions(
+      a,
+      [draft("Fresh")],
+      tomorrow(),
+    );
     const listed = await listExpiredUnmadeSuggestions(new Date(), 100);
-    expect(listed.map((r) => r.id)).toEqual([expired.id]);
+    expect(ownIds(listed, [expired.id, fresh.id])).toEqual([expired.id]);
     expect(
       (await deleteInspiredSuggestions([expired.id])).map((r) => r.id),
     ).toEqual([expired.id]);
@@ -184,7 +193,9 @@ describe("inspired suggestions storage", () => {
     );
     const recipe = await seedCommunityRecipe(a);
     await claimInspiredSuggestionMade(a, row.id, recipe.id);
-    expect(await listExpiredUnmadeSuggestions(new Date(), 100)).toEqual([]);
+    expect(
+      ownIds(await listExpiredUnmadeSuggestions(new Date(), 100), [row.id]),
+    ).toEqual([]);
     expect(await deleteInspiredSuggestions([row.id])).toEqual([]);
     expect(await getInspiredSuggestion(a, row.id)).toBeDefined();
   });
@@ -206,7 +217,7 @@ describe("inspired suggestions storage", () => {
       .where(eq(inspiredSuggestions.id, stale.id));
 
     const listed = await listExpiredUnmadeSuggestions(new Date(), 100);
-    expect(listed.map((r) => r.id)).toEqual([stale.id]);
+    expect(ownIds(listed, [live.id, stale.id])).toEqual([stale.id]);
     expect(
       (await deleteInspiredSuggestions([live.id, stale.id])).map((r) => r.id),
     ).toEqual([stale.id]);

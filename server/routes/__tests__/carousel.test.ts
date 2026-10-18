@@ -36,6 +36,7 @@ const mockCards = [
     allergens: null,
     dietTags: [],
     dietConflicts: null,
+    spiceLevel: null,
     totalTimeMinutes: null,
   },
   {
@@ -47,6 +48,7 @@ const mockCards = [
     allergens: null,
     dietTags: [],
     dietConflicts: null,
+    spiceLevel: null,
     totalTimeMinutes: null,
   },
 ];

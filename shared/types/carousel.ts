@@ -1,5 +1,6 @@
 import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 import type { DietConflictId } from "@shared/constants/diet-conflicts";
+import type { SpiceLevel } from "@shared/schemas/recipe-finder";
 
 export interface CarouselRecipeCard {
   /** Community recipe ID */
@@ -19,6 +20,8 @@ export interface CarouselRecipeCard {
   // the same contract as `allergens`: `null` = not checked, never `?? []`.
   dietTags: string[];
   dietConflicts: DietConflictId[] | null;
+  /** AI-set heat level; `null` = not worked out, no icon. */
+  spiceLevel: SpiceLevel | null;
   /** `toTotalTimeMinutes` of the source recipe; `null` when unknown. */
   totalTimeMinutes: number | null;
 }

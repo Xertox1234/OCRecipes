@@ -26,6 +26,7 @@ const resolvedFavouriteRecipeDefaults: ResolvedFavouriteRecipe = {
   allergens: null,
   dietTags: [],
   dietConflicts: null,
+  spiceLevel: null,
   totalTimeMinutes: null,
 };
 

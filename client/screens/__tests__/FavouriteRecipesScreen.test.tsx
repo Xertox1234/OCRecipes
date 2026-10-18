@@ -54,6 +54,7 @@ const baseRecipe: ResolvedFavouriteRecipe = {
   allergens: null,
   dietTags: [],
   dietConflicts: null,
+  spiceLevel: null,
   totalTimeMinutes: null,
 };
 

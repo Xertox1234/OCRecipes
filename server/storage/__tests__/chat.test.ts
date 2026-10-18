@@ -485,6 +485,50 @@ describe("chat storage", () => {
     });
   });
 
+  describe("saveRecipeFromChat — spice level", () => {
+    async function saveWith(recipeExtra: Record<string, unknown>) {
+      const conv = await createChatConversation(
+        testUser.id,
+        "Spice Chat",
+        "recipe",
+      );
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Here it is!",
+        {
+          metadataVersion: 1,
+          recipe: {
+            title: "Curry",
+            description: "Warm",
+            difficulty: "Easy",
+            timeEstimate: "30 min",
+            servings: 2,
+            ingredients: [{ name: "Chili", quantity: "1", unit: "" }],
+            instructions: ["Cook"],
+            dietTags: [],
+            ...recipeExtra,
+          },
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      );
+      return saveRecipeFromChat(msg.id, conv.id, testUser.id);
+    }
+
+    it("saves the level the AI set", async () => {
+      const recipe = await saveWith({ spiceLevel: "medium" });
+      expect(recipe!.spiceLevel).toBe("medium");
+    });
+
+    it("saves null for old metadata without the field", async () => {
+      const recipe = await saveWith({});
+      expect(recipe).not.toBeNull();
+      expect(recipe!.spiceLevel).toBeNull();
+    });
+  });
+
   // ---- saveRecipeFromChat — additional exit paths (H9) ----
 
   describe("saveRecipeFromChat — exit paths", () => {

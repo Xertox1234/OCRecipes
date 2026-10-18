@@ -21,6 +21,7 @@ import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { DietConflictId } from "./constants/diet-conflicts";
+import type { SpiceLevel } from "./schemas/recipe-finder";
 import type { MealSuggestion } from "./types/meal-suggestions";
 import type {
   ReminderMutes,
@@ -886,6 +887,9 @@ export const communityRecipes = pgTable(
     // Derived diet-conflict cache (`deriveRecipeDietConflicts`). `null` =
     // "not checked" — diet icons stay hidden. Never coerce with `?? []`.
     dietConflicts: jsonb("diet_conflicts").$type<DietConflictId[] | null>(),
+    // AI-set heat level (mild / medium / hot), written when OUR AI writes the
+    // recipe. `null` = not worked out (imports, manual entry, no heat) — no icon.
+    spiceLevel: text("spice_level").$type<SpiceLevel | null>(),
     instructions: jsonb("instructions").$type<string[]>().notNull(),
     ingredients: jsonb("ingredients")
       .$type<{ name: string; quantity: string; unit: string }[]>()
@@ -1131,6 +1135,9 @@ export const mealPlanRecipes = pgTable(
     // Derived diet-conflict cache (`deriveRecipeDietConflicts`). `null` =
     // "not checked" — diet icons stay hidden. Never coerce with `?? []`.
     dietConflicts: jsonb("diet_conflicts").$type<DietConflictId[] | null>(),
+    // AI-set heat level (mild / medium / hot), written when OUR AI writes the
+    // recipe. `null` = not worked out (imports, manual entry, no heat) — no icon.
+    spiceLevel: text("spice_level").$type<SpiceLevel | null>(),
     caloriesPerServing: decimal("calories_per_serving", {
       precision: 10,
       scale: 2,
@@ -2063,6 +2070,8 @@ export interface ResolvedFavouriteRecipe {
   // same contract as `allergens`: `null` = not checked, never `?? []`.
   dietTags: string[];
   dietConflicts: DietConflictId[] | null;
+  /** AI-set heat level; `null` = not worked out, no icon. */
+  spiceLevel: SpiceLevel | null;
   /** `toTotalTimeMinutes` of the source recipe; `null` when unknown. */
   totalTimeMinutes: number | null;
 }

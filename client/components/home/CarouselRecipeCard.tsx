@@ -135,6 +135,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
     dietTags: card.dietTags,
     allergens: card.allergens,
     dietConflicts: card.dietConflicts,
+    spiceLevel: card.spiceLevel,
     totalTimeMinutes: card.totalTimeMinutes,
   };
   const attributeA11ySuffix = toRecipeAttributeA11ySuffix(attributeFacts);

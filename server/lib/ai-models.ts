@@ -75,6 +75,7 @@ export const AI_FEATURES = {
   // Scripts
   "script-seed-macros": { ...FAST, json: true, vision: false }, // server/scripts/seed-recipes estimateMacros
   "script-backfill-macros": { ...FAST, json: true, vision: false }, // server/scripts/backfill-community-nutrition estimateMacros
+  "script-backfill-spice": { ...FAST, json: true, vision: false }, // server/scripts/backfill-recipe-spice-level askSpiceLevels
 } as const satisfies Record<string, AiFeatureConfig>;
 
 export type AiFeature = keyof typeof AI_FEATURES;

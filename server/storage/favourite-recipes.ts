@@ -195,6 +195,7 @@ export async function getResolvedFavouriteRecipes(
             allergens: mealPlanRecipes.allergens,
             dietTags: mealPlanRecipes.dietTags,
             dietConflicts: mealPlanRecipes.dietConflicts,
+            spiceLevel: mealPlanRecipes.spiceLevel,
             prepTimeMinutes: mealPlanRecipes.prepTimeMinutes,
             cookTimeMinutes: mealPlanRecipes.cookTimeMinutes,
           })
@@ -220,6 +221,7 @@ export async function getResolvedFavouriteRecipes(
             allergens: communityRecipes.allergens,
             dietTags: communityRecipes.dietTags,
             dietConflicts: communityRecipes.dietConflicts,
+            spiceLevel: communityRecipes.spiceLevel,
             timeEstimate: communityRecipes.timeEstimate,
           })
           .from(communityRecipes)
@@ -251,6 +253,7 @@ export async function getResolvedFavouriteRecipes(
           allergens: recipe.allergens,
           dietTags: recipe.dietTags ?? [],
           dietConflicts: recipe.dietConflicts ?? null,
+          spiceLevel: recipe.spiceLevel ?? null,
           totalTimeMinutes: toTotalTimeMinutes(recipe),
         });
       } else orphanIds.push(row.id);
@@ -270,6 +273,7 @@ export async function getResolvedFavouriteRecipes(
             allergens: recipe.allergens,
             dietTags: recipe.dietTags ?? [],
             dietConflicts: recipe.dietConflicts ?? null,
+            spiceLevel: recipe.spiceLevel ?? null,
             totalTimeMinutes: toTotalTimeMinutes(recipe),
           });
         }
