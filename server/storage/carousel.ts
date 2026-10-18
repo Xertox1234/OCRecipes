@@ -22,6 +22,9 @@ const CAROUSEL_COLUMNS = {
   // Threaded through for the universal "Contains: <allergen>" carousel label
   // (todos/archive/P3-2026-07-24-universal-allergen-label-remaining-surfaces.md).
   allergens: communityRecipes.allergens,
+  // Read with `allergens` and `dietTags` by the attribute icons (spec
+  // 2026-10-17).
+  dietConflicts: communityRecipes.dietConflicts,
 } as const;
 
 // ============================================================================

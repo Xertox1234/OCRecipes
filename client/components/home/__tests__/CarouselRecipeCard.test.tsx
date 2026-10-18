@@ -46,6 +46,9 @@ const baseCard: CarouselCardType = {
   prepTimeMinutes: 20,
   recommendationReason: "High protein",
   allergens: null,
+  dietTags: [],
+  dietConflicts: null,
+  totalTimeMinutes: null,
 };
 
 describe("CarouselRecipeCard remix badge accessibility", () => {

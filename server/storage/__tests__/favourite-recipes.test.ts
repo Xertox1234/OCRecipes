@@ -390,6 +390,39 @@ describe("favourite-recipes storage", () => {
       expect(byTitle.get("Undetermined Recipe")?.allergens).toBeNull();
     });
 
+    it("carries diet tags, diet conflicts and one total time for the attribute icons", async () => {
+      const mealPlan = await createTestMealPlanRecipe(testUser.id, {
+        title: "Vegan Bowl",
+        prepTimeMinutes: 10,
+        cookTimeMinutes: 15,
+        dietTags: ["vegan"],
+        dietConflicts: ["honey"],
+      });
+      const community = await createTestCommunityRecipe(testUser.id, {
+        title: "Quick Salad",
+        timeEstimate: "20 min",
+        dietTags: ["vegetarian"],
+        dietConflicts: null,
+        isPublic: true,
+      });
+      await toggleFavouriteRecipe(testUser.id, mealPlan.id, "mealPlan");
+      await toggleFavouriteRecipe(testUser.id, community.id, "community");
+
+      const result = await getResolvedFavouriteRecipes(testUser.id);
+      const byTitle = new Map(result.map((r) => [r.title, r]));
+
+      expect(byTitle.get("Vegan Bowl")).toMatchObject({
+        dietTags: ["vegan"],
+        dietConflicts: ["honey"],
+        totalTimeMinutes: 25,
+      });
+      expect(byTitle.get("Quick Salad")).toMatchObject({
+        dietTags: ["vegetarian"],
+        dietConflicts: null,
+        totalTimeMinutes: 20,
+      });
+    });
+
     it("cleans up orphan favourites when recipe is deleted", async () => {
       const recipe = await createTestMealPlanRecipe(testUser.id);
       await toggleFavouriteRecipe(testUser.id, recipe.id, "mealPlan");

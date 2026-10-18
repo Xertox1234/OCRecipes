@@ -2,6 +2,7 @@ import type { UserProfile, CommunityRecipe } from "@shared/schema";
 import type { CarouselRecipeCard } from "@shared/types/carousel";
 import { storage } from "../storage";
 import { inferMealTimeHint } from "../lib/meal-time-hint";
+import { toTotalTimeMinutes } from "@shared/lib/recipe-time";
 
 type CarouselRecipe = Pick<
   CommunityRecipe,
@@ -14,6 +15,7 @@ type CarouselRecipe = Pick<
   | "isCanonical"
   | "mealTypes"
   | "allergens"
+  | "dietConflicts"
 >;
 
 // ── Normalization ────────────────────────────────────────────────────
@@ -31,6 +33,9 @@ function normalizeCommunity(
     isRemix: !!recipe.remixedFromId,
     isCanonical: recipe.isCanonical,
     allergens: recipe.allergens,
+    dietTags: recipe.dietTags ?? [],
+    dietConflicts: recipe.dietConflicts ?? null,
+    totalTimeMinutes: toTotalTimeMinutes({ timeEstimate: recipe.timeEstimate }),
   };
 }
 

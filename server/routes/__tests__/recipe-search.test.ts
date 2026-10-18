@@ -142,6 +142,7 @@ describe("GET /api/recipes/search", () => {
           createdAt: "2026-09-14T00:00:00.000Z",
           isCanonical: false,
           allergens: null,
+          dietConflicts: null,
         },
       ],
       total: 1,

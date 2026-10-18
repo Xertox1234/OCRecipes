@@ -30,6 +30,10 @@ export function toCarouselCard(recipe: SearchableRecipe): CarouselRecipeCard {
     // SearchableRecipe already carries the derived-allergen cache (same
     // fail-dangerous null/[] contract) — thread it through, no re-derivation.
     allergens: recipe.allergens,
+    // Attribute-icon facts, threaded the same way (null conflicts stay null).
+    dietTags: recipe.dietTags,
+    dietConflicts: recipe.dietConflicts,
+    totalTimeMinutes: recipe.totalTimeMinutes,
   };
 }
 

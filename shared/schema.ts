@@ -2059,6 +2059,12 @@ export interface ResolvedFavouriteRecipe {
   favouritedAt: string;
   // See ResolvedCookbookRecipe.allergens above — same fail-dangerous contract.
   allergens: DerivedRecipeAllergen[] | null;
+  // Facts for the attribute icons (spec 2026-10-17). `dietConflicts` has the
+  // same contract as `allergens`: `null` = not checked, never `?? []`.
+  dietTags: string[];
+  dietConflicts: DietConflictId[] | null;
+  /** `toTotalTimeMinutes` of the source recipe; `null` when unknown. */
+  totalTimeMinutes: number | null;
 }
 
 // ============================================================================

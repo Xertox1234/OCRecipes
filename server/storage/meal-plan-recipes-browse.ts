@@ -72,6 +72,7 @@ export async function getAllMealPlanRecipes(): Promise<
       dietTags: mealPlanRecipes.dietTags,
       mealTypes: mealPlanRecipes.mealTypes,
       allergens: mealPlanRecipes.allergens,
+      dietConflicts: mealPlanRecipes.dietConflicts,
       difficulty: mealPlanRecipes.difficulty,
       prepTimeMinutes: mealPlanRecipes.prepTimeMinutes,
       cookTimeMinutes: mealPlanRecipes.cookTimeMinutes,
