@@ -101,6 +101,51 @@ export async function sessionMatch(
   }
 }
 
+interface GenerationDeps {
+  queryClient: QueryClient;
+  toast: Pick<ReturnType<typeof useToast>, "error">;
+  haptics: Pick<ReturnType<typeof useHaptics>, "notification">;
+}
+
+/**
+ * The request itself, as a plain module function: it owns the try/catch/
+ * finally that React Compiler cannot lower, so the hook below stays
+ * compilable (docs/solutions/code-quality/react-compiler-bails-on-a-conditional-inside-a-try-2026-10-10.md).
+ * The caller has already flagged "photo" as pending.
+ */
+export async function runPhotoGeneration(
+  { queryClient, toast, haptics }: GenerationDeps,
+  input: GenerateRecipeInput,
+): Promise<void> {
+  let token: string | null = null;
+  let session: SessionMatch = "unknown";
+  try {
+    token = await tokenStorage.get();
+    const res = await withDeadline((signal) =>
+      apiRequest("POST", "/api/recipes/generate", input, { signal }, token),
+    );
+    const recipe = (await res.json()) as CommunityRecipe;
+    session = await sessionMatch(token);
+    if (session !== "same") return;
+    invalidateSavedItems(queryClient);
+    noteGeneratedRecipeReady(queryClient, recipe.id);
+    haptics.notification(Haptics.NotificationFeedbackType.Success);
+  } catch (err) {
+    session = await sessionMatch(token);
+    if (session !== "same") return;
+    if (isClientRejection(err)) {
+      toast.error(generationErrorCopy(err));
+      return;
+    }
+    invalidateSavedItems(queryClient);
+    toast.error(SOFT_FAILURE_COPY);
+  } finally {
+    if (session !== "different") {
+      setPendingGeneration(queryClient, "photo", false);
+    }
+  }
+}
+
 /**
  * Generate a recipe from the photo-analysis sheet WITHOUT holding the sheet
  * open. `start` returns at once; the request runs to completion on its own
@@ -133,42 +178,7 @@ export function useGenerateRecipeInBackground(): {
     (input: GenerateRecipeInput) => {
       if (isPendingGeneration(queryClient, "photo")) return;
       setPendingGeneration(queryClient, "photo", true);
-
-      void (async () => {
-        let token: string | null = null;
-        let session: SessionMatch = "unknown";
-        try {
-          token = await tokenStorage.get();
-          const res = await withDeadline((signal) =>
-            apiRequest(
-              "POST",
-              "/api/recipes/generate",
-              input,
-              { signal },
-              token,
-            ),
-          );
-          const recipe = (await res.json()) as CommunityRecipe;
-          session = await sessionMatch(token);
-          if (session !== "same") return;
-          invalidateSavedItems(queryClient);
-          noteGeneratedRecipeReady(queryClient, recipe.id);
-          haptics.notification(Haptics.NotificationFeedbackType.Success);
-        } catch (err) {
-          session = await sessionMatch(token);
-          if (session !== "same") return;
-          if (isClientRejection(err)) {
-            toast.error(generationErrorCopy(err));
-            return;
-          }
-          invalidateSavedItems(queryClient);
-          toast.error(SOFT_FAILURE_COPY);
-        } finally {
-          if (session !== "different") {
-            setPendingGeneration(queryClient, "photo", false);
-          }
-        }
-      })();
+      void runPhotoGeneration({ queryClient, toast, haptics }, input);
     },
     [queryClient, toast, haptics],
   );
