@@ -11,6 +11,10 @@ describe("parseTimeEstimateMinutes", () => {
     ["2 hours 5 minutes", 125],
     ["1.5 hours", 90],
     ["20-30 min", 30],
+    ["20 min to 30 min", 30],
+    ["Prep 10 min, cook 25 min", 35],
+    ["prep 10 min + cook 1 hr", 70],
+    ["1 hr 15 min", 75],
   ])("%s → %d", (text, minutes) => {
     expect(parseTimeEstimateMinutes(text)).toBe(minutes);
   });

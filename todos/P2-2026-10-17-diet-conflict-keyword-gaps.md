@@ -1,6 +1,6 @@
 ---
 title: "Diet conflict keywords: stop clearing real meat, add missing meat words, fix 'prep + cook' time text"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-17
 updated: 2026-10-17
