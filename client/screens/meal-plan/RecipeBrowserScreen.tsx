@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -507,6 +513,7 @@ export default function RecipeBrowserScreen() {
   } = useCreateSuggestionListing();
   const { mutateAsync: makeSuggestion } = useMakeSuggestion();
   const [makingId, setMakingId] = useState<number | null>(null);
+  const makingRef = useRef<number | null>(null);
 
   const ideas: Suggestion[] = useMemo(() => ideasData ?? [], [ideasData]);
 
@@ -616,7 +623,9 @@ export default function RecipeBrowserScreen() {
   const handleMakeIdea = useCallback(
     (suggestion: Suggestion) => {
       // One make at a time — a second card's tap is ignored while one runs.
-      if (makingId !== null) return;
+      // A ref, not state: two taps in the same frame must not both pass.
+      if (makingRef.current !== null) return;
+      makingRef.current = suggestion.id;
       setMakingId(suggestion.id);
       makeSuggestion(suggestion.id)
         .then(({ recipeId }) => {
@@ -636,13 +645,14 @@ export default function RecipeBrowserScreen() {
             toast.error("Couldn't make this recipe. Try again.");
           }
         })
-        .finally(() =>
+        .finally(() => {
+          if (makingRef.current === suggestion.id) makingRef.current = null;
           setMakingId((current) =>
             current === suggestion.id ? null : current,
-          ),
-        );
+          );
+        });
     },
-    [makingId, makeSuggestion, navigation, toast, resetIdeas],
+    [makeSuggestion, navigation, toast, resetIdeas],
   );
 
   const handleRecipePress = useCallback(

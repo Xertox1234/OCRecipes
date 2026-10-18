@@ -229,7 +229,7 @@ describe("RecipeResultsList", () => {
     expect(screen.getByText("Ideas for you")).toBeDefined();
     expect(screen.getByText(inspiredItem.description!)).toBeDefined();
     fireEvent.click(screen.getByLabelText(`Make ${inspiredItem.title} mine`));
-    expect(onMakeItem).toHaveBeenCalledWith(inspiredItem);
+    expect(onMakeItem).toHaveBeenCalledWith(inspiredItem, block.flow.flowId);
     // An idea has no detail screen — the row itself never opens anything.
     expect(screen.queryByRole("button", { name: /Opens recipe/ })).toBeNull();
     expect(onOpenItem).not.toHaveBeenCalled();
@@ -250,6 +250,63 @@ describe("RecipeResultsList", () => {
     const button = screen.getByLabelText(`Make ${inspiredItem.title} mine`);
     fireEvent.click(button);
     expect(onMakeItem).not.toHaveBeenCalled();
+  });
+
+  it("other idea rows are disabled while one idea is being made", () => {
+    const other: FinderItem = {
+      ...inspiredItem,
+      id: inspiredItem.id + 1,
+      title: "Other idea",
+    };
+    const onMakeItem = vi.fn();
+    renderComponent(
+      <RecipeResultsList
+        block={{ ...block, source: "inspired", items: [inspiredItem, other] }}
+        isActive
+        onButton={vi.fn()}
+        onOpenItem={vi.fn()}
+        onMakeItem={onMakeItem}
+        makingId={inspiredItem.id}
+      />,
+    );
+    const otherButton = screen.getByLabelText("Make Other idea mine");
+    expect(otherButton.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(otherButton);
+    expect(onMakeItem).not.toHaveBeenCalled();
+  });
+
+  it("an expired flow's idea buttons are disabled, other flows' are not", () => {
+    const onMakeItem = vi.fn();
+    const props = {
+      isActive: true,
+      onButton: vi.fn(),
+      onOpenItem: vi.fn(),
+      onMakeItem,
+    };
+    const inspiredBlock = {
+      ...block,
+      source: "inspired" as const,
+      items: [inspiredItem],
+    };
+    const { unmount } = renderComponent(
+      <RecipeResultsList
+        {...props}
+        block={inspiredBlock}
+        expiredFlowIds={new Set([block.flow.flowId])}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText(`Make ${inspiredItem.title} mine`));
+    expect(onMakeItem).not.toHaveBeenCalled();
+    unmount();
+    renderComponent(
+      <RecipeResultsList
+        {...props}
+        block={inspiredBlock}
+        expiredFlowIds={new Set(["some-other-flow"])}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText(`Make ${inspiredItem.title} mine`));
+    expect(onMakeItem).toHaveBeenCalledTimes(1);
   });
 
   it("an idea row is text-only, even when an old message still carries a photo", () => {
