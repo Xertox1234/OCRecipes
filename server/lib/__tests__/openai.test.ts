@@ -22,7 +22,6 @@ describe("openai client init", () => {
     const mod = await load();
     expect(mod.isAiConfigured).toBe(false);
     expect(mod.openai).toBeDefined();
-    expect(mod.dalleClient).toBeDefined();
   });
 
   it("does not throw when the API key is an empty string", async () => {

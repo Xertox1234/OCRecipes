@@ -14,12 +14,11 @@ vi.mock("../../storage", () => ({
 }));
 
 // Hoisted, mutable image-pipeline knobs so individual tests can flip the
-// Runware-configured flag and choose Runware/DALL-E success vs failure.
+// Runware-configured flag and choose Runware success vs failure.
 const runware = vi.hoisted(() => ({
   configured: false,
   generateImage: vi.fn().mockResolvedValue(null as Buffer | null),
   saveImageBuffer: vi.fn().mockResolvedValue("/api/recipe-images/test.png"),
-  dalleGenerate: vi.fn().mockResolvedValue({ data: [] }),
 }));
 
 vi.mock("../../lib/runware", () => ({
@@ -38,11 +37,6 @@ const mockCreate = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/ai-client", () => ({ aiChat: mockCreate }));
 vi.mock("../../lib/openai", () => ({
-  dalleClient: {
-    images: {
-      generate: runware.dalleGenerate,
-    },
-  },
   OPENAI_TIMEOUT_IMAGE_MS: 120000,
   OPENAI_TIMEOUT_FAST_MS: 30000,
   // isAiConfigured: false keeps buildImagePrompt in deterministic mode
@@ -194,7 +188,6 @@ describe("enrichRecipe", () => {
     runware.configured = false;
     runware.generateImage.mockResolvedValue(null);
     runware.saveImageBuffer.mockResolvedValue("/api/recipe-images/test.png");
-    runware.dalleGenerate.mockResolvedValue({ data: [] });
   });
 
   it("throws when the recipe is not found", async () => {
@@ -214,11 +207,9 @@ describe("enrichRecipe", () => {
     expect(storage.markEnriched).not.toHaveBeenCalled();
   });
 
-  it("enriches via DALL-E fallback and normalizes ingredients/instructions", async () => {
-    // DALL-E returns a valid image (Runware not configured).
-    runware.dalleGenerate.mockResolvedValue({
-      data: [{ b64_json: Buffer.from("img").toString("base64") }],
-    });
+  it("enriches via Runware and normalizes ingredients/instructions", async () => {
+    runware.configured = true;
+    runware.generateImage.mockResolvedValue(Buffer.from("img"));
     vi.mocked(storage.getRecipeById).mockResolvedValue(
       createMockCommunityRecipe({
         id: 5,
@@ -239,22 +230,11 @@ describe("enrichRecipe", () => {
     const [recipeId, enrichment] = vi.mocked(storage.markEnriched).mock
       .calls[0];
     expect(recipeId).toBe(5);
-    // 3 image shots all succeed via DALL-E.
+    // 3 image shots all succeed via Runware.
     expect(enrichment.canonicalImages).toHaveLength(3);
     // Editorial content from the default GPT-4o mock.
     expect(enrichment.cuisineOrigin).toBe("Italian");
     expect(enrichment.toolsRequired[0].name).toBe("Skillet");
-    // M1 regression guard: the DALL-E negative channel must be present in the
-    // prompt (the suffix is the ONLY source — composePrompt is positive-only,
-    // so deleting the suffix kills this assert).
-    const dallePromptArg = runware.dalleGenerate.mock.calls[0][0]
-      .prompt as string;
-    expect(dallePromptArg).toContain(
-      "No text, no watermarks, no logos, no labels, no letters.",
-    );
-    // DALL-E-3 returns PNG bytes — the fallback path must keep
-    // saveImageBuffer's "png" default, not the Runware path's "jpg".
-    expect(runware.saveImageBuffer).toHaveBeenCalledWith(expect.any(Buffer));
   });
 
   it("uses the Runware HQ path when configured", async () => {
@@ -276,11 +256,10 @@ describe("enrichRecipe", () => {
     await enrichRecipe(9);
 
     expect(runware.generateImage).toHaveBeenCalled();
-    expect(runware.dalleGenerate).not.toHaveBeenCalled();
     const [, enrichment] = vi.mocked(storage.markEnriched).mock.calls[0];
     expect(enrichment.canonicalImages).toHaveLength(3);
     // Verify positive-only prompt: editorial phrase present, no negative terms
-    // (negatives are DALL-E-only and must not bleed into the Runware prompt)
+    // (exclusions travel in Runware's negativePrompt field only)
     const firstCall = runware.generateImage.mock.calls[0][0] as {
       prompt: string;
     };
@@ -294,11 +273,9 @@ describe("enrichRecipe", () => {
     );
   });
 
-  it("skips images that fail on both Runware and DALL-E", async () => {
+  it("skips images when Runware throws", async () => {
     runware.configured = true;
-    // Runware throws, DALL-E returns no data → image is null and skipped.
     runware.generateImage.mockRejectedValue(new Error("runware boom"));
-    runware.dalleGenerate.mockResolvedValue({ data: [] });
     vi.mocked(storage.getRecipeById).mockResolvedValue(
       createMockCommunityRecipe({
         id: 11,
@@ -313,6 +290,47 @@ describe("enrichRecipe", () => {
 
     await enrichRecipe(11);
 
+    const [, enrichment] = vi.mocked(storage.markEnriched).mock.calls[0];
+    expect(enrichment.canonicalImages).toEqual([]);
+  });
+
+  it("skips images when Runware returns no image", async () => {
+    runware.configured = true;
+    runware.generateImage.mockResolvedValue(null);
+    vi.mocked(storage.getRecipeById).mockResolvedValue(
+      createMockCommunityRecipe({
+        id: 12,
+        title: "Empty Image Dish",
+        canonicalEnrichedAt: null,
+        ingredients: [] as unknown as ReturnType<
+          typeof createMockCommunityRecipe
+        >["ingredients"],
+        instructions: [],
+      }),
+    );
+
+    await enrichRecipe(12);
+
+    const [, enrichment] = vi.mocked(storage.markEnriched).mock.calls[0];
+    expect(enrichment.canonicalImages).toEqual([]);
+  });
+
+  it("generates no images when Runware is not configured", async () => {
+    vi.mocked(storage.getRecipeById).mockResolvedValue(
+      createMockCommunityRecipe({
+        id: 13,
+        title: "Unconfigured Dish",
+        canonicalEnrichedAt: null,
+        ingredients: [] as unknown as ReturnType<
+          typeof createMockCommunityRecipe
+        >["ingredients"],
+        instructions: [],
+      }),
+    );
+
+    await enrichRecipe(13);
+
+    expect(runware.generateImage).not.toHaveBeenCalled();
     const [, enrichment] = vi.mocked(storage.markEnriched).mock.calls[0];
     expect(enrichment.canonicalImages).toEqual([]);
   });

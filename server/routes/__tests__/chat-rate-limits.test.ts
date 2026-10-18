@@ -24,7 +24,6 @@ vi.mock("../../storage", () => ({
 vi.mock("../../lib/openai", () => ({
   isAiConfigured: true,
   openai: {},
-  dalleClient: {},
   OPENAI_TIMEOUT_MS: 30000,
   OPENAI_VISION_TIMEOUT_MS: 60000,
 }));

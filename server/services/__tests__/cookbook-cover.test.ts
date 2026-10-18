@@ -8,7 +8,6 @@ import {
   FALLBACK_COVER_SUBJECT,
 } from "../cookbook-cover";
 import { aiChat } from "../../lib/ai-client";
-import { dalleClient } from "../../lib/openai";
 import { generateImage } from "../../lib/runware";
 import { saveCookbookCover } from "../../lib/image-store";
 import { isArtDirectorLLMEnabled } from "../image-art-direction";
@@ -16,10 +15,7 @@ import { createMockChatCompletion } from "../../__tests__/factories/nutrition";
 
 vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
-  dalleClient: { images: { generate: vi.fn() } },
   OPENAI_TIMEOUT_FAST_MS: 15000,
-  OPENAI_TIMEOUT_IMAGE_MS: 120000,
-  isAiConfigured: true,
 }));
 
 vi.mock("../image-art-direction", () => ({
@@ -46,22 +42,6 @@ vi.mock("../../lib/image-store", () => ({
 function mockCompletion(content: string) {
   vi.mocked(aiChat).mockResolvedValue(createMockChatCompletion(content));
 }
-
-/**
- * A DALL-E images.generate response, typed from the SDK's own return type so
- * no cast is needed. Omit `b64` for the "responded but produced nothing" case.
- */
-type ImagesResponse = Awaited<ReturnType<typeof dalleClient.images.generate>>;
-function mockDalleImage(b64?: string) {
-  const response: ImagesResponse = {
-    created: 0,
-    data: [b64 === undefined ? {} : { b64_json: b64 }],
-  };
-  vi.mocked(dalleClient.images.generate).mockResolvedValue(response);
-}
-
-/** Base64 of a stand-in image payload. */
-const FAKE_IMAGE_B64 = Buffer.from("img").toString("base64");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -304,13 +284,12 @@ describe("generateCookbookCover — provider fallback", () => {
     vi.mocked(saveCookbookCover).mockResolvedValue("https://cdn.test/c.png");
   });
 
-  it("returns the stored URL when Runware succeeds, without calling DALL-E", async () => {
+  it("returns the stored URL when Runware succeeds", async () => {
     vi.mocked(generateImage).mockResolvedValue(Buffer.from("img"));
 
     await expect(generateCookbookCover("Sunday Bakes")).resolves.toBe(
       "https://cdn.test/c.png",
     );
-    expect(vi.mocked(dalleClient.images.generate)).not.toHaveBeenCalled();
     // Runware bytes are JPEG (no outputFormat requested) — the stored label
     // must match, not saveCookbookCover's "png" default.
     expect(vi.mocked(saveCookbookCover)).toHaveBeenCalledWith(
@@ -331,71 +310,26 @@ describe("generateCookbookCover — provider fallback", () => {
     expect(opts?.negativePrompt).toContain("chalkboard");
   });
 
-  it("falls back to DALL-E when Runware returns no image", async () => {
+  it("returns null when Runware returns no image", async () => {
     vi.mocked(generateImage).mockResolvedValue(null);
-    mockDalleImage(FAKE_IMAGE_B64);
-
-    await expect(generateCookbookCover("Sunday Bakes")).resolves.toBe(
-      "https://cdn.test/c.png",
-    );
-    expect(vi.mocked(dalleClient.images.generate)).toHaveBeenCalled();
-    // DALL-E-3 returns PNG bytes — the fallback must keep
-    // saveCookbookCover's "png" default, not the Runware path's "jpg".
-    expect(vi.mocked(saveCookbookCover)).toHaveBeenCalledWith(
-      expect.any(Buffer),
-    );
-  });
-
-  it("falls back to DALL-E when Runware throws", async () => {
-    vi.mocked(generateImage).mockRejectedValue(new Error("runware down"));
-    mockDalleImage(FAKE_IMAGE_B64);
-
-    await expect(generateCookbookCover("Sunday Bakes")).resolves.toBe(
-      "https://cdn.test/c.png",
-    );
-  });
-
-  it("carries the cookbook-specific surface nouns in the DALL-E suffix", async () => {
-    // Regression guard: DALL-E has no separate negative channel, so this
-    // suffix is the ONLY lettering gate on the fallback path — and it runs
-    // exactly when Runware isn't there to catch it.
-    vi.mocked(generateImage).mockResolvedValue(null);
-    mockDalleImage(FAKE_IMAGE_B64);
-
-    await generateCookbookCover("Sunday Bakes");
-
-    const body = vi.mocked(dalleClient.images.generate).mock.calls[0]?.[0] as {
-      prompt: string;
-    };
-    expect(body.prompt).toContain("book cover");
-    expect(body.prompt).toContain("chalkboard");
-    expect(body.prompt).toContain("recipe card");
-  });
-
-  it("goes straight to DALL-E when Runware is unconfigured", async () => {
-    runwareState.configured = false;
-    mockDalleImage(FAKE_IMAGE_B64);
-
-    await generateCookbookCover("Sunday Bakes");
-
-    expect(vi.mocked(generateImage)).not.toHaveBeenCalled();
-    expect(vi.mocked(dalleClient.images.generate)).toHaveBeenCalled();
-  });
-
-  it("returns null when both providers fail", async () => {
-    vi.mocked(generateImage).mockResolvedValue(null);
-    vi.mocked(dalleClient.images.generate).mockRejectedValue(
-      new Error("dalle down"),
-    );
 
     await expect(generateCookbookCover("Sunday Bakes")).resolves.toBeNull();
+    expect(vi.mocked(generateImage)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(saveCookbookCover)).not.toHaveBeenCalled();
   });
 
-  it("returns null when DALL-E responds without image data", async () => {
-    vi.mocked(generateImage).mockResolvedValue(null);
-    mockDalleImage();
+  it("returns null when Runware throws", async () => {
+    vi.mocked(generateImage).mockRejectedValue(new Error("runware down"));
 
     await expect(generateCookbookCover("Sunday Bakes")).resolves.toBeNull();
+    expect(vi.mocked(generateImage)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveCookbookCover)).not.toHaveBeenCalled();
+  });
+
+  it("returns null without calling Runware when it is unconfigured", async () => {
+    runwareState.configured = false;
+
+    await expect(generateCookbookCover("Sunday Bakes")).resolves.toBeNull();
+    expect(vi.mocked(generateImage)).not.toHaveBeenCalled();
   });
 });
