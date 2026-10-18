@@ -69,6 +69,9 @@ async function callRecipeChat(input: RecipeChatInput): Promise<string> {
     }
     if ("recipe" in event && event.recipe) {
       recipe = event.recipe;
+      // Stop here: what follows is the hero-image step (Runware, up to a
+      // 15 s race). The judge never sees it and it would pollute latencyMs.
+      break;
     }
   }
 
