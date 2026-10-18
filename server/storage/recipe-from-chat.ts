@@ -8,6 +8,7 @@ import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
 import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
+import { deriveRecipeDietConflicts } from "@shared/constants/diet-conflicts";
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
 // ============================================================================
@@ -117,6 +118,9 @@ export async function saveRecipeFromChat(
     const allergens = deriveRecipeAllergens(
       normalizedIngredients.map((i) => i.name),
     );
+    const dietConflicts = deriveRecipeDietConflicts(
+      normalizedIngredients.map((i) => i.name),
+    );
     const [created] = await tx
       .insert(communityRecipes)
       .values({
@@ -134,6 +138,7 @@ export async function saveRecipeFromChat(
         dietTags: recipe.dietTags ?? [],
         mealTypes: mealTypes ?? [],
         allergens,
+        dietConflicts,
         instructions: normalized.instructions ?? recipe.instructions,
         ingredients: normalizedIngredients,
         imageUrl: parsed.data.imageUrl ?? null,

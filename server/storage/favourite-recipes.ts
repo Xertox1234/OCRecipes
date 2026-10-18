@@ -7,6 +7,7 @@ import {
   type ResolvedFavouriteRecipe,
 } from "@shared/schema";
 import { TIER_FEATURES } from "@shared/types/premium";
+import { toTotalTimeMinutes } from "@shared/lib/recipe-time";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { isUniqueViolation } from "../lib/db-errors";
 import { incrementRecipePopularity } from "./canonical-recipes";
@@ -192,6 +193,10 @@ export async function getResolvedFavouriteRecipes(
             servings: mealPlanRecipes.servings,
             difficulty: mealPlanRecipes.difficulty,
             allergens: mealPlanRecipes.allergens,
+            dietTags: mealPlanRecipes.dietTags,
+            dietConflicts: mealPlanRecipes.dietConflicts,
+            prepTimeMinutes: mealPlanRecipes.prepTimeMinutes,
+            cookTimeMinutes: mealPlanRecipes.cookTimeMinutes,
           })
           .from(mealPlanRecipes)
           .where(
@@ -213,6 +218,9 @@ export async function getResolvedFavouriteRecipes(
             servings: communityRecipes.servings,
             difficulty: communityRecipes.difficulty,
             allergens: communityRecipes.allergens,
+            dietTags: communityRecipes.dietTags,
+            dietConflicts: communityRecipes.dietConflicts,
+            timeEstimate: communityRecipes.timeEstimate,
           })
           .from(communityRecipes)
           // Fetch by ID first so hidden-but-existing recipes are not mistaken
@@ -241,6 +249,9 @@ export async function getResolvedFavouriteRecipes(
           difficulty: recipe.difficulty ?? null,
           favouritedAt: row.createdAt.toISOString(),
           allergens: recipe.allergens,
+          dietTags: recipe.dietTags ?? [],
+          dietConflicts: recipe.dietConflicts ?? null,
+          totalTimeMinutes: toTotalTimeMinutes(recipe),
         });
       } else orphanIds.push(row.id);
     } else if (row.recipeType === "community") {
@@ -257,6 +268,9 @@ export async function getResolvedFavouriteRecipes(
             difficulty: recipe.difficulty ?? null,
             favouritedAt: row.createdAt.toISOString(),
             allergens: recipe.allergens,
+            dietTags: recipe.dietTags ?? [],
+            dietConflicts: recipe.dietConflicts ?? null,
+            totalTimeMinutes: toTotalTimeMinutes(recipe),
           });
         }
       } else orphanIds.push(row.id);

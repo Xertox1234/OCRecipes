@@ -1,9 +1,9 @@
 ---
 title: "Standard icons for recipe attributes (vegan, spice level, contains nuts …)"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-14
-updated: 2026-10-14
+updated: 2026-10-17
 assignee:
 labels: [feature, react-native, design]
 github_issue:
@@ -31,11 +31,11 @@ The owner raised this on 2026-10-14 while approving the text-only inspired idea 
 
 ## Acceptance Criteria
 
-- [ ] Owner answers the open questions; design written and approved
-- [ ] One shared list of attributes (id → icon, colour token, spoken label) used by every screen
-- [ ] A missing allergen icon never reads as "free of" that allergen. Keep the `null` = unknown rule, and decide how AI-guessed facts on idea cards are shown.
-- [ ] Each icon has an accessibility label; colour is never the only signal
-- [ ] Tests for the mapping and for at least one card that renders it
+- [x] Owner answers the open questions; design written and approved
+- [x] One shared list of attributes (id → icon, colour token, spoken label) used by every screen
+- [x] A missing allergen icon never reads as "free of" that allergen. Keep the `null` = unknown rule, and decide how AI-guessed facts on idea cards are shown.
+- [x] Each icon has an accessibility label; colour is never the only signal
+- [x] Tests for the mapping and for at least one card that renders it
 
 ## Implementation Notes
 
@@ -43,3 +43,12 @@ The owner raised this on 2026-10-14 while approving the text-only inspired idea 
 - `client/components/AllergenBadge.tsx`, `client/components/allergen-badge-utils.ts`
 - `client/components/inspired/SuggestionCard.tsx`, `client/components/recipe-finder/RecipeResultsList.tsx`
 - Diet tags are free text today; a fixed list may need a normaliser for existing rows
+
+## Updates
+
+### 2026-10-17
+
+- Owner-led (gate overridden in session). Design: `docs/superpowers/specs/2026-10-17-recipe-attribute-icons-design.md`.
+- Owner answers: real recipes first (carousel, Saved, browser, detail); idea cards out of scope, so AI-guessed facts get no icons. Diet + allergens + Quick now; spice level as a followup (`todos/P2-2026-10-17-recipe-spice-level-attribute.md`). A diet icon shows only when the tag and both ingredient checks agree.
+- Built: a `diet_conflicts` cache (migration 0028), one shared rule (`getRecipeAttributes`), one chip, icons on all four surfaces, allergen icons on all nine "Contains:" surfaces, and gluten/dairy keyword gaps closed at the root.
+- Review found gaps in the diet-conflict keywords and the time parser; filed as `todos/P2-2026-10-17-diet-conflict-keyword-gaps.md`.

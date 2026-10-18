@@ -216,6 +216,32 @@ describe("community storage", () => {
     });
   });
 
+  describe("createCommunityRecipe diet conflicts", () => {
+    it("stores the derived diet conflicts beside allergens", async () => {
+      const recipe = await createTestRecipe(testUser.id, {
+        ingredients: [{ name: "lard", quantity: "1", unit: "tbsp" }],
+      });
+      expect(recipe.dietConflicts).toEqual(["animal_derived"]);
+    });
+
+    it("stores null diet conflicts for a recipe with no ingredients", async () => {
+      const recipe = await createTestRecipe(testUser.id);
+      expect(recipe.dietConflicts).toBeNull();
+    });
+
+    it("stores them on the limit-checked create path too", async () => {
+      const recipe = await createRecipeWithLimitCheck(testUser.id, 3, {
+        authorId: testUser.id,
+        title: "Gelatin Dessert",
+        normalizedProductName: "test-gelatin",
+        instructions: ["Set in the fridge"],
+        isPublic: false,
+        ingredients: [{ name: "gelatine leaves", quantity: "4", unit: "" }],
+      });
+      expect(recipe!.dietConflicts).toEqual(["animal_derived"]);
+    });
+  });
+
   // --------------------------------------------------------------------------
   // createRecipeWithLimitCheck
   // --------------------------------------------------------------------------

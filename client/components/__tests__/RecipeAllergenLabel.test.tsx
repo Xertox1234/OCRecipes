@@ -16,16 +16,10 @@ describe("RecipeAllergenLabel", () => {
 
     expect(getByText("Contains:")).toBeTruthy();
     expect(getByText("Tree Nuts")).toBeTruthy();
-    // NOTE: for a single-allergen recipe at severity="mild", AllergenBadge's
-    // OWN composed label ("Contains: Tree Nuts") is textually identical to
-    // this component's container label — on-device the badge is fully
-    // unlinked from the a11y tree (accessibilityElementsHidden +
-    // importantForAccessibility="no-hide-descendants"), so only the
-    // container's label is ever announced. jsdom's mock does not model that
-    // hiding, so both the container AND the nested badge remain in the DOM
-    // with the same aria-label, which would make `getByLabelText` throw on
-    // ambiguity. `querySelector` returns matches in document order (parent
-    // before descendant), so this reliably targets the outer container.
+    // The chips carry no label of their own (they are decorative and hidden
+    // from the a11y tree on-device), so the container is the only node with
+    // this aria-label. `querySelector` returns the first match in document
+    // order, which targets the outer container.
     const labelled = container.querySelector(
       '[aria-label="Contains: Tree Nuts"]',
     );
@@ -44,6 +38,20 @@ describe("RecipeAllergenLabel", () => {
     );
 
     expect(getByLabelText("Contains: Peanuts, Dairy/Milk")).toBeTruthy();
+  });
+
+  it("draws each allergen chip with its own icon", () => {
+    const { container } = renderComponent(
+      <RecipeAllergenLabel
+        allergens={[
+          { id: "peanuts", viaDerived: false },
+          { id: "milk", viaDerived: true },
+        ]}
+      />,
+    );
+
+    expect(container.querySelector('[data-icon="peanut"]')).toBeTruthy();
+    expect(container.querySelector('[data-icon="cheese"]')).toBeTruthy();
   });
 
   it("renders nothing for null allergens — never a false safe/allergen-free signal", () => {

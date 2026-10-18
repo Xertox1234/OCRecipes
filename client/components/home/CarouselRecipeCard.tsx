@@ -10,8 +10,8 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import Animated, { FadeOut } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
-import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
-import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
+import { RecipeAttributeRow } from "@/components/RecipeAttributeRow";
+import { toRecipeAttributeA11ySuffix } from "@/components/recipe-attribute-row-utils";
 import { FallbackImage } from "@/components/FallbackImage";
 import { CuratedBadge } from "@/components/CuratedBadge";
 import { useTheme } from "@/hooks/useTheme";
@@ -126,12 +126,18 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
 
   // The card AnimatedPressable is accessible by default, which collapses its
   // whole subtree into a single VoiceOver/TalkBack focus stop — the nested
-  // RecipeAllergenLabel's own container label is never reached. Fold the
-  // recipe's derived allergens into the card's own label so the
-  // safety-critical allergen info still reaches screen-reader users (same
-  // pattern as RecipeBrowserScreen's UnifiedRecipeCard); the visible chips
-  // (RecipeAllergenLabel below) remain for sighted users.
-  const allergenA11ySuffix = toRecipeAllergenA11ySuffix(card.allergens);
+  // RecipeAttributeRow's own labels are never reached. Fold the checked
+  // attributes and the recipe's derived allergens into the card's own label
+  // so the safety-critical allergen info still reaches screen-reader users
+  // (same pattern as RecipeBrowserScreen's UnifiedRecipeCard); the visible
+  // chips (RecipeAttributeRow below) remain for sighted users.
+  const attributeFacts = {
+    dietTags: card.dietTags,
+    allergens: card.allergens,
+    dietConflicts: card.dietConflicts,
+    totalTimeMinutes: card.totalTimeMinutes,
+  };
+  const attributeA11ySuffix = toRecipeAttributeA11ySuffix(attributeFacts);
 
   return (
     <AnimatedPressable
@@ -140,7 +146,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
       onPress={handlePress}
       style={[animatedStyle, styles.cardWrapper]}
       accessibilityRole="button"
-      accessibilityLabel={`${card.isRemix ? "Remixed recipe. " : ""}${card.isCanonical ? "Curated recipe. " : ""}${card.title}${prepLabel ? `, ${prepLabel} prep` : ""}${card.recommendationReason ? `. ${card.recommendationReason}` : ""}${allergenA11ySuffix}. Double tap to view recipe.`}
+      accessibilityLabel={`${card.isRemix ? "Remixed recipe. " : ""}${card.isCanonical ? "Curated recipe. " : ""}${card.title}${prepLabel ? `, ${prepLabel} prep` : ""}${card.recommendationReason ? `. ${card.recommendationReason}` : ""}${attributeA11ySuffix}. Double tap to view recipe.`}
       accessibilityHint="Opens recipe details"
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={handleAccessibilityAction}
@@ -241,7 +247,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
             {card.title}
           </ThemedText>
 
-          <RecipeAllergenLabel allergens={card.allergens} />
+          <RecipeAttributeRow facts={attributeFacts} />
 
           {/* Rendered only when non-empty: an empty `recommendationReason`
               (see `toCarouselCard`'s fallback chain, which terminates at

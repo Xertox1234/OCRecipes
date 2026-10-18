@@ -32,9 +32,12 @@ import {
 } from "@/components/recipe-detail";
 import { AskCoachSection } from "@/components/AskCoachSection";
 import { RecipeCommunityStats } from "@/components/RecipeCommunityStats";
-import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
+import { RecipeAttributeRow } from "@/components/RecipeAttributeRow";
 import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
-import { STEP_TEXT_LINE_HEIGHT } from "@/components/recipe-detail/recipe-detail-utils";
+import {
+  STEP_TEXT_LINE_HEIGHT,
+  toDisplayedDietTags,
+} from "@/components/recipe-detail/recipe-detail-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAllergenCheck } from "@/hooks/useAllergenCheck";
@@ -82,6 +85,13 @@ export interface RecipeDetailContentProps {
    * viewer's declared allergies. Renders the "Contains: <allergens>" label.
    */
   allergens?: DerivedRecipeAllergen[] | null;
+  /**
+   * Derived diet-conflict cache (stored jsonb, read defensively). `null` =
+   * not checked, so no diet icon shows.
+   */
+  dietConflicts?: unknown;
+  /** `toTotalTimeMinutes` of the recipe; drives the Quick icon. */
+  totalTimeMinutes?: number | null;
   /** ID of the recipe this was remixed from (null if original was deleted) */
   remixedFromId?: number | null;
   /** Title snapshot of the original recipe (preserved even if original is deleted) */
@@ -175,6 +185,9 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
     () => [...new Set(props.dietTags ?? [])],
     [props.dietTags],
   );
+  // Checkable diets show only as checked icons (RecipeAttributeRow); the
+  // rest stay text chips. The coach context below still gets every tag.
+  const displayedTags = toDisplayedDietTags(uniqueTags);
 
   const recipeCoachQuestions = useMemo(
     () => [
@@ -269,9 +282,17 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
             {props.title}
           </ThemedText>
 
-          {/* 2a. Universal allergen label — profile-independent, distinct
-              from the personalized AllergenWarningBanner further down. */}
-          <RecipeAllergenLabel allergens={props.allergens} />
+          {/* 2a. Checked attribute icons + universal allergen label —
+              profile-independent, distinct from the personalized
+              AllergenWarningBanner further down. */}
+          <RecipeAttributeRow
+            facts={{
+              dietTags: props.dietTags,
+              allergens: props.allergens,
+              dietConflicts: props.dietConflicts,
+              totalTimeMinutes: props.totalTimeMinutes,
+            }}
+          />
 
           {/* 2b. Remix lineage */}
           {props.remixedFromTitle && (
@@ -363,7 +384,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
           )}
 
           {/* 5. Diet Tags */}
-          {uniqueTags.length > 0 && <RecipeDietTags tags={uniqueTags} />}
+          {displayedTags.length > 0 && <RecipeDietTags tags={displayedTags} />}
 
           {/* 6. Nutrition (conditional) */}
           {props.nutrition && <NutritionCard nutrition={props.nutrition} />}

@@ -50,6 +50,7 @@ import type {
 } from "@shared/schema";
 import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { toTotalTimeMinutes } from "@shared/lib/recipe-time";
 
 /** Content height of the backing band below the status-bar inset (close button
  *  bottom = Spacing.sm + 36, plus breathing room). */
@@ -80,6 +81,9 @@ interface NormalizedRecipe {
   imageUrl?: string | null;
   nutrition?: ReturnType<typeof parseNutritionData>;
   allergens?: DerivedRecipeAllergen[] | null;
+  /** Stored jsonb; read defensively downstream (`parseDietConflicts`). */
+  dietConflicts?: unknown;
+  totalTimeMinutes?: number | null;
   remixedFromId?: number | null;
   remixedFromTitle?: string | null;
   // Curated recipe fields
@@ -168,6 +172,8 @@ export default function FeaturedRecipeDetailScreen() {
         imageUrl: mealPlanRecipe.imageUrl,
         nutrition: parseNutritionData(mealPlanRecipe),
         allergens: mealPlanRecipe.allergens,
+        dietConflicts: mealPlanRecipe.dietConflicts,
+        totalTimeMinutes: toTotalTimeMinutes(mealPlanRecipe),
         isCanonical: false,
         canonicalImages: [],
         instructionDetails: [],
@@ -189,6 +195,8 @@ export default function FeaturedRecipeDetailScreen() {
         ingredients: (communityRecipe.ingredients ?? []) as IngredientItem[],
         imageUrl: communityRecipe.imageUrl,
         allergens: communityRecipe.allergens,
+        dietConflicts: communityRecipe.dietConflicts,
+        totalTimeMinutes: toTotalTimeMinutes(communityRecipe),
         remixedFromId: communityRecipe.remixedFromId,
         remixedFromTitle: communityRecipe.remixedFromTitle,
         isCanonical: communityRecipe.isCanonical,
@@ -363,6 +371,8 @@ export default function FeaturedRecipeDetailScreen() {
           dietTags={normalized.dietTags}
           nutrition={normalized.nutrition ?? null}
           allergens={normalized.allergens}
+          dietConflicts={normalized.dietConflicts}
+          totalTimeMinutes={normalized.totalTimeMinutes}
           ingredients={normalized.ingredients}
           instructions={normalized.instructions}
           contentPaddingBottom={

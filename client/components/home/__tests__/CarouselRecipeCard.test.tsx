@@ -46,6 +46,9 @@ const baseCard: CarouselCardType = {
   prepTimeMinutes: 20,
   recommendationReason: "High protein",
   allergens: null,
+  dietTags: [],
+  dietConflicts: null,
+  totalTimeMinutes: null,
 };
 
 describe("CarouselRecipeCard remix badge accessibility", () => {
@@ -272,6 +275,44 @@ describe("CarouselRecipeCard universal allergen label", () => {
         "Pasta Carbonara, 20 min prep. High protein. Double tap to view recipe.",
       ),
     ).toBeDefined();
+  });
+});
+
+describe("CarouselRecipeCard attribute icons", () => {
+  it("folds checked attributes into the card label before the allergen suffix", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{
+          ...baseCard,
+          dietTags: ["vegan"],
+          dietConflicts: [],
+          allergens: [{ id: "soy", viaDerived: false }],
+          totalTimeMinutes: 20,
+        }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        "Pasta Carbonara, 20 min prep. High protein. Vegan, Quick, 30 minutes or less. Contains: Soy. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByText("Vegan")).toBeDefined();
+  });
+
+  it("shows no diet chip while diet conflicts are unchecked (pre-backfill rows)", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{
+          ...baseCard,
+          dietTags: ["vegan"],
+          dietConflicts: null,
+          allergens: [],
+        }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("Vegan")).toBeNull();
   });
 });
 

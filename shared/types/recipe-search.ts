@@ -3,6 +3,10 @@ import {
   allergenIdSchema,
   type DerivedRecipeAllergen,
 } from "@shared/constants/allergens";
+import {
+  parseDietConflicts,
+  type DietConflictId,
+} from "@shared/constants/diet-conflicts";
 
 export interface SearchableRecipe {
   id: string; // "personal:42", "community:17"
@@ -33,6 +37,11 @@ export interface SearchableRecipe {
    * as unsafe (fail-closed). `[]` means "derived, genuinely no allergens" = safe.
    */
   allergens: DerivedRecipeAllergen[] | null;
+  /**
+   * Derived diet-conflict cache (attribute icons, spec 2026-10-17). Same
+   * contract as `allergens`: `null` = not checked, so no diet icon shows.
+   */
+  dietConflicts: DietConflictId[] | null;
 }
 
 export interface RecipeSearchParams {
@@ -101,6 +110,11 @@ const searchableRecipeSchema = z.object({
   createdAt: z.string().nullable(),
   isCanonical: z.boolean(),
   allergens: z.array(derivedRecipeAllergenSchema).nullable(),
+  // Lenient on purpose: a server without the field (older deploy), a
+  // non-array, or an unknown id all read as "not checked" / dropped — the
+  // icon only hides, the response never fails. Without this key Zod would
+  // strip the field and no diet icon could ever show in the browser.
+  dietConflicts: z.unknown().transform(parseDietConflicts),
 });
 
 export const recipeSearchResponseSchema = z.object({

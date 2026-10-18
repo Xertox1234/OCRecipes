@@ -32,6 +32,7 @@ const base: SearchableRecipe = {
   createdAt: null,
   isCanonical: true,
   allergens: [],
+  dietConflicts: [],
 };
 
 describe("parseSearchableRecipeNumericId", () => {
@@ -52,7 +53,22 @@ describe("toCarouselCard", () => {
       recommendationReason: "520 cal",
       isCanonical: true,
       allergens: [],
+      dietTags: [],
+      dietConflicts: [],
+      totalTimeMinutes: 30,
     });
+  });
+
+  it("threads the attribute-icon facts through, preserving null diet conflicts", () => {
+    const card = toCarouselCard({
+      ...base,
+      dietTags: ["vegan"],
+      dietConflicts: null,
+      totalTimeMinutes: 15,
+    });
+    expect(card.dietTags).toEqual(["vegan"]);
+    expect(card.dietConflicts).toBeNull();
+    expect(card.totalTimeMinutes).toBe(15);
   });
 
   it("threads the recipe's derived allergens through unmodified (no re-derivation)", () => {

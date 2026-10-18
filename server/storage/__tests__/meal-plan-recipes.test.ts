@@ -292,6 +292,19 @@ describe("meal-plan-recipes storage", () => {
       expect(searchIndex.addToIndex).toHaveBeenCalledTimes(1);
     });
 
+    it("stores the derived diet conflicts beside allergens", async () => {
+      const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
+        { recipeId: 0, name: "Bacon", displayOrder: 0 },
+        { recipeId: 0, name: "Honey", displayOrder: 1 },
+      ]);
+      expect(created.dietConflicts).toEqual(["meat", "honey"]);
+    });
+
+    it("stores null diet conflicts for a recipe with no ingredients", async () => {
+      const created = await createMealPlanRecipe(makeRecipeInput(testUser.id));
+      expect(created.dietConflicts).toBeNull();
+    });
+
     it("assigns sequential displayOrder when ingredients omit it", async () => {
       const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
         { recipeId: 0, name: "A" },
@@ -453,6 +466,20 @@ describe("meal-plan-recipes storage", () => {
 
       // One index update per created recipe.
       expect(searchIndex.addToIndex).toHaveBeenCalledTimes(2);
+
+      // Each recipe stores its diet conflicts cache: checked-and-clear for the
+      // tomato recipe, unchecked (null) for the one with no ingredients.
+      const [first] = await tx
+        .select({ dietConflicts: mealPlanRecipes.dietConflicts })
+        .from(mealPlanRecipes)
+        .where(eq(mealPlanRecipes.id, result[0].recipeId));
+      expect(first.dietConflicts).not.toBeUndefined();
+      expect(first.dietConflicts).toEqual([]);
+      const [second] = await tx
+        .select({ dietConflicts: mealPlanRecipes.dietConflicts })
+        .from(mealPlanRecipes)
+        .where(eq(mealPlanRecipes.id, result[1].recipeId));
+      expect(second.dietConflicts).toBeNull();
     });
 
     it("normalizes ingredient name/unit and converts a fraction quantity to a decimal string", async () => {
@@ -563,6 +590,16 @@ describe("meal-plan-recipes storage", () => {
       expect(updated!.title).toBe("New Title");
       expect(updated!.servings).toBe(6);
       expect(searchIndex.addToIndex).toHaveBeenCalledTimes(1);
+    });
+
+    it("recomputes diet conflicts from the stored ingredients", async () => {
+      const recipe = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
+        { recipeId: 0, name: "Chicken", displayOrder: 0 },
+      ]);
+      const updated = await updateMealPlanRecipe(recipe.id, testUser.id, {
+        title: "Roast Dinner",
+      });
+      expect(updated?.dietConflicts).toEqual(["poultry"]);
     });
 
     it("returns undefined when the recipe belongs to another user (IDOR scoping)", async () => {

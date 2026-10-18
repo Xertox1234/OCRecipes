@@ -53,6 +53,7 @@ const baseMealPlanRecipe: MealPlanRecipe = {
   dietTags: ["gluten free"],
   mealTypes: ["dinner"],
   allergens: [],
+  dietConflicts: null,
   caloriesPerServing: "450",
   proteinPerServing: "35",
   carbsPerServing: "20",
@@ -77,6 +78,7 @@ const baseCommunityRecipe: CommunityRecipe = {
   dietTags: ["vegetarian"],
   mealTypes: ["lunch"],
   allergens: [],
+  dietConflicts: null,
   instructions: ["Grill chicken", "Toss salad"],
   ingredients: [
     { name: "Chicken breast", quantity: "2", unit: "pieces" },
@@ -161,24 +163,37 @@ describe("mealPlanToSearchable", () => {
     expect(doc.totalTimeMinutes).toBeNull();
   });
 
-  it("calculates totalTimeMinutes from prep only when cook is null", () => {
+  it("does not treat half a time as the total (prep only)", () => {
     const recipe: MealPlanRecipe = {
       ...baseMealPlanRecipe,
       prepTimeMinutes: 10,
       cookTimeMinutes: null,
     };
     const doc = mealPlanToSearchable(recipe, []);
-    expect(doc.totalTimeMinutes).toBe(10);
+    expect(doc.totalTimeMinutes).toBeNull();
   });
 
-  it("calculates totalTimeMinutes from cook only when prep is null", () => {
+  it("does not treat half a time as the total (cook only)", () => {
     const recipe: MealPlanRecipe = {
       ...baseMealPlanRecipe,
       prepTimeMinutes: null,
       cookTimeMinutes: 20,
     };
     const doc = mealPlanToSearchable(recipe, []);
-    expect(doc.totalTimeMinutes).toBe(20);
+    expect(doc.totalTimeMinutes).toBeNull();
+  });
+
+  it("carries the diet conflicts cache, preserving null", () => {
+    expect(
+      mealPlanToSearchable(
+        { ...baseMealPlanRecipe, dietConflicts: ["poultry"] },
+        [],
+      ).dietConflicts,
+    ).toEqual(["poultry"]);
+    expect(
+      mealPlanToSearchable({ ...baseMealPlanRecipe, dietConflicts: null }, [])
+        .dietConflicts,
+    ).toBeNull();
   });
 });
 
@@ -206,9 +221,28 @@ describe("communityToSearchable", () => {
     expect(doc.proteinPerServing).toBe(40);
     expect(doc.carbsPerServing).toBe(10);
     expect(doc.fatPerServing).toBe(15);
-    // Community recipes have no time columns — always null
+    // Community recipes have no prep/cook columns; the total comes from the
+    // free-text timeEstimate ("20 min").
     expect(doc.prepTimeMinutes).toBeNull();
     expect(doc.cookTimeMinutes).toBeNull();
+    expect(doc.totalTimeMinutes).toBe(20);
+  });
+
+  it("reads the total time from timeEstimate and carries diet conflicts", () => {
+    const doc = communityToSearchable({
+      ...baseCommunityRecipe,
+      timeEstimate: "40 minutes",
+      dietConflicts: ["meat"],
+    });
+    expect(doc.totalTimeMinutes).toBe(40);
+    expect(doc.dietConflicts).toEqual(["meat"]);
+  });
+
+  it("gives a null total time when timeEstimate is unreadable", () => {
+    const doc = communityToSearchable({
+      ...baseCommunityRecipe,
+      timeEstimate: "a while",
+    });
     expect(doc.totalTimeMinutes).toBeNull();
   });
 

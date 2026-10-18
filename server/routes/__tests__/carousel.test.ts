@@ -34,6 +34,9 @@ const mockCards = [
     prepTimeMinutes: 25,
     recommendationReason: "Recently added recipe",
     allergens: null,
+    dietTags: [],
+    dietConflicts: null,
+    totalTimeMinutes: null,
   },
   {
     id: 2,
@@ -42,6 +45,9 @@ const mockCards = [
     prepTimeMinutes: 30,
     recommendationReason: "Matches your keto diet",
     allergens: null,
+    dietTags: [],
+    dietConflicts: null,
+    totalTimeMinutes: null,
   },
 ];
 

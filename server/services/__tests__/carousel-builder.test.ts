@@ -63,6 +63,7 @@ const mockCommunityRecipes = [
     remixedFromId: null,
     remixedFromTitle: null,
     allergens: null,
+    dietConflicts: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   },
@@ -90,6 +91,7 @@ const mockCommunityRecipes = [
     remixedFromId: null,
     remixedFromTitle: null,
     allergens: null,
+    dietConflicts: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   },
@@ -140,6 +142,33 @@ describe("carousel-builder", () => {
     const cards = await buildCarousel("1", mockProfile);
 
     expect(cards[0].allergens).toBeNull();
+  });
+
+  it("carries diet tags, diet conflicts and the total time for the attribute icons", async () => {
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      {
+        ...mockCommunityRecipes[0],
+        dietTags: ["vegan"],
+        dietConflicts: [],
+        timeEstimate: "1 hr 15 min",
+      },
+    ]);
+
+    const cards = await buildCarousel("1", mockProfile);
+
+    expect(cards[0].dietTags).toEqual(["vegan"]);
+    expect(cards[0].dietConflicts).toEqual([]);
+    expect(cards[0].totalTimeMinutes).toBe(75);
+  });
+
+  it("preserves null diet conflicts (unchecked, never coerced to [])", async () => {
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      { ...mockCommunityRecipes[0], dietConflicts: null },
+    ]);
+
+    const cards = await buildCarousel("1", mockProfile);
+
+    expect(cards[0].dietConflicts).toBeNull();
   });
 
   it("marks isRemix strictly true (not merely truthy) for a remixed recipe", async () => {

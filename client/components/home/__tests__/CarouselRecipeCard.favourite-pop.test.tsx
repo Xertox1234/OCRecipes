@@ -35,6 +35,9 @@ const card: CarouselCardType = {
   prepTimeMinutes: 20,
   recommendationReason: "High protein",
   allergens: null,
+  dietTags: [],
+  dietConflicts: null,
+  totalTimeMinutes: null,
 };
 
 beforeEach(() => {

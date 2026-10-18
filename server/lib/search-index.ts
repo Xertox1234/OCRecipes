@@ -8,6 +8,7 @@
 import MiniSearch from "minisearch";
 import type { SearchableRecipe } from "@shared/types/recipe-search";
 import type { MealPlanRecipe, CommunityRecipe } from "@shared/schema";
+import { toTotalTimeMinutes } from "@shared/lib/recipe-time";
 
 /**
  * Columns needed to hydrate a meal-plan search-index entry. Omits heavy JSONB
@@ -23,6 +24,7 @@ export type SearchIndexableMealPlanRecipe = Pick<
   | "dietTags"
   | "mealTypes"
   | "allergens"
+  | "dietConflicts"
   | "difficulty"
   | "prepTimeMinutes"
   | "cookTimeMinutes"
@@ -49,7 +51,9 @@ export type SearchIndexableCommunityRecipe = Pick<
   | "dietTags"
   | "mealTypes"
   | "allergens"
+  | "dietConflicts"
   | "difficulty"
+  | "timeEstimate"
   | "servings"
   | "caloriesPerServing"
   | "proteinPerServing"
@@ -68,11 +72,6 @@ function parseNum(val: string | null | undefined): number | null {
   if (val === null || val === undefined) return null;
   const n = parseFloat(val);
   return isNaN(n) ? null : n;
-}
-
-function calcTotal(prep: number | null, cook: number | null): number | null {
-  if (prep === null && cook === null) return null;
-  return (prep ?? 0) + (cook ?? 0);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -98,10 +97,16 @@ export function mealPlanToSearchable(
     // Pass `null` ("not yet derived") through unchanged — coercing to `[]`
     // here would mask un-analyzed recipes as safe in the search predicate.
     allergens: recipe.allergens ?? null,
+    // Same contract as `allergens`: `null` = not checked.
+    dietConflicts: recipe.dietConflicts ?? null,
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: prep,
     cookTimeMinutes: cook,
-    totalTimeMinutes: calcTotal(prep, cook),
+    // One total-time rule app-wide: prep + cook only when BOTH are known.
+    totalTimeMinutes: toTotalTimeMinutes({
+      prepTimeMinutes: prep,
+      cookTimeMinutes: cook,
+    }),
     caloriesPerServing: parseNum(recipe.caloriesPerServing),
     proteinPerServing: parseNum(recipe.proteinPerServing),
     carbsPerServing: parseNum(recipe.carbsPerServing),
@@ -131,10 +136,16 @@ export function communityToSearchable(
     // Pass `null` ("not yet derived") through unchanged — coercing to `[]`
     // here would mask un-analyzed recipes as safe in the search predicate.
     allergens: recipe.allergens ?? null,
+    // Same contract as `allergens`: `null` = not checked.
+    dietConflicts: recipe.dietConflicts ?? null,
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: null,
     cookTimeMinutes: null,
-    totalTimeMinutes: null,
+    // Community recipes have no prep/cook columns — read the free-text
+    // `timeEstimate` ("20 min"); unreadable → null.
+    totalTimeMinutes: toTotalTimeMinutes({
+      timeEstimate: recipe.timeEstimate,
+    }),
     caloriesPerServing: parseNum(recipe.caloriesPerServing),
     proteinPerServing: parseNum(recipe.proteinPerServing),
     carbsPerServing: parseNum(recipe.carbsPerServing),

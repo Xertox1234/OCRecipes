@@ -157,6 +157,9 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "skim milk",
       "custard",
       "custards",
+      // Pesto is made with parmesan (owner ruling 2026-10-17). "Vegan pesto"
+      // over-flags; accepted (safe direction).
+      "pesto",
     ],
     derivedIngredients: [
       "whey",
@@ -266,6 +269,17 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
       "orzo",
       "ramen",
       "udon",
+      // Gluten grains and gluten-brewed foods (owner ruling 2026-10-17): the
+      // label is "Wheat/Gluten", and the gluten-free icon reads this list as an
+      // absence claim. Bare "ale" is deliberately absent — "ginger ale" has no
+      // gluten. "gluten-free soy sauce" over-flags; accepted (safe direction).
+      "barley",
+      "rye",
+      "beer",
+      "lager",
+      "stout",
+      "soy sauce",
+      "teriyaki",
     ],
     derivedIngredients: [
       "gluten",
@@ -812,7 +826,7 @@ function getSubstituteModifierPattern(keyword: string): RegExp {
  * of that allergen, so it does NOT match. The substitute's own allergen still
  * matches through its own keyword.
  */
-function ingredientContainsKeyword(
+export function ingredientContainsKeyword(
   lowerIngredient: string,
   keyword: string,
 ): boolean {

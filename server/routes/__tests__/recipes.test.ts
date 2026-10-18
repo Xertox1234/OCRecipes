@@ -137,6 +137,7 @@ describe("Recipes Routes", () => {
             dietTags: [],
             mealTypes: [],
             allergens: [],
+            dietConflicts: null,
             difficulty: null,
             prepTimeMinutes: null,
             cookTimeMinutes: null,

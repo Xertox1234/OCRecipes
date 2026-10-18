@@ -51,6 +51,7 @@ function recipe(
     createdAt: null,
     isCanonical: false,
     allergens: [],
+    dietConflicts: null,
     ...overrides,
   };
 }
