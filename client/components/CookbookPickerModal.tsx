@@ -17,6 +17,7 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { EmptyState } from "@/components/EmptyState";
+import { ModalToastHost } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -345,6 +346,7 @@ export function CookbookPickerModal({
             </View>
           )
         )}
+        <ModalToastHost />
       </KeyboardAvoidingView>
     </Modal>
   );

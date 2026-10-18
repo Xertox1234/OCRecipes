@@ -5,7 +5,7 @@ import * as RN from "react-native";
 import { FullWindowOverlay } from "react-native-screens";
 import { NotificationFeedbackType } from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
-import { ToastProvider, useToast } from "../ToastContext";
+import { ToastProvider, useToast, ModalToastHost } from "../ToastContext";
 
 const ghRootProps = vi.hoisted(() => [] as Record<string, unknown>[]);
 const mockNotification = vi.hoisted(() => vi.fn());
@@ -162,5 +162,98 @@ describe("ToastProvider haptics", () => {
     });
     expect(screen.getByText("Session expired")).toBeDefined();
     expect(mockNotification).not.toHaveBeenCalled();
+  });
+});
+
+describe("ModalToastHost (toast over an RN Modal sheet)", () => {
+  const originalOS = RN.Platform.OS;
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+  afterEach(() => {
+    RN.Platform.OS = originalOS;
+    announceSpy.mockRestore();
+  });
+
+  function mountWithModal(showModal: boolean) {
+    return renderComponent(
+      <ToastProvider>
+        <Capture />
+        {showModal ? <ModalToastHost /> : null}
+      </ToastProvider>,
+    );
+  }
+
+  it("renders the toast in the modal and suppresses the root overlay: one visible toast, one announcement", () => {
+    RN.Platform.OS = "ios";
+    mountWithModal(true);
+    act(() => {
+      api.info("Recipe ready");
+    });
+    expect(screen.getAllByText("Recipe ready")).toHaveLength(1);
+    expect(screen.queryByTestId("full-window-overlay")).toBeNull();
+    expect(announceSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders nothing while there is no toast", () => {
+    RN.Platform.OS = "ios";
+    mountWithModal(true);
+    expect(screen.queryByText("Recipe ready")).toBeNull();
+  });
+
+  it("falls back to the root overlay once the modal host unmounts", () => {
+    RN.Platform.OS = "ios";
+    const view = mountWithModal(true);
+    act(() => {
+      api.info("Recipe ready");
+    });
+    expect(screen.queryByTestId("full-window-overlay")).toBeNull();
+    view.rerender(
+      <ToastProvider>
+        <Capture />
+      </ToastProvider>,
+    );
+    act(() => {
+      api.info("Second");
+    });
+    expect(screen.getByTestId("full-window-overlay").textContent).toContain(
+      "Second",
+    );
+    expect(screen.getAllByText("Second")).toHaveLength(1);
+  });
+
+  it("two mounted modal hosts still show a single toast", () => {
+    RN.Platform.OS = "ios";
+    renderComponent(
+      <ToastProvider>
+        <Capture />
+        <ModalToastHost />
+        <ModalToastHost />
+      </ToastProvider>,
+    );
+    act(() => {
+      api.info("Only once");
+    });
+    expect(screen.getAllByText("Only once")).toHaveLength(1);
+    expect(announceSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("a modal host mounting mid-toast moves the toast without duplicating it", () => {
+    RN.Platform.OS = "ios";
+    const view = mountWithModal(false);
+    act(() => {
+      api.info("Mid-flight");
+    });
+    expect(screen.getByTestId("full-window-overlay")).toBeDefined();
+    view.rerender(
+      <ToastProvider>
+        <Capture />
+        <ModalToastHost />
+      </ToastProvider>,
+    );
+    expect(screen.queryByTestId("full-window-overlay")).toBeNull();
+    expect(screen.getAllByText("Mid-flight")).toHaveLength(1);
   });
 });

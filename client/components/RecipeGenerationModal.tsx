@@ -15,6 +15,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { SelectableTile } from "@/components/SelectableTile";
+import { ModalToastHost } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useGenerateRecipeInBackground } from "@/hooks/useGenerateRecipeInBackground";
@@ -459,6 +460,8 @@ export function RecipeGenerationModal({
             )}
           </Pressable>
         </ScrollView>
+        {/* RN Modal sheets sit above the root toast window. */}
+        <ModalToastHost />
       </KeyboardAvoidingView>
     </Modal>
   );
