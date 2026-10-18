@@ -81,16 +81,23 @@ function invalidateSavedItems(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: ["/api/saved-items/count"] });
 }
 
+export type SessionMatch = "same" | "different" | "unknown";
+
 /**
- * True when the session that submitted (`token`) is still the one signed in.
- * An unreadable token counts as "not the same": stay quiet rather than risk
- * a mark, a toast or a haptic for someone else (same guard as useChat.ts).
+ * Whether the session that submitted (`token`) is still the one signed in.
+ * "unknown" (the token could not be read) is treated like "different" for
+ * anything user-visible — stay quiet rather than risk a mark, a toast or a
+ * haptic for someone else (same guard as useChat.ts) — but like "same" for
+ * releasing the pending flag, or an unreadable store would leave the current
+ * user's Generate button stuck.
  */
-export async function isSameSession(token: string | null): Promise<boolean> {
+export async function sessionMatch(
+  token: string | null,
+): Promise<SessionMatch> {
   try {
-    return (await tokenStorage.get()) === token;
+    return (await tokenStorage.get()) === token ? "same" : "different";
   } catch {
-    return false;
+    return "unknown";
   }
 }
 
@@ -108,7 +115,11 @@ export async function isSameSession(token: string | null): Promise<boolean> {
  *    the toast says to look there.
  *
  * One generation at a time for this entry point (owner ruling 2026-10-17):
- * `start` is a no-op while "photo" is pending. Spec:
+ * `start` is a no-op while "photo" is pending. The flag belongs to the
+ * session that set it: a request that outlives a sign-out must not release
+ * the flag the next session now owns (same shape as
+ * docs/solutions/logic-errors/conditional-update-lock-release-must-compare-its-own-token-2026-10-13.md).
+ * Spec:
  * docs/superpowers/specs/2026-10-17-recipe-generate-argon-background-completion-design.md
  */
 export function useGenerateRecipeInBackground(): {
@@ -125,6 +136,7 @@ export function useGenerateRecipeInBackground(): {
 
       void (async () => {
         let token: string | null = null;
+        let session: SessionMatch = "unknown";
         try {
           token = await tokenStorage.get();
           const res = await withDeadline((signal) =>
@@ -137,12 +149,14 @@ export function useGenerateRecipeInBackground(): {
             ),
           );
           const recipe = (await res.json()) as CommunityRecipe;
-          if (!(await isSameSession(token))) return;
+          session = await sessionMatch(token);
+          if (session !== "same") return;
           invalidateSavedItems(queryClient);
           noteGeneratedRecipeReady(queryClient, recipe.id);
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         } catch (err) {
-          if (!(await isSameSession(token))) return;
+          session = await sessionMatch(token);
+          if (session !== "same") return;
           if (isClientRejection(err)) {
             toast.error(generationErrorCopy(err));
             return;
@@ -150,7 +164,9 @@ export function useGenerateRecipeInBackground(): {
           invalidateSavedItems(queryClient);
           toast.error(SOFT_FAILURE_COPY);
         } finally {
-          setPendingGeneration(queryClient, "photo", false);
+          if (session !== "different") {
+            setPendingGeneration(queryClient, "photo", false);
+          }
         }
       })();
     },

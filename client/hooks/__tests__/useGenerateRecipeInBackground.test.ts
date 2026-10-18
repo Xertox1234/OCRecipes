@@ -10,6 +10,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import {
   getUnreadGeneratedRecipeIds,
   isPendingGeneration,
+  setPendingGeneration,
   subscribeToGeneratedRecipeReady,
 } from "../useGeneratedRecipeNotices";
 import {
@@ -128,13 +129,18 @@ describe("useGenerateRecipeInBackground", () => {
       start(input);
     });
 
-    await waitFor(() =>
-      expect(isPendingGeneration(queryClient, "photo")).toBe(false),
-    );
+    // Submit-time read, then the post-settle re-read.
+    await waitFor(() => expect(tokenStorage.get).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(getUnreadGeneratedRecipeIds(queryClient)).toEqual([]);
     expect(listener).not.toHaveBeenCalled();
     expect(mockNotification).not.toHaveBeenCalled();
     expect(mockToast.error).not.toHaveBeenCalled();
+    // The flag is left to the session that owns it now (teardown's
+    // queryClient.clear() already dropped the old one).
+    expect(isPendingGeneration(queryClient, "photo")).toBe(true);
     unsubscribe();
   });
 
@@ -152,11 +158,13 @@ describe("useGenerateRecipeInBackground", () => {
       start(input);
     });
 
-    await waitFor(() =>
-      expect(isPendingGeneration(queryClient, "photo")).toBe(false),
-    );
+    await waitFor(() => expect(tokenStorage.get).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(mockToast.error).not.toHaveBeenCalled();
     expect(invalidate).not.toHaveBeenCalled();
+    expect(isPendingGeneration(queryClient, "photo")).toBe(true);
     invalidate.mockRestore();
   });
 
@@ -297,5 +305,61 @@ describe("generationErrorCopy", () => {
     expect(generationErrorCopy(new Error("boom"))).toBe(
       "Couldn't generate the recipe",
     );
+  });
+});
+
+// The pending flag is per entry point, not per session: a request that
+// outlives its session must not release a flag the NEXT session now owns
+// (same shape as docs/solutions/logic-errors/conditional-update-lock-release-
+// must-compare-its-own-token-2026-10-13.md).
+describe("useGenerateRecipeInBackground — stale request and the pending flag", () => {
+  it("leaves the next session's pending flag alone when a stale request settles", async () => {
+    vi.mocked(tokenStorage.get)
+      .mockResolvedValueOnce("tok-A")
+      .mockResolvedValue("tok-B");
+    let resolveRequest: (res: Response) => void = () => {};
+    vi.mocked(apiRequest).mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const { queryClient, start } = renderStart();
+    act(() => {
+      start(input);
+    });
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledOnce());
+
+    // A signs out (teardown clears the cache), B signs in and starts their own.
+    queryClient.clear();
+    setPendingGeneration(queryClient, "photo", true);
+    await act(async () => {
+      resolveRequest(okResponse({ id: 42 }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(isPendingGeneration(queryClient, "photo")).toBe(true);
+    expect(getUnreadGeneratedRecipeIds(queryClient)).toEqual([]);
+  });
+
+  it("releases the pending flag when the token cannot be read after settle, so the current user is not stuck", async () => {
+    vi.mocked(tokenStorage.get)
+      .mockResolvedValueOnce("tok-A")
+      .mockRejectedValue(new Error("secure store unavailable"));
+    vi.mocked(apiRequest).mockResolvedValue(okResponse({ id: 42 }));
+    const listener = vi.fn();
+    const unsubscribe = subscribeToGeneratedRecipeReady(listener);
+    const { queryClient, start } = renderStart();
+
+    act(() => {
+      start(input);
+    });
+
+    await waitFor(() =>
+      expect(isPendingGeneration(queryClient, "photo")).toBe(false),
+    );
+    expect(listener).not.toHaveBeenCalled();
+    expect(mockToast.error).not.toHaveBeenCalled();
+    unsubscribe();
   });
 });
