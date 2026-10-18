@@ -137,6 +137,11 @@ export default function CoachChat({
   const [makingFinderItemId, setMakingFinderItemId] = useState<number | null>(
     null,
   );
+  const makingFinderRef = useRef<number | null>(null);
+  // Flows whose idea cards came back expired (410).
+  const [expiredFinderFlowIds, setExpiredFinderFlowIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const canGenerateRecipes = usePremiumFeature("recipeGeneration");
   const finderLocks = useMemo(
     () =>
@@ -757,9 +762,11 @@ export default function CoachChat({
 
   // "Make this mine" on an idea card: generate the recipe, then open it.
   const handleMakeFinderItem = useCallback(
-    (item: FinderItem) => {
+    (item: FinderItem, flowId: string) => {
       // One make at a time — a second card's tap is ignored while one runs.
-      if (makingFinderItemId !== null) return;
+      // A ref, not state: two taps in the same frame must not both pass.
+      if (makingFinderRef.current !== null) return;
+      makingFinderRef.current = item.id;
       setMakingFinderItemId(item.id);
       makeSuggestion(item.id)
         .then(({ recipeId }) => {
@@ -775,17 +782,22 @@ export default function CoachChat({
             toast.error("You've reached today's recipe limit.");
           } else if (status === 410) {
             toast.error("These ideas expired — search again.");
+            // Keep this list's idea buttons from being tapped again.
+            setExpiredFinderFlowIds((prev) => new Set(prev).add(flowId));
           } else {
             toast.error("Couldn't make this recipe. Try again.");
           }
         })
-        .finally(() =>
+        .finally(() => {
+          if (makingFinderRef.current === item.id) {
+            makingFinderRef.current = null;
+          }
           setMakingFinderItemId((current) =>
             current === item.id ? null : current,
-          ),
-        );
+          );
+        });
     },
-    [makingFinderItemId, makeSuggestion, navigation, toast],
+    [makeSuggestion, navigation, toast],
   );
 
   const openUpgrade = useCallback(() => setShowUpgrade(true), []);
@@ -910,6 +922,7 @@ export default function CoachChat({
                   onOpenFinderItem={handleOpenFinderItem}
                   onMakeFinderItem={handleMakeFinderItem}
                   makingFinderItemId={makingFinderItemId}
+                  expiredFinderFlowIds={expiredFinderFlowIds}
                   messageContent={msg.content}
                   adjustChoices={adjustChoices}
                 />
@@ -981,6 +994,7 @@ export default function CoachChat({
       handleOpenFinderItem,
       handleMakeFinderItem,
       makingFinderItemId,
+      expiredFinderFlowIds,
       adjustChoices,
       generatedRecipes,
       savingRecipeMessageId,

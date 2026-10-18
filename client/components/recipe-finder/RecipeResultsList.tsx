@@ -36,14 +36,17 @@ export interface RecipeResultsListProps {
   onButton: (button: FinderButton) => void;
   onOpenItem: (item: FinderItem) => void;
   /** "Make this mine" on an inspired row (ideas have no detail screen). */
-  onMakeItem?: (item: FinderItem) => void;
+  onMakeItem?: (item: FinderItem, flowId: string) => void;
   /** The inspired row whose recipe is being made right now, if any. */
   makingId?: number | null;
+  /** Flows whose idea cards expired (410) — their idea buttons are disabled. */
+  expiredFlowIds?: ReadonlySet<string>;
 }
 
 const THUMB = 48;
 const NO_LOCKS: FinderButton[] = [];
 const noop = () => {};
+const NO_EXPIRED: ReadonlySet<string> = new Set();
 
 export const RecipeResultsList = React.memo(function RecipeResultsList({
   block,
@@ -54,6 +57,7 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
   onOpenItem,
   onMakeItem = noop,
   makingId = null,
+  expiredFlowIds = NO_EXPIRED,
 }: RecipeResultsListProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -95,6 +99,7 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
             const meta = formatItemMeta(item);
             if (item.source === "inspired") {
               const making = makingId === item.id;
+              const ideasExpired = expiredFlowIds.has(block.flow.flowId);
               return (
                 <View
                   key={`${item.source}:${item.id}`}
@@ -138,9 +143,9 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
                     <Button
                       onPress={() => {
                         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-                        onMakeItem(item);
+                        onMakeItem(item, block.flow.flowId);
                       }}
-                      disabled={making}
+                      disabled={makingId !== null || ideasExpired}
                       loading={making}
                       loadingText="Making…"
                       accessibilityLabel={`Make ${item.title} mine`}

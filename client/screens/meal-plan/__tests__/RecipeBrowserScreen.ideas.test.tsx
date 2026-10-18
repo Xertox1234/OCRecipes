@@ -10,7 +10,7 @@
 // listing's data/pending/error flow through the screen the way TanStack's
 // useMutation would surface them.
 import React from "react";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AccessibilityInfo } from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
 import RecipeBrowserScreen from "../RecipeBrowserScreen";
@@ -263,6 +263,23 @@ describe("RecipeBrowserScreen — Ideas for you", () => {
 
     expect(makeMutateAsync).toHaveBeenCalledTimes(1);
     expect(makeMutateAsync).toHaveBeenCalledWith(7);
+  });
+
+  it("ignores two Make this mine taps landing in the same frame", async () => {
+    mutateAsync.mockResolvedValue([card, card2]);
+    makeMutateAsync.mockReturnValue(new Promise(() => {}));
+    renderComponent(<RecipeBrowserScreen />);
+
+    fireEvent.click(screen.getByText("Get ideas made for you"));
+    await screen.findByText("Fish Tacos");
+    const first = screen.getByLabelText("Make Bean Tacos mine");
+    const second = screen.getByLabelText("Make Fish Tacos mine");
+    act(() => {
+      fireEvent.click(first);
+      fireEvent.click(second);
+    });
+
+    expect(makeMutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it("a generic listing failure offers a retry", async () => {

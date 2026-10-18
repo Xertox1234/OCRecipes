@@ -30,8 +30,9 @@ export interface RecipeFinderMessageProps {
   onLockedButton: (button: FinderButton) => void;
   onOpenItem: (item: FinderItem) => void;
   /** "Make this mine" on an inspired row; see RecipeResultsListProps. */
-  onMakeItem?: (item: FinderItem) => void;
+  onMakeItem?: (item: FinderItem, flowId: string) => void;
   makingId?: number | null;
+  expiredFlowIds?: ReadonlySet<string>;
   /** The screen's adjust-card choices by flowId; survives a card remount. */
   adjustChoices?: AdjustChoicesStore;
 }
@@ -49,6 +50,7 @@ export function RecipeFinderMessage({
   onOpenItem,
   onMakeItem,
   makingId,
+  expiredFlowIds,
   adjustChoices,
 }: RecipeFinderMessageProps) {
   // The server mints flowIds; the client only echoes the block's own back.
@@ -117,6 +119,7 @@ export function RecipeFinderMessage({
         onOpenItem={onOpenItem}
         onMakeItem={onMakeItem}
         makingId={makingId}
+        expiredFlowIds={expiredFlowIds}
       />
     );
   }
