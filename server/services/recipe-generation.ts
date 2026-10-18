@@ -177,7 +177,9 @@ export async function generateRecipeContent(
       "recipe-generate",
       {
         temperature: 0.85,
-        max_completion_tokens: 2000,
+        // 4000: a recipe is ~900 output tokens; the headroom is for a model
+        // that reasons before answering and is free when unused (spec §3).
+        max_completion_tokens: 4000,
         messages: [
           {
             role: "system",

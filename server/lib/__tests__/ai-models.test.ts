@@ -40,6 +40,16 @@ describe("AI_FEATURES table", () => {
       vision: false,
       adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
     },
+    // Owner-approved 2026-10-17 after a paired eval (spec
+    // 2026-10-17-recipe-generate-argon-background-completion §1): Gemini keeps
+    // `temperature`, reports no reasoning tokens, and OpenRouter honours
+    // `max_completion_tokens` for it — so no adapt block.
+    "recipe-generate": {
+      model: "google/gemini-4-argon",
+      fallback: "gpt-4o",
+      json: true,
+      vision: false,
+    },
   };
 
   it("switched rows are exactly the approved ones", () => {

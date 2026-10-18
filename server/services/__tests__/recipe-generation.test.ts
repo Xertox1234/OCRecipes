@@ -148,6 +148,37 @@ describe("Recipe Generation", () => {
       expect(mockCreate.mock.calls[0][0]).toBe("recipe-generate");
     });
 
+    // Gemini 4 Argon (spec 2026-10-17 §3): a full recipe is ~900 output
+    // tokens and the old 2000 cap left no room for a model that reasons;
+    // the cap is free when unused.
+    it("sends a 4000-token output cap", async () => {
+      mockCreate.mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: "Grilled Chicken Salad",
+                description: "A light and healthy salad.",
+                difficulty: "Easy",
+                timeEstimate: "20 min",
+                ingredients: [
+                  { name: "chicken breast", quantity: "2", unit: "" },
+                ],
+                instructions: "Grill chicken",
+                dietTags: [],
+              }),
+            },
+          },
+        ],
+      } as any);
+
+      await generateRecipeContent({ productName: "Chicken Breast" });
+
+      expect(mockCreate.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ max_completion_tokens: 4000 }),
+      );
+    });
+
     describe("spiceLevel", () => {
       const base = {
         title: "Chili",
