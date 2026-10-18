@@ -5,9 +5,11 @@ import React, {
   useCallback,
   useMemo,
   useRef,
+  useEffect,
+  useId,
   type ReactNode,
 } from "react";
-import { Platform } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { FullWindowOverlay } from "react-native-screens";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { NotificationFeedbackType } from "expo-haptics";
@@ -54,11 +56,28 @@ function ToastHost({ children }: { children: React.ReactElement }) {
 
 const ToastContext = createContext<ToastContextType | null>(null);
 
+/** Internal channel for `ModalToastHost`: the live toast plus a registry of
+ *  mounted modal hosts. A React Native `<Modal>` presents its own view
+ *  controller above the `FullWindowOverlay` window, so a toast fired while one
+ *  is open renders hidden behind it. While a modal host is mounted it renders
+ *  the toast instead and the root host steps aside — one visible toast, one
+ *  screen-reader announcement. */
+interface ModalHostChannel {
+  toast: ToastItem | undefined;
+  /** The top-most mounted modal host — the only one that renders the toast. */
+  activeHostId: string | undefined;
+  dismiss: () => void;
+  register: (id: string) => () => void;
+}
+const ModalHostContext = createContext<ModalHostChannel | null>(null);
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const { theme } = useTheme();
   const { notification } = useHaptics();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(0);
+  // Ids of mounted modal hosts, most recently mounted last (top-most modal).
+  const [modalHosts, setModalHosts] = useState<string[]>([]);
 
   const show = useCallback(
     (message: string, variant: ToastVariant, options?: ToastOptions) => {
@@ -95,6 +114,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [show],
   );
 
+  const register = useCallback((id: string) => {
+    setModalHosts((prev) => [...prev, id]);
+    return () => setModalHosts((prev) => prev.filter((h) => h !== id));
+  }, []);
+
+  const modalChannel = useMemo(
+    () => ({
+      toast: toasts[0],
+      activeHostId: modalHosts[modalHosts.length - 1],
+      dismiss,
+      register,
+    }),
+    [toasts, modalHosts, dismiss, register],
+  );
+
   const value = useMemo(
     () => ({ success, error, info, dismiss }),
     [success, error, info, dismiss],
@@ -102,8 +136,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   return (
     <ToastContext.Provider value={value}>
-      {children}
-      {toasts.length > 0 && (
+      <ModalHostContext.Provider value={modalChannel}>
+        {children}
+      </ModalHostContext.Provider>
+      {toasts.length > 0 && modalHosts.length === 0 && (
         <ToastHost key={toasts[0].id}>
           <Toast
             message={toasts[0].message}
@@ -125,3 +161,42 @@ export function useToast(): ToastContextType {
   }
   return context;
 }
+
+/**
+ * Mount inside a React Native `<Modal>` that can be open when a background
+ * event toasts (the toast host in the root window renders behind it). Renders
+ * the current toast over the modal's content; the root host is suppressed
+ * while this is mounted, so only one `Toast` (one live region) exists. Place it
+ * as the LAST child of the modal's root view so it stacks above the content.
+ */
+export function ModalToastHost() {
+  // Outside a provider (isolated component tests) there is no toast to show.
+  const channel = useContext(ModalHostContext);
+  const register = channel?.register;
+  const { theme } = useTheme();
+  const hostId = useId();
+
+  useEffect(() => register?.(hostId), [register, hostId]);
+
+  if (!channel) return null;
+  const { toast, activeHostId, dismiss } = channel;
+  if (!toast || activeHostId !== hostId) return null;
+  return (
+    <GestureHandlerRootView style={styles.fill} pointerEvents="box-none">
+      <View style={styles.fill} pointerEvents="box-none">
+        <Toast
+          key={toast.id}
+          message={toast.message}
+          variant={toast.variant}
+          theme={theme}
+          onDismiss={dismiss}
+          action={toast.action}
+        />
+      </View>
+    </GestureHandlerRootView>
+  );
+}
+
+const styles = StyleSheet.create({
+  fill: { ...StyleSheet.absoluteFillObject },
+});
