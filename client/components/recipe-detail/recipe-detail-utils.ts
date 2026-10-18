@@ -1,4 +1,15 @@
 import type { NutritionData } from "./NutritionCard";
+import { toCheckableDiets } from "@shared/constants/recipe-attributes";
+
+/**
+ * The diet tags to show as plain text chips on recipe detail. Tags the
+ * attribute icons check (vegetarian, vegan, gluten-free, dairy-free) appear
+ * ONLY as checked icons (owner ruling 2026-10-17) — an unchecked "vegan" text
+ * chip beside a hidden Vegan icon would make the claim the icon withholds.
+ */
+export function toDisplayedDietTags(tags: readonly string[]): string[] {
+  return tags.filter((tag) => toCheckableDiets([tag]).size === 0);
+}
 
 /**
  * Formats prep and cook times into a display string.

@@ -24,8 +24,8 @@ import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 import { ThemedText } from "@/components/ThemedText";
 import { PressableScale } from "@/components/PressableScale";
 import { Chip } from "@/components/Chip";
-import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
-import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
+import { RecipeAttributeRow } from "@/components/RecipeAttributeRow";
+import { toRecipeAttributeA11ySuffix } from "@/components/recipe-attribute-row-utils";
 import {
   SkeletonBox,
   SkeletonLoadingRegion,
@@ -215,12 +215,19 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
     : (theme.success ?? theme.link);
 
   // The card Pressable is accessible={true}, which collapses its whole subtree
-  // into a single focus stop — the nested RecipeAllergenLabel's own container
-  // label is never reached by VoiceOver/TalkBack (see the toast-action-button
-  // precedent). Fold the recipe's derived allergens into the card's own label
-  // so the safety-critical allergen info still reaches screen-reader users; the
-  // visible chips (RecipeAllergenLabel below) remain for sighted users.
-  const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.allergens);
+  // into a single focus stop — the nested RecipeAttributeRow's own labels are
+  // never reached by VoiceOver/TalkBack (see the toast-action-button
+  // precedent). Fold the checked attributes and the recipe's derived allergens
+  // into the card's own label so the safety-critical allergen info still
+  // reaches screen-reader users; the visible chips (RecipeAttributeRow below)
+  // remain for sighted users.
+  const attributeFacts = {
+    dietTags: item.dietTags,
+    allergens: item.allergens,
+    dietConflicts: item.dietConflicts,
+    totalTimeMinutes: item.totalTimeMinutes,
+  };
+  const attributeA11ySuffix = toRecipeAttributeA11ySuffix(attributeFacts);
   const baseA11yLabel =
     isCommunity || browseOnly
       ? `View ${item.title}`
@@ -237,7 +244,7 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
       ]}
       accessibilityRole="button"
       accessibilityState={{ disabled: adding }}
-      accessibilityLabel={`${baseA11yLabel}${allergenA11ySuffix}`}
+      accessibilityLabel={`${baseA11yLabel}${attributeA11ySuffix}`}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={handleAccessibilityAction}
     >
@@ -253,7 +260,7 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
         <ThemedText style={styles.recipeCardTitle} numberOfLines={2}>
           {item.title}
         </ThemedText>
-        <RecipeAllergenLabel allergens={item.allergens} />
+        <RecipeAttributeRow facts={attributeFacts} />
         <View style={styles.recipeCardMeta}>
           {timeText && (
             <>

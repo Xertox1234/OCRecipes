@@ -3,7 +3,24 @@ import {
   formatTimeDisplay,
   parseNutritionData,
   STEP_TEXT_LINE_HEIGHT,
+  toDisplayedDietTags,
 } from "../recipe-detail/recipe-detail-utils";
+
+describe("toDisplayedDietTags", () => {
+  // Checkable diets show only as checked icons (owner ruling 2026-10-17);
+  // every other tag stays a text chip.
+  it("drops the tags the attribute icons check, keeps the rest", () => {
+    expect(
+      toDisplayedDietTags(["Vegan", "italian", "Gluten-Free", "keto"]),
+    ).toEqual(["italian", "keto"]);
+  });
+
+  it("keeps order and drops dairy-free and vegetarian too", () => {
+    expect(
+      toDisplayedDietTags(["dairy free", "Low-Carb", "vegetarian", "thai"]),
+    ).toEqual(["Low-Carb", "thai"]);
+  });
+});
 
 describe("formatTimeDisplay", () => {
   it("returns null when both times are zero", () => {
