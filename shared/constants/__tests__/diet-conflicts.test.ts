@@ -40,6 +40,9 @@ describe("deriveRecipeDietConflicts", () => {
     ["lardons", "meat"],
     ["pastrami", "meat"],
     ["guanciale", "meat"],
+    ["meat free-range", "meat"],
+    ["meat free range", "meat"],
+    ["meat, free-range", "meat"],
   ])("flags %s as %s", (ingredient, id) => {
     expect(deriveRecipeDietConflicts([ingredient])).toContain(id);
   });
@@ -62,6 +65,10 @@ describe("deriveRecipeDietConflicts", () => {
     "microbial rennet",
     "goat cheese",
     "meat-free mince",
+    "meat-free",
+    "meat free",
+    "meat-free, vegan",
+    "meat-free-style burger",
     "plant-based meat",
     "vegan chicken egg noodles",
   ])("does not flag %s", (ingredient) => {
