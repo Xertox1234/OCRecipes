@@ -23,6 +23,7 @@ import { storage } from "../storage";
 import { civilDateString, civilDateToInstant } from "../lib/civil-date";
 import { lookupNutrition } from "./nutrition-lookup";
 import { findCommunity } from "./recipe-finder/find-community";
+import { getSubstitutions } from "./ingredient-substitution";
 import { logger } from "../lib/logger";
 import { isValidCalendarDate } from "../utils/date-validation";
 import type { UserProfile } from "@shared/schema";
@@ -732,8 +733,6 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("get_substitutions", parsed.error.message);
       }
-      // Lazy import to avoid circular dependency with recipe-catalog
-      const { getSubstitutions } = await import("./ingredient-substitution");
       const rawIngredients = parsed.data.ingredients ?? [];
 
       const ingredients = rawIngredients.map((item, index) => ({
