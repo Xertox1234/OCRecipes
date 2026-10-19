@@ -3,7 +3,7 @@ import {
   type CatalogSearchResult,
   type CatalogSearchResponse,
 } from "@shared/types/recipe-catalog";
-import { createServiceLogger, toError } from "../lib/logger";
+import { createServiceLogger } from "../lib/logger";
 import { cachedFetch } from "./dev-api-cache";
 import {
   parseUserAllergies,
