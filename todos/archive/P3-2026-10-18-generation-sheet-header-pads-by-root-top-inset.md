@@ -1,6 +1,6 @@
 ---
 title: "RecipeGenerationModal pads its header by the root safe-area top inside a pageSheet"
-status: backlog
+status: done
 priority: low
 created: 2026-10-18
 updated: 2026-10-18
@@ -21,8 +21,8 @@ Noticed while fixing the toast's top inset inside the same sheets (follow-up to 
 
 ## Acceptance Criteria
 
-- [ ] The generation sheet's header uses a fixed top padding (`Spacing.lg`, matching the fallback already in the expression) instead of the root top inset.
-- [ ] Simulator check: open the sheet and confirm the title sits directly under the sheet's drag area with no status-bar-height gap. Then fire a background "Recipe ready" toast with the sheet open and decide whether the toast overlapping the title row is acceptable (it already is for the two picker sheets and for the root toast over navigation headers).
+- [x] The generation sheet's header uses a fixed top padding (`Spacing.lg`, matching the fallback already in the expression) instead of the root top inset.
+- [x] Simulator check: open the sheet and confirm the title sits directly under the sheet's drag area with no status-bar-height gap. Then fire a background "Recipe ready" toast with the sheet open and decide whether the toast overlapping the title row is acceptable (it already is for the two picker sheets and for the root toast over navigation headers).
 
 ## Implementation Notes
 
@@ -48,3 +48,10 @@ Noticed while fixing the toast's top inset inside the same sheets (follow-up to 
 ### 2026-10-18
 
 - Initial creation.
+
+### 2026-10-18 — orchestrator
+
+- **Owner decision:** fix it (chosen over leaving the band or also moving the toast lower). The owner accepted that a background toast now overlaps the title row for a few seconds, as it already does on the picker sheets.
+- **Done.** `paddingTop: insets.top || Spacing.lg` → `paddingTop: Spacing.lg` (16 pt). The two picker sheets already use `Spacing.lg` for their header top padding, so the three sheets now match; the todo's claim that the pickers "do not pad their headers" was imprecise.
+- **Sim check (iPhone 17 Pro, dev-client build, Fast Refresh on the open sheet):** before, the title sat ~59 pt below the sheet's top edge; after, it sits directly under the drag area with the Close button beside it. The toast-overlap half of AC2 was decided by the owner from the layout, not re-run with a live generation: the toast position inside the sheet is unchanged since PR #1505 (top edge + `Spacing.sm`), and the title moved up into it. Android and iPad were not observed.
+- No test: the safe-area mock returns top 0 and the RN mock drops `style`, so jsdom renders both expressions identically.

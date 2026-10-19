@@ -20,7 +20,7 @@ While any `ModalToastHost` is mounted the provider suppresses the root host, and
 
 ## Top inset inside the sheet
 
-`Toast` clears `useSafeAreaInsets().top`, read from the ROOT provider. A `pageSheet` (and a default Android `Modal`) is laid out below the status bar, so that inset is wrong inside it: the toast landed ~60 px down, on the sheet's title row. `ModalToastHost` passes `topInset={0}` and `Toast` uses `topInset ?? insets.top`. Do not fix this with a nested `SafeAreaProvider`: it seeds its state from the parent insets and only corrects after the native measurement, so the first frame still jumps. A `fullScreen`/`overFullScreen` or `statusBarTranslucent` Modal does sit under the status bar and would need the inset back.
+`Toast` clears `useSafeAreaInsets().top`, read from the ROOT provider. A `pageSheet` (and a default Android `Modal`) is laid out below the status bar, so that inset is wrong inside it: the toast landed ~60 px down, on the sheet's title row. `ModalToastHost` passes `topInset={0}` and `Toast` uses `topInset ?? insets.top`. Do not fix this with a nested `SafeAreaProvider`: it seeds its state from the parent insets and only corrects after the native measurement, so the first frame still jumps. A `fullScreen`/`overFullScreen` or `statusBarTranslucent` Modal does sit under the status bar and would need the inset back. The same class hit the sheet header itself: `RecipeGenerationModal` padded its title row by `insets.top || Spacing.lg`, a 59 pt band on an iPhone 17 Pro; inside a pageSheet use the fixed token, as the two picker sheets already did.
 
 ## Limit
 
