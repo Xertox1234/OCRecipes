@@ -57,8 +57,12 @@ export interface AiChatClient {
 
 export interface AiChatDeps {
   openrouter: AiChatClient | null;
+  /** Vertex AI direct — primary for `primary: "vertex"` rows; null = not configured. */
+  vertex: AiChatClient | null;
   fallback: AiChatClient;
   breaker: CircuitBreaker;
+  /** Separate from `breaker` (= OpenRouter health): one route's outage never trips the other. */
+  vertexBreaker: CircuitBreaker;
   report: (error: Error, context: string) => void;
   log: {
     info(obj: object, msg: string): void;
@@ -175,7 +179,16 @@ function fallbackModel(row: AiFeatureConfig, feature: AiFeature): string {
 
 export function createAiChat(deps: AiChatDeps): AiChat {
   const now = deps.now ?? Date.now;
-  const configReportedAt = new Map<AiFeature, number>();
+  const reportedAt = new Map<string, number>();
+
+  /** At most one report per key per CONFIG_REPORT_INTERVAL_MS. */
+  function throttledReport(key: string, error: Error): void {
+    const t = now();
+    const last = reportedAt.get(key);
+    if (last !== undefined && t - last < CONFIG_REPORT_INTERVAL_MS) return;
+    reportedAt.set(key, t);
+    deps.report(error, "ai-client");
+  }
 
   async function run(
     feature: AiFeature,
@@ -202,6 +215,19 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         fellBack,
       });
     };
+
+    // Before any OpenAI path below — incl. the no-OpenRouter-key early return.
+    if (row.primary === "vertex") {
+      return runVertexFirst(
+        feature,
+        row,
+        params,
+        options,
+        ctx,
+        requestedModel,
+        record,
+      );
+    }
 
     const callFallback = async (reason: FallbackReason, err?: unknown) => {
       deps.log.warn(
@@ -302,19 +328,13 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       } else if (kind === "config") {
         // Throttled per feature; the fallback warn log below still records
         // every failure.
-        const t = now();
-        const last = configReportedAt.get(feature);
-        if (last === undefined || t - last >= CONFIG_REPORT_INTERVAL_MS) {
-          configReportedAt.set(feature, t);
-          const status =
-            err instanceof OpenAI.APIError ? err.status : undefined;
-          deps.report(
-            new Error(
-              `AI config error: ${feature} (${String(status)}): ${message}`,
-            ),
-            "ai-client",
-          );
-        }
+        const status = err instanceof OpenAI.APIError ? err.status : undefined;
+        throttledReport(
+          `openrouter:${feature}`,
+          new Error(
+            `AI config error: ${feature} (${String(status)}): ${message}`,
+          ),
+        );
       }
       if (!fallbackAllowed) {
         // Eval context: say WHY the call failed before the caller's catch eats it.
@@ -334,6 +354,184 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       }
       return callFallback(kind, err);
     }
+  }
+
+  /**
+   * Vertex direct → OpenRouter → throw (spec 2026-10-19-vision-rows-vertex-
+   * direct §2.3). NEVER calls deps.fallback (OpenAI direct). With the
+   * fallback off (evals) only the first available route is tried.
+   */
+  async function runVertexFirst(
+    feature: AiFeature,
+    row: AiFeatureConfig,
+    params: AiChatParams | AiChatStreamParams,
+    options: AiChatOptions | undefined,
+    ctx: AiCallContext | undefined,
+    requestedModel: string,
+    record: (
+      answeredModel: string | null,
+      provider: string | null,
+      fellBack: boolean,
+    ) => void,
+  ): Promise<ChatCompletion> {
+    if (params.stream === true) {
+      throw new Error(
+        `aiChat(${feature}): streaming is not supported on a Vertex-first row`,
+      );
+    }
+    const evalMode = ctx?.fallback === "off";
+    const override = ctx?.overrides[feature];
+    const adapted = {
+      ...adaptParams(params, row.adapt, override?.set),
+      model: requestedModel,
+    };
+    const statusOf = (err: unknown) =>
+      err instanceof OpenAI.APIError ? err.status : undefined;
+    const messageOf = (err: unknown) =>
+      (err instanceof Error ? err.message : String(err)).slice(0, 300);
+    const recordEvalError = (kind: AiFailureKind, err: unknown) => {
+      ctx?.calls.push({
+        feature,
+        requestedModel,
+        answeredModel: null,
+        answeredProvider: null,
+        fellBack: false,
+        error: {
+          kind,
+          moderated: kind === "request" && isModerationBlock(err),
+          message: messageOf(err),
+        },
+      });
+    };
+
+    let lastErr: unknown;
+
+    // 1. Vertex
+    let vertexSkip: string | null = null;
+    if (!deps.vertex) vertexSkip = "not configured (GOOGLE_VERTEX_*)";
+    else if (!evalMode && deps.vertexBreaker.isOpen())
+      vertexSkip = "circuit open";
+    else {
+      try {
+        const res = await deps.vertex.chat.completions.create(adapted, options);
+        deps.vertexBreaker.recordSuccess();
+        const model = answeredModel(res);
+        record(model, "vertex", false);
+        deps.log.info(
+          {
+            feature,
+            provider: "vertex",
+            requestedModel,
+            answeredModel: model,
+            usage: (res as { usage?: unknown }).usage,
+          },
+          "ai call",
+        );
+        return res as ChatCompletion;
+      } catch (err) {
+        if (isAbort(err, options)) throw err;
+        const kind = classifyAiFailure(err);
+        if (countsTowardBreaker(kind)) deps.vertexBreaker.recordFailure();
+        if (kind === "config") {
+          throttledReport(
+            `vertex:${feature}`,
+            new Error(
+              `AI config error: ${feature} (vertex) (${String(statusOf(err))}): ${messageOf(err)}`,
+            ),
+          );
+        }
+        if (evalMode) {
+          recordEvalError(kind, err);
+          throw err;
+        }
+        lastErr = err;
+        deps.log.warn(
+          {
+            feature,
+            provider: "openrouter",
+            requestedModel,
+            fallbackReason: kind,
+            error: { status: statusOf(err), message: messageOf(err) },
+          },
+          "ai call using fallback",
+        );
+      }
+    }
+
+    // 2. OpenRouter (pinned Vertex host, ZDR)
+    let openrouterSkip: string | null = null;
+    if (!deps.openrouter)
+      openrouterSkip = "not configured (OPENROUTER_API_KEY)";
+    else if (!evalMode && deps.breaker.isOpen())
+      openrouterSkip = "circuit open";
+    else {
+      const host = hostForModel(requestedModel);
+      if (!host) {
+        throw new Error(
+          `aiChat(${feature}): no pinned OpenRouter host for "${requestedModel}"`,
+        );
+      }
+      try {
+        const res = await deps.openrouter.chat.completions.create(
+          { ...adapted, provider: { zdr: true, only: [host] } },
+          options,
+        );
+        deps.breaker.recordSuccess();
+        const model = answeredModel(res);
+        const provider = answeredProvider(res);
+        record(model, provider, lastErr !== undefined);
+        deps.log.info(
+          {
+            feature,
+            provider: "openrouter",
+            requestedModel,
+            answeredModel: model,
+            answeredProvider: provider,
+            cost: usageCost(res),
+          },
+          "ai call",
+        );
+        return res as ChatCompletion;
+      } catch (err) {
+        if (isAbort(err, options)) throw err;
+        const kind = classifyAiFailure(err);
+        if (countsTowardBreaker(kind)) deps.breaker.recordFailure();
+        if (kind === "balance") {
+          deps.report(
+            new Error(
+              `OpenRouter balance exhausted (402) — ${feature} has no fallback while Vertex is failing`,
+            ),
+            "ai-client",
+          );
+        } else if (kind === "config") {
+          throttledReport(
+            `openrouter:${feature}`,
+            new Error(
+              `AI config error: ${feature} (${String(statusOf(err))}): ${messageOf(err)}`,
+            ),
+          );
+        }
+        if (evalMode) {
+          recordEvalError(kind, err);
+          throw err;
+        }
+        lastErr = err;
+      }
+    }
+
+    // 3. Neither route answered — never OpenAI.
+    if (lastErr !== undefined) {
+      throttledReport(
+        `unavailable:${feature}`,
+        new Error(
+          `AI unavailable: ${feature} — Vertex and OpenRouter both failed or were skipped`,
+        ),
+      );
+      throw lastErr;
+    }
+    throw new Error(
+      `aiChat(${feature}): no AI route available (vertex: ${vertexSkip}; openrouter: ${openrouterSkip}) — set GOOGLE_VERTEX_* and/or OPENROUTER_API_KEY`,
+    );
   }
 
   async function openStream(
@@ -384,8 +582,10 @@ function defaultDeps(): AiChatDeps {
           defaultHeaders: { "X-Title": "OCRecipes" },
         }) as unknown as AiChatClient)
       : null,
+    vertex: null,
     fallback: openai as unknown as AiChatClient,
     breaker: new CircuitBreaker(),
+    vertexBreaker: new CircuitBreaker(),
     report: (error, context) => reportError(error, context),
     log: createServiceLogger("ai-client"),
   };

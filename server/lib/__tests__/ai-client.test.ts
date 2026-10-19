@@ -3,9 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import OpenAI from "openai";
 import { createAiChat, withAiCallContext } from "../ai-client";
 import type { AiChatDeps } from "../ai-client";
-import { CircuitBreaker } from "../ai-failure";
+import { CircuitBreaker, VertexAuthError } from "../ai-failure";
 import type { AiCallContext } from "../ai-call-context";
 import { AI_FEATURES } from "../ai-models";
+import type { AiFeature } from "../ai-models";
 
 vi.mock("../logger", () => ({
   createServiceLogger: () => ({
@@ -20,6 +21,23 @@ vi.mock("../error-reporter", () => ({ reportError: vi.fn() }));
 vi.mock("../openai", () => ({
   openai: { chat: { completions: { create: vi.fn() } } },
 }));
+vi.mock("../ai-models", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../ai-models")>();
+  return {
+    ...real,
+    AI_FEATURES: {
+      ...real.AI_FEATURES,
+      // Synthetic Vertex-first row: no real row is flagged until rollout PR 2.
+      "test-vertex-row": {
+        model: "google/gemini-3.8-flash",
+        json: true,
+        vision: true,
+        primary: "vertex",
+        adapt: { set: { reasoning_effort: "low" } },
+      },
+    },
+  };
+});
 
 const completion = (model: string, provider?: string) => ({
   id: "c1",
@@ -53,8 +71,10 @@ const apiError = (status: number, message = "boom") =>
 function makeDeps(overrides: Partial<AiChatDeps> = {}) {
   const deps: AiChatDeps = {
     openrouter: { chat: { completions: { create: vi.fn() } } },
+    vertex: null,
     fallback: { chat: { completions: { create: vi.fn() } } },
     breaker: new CircuitBreaker(),
+    vertexBreaker: new CircuitBreaker(),
     report: vi.fn(),
     log: { info: vi.fn(), warn: vi.fn() },
     ...overrides,
@@ -935,5 +955,270 @@ describe("aiChat default deps", () => {
         mod.aiChat("coach-notebook-extract", params),
       ),
     ).rejects.toThrow(/OPENROUTER_API_KEY is required when fallback is off/);
+  });
+});
+
+describe("aiChat (Vertex-first rows)", () => {
+  // Synthetic row from the ai-models mock above; not in the AiFeature union.
+  const V = "test-vertex-row" as unknown as AiFeature;
+  const client = () => ({ chat: { completions: { create: vi.fn() } } });
+  const ctxOn = (): AiCallContext => ({
+    overrides: {},
+    fallback: "on",
+    calls: [],
+  });
+  const ctxOff = (): AiCallContext => ({
+    overrides: {},
+    fallback: "off",
+    calls: [],
+  });
+  let deps: AiChatDeps;
+  beforeEach(() => {
+    deps = makeDeps({ vertex: client() });
+  });
+  const neverOpenAI = () =>
+    expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+
+  it("Vertex answers: adapted params, no provider key, recorded as vertex", async () => {
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash"),
+    );
+    const ctx = ctxOn();
+    await withAiCallContext(ctx, () =>
+      createAiChat(deps)(V, params, { timeout: 9 }),
+    );
+    const [body, opts] = vi.mocked(deps.vertex!.chat.completions.create).mock
+      .calls[0];
+    expect(body).toEqual({
+      ...params,
+      model: "google/gemini-3.8-flash",
+      reasoning_effort: "low",
+    });
+    expect(body).not.toHaveProperty("provider");
+    expect(opts).toEqual({ timeout: 9 });
+    expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
+    expect(ctx.calls[0]).toMatchObject({
+      answeredProvider: "vertex",
+      fellBack: false,
+    });
+    neverOpenAI();
+  });
+
+  it("Vertex fails (5xx) → OpenRouter with zdr + pinned host + adapt; fellBack", async () => {
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash", "Google"),
+    );
+    const ctx = ctxOn();
+    await withAiCallContext(ctx, () => createAiChat(deps)(V, params));
+    expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
+      {
+        ...params,
+        model: "google/gemini-3.8-flash",
+        reasoning_effort: "low",
+        provider: { zdr: true, only: ["google-vertex"] },
+      },
+      undefined,
+    );
+    expect(ctx.calls[0]).toMatchObject({ fellBack: true });
+    expect(deps.log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openrouter",
+        fallbackReason: "transport",
+      }),
+      "ai call using fallback",
+    );
+    neverOpenAI();
+  });
+
+  it("both routes fail → throws the last error, reports, never OpenAI", async () => {
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(502, "or down"),
+    );
+    await expect(createAiChat(deps)(V, params)).rejects.toThrow("or down");
+    expect(deps.report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("test-vertex-row"),
+      }),
+      "ai-client",
+    );
+    neverOpenAI();
+  });
+
+  it("vertex only: Vertex present, OpenRouter absent → Vertex answers, no warn", async () => {
+    deps = makeDeps({ vertex: client(), openrouter: null });
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash"),
+    );
+    await createAiChat(deps)(V, params);
+    expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(1);
+    expect(deps.log.warn).not.toHaveBeenCalled();
+    neverOpenAI();
+  });
+
+  it("vertex null → OpenRouter directly, not marked fellBack", async () => {
+    deps = makeDeps({ vertex: null });
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash", "Google"),
+    );
+    const ctx = ctxOn();
+    await withAiCallContext(ctx, () => createAiChat(deps)(V, params));
+    expect(ctx.calls[0]).toMatchObject({ fellBack: false });
+    neverOpenAI();
+  });
+
+  it("no route available: both clients null → config error naming both env vars", async () => {
+    deps = makeDeps({ vertex: null, openrouter: null });
+    await expect(createAiChat(deps)(V, params)).rejects.toThrow(
+      /GOOGLE_VERTEX_.*OPENROUTER_API_KEY/,
+    );
+    neverOpenAI();
+  });
+
+  it("no route available: Vertex breaker open and OpenRouter absent → error, not OpenAI", async () => {
+    deps = makeDeps({ vertex: client(), openrouter: null });
+    for (let i = 0; i < 5; i++) deps.vertexBreaker.recordFailure();
+    await expect(createAiChat(deps)(V, params)).rejects.toThrow(
+      /vertex: circuit open/,
+    );
+    expect(deps.vertex!.chat.completions.create).not.toHaveBeenCalled();
+    neverOpenAI();
+  });
+
+  it("Vertex breaker open → straight to OpenRouter", async () => {
+    for (let i = 0; i < 5; i++) deps.vertexBreaker.recordFailure();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash", "Google"),
+    );
+    await createAiChat(deps)(V, params);
+    expect(deps.vertex!.chat.completions.create).not.toHaveBeenCalled();
+  });
+
+  it("breakers are separate: Vertex failures never open the OpenRouter breaker", async () => {
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash", "Google"),
+    );
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 6; i++) await aiChat(V, params);
+    expect(deps.vertexBreaker.isOpen()).toBe(true);
+    expect(deps.breaker.isOpen()).toBe(false);
+  });
+
+  it("breakers are separate: OpenRouter failures never open the Vertex breaker", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.fallback.chat.completions.create).mockResolvedValue(
+      completion("gpt-4o-mini"),
+    );
+    const aiChat = createAiChat(deps);
+    for (let i = 0; i < 6; i++) await aiChat("coach-notebook-extract", params);
+    expect(deps.breaker.isOpen()).toBe(true);
+    expect(deps.vertexBreaker.isOpen()).toBe(false);
+  });
+
+  it("abort on Vertex is rethrown without trying OpenRouter", async () => {
+    const ac = new AbortController();
+    ac.abort();
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      new OpenAI.APIUserAbortError(),
+    );
+    await expect(
+      createAiChat(deps)(V, params, { signal: ac.signal }),
+    ).rejects.toThrow();
+    expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
+    neverOpenAI();
+  });
+
+  it("auth failure: VertexAuthError → config report (throttled), then OpenRouter", async () => {
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      new VertexAuthError(
+        "Vertex login failed — check GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL / _KEY",
+      ),
+    );
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash", "Google"),
+    );
+    const aiChat = createAiChat(deps);
+    await aiChat(V, params);
+    await aiChat(V, params);
+    expect(deps.report).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(deps.report).mock.calls[0][0].message).toMatch(
+      /AI config error: test-vertex-row \(vertex\)/,
+    );
+    expect(deps.vertexBreaker.isOpen()).toBe(false);
+  });
+
+  it("402 text: OpenRouter balance on a Vertex-first row does not mention OpenAI", async () => {
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(402),
+    );
+    await expect(createAiChat(deps)(V, params)).rejects.toThrow();
+    const messages = vi.mocked(deps.report).mock.calls.map(([e]) => e.message);
+    expect(messages.some((m) => /402/.test(m))).toBe(true);
+    expect(messages.join(" ")).not.toMatch(/OpenAI/);
+  });
+
+  it("eval context (fallback off): Vertex failure is recorded and thrown, OpenRouter untried", async () => {
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      apiError(400, "bad field"),
+    );
+    const ctx = ctxOff();
+    await expect(
+      withAiCallContext(ctx, () => createAiChat(deps)(V, params)),
+    ).rejects.toThrow("bad field");
+    expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
+    expect(ctx.calls[0]).toMatchObject({ error: { kind: "config" } });
+  });
+
+  it("eval context (fallback off) with no Vertex client measures OpenRouter", async () => {
+    deps = makeDeps({ vertex: null });
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash", "Google"),
+    );
+    await withAiCallContext(ctxOff(), () => createAiChat(deps)(V, params));
+    expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("eval override model/set reaches the Vertex body", async () => {
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-4-argon"),
+    );
+    const ctx: AiCallContext = {
+      overrides: {
+        "test-vertex-row": {
+          model: "google/gemini-4-argon",
+          set: { reasoning_effort: "medium" },
+        },
+      } as unknown as AiCallContext["overrides"],
+      fallback: "off",
+      calls: [],
+    };
+    await withAiCallContext(ctx, () => createAiChat(deps)(V, params));
+    expect(
+      vi.mocked(deps.vertex!.chat.completions.create).mock.calls[0][0],
+    ).toMatchObject({
+      model: "google/gemini-4-argon",
+      reasoning_effort: "medium",
+    });
+  });
+
+  it("stream: true on a Vertex-first row throws before any call", async () => {
+    await expect(
+      createAiChat(deps)(V, { ...params, stream: true }),
+    ).rejects.toThrow(/stream/);
+    expect(deps.vertex!.chat.completions.create).not.toHaveBeenCalled();
+    neverOpenAI();
   });
 });
