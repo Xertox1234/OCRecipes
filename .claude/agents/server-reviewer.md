@@ -203,7 +203,7 @@ export async function initCache(): Promise<void> {
 - Services: `createServiceLogger("service-name")` where the name matches the filename.
 - Always serialize errors with `toError(err)` — never pass raw `err` (may not be an `Error` instance).
 - Zod validation failures log at `warn` level with `zodErrors: parsed.error.flatten()`.
-- Message style: lowercase, concise; proper nouns stay capitalized (DALL-E, OpenAI, Spoonacular).
+- Message style: lowercase, concise; proper nouns stay capitalized (Runware, OpenAI, Spoonacular).
 
 ## Review-Gate Diff Scope
 

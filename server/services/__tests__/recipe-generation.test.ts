@@ -37,7 +37,7 @@ vi.mock("node:fs", async () => {
 vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
-  OPENAI_TIMEOUT_IMAGE_MS: 120_000,
+  OPENAI_TIMEOUT_LONG_MS: 120_000,
   OPENAI_TIMEOUT_FAST_MS: 30_000,
   // isAiConfigured: false keeps isArtDirectorLLMEnabled() → false,
   // so image-art-direction uses the deterministic path (no LLM calls in tests).

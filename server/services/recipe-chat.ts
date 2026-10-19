@@ -7,10 +7,7 @@ import {
   type AllergenMatch,
 } from "@shared/constants/allergens";
 import { aiChat } from "../lib/ai-client";
-import {
-  OPENAI_TIMEOUT_HEAVY_MS,
-  OPENAI_TIMEOUT_IMAGE_MS,
-} from "../lib/openai";
+import { OPENAI_TIMEOUT_HEAVY_MS, OPENAI_TIMEOUT_LONG_MS } from "../lib/openai";
 import {
   sanitizeContextField,
   sanitizeUserInput,
@@ -552,7 +549,7 @@ export async function analyzeImageForRecipe(
         max_completion_tokens: 500,
         temperature: 0.3,
       },
-      { timeout: OPENAI_TIMEOUT_IMAGE_MS },
+      { timeout: OPENAI_TIMEOUT_LONG_MS },
     );
 
     const content = response.choices[0]?.message?.content;

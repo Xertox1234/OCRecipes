@@ -37,7 +37,7 @@ const mockCreate = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/ai-client", () => ({ aiChat: mockCreate }));
 vi.mock("../../lib/openai", () => ({
-  OPENAI_TIMEOUT_IMAGE_MS: 120000,
+  OPENAI_TIMEOUT_LONG_MS: 120000,
   OPENAI_TIMEOUT_FAST_MS: 30000,
   // isAiConfigured: false keeps buildImagePrompt in deterministic mode
   // (skips the LLM art-director pre-pass so prompt assertions are stable)

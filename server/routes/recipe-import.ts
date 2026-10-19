@@ -94,7 +94,7 @@ export function register(app: Express): void {
     urlImportRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        // Gate before triggering fire-and-forget Runware/DALL-E image generation
+        // Gate before triggering fire-and-forget Runware image generation
         const features = await checkPremiumFeature(
           req,
           res,

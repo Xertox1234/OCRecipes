@@ -19,7 +19,7 @@ import {
   isRunwareConfigured,
   RUNWARE_MODEL_HQ,
 } from "../lib/runware";
-import { OPENAI_TIMEOUT_IMAGE_MS } from "../lib/openai";
+import { OPENAI_TIMEOUT_LONG_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import {
   buildImagePrompt,
@@ -237,7 +237,7 @@ export async function generateEditorialContent(
         temperature: 0.3,
         max_tokens: 1500,
       },
-      { timeout: OPENAI_TIMEOUT_IMAGE_MS },
+      { timeout: OPENAI_TIMEOUT_LONG_MS },
     );
 
     const raw = completion.choices[0]?.message?.content;
