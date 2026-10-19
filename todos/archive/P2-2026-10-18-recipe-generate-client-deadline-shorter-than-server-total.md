@@ -1,6 +1,6 @@
 ---
 title: "Background recipe generation: the 60 s client deadline fires before a slow server finishes (observed 65 s), turning a success into 'check Saved items'"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-18
 updated: 2026-10-18
@@ -21,9 +21,9 @@ Deferred because the behaviour is the one the spec asked for (the soft path exis
 
 ## Acceptance Criteria
 
-- [ ] Owner decides the client deadline: keep 60 s, or raise to ~90 s so the client outlives the server's own 60 s model timeout plus post-processing (the server will have answered or 5xx'd by then).
-- [ ] If raised: change `RECIPE_GENERATION_DEADLINE_MS` in `client/hooks/useGenerateRecipeInBackground.ts` (and the meal-plan hook if it shares it), update the deadline test, and update spec §3.
-- [ ] Measure once after PR 3 is live: p95 of `responseTime` for `POST /api/recipes/generate` in the server log over a day of dev use, and confirm it sits well under the chosen deadline.
+- [x] Owner decides the client deadline: keep 60 s, or raise to ~90 s so the client outlives the server's own 60 s model timeout plus post-processing (the server will have answered or 5xx'd by then). _Owner 2026-10-18: raise to 90 s._
+- [x] If raised: change `RECIPE_GENERATION_DEADLINE_MS` in `client/hooks/useGenerateRecipeInBackground.ts` (and the meal-plan hook if it shares it), update the deadline test, and update spec §3. _Done; the meal-plan hook (`useRecipeGenerate.ts`) inherits the constant through `withDeadline`'s default. The spec sentence lives in §5 (and §8), not §3._
+- [x] Measure once after PR 3 is live: p95 of `responseTime` for `POST /api/recipes/generate` in the server log over a day of dev use, and confirm it sits well under the chosen deadline. _Skipped (owner 2026-10-18): the dev server logs to the terminal only (pino-pretty on stdout), so there is no stored log to measure. The new test pins the one slow case observed (65 s)._
 
 ## Implementation Notes
 
@@ -49,3 +49,10 @@ Deferred because the behaviour is the one the spec asked for (the soft path exis
 ### 2026-10-18
 
 - Initial creation (observed during the PR 1 simulator check, server log 23:58:37 entry).
+
+### 2026-10-18 — orchestrator
+
+- Owner raised the deadline to 90 s. `RECIPE_GENERATION_DEADLINE_MS` is now `90_000`; both the photo hook and the meal-plan hook move together (shared `withDeadline` default).
+- TDD: new test "waits out a slow success: a reply at 65 s still lands as a ready recipe" in `useGenerateRecipeInBackground.test.ts` was red at 60 s (listener never called; the abort won) and is green at 90 s. 22 tests pass across the two hook files.
+- Two premises in the Summary were wrong, corrected in the hook's doc comment and the spec: the hero image is fire-and-forget AFTER the reply (`fireAndForget` in `server/routes/recipes.ts`), so the pre-reply work is model + normalization + two DB writes; and the server has NO 60 s ceiling: `OPENAI_TIMEOUT_HEAVY_MS` is per attempt, the OpenAI SDK retries a timed-out attempt (default `maxRetries` 2), and `aiChat` then tries the OpenAI fallback with its own budget. No client deadline can rule out the soft path for a hung model; 90 s covers the slow-success case.
+- Spec updated at §5 (the 60 s sentence, with the reason) and §8 ("The 90 s client deadline"). The AC's "§3" pointed at the wrong section.
