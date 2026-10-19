@@ -72,8 +72,10 @@ const CATEGORY_INSTRUCTION = `6. Food category: one of "protein", "vegetable", "
  * Completion cap for a food list (logging and its follow-up refine). A
  * multi-food photo ran the old 500 to the limit and truncated to invalid JSON
  * (live burger photo, 2026-09-27); the cap bounds cost, not typical length.
+ * Gemini Flash names items at more length: a busy board ran 790-1000 tokens
+ * and 1 reply in 6 hit 1000 (2026-10-19), so the cap is 1500.
  */
-const LOG_MAX_TOKENS = 1000;
+const LOG_MAX_TOKENS = 1500;
 
 const LOG_PROMPT = `You are a nutrition analysis assistant. Analyze food photos and identify:
 1. Each distinct food item visible

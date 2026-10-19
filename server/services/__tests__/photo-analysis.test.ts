@@ -573,9 +573,11 @@ describe("getPromptForIntent", () => {
     expect(getPromptForIntent("recipe").maxTokens).toBe(300);
     expect(getPromptForIntent("label").maxTokens).toBe(800);
     // A multi-food answer ran 500 tokens and truncated to invalid JSON (live
-    // burger photo, 2026-09-27), so logging gets more room.
-    expect(getPromptForIntent("log").maxTokens).toBe(1000);
-    expect(getPromptForIntent("calories").maxTokens).toBe(1000);
+    // burger photo, 2026-09-27), so logging gets more room. Gemini Flash names
+    // items at more length (790-1000 tokens on a busy board, 1/6 cut off at
+    // 1000, 2026-10-19), so the cap is 1500.
+    expect(getPromptForIntent("log").maxTokens).toBe(1500);
+    expect(getPromptForIntent("calories").maxTokens).toBe(1500);
   });
 
   it.each(['"grams"', '"lookupName"'])(
@@ -997,7 +999,7 @@ describe("refineAnalysis", () => {
     expect(request.messages[0].content).toContain('"grams"');
     expect(request.messages[0].content).toContain('"lookupName"');
     // It returns the whole food list, so it gets the same room as logging.
-    expect(request.max_completion_tokens).toBe(1000);
+    expect(request.max_completion_tokens).toBe(1500);
   });
 
   describe("aiChat routing", () => {
