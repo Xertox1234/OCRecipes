@@ -45,6 +45,11 @@ interface ToastProps {
   theme: Theme;
   onDismiss: () => void;
   action?: ToastAction;
+  /** Overrides the safe-area top inset the toast clears. The default reads the
+   *  root SafeAreaProvider, which is right in the root window but double-counts
+   *  inside an RN `Modal` sheet (laid out below the status bar) — the sheet's
+   *  `ModalToastHost` passes 0. */
+  topInset?: number;
 }
 
 const AUTO_DISMISS_MS = 3000;
@@ -59,8 +64,10 @@ export function Toast({
   theme,
   onDismiss,
   action,
+  topInset,
 }: ToastProps) {
   const insets = useSafeAreaInsets();
+  const top = (topInset ?? insets.top) + Spacing.sm;
   const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -136,7 +143,7 @@ export function Toast({
           Shadows.medium,
           animatedStyle,
           {
-            top: insets.top + Spacing.sm,
+            top,
             backgroundColor: colors.background,
           },
         ]}
