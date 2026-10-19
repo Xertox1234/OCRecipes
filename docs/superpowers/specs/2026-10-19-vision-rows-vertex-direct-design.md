@@ -43,12 +43,16 @@ Rulings, all from the owner on 2026-10-19:
   OpenAI-compatible endpoint uses the same `google/<model>` ids. Plan Task 1
   verifies this against the live API before any code depends on it.
 - **The `fallback` field.** It names the OpenAI-direct model, so it is
-  meaningless on a flagged row. The type becomes a discriminated union:
-  - flagged rows: `fallback?: never`;
-  - unflagged rows: `fallback: string`, as today.
-- **A table test pins this:** every row with `vision: true` carries
-  `primary: "vertex"` once rollout is complete. Until then, an allowlist in
-  the test names the rows already flagged.
+  meaningless on a flagged row. `fallback` becomes optional, with no type
+  union. Its readers are `ai-client.ts` (only on the unflagged path, which
+  keeps the field) and `ai-models.test.ts:22,74`, which iterate every row.
+  A union would force casts at each of them for no runtime gain.
+- **The table test pins it** (`server/lib/__tests__/ai-models.test.ts`):
+  - every flagged row has no `fallback`;
+  - every unflagged row has one;
+  - every row with `vision: true` carries `primary: "vertex"` once rollout is
+    complete. Until then, the test's existing `SWITCHED` map names the rows
+    already flagged.
 - **Unflagged rows (the 25 text rows and the 2 coach rows) are unchanged.**
   They keep OpenRouter → OpenAI direct.
 
@@ -59,17 +63,28 @@ existing `openai` SDK (6.39, which accepts `apiKey: () => Promise<string>`):
 
 - **Endpoint:**
   `baseURL = https://aiplatform.googleapis.com/v1/projects/${GOOGLE_VERTEX_PROJECT}/locations/global/endpoints/openapi`.
-  Task 1 confirms the `global` location serves the chosen models.
+  Task 1 confirms the hostname, the `global` location and the model-id form
+  from Google's current docs (Context7, or the Vertex docs page), not from
+  recall, and then with one live call.
 - **Login:** an async `apiKey` function that returns an access token from a
   `google-auth-library` `GoogleAuth` client.
   - Scope: `https://www.googleapis.com/auth/cloud-platform`.
-  - Credentials: parsed from `GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY` (the key
-    JSON).
+  - Credentials: `GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL` +
+    `GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY` (PEM, `\n` for newlines), passed as
+    `credentials: { client_email, private_key }`. This is the same email + PEM
+    shape as the existing Google Play IAP pair (`GOOGLE_SERVICE_ACCOUNT_*`,
+    `server/lib/env.ts:120-121`, `receipt-validation.ts`), so there is one
+    convention to learn.
+  - It is a **separate account, under its own names.** The Play account must
+    not gain Vertex rights (least privilege), and AI routing must never read
+    the IAP credentials. The receipt-validation code is untouched.
+  - All three vars are added to the `server/lib/env.ts` Zod schema as
+    optional strings.
   - The library caches the token and renews it before expiry.
 - **Build failures are not crashes.**
-  - If either env var is missing, `vertex` is `null`.
-  - If the key does not parse as JSON, `vertex` is `null` too, and a reported
-    config error says so, with the key value never logged.
+  - If any of the three env vars is missing, `vertex` is `null`.
+  - A bad key surfaces on the first call as a Vertex failure of kind `config`
+    (reported and throttled, as in §2.3). The key value is never logged.
 
 `AiChatDeps` gains:
 
@@ -123,7 +138,7 @@ match.
 ## 3. Rollout (four PRs)
 
 1. **PR 1, plumbing.** Behavior does not change.
-   - The union type, the Vertex client, `vertexBreaker`, the flagged-row flow,
+   - The optional `primary`/`fallback` fields, the Vertex client, `vertexBreaker`, the flagged-row flow,
      `ai:smoke` support for the Vertex route, unit tests, and
      `.env.example` / CLAUDE.md env lines.
    - No row is flagged. This PR can merge before the owner's Google Cloud setup
@@ -136,6 +151,17 @@ match.
      `finish_reason: length` count is reported.
    - After the deploy, prod logs must show `provider: "vertex"` lines for the
      feature.
+   - **Privacy wording, in this PR.** `site/privacy/index.html:22` says Google
+     is one of the companies OpenRouter "connects us to". From this PR on,
+     photo scanning reaches Google directly. The recipient, the data and the
+     zero retention are the same, so only the sentence changes: Google is
+     reached directly for photo scanning, and through OpenRouter as a backup.
+     The OpenRouter row (line 69) and the Google row (line 71) stay accurate:
+     `photo-analyze` sends only the image, as the other 6 non-menu vision
+     functions do (their signatures take only image data:
+     `photo-analysis.ts:336/505/597/822`, `receipt-analysis.ts:100`,
+     `front-label-analysis.ts:55`; `menu-analysis.ts:95-110` is the one that
+     adds user context).
 3. **PR 3, the five lower-risk rows.** `photo-classify`, `photo-recipe`,
    `receipt-scan`, `cooking-ingredient-photo` and `recipe-chat-image` move to
    `google/gemini-3.8-flash` with `adapt: { set: { reasoning_effort: "low" } }`
@@ -174,13 +200,15 @@ match.
 ## 4. Owner setup (needed before PR 2)
 
 1. Create a Google Cloud project, link billing, and enable the Vertex AI API.
-2. Create a service account with the role `roles/aiplatform.user`, and create a
-   JSON key for it.
+2. Create a NEW service account (not the Google Play one) with the role
+   `roles/aiplatform.user`, and create a JSON key for it. From the key, the
+   `client_email` and `private_key` fields go into the env vars below.
 3. Turn off Vertex AI's prompt caching for the project, so that no request
    data is retained. The exact console setting or API call is confirmed from
    Google's current documentation in plan Task 1. Request an abuse-monitoring
    logging exemption if Google still requires one for zero retention.
-4. Set `GOOGLE_VERTEX_PROJECT` and `GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY`:
+4. Set `GOOGLE_VERTEX_PROJECT`, `GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL` and
+   `GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY` (the PEM, with `\n` for newlines):
    - in Railway (OCRecipes service, production);
    - in the local `.env` for smoke tests and evals.
 
@@ -192,6 +220,10 @@ match.
   - Flagged row: Vertex success; Vertex fail → OpenRouter success; both fail →
     throws, and `deps.fallback.chat.completions.create` is never called.
   - Flagged row: `vertex` is null → OpenRouter; both null → config error.
+  - Flagged row, Vertex present, OpenRouter absent → Vertex answers, with no
+    warn and no throw. This guards against today's early return
+    (`ai-client.ts:231`, `!deps.openrouter` → straight to OpenAI) staying ahead
+    of the new routing.
   - `vertexBreaker` open → straight to OpenRouter, and the OpenRouter breaker
     is untouched by Vertex failures (and the reverse).
   - Abort on Vertex is rethrown, without trying OpenRouter.
@@ -203,10 +235,12 @@ match.
   - A flagged row with `stream: true` throws.
   - **Unflagged rows:** the existing tests stay green, unmodified. This is the
     regression guard for the 27 rows that don't move.
-- **Table tests (`ai-models` tests).** The union type holds. The vision-row
-  allowlist matches the flagged rows.
-- **Build failures.** A key that is not JSON → `vertex` null and a config
-  report, and the key value never appears in the reported message.
+- **Table tests (`ai-models` tests).** Flagged rows have no `fallback`, and
+  unflagged rows have one. The `SWITCHED` map matches the flagged rows.
+- **Build failures.**
+  - A missing env var → `vertex` null.
+  - A bad key → the Vertex attempt fails as kind `config`, the call moves to
+    OpenRouter, and the key value never appears in the reported message.
 - **Live.** `ai:smoke` on the Vertex route for every flagged row, before its PR
   opens.
 
