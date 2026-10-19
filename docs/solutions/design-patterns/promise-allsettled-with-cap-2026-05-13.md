@@ -6,6 +6,7 @@ module: server
 tags: [api, external-api, concurrency, rate-limiting, fallback]
 applies_to: [server/services/**/*.ts]
 created: '2026-05-13'
+last_updated: '2026-10-19'
 ---
 
 # Promise.allSettled with cap for external API fan-out
@@ -69,7 +70,8 @@ await Promise.allSettled(items.slice(0, MAX).map(...));
 
 ## Related Files
 
-- `server/services/ingredient-substitution.ts` — 3-tier substitution pipeline (Static → Spoonacular → AI)
+- `server/services/food-nlp.ts` — parallel nutrition lookups per parsed item under a `p-limit` concurrency cap, settled with `Promise.allSettled`
+- The example above was the Spoonacular tier of `server/services/ingredient-substitution.ts`; that tier was removed on 2026-10-19 (owner licensing decision), so the pipeline is now Static → AI. The pattern stands; the file no longer shows it.
 
 ## See Also
 

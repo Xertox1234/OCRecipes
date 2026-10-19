@@ -57,6 +57,13 @@ vi.mock("../recipe-finder/find-community", () => ({
   findCommunity: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("../ingredient-substitution", () => ({
+  getSubstitutions: vi.fn().mockResolvedValue({
+    suggestions: [],
+    dietaryProfileSummary: "",
+  }),
+}));
+
 vi.mock("../../lib/logger", () => ({
   logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));

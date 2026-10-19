@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   catalogSearchResponseSchema,
   type CatalogSearchResult,
@@ -99,49 +98,6 @@ export class CatalogQuotaError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CatalogQuotaError";
-  }
-}
-
-// ── Ingredient Substitution Lookup ───────────────────────────────────
-
-const substitutesResponseSchema = z.object({
-  substitutes: z.array(z.string()),
-  message: z.string().optional(),
-});
-
-/**
- * Fetch ingredient substitution suggestions from Spoonacular.
- * Returns plain-text substitute descriptions (e.g. "1 cup margarine").
- * Returns empty array if the API key is missing or the request fails.
- */
-export async function getSpoonacularSubstitutes(
-  ingredientName: string,
-): Promise<string[]> {
-  if (!SPOONACULAR_API_KEY) return [];
-
-  const url = new URL(`${SPOONACULAR_BASE}/food/ingredients/substitutes`);
-  url.searchParams.set("apiKey", SPOONACULAR_API_KEY);
-  url.searchParams.set("ingredientName", ingredientName);
-
-  try {
-    const res = await cachedFetch("spoonacular", url.toString(), {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-
-    if (res.status === 402) return []; // quota exceeded — degrade gracefully
-    if (!res.ok) return [];
-
-    const json = await res.json();
-    const parsed = substitutesResponseSchema.safeParse(json);
-    if (!parsed.success) return [];
-
-    return parsed.data.substitutes;
-  } catch (err) {
-    log.warn(
-      { err: toError(err), ingredientName },
-      "Spoonacular substitutes fetch failed",
-    );
-    return []; // network error — degrade gracefully
   }
 }
 

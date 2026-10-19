@@ -22,7 +22,6 @@ import {
 } from "@shared/constants/allergens";
 import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
-import { getSpoonacularSubstitutes } from "./recipe-catalog";
 import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("ingredient-substitution");
@@ -474,64 +473,23 @@ export async function getSubstitutions(
     }[]) ?? []
   ).filter((a) => a.name && a.severity);
 
-  // Tier 2: Spoonacular substitutes (parallel, capped at 5 to protect quota)
-  const MAX_SPOONACULAR_CALLS = 5;
-  const spoonacularResults: SubstitutionSuggestion[] = [];
-  const needsAiAfterSpoonacular: CookingSessionIngredient[] = [];
-
-  const spoonacularBatch = needsAi.slice(0, MAX_SPOONACULAR_CALLS);
-  const skippedBySpoonacular = needsAi.slice(MAX_SPOONACULAR_CALLS);
-
-  const spoonacularOutcomes = await Promise.allSettled(
-    spoonacularBatch.map(async (ingredient) => {
-      const subs = await getSpoonacularSubstitutes(ingredient.name);
-      return { ingredient, subs };
-    }),
-  );
-
-  for (let i = 0; i < spoonacularOutcomes.length; i++) {
-    const outcome = spoonacularOutcomes[i];
-    if (outcome.status === "fulfilled" && outcome.value.subs.length > 0) {
-      for (const sub of outcome.value.subs.slice(0, 2)) {
-        spoonacularResults.push({
-          originalIngredientId: outcome.value.ingredient.id,
-          substitute: sub,
-          reason: "Spoonacular recommended substitute",
-          ratio: "see description",
-          // Zeros = unknown (Spoonacular doesn't return macro diffs)
-          macroDelta: { calories: 0, protein: 0, carbs: 0, fat: 0 },
-          confidence: 0.75,
-        });
-      }
-    } else {
-      needsAiAfterSpoonacular.push(spoonacularBatch[i]);
-    }
-  }
-
-  // Any ingredients beyond the cap go straight to AI
-  needsAiAfterSpoonacular.push(...skippedBySpoonacular);
-
-  // Tier 3: AI fallback for anything not covered by static or Spoonacular
+  // Tier 2: AI for anything the static table missed
   let aiResults: SubstitutionSuggestion[] = [];
-  if (needsAiAfterSpoonacular.length > 0) {
+  if (needsAi.length > 0) {
     try {
       aiResults = await getAiSubstitutions(
-        needsAiAfterSpoonacular,
+        needsAi,
         ingredients,
         profileSummary,
         userAllergies,
       );
     } catch (error) {
       log.error({ err: toError(error) }, "AI substitution error");
-      // Static + Spoonacular results still returned even if AI fails
+      // Static results still returned even if AI fails
     }
   }
 
-  const allSuggestions = [
-    ...staticResults,
-    ...spoonacularResults,
-    ...aiResults,
-  ];
+  const allSuggestions = [...staticResults, ...aiResults];
 
   const safeSuggestions = filterSafeSubstitutions(
     allSuggestions,

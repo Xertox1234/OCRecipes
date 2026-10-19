@@ -13,10 +13,6 @@ vi.mock("../../lib/ai-safety", () => ({
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
-vi.mock("../recipe-catalog", () => ({
-  getSpoonacularSubstitutes: vi.fn().mockResolvedValue([]),
-}));
-
 const mockCreate = vi.mocked(aiChat);
 
 const {
@@ -222,6 +218,36 @@ describe("ingredient-substitution", () => {
       expect(result.suggestions[0].substitute).toBe("turmeric");
       expect(mockCreate).toHaveBeenCalledTimes(1);
       expect(mockCreate.mock.calls[0][0]).toBe("ingredient-substitution");
+    });
+
+    it("sends every ingredient the static table misses to the AI tier in one call", async () => {
+      const ingredients = [
+        makeIngredient({ name: "saffron" }),
+        makeIngredient({ name: "gochugaru" }),
+      ];
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: { content: JSON.stringify({ suggestions: [] }) },
+            index: 0,
+            finish_reason: "stop",
+          },
+        ],
+        id: "test",
+        model: "gpt-4o",
+        object: "chat.completion",
+        created: Date.now(),
+      } as any);
+
+      const result = await getSubstitutions(ingredients, null);
+
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      const call = JSON.stringify(mockCreate.mock.calls[0]);
+      expect(call).toContain("saffron");
+      expect(call).toContain("gochugaru");
+      expect(
+        result.suggestions.some((s) => /spoonacular/i.test(s.reason)),
+      ).toBe(false);
     });
 
     it("returns static results even if AI fails", async () => {
