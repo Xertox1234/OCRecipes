@@ -23,7 +23,7 @@ Found while verifying PR 1 of the recipe-generate → Argon project. Deferred be
 
 - [x] Decide the layering fix: **(a) chosen** (see Updates). Original options:: (a) render the toast host inside each RN `Modal` as well (a second `Toast` mount reading the same context), (b) convert `RecipeGenerationModal` (and any other RN `Modal` that can be open when a background toast fires) to a native-stack modal screen, or (c) accept and document.
 - [x] Inventory: `grep -rn "from \"react-native\"" client | xargs grep -ln "<Modal"` — list every RN `Modal` that can be on screen while a background event can toast (coach reply, recipe ready, draft ready).
-- [ ] Sim check: reopen the generation sheet, freeze the server (`kill -STOP <pid>`), tap Generate, resume, and confirm the toast is visible over the sheet via `xcrun simctl io <UDID> screenshot` (Maestro / `snapshot_ui` cannot see `FullWindowOverlay`).
+- [x] Sim check: reopen the generation sheet, freeze the server (`kill -STOP <pid>`), tap Generate, resume, and confirm the toast is visible over the sheet via `xcrun simctl io <UDID> screenshot` (Maestro / `snapshot_ui` cannot see `FullWindowOverlay`).
 
 ## Implementation Notes
 
@@ -62,3 +62,8 @@ Found while verifying PR 1 of the recipe-generate → Argon project. Deferred be
   - `ErrorFallback`, `ScanScreen` (match is the `UpgradeModal` mention/import, not a separate Modal) — not wired.
 - **Known limit:** if a modal host mounts or unmounts while a toast is live, the `Toast` remounts in the other host, so it re-announces once and its dismiss timer restarts.
 - **AC3 (sim check) not done by the executor** — needs the dev-client build and a real generation; left unchecked.
+
+### 2026-10-18 — orchestrator
+
+- **AC3 (sim check) done.** iPhone 17 Pro simulator, dev-client build, real generation with the server paused (`kill -STOP`), sheet reopened, server resumed, `xcrun simctl io` screenshot loop: the "Recipe ready — tap to open" toast was fully visible over the reopened `RecipeGenerationModal` ~5–9 s after `kill -CONT`. Record: PR #1503 comment (issuecomment-6253399895). The toast first settled over the sheet's header row because `Toast` read the root safe-area top inside a pageSheet; fixed in PR #1505 (`topInset` prop, host passes 0) and re-verified the same way: toast at the sheet's top edge, title and Close visible.
+- Remount re-announce and the Android check are filed as `todos/P3-2026-10-18-toast-remount-across-modal-hosts-re-announces.md` and `todos/P3-2026-10-18-modal-toast-host-android-check.md`.
