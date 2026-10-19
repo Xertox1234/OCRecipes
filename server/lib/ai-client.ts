@@ -1,7 +1,9 @@
 /**
- * The single entry point for chat/vision completions (spec §3.2). Routes via
- * OpenRouter (zero-data-retention) when OPENROUTER_API_KEY is set, else via
- * today's OpenAI client; falls back per spec §3.4. Never call
+ * The single entry point for chat/vision completions (spec §3.2). Rows with
+ * `primary: "vertex"` route Vertex AI direct → OpenRouter and never reach
+ * OpenAI (spec 2026-10-19-vision-rows-vertex-direct). Every other row routes
+ * via OpenRouter (zero-data-retention) when OPENROUTER_API_KEY is set, else
+ * via today's OpenAI client; falls back per spec §3.4. Never call
  * `chat.completions.create` elsewhere — ocrecipes/no-direct-chat-completions.
  */
 import OpenAI from "openai";
@@ -24,6 +26,7 @@ import {
 } from "./ai-failure";
 import type { AiFailureKind } from "./ai-failure";
 import { openai } from "./openai";
+import { createVertexClient } from "./vertex-client";
 import { createServiceLogger } from "./logger";
 import { reportError } from "./error-reporter";
 
@@ -582,7 +585,7 @@ function defaultDeps(): AiChatDeps {
           defaultHeaders: { "X-Title": "OCRecipes" },
         }) as unknown as AiChatClient)
       : null,
-    vertex: null,
+    vertex: createVertexClient(),
     fallback: openai as unknown as AiChatClient,
     breaker: new CircuitBreaker(),
     vertexBreaker: new CircuitBreaker(),

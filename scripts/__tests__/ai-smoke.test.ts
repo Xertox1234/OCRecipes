@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from "vitest";
 import type { AiChat } from "../../server/lib/ai-client";
-import { buildSmokeRequest, smokeRow } from "../ai-smoke";
+import { withAiCallContext } from "../../server/lib/ai-client";
+import type { AiCallContext } from "../../server/lib/ai-call-context";
+import { buildSmokeRequest, smokeKeysPresent, smokeRow } from "../ai-smoke";
 
 describe("buildSmokeRequest", () => {
   it("json rows ask for json_object and say JSON in the prompt", () => {
@@ -63,5 +65,64 @@ describe("smokeRow", () => {
     );
     expect(r.ok).toBe(false);
     expect(r.detail).toMatch(/unsupported parameter/);
+  });
+});
+
+describe("smoke on the Vertex route", () => {
+  it("smokeKeysPresent accepts Vertex vars alone, OpenRouter alone, or both", () => {
+    const v = {
+      GOOGLE_VERTEX_PROJECT: "p",
+      GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL: "e",
+      GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY: "k",
+    };
+    expect(smokeKeysPresent(v)).toBe(true);
+    expect(smokeKeysPresent({ OPENROUTER_API_KEY: "x" })).toBe(true);
+    expect(smokeKeysPresent({ ...v, OPENROUTER_API_KEY: "x" })).toBe(true);
+    expect(smokeKeysPresent({})).toBe(false);
+    expect(smokeKeysPresent({ GOOGLE_VERTEX_PROJECT: "p" })).toBe(false);
+  });
+
+  it("reads the provider from the call record when the reply has none (Vertex)", async () => {
+    const chat = vi.fn().mockResolvedValue({
+      model: "google/gemini-3.8-flash",
+      choices: [{ message: { content: '{"ok":true}' } }],
+    });
+    const ctx: AiCallContext = {
+      overrides: {},
+      fallback: "off",
+      calls: [
+        {
+          feature: "photo-analyze",
+          requestedModel: "google/gemini-3.8-flash",
+          answeredModel: "google/gemini-3.8-flash",
+          answeredProvider: "vertex",
+          fellBack: false,
+        },
+      ],
+    };
+    const r = await withAiCallContext(ctx, () =>
+      smokeRow("photo-analyze", chat as unknown as AiChat),
+    );
+    expect(r).toMatchObject({ ok: true, answeredProvider: "vertex" });
+  });
+
+  it("accepts a bare model id answer for a google/ row", async () => {
+    const chat = vi.fn().mockResolvedValue({
+      model: "gemini-3.8-flash",
+      choices: [{ message: { content: '{"ok":true}' } }],
+    });
+    expect(
+      (await smokeRow("photo-analyze", chat as unknown as AiChat)).ok,
+    ).toBe(true);
+  });
+
+  it("still rejects a different model", async () => {
+    const chat = vi.fn().mockResolvedValue({
+      model: "gpt-4o",
+      choices: [{ message: { content: '{"ok":true}' } }],
+    });
+    expect(
+      (await smokeRow("photo-analyze", chat as unknown as AiChat)).ok,
+    ).toBe(false);
   });
 });
