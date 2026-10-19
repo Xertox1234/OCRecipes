@@ -7,6 +7,7 @@ import {
   classifyAiFailure,
   countsTowardBreaker,
   isModerationBlock,
+  VertexAuthError,
 } from "../ai-failure";
 
 const apiError = (status: number, message: string, code?: string) =>
@@ -18,6 +19,12 @@ const apiError = (status: number, message: string, code?: string) =>
   );
 
 describe("classifyAiFailure", () => {
+  it("classifies a Vertex login failure as config (no breaker, reported)", () => {
+    const kind = classifyAiFailure(new VertexAuthError("Vertex login failed"));
+    expect(kind).toBe("config");
+    expect(countsTowardBreaker(kind)).toBe(false);
+  });
+
   it.each([
     [500, "transport"],
     [502, "transport"],
