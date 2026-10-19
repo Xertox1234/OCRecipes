@@ -18,6 +18,10 @@ The root toast host lives in a `FullWindowOverlay`, which sits above native-stac
 
 While any `ModalToastHost` is mounted the provider suppresses the root host, and only the last-registered host renders, so exactly one `Toast` (one live region, one announcement) exists. Hosts register by `useId`, not a module counter or ref (a ref read in render makes the React Compiler bail out). A hidden RN `Modal` renders null, so a closed modal registers nothing. Outside a provider the host renders null.
 
+## Top inset inside the sheet
+
+`Toast` clears `useSafeAreaInsets().top`, read from the ROOT provider. A `pageSheet` (and a default Android `Modal`) is laid out below the status bar, so that inset is wrong inside it: the toast landed ~60 px down, on the sheet's title row. `ModalToastHost` passes `topInset={0}` and `Toast` uses `topInset ?? insets.top`. Do not fix this with a nested `SafeAreaProvider`: it seeds its state from the parent insets and only corrects after the native measurement, so the first frame still jumps. A `fullScreen`/`overFullScreen` or `statusBarTranslucent` Modal does sit under the status bar and would need the inset back.
+
 ## Limit
 
-A host mounting or unmounting while a toast is live remounts the `Toast`: one extra announcement and a restarted dismiss timer.
+A host mounting or unmounting while a toast is live remounts the `Toast`: one extra announcement and a restarted dismiss timer. Tracked in `todos/P3-2026-10-18-toast-remount-across-modal-hosts-re-announces.md`.
