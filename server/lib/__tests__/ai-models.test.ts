@@ -50,6 +50,16 @@ describe("AI_FEATURES table", () => {
       json: true,
       vision: false,
     },
+    // Owner-approved 2026-10-19 after a paired eval (todo
+    // P2-2026-10-18-camera-vision-features-to-gemini, Updates): low reasoning
+    // keeps the JSON reply inside its token cap.
+    "photo-analyze": {
+      model: "google/gemini-3.8-flash",
+      fallback: "gpt-4o",
+      json: true,
+      vision: true,
+      adapt: { set: { reasoning_effort: "low" } },
+    },
   };
 
   it("switched rows are exactly the approved ones", () => {

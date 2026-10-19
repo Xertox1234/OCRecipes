@@ -107,3 +107,8 @@ That mismatch penalised whichever model read the photo correctly: Gemini scored 
 - **Argon.** Skipped for this row. "Where accuracy matters most" means the allergen-critical rows (photo-label, front-label).
 - **Spend.** $1.41 of today's $5 OpenRouter budget, covering both run pairs, judging and the 9 repro calls.
 - **Owner decision needed.** Switch `photo-analyze` to Gemini Flash (low) with a higher token cap for better accuracy at half the cost per call but a slower and spikier wait, or keep gpt-4o for now. No row was switched.
+
+### 2026-10-19: `photo-analyze` switched; the other rows PARKED
+
+- **Owner: "switch to gemini".** `photo-analyze` now runs `google/gemini-3.8-flash` with `adapt: { set: { reasoning_effort: "low" } }`, and the direct-OpenAI fallback stays `gpt-4o`. `LOG_MAX_TOKENS` went from 1000 to 1500, which covers the cut-off reply measured above. `refineAnalysis` shares that cap. `npm run ai:smoke -- photo-analyze` passed: answered by Google `google/gemini-3.8-flash`, 1/1 rows.
+- **Owner: "park for now"** for the other 8 rows. Each still needs its own eval cases first, using free-to-use photos and descriptions checked against each photo. Start with photo-label and front-label, since allergen detection depends on them. Resume only when the owner asks.
