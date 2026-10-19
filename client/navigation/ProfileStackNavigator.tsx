@@ -123,7 +123,7 @@ export default function ProfileStackNavigator() {
         name="SavedItems"
         component={SavedItemsScreen}
         options={{
-          headerTitle: () => <HeaderTitle title="My Library" />,
+          headerTitle: () => <HeaderTitle title="Saved Items" />,
         }}
       />
       <Stack.Screen
@@ -230,7 +230,9 @@ export default function ProfileStackNavigator() {
         component={RecipeBrowserScreen}
         initialParams={{}}
         options={{
-          headerTitle: () => <HeaderTitle title="Recipes" showIcon={false} />,
+          headerTitle: () => (
+            <HeaderTitle title="Browse Recipes" showIcon={false} />
+          ),
         }}
       />
     </Stack.Navigator>

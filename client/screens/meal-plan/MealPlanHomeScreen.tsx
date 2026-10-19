@@ -1528,8 +1528,14 @@ export default function MealPlanHomeScreen() {
           isAnySheetOpen ? "no-hide-descendants" : "auto"
         }
       >
-        {/* Top Action Buttons */}
-        <View style={styles.topActions}>
+        {/* Top action chips: one scrolling row, so a fourth chip never
+            wraps alone onto a second line (visual QA sweep #6). */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.topActionsScroll}
+          contentContainerStyle={styles.topActions}
+        >
           {topActions.map((action) => (
             <PressableScale
               scaleTo={0.95}
@@ -1568,7 +1574,7 @@ export default function MealPlanHomeScreen() {
               )}
             </PressableScale>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Month/Year Header with arrows */}
         <View style={styles.monthHeader}>
@@ -1795,7 +1801,8 @@ const styles = StyleSheet.create({
   dateStrip: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: Spacing.md,
+    // Same gutter as the month header above and the chips (sweep #6).
+    paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.lg,
   },
   dateStripItem: {
@@ -1876,12 +1883,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: FontFamily.medium,
   },
+  topActionsScroll: {
+    flexGrow: 0,
+    marginBottom: Spacing.sm,
+  },
   topActions: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
+    alignItems: "center",
     paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
     gap: Spacing.sm,
   },
   expiringBadge: {

@@ -37,13 +37,13 @@ export function formatDateLong(dateStr: string): string {
   });
 }
 
-/** Human-readable duration from minutes: "1h 30m", "45m", "2h" */
+/** Human-readable duration from minutes: "1 hr 30 min", "45 min", "2 hr" */
 export function formatDuration(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
+  if (h === 0) return `${m} min`;
+  if (m === 0) return `${h} hr`;
+  return `${h} hr ${m} min`;
 }
 
 /** Date range: "Jan 5 - Jan 12" */

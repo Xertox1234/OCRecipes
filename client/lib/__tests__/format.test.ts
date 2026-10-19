@@ -10,31 +10,31 @@ import {
 describe("Format Utilities", () => {
   describe("formatDuration", () => {
     it("formats minutes only", () => {
-      expect(formatDuration(45)).toBe("45m");
+      expect(formatDuration(45)).toBe("45 min");
     });
 
     it("formats hours only", () => {
-      expect(formatDuration(120)).toBe("2h");
+      expect(formatDuration(120)).toBe("2 hr");
     });
 
     it("formats hours and minutes", () => {
-      expect(formatDuration(90)).toBe("1h 30m");
+      expect(formatDuration(90)).toBe("1 hr 30 min");
     });
 
     it("formats zero minutes", () => {
-      expect(formatDuration(0)).toBe("0m");
+      expect(formatDuration(0)).toBe("0 min");
     });
 
     it("formats 1 minute", () => {
-      expect(formatDuration(1)).toBe("1m");
+      expect(formatDuration(1)).toBe("1 min");
     });
 
     it("formats large durations", () => {
-      expect(formatDuration(720)).toBe("12h");
+      expect(formatDuration(720)).toBe("12 hr");
     });
 
     it("formats 61 minutes", () => {
-      expect(formatDuration(61)).toBe("1h 1m");
+      expect(formatDuration(61)).toBe("1 hr 1 min");
     });
   });
 

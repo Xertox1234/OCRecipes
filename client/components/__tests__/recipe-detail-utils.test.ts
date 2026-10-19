@@ -4,6 +4,7 @@ import {
   parseNutritionData,
   STEP_TEXT_LINE_HEIGHT,
   toDisplayedDietTags,
+  uniqueTagsIgnoringCase,
 } from "../recipe-detail/recipe-detail-utils";
 
 describe("toDisplayedDietTags", () => {
@@ -131,5 +132,24 @@ describe("STEP_TEXT_LINE_HEIGHT", () => {
 
   it("stays visually 20pt", () => {
     expect(Math.abs(STEP_TEXT_LINE_HEIGHT - 20)).toBeLessThan(0.01);
+  });
+});
+
+describe("uniqueTagsIgnoringCase", () => {
+  // Visual QA sweep #34: "Mediterranean" and "mediterranean" showed as two
+  // chips. The first spelling the recipe used is the one that stays.
+  it("keeps the first spelling of a tag that repeats in another case", () => {
+    expect(
+      uniqueTagsIgnoringCase([
+        "Mediterranean",
+        "mediterranean",
+        "Vegan",
+        "MEDITERRANEAN",
+      ]),
+    ).toEqual(["Mediterranean", "Vegan"]);
+  });
+
+  it("ignores surrounding blanks when comparing", () => {
+    expect(uniqueTagsIgnoringCase(["keto", " Keto "])).toEqual(["keto"]);
   });
 });

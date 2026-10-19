@@ -37,6 +37,7 @@ import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
 import {
   STEP_TEXT_LINE_HEIGHT,
   toDisplayedDietTags,
+  uniqueTagsIgnoringCase,
 } from "@/components/recipe-detail/recipe-detail-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -184,7 +185,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
   } = useAllergenCheck(ingredientNames);
 
   const uniqueTags = useMemo(
-    () => [...new Set(props.dietTags ?? [])],
+    () => uniqueTagsIgnoringCase(props.dietTags ?? []),
     [props.dietTags],
   );
   // Checkable diets show only as checked icons (RecipeAttributeRow); the

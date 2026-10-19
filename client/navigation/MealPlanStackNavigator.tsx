@@ -92,7 +92,7 @@ export default function MealPlanStackNavigator() {
         component={RecipeBrowserScreen}
         options={{
           headerTitle: () => (
-            <HeaderTitle title="Add Recipe" showIcon={false} />
+            <HeaderTitle title="Browse Recipes" showIcon={false} />
           ),
         }}
       />
@@ -110,7 +110,7 @@ export default function MealPlanStackNavigator() {
         component={RecipeAIGenerateScreen}
         options={{
           headerTitle: () => (
-            <HeaderTitle title="Generate Recipe" showIcon={false} />
+            <HeaderTitle title="Generate with AI" showIcon={false} />
           ),
         }}
       />

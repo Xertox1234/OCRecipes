@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { Alert } from "react-native";
+import { View } from "react-native";
 import {
   useNavigation,
   useRoute,
@@ -9,6 +9,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import WizardShell from "@/components/recipe-wizard/WizardShell";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import {
   BACK_ACTION_TYPES,
   redirectToHomeTab,
@@ -27,6 +28,8 @@ export default function RecipeCreateScreen() {
   const { prefill, returnToMealPlan, fromHome } = route.params ?? {};
   const isDirtyRef = useRef(false);
   const isSavingRef = useRef(false);
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
 
   const handleGoBack = useCallback(() => {
     navigation.goBack();
@@ -58,8 +61,8 @@ export default function RecipeCreateScreen() {
   // coordinated with a plain preventDefault(), which desyncs JS state from
   // the native screen stack). Always armed (not just while dirty/fromHome)
   // so the discard confirm and the redirect share one interception point —
-  // running both off separate conditions would race an Alert against an
-  // immediate tab switch. `proceed` is the single exit for every branch
+  // running both off separate conditions would race the confirm sheet
+  // against an immediate tab switch. `proceed` is the single exit for every branch
   // (saving, discarding, or a plain clean back) so a save-triggered goBack()
   // still redirects home instead of silently falling through to a raw
   // dispatch — it's leaving the screen the same way an explicit back would.
@@ -78,14 +81,16 @@ export default function RecipeCreateScreen() {
     }
 
     if (isDirtyRef.current) {
-      Alert.alert(
-        "Discard changes?",
-        "You have unsaved changes. Are you sure you want to go back?",
-        [
-          { text: "Keep editing", style: "cancel" },
-          { text: "Discard", style: "destructive", onPress: proceed },
-        ],
-      );
+      // The shared sheet, not the native Alert, like every other confirm in
+      // the app (visual QA sweep #14).
+      confirm({
+        title: "Discard changes?",
+        message: "You have unsaved changes. Are you sure you want to go back?",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+        destructive: true,
+        onConfirm: proceed,
+      });
       return;
     }
 
@@ -93,13 +98,16 @@ export default function RecipeCreateScreen() {
   });
 
   return (
-    <WizardShell
-      prefill={prefill}
-      returnToMealPlan={returnToMealPlan}
-      onGoBack={handleGoBack}
-      onSaveComplete={handleSaveComplete}
-      onDirtyChange={handleDirtyChange}
-      onSavingChange={handleSavingChange}
-    />
+    <View style={{ flex: 1 }} {...behindContentA11yProps}>
+      <WizardShell
+        prefill={prefill}
+        returnToMealPlan={returnToMealPlan}
+        onGoBack={handleGoBack}
+        onSaveComplete={handleSaveComplete}
+        onDirtyChange={handleDirtyChange}
+        onSavingChange={handleSavingChange}
+      />
+      <ConfirmationModal />
+    </View>
   );
 }

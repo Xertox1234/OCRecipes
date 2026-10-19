@@ -286,6 +286,12 @@ export default function CookbookDetailScreen() {
     );
   }
 
+  // An empty cookbook already offers "Add Recipes" through its EmptyState; a
+  // second copy in the header right above it read as two controls (visual QA
+  // sweep #27). The error state keeps the header button: its EmptyState only
+  // offers "Try Again".
+  const showHeaderAddButton = (cookbook?.recipes?.length ?? 0) > 0 || isError;
+
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <FlatList
@@ -327,22 +333,24 @@ export default function CookbookDetailScreen() {
               </ThemedText>
             ) : null}
             <View style={styles.headerActions}>
-              <PressableScale
-                onPress={handleAddRecipes}
-                style={[
-                  styles.addRecipesButton,
-                  { backgroundColor: withOpacity(theme.link, 0.1) },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Add recipes"
-              >
-                <Feather name="plus" size={14} color={theme.link} />
-                <ThemedText
-                  style={[styles.addRecipesText, { color: theme.link }]}
+              {showHeaderAddButton ? (
+                <PressableScale
+                  onPress={handleAddRecipes}
+                  style={[
+                    styles.addRecipesButton,
+                    { backgroundColor: withOpacity(theme.link, 0.1) },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add recipes"
                 >
-                  Add Recipes
-                </ThemedText>
-              </PressableScale>
+                  <Feather name="plus" size={14} color={theme.link} />
+                  <ThemedText
+                    style={[styles.addRecipesText, { color: theme.link }]}
+                  >
+                    Add Recipes
+                  </ThemedText>
+                </PressableScale>
+              ) : null}
               <Pressable
                 onPress={handleOverflowMenu}
                 hitSlop={8}

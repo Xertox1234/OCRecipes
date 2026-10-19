@@ -144,3 +144,20 @@ describe("CookbookDetailScreen cover image", () => {
     expect(src).toBe(resolveImageUrl("/api/recipe-images/42.jpg"));
   });
 });
+
+// An empty cookbook shows its EmptyState's "Add Recipes" action; the header's
+// own button would be a second, identical control right above it (visual QA
+// sweep #27). The header button returns once there is a list to add to.
+describe("CookbookDetailScreen Add Recipes button", () => {
+  it("shows one Add Recipes control while the cookbook is empty", () => {
+    mockCookbook([]);
+    renderComponent(<CookbookDetailScreen />);
+    expect(screen.getAllByLabelText(/^add recipes$/i)).toHaveLength(1);
+  });
+
+  it("keeps the header button once the cookbook has recipes", () => {
+    mockCookbook([baseRecipe]);
+    renderComponent(<CookbookDetailScreen />);
+    expect(screen.getByLabelText("Add recipes")).toBeDefined();
+  });
+});

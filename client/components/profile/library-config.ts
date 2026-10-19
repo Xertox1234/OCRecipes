@@ -56,7 +56,7 @@ export const LIBRARY_ITEMS: readonly LibraryItem[] = [
   {
     id: "recipes",
     icon: "star",
-    label: "Recipes",
+    label: "Recipe Catalog",
     countKey: "featuredRecipes",
   },
 ];
@@ -89,4 +89,18 @@ export function navigateLibraryItem(
       navigation.navigate("RecipeBrowser", {});
       break;
   }
+}
+
+/**
+ * The tile's screen-reader label, with the noun agreeing with the count
+ * ("1 item", "16 items"); locked premium tiles say so.
+ */
+export function libraryTileLabel(
+  label: string,
+  count: number,
+  locked: boolean,
+): string {
+  const noun = count === 1 ? "item" : "items";
+  const base = `${label}: ${count} ${noun}`;
+  return locked ? `${base}. Premium feature, locked` : base;
 }

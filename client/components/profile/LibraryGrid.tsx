@@ -15,6 +15,7 @@ import {
 } from "@/constants/theme";
 import {
   LIBRARY_ITEMS,
+  libraryTileLabel,
   navigateLibraryItem,
   type LibraryItem,
 } from "@/components/profile/library-config";
@@ -44,11 +45,7 @@ const LibraryCard = React.memo(function LibraryCard({
     <Pressable
       onPress={handlePress}
       accessibilityRole="button"
-      accessibilityLabel={
-        locked
-          ? `${item.label}: ${count} items. Premium feature, locked`
-          : `${item.label}: ${count} items`
-      }
+      accessibilityLabel={libraryTileLabel(item.label, count, locked)}
       accessibilityHint={
         locked
           ? "Opens upgrade screen"
