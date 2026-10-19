@@ -6,7 +6,7 @@ module: server
 tags: [api, openai, timeout, ai, error-handling]
 applies_to: [server/services/**/*.ts, server/lib/openai.ts]
 created: '2026-05-13'
-last_updated: '2026-05-28'
+last_updated: '2026-10-18'
 ---
 
 # OpenAI SDK timeout and tiered error handling
@@ -107,6 +107,10 @@ if (!parsed.success) {
   throw new Error("Recipe generation returned unexpected data.");
 }
 ```
+
+## Limit: the timeout bounds one attempt, not the request
+
+`{ timeout }` is per HTTP attempt. The SDK retries a timed-out or failed connection with `maxRetries` defaulting to 2 (`node_modules/openai/client.js:159`, retry branch at `:374`), so one `create()` call can run for up to three timeouts. `aiChat` (`server/lib/ai-client.ts`) then classifies the failure as `transport` and calls the OpenAI fallback, which spends its own attempts. A route that awaits `aiChat` therefore has NO ceiling equal to its timeout constant: `OPENAI_TIMEOUT_HEAVY_MS = 60_000` means a hung model can hold `/api/recipes/generate` for several minutes, and a slow success can land past 60 s (observed at ~65 s on 2026-10-18: answer near 60 s, then the save). Do not derive a client-side deadline from a server timeout constant as if it were a total; the client's `RECIPE_GENERATION_DEADLINE_MS` (90 s, #1510) covers the slow success and still falls through to the "check Saved items" path for a hung model.
 
 ## Related Files
 
