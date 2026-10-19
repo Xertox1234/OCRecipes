@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildShareContent } from "../saved-item-card-utils";
+import {
+  buildShareContent,
+  formatSavedItemTime,
+} from "../saved-item-card-utils";
 
 describe("buildShareContent", () => {
   it("includes title", () => {
@@ -75,5 +78,23 @@ describe("buildShareContent", () => {
     });
     // Empty strings are falsy, so they should be omitted like null
     expect(content).toBe("Item\n");
+  });
+});
+
+describe("formatSavedItemTime", () => {
+  // The AI writes the estimate as free text, so one list showed "1 hr 30 min"
+  // beside "1 hour 15 min" (visual QA sweep #82). Readable estimates get one
+  // spelling; anything else is shown as written.
+  it("gives readable estimates one spelling", () => {
+    expect(formatSavedItemTime("1 hour 15 min")).toBe("1 hr 15 min");
+    expect(formatSavedItemTime("1 hr 30 min")).toBe("1 hr 30 min");
+    expect(formatSavedItemTime("45 minutes")).toBe("45 min");
+    expect(formatSavedItemTime("2 hours")).toBe("2 hr");
+  });
+
+  it("keeps text it cannot read, and null for nothing", () => {
+    expect(formatSavedItemTime("Quick")).toBe("Quick");
+    expect(formatSavedItemTime(null)).toBeNull();
+    expect(formatSavedItemTime(undefined)).toBeNull();
   });
 });

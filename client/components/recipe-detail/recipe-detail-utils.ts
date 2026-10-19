@@ -66,3 +66,21 @@ export function parseNutritionData(fields: {
  * rounding. Do not "clean" it back to 20.
  */
 export const STEP_TEXT_LINE_HEIGHT = 20.001;
+
+/**
+ * Diet tags with repeats that differ only by case (or blanks) removed —
+ * "Mediterranean" and "mediterranean" are one chip (visual QA sweep #34). The
+ * first spelling the recipe used is the one kept, so the display matches the
+ * source where it can.
+ */
+export function uniqueTagsIgnoringCase(tags: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const tag of tags) {
+    const key = tag.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(tag);
+  }
+  return unique;
+}

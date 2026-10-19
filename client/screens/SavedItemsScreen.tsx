@@ -243,7 +243,7 @@ export default function SavedItemsScreen() {
   const renderHeader = () => (
     <View style={styles.header}>
       <View style={styles.headerRow}>
-        <ThemedText type="h3">My Library</ThemedText>
+        <ThemedText type="h3">Saved Items</ThemedText>
         {limit !== null ? (
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
             {itemCountLabel} / {limit} items

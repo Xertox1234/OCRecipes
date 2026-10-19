@@ -195,7 +195,9 @@ export default function ChatStackNavigator() {
         component={RecipeBrowserScreen}
         initialParams={{}}
         options={{
-          headerTitle: () => <HeaderTitle title="Recipes" showIcon={false} />,
+          headerTitle: () => (
+            <HeaderTitle title="Browse Recipes" showIcon={false} />
+          ),
         }}
       />
     </Stack.Navigator>

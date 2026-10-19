@@ -2,6 +2,8 @@
  * Pure formatting utilities for SavedItemCard.
  * Extracted for testability — no React or RN dependencies.
  */
+import { parseTimeEstimateMinutes } from "@shared/lib/recipe-time";
+import { formatDuration } from "@/lib/format";
 
 interface ShareableItem {
   title: string;
@@ -27,4 +29,18 @@ export function buildShareContent(item: ShareableItem): string {
   }
 
   return content;
+}
+
+/**
+ * The time estimate as one spelling. The AI writes it as free text ("1 hour
+ * 15 min" beside "1 hr 30 min" in the same list — visual QA sweep #82), so a
+ * readable estimate is re-spelled through `formatDuration`; text the parser
+ * cannot read ("Quick") is shown as written.
+ */
+export function formatSavedItemTime(
+  timeEstimate: string | null | undefined,
+): string | null {
+  if (!timeEstimate) return null;
+  const minutes = parseTimeEstimateMinutes(timeEstimate);
+  return minutes === null ? timeEstimate : formatDuration(minutes);
 }

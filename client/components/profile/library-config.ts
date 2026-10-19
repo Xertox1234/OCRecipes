@@ -56,7 +56,7 @@ export const LIBRARY_ITEMS: readonly LibraryItem[] = [
   {
     id: "recipes",
     icon: "star",
-    label: "Recipes",
+    label: "Recipe Catalog",
     countKey: "featuredRecipes",
   },
 ];

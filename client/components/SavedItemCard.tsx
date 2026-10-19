@@ -16,7 +16,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useDeleteSavedItem } from "@/hooks/useSavedItems";
 import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
-import { buildShareContent } from "./saved-item-card-utils";
+import {
+  buildShareContent,
+  formatSavedItemTime,
+} from "./saved-item-card-utils";
 import type { SavedItem } from "@shared/schema";
 
 interface SavedItemCardProps {
@@ -136,7 +139,7 @@ export function SavedItemCard({ item, onPress }: SavedItemCardProps) {
           <View style={styles.metaItem}>
             <Feather name="clock" size={12} color={theme.textSecondary} />
             <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-              {item.timeEstimate}
+              {formatSavedItemTime(item.timeEstimate)}
             </ThemedText>
           </View>
         ) : null}
