@@ -3,10 +3,11 @@ title: "Accessibility, layout bugs and copy polish from the visual QA sweep"
 status: backlog
 priority: medium
 created: 2026-10-12
-updated: 2026-10-12
+updated: 2026-10-18
 assignee:
 labels: [qa-sweep, ui, accessibility]
 github_issue:
+human_led: true
 ---
 
 # Accessibility, layout bugs and copy polish
@@ -39,11 +40,11 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), groups F
 
 ## Acceptance Criteria
 
-- [ ] Every sheet/modal listed in #32 hides the screen beneath from VoiceOver; RecipeChat chips individually reachable; ring icon not announced as a glyph.
-- [ ] #39/#39b checked with VoiceOver on a device; fixed if real, closed if not.
-- [ ] Medium layout bugs (#30, #26, #15, #68, #69, #70) fixed; Lows fixed or declined in the PR body with a reason.
-- [ ] Copy items fixed or declined; British spelling ("Favourites") consistent.
-- [ ] Re-checked light + dark.
+- [ ] Every sheet/modal listed in #32 hides the screen beneath from VoiceOver (_code sets `accessibilityViewIsModal` on all five; needs a device VoiceOver pass_); ~~RecipeChat chips individually reachable; ring icon not announced as a glyph~~ (_done in #1417_).
+- [ ] #39/#39b checked with VoiceOver on a device; fixed if real, closed if not (_device pass, owner_).
+- [x] Medium layout bugs (#30, #26, #15, #68, #69, #70) fixed (_#1417, #1421_); Lows fixed or declined in the PR body with a reason (_#6, #8, #21, #22, #46, #64 fixed; #33, #25 and the chrome items moved to `todos/P3-2026-10-18-screen-chrome-consistency-followups-from-qa-sweep.md` at the owner's request; #23 not reproduced_).
+- [x] Copy items fixed or declined; British spelling ("Favourites") consistent (_polish PR, owner decisions 2026-10-18_).
+- [x] Re-checked light + dark (_simulator, 2026-10-18: Plan, Browse Recipes, Profile, Saved Items, discard sheet_).
 
 ## Implementation Notes
 
@@ -92,3 +93,25 @@ Checked on the iOS 26.5 simulator, light mode (grocery row also dark), against m
 - Side finding, filed: `todos/P3-2026-10-12-recipe-import-every-failure-says-no-recipe-data.md`.
 
 Still open in this todo: #32 and #39/#39b need VoiceOver on a real device. The Lows and copy items marked "needs a product call" in pass 1 (#6, #8, #33, #34 tags, #64, #12, #17, #14, #29, #27, #3, #25, #23, #66, #80, #82, Community vs Curated) are still undecided.
+
+### 2026-10-18 — copy and consistency polish (orchestrator)
+
+Owner decisions, asked in plain words before any change: the recipe browser is "Browse Recipes" in all three stacks and Plan's generate screen is "Generate with AI" (#12/#17; the hub keeps "Add Recipe"); the Profile tile is "Recipe Catalog" (#64); "Saved Items" everywhere (#82); the design-system items are filed, not declined.
+
+Done in one PR, keyed by finding ID, each behaviour change with a failing test first:
+
+- #12/#17 titles; #64 tile; #82 header + heading, and Saved Items time estimates get one spelling through `formatDuration` ("1 hr 15 min"), which now spells hr/min (it had no callers).
+- #34 diet tags that differ only by case are one chip (`uniqueTagsIgnoringCase`).
+- #27 an empty cookbook shows "Add Recipes" once (the header button waits for a list).
+- #14 RecipeCreate's "Discard changes?" uses the shared confirmation sheet.
+- #6 Plan quick-link chips are one horizontal scroll row; the week strip shares the chip gutter.
+- #8 the browser's "+ Add" sits at the end of the filter-chip row; the collapsible header shrank from 160 to 60.
+- Profile tile screen-reader label pluralises ("1 item"), the same slip as #46.
+
+Checked on the iOS 26.5 simulator in light and dark: Plan, Browse Recipes, Profile, Saved Items, the discard sheet, Generate with AI, the hub.
+
+Not reproduced: #23 — with the photo permission genuinely reset (`simctl privacy reset photos com.williamtower.ocrecipes`, app relaunched), granting "Allow Full Access" on the import sheet's From Gallery opened the picker without a second tap. The other picker paths (cookbook cover, avatar, capture screens) use PHPicker and never prompt.
+
+Moved to `todos/P3-2026-10-18-screen-chrome-consistency-followups-from-qa-sweep.md` (owner: "file a todo for the out of scope items"): #3, #29, #66, #80 list cues, Favourites "Community" vs "Curated", #33 (Ask Coach is a Card like the Tips card above it; Community is the flat one — a section-style decision), #25 (the dairy category image is an AI-generated asset whose text reads "Boiry").
+
+Still open here, human-led: #32 on-device VoiceOver confirmation; #39/#39b.

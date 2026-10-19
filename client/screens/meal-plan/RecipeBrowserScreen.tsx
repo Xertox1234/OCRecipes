@@ -97,7 +97,8 @@ import {
 } from "@/components/coach/coach-chat-utils";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
-const RECIPE_HEADER_EXPANDED = 160;
+// One 44pt filter row plus the header area's bottom padding.
+const RECIPE_HEADER_EXPANDED = 60;
 const RECIPE_HEADER_COLLAPSED = 0;
 const RECIPE_COLLAPSE_THRESHOLD = 100;
 
@@ -846,9 +847,163 @@ export default function RecipeBrowserScreen() {
         pointerEvents={isBarVisible ? "none" : "auto"}
         style={[styles.headerArea, headerAnimatedStyle, { overflow: "hidden" }]}
       >
-        {/* Action row (no tabs) */}
-        <View style={styles.actionRow}>
-          <View style={{ flex: 1 }} />
+        {/* Filter chips, with Add pinned at the end of the row. The button
+            used to sit alone on a row of its own above them (visual QA
+            sweep #8). */}
+        <View style={styles.filterBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterScroll}
+            contentContainerStyle={styles.filterRow}
+          >
+            <Chip
+              label="Curated"
+              variant="filter"
+              selected={filters.curatedOnly}
+              onPress={() => {
+                setFilters((prev) => ({
+                  ...prev,
+                  curatedOnly: !prev.curatedOnly,
+                }));
+              }}
+              accessibilityLabel="Filter curated recipes only"
+            />
+            <Chip
+              label="Safe for me"
+              variant="filter"
+              selected={filters.safeForMe}
+              onPress={() => {
+                setFilters((prev) => ({
+                  ...prev,
+                  safeForMe: !prev.safeForMe,
+                }));
+              }}
+              accessibilityLabel="Filter recipes safe for my allergies"
+            />
+            <View
+              style={[
+                styles.filterDivider,
+                { backgroundColor: withOpacity(theme.text, 0.15) },
+              ]}
+            />
+            {CUISINE_PRESETS.map((c) => (
+              <Chip
+                key={c}
+                label={c}
+                variant="filter"
+                selected={filters.activeCuisine === c}
+                onPress={() => handleToggleCuisine(c)}
+                accessibilityLabel={`Filter by ${c}`}
+              />
+            ))}
+            <View
+              style={[
+                styles.filterDivider,
+                { backgroundColor: withOpacity(theme.text, 0.15) },
+              ]}
+            />
+            {DIET_PRESETS.map((d) => (
+              <Chip
+                key={d}
+                label={d}
+                variant="filter"
+                selected={filters.activeDiet === d}
+                onPress={() => handleToggleDiet(d)}
+                accessibilityLabel={`Filter by ${d}`}
+              />
+            ))}
+            <View
+              style={[
+                styles.filterDivider,
+                { backgroundColor: withOpacity(theme.text, 0.15) },
+              ]}
+            />
+            {["Easy", "Medium", "Hard"].map((d) => (
+              <Chip
+                key={`diff-${d}`}
+                label={d}
+                variant="filter"
+                selected={filters.activeDifficulty === d.toLowerCase()}
+                onPress={() => {
+                  setFilters((prev) => ({
+                    ...prev,
+                    activeDifficulty:
+                      prev.activeDifficulty === d.toLowerCase()
+                        ? undefined
+                        : d.toLowerCase(),
+                  }));
+                }}
+                accessibilityLabel={`Filter by ${d} difficulty`}
+              />
+            ))}
+            <View
+              style={[
+                styles.filterDivider,
+                { backgroundColor: withOpacity(theme.text, 0.15) },
+              ]}
+            />
+            <Chip
+              label="From my pantry"
+              variant="filter"
+              selected={filters.pantryMode}
+              onPress={() => {
+                setFilters((prev) => ({
+                  ...prev,
+                  pantryMode: !prev.pantryMode,
+                }));
+              }}
+              accessibilityLabel="Filter recipes by pantry items"
+            />
+            <Chip
+              label="Quick meals"
+              variant="filter"
+              selected={filters.advanced.maxPrepTime === 30}
+              onPress={() => {
+                setFilters((prev) => ({
+                  ...prev,
+                  advanced: {
+                    ...prev.advanced,
+                    maxPrepTime:
+                      prev.advanced.maxPrepTime === 30 ? undefined : 30,
+                  },
+                }));
+              }}
+              accessibilityLabel="Filter quick meals under 30 minutes"
+            />
+            <PressableScale
+              scaleTo={0.95}
+              onPress={() => {
+                filterSheetRef.current?.present();
+                setIsFilterSheetOpen(true);
+              }}
+              style={[
+                styles.filterIconButton,
+                { borderColor: withOpacity(theme.text, 0.15) },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Advanced filters${activeFilterCount > 0 ? `, ${activeFilterCount} active` : ""}`}
+            >
+              <Feather name="sliders" size={16} color={theme.link} />
+              {activeFilterCount > 0 && (
+                <View
+                  style={[
+                    styles.filterBadge,
+                    { backgroundColor: theme.accentSolid },
+                  ]}
+                >
+                  <ThemedText
+                    style={[
+                      styles.filterBadgeText,
+                      { color: theme.buttonText },
+                    ]}
+                  >
+                    {activeFilterCount}
+                  </ThemedText>
+                </View>
+              )}
+            </PressableScale>
+          </ScrollView>
           <PressableScale
             onPress={() =>
               // Root-qualified: this screen is also registered in the Profile
@@ -890,157 +1045,6 @@ export default function RecipeBrowserScreen() {
             </ThemedText>
           </PressableScale>
         </View>
-
-        {/* Filter chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-        >
-          <Chip
-            label="Curated"
-            variant="filter"
-            selected={filters.curatedOnly}
-            onPress={() => {
-              setFilters((prev) => ({
-                ...prev,
-                curatedOnly: !prev.curatedOnly,
-              }));
-            }}
-            accessibilityLabel="Filter curated recipes only"
-          />
-          <Chip
-            label="Safe for me"
-            variant="filter"
-            selected={filters.safeForMe}
-            onPress={() => {
-              setFilters((prev) => ({
-                ...prev,
-                safeForMe: !prev.safeForMe,
-              }));
-            }}
-            accessibilityLabel="Filter recipes safe for my allergies"
-          />
-          <View
-            style={[
-              styles.filterDivider,
-              { backgroundColor: withOpacity(theme.text, 0.15) },
-            ]}
-          />
-          {CUISINE_PRESETS.map((c) => (
-            <Chip
-              key={c}
-              label={c}
-              variant="filter"
-              selected={filters.activeCuisine === c}
-              onPress={() => handleToggleCuisine(c)}
-              accessibilityLabel={`Filter by ${c}`}
-            />
-          ))}
-          <View
-            style={[
-              styles.filterDivider,
-              { backgroundColor: withOpacity(theme.text, 0.15) },
-            ]}
-          />
-          {DIET_PRESETS.map((d) => (
-            <Chip
-              key={d}
-              label={d}
-              variant="filter"
-              selected={filters.activeDiet === d}
-              onPress={() => handleToggleDiet(d)}
-              accessibilityLabel={`Filter by ${d}`}
-            />
-          ))}
-          <View
-            style={[
-              styles.filterDivider,
-              { backgroundColor: withOpacity(theme.text, 0.15) },
-            ]}
-          />
-          {["Easy", "Medium", "Hard"].map((d) => (
-            <Chip
-              key={`diff-${d}`}
-              label={d}
-              variant="filter"
-              selected={filters.activeDifficulty === d.toLowerCase()}
-              onPress={() => {
-                setFilters((prev) => ({
-                  ...prev,
-                  activeDifficulty:
-                    prev.activeDifficulty === d.toLowerCase()
-                      ? undefined
-                      : d.toLowerCase(),
-                }));
-              }}
-              accessibilityLabel={`Filter by ${d} difficulty`}
-            />
-          ))}
-          <View
-            style={[
-              styles.filterDivider,
-              { backgroundColor: withOpacity(theme.text, 0.15) },
-            ]}
-          />
-          <Chip
-            label="From my pantry"
-            variant="filter"
-            selected={filters.pantryMode}
-            onPress={() => {
-              setFilters((prev) => ({
-                ...prev,
-                pantryMode: !prev.pantryMode,
-              }));
-            }}
-            accessibilityLabel="Filter recipes by pantry items"
-          />
-          <Chip
-            label="Quick meals"
-            variant="filter"
-            selected={filters.advanced.maxPrepTime === 30}
-            onPress={() => {
-              setFilters((prev) => ({
-                ...prev,
-                advanced: {
-                  ...prev.advanced,
-                  maxPrepTime:
-                    prev.advanced.maxPrepTime === 30 ? undefined : 30,
-                },
-              }));
-            }}
-            accessibilityLabel="Filter quick meals under 30 minutes"
-          />
-          <PressableScale
-            scaleTo={0.95}
-            onPress={() => {
-              filterSheetRef.current?.present();
-              setIsFilterSheetOpen(true);
-            }}
-            style={[
-              styles.filterIconButton,
-              { borderColor: withOpacity(theme.text, 0.15) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`Advanced filters${activeFilterCount > 0 ? `, ${activeFilterCount} active` : ""}`}
-          >
-            <Feather name="sliders" size={16} color={theme.link} />
-            {activeFilterCount > 0 && (
-              <View
-                style={[
-                  styles.filterBadge,
-                  { backgroundColor: theme.accentSolid },
-                ]}
-              >
-                <ThemedText
-                  style={[styles.filterBadgeText, { color: theme.buttonText }]}
-                >
-                  {activeFilterCount}
-                </ThemedText>
-              </View>
-            )}
-          </PressableScale>
-        </ScrollView>
       </Animated.View>
 
       {/* AI meal plan summary banner */}
@@ -1279,11 +1283,13 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
     padding: 0,
   },
-  actionRow: {
+  filterBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
-    marginBottom: Spacing.md,
+  },
+  filterScroll: {
+    flex: 1,
   },
   headerAction: {
     flexDirection: "row",

@@ -90,3 +90,17 @@ export function navigateLibraryItem(
       break;
   }
 }
+
+/**
+ * The tile's screen-reader label, with the noun agreeing with the count
+ * ("1 item", "16 items"); locked premium tiles say so.
+ */
+export function libraryTileLabel(
+  label: string,
+  count: number,
+  locked: boolean,
+): string {
+  const noun = count === 1 ? "item" : "items";
+  const base = `${label}: ${count} ${noun}`;
+  return locked ? `${base}. Premium feature, locked` : base;
+}
