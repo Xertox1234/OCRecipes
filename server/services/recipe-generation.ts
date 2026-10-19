@@ -5,11 +5,7 @@ import type {
   RecipeContent,
   GeneratedIngredient,
 } from "@shared/types/cook-session";
-import {
-  dalleClient,
-  OPENAI_TIMEOUT_HEAVY_MS,
-  OPENAI_TIMEOUT_IMAGE_MS,
-} from "../lib/openai";
+import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import {
   generateImage as runwareGenerateImage,
   isRunwareConfigured,
@@ -310,7 +306,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
 }
 
 /**
- * Generate a food image using Runware (primary) or DALL-E 3 (fallback).
+ * Generate a food image using Runware (the only image provider).
  * Persists the image via the image-store (Cloudflare R2 in production, local disk in dev) and returns the URL, or null on failure.
  */
 export async function generateRecipeImage(
@@ -330,40 +326,12 @@ export async function generateRecipeImage(
       });
       // Runware returns JPEG (no outputFormat requested) — label it to match.
       if (buffer) return await saveRecipeImage(buffer, "jpg");
-      log.warn("Runware returned no image, falling back to DALL-E");
+      log.warn("Runware returned no image");
     } catch (error) {
-      log.warn(
-        { err: toError(error) },
-        "Runware failed, falling back to DALL-E",
-      );
+      log.warn({ err: toError(error) }, "Runware failed");
     }
   }
-
-  try {
-    // DALL-E has no separate negative field — the exclusions ride as a suffix
-    // (this is the DALL-E negative channel; composePrompt stays positive-only).
-    const dallePrompt = `${prompt} No text, no watermarks, no logos, no labels, no letters.`;
-    const response = await dalleClient.images.generate(
-      {
-        model: "dall-e-3",
-        prompt: dallePrompt,
-        n: 1,
-        size: "1024x1024",
-        quality: "standard",
-        response_format: "b64_json",
-      },
-      { timeout: OPENAI_TIMEOUT_IMAGE_MS },
-    );
-    const imageData = response.data?.[0]?.b64_json;
-    if (!imageData) {
-      log.error("DALL-E returned no image data");
-      return null;
-    }
-    return await saveRecipeImage(Buffer.from(imageData, "base64"));
-  } catch (error) {
-    log.error({ err: toError(error) }, "DALL-E image generation error");
-    return null;
-  }
+  return null;
 }
 
 /**

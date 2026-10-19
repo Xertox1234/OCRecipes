@@ -19,7 +19,7 @@ import {
   isRunwareConfigured,
   RUNWARE_MODEL_HQ,
 } from "../lib/runware";
-import { dalleClient, OPENAI_TIMEOUT_IMAGE_MS } from "../lib/openai";
+import { OPENAI_TIMEOUT_IMAGE_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import {
   buildImagePrompt,
@@ -131,7 +131,7 @@ async function generateSingleImage(
 ): Promise<string | null> {
   const prompt = await buildImagePrompt(ctx, variant); // LLM on for HQ canonical
 
-  // Try Runware HQ model first
+  // Runware HQ model is the only image provider
   if (isRunwareConfigured) {
     try {
       const buffer = await generateImage({ prompt, model: RUNWARE_MODEL_HQ });
@@ -139,42 +139,12 @@ async function generateSingleImage(
         // Runware returns JPEG (no outputFormat requested) — label it to match.
         return await saveImageBuffer(buffer, "jpg");
       }
-      log.warn(
-        { variant },
-        "Runware returned no image, falling back to DALL-E",
-      );
+      log.warn({ variant }, "Runware returned no image");
     } catch (err) {
-      log.warn(
-        { err: toError(err), variant },
-        "Runware failed, falling back to DALL-E",
-      );
+      log.warn({ err: toError(err), variant }, "Runware failed");
     }
   }
-
-  // DALL-E 3 fallback — negatives are appended here only (not in the positive prompt)
-  try {
-    const dallePrompt = `${prompt} No text, no watermarks, no logos, no labels, no letters.`;
-    const response = await dalleClient.images.generate(
-      {
-        model: "dall-e-3",
-        prompt: dallePrompt,
-        n: 1,
-        size: "1024x1024",
-        quality: "standard",
-        response_format: "b64_json",
-      },
-      { timeout: OPENAI_TIMEOUT_IMAGE_MS },
-    );
-    const imageData = response.data?.[0]?.b64_json;
-    if (!imageData) {
-      log.error({ variant }, "DALL-E returned no image data");
-      return null;
-    }
-    return await saveImageBuffer(Buffer.from(imageData, "base64"));
-  } catch (err) {
-    log.error({ err: toError(err), variant }, "DALL-E image generation error");
-    return null;
-  }
+  return null;
 }
 
 /**

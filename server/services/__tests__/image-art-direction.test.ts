@@ -269,7 +269,7 @@ describe("composePrompt — hostile-title injection guard (M2)", () => {
       "Photorealistic, appetizing, natural food textures, intentional composition, professional color grading, shallow depth of field where appropriate.",
     );
     // The hostile title is slotted as inert subject data — no negative terms
-    // (which must stay in the DALL-E suffix / Runware negativePrompt, not here).
+    // (which must stay in the Runware negativePrompt, not here).
     expect(out).not.toMatch(/no text|watermark/i);
   });
 });

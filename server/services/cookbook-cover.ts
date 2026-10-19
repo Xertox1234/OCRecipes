@@ -1,12 +1,7 @@
 import { aiChat } from "../lib/ai-client";
 import { z } from "zod";
 
-import {
-  dalleClient,
-  OPENAI_TIMEOUT_FAST_MS,
-  OPENAI_TIMEOUT_IMAGE_MS,
-  isAiConfigured,
-} from "../lib/openai";
+import { OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
 import {
   generateImage as runwareGenerateImage,
   isRunwareConfigured,
@@ -51,7 +46,7 @@ const COVER_NEGATIVE_PROMPT =
 /**
  * Nouns that are themselves lettering surfaces. Used two ways: rejected if the
  * LLM pre-pass smuggles one into the derived subject, and (via
- * `COVER_SURFACE_NEGATIVES`) excluded on both provider paths.
+ * `COVER_SURFACE_NEGATIVES`) excluded from the Runware negativePrompt.
  *
  * `cookbook` is listed separately from `book` on purpose — `\bbooks?\b` does
  * NOT match "cookbook", because `\b` needs a word/non-word transition and
@@ -285,8 +280,7 @@ export async function deriveCoverSubject(
  * Generate a cookbook cover image and persist it. Returns the stored URL, or
  * null when every provider failed or none is configured.
  *
- * Runware is primary, DALL-E 3 the fallback — the same order the recipe hero
- * images use.
+ * Runware is the only image provider; a miss or failure returns null.
  */
 export async function generateCookbookCover(
   name: string,
@@ -306,47 +300,10 @@ export async function generateCookbookCover(
       });
       // Runware returns JPEG (no outputFormat requested) — label it to match.
       if (buffer) return await saveCookbookCover(buffer, "jpg");
-      log.warn("Runware returned no cover image, falling back to DALL-E");
+      log.warn("Runware returned no cover image");
     } catch (error) {
-      log.warn(
-        { err: toError(error) },
-        "Runware cover generation failed, falling back to DALL-E",
-      );
+      log.warn({ err: toError(error) }, "Runware cover generation failed");
     }
   }
-
-  if (!isAiConfigured) return null;
-
-  try {
-    // DALL-E has no separate negative field, so the exclusions ride as a
-    // suffix. This suffix is therefore the ONLY lettering gate on the fallback
-    // path, so it carries the same cookbook-specific surface nouns as
-    // `COVER_NEGATIVE_PROMPT` — a generic "no text, no letters" was already
-    // proven insufficient, and this path runs precisely when Runware is
-    // unconfigured or failing, i.e. when there is no second line of defence.
-    // (The style negatives — blurry, cartoon, 3d render — stay out; they are a
-    // separate concern and DALL-E handles them via the positive prompt.)
-    // DALL-E 3 has no 3:4 size — 1024x1792 is its portrait option; the client
-    // crops to the cover plate.
-    const response = await dalleClient.images.generate(
-      {
-        model: "dall-e-3",
-        prompt: `${prompt} Do not render any of the following: ${COVER_SURFACE_NEGATIVES}.`,
-        n: 1,
-        size: "1024x1792",
-        quality: "standard",
-        response_format: "b64_json",
-      },
-      { timeout: OPENAI_TIMEOUT_IMAGE_MS },
-    );
-    const imageData = response.data?.[0]?.b64_json;
-    if (!imageData) {
-      log.error("DALL-E returned no cover image data");
-      return null;
-    }
-    return await saveCookbookCover(Buffer.from(imageData, "base64"));
-  } catch (error) {
-    log.error({ err: toError(error) }, "DALL-E cover generation error");
-    return null;
-  }
+  return null;
 }

@@ -177,7 +177,7 @@ export function validateEnv(): Env {
   }
   if (!validated.RUNWARE_API_KEY) {
     warnings.push(
-      "RUNWARE_API_KEY not set — recipe image generation falls back to DALL-E",
+      "RUNWARE_API_KEY not set — recipe image generation is disabled",
     );
   }
   if (!validated.EXPO_ACCESS_TOKEN) {
