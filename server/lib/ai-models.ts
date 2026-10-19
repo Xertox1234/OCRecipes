@@ -1,9 +1,12 @@
 // server/lib/ai-models.ts
 /**
- * One row per AI call site. `model` is the OpenRouter id (provider-prefixed);
- * `fallback` is the id for the existing OpenAI client (today's path). Moving
- * a feature to another model = edit its row (spec §3.1, owner approval +
- * paired eval report required — spec §5/§6).
+ * One row per AI call site. `model` is the provider-prefixed id (OpenRouter's
+ * form, which Vertex's OpenAI-compatible endpoint also uses). `fallback` is
+ * the id for the existing OpenAI client (today's path). A row with
+ * `primary: "vertex"` goes Vertex direct → OpenRouter and has NO `fallback`:
+ * it never reaches OpenAI (spec 2026-10-19-vision-rows-vertex-direct §2).
+ * Moving a feature to another model = edit its row (owner approval + paired
+ * eval report required).
  *
  * `json` / `vision` describe the call (response_format json_object / an
  * image_url part) — scripts/ai-smoke.ts reproduces them per row.
@@ -16,9 +19,11 @@ export interface AiAdapt {
 
 export interface AiFeatureConfig {
   model: string;
-  fallback: string;
+  /** OpenAI-direct model id. Absent exactly when `primary` is "vertex". */
+  fallback?: string;
   json: boolean;
   vision: boolean;
+  primary?: "vertex";
   adapt?: AiAdapt;
 }
 

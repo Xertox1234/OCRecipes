@@ -25,6 +25,11 @@ const envSchema = z.object({
   AI_INTEGRATIONS_OPENAI_BASE_URL: z.string().optional(),
   // OpenRouter — routes AI chat/vision (server/lib/ai-client.ts). Unset ⇒ today's OpenAI path.
   OPENROUTER_API_KEY: z.string().optional(),
+  // Vertex AI direct (vision rows). Its OWN service account — never the Play
+  // IAP one below. Key is a PEM with \n for newlines.
+  GOOGLE_VERTEX_PROJECT: z.string().optional(),
+  GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
+  GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY: z.string().optional(),
   SPOONACULAR_API_KEY: z.string().optional(),
   USDA_API_KEY: z.string().optional(),
   API_NINJAS_KEY: z.string().optional(),

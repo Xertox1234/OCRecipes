@@ -166,6 +166,13 @@ async function* wrapStream(
   }
 }
 
+/** Unflagged rows always carry `fallback` (pinned by ai-models.test.ts). */
+function fallbackModel(row: AiFeatureConfig, feature: AiFeature): string {
+  if (row.fallback === undefined)
+    throw new Error(`aiChat(${feature}): row has no OpenAI fallback`);
+  return row.fallback;
+}
+
 export function createAiChat(deps: AiChatDeps): AiChat {
   const now = deps.now ?? Date.now;
   const configReportedAt = new Map<AiFeature, number>();
@@ -202,7 +209,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           feature,
           provider: "fallback",
           requestedModel,
-          fallbackModel: row.fallback,
+          fallbackModel: fallbackModel(row, feature),
           fallbackReason: reason,
           ...(err !== undefined && {
             error: {
@@ -217,11 +224,11 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         "ai call using fallback",
       );
       const res = await deps.fallback.chat.completions.create(
-        { ...params, model: row.fallback },
+        { ...params, model: fallbackModel(row, feature) },
         options,
       );
       record(
-        streaming ? row.fallback : answeredModel(res),
+        streaming ? fallbackModel(row, feature) : answeredModel(res),
         "openai-direct",
         true,
       );
@@ -236,7 +243,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       }
       // Today's path, byte-for-byte: no warn — this is the normal no-key state.
       const res = await deps.fallback.chat.completions.create(
-        { ...params, model: row.fallback },
+        { ...params, model: fallbackModel(row, feature) },
         options,
       );
       return res as ChatCompletion | AsyncIterable<ChatCompletionChunk>;
