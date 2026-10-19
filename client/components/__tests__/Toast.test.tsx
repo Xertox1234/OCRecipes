@@ -84,6 +84,37 @@ describe("Toast", () => {
     expect(mockDismiss).toHaveBeenCalled();
   });
 
+  it("counts the dismiss window from createdAt, not from mount", () => {
+    // Mounted 2 s into its life (the toast moved hosts): 1 s remains.
+    renderComponent(
+      <Toast
+        message="Moved hosts"
+        variant="success"
+        theme={Colors.light}
+        onDismiss={mockDismiss}
+        createdAt={Date.now() - 2000}
+      />,
+    );
+    vi.advanceTimersByTime(999);
+    expect(mockDismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(mockDismiss).toHaveBeenCalled();
+  });
+
+  it("dismisses at once when createdAt is already past the window", () => {
+    renderComponent(
+      <Toast
+        message="Stale"
+        variant="success"
+        theme={Colors.light}
+        onDismiss={mockDismiss}
+        createdAt={Date.now() - 10000}
+      />,
+    );
+    vi.advanceTimersByTime(0);
+    expect(mockDismiss).toHaveBeenCalled();
+  });
+
   it("renders action button when action prop is provided", () => {
     const mockAction = vi.fn();
     renderComponent(

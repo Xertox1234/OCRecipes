@@ -1,11 +1,5 @@
 import React, { useEffect, useCallback } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  AccessibilityInfo,
-  Platform,
-} from "react-native";
+import { StyleSheet, View, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
   useSharedValue,
@@ -50,6 +44,11 @@ interface ToastProps {
    *  inside an RN `Modal` sheet (laid out below the status bar) — the sheet's
    *  `ModalToastHost` passes 0. */
   topInset?: number;
+  /** `Date.now()` when the toast was shown. The dismiss window counts from
+   *  here rather than from mount, so a remount (the toast moving between the
+   *  root host and a `ModalToastHost`) keeps the original deadline. Omitted:
+   *  the window counts from mount. */
+  createdAt?: number;
 }
 
 const AUTO_DISMISS_MS = 3000;
@@ -65,6 +64,7 @@ export function Toast({
   onDismiss,
   action,
   topInset,
+  createdAt,
 }: ToastProps) {
   const insets = useSafeAreaInsets();
   const top = (topInset ?? insets.top) + Spacing.sm;
@@ -84,27 +84,25 @@ export function Toast({
     onDismiss();
   }, [action, onDismiss]);
 
+  // The screen-reader announcement lives in ToastProvider's `show`, once per
+  // toast: a mount effect here would fire again when the toast remounts into
+  // or out of a `ModalToastHost`.
   useEffect(() => {
-    if (Platform.OS === "ios") {
-      const announcement = action
-        ? `${message}. ${action.label} available.`
-        : message;
-      AccessibilityInfo.announceForAccessibility(announcement);
-    }
-  }, [message, action]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (reducedMotion) {
-        onDismiss();
-      } else {
-        opacity.value = withTiming(0, toastExitTimingConfig, (finished) => {
-          if (finished) scheduleOnRN(onDismiss);
-        });
-      }
-    }, dismissMs);
+    const elapsed = createdAt === undefined ? 0 : Date.now() - createdAt;
+    const timer = setTimeout(
+      () => {
+        if (reducedMotion) {
+          onDismiss();
+        } else {
+          opacity.value = withTiming(0, toastExitTimingConfig, (finished) => {
+            if (finished) scheduleOnRN(onDismiss);
+          });
+        }
+      },
+      Math.max(0, dismissMs - elapsed),
+    );
     return () => clearTimeout(timer);
-  }, [onDismiss, opacity, reducedMotion, dismissMs]);
+  }, [onDismiss, opacity, reducedMotion, dismissMs, createdAt]);
 
   const swipeGesture = Gesture.Pan()
     .onUpdate((e) => {

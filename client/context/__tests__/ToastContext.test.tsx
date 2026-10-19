@@ -255,5 +255,69 @@ describe("ModalToastHost (toast over an RN Modal sheet)", () => {
     );
     expect(screen.queryByTestId("full-window-overlay")).toBeNull();
     expect(screen.getAllByText("Mid-flight")).toHaveLength(1);
+    // The move is a remount (different subtrees); the announcement belongs to
+    // the toast, not the mount, so VoiceOver hears it once.
+    expect(announceSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("a modal host unmounting mid-toast does not announce the toast again", () => {
+    RN.Platform.OS = "ios";
+    const view = mountWithModal(true);
+    act(() => {
+      api.info("Mid-flight");
+    });
+    expect(announceSpy).toHaveBeenCalledTimes(1);
+    view.rerender(
+      <ToastProvider>
+        <Capture />
+      </ToastProvider>,
+    );
+    expect(screen.getByTestId("full-window-overlay").textContent).toContain(
+      "Mid-flight",
+    );
+    expect(announceSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ModalToastHost dismiss timer across a host change", () => {
+  const originalOS = RN.Platform.OS;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    RN.Platform.OS = originalOS;
+    vi.useRealTimers();
+  });
+
+  it("measures the 3 s window from the toast's creation, not from the remount", () => {
+    RN.Platform.OS = "ios";
+    const view = renderComponent(
+      <ToastProvider>
+        <Capture />
+      </ToastProvider>,
+    );
+    act(() => {
+      api.info("Mid-flight");
+    });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    // A sheet opens 2 s in: the toast moves into its host.
+    view.rerender(
+      <ToastProvider>
+        <Capture />
+        <ModalToastHost />
+      </ToastProvider>,
+    );
+    expect(screen.getAllByText("Mid-flight")).toHaveLength(1);
+    act(() => {
+      vi.advanceTimersByTime(999);
+    });
+    expect(screen.queryByText("Mid-flight")).not.toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByText("Mid-flight")).toBeNull();
   });
 });
