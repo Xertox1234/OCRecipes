@@ -21,7 +21,7 @@
   {
     "id": "photo-analysis-salad-02",
     "category": "accuracy",
-    "description": "Fresh vegetable salad — should identify multiple vegetables with high confidence",
+    "description": "Green salad in a white bowl, seen from above: butterhead lettuce, cherry tomatoes, sliced red chili, fresh herbs, a few nuts, and several slices of cooked meat (could be read as beef, pork or sausage; any of these is acceptable). Should identify the vegetables and the meat with high confidence",
     "input": {
       "imageUrl": "https://images.unsplash.com/photo-1607532941433-304659e8198a?w=400",
       "intent": "log"
@@ -77,7 +77,7 @@
   {
     "id": "photo-analysis-sushi-05",
     "category": "accuracy",
-    "description": "Sushi plate — Japanese food, multiple pieces, tests cuisine classification",
+    "description": "Black slate with about ten pieces of nigiri sushi in a row (salmon, tuna, white fish, shrimp and avocado toppings among them), chopsticks and a small bowl of soy sauce beside it, on a dark background. Japanese food, multiple pieces, tests cuisine classification",
     "input": {
       "imageUrl": "https://images.unsplash.com/photo-1617196034796-73dfa7b1fd56?w=400",
       "intent": "log"
@@ -115,7 +115,7 @@
   {
     "id": "photo-analysis-peanut-butter-allergen-07",
     "category": "accuracy",
-    "description": "Peanut butter — allergen identification; model should identify peanut butter product",
+    "description": "Jar labelled 'Protein Choco Crisp Peanut Butter' with a spoon lifting peanut butter out of it. Slices of brown bread sit beside the jar and a glass of dark drink (tea or coffee) is in the background. Allergen identification: the model must identify peanut butter (peanut); naming the bread and the drink is correct, not invented",
     "input": {
       "imageUrl": "https://images.unsplash.com/photo-1768161681443-f6f116e7a2d1?w=400",
       "intent": "identify"
@@ -129,7 +129,7 @@
   {
     "id": "photo-analysis-multi-food-restaurant-08",
     "category": "accuracy",
-    "description": "Restaurant meal with multiple dishes — tests multi-food scene detection",
+    "description": "Busy restaurant table, shallow focus: the one clear dish is a small plated portion (greens on top of an orange/red base) on a large white plate; a basket of bread is at the left edge; glasses of white wine and water stand behind. Other plates in the background are blurred and should not be itemised with high confidence. Tests multi-food scene detection",
     "input": {
       "imageUrl": "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=400",
       "intent": "log"
@@ -147,7 +147,7 @@
   {
     "id": "photo-analysis-steak-09",
     "category": "accuracy",
-    "description": "Grilled steak — high-protein meal, should estimate portions clearly",
+    "description": "Wooden board of RAW meats (not cooked): raw beef steak cuts, raw beef strips, two sausages or frankfurters, a round slab of minced meat or sausage meat, plus cherry tomatoes, herbs and small bowls of peppercorns and lentils. Should identify the raw meat items and estimate portions clearly",
     "input": {
       "imageUrl": "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400",
       "intent": "log"
@@ -185,7 +185,7 @@
   {
     "id": "photo-analysis-low-confidence-ambiguous-11",
     "category": "edge-case",
-    "description": "Dark/dimly-lit food scene — ambiguous content should trigger lower confidence and possibly follow-up questions",
+    "description": "Well-lit restaurant plate: grilled shellfish tails with herbs (langoustine, scampi, prawn or lobster tail are all acceptable readings), a small bowl of dipping sauce, a green salad, slices of bread, with a glass of beer and a glass of water behind. The exact shellfish species is ambiguous at this size, so confidence on that item should be moderate rather than near-certain; the other items are clear",
     "input": {
       "imageUrl": "https://images.unsplash.com/photo-1476224203421-9ac39bcb3327?w=400",
       "intent": "log"
@@ -198,7 +198,7 @@
   {
     "id": "photo-analysis-multi-food-colorful-12",
     "category": "accuracy",
-    "description": "Colorful food spread with multiple items — tests enumeration of distinct food items",
+    "description": "Overhead view of four dishes on a stone table: a plate of glazed meat pieces with sliced chili, a plate of sliced cooked beef with lettuce and onion rings, a plate of a meat-and-onion salad with herbs, and a small bowl of brown dipping sauce. Loose cashew nuts, red chilies and herbs are scattered between them. Tests enumeration of distinct food items",
     "input": {
       "imageUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400",
       "intent": "log"

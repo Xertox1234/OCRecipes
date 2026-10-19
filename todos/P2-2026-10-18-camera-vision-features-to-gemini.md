@@ -68,3 +68,42 @@ The text-only follow-ups (`photo-refine`, `photo-recipe-text`) can move together
 ### 2026-10-18
 
 - Created after the owner corrected the image todo: Gemini is for reading images (camera features), not generating them.
+
+### 2026-10-19: `photo-analyze` measured (gpt-4o vs Gemini 3.8 Flash, low reasoning)
+
+**Dataset fix first.** The judge never sees the photo. It scores against each case's text `description`. Seven of the 12 descriptions did not match their photo:
+
+| Case             | Problem                                                        |
+| ---------------- | -------------------------------------------------------------- |
+| steak-09         | The board holds raw meats and sausages, not a grilled steak.   |
+| salad-02         | The salad has meat slices in it.                               |
+| peanut-butter-07 | The jar is "Protein Choco Crisp", with bread and a drink.      |
+| ambiguous-11     | A well-lit plate of grilled shellfish tails, not a dark scene. |
+| colorful-12      | Description too thin to check against.                         |
+| restaurant-08    | Description too thin to check against.                         |
+| sushi-05         | Description too thin to check against.                         |
+
+The dataset has no genuine low-light case now; add one when the label/receipt cases are built.
+
+That mismatch penalised whichever model read the photo correctly: Gemini scored 3/10 for naming the jar's exact label. The first pair of runs is kept locally as `*.INVALID-pre-description-fix.json` and is not comparable.
+
+**Runs:** 12 cases × 3 samples, judged by `anthropic/claude-sonnet-4.6`, with the fallback off and 0 call violations. Result files are gitignored and kept in the main checkout's `evals/results/`.
+
+| Measure                               | gpt-4o (`photo-analysis-2026-10-19T03-09-51`) | Gemini 3.8 Flash, low (`…T03-12-49`) |
+| ------------------------------------- | --------------------------------------------- | ------------------------------------ |
+| Weighted overall                      | 6.90                                          | 7.76                                 |
+| Identification                        | 7.1                                           | 8.1                                  |
+| Portion plausibility                  | 6.7                                           | 7.1                                  |
+| Confidence calibration                | 6.6                                           | 7.8                                  |
+| Hard-assertion / JSON failures        | 0/36                                          | 1/36 (steak-09#3)                    |
+| Latency p50 / p90 / max               | 5.2 s / 7.3 s / 7.8 s                         | 8.0 s / 21.0 s / 31.1 s              |
+| Cost per call (steak photo, measured) | ~$0.008                                       | ~$0.004                              |
+| Host                                  | Azure                                         | Google (vertex)                      |
+
+- **Paired result** (`eval:paired`): quality passes on every dimension. Identification is +0.90 [0.44, 1.36], calibration +1.19 [0.28, 2.25], portions +0.38 [-0.30, 1.10]. The gate reads FAIL only because of the new steak-09 failure.
+- **What caused the failure.** I reproduced it on the same request 6 times. 1 of 6 stopped with `finish_reason: length` at 996 tokens, which is cut-off JSON. Healthy Gemini replies used 790–930 tokens against the `LOG_MAX_TOKENS = 1000` cap (`photo-analysis.ts:76`). gpt-4o used 610–690 tokens on the same photo, and reasoning tokens were 0 for both. Gemini writes longer item names, so a move would need a higher cap for this row.
+- **Latency is the real trade-off.** In the invalid first run, Gemini also had 3/36 samples at 40 s, 66 s and 68 s. The two above 60 s match the 60 s `OPENAI_TIMEOUT_HEAVY_MS` timeout plus the SDK's automatic retry, so in the app a user would have waited over a minute. gpt-4o's slowest sample across both runs was 8.6 s.
+- **Privacy.** `analyzePhoto(imageBase64, intent)` sends only the photo and the scan instructions. No profile or health fields go in the prompt.
+- **Argon.** Skipped for this row. "Where accuracy matters most" means the allergen-critical rows (photo-label, front-label).
+- **Spend.** $1.41 of today's $5 OpenRouter budget, covering both run pairs, judging and the 9 repro calls.
+- **Owner decision needed.** Switch `photo-analyze` to Gemini Flash (low) with a higher token cap for better accuracy at half the cost per call but a slower and spikier wait, or keep gpt-4o for now. No row was switched.
