@@ -25,7 +25,7 @@ Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-inj
 
 - Every chat/vision call goes through `aiChat(feature, params, options)` in `server/lib/ai-client.ts` — never `openai.chat.completions.create` directly (lint rule `ocrecipes/no-direct-chat-completions`). The model is not in the call: each feature is a row in `AI_FEATURES` (`server/lib/ai-models.ts`) with `model` (OpenRouter id), `fallback` (direct-OpenAI model), and `json`/`vision` flags. A new AI call means a new row.
 - Tiers today: FAST rows use `gpt-4o-mini` (parsing, classification, extraction); HEAVY rows use `gpt-4o` (most vision, recipe generation, meal planning); LUNA rows use `gpt-6-luna` (both coach chats; `gpt-4o-mini` fallback). Each row picks its own tier — modality does not decide it (`photo-classify` is FAST vision, `photo-refine` is HEAVY text).
-- Timeout tiers (still in `server/lib/openai.ts`, passed as `aiChat`'s third argument): `OPENAI_TIMEOUT_FAST_MS` 15s (food-nlp: simple text parsing) · `OPENAI_TIMEOUT_STREAM_MS` 30s (nutrition-coach: streaming chat) · `OPENAI_TIMEOUT_HEAVY_MS` 60s (recipe/meal generation: large budgets) · `OPENAI_TIMEOUT_IMAGE_MS` 120s (DALL-E image generation)
+- Timeout tiers (still in `server/lib/openai.ts`, passed as `aiChat`'s third argument): `OPENAI_TIMEOUT_FAST_MS` 15s (food-nlp: simple text parsing) · `OPENAI_TIMEOUT_STREAM_MS` 30s (nutrition-coach: streaming chat) · `OPENAI_TIMEOUT_HEAVY_MS` 60s (recipe/meal generation: large budgets) · `OPENAI_TIMEOUT_LONG_MS` 120s (long vision / enrichment calls: recipe-chat photo analysis, canonical editorial content)
 - `isAiConfigured` — true only when the API key is set
 
 ### AI safety (`server/lib/ai-safety.ts`)
@@ -53,7 +53,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 
 **Audio:** `server/services/voice-transcription.ts` — calls the direct `openai` client (`openai.audio.transcriptions.create`); no `AI_FEATURES` row, since `aiChat` covers chat/vision only.
 
-**Image generation:** `server/services/carousel-builder.ts` — recipe card images via Runware (FLUX.2 klein 9B KV default, FLUX.1 dev for curated recipes — see `server/lib/runware.ts`) with DALL-E fallback.
+**Image generation:** Runware only, no fallback (owner ruling 2026-10-18) — `generateRecipeImage` in `server/services/recipe-generation.ts` (hero images, FLUX.2 klein 9B KV default), `server/services/cookbook-cover.ts`, and `server/services/canonical-enrichment.ts` (FLUX.1 dev HQ for curated recipes) — see `server/lib/runware.ts`. A Runware miss returns `null`.
 
 ## Implementation Patterns
 
@@ -135,7 +135,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 - [ ] Rate limiting applied on the route (`_rate-limiters.ts`)
 - [ ] Premium feature gating via `checkPremiumFeature()`
 - [ ] Error handling uses `handleRouteError(res, err, "context")`
-- [ ] If the OpenAI client sets a custom `baseURL` (`AI_INTEGRATIONS_OPENAI_BASE_URL`), the API key's **provider must match the endpoint**: OpenAI `sk-…`/`sk-proj-…` ↔ `api.openai.com`; OpenRouter `sk-or-…` ↔ `openrouter.ai`. A mismatch compiles fine and only 401s ("Missing Authentication header") at request time; a non-OpenAI gateway base URL also breaks DALL·E (image gen is OpenAI-only — `dalleClient` stays direct), and chat models must match the provider's namespacing (bare `gpt-4o` vs `provider/model`). (Ref: `docs/solutions/runtime-errors/openrouter-base-url-with-openai-key-401-2026-06-25.md`)
+- [ ] If the OpenAI client sets a custom `baseURL` (`AI_INTEGRATIONS_OPENAI_BASE_URL`), the API key's **provider must match the endpoint**: OpenAI `sk-…`/`sk-proj-…` ↔ `api.openai.com`; OpenRouter `sk-or-…` ↔ `openrouter.ai`. A mismatch compiles fine and only 401s ("Missing Authentication header") at request time, and chat models must match the provider's namespacing (bare `gpt-4o` vs `provider/model`). (Ref: `docs/solutions/runtime-errors/openrouter-base-url-with-openai-key-401-2026-06-25.md`)
 
 ---
 

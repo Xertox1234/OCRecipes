@@ -17,7 +17,7 @@
  *   Up to CONTENT_CONCURRENCY (3) recipes run their full pipeline
  *   (content + image + insert) in parallel. Image generation retries stay
  *   serial-per-recipe (5s sleep inside generateImageWithRetry) to respect
- *   Runware/DALL-E rate limits while still allowing 3 recipes to be in
+ *   Runware rate limits while still allowing 3 recipes to be in
  *   flight at once. Expected wall-clock: ~1.5 min for 25 recipes vs. the
  *   original ~6+ min serial path.
  *

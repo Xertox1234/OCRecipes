@@ -224,7 +224,7 @@ vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 
 vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_HEAVY_MS: 30_000,
-  OPENAI_TIMEOUT_IMAGE_MS: 15_000,
+  OPENAI_TIMEOUT_LONG_MS: 15_000,
 }));
 
 vi.mock("../recipe-generation", () => ({

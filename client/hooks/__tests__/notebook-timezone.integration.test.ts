@@ -31,7 +31,7 @@ vi.mock("../../../server/lib/openai", () => ({
   OPENAI_TIMEOUT_FAST_MS: 1,
   OPENAI_TIMEOUT_STREAM_MS: 1,
   OPENAI_TIMEOUT_HEAVY_MS: 1,
-  OPENAI_TIMEOUT_IMAGE_MS: 1,
+  OPENAI_TIMEOUT_LONG_MS: 1,
   isAiConfigured: false,
   openai: {},
 }));
