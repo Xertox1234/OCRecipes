@@ -139,7 +139,7 @@ export function RecipeGenerationModal({
             styles.header,
             {
               borderBottomColor: theme.border,
-              paddingTop: insets.top || Spacing.lg,
+              paddingTop: Spacing.lg,
             },
           ]}
         >
