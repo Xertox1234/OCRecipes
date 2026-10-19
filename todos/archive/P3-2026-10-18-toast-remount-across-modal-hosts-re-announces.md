@@ -1,6 +1,6 @@
 ---
 title: "A toast live while a modal toast host mounts or unmounts remounts the Toast: second announcement, restarted dismiss timer"
-status: backlog
+status: done
 priority: low
 created: 2026-10-18
 updated: 2026-10-18
@@ -21,10 +21,10 @@ Deferred from PR #1503 (toasts over RN `Modal` sheets). The provider renders exa
 
 ## Acceptance Criteria
 
-- [ ] A toast that moves between hosts mid-display is announced once per toast id, not once per mount.
-- [ ] The dismiss timer measures from the toast's creation, so a host change does not extend the toast's total visible time.
-- [ ] A test in `client/context/__tests__/` mounts a `ModalToastHost` mid-toast and asserts one announcement and an unchanged dismiss time.
-- [ ] The "Limit" paragraph of the solution doc is updated to describe the new behaviour.
+- [x] A toast that moves between hosts mid-display is announced once per toast id, not once per mount (iOS imperative announce; the Android live region re-read on remount is unverified, Android runs parked).
+- [x] The dismiss timer measures from the toast's creation, so a host change does not extend the toast's total visible time.
+- [x] A test in `client/context/__tests__/` mounts a `ModalToastHost` mid-toast and asserts one announcement and an unchanged dismiss time.
+- [x] The "Limit" paragraph of the solution doc is updated to describe the new behaviour.
 
 ## Implementation Notes
 
@@ -51,3 +51,9 @@ Deferred from PR #1503 (toasts over RN `Modal` sheets). The provider renders exa
 ### 2026-10-18
 
 - Initial creation, deferred from PR #1503 and triaged with the owner.
+
+### 2026-10-18 — orchestrator
+
+- Done. The announcement moved from a `Toast` mount effect into `ToastProvider`'s `show` (still iOS-gated, next to the haptic), so it fires once per toast however many times the toast remounts. `show` stamps `createdAt` on the queued toast; `Toast` takes it as an optional prop and sets its dismiss timer to `dismissMs - (Date.now() - createdAt)`, clamped at 0, so a host change keeps the original deadline.
+- Tests: `client/context/__tests__/ToastContext.test.tsx` asserts one announcement when a `ModalToastHost` mounts mid-toast and when one unmounts mid-toast, and (fake timers) that a toast shown at 0 s and moved into a host at 2 s is gone at 3 s. `client/components/__tests__/Toast.test.tsx` covers the `createdAt` prop directly, including the clamp. Red before the change (2 announcements; toast still visible at 3 s), green after. jsdom covers both criteria; no simulator run.
+- The solution doc's "Limit" paragraph became a "Host change mid-toast" section; the remaining limit is the unverified Android live-region re-read on remount.

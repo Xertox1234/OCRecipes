@@ -9,7 +9,7 @@ import React, {
   useId,
   type ReactNode,
 } from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { AccessibilityInfo, Platform, StyleSheet, View } from "react-native";
 import { FullWindowOverlay } from "react-native-screens";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { NotificationFeedbackType } from "expo-haptics";
@@ -32,6 +32,9 @@ interface ToastItem {
   message: string;
   variant: ToastVariant;
   action?: ToastAction;
+  /** `Date.now()` at `show`: the dismiss window is measured from here, so a
+   *  host change mid-toast (a remount) does not extend the toast. */
+  createdAt: number;
 }
 
 interface ToastContextType {
@@ -82,7 +85,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const show = useCallback(
     (message: string, variant: ToastVariant, options?: ToastOptions) => {
       const id = nextId.current++;
-      setToasts([{ id, message, variant, action: options?.action }]);
+      const action = options?.action;
+      // Announce here, once per toast, not in a `Toast` mount effect: the toast
+      // remounts when a `ModalToastHost` mounts or unmounts mid-display (the
+      // root overlay and a modal host are different subtrees), and a mount
+      // effect would announce it again. iOS-gated: the Android live region on
+      // the message group covers the change (docs/rules/accessibility.md).
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(
+          action ? `${message}. ${action.label} available.` : message,
+        );
+      }
+      setToasts([{ id, message, variant, action, createdAt: Date.now() }]);
     },
     [],
   );
@@ -147,6 +161,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             theme={theme}
             onDismiss={dismiss}
             action={toasts[0].action}
+            createdAt={toasts[0].createdAt}
           />
         </ToastHost>
       )}
@@ -198,6 +213,7 @@ export function ModalToastHost() {
           theme={theme}
           onDismiss={dismiss}
           action={toast.action}
+          createdAt={toast.createdAt}
           topInset={0}
         />
       </View>
