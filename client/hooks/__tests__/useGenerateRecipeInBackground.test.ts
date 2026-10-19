@@ -266,6 +266,38 @@ describe("useGenerateRecipeInBackground", () => {
     }
   });
 
+  it("waits out a slow success: a reply at 65 s still lands as a ready recipe", async () => {
+    // The 2026-10-18 incident: the model answered at ~60 s and the save took a
+    // few more seconds, so a 60 s deadline turned a success into the soft path.
+    vi.useFakeTimers();
+    try {
+      vi.mocked(apiRequest).mockImplementation(
+        (_method, _route, _data, init) =>
+          new Promise<Response>((resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            );
+            setTimeout(() => resolve(okResponse({ id: 42 })), 65_000);
+          }),
+      );
+      const listener = vi.fn();
+      const unsubscribe = subscribeToGeneratedRecipeReady(listener);
+      const { queryClient, start } = renderStart();
+
+      await act(async () => {
+        start(input);
+        await vi.advanceTimersByTimeAsync(65_000);
+      });
+
+      expect(listener).toHaveBeenCalledWith(42);
+      expect(mockToast.error).not.toHaveBeenCalled();
+      expect(isPendingGeneration(queryClient, "photo")).toBe(false);
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ignores start() while photo is already pending", async () => {
     vi.mocked(apiRequest).mockResolvedValue(okResponse({ id: 42 }));
     const { queryClient, start } = renderStart();

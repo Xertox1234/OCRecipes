@@ -24,8 +24,14 @@ export interface GenerateRecipeInput {
   shareToPublic: boolean;
 }
 
-/** The server's own heavy-model timeout is 60 s; past it nothing is coming. */
-export const RECIPE_GENERATION_DEADLINE_MS = 60_000;
+/**
+ * Long enough to outlive a slow first model attempt (the server's per-attempt
+ * timeout is 60 s) plus the save: a reply observed at ~65 s (2026-10-18) must
+ * still land as a ready recipe. Not a bound on the server, which retries a
+ * hung model and then tries its fallback; a stuck generation still ends on the
+ * soft path below, and the Generate button stays disabled this long.
+ */
+export const RECIPE_GENERATION_DEADLINE_MS = 90_000;
 
 export const SOFT_FAILURE_COPY =
   "Couldn't confirm the recipe — check Saved items";
@@ -155,7 +161,7 @@ export async function runPhotoGeneration(
  *    and Profile dot via the bridge in MainTabNavigator), success haptic;
  *  - 4xx (limit, premium, validation) → error toast with static copy, nothing
  *    saved, nothing to refetch;
- *  - anything else (5xx, network, 60 s deadline) → the server may well have
+ *  - anything else (5xx, network, 90 s deadline) → the server may well have
  *    saved the recipe before the reply was lost, so Saved items refetch and
  *    the toast says to look there.
  *
