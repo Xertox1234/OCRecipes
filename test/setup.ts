@@ -40,6 +40,62 @@ for (const ext of [
   };
 }
 
+// supertest's request(app) listens on the wildcard address, then connects to
+// 127.0.0.1. On macOS another process can hold 127.0.0.1 on that same port, and
+// the request lands on its server instead (a stray 401/403, or a rate-limit hit
+// that never counts). Linux refuses the second bind, so CI never sees it. Bind
+// 127.0.0.1 itself, which the kernel will not share. listen() with a host only
+// settles asynchronously, so the bind moves out of serverAddress() (sync, runs
+// in the constructor) into end(), which every await/.then/.end() goes through.
+// Written against supertest 7.2.2; test/supertest-loopback.test.ts is the canary.
+// See docs/solutions/runtime-errors/supertest-per-request-listener-reaches-foreign-server-on-macos-2026-10-20.md
+const http = process.getBuiltinModule("node:http");
+type EndCallback = (err: unknown, res?: unknown) => void;
+type SupertestTest = {
+  url: string;
+  _server?: import("node:http").Server;
+  _loopback?: { app: import("node:http").Server; path: string };
+};
+const supertestProto = nodeRequire("supertest").Test.prototype;
+const originalServerAddress = supertestProto.serverAddress;
+const originalEnd = supertestProto.end;
+if (
+  typeof originalServerAddress !== "function" ||
+  typeof originalEnd !== "function"
+) {
+  throw new Error(
+    "test/setup.ts: supertest's Test.serverAddress/end changed — revisit the 127.0.0.1 bind patch",
+  );
+}
+supertestProto.serverAddress = function (
+  this: SupertestTest,
+  app: unknown,
+  path: string,
+) {
+  // Leave https/http2 servers and already-listening servers to supertest.
+  if (!(app instanceof http.Server) || app.address()) {
+    return originalServerAddress.call(this, app, path);
+  }
+  this._loopback = { app, path };
+  return `http://127.0.0.1${path}`; // placeholder; end() sets the real port
+};
+supertestProto.end = function (this: SupertestTest, fn?: EndCallback) {
+  const pending = this._loopback;
+  if (!pending) return originalEnd.call(this, fn);
+  this._loopback = undefined;
+  const { app, path } = pending;
+  const onError = (err: Error) => fn?.(err);
+  app.once("error", onError);
+  app.listen(0, "127.0.0.1", () => {
+    app.off("error", onError);
+    const { port } = app.address() as import("node:net").AddressInfo;
+    this.url = `http://127.0.0.1:${port}${path}`;
+    this._server = app; // supertest's end() closes it after the response
+    originalEnd.call(this, fn);
+  });
+  return this;
+};
+
 // Guard against accidentally running tests on a production database
 const dbUrl = process.env.DATABASE_URL;
 if (

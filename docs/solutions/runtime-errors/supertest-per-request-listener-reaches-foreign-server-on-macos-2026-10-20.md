@@ -6,7 +6,7 @@ module: server
 severity: medium
 tags: [testing, supertest, vitest, flaky, rate-limit, macos]
 symptoms: ["expected 200 to be 429 on the (max+1)th request, passes alone", "stray 401/403/400 responses mid-loop with foreign headers (x-powered-by Dart with package:shelf)", "body 'WebSockets request was expected'", "fails only under parallel CPU load, never on Linux CI", "vitest retry then fails the other way (429 where 200 expected)"]
-applies_to: ['server/routes/**/__tests__/**/*.ts']
+applies_to: ['server/**/__tests__/**/*.ts', 'test/setup.ts']
 created: 2026-10-20
 ---
 
@@ -18,21 +18,33 @@ created: 2026-10-20
 
 ## Root Cause
 
-Looping the file 12-80x in parallel with `--retry=0` and logging every response showed 1-3 of the 61 requests answered by a different server (a Dart `shelf` 403, a foreign Express 401, a 400 "WebSockets request was expected"). Those never reached the limiter, so it counted 60 or fewer hits. Inferred mechanism: `request(app)` opens a fresh wildcard listener on an ephemeral port per request, and macOS lets another process bind `127.0.0.1` on the same port beside it; the client connects to 127.0.0.1 and lands on that process. Not proven at socket level. Ruled out: limiter key, MemoryStore window expiry, cross-file module sharing.
+Looping the file 12-80x in parallel with `--retry=0` and logging every response showed 1-3 of the 61 requests answered by a different server (a Dart `shelf` 403, a foreign Express 401, a 400 "WebSockets request was expected"). Those never reached the limiter, so it counted 60 or fewer hits. Ruled out: limiter key, MemoryStore window expiry, cross-file module sharing.
+
+supertest's `request(app)` calls `app.listen(0)` (wildcard `::`) and then connects to `127.0.0.1:<port>` (`node_modules/supertest/lib/test.js`, `serverAddress`). Measured with two Node processes, 2026-10-20, Node 24:
+
+| Order                                                  | macOS 26                                                          | Linux (Docker, kernel 7.0)  |
+| ------------------------------------------------------ | ----------------------------------------------------------------- | --------------------------- |
+| other process holds `127.0.0.1:P`, then we bind `::` P | bind OK; client to `127.0.0.1:P` reaches the OTHER process        | `EADDRINUSE`                |
+| we hold `::` P, then other process binds `127.0.0.1:P` | bind OK; client to `127.0.0.1:P` reaches the OTHER process        | `EADDRINUSE`                |
+| we bind `127.0.0.1` exactly on a held port             | `EADDRINUSE`                                                      | `EADDRINUSE`                |
+
+So the collision is macOS-only: CI (Ubuntu) cannot hit it, and a listener bound to `127.0.0.1` itself never shares its port.
 
 ## Solution
 
-Any test that depends on a request COUNT (rate limits, quotas) should bind one server to `127.0.0.1` and reuse it, assert every request in the loop was served by the app (status plus an app-only header such as `ratelimit-limit`), and build a fresh module graph per attempt when the limiter is module-level:
+`test/setup.ts` patches supertest so `request(app)` binds `127.0.0.1` instead of the wildcard. The bind is asynchronous with a host, so it happens in `Test.end()` (which `await`, `.then` and `.end(cb)` all go through) rather than in the synchronous `serverAddress()`. Already-listening servers and https/http2 servers pass through untouched. `test/supertest-loopback.test.ts` is the canary: it asserts `req.socket.localAddress === "127.0.0.1"` (a wildcard listener reports `::ffff:127.0.0.1`), so a supertest upgrade that changes those internals fails loudly instead of silently reopening the flake.
+
+Count-dependent tests (rate limits, quotas) still need one more thing: a module-level limiter store keeps its counts across vitest retries, so if such a test ever flakes for another reason the retry fails the other way (429 where 200 was expected). Build a fresh module graph per attempt:
 
 ```ts
 vi.resetModules();
 const hub = await import("../profile-hub"); // fresh limiter store
-const server = await new Promise<Server>((r) => {
-  const s = app.listen(0, "127.0.0.1", () => r(s));
-});
-const res = await request(server).get(path); // not request(app)
 ```
+
+and assert every request in the loop was served by the app (status plus an app-only header such as `ratelimit-limit`), so a stray response fails on the request that caused it instead of on the count.
 
 ## Related Files
 
+- `test/setup.ts` (the supertest patch)
+- `test/supertest-loopback.test.ts` (canary)
 - `server/routes/__tests__/profile-hub-rate-limit.test.ts`
