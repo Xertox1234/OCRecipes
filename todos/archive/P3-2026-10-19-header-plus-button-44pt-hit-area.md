@@ -1,6 +1,6 @@
 ---
 title: "Header '+' buttons on Grocery Lists and Cookbooks have a 40pt tap target — raise to 44pt"
-status: in-progress
+status: done
 priority: low
 created: 2026-10-19
 updated: 2026-10-19
@@ -49,3 +49,7 @@ The mobile-reviewer raised it as a warning on PR #1520. The one-review-pass rule
 ### 2026-10-19
 
 - Filed from the PR #1520 mobile review.
+
+### 2026-10-19 (executed)
+
+- Both header "+" Pressables now use `hitSlop={10}` (24pt icon + 20 = 44pt); tests pin it on both screens.
