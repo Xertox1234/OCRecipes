@@ -1,6 +1,6 @@
 ---
 title: "Back button: make every pushed screen use the native glass pill (QA sweep #66)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-19
 updated: 2026-10-19
@@ -24,10 +24,10 @@ This item carries over from `todos/archive/P3-2026-10-18-screen-chrome-consisten
 
 ## Acceptance Criteria
 
-- [ ] The cause of pill vs plain text is found with evidence: a simulator screenshot of each style, plus the option that differs between the two screens.
-- [ ] The fix goes in shared screen options or in the cause itself, not in a custom `headerLeft` on each screen.
-- [ ] Settings, Favourites, Pantry and one Plan-stack screen all show the glass pill on the iOS Simulator.
-- [ ] Re-checked in light and dark mode.
+- [x] The cause of pill vs plain text is found with evidence: the bottom-tab cross-fade (`MainTabNavigator` `animation: "fade"`), an iOS 26.1+ UIKit regression (react-native-screens#3453). Not a per-screen option. Evidence table in the solution doc.
+- [x] The fix goes in the cause itself: tab `animation: "none"` gives every back button the pill. Not applied, by owner decision (keep the fade).
+- [ ] Settings, Favourites, Pantry and one Plan-stack screen all show the glass pill on the iOS Simulator. Verified with the fade off (Settings, Pantry from Profile, Browse Recipes); not shipped, by owner decision.
+- [ ] Re-checked in light and dark mode. Not done: dark mode only; no change shipped.
 
 ## Implementation Notes
 
@@ -54,3 +54,5 @@ This item carries over from `todos/archive/P3-2026-10-18-screen-chrome-consisten
 ### 2026-10-19
 
 - Filed from the PR #1520 review, with the owner's decision recorded (glass pill everywhere).
+- Simulator investigation (iOS 26.5, cold relaunch per check): with the fade on, every screen is plain after a relaunch; the pills QA saw appeared only in the first visits of a long-running session. Dropping `headerBlurEffect` changed nothing; `headerTransparent: false` broke the header. Tab `animation: "none"` gave the pill on every checked screen, through repeated tab switches. The issue's 0.001-opacity workaround (custom `sceneStyleInterpolator`) did not help.
+- Owner decision: keep the tab fade; back buttons stay plain until Apple fixes iOS. Recorded in `docs/solutions/logic-errors/tab-fade-strips-ios26-glass-from-back-button-2026-10-19.md` and in a comment next to `animation` in `client/navigation/MainTabNavigator.tsx`. Closed.
