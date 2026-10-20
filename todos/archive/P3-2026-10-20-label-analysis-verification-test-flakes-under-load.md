@@ -1,6 +1,6 @@
 ---
 title: "LabelAnalysisScreen verification 'returns past the label camera' test flaked once under a full --retry=0 suite"
-status: backlog
+status: done
 priority: low
 created: 2026-10-20
 updated: 2026-10-20
@@ -28,3 +28,10 @@ Found while verifying the supertest loopback-bind fix — unrelated to it (clien
 
 - Files: `client/screens/__tests__/LabelAnalysisScreen.verification.test.tsx`; the screen is `client/screens/LabelAnalysisScreen.tsx` (read-only unless the cause is there).
 - Repro loop: `for i in $(seq 20); do NODE_ENV=test npx vitest run client/screens/__tests__/LabelAnalysisScreen.verification.test.tsx --retry=0 & done; wait`.
+
+## Updates
+
+### 2026-10-20
+
+- Reproduced 1/20 in parallel `--retry=0`: the submit carried `sessionId: null`. This was a real (narrow) race in the screen, not the test: `useMutation` installs a new `mutationFn` in an effect, so a tap between the render that sets the session and its effects ran the old closure (`sessionId` null) after `handleLog`'s guard had passed.
+- Fix: `handleLog` passes the checked session as a mutation variable to both `verifyLog` and `confirmLog`. 40/40 parallel `--retry=0` runs pass. Added the trigger to `docs/solutions/logic-errors/setstate-mutateasync-stale-closure-2026-05-13.md`.

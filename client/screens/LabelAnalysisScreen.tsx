@@ -275,14 +275,20 @@ export default function LabelAnalysisScreen() {
     };
   }, [imageUri, barcode, retryToken, toast, retryUpload]);
 
-  // The variable is the servings count at tap time, so the POST and the
-  // success toast agree even if the stepper moves while the request is out.
+  // The variables are the session and servings count at tap time, so the POST
+  // and the success toast agree even if the stepper moves while the request is
+  // out. The session comes from handleLog, not this closure: useMutation picks
+  // up a new mutationFn in an effect, so a tap right after the session arrives
+  // can still run the previous render's closure, where sessionId is null.
   const { mutate: confirmLog, isPending: isConfirming } = useMutation({
-    mutationFn: (servingsAtTap: number) => {
-      if (!sessionId) throw new Error("No session");
-      return confirmLabelAnalysis(sessionId, servingsAtTap);
-    },
-    onSuccess: (_data, servingsAtTap) => {
+    mutationFn: ({
+      sessionId: sessionAtTap,
+      servingsAtTap,
+    }: {
+      sessionId: string;
+      servingsAtTap: number;
+    }) => confirmLabelAnalysis(sessionAtTap, servingsAtTap),
+    onSuccess: (_data, { servingsAtTap }) => {
       haptics.notification(
         getConfidenceHapticType(getConfidenceTier(labelData?.confidence ?? 0)),
       );
@@ -369,10 +375,11 @@ export default function LabelAnalysisScreen() {
   );
 
   const { mutate: verifyLog, isPending: isVerifying } = useMutation({
-    mutationFn: async () => {
+    // sessionId is passed at tap time, for the reason given on confirmLog.
+    mutationFn: async (sessionAtTap: string) => {
       const response = await apiRequest("POST", "/api/verification/submit", {
         barcode: verifyBarcode,
-        sessionId,
+        sessionId: sessionAtTap,
       });
       return (await response.json()) as VerificationSubmitResponse;
     },
@@ -399,9 +406,9 @@ export default function LabelAnalysisScreen() {
     if (!sessionId) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     if (verificationMode && verifyBarcode) {
-      verifyLog();
+      verifyLog(sessionId);
     } else {
-      confirmLog(servings);
+      confirmLog({ sessionId, servingsAtTap: servings });
     }
   }, [
     sessionId,

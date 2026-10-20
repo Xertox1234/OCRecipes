@@ -46,6 +46,10 @@ await addPhoto.mutateAsync({ sessionId: sid, photoUri }); // always fresh
 
 This is the general rule for any TanStack Query mutation that consumes freshly-set state in the same handler.
 
+### Second trigger: an inline `mutationFn` read across renders (2026-10-20)
+
+The stale read does not need a same-handler `setState`. `useMutation` hands each render's options to its observer in a `useEffect` (`@tanstack/react-query` 5.101, `build/modern/useMutation.js`), so between a commit and its passive effects the observer still holds the PREVIOUS render's `mutationFn`. `LabelAnalysisScreen` had `mutationFn: () => apiRequest(..., { sessionId })` closing over state, and `handleLog` guarded `if (!sessionId) return` from the NEW render. A tap that landed in that window passed the guard and still POSTed `sessionId: null`. It showed up as a test flake (1 in 20 parallel runs). The fix is the same as above: `handleLog` passes the value it just checked (`verifyLog(sessionId)`, `confirmLog({ sessionId, servingsAtTap })`), so the guard and the request read one value.
+
 ## Prevention
 
 - Do not parameterize mutation hooks with state values that change within the same handler. Pass them through `mutateAsync` variables instead.
