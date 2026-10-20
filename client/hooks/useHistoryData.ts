@@ -1,11 +1,7 @@
-import { useCallback, useMemo, useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, Share } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { Alert, Share } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 
 import { useHaptics } from "@/hooks/useHaptics";
@@ -19,21 +15,12 @@ import { getApiUrl } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
 import type { ScanHistoryNavigationProp } from "@/types/navigation";
-import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
-import type {
-  ScannedItemResponse,
-  PaginatedResponse,
-  DailySummaryResponse,
-} from "@/types/api";
-import type { RouteProp } from "@react-navigation/native";
-import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
+import type { ScannedItemResponse, PaginatedResponse } from "@/types/api";
 
 const PAGE_SIZE = 50;
-const DASHBOARD_ITEM_LIMIT = 5;
 
 export function useHistoryData() {
   const navigation = useNavigation<ScanHistoryNavigationProp>();
-  const route = useRoute<RouteProp<ProfileStackParamList, "ScanHistory">>();
   const { user } = useAuthContext();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
@@ -49,46 +36,7 @@ export function useHistoryData() {
   const [groceryPickerVisible, setGroceryPickerVisible] = useState(false);
   const [groceryItemName, setGroceryItemName] = useState("");
 
-  // Determine if we're showing dashboard or full history
-  const showAll = route.params?.showAll ?? false;
-
-  // Dashboard queries (only when not showing all)
-  const {
-    data: todaySummary,
-    isLoading: summaryLoading,
-    isFetching: summaryFetching,
-    isError: summaryError,
-  } = useQuery<DailySummaryResponse>({
-    queryKey: QUERY_KEYS.dailySummary,
-    queryFn: async (): Promise<DailySummaryResponse> => {
-      const baseUrl = getApiUrl();
-      const url = new URL("/api/daily-summary", baseUrl);
-
-      const headers: Record<string, string> = {};
-      const token = await tokenStorage.get();
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-      try {
-        headers["X-Timezone"] =
-          Intl.DateTimeFormat().resolvedOptions().timeZone;
-      } catch {
-        headers["X-Timezone"] = "UTC";
-      }
-
-      const res = await fetch(url, { headers });
-      if (!res.ok) {
-        const text = (await res.text()) || res.statusText;
-        throw new Error(`${res.status}: ${text}`);
-      }
-      return res.json();
-    },
-    staleTime: 1000 * 60 * 2, // 2 minutes
-    refetchOnWindowFocus: true,
-    enabled: !!user && !showAll,
-  });
-
-  // Full history with infinite scroll (for showAll mode)
+  // Full history with infinite scroll
   const {
     data,
     isLoading: historyLoading,
@@ -140,37 +88,16 @@ export function useHistoryData() {
     [data],
   );
 
-  // Items to display: limited for dashboard, all for full history
-  const displayItems = showAll
-    ? allItems
-    : allItems.slice(0, DASHBOARD_ITEM_LIMIT);
+  // Only surface the error state when there is no cached data to show, so a
+  // background-refetch failure over stale data does not blank an
+  // otherwise-usable screen.
+  const isError = historyError && allItems.length === 0;
 
-  const isLoading = showAll ? historyLoading : historyLoading || summaryLoading;
-  // Error gate mirrors the loading gate: the dashboard depends on the daily
-  // summary (zero-defaulting its totals would present a fetch failure as
-  // legitimate "0 calories" data), the full-history view depends on the
-  // infinite scanned-items query. Only surface the error state when there is no
-  // cached data to show, so a background-refetch failure over stale data does
-  // not blank an otherwise-usable screen.
-  const isError = showAll
-    ? historyError && allItems.length === 0
-    : (summaryError && !todaySummary) ||
-      (historyError && allItems.length === 0);
-  const isRefreshingDashboard = summaryFetching || isRefetching;
-
-  // Coordinated pull-to-refresh for dashboard
   const handleRefresh = useCallback(async () => {
     setExpandedItemId(null);
-    if (!showAll) {
-      await Promise.all([
-        queryClient.refetchQueries({ queryKey: QUERY_KEYS.dailySummary }),
-        queryClient.refetchQueries({ queryKey: QUERY_KEYS.scannedItems }),
-      ]);
-    } else {
-      await refetch();
-    }
+    await refetch();
     haptics.impact();
-  }, [showAll, queryClient, refetch, haptics]);
+  }, [refetch, haptics]);
 
   const handleToggleExpand = useCallback(
     (itemId: number) => {
@@ -283,11 +210,6 @@ export function useHistoryData() {
     navigation.navigate("Scan");
   }, [navigation, haptics]);
 
-  const handleViewAllPress = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.setParams({ showAll: true });
-  }, [navigation, haptics]);
-
   // Pending item IDs for mutation loading state — passed as scalars so
   // HistoryItem can compute its own loading booleans internally.
   const favouritePendingItemId = toggleFavourite.isPending
@@ -302,37 +224,10 @@ export function useHistoryData() {
   }, []);
 
   const handleEndReached = useCallback(() => {
-    if (showAll && hasNextPage && !isFetchingNextPage) {
+    if (hasNextPage && !isFetchingNextPage) {
       void fetchNextPage();
     }
-  }, [showAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  // Calculate calorie progress
-  const calorieGoal =
-    user?.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories;
-  const currentCalories = Math.round(todaySummary?.totalCalories || 0);
-  const calorieProgress = Math.min((currentCalories / calorieGoal) * 100, 100);
-  const userName = user?.displayName || user?.username || "there";
-  const itemCount = todaySummary?.itemCount || 0;
-  const plannedCalories = Math.round(todaySummary?.plannedCalories || 0);
-
-  // Announce calorie summary for screen readers once on dashboard load
-  const hasAnnouncedRef = useRef(false);
-  useEffect(() => {
-    if (!showAll && !isLoading && todaySummary && !hasAnnouncedRef.current) {
-      hasAnnouncedRef.current = true;
-      AccessibilityInfo.announceForAccessibility(
-        `Today: ${currentCalories} of ${calorieGoal} calories, ${itemCount} items scanned`,
-      );
-    }
-  }, [
-    showAll,
-    isLoading,
-    todaySummary,
-    currentCalories,
-    calorieGoal,
-    itemCount,
-  ]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return {
     // State
@@ -342,27 +237,17 @@ export function useHistoryData() {
     groceryPickerVisible,
     setGroceryPickerVisible,
     groceryItemName,
-    showAll,
     reducedMotion,
     isPremium,
 
     // Data
-    displayItems,
-    isLoading,
+    displayItems: allItems,
+    isLoading: historyLoading,
     isError,
     isRefetching,
-    isRefreshingDashboard,
     isFetchingNextPage,
     favouritePendingItemId,
     discardPendingItemId,
-
-    // Dashboard data
-    userName,
-    currentCalories,
-    calorieGoal,
-    calorieProgress,
-    itemCount,
-    plannedCalories,
 
     // Handlers
     handleRefresh,
@@ -374,7 +259,6 @@ export function useHistoryData() {
     handleShare,
     handleDiscard,
     handleScanPress,
-    handleViewAllPress,
     handleScrollBeginDrag,
     handleEndReached,
   };

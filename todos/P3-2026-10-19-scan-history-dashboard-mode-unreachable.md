@@ -1,6 +1,6 @@
 ---
 title: "Scan History's 'Today dashboard' mode is unreachable after QA sweep #80 — remove it"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-19
 updated: 2026-10-19

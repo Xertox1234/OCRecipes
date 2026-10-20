@@ -52,7 +52,6 @@ const ERROR_ANNOUNCEMENT = "Couldn't load your history. Try again.";
  */
 function historyState(overrides: Partial<HistoryData> = {}) {
   return {
-    showAll: false,
     isLoading: true,
     isError: false,
     displayItems: [],
@@ -70,53 +69,34 @@ describe("HistoryScreen — loading skeleton screen-reader signal", () => {
     vi.useRealTimers();
   });
 
-  it("hides the dashboard skeleton from screen readers as one unit", () => {
-    mockUseHistoryData.mockReturnValue(historyState({ showAll: false }));
-    renderComponent(<HistoryScreen />);
-
-    const list = screen.getByTestId("skeleton-list");
-    // DashboardSkeleton's own root View has no testID; the list sits directly
-    // inside it, so its parent is the region that hides the stats/CTA/header
-    // boxes the list itself doesn't cover.
-    expect(list.parentElement?.getAttribute("aria-hidden")).toBe("true");
-    expect(list.getAttribute("aria-hidden")).toBe("true");
-  });
-
   it("hides the full-history skeleton from screen readers", () => {
-    mockUseHistoryData.mockReturnValue(historyState({ showAll: true }));
+    mockUseHistoryData.mockReturnValue(historyState());
     renderComponent(<HistoryScreen />);
 
-    // Exactly one: the FlatList's ListEmptyComponent skeleton, not the
-    // dashboard one.
+    // Exactly one: the FlatList's ListEmptyComponent skeleton.
     const lists = screen.getAllByTestId("skeleton-list");
     expect(lists).toHaveLength(1);
     expect(lists[0].getAttribute("aria-hidden")).toBe("true");
   });
 
-  it.each([
-    { site: "dashboard", showAll: false },
-    { site: "full-history", showAll: true },
-  ])(
-    "announces Loading once after the delay on the $site skeleton, not synchronously",
-    ({ showAll }) => {
-      const announceSpy = vi.spyOn(
-        RN.AccessibilityInfo,
-        "announceForAccessibility",
-      );
-      try {
-        mockUseHistoryData.mockReturnValue(historyState({ showAll }));
-        renderComponent(<HistoryScreen />);
+  it("announces Loading once after the delay on the skeleton, not synchronously", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      mockUseHistoryData.mockReturnValue(historyState());
+      renderComponent(<HistoryScreen />);
 
-        expect(announceSpy).not.toHaveBeenCalledWith("Loading");
+      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
 
-        vi.advanceTimersByTime(LOADING_ANNOUNCEMENT_DELAY_MS);
+      vi.advanceTimersByTime(LOADING_ANNOUNCEMENT_DELAY_MS);
 
-        expect(announceSpy).toHaveBeenCalledExactlyOnceWith("Loading");
-      } finally {
-        announceSpy.mockRestore();
-      }
-    },
-  );
+      expect(announceSpy).toHaveBeenCalledExactlyOnceWith("Loading");
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
 
   // isLoading and isError come from two independent queries (useHistoryData),
   // so an error can land while the other query is still loading. Without the
@@ -199,7 +179,6 @@ describe("HistoryScreen — row tap and back affordance", () => {
   function renderList() {
     mockUseHistoryData.mockReturnValue(
       historyState({
-        showAll: true,
         isLoading: false,
         displayItems: [item],
         expandedItemId: null,

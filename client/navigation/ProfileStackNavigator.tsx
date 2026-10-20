@@ -55,7 +55,7 @@ export type ProfileStackParamList = LibraryRoutes & {
     mfaEnabled: boolean;
   };
   SavedItems: undefined;
-  ScanHistory: { showAll?: boolean } | undefined;
+  ScanHistory: undefined;
   ItemDetail: { itemId: number };
   FavouriteRecipes: undefined;
   CoachReminders: undefined;
@@ -129,7 +129,6 @@ export default function ProfileStackNavigator() {
       <Stack.Screen
         name="ScanHistory"
         component={HistoryScreen}
-        initialParams={{ showAll: true }}
         options={{
           headerTitle: () => (
             <HeaderTitle title="Scan History" showIcon={false} />
