@@ -1,6 +1,6 @@
 ---
 title: "SecondFactorField 'announces the send once' test fails on every first attempt, passes only on retry"
-status: backlog
+status: done
 priority: low
 created: 2026-10-20
 updated: 2026-10-20
@@ -29,3 +29,11 @@ Found while verifying the supertest loopback-bind fix (2026-10-20). The componen
 
 - Files: `client/components/__tests__/SecondFactorField.test.tsx` (likely the only change), `client/components/SecondFactorField.tsx` (read-only unless the cause is in the component).
 - Repro: `NODE_ENV=test npx vitest run client/components/__tests__/SecondFactorField.test.tsx --retry=0`.
+
+## Updates
+
+### 2026-10-20
+
+- Cause: InlineError announces through `announceTogether` on a 0 ms real timer. The 429 test ended before it fired, so "Too many codes today…" landed in the next test's fresh spy (logged call stack: `announce-together.ts:21` <- timer). The component never announces on a tick.
+- The "a refused send announces nothing" test was false, not just flaky: a refused send does announce the error; the assertion ran before the timer. Renamed to "announces the error, never 'Code sent'" and it now waits for the announcement.
+- The 429 test now waits for its own announcement, so nothing leaks. 10/10 `--retry=0` runs pass; adding a second announce in `sendCode` fails the test (mutation check).

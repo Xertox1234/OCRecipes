@@ -68,6 +68,13 @@ describe("SecondFactorField", () => {
         "Too many codes today. Use the newest one in your email, or try again tomorrow.",
       ),
     ).toBeTruthy();
+    // InlineError announces on a 0 ms timer (announceTogether). Wait for it
+    // here, or it fires inside the next test and lands in that test's spy.
+    await waitFor(() =>
+      expect(announceSpy).toHaveBeenCalledWith(
+        "Too many codes today. Use the newest one in your email, or try again tomorrow.",
+      ),
+    );
     expect(screen.getByLabelText("Email me a code")).toBeTruthy();
   });
 
@@ -100,7 +107,10 @@ describe("SecondFactorField", () => {
     expect(announceSpy).not.toHaveBeenCalled();
   });
 
-  it("a refused send announces nothing", async () => {
+  // The error itself is announced (InlineError, after a 0 ms timer); the
+  // "Code sent" line must not be. Asserting "nothing" before that timer fired
+  // passed only because it looked too early.
+  it("a refused send announces the error, never 'Code sent'", async () => {
     send.mockRejectedValue(new ApiError("500: {}", undefined, 500));
     renderComponent(
       <SecondFactorField onChange={vi.fn()} emailCode={{ send }} />,
@@ -109,6 +119,11 @@ describe("SecondFactorField", () => {
     expect(
       await screen.findByText("Couldn't send a code. Please try again."),
     ).toBeTruthy();
-    expect(announceSpy).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(announceSpy).toHaveBeenCalledWith(
+        "Couldn't send a code. Please try again.",
+      ),
+    );
+    expect(announceSpy).toHaveBeenCalledTimes(1);
   });
 });
