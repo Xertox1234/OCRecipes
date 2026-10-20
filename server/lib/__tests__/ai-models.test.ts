@@ -19,7 +19,8 @@ describe("AI_FEATURES table", () => {
   it("every model has a provider/ prefix and no fallback does", () => {
     for (const [name, row] of rows) {
       expect(row.model, name).toMatch(/^[a-z0-9-]+\/[^/]+$/);
-      expect(row.fallback, name).not.toContain("/");
+      if (row.fallback !== undefined)
+        expect(row.fallback, name).not.toContain("/");
     }
   });
 
@@ -80,6 +81,28 @@ describe("AI_FEATURES table", () => {
     for (const [name, row] of rows) {
       expect(hostForModel(row.model), name).toBeDefined();
     }
+  });
+
+  it("a Vertex-first row has no OpenAI fallback; every other row has one", () => {
+    for (const [name, row] of rows) {
+      if (row.primary === "vertex") {
+        expect(row.fallback, name).toBeUndefined();
+        expect(row.model, name).toMatch(/^google\//);
+      } else {
+        expect(typeof row.fallback, name).toBe("string");
+      }
+    }
+  });
+
+  // Rollout allowlist (spec 2026-10-19-vision-rows-vertex-direct §2.1): grows
+  // PR by PR until every vision row is here, then this test asserts all of them.
+  const VERTEX_FIRST: string[] = [];
+  it("Vertex-first rows are exactly the rolled-out ones", () => {
+    const flagged = rows
+      .filter(([, row]) => row.primary === "vertex")
+      .map(([name]) => name)
+      .sort();
+    expect(flagged).toEqual([...VERTEX_FIRST].sort());
   });
 
   it("isAiFeature narrows known names only", () => {

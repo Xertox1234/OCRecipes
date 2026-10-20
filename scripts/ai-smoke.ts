@@ -1,9 +1,10 @@
 /**
- * One tiny call per AI_FEATURES row through OpenRouter with the fallback OFF
- * (spec §6 step 4). Proves zero-retention routing, params (incl. adapt) and
- * JSON/vision mode for every row in the current config. Run after setting
- * OPENROUTER_API_KEY and after every row switch: `npm run ai:smoke`
- * (or `npm run ai:smoke -- coach-chat` for one row).
+ * One tiny call per AI_FEATURES row with the fallback OFF (spec §6 step 4):
+ * OpenRouter for most rows, Vertex AI direct for `primary: "vertex"` rows when
+ * the GOOGLE_VERTEX_* vars are set (else their OpenRouter route). Proves
+ * zero-retention routing, params (incl. adapt) and JSON/vision mode for every
+ * row in the current config. Run after setting the keys and after every row
+ * switch: `npm run ai:smoke` (or `npm run ai:smoke -- coach-chat` for one row).
  */
 import "dotenv/config";
 import { AI_FEATURES, isAiFeature } from "../server/lib/ai-models";
@@ -11,11 +12,31 @@ import type { AiFeature, AiFeatureConfig } from "../server/lib/ai-models";
 import { aiChat, withAiCallContext } from "../server/lib/ai-client";
 import type { AiChat, AiChatParams } from "../server/lib/ai-client";
 import type { AiCallContext } from "../server/lib/ai-call-context";
+import { getAiCallContext } from "../server/lib/ai-call-context";
 import { modelMatches } from "../evals/lib/candidate";
 
 // 1×1 PNG — enough for the provider to accept an image part.
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/** Smoke needs at least one fallback-free route: Vertex (all 3 vars) or OpenRouter. */
+export function smokeKeysPresent(
+  env: Record<string, string | undefined>,
+): boolean {
+  const vertex = [
+    "GOOGLE_VERTEX_PROJECT",
+    "GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL",
+    "GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY",
+  ].every((k) => env[k]?.trim());
+  return vertex || !!env.OPENROUTER_API_KEY?.trim();
+}
+
+/** Vertex may answer with the bare id; OpenRouter answers provider-prefixed. */
+function answeredMatches(requested: string, answered: string | null): boolean {
+  if (modelMatches(requested, answered)) return true;
+  const slash = requested.indexOf("/");
+  return slash > 0 && modelMatches(requested.slice(slash + 1), answered);
+}
 
 export function buildSmokeRequest(row: AiFeatureConfig): AiChatParams {
   const text = row.json
@@ -52,8 +73,12 @@ export async function smokeRow(
   try {
     const res = await chat(feature, buildSmokeRequest(row));
     const content = res.choices[0]?.message?.content ?? "";
-    const provider = (res as unknown as { provider?: string }).provider ?? null;
-    if (!modelMatches(row.model, res.model)) {
+    // Vertex replies carry no `provider`; the call record names the route.
+    const provider =
+      (res as unknown as { provider?: string }).provider ??
+      getAiCallContext()?.calls.at(-1)?.answeredProvider ??
+      null;
+    if (!answeredMatches(row.model, res.model)) {
       return {
         feature,
         ok: false,
@@ -85,9 +110,9 @@ export async function smokeRow(
 }
 
 async function main(): Promise<void> {
-  if (!process.env.OPENROUTER_API_KEY?.trim()) {
+  if (!smokeKeysPresent(process.env)) {
     console.error(
-      "ai:smoke needs OPENROUTER_API_KEY (it never uses the fallback).",
+      "ai:smoke needs GOOGLE_VERTEX_* (all three) or OPENROUTER_API_KEY (it never uses the OpenAI fallback).",
     );
     process.exit(2);
   }

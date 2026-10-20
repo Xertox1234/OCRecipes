@@ -10,6 +10,14 @@ export class InStreamError extends Error {
   }
 }
 
+/** The Vertex service-account login failed (bad/expired key, wrong email). */
+export class VertexAuthError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "VertexAuthError";
+  }
+}
+
 // OpenRouter's moderation on some models (e.g. openai/*) rejects the input.
 const MODERATION_PATTERNS = [/requires moderation/i, /input was flagged/i];
 
@@ -30,6 +38,7 @@ export function isModerationBlock(err: unknown): boolean {
 }
 
 export function classifyAiFailure(err: unknown): AiFailureKind {
+  if (err instanceof VertexAuthError) return "config";
   if (err instanceof InStreamError) return "transport";
   if (err instanceof OpenAI.APIError) {
     const status = err.status;
