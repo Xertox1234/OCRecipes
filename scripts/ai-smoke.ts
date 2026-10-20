@@ -1,9 +1,11 @@
 /**
  * One tiny call per AI_FEATURES row with the fallback OFF (spec §6 step 4):
  * OpenRouter for most rows, Vertex AI direct for `primary: "vertex"` rows when
- * the GOOGLE_VERTEX_* vars are set (else their OpenRouter route). Proves
- * zero-retention routing, params (incl. adapt) and JSON/vision mode for every
- * row in the current config. Run after setting the keys and after every row
+ * the GOOGLE_VERTEX_* vars are set (else their OpenRouter route). Proves the
+ * answering route (zero-retention on OpenRouter), params (incl. adapt) and
+ * JSON/vision mode for every row in the current config. It cannot see Vertex
+ * retention: that is the project's cacheConfig and abuse-monitoring exemption
+ * (spec 2026-10-19-vision-rows-vertex-direct §4). Run after setting the keys and after every row
  * switch: `npm run ai:smoke` (or `npm run ai:smoke -- coach-chat` for one row).
  */
 import "dotenv/config";

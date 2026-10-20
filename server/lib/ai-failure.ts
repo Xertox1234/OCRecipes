@@ -10,8 +10,13 @@ export class InStreamError extends Error {
   }
 }
 
-/** The Vertex service-account login failed (bad/expired key, wrong email). */
-export class VertexAuthError extends Error {
+/**
+ * The Vertex service-account login failed (bad/expired key, wrong email).
+ * Extends OpenAIError because the SDK re-throws those from the async apiKey
+ * setter as-is and wraps anything else in a generic error (openai client.js
+ * `_callApiKey`) — which would classify as transport and hide the bad key.
+ */
+export class VertexAuthError extends OpenAI.OpenAIError {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = "VertexAuthError";
