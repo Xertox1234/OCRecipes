@@ -1,6 +1,6 @@
 ---
 title: "Header '+' buttons on Grocery Lists and Cookbooks have a 40pt tap target — raise to 44pt"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-19
 updated: 2026-10-19

@@ -162,4 +162,10 @@ describe("GroceryListsScreen -- header create button (QA sweep #29)", () => {
       screen.queryAllByLabelText("Generate new grocery list"),
     ).toHaveLength(0);
   });
+
+  it("has a tap target of at least 44pt (24pt icon + hitSlop on both sides)", () => {
+    renderOn("GroceryLists", false);
+    const hitSlop = (headerRight()!()!.props as { hitSlop: number }).hitSlop;
+    expect(24 + 2 * hitSlop).toBeGreaterThanOrEqual(44);
+  });
 });
