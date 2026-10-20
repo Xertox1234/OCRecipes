@@ -77,7 +77,7 @@ export function navigateLibraryItem(
       navigation.navigate("SavedItems");
       break;
     case "scanHistory":
-      navigation.navigate("ScanHistory", { showAll: true });
+      navigation.navigate("ScanHistory");
       break;
     case "groceryLists":
       navigation.navigate("GroceryLists");

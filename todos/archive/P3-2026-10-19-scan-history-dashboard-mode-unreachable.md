@@ -1,6 +1,6 @@
 ---
 title: "Scan History's 'Today dashboard' mode is unreachable after QA sweep #80 — remove it"
-status: backlog
+status: done
 priority: low
 created: 2026-10-19
 updated: 2026-10-19
@@ -57,3 +57,7 @@ Home has its own daily summary.
 ### 2026-10-19
 
 - Filed from the PR #1520 review.
+
+### 2026-10-19 (executed)
+
+- Removed the dashboard mode from `HistoryScreen.tsx` and `useHistoryData.ts`, the `showAll` param (`ProfileStackNavigator.tsx`, `library-config.ts`), and the dashboard test cases. `client/types/navigation.ts` needed no change.

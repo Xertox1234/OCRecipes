@@ -6,7 +6,6 @@ import {
   Pressable,
   RefreshControl,
   ActivityIndicator,
-  ScrollView,
   AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,11 +24,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { EmptyState } from "@/components/EmptyState";
-import {
-  SkeletonList,
-  SkeletonBox,
-  SkeletonProvider,
-} from "@/components/SkeletonLoader";
+import { SkeletonList } from "@/components/SkeletonLoader";
 import { HistoryItemActions } from "@/components/HistoryItemActions";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { GroceryListPickerModal } from "@/components/GroceryListPickerModal";
@@ -37,7 +32,7 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHistoryData } from "@/hooks/useHistoryData";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 import { pressSpringConfig, expandTimingConfig } from "@/constants/animations";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { ScannedItemResponse } from "@/types/api";
@@ -335,242 +330,6 @@ function LoadingFooter() {
   );
 }
 
-function DashboardSkeleton() {
-  return (
-    <SkeletonProvider>
-      <View
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      >
-        {/* Stats row skeleton */}
-        <View style={styles.statsRow}>
-          <SkeletonBox
-            width="48%"
-            height={100}
-            borderRadius={BorderRadius["2xl"]}
-          />
-          <SkeletonBox
-            width="48%"
-            height={100}
-            borderRadius={BorderRadius["2xl"]}
-          />
-        </View>
-        {/* CTA skeleton */}
-        <SkeletonBox
-          width="100%"
-          height={120}
-          borderRadius={BorderRadius["2xl"]}
-          style={{ marginTop: Spacing.xl }}
-        />
-        {/* Section header skeleton */}
-        <SkeletonBox
-          width={150}
-          height={24}
-          style={{ marginTop: Spacing["2xl"], marginBottom: Spacing.lg }}
-        />
-        {/* Recent items skeleton */}
-        <SkeletonList count={3} />
-      </View>
-    </SkeletonProvider>
-  );
-}
-
-/** Props for DashboardHeader component */
-type DashboardHeaderProps = {
-  userName: string;
-  currentCalories: number;
-  calorieGoal: number;
-  calorieProgress: number;
-  itemCount: number;
-  plannedCalories: number;
-  reducedMotion: boolean;
-  onScanPress: () => void;
-};
-
-const DashboardHeader = React.memo(function DashboardHeader({
-  userName,
-  currentCalories,
-  calorieGoal,
-  calorieProgress,
-  itemCount,
-  plannedCalories,
-  reducedMotion,
-  onScanPress,
-}: DashboardHeaderProps) {
-  const { theme } = useTheme();
-
-  return (
-    <View>
-      {/* Welcome */}
-      <Animated.View
-        entering={
-          reducedMotion ? undefined : FadeInDown.delay(50).duration(300)
-        }
-      >
-        <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-          WELCOME BACK
-        </ThemedText>
-        <ThemedText type="h2" style={{ marginBottom: Spacing.xl }}>
-          {userName}
-        </ThemedText>
-      </Animated.View>
-
-      {/* Stats row */}
-      <Animated.View
-        entering={
-          reducedMotion ? undefined : FadeInDown.delay(100).duration(300)
-        }
-        style={styles.statsRow}
-      >
-        {/* Calories card */}
-        <Card
-          elevation={1}
-          style={[styles.statCard, { backgroundColor: theme.accentSolid }]}
-        >
-          <View
-            accessible={true}
-            accessibilityRole="text"
-            accessibilityLabel={`Today's calories: ${currentCalories} of ${calorieGoal} consumed. ${Math.round(calorieProgress)} percent of daily goal.${plannedCalories > 0 ? ` ${plannedCalories} planned.` : ""}`}
-          >
-            <ThemedText
-              type="caption"
-              style={{ color: withOpacity(theme.buttonText, 0.9) }}
-            >
-              TODAY&apos;S CALORIES
-            </ThemedText>
-            <View style={styles.statValueRow}>
-              <ThemedText
-                type="h2"
-                style={{ color: theme.buttonText }}
-                maxScale={1.3}
-              >
-                {currentCalories.toLocaleString()}
-              </ThemedText>
-              <ThemedText
-                type="body"
-                style={{
-                  color: withOpacity(theme.buttonText, 0.9),
-                  marginLeft: Spacing.xs,
-                }}
-              >
-                / {calorieGoal.toLocaleString()}
-              </ThemedText>
-            </View>
-            {plannedCalories > 0 && (
-              <ThemedText
-                type="caption"
-                style={{
-                  color: withOpacity(theme.buttonText, 0.9),
-                  marginTop: Spacing.xs,
-                }}
-              >
-                {plannedCalories.toLocaleString()} planned
-              </ThemedText>
-            )}
-          </View>
-        </Card>
-
-        {/* Items scanned card */}
-        <Card
-          elevation={1}
-          style={[
-            styles.statCard,
-            { backgroundColor: theme.backgroundSecondary },
-          ]}
-        >
-          <View
-            accessible={true}
-            accessibilityRole="text"
-            accessibilityLabel={`Items scanned today: ${itemCount}`}
-          >
-            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-              ITEMS SCANNED
-            </ThemedText>
-            <ThemedText type="h2" style={{ color: theme.text }} maxScale={1.3}>
-              {itemCount}
-            </ThemedText>
-          </View>
-        </Card>
-      </Animated.View>
-
-      {/* Scan CTA */}
-      <Animated.View
-        entering={
-          reducedMotion ? undefined : FadeInDown.delay(150).duration(300)
-        }
-      >
-        <Pressable
-          style={({ pressed }) => [
-            styles.scanCTA,
-            {
-              backgroundColor: theme.backgroundSecondary,
-              opacity: pressed ? 0.8 : 1,
-            },
-          ]}
-          onPress={onScanPress}
-          accessibilityRole="button"
-          accessibilityLabel="Scan barcode. Opens camera to scan food barcode."
-        >
-          <View style={styles.scanCTAIcon}>
-            <Feather name="camera" size={32} color={theme.text} />
-          </View>
-          <ThemedText type="h4" style={{ marginTop: Spacing.md }}>
-            Scan Barcode
-          </ThemedText>
-          <ThemedText
-            type="small"
-            style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-          >
-            Identify food & get AI recipes
-          </ThemedText>
-        </Pressable>
-      </Animated.View>
-
-      {/* Recent History section header */}
-      <Animated.View
-        entering={
-          reducedMotion ? undefined : FadeInDown.delay(200).duration(300)
-        }
-        style={styles.sectionHeader}
-      >
-        <ThemedText type="h4">Recent History</ThemedText>
-      </Animated.View>
-    </View>
-  );
-});
-
-/** Props for ViewAllFooter component */
-type ViewAllFooterProps = {
-  onViewAllPress: () => void;
-};
-
-const ViewAllFooter = React.memo(function ViewAllFooter({
-  onViewAllPress,
-}: ViewAllFooterProps) {
-  const { theme } = useTheme();
-
-  return (
-    <View style={styles.viewAllContainer}>
-      <Pressable
-        onPress={onViewAllPress}
-        style={styles.viewAllLink}
-        accessibilityRole="link"
-        accessibilityLabel="View all history"
-      >
-        <ThemedText type="body" style={{ color: theme.link }}>
-          View All History
-        </ThemedText>
-        <Feather
-          name="arrow-right"
-          size={16}
-          color={theme.link}
-          style={{ marginLeft: Spacing.xs }}
-        />
-      </Pressable>
-    </View>
-  );
-});
-
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -588,7 +347,6 @@ export default function HistoryScreen() {
     groceryPickerVisible,
     setGroceryPickerVisible,
     groceryItemName,
-    showAll,
     reducedMotion,
     isPremium,
 
@@ -597,18 +355,9 @@ export default function HistoryScreen() {
     isLoading,
     isError,
     isRefetching,
-    isRefreshingDashboard,
     isFetchingNextPage,
     favouritePendingItemId,
     discardPendingItemId,
-
-    // Dashboard data
-    userName,
-    currentCalories,
-    calorieGoal,
-    calorieProgress,
-    itemCount,
-    plannedCalories,
 
     // Handlers
     handleRefresh,
@@ -620,7 +369,6 @@ export default function HistoryScreen() {
     handleShare,
     handleDiscard,
     handleScanPress,
-    handleViewAllPress,
     handleScrollBeginDrag,
     handleEndReached,
   } = useHistoryData();
@@ -642,19 +390,15 @@ export default function HistoryScreen() {
     }
   }, [isError]);
 
-  // Tell screen-reader users the dashboard/history is loading. Delayed
+  // Tell screen-reader users the history is loading. Delayed
   // 500ms to match the modal-safe pattern (docs/solutions/conventions/on-open-
   // announce-must-delay-past-modal-present-focus-shift-2026-06-25.md) —
   // harmless on this non-modal route, kept for consistency with the other
   // skeleton screens fixed alongside this one
   // (todos/archive/P2-2026-09-23-skeleton-loaders-screen-reader-busy-state.md).
-  // Covers both skeleton render sites below (the dashboard early-return and
-  // the full-history FlatList's ListEmptyComponent) — both key off this same
-  // `isLoading` flag.
+  // Covers the FlatList's ListEmptyComponent skeleton.
   //
-  // Gated on !isError too: isLoading and isError key off two independent
-  // queries (client/hooks/useHistoryData.ts), so one can error while the
-  // other is still loading. Without this guard, a fast error could announce
+  // Gated on !isError too: without this guard, a fast error could announce
   // "Couldn't load..." and then, once this timer elapses, "Loading" — a
   // stale announcement after the failure was already reported.
   useDelayedLoadingAnnouncement(isLoading && !isError);
@@ -722,27 +466,7 @@ export default function HistoryScreen() {
     [],
   );
 
-  // Render loading state for dashboard
-  if (!showAll && isLoading) {
-    return (
-      <ScrollView
-        style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
-        contentContainerStyle={{
-          paddingTop: headerHeight + Spacing.xl,
-          paddingBottom: tabBarHeight + Spacing.xl,
-          paddingHorizontal: Spacing.lg,
-        }}
-        scrollIndicatorInsets={{ bottom: insets.bottom }}
-      >
-        <DashboardSkeleton />
-      </ScrollView>
-    );
-  }
-
-  // Error gate — placed before the zero-defaulting dashboard render. Without
-  // this, a failed daily-summary query would render "0 of goal calories, 0
-  // items scanned" against real goals, presenting a network failure as
-  // legitimate zero-intake data. Only fires when there is no cached data.
+  // Error gate — only fires when there is no cached data to show.
   if (isError) {
     return (
       <View
@@ -800,23 +524,6 @@ export default function HistoryScreen() {
         keyExtractor={(item) => item.id.toString()}
         extraData={extraData}
         onScrollBeginDrag={handleScrollBeginDrag}
-        ListHeaderComponent={
-          // The full-history list has no header of its own: the navigator's
-          // title bar ("Scan History" + the native back button) is the single
-          // back affordance (QA sweep #80).
-          showAll ? null : (
-            <DashboardHeader
-              userName={userName}
-              currentCalories={currentCalories}
-              calorieGoal={calorieGoal}
-              calorieProgress={calorieProgress}
-              itemCount={itemCount}
-              plannedCalories={plannedCalories}
-              reducedMotion={reducedMotion}
-              onScanPress={handleScanPress}
-            />
-          )
-        }
         ListEmptyComponent={
           isLoading ? (
             // SkeletonList hides its own subtree on both platforms — no
@@ -827,18 +534,10 @@ export default function HistoryScreen() {
             <HistoryEmptyState onScan={handleScanPress} />
           )
         }
-        ListFooterComponent={
-          showAll ? (
-            isFetchingNextPage ? (
-              <LoadingFooter />
-            ) : null
-          ) : displayItems.length > 0 ? (
-            <ViewAllFooter onViewAllPress={handleViewAllPress} />
-          ) : null
-        }
+        ListFooterComponent={isFetchingNextPage ? <LoadingFooter /> : null}
         refreshControl={
           <RefreshControl
-            refreshing={showAll ? isRefetching : isRefreshingDashboard}
+            refreshing={isRefetching}
             onRefresh={handleRefresh}
             tintColor={theme.link}
           />
@@ -847,9 +546,7 @@ export default function HistoryScreen() {
         getItemLayout={getItemLayout}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
-        accessibilityLabel={
-          showAll ? "Full scan history list" : "Today dashboard"
-        }
+        accessibilityLabel="Full scan history list"
         accessibilityRole="list"
       />
       <UpgradeModal
@@ -872,48 +569,6 @@ const styles = StyleSheet.create({
   emptyListContent: {
     flexGrow: 1,
     justifyContent: "center",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    marginBottom: Spacing.xl,
-  },
-  statCard: {
-    flex: 1,
-    padding: Spacing.lg,
-  },
-  statValueRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    marginTop: Spacing.sm,
-  },
-  scanCTA: {
-    padding: Spacing.xl,
-    borderRadius: BorderRadius["2xl"],
-    alignItems: "center",
-    marginBottom: Spacing["2xl"],
-  },
-  scanCTAIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: BorderRadius.full,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  sectionHeader: {
-    marginBottom: Spacing.lg,
-  },
-  viewAllContainer: {
-    alignItems: "center",
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.md,
-  },
-  viewAllLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    minHeight: 44,
   },
   itemCard: {
     padding: Spacing.lg,

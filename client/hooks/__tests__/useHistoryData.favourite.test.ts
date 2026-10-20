@@ -13,7 +13,6 @@ const { mockMutate, mockImpact, mockNotification } = vi.hoisted(() => ({
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
-  useRoute: () => ({ params: { showAll: true } }),
 }));
 // No user: both queries stay disabled and read the seeded cache only.
 vi.mock("@/context/AuthContext", () => ({

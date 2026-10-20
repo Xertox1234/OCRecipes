@@ -17,7 +17,7 @@ Use route params to toggle between screen modes (dashboard vs full view, list vs
 ## Examples
 
 ```typescript
-// Good: Single screen with mode param (HistoryScreen.tsx)
+// Good: Single screen with mode param (illustrative — HistoryScreen.tsx once did this; its dashboard mode was removed as unreachable)
 type HistoryScreenRouteProp = RouteProp<
   { History: { showAll?: boolean } },
   "History"
@@ -63,7 +63,7 @@ When NOT to use:
 
 ## Related Files
 
-- `client/screens/HistoryScreen.tsx` — dashboard/full toggle via `showAll` param
+- `client/screens/HistoryScreen.tsx` — formerly the dashboard/full toggle via `showAll` param (dashboard mode removed; now full-history only)
 
 ## See Also
 
