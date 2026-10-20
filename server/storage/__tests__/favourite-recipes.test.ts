@@ -423,6 +423,31 @@ describe("favourite-recipes storage", () => {
       });
     });
 
+    it("carries isCanonical so the Favourites list can show the Curated badge", async () => {
+      const mealPlan = await createTestMealPlanRecipe(testUser.id, {
+        title: "Personal One",
+      });
+      const curated = await createTestCommunityRecipe(testUser.id, {
+        title: "Curated One",
+        isPublic: true,
+        isCanonical: true,
+      });
+      const shared = await createTestCommunityRecipe(testUser.id, {
+        title: "Shared One",
+        isPublic: true,
+      });
+      await toggleFavouriteRecipe(testUser.id, mealPlan.id, "mealPlan");
+      await toggleFavouriteRecipe(testUser.id, curated.id, "community");
+      await toggleFavouriteRecipe(testUser.id, shared.id, "community");
+
+      const result = await getResolvedFavouriteRecipes(testUser.id);
+      const byTitle = new Map(result.map((r) => [r.title, r]));
+
+      expect(byTitle.get("Curated One")?.isCanonical).toBe(true);
+      expect(byTitle.get("Shared One")?.isCanonical).toBe(false);
+      expect(byTitle.get("Personal One")?.isCanonical).toBe(false);
+    });
+
     it("cleans up orphan favourites when recipe is deleted", async () => {
       const recipe = await createTestMealPlanRecipe(testUser.id);
       await toggleFavouriteRecipe(testUser.id, recipe.id, "mealPlan");

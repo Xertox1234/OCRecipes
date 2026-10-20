@@ -290,6 +290,7 @@ export function QuickLogDrawer({
     <HomeInlineDrawer
       icon={action.icon}
       label={action.label}
+      subtitle={action.subtitle}
       isOpen={isOpen}
       onToggle={onToggle}
       isLocked={isLocked}

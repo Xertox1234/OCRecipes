@@ -18,7 +18,7 @@
 // its own tests. GroceryListPickerModal imports fine; it is stubbed only to keep
 // its own list query out of these tests.
 import React from "react";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { LOADING_ANNOUNCEMENT_DELAY_MS } from "@/hooks/useDelayedLoadingAnnouncement";
@@ -175,5 +175,63 @@ describe("HistoryScreen harness — the real data-path imports load", () => {
       typeof import("@/hooks/useHistoryData")
     >("@/hooks/useHistoryData");
     expect(actual.useHistoryData).toBeDefined();
+  });
+});
+
+// QA sweep #80 (owner 2026-10-19): the full-history list keeps ONE back
+// affordance (the navigator's native one), and a row opens its detail on the
+// first tap — the actions area opens from an explicit chevron button.
+describe("HistoryScreen — row tap and back affordance", () => {
+  const item = {
+    id: 7,
+    productName: "Oat Bar",
+    brandName: null,
+    calories: "190",
+    imageUrl: null,
+    isFavourited: false,
+    scannedAt: "2026-10-19T00:00:00.000Z",
+  };
+  const handlers = {
+    handleNavigateToDetail: vi.fn(),
+    handleToggleExpand: vi.fn(),
+  };
+
+  function renderList() {
+    mockUseHistoryData.mockReturnValue(
+      historyState({
+        showAll: true,
+        isLoading: false,
+        displayItems: [item],
+        expandedItemId: null,
+        reducedMotion: true,
+        isPremium: false,
+        ...handlers,
+      }),
+    );
+    renderComponent(<HistoryScreen />);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("opens the item detail on the first tap of a row", () => {
+    renderList();
+    fireEvent.click(screen.getByLabelText(/^Oat Bar, 190 calories/));
+    expect(handlers.handleNavigateToDetail).toHaveBeenCalledWith(7);
+    expect(handlers.handleToggleExpand).not.toHaveBeenCalled();
+  });
+
+  it("opens the actions only from the explicit chevron button", () => {
+    renderList();
+    fireEvent.click(screen.getByLabelText("Show actions for Oat Bar"));
+    expect(handlers.handleToggleExpand).toHaveBeenCalledWith(7);
+    expect(handlers.handleNavigateToDetail).not.toHaveBeenCalled();
+  });
+
+  it("has no in-list back button or duplicate heading (the navigator owns Back)", () => {
+    renderList();
+    expect(screen.queryByLabelText("Back to Today dashboard")).toBeNull();
+    expect(screen.queryByText("All History")).toBeNull();
   });
 });

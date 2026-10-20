@@ -1,4 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { StyleSheet, View, Pressable, FlatList, TextInput } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
@@ -118,6 +123,35 @@ export default function GroceryListsScreen() {
     return toLocalDateString(d);
   });
 
+  // Header "+" instead of a floating button (avoids collision with the Scan
+  // FAB; same as CookbookListScreen). Declared before the back-button effect
+  // above runs so that effect's options stay the last `setOptions` payload.
+  // Hidden while the confirm sheet is open, like the back control, so
+  // TalkBack/VoiceOver can't reach it behind the sheet.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: isOpen
+        ? () => null
+        : () => (
+            <Pressable
+              onPress={() => {
+                haptics.impact();
+                setShowDatePicker(true);
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Generate new grocery list"
+              style={({ pressed }) => [
+                { marginRight: Spacing.md },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Feather name="plus" size={24} color={theme.link} />
+            </Pressable>
+          ),
+    });
+  }, [navigation, haptics, isOpen, theme.link]);
+
   const handleGenerate = useCallback(() => {
     haptics.impact();
     createListMutate(
@@ -226,7 +260,7 @@ export default function GroceryListsScreen() {
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.md,
           paddingHorizontal: Spacing.lg,
-          paddingBottom: tabBarHeight + Spacing.xl + 56,
+          paddingBottom: tabBarHeight + Spacing.xl,
         }}
         ListEmptyComponent={
           isError ? (
@@ -368,27 +402,6 @@ export default function GroceryListsScreen() {
         }
       />
 
-      {/* FAB */}
-      {!showDatePicker && (
-        <PressableScale
-          onPress={() => {
-            haptics.impact();
-            setShowDatePicker(true);
-          }}
-          style={[
-            styles.fab,
-            {
-              backgroundColor: theme.accentSolid,
-              bottom: tabBarHeight + Spacing.md,
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Generate new grocery list"
-          {...behindContentA11yProps}
-        >
-          <Feather name="plus" size={24} color={theme.buttonText} />
-        </PressableScale>
-      )}
       <ConfirmationModal />
     </View>
   );
@@ -481,19 +494,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-  },
-  fab: {
-    position: "absolute",
-    right: Spacing.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 4,
-    shadowColor: "#000", // hardcoded
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
   },
 });

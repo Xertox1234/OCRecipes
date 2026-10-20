@@ -56,6 +56,7 @@ const baseRecipe: ResolvedFavouriteRecipe = {
   dietConflicts: null,
   spiceLevel: null,
   totalTimeMinutes: null,
+  isCanonical: false,
 };
 
 describe("FavouriteRecipesScreen favourite-heart accessibility", () => {
@@ -127,5 +128,33 @@ describe("FavouriteRecipesScreen universal allergen label", () => {
     });
     renderComponent(<FavouriteRecipesScreen />);
     expect(screen.getByLabelText("Pasta Carbonara")).toBeDefined();
+  });
+});
+
+describe("FavouriteRecipesScreen Curated badge", () => {
+  const mockList = (recipe: ResolvedFavouriteRecipe) =>
+    mockUseFavouriteRecipes.mockReturnValue({
+      data: [recipe],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      isRefetching: false,
+    });
+
+  it("shows Curated (not Community) for a canonical community recipe", () => {
+    mockList({ ...baseRecipe, recipeType: "community", isCanonical: true });
+    renderComponent(<FavouriteRecipesScreen />);
+    expect(screen.getByText("Curated")).toBeDefined();
+    expect(screen.queryByText("Community")).toBeNull();
+    expect(
+      screen.getByLabelText("Pasta Carbonara, curated recipe"),
+    ).toBeDefined();
+  });
+
+  it("keeps the Community label for a non-canonical community recipe", () => {
+    mockList({ ...baseRecipe, recipeType: "community", isCanonical: false });
+    renderComponent(<FavouriteRecipesScreen />);
+    expect(screen.getByText("Community")).toBeDefined();
+    expect(screen.queryByText("Curated")).toBeNull();
   });
 });

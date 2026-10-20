@@ -223,6 +223,7 @@ export async function getResolvedFavouriteRecipes(
             dietConflicts: communityRecipes.dietConflicts,
             spiceLevel: communityRecipes.spiceLevel,
             timeEstimate: communityRecipes.timeEstimate,
+            isCanonical: communityRecipes.isCanonical,
           })
           .from(communityRecipes)
           // Fetch by ID first so hidden-but-existing recipes are not mistaken
@@ -255,6 +256,7 @@ export async function getResolvedFavouriteRecipes(
           dietConflicts: recipe.dietConflicts ?? null,
           spiceLevel: recipe.spiceLevel ?? null,
           totalTimeMinutes: toTotalTimeMinutes(recipe),
+          isCanonical: false,
         });
       } else orphanIds.push(row.id);
     } else if (row.recipeType === "community") {
@@ -275,6 +277,7 @@ export async function getResolvedFavouriteRecipes(
             dietConflicts: recipe.dietConflicts ?? null,
             spiceLevel: recipe.spiceLevel ?? null,
             totalTimeMinutes: toTotalTimeMinutes(recipe),
+            isCanonical: recipe.isCanonical,
           });
         }
       } else orphanIds.push(row.id);

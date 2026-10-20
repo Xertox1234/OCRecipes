@@ -140,13 +140,9 @@ const HistoryItem = React.memo(function HistoryItem({
     }
   };
 
-  const handlePress = () => {
-    if (isExpanded) {
-      onNavigateToDetail(item.id);
-    } else {
-      onToggleExpand(item.id);
-    }
-  };
+  // A row opens its detail on the first tap (QA sweep #80); the actions area
+  // is opened by the explicit chevron button beside it.
+  const handlePress = () => onNavigateToDetail(item.id);
 
   const calorieText = item.calories
     ? `${Math.round(parseFloat(item.calories))} calories`
@@ -174,14 +170,15 @@ const HistoryItem = React.memo(function HistoryItem({
           }}
         >
           <Card elevation={1} style={styles.itemCard}>
-            <Pressable
-              onPress={handlePress}
-              onPressIn={handlePressIn}
-              onPressOut={handlePressOut}
-              accessibilityLabel={`${item.productName}${item.brandName && item.brandName !== "null" ? ` by ${item.brandName}` : ""}, ${calorieText}. ${isExpanded ? "Tap to view details." : "Tap to show actions."}`}
-              accessibilityRole="button"
-            >
-              <View style={styles.itemContent}>
+            <View style={styles.itemContent}>
+              <Pressable
+                onPress={handlePress}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+                style={styles.itemMain}
+                accessibilityLabel={`${item.productName}${item.brandName && item.brandName !== "null" ? ` by ${item.brandName}` : ""}, ${calorieText}. Tap to view details.`}
+                accessibilityRole="button"
+              >
                 <FallbackImage
                   source={{ uri: item.imageUrl ?? undefined }}
                   style={styles.itemImage}
@@ -265,16 +262,26 @@ const HistoryItem = React.memo(function HistoryItem({
                     kcal
                   </ThemedText>
                 </View>
+              </Pressable>
 
+              <Pressable
+                onPress={() => onToggleExpand(item.id)}
+                hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                style={styles.expandButton}
+                accessibilityRole="button"
+                accessibilityLabel={`${isExpanded ? "Hide" : "Show"} actions for ${item.productName}`}
+                accessibilityState={{ expanded: isExpanded }}
+              >
                 <Animated.View style={animatedChevron}>
                   <Feather
                     name="chevron-right"
                     size={20}
                     color={theme.textSecondary}
+                    accessible={false}
                   />
                 </Animated.View>
-              </View>
-            </Pressable>
+              </Pressable>
+            </View>
 
             {/* Expandable actions area */}
             <Animated.View style={animatedExpand}>
@@ -532,40 +539,6 @@ const DashboardHeader = React.memo(function DashboardHeader({
   );
 });
 
-/** Props for FullHistoryHeader component */
-type FullHistoryHeaderProps = {
-  onBackPress: () => void;
-};
-
-const FullHistoryHeader = React.memo(function FullHistoryHeader({
-  onBackPress,
-}: FullHistoryHeaderProps) {
-  const { theme } = useTheme();
-
-  return (
-    <View style={styles.fullHistoryHeader}>
-      <Pressable
-        onPress={onBackPress}
-        style={styles.backButton}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityRole="button"
-        accessibilityLabel="Back to Today dashboard"
-      >
-        <Feather name="arrow-left" size={20} color={theme.link} />
-        <ThemedText
-          type="body"
-          style={{ color: theme.link, marginLeft: Spacing.xs }}
-        >
-          Today
-        </ThemedText>
-      </Pressable>
-      <ThemedText type="h4" style={{ marginTop: Spacing.md }}>
-        All History
-      </ThemedText>
-    </View>
-  );
-});
-
 /** Props for ViewAllFooter component */
 type ViewAllFooterProps = {
   onViewAllPress: () => void;
@@ -648,7 +621,6 @@ export default function HistoryScreen() {
     handleDiscard,
     handleScanPress,
     handleViewAllPress,
-    handleBackToDashboard,
     handleScrollBeginDrag,
     handleEndReached,
   } = useHistoryData();
@@ -829,9 +801,10 @@ export default function HistoryScreen() {
         extraData={extraData}
         onScrollBeginDrag={handleScrollBeginDrag}
         ListHeaderComponent={
-          showAll ? (
-            <FullHistoryHeader onBackPress={handleBackToDashboard} />
-          ) : (
+          // The full-history list has no header of its own: the navigator's
+          // title bar ("Scan History" + the native back button) is the single
+          // back affordance (QA sweep #80).
+          showAll ? null : (
             <DashboardHeader
               userName={userName}
               currentCalories={currentCalories}
@@ -930,14 +903,6 @@ const styles = StyleSheet.create({
   sectionHeader: {
     marginBottom: Spacing.lg,
   },
-  fullHistoryHeader: {
-    marginBottom: Spacing.lg,
-  },
-  backButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-  },
   viewAllContainer: {
     alignItems: "center",
     paddingTop: Spacing.xl,
@@ -957,6 +922,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: Spacing.md,
+  },
+  itemMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.md,
+  },
+  expandButton: {
+    alignSelf: "center",
+    minWidth: 28,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   itemImage: {
     width: 56,

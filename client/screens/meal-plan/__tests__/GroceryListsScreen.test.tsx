@@ -40,8 +40,10 @@ vi.mock("@/hooks/useSafeTabBarHeight", () => ({
   useSafeTabBarHeight: () => 0,
 }));
 
+const { setOptions } = vi.hoisted(() => ({ setOptions: vi.fn() }));
+
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn(), setOptions: vi.fn() }),
+  useNavigation: () => ({ navigate: vi.fn(), setOptions }),
   useRoute: () => ({ name: "GroceryLists", params: undefined }),
   usePreventRemove: () => {},
   useIsFocused: () => true,
@@ -53,7 +55,14 @@ describe("GroceryListsScreen — date range defaults to the local calendar day",
   const openDatePicker = () => {
     renderComponent(<GroceryListsScreen />);
     // The date inputs live in the FlatList's ListHeaderComponent, gated
-    // behind showDatePicker — open it via the FAB.
+    // behind showDatePicker — open it via the header "+" the screen registers
+    // through setOptions({ headerRight }).
+    const headerRight = setOptions.mock.calls
+      .map(([o]) => o?.headerRight)
+      .filter(Boolean)
+      .at(-1);
+    expect(headerRight, "screen never registered a headerRight").toBeDefined();
+    renderComponent(<>{headerRight()}</>);
     fireEvent.click(screen.getByLabelText("Generate new grocery list"));
   };
 

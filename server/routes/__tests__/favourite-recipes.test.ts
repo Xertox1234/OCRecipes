@@ -39,6 +39,7 @@ const mockResolvedFavourite = {
   dietConflicts: null,
   spiceLevel: null,
   totalTimeMinutes: null,
+  isCanonical: false,
 };
 
 describe("Favourite Recipe Routes", () => {
