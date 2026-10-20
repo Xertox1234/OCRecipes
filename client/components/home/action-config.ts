@@ -124,6 +124,7 @@ export const HOME_ACTIONS: HomeAction[] = [
     group: "nutrition",
     icon: "edit-3",
     label: "Quick Log",
+    subtitle: "Type what you ate",
     premium: true,
     renderInline: true,
   },

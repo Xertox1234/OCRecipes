@@ -512,6 +512,7 @@ export default function HomeScreen() {
         <HomeInlineDrawer
           icon={action.icon}
           label={action.label}
+          subtitle={action.subtitle}
           isOpen={isOpen}
           onToggle={() => handleDrawerToggle(action)}
           maxHeight={DRAWER_MAX_HEIGHT}

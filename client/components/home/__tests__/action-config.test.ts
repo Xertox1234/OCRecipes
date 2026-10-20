@@ -30,13 +30,24 @@ describe("action-config", () => {
       expect(pantry?.premium).toBe(true);
     });
 
-    // Inline drawers render only their label, so the rule covers row actions.
     it("premium row actions have a subtitle (shown under the label)", () => {
-      const premiumActions = HOME_ACTIONS.filter(
-        (a) => a.premium && !a.renderInline,
-      );
+      const premiumActions = HOME_ACTIONS.filter((a) => a.premium);
       for (const action of premiumActions) {
         expect(action.subtitle).toBeTruthy();
+      }
+    });
+  });
+
+  // QA sweep #3 (owner 2026-10-19): every Home recipes row has a subtitle;
+  // inline drawers (HomeInlineDrawer) render it too.
+  describe("subtitles", () => {
+    it("every recipes row and every inline drawer has a subtitle", () => {
+      const rows = HOME_ACTIONS.filter(
+        (a) => a.group === "recipes" || a.renderInline,
+      );
+      expect(rows.length).toBeGreaterThan(0);
+      for (const action of rows) {
+        expect(action.subtitle, action.id).toBeTruthy();
       }
     });
   });

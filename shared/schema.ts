@@ -2074,6 +2074,8 @@ export interface ResolvedFavouriteRecipe {
   spiceLevel: SpiceLevel | null;
   /** `toTotalTimeMinutes` of the source recipe; `null` when unknown. */
   totalTimeMinutes: number | null;
+  /** Hand-picked "Curated" recipe (community rows only; `false` for mealPlan). */
+  isCanonical: boolean;
 }
 
 // ============================================================================

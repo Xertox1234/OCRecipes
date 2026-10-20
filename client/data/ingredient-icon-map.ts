@@ -197,7 +197,9 @@ export const categoryIconMap: Record<string, ImageSourcePropType> = {
   "category-vegetable": require("../../assets/images/ingredients/category-vegetable.png"),
   "category-grain": require("../../assets/images/ingredients/category-grain.png"),
   "category-fruit": require("../../assets/images/ingredients/category-fruit.png"),
-  "category-dairy": require("../../assets/images/ingredients/category-dairy.png"),
+  // Reuses the text-free cheese icon: the generated category-dairy.png read
+  // "Boiry" (QA sweep #25).
+  "category-dairy": require("../../assets/images/ingredients/cheese.png"),
   "category-beverage": require("../../assets/images/ingredients/category-beverage.png"),
   "category-other": require("../../assets/images/ingredients/category-other.png"),
   "category-produce": require("../../assets/images/ingredients/category-produce.png"),

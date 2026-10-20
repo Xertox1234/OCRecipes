@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { CuratedBadge } from "@/components/CuratedBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { RecipeAttributeRow } from "@/components/RecipeAttributeRow";
 import { toRecipeAttributeA11ySuffix } from "@/components/recipe-attribute-row-utils";
@@ -88,7 +89,7 @@ export default function FavouriteRecipesScreen() {
             { backgroundColor: withOpacity(theme.text, 0.04) },
           ]}
           accessibilityRole="button"
-          accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}${attributeA11ySuffix}`}
+          accessibilityLabel={`${item.title}${item.isCanonical ? ", curated recipe" : item.recipeType === "community" ? ", community recipe" : ""}${attributeA11ySuffix}`}
           // The card Pressable is accessible by default, which collapses its
           // whole subtree into a single VoiceOver/TalkBack focus stop — the
           // nested "remove from favourites" Pressable below is never
@@ -127,33 +128,37 @@ export default function FavouriteRecipesScreen() {
             </ThemedText>
             <RecipeAttributeRow facts={attributeFacts} />
             <View style={styles.recipeMeta}>
-              <View
-                style={[
-                  styles.typeBadge,
-                  {
-                    backgroundColor: withOpacity(
-                      item.recipeType === "community"
-                        ? theme.link
-                        : theme.success,
-                      0.12,
-                    ),
-                  },
-                ]}
-              >
-                <ThemedText
+              {item.isCanonical ? (
+                <CuratedBadge />
+              ) : (
+                <View
                   style={[
-                    styles.typeBadgeText,
+                    styles.typeBadge,
                     {
-                      color:
+                      backgroundColor: withOpacity(
                         item.recipeType === "community"
                           ? theme.link
                           : theme.success,
+                        0.12,
+                      ),
                     },
                   ]}
                 >
-                  {item.recipeType === "community" ? "Community" : "Personal"}
-                </ThemedText>
-              </View>
+                  <ThemedText
+                    style={[
+                      styles.typeBadgeText,
+                      {
+                        color:
+                          item.recipeType === "community"
+                            ? theme.link
+                            : theme.success,
+                      },
+                    ]}
+                  >
+                    {item.recipeType === "community" ? "Community" : "Personal"}
+                  </ThemedText>
+                </View>
+              )}
               {item.difficulty && (
                 <ThemedText
                   style={[

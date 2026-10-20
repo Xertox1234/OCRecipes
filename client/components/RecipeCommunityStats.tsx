@@ -4,6 +4,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
+import { Card } from "@/components/Card";
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
@@ -42,12 +43,16 @@ export function RecipeCommunityStats({
 
   if (stats.isPending) {
     return (
-      <View style={styles.section} accessibilityLabel="Loading community stats">
+      <Card
+        elevation={1}
+        style={styles.section}
+        accessibilityLabel="Loading community stats"
+      >
         <SkeletonBox width={120} height={18} />
         {[0, 1, 2].map((i) => (
           <SkeletonBox key={i} height={20} style={styles.skeletonRow} />
         ))}
-      </View>
+      </Card>
     );
   }
   if (!stats.isSuccess) return null;
@@ -65,7 +70,7 @@ export function RecipeCommunityStats({
   };
 
   return (
-    <View style={styles.section}>
+    <Card elevation={1} style={styles.section}>
       <ThemedText type="h4" style={styles.heading}>
         Community
       </ThemedText>
@@ -135,14 +140,16 @@ export function RecipeCommunityStats({
           <Feather name="chevron-right" size={16} color={theme.textSecondary} />
         </View>
       </Pressable>
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
   section: {
+    // Boxed like Tips and Ask Coach (AskCoachSection) so the three sections
+    // share one inset.
     marginHorizontal: Spacing.lg,
-    marginTop: Spacing.xl,
+    marginBottom: Spacing.md,
   },
   heading: {
     marginBottom: Spacing.sm,

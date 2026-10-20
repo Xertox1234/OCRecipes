@@ -20,6 +20,8 @@ import {
 interface HomeInlineDrawerProps {
   icon: string;
   label: string;
+  /** Grey second line, matching ActionRow's subtitled rows. */
+  subtitle?: string;
   isOpen: boolean;
   onToggle: () => void;
   maxHeight?: number;
@@ -33,6 +35,7 @@ interface HomeInlineDrawerProps {
 export function HomeInlineDrawer({
   icon,
   label,
+  subtitle,
   isOpen,
   onToggle,
   maxHeight,
@@ -101,9 +104,18 @@ export function HomeInlineDrawer({
             accessible={false}
           />
         </View>
-        <ThemedText type="body" style={styles.label}>
-          {label}
-        </ThemedText>
+        <View style={styles.textContainer}>
+          <ThemedText type="body">{label}</ThemedText>
+          {subtitle ? (
+            <ThemedText
+              type="small"
+              style={{ color: theme.textSecondary }}
+              numberOfLines={1}
+            >
+              {subtitle}
+            </ThemedText>
+          ) : null}
+        </View>
         {isLocked ? (
           <Feather
             name="lock"
@@ -158,7 +170,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  label: { flex: 1 },
+  textContainer: { flex: 1, gap: 2 },
   clip: { overflow: "hidden" },
   body: {
     position: "absolute",

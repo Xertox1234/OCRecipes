@@ -1,6 +1,6 @@
 ---
 title: "Screen-chrome consistency follow-ups from the visual QA sweep"
-status: backlog
+status: done
 priority: low
 created: 2026-10-18
 updated: 2026-10-18
@@ -29,7 +29,7 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), groups F
 
 ## Acceptance Criteria
 
-- [ ] Owner decides each pattern (card vs flat sections, header "+" vs FAB, back-button style, Home row style).
+- [x] Owner decides each pattern (card vs flat sections, header "+" vs FAB, back-button style, Home row style).
 - [ ] #80 list cues reduced to one back affordance; a row opens on the first tap or the expand affordance is explicit.
 - [ ] Favourites shows "Curated" for canonical recipes or the owner confirms "Community" is the intended label.
 - [ ] `category-dairy.png` replaced with an image without text, or text that reads "Dairy".
@@ -59,3 +59,16 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), groups F
 ### 2026-10-18
 
 - Filed from the copy-and-consistency polish pass (owner: "file a todo for the out of scope items").
+
+### 2026-10-19
+
+Owner decisions (via the orchestrator):
+
+- **#29** header "+" wins: Grocery Lists drops its FAB and gets a header "+" like Cookbooks.
+- **#66** the native iOS glass pill wins everywhere; fix the root cause in shared options, no per-screen `headerLeft`.
+- **#33** all boxed cards: the "Community" section goes into a `Card`.
+- **Favourites** shows "Curated" (`CuratedBadge`) for canonical recipes; no schema change (`isCanonical` is an existing column).
+- **#3** every Home Recipes row gets a subtitle.
+- **#25** reuse an existing text-free ingredient image; no new AI image.
+- **#80** one back affordance; a row opens on the first tap or the expand control is explicit (executor's choice).
+- One PR, checklist keyed by finding ID.

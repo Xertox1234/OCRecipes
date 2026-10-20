@@ -28,6 +28,7 @@ const resolvedFavouriteRecipeDefaults: ResolvedFavouriteRecipe = {
   dietConflicts: null,
   spiceLevel: null,
   totalTimeMinutes: null,
+  isCanonical: false,
 };
 
 export function createMockResolvedFavouriteRecipe(

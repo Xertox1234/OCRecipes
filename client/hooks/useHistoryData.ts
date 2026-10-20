@@ -288,11 +288,6 @@ export function useHistoryData() {
     navigation.setParams({ showAll: true });
   }, [navigation, haptics]);
 
-  const handleBackToDashboard = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.setParams({ showAll: false });
-  }, [navigation, haptics]);
-
   // Pending item IDs for mutation loading state — passed as scalars so
   // HistoryItem can compute its own loading booleans internally.
   const favouritePendingItemId = toggleFavourite.isPending
@@ -380,7 +375,6 @@ export function useHistoryData() {
     handleDiscard,
     handleScanPress,
     handleViewAllPress,
-    handleBackToDashboard,
     handleScrollBeginDrag,
     handleEndReached,
   };

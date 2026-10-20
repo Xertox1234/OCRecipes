@@ -22,6 +22,7 @@
 // so only the `if` side was ever exercised. Asserting the setOptions PAYLOAD
 // (rather than a rendered effect) follows CookbookCreateScreen.test.tsx.
 import React from "react";
+import { screen } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import GroceryListsScreen from "../GroceryListsScreen";
 
@@ -132,5 +133,33 @@ describe("GroceryListsScreen -- RootStack modal route (custom close-X headerLeft
     // Collapsing headerLeft to null is what removes the close "X" from the
     // TalkBack/VoiceOver order while the sheet owns focus.
     expect(options.headerLeft!()).toBeNull();
+  });
+});
+
+describe("GroceryListsScreen -- header create button (QA sweep #29)", () => {
+  type HeaderRight = () => React.ReactElement | null;
+  /** The headerRight the screen registered (last one wins, like the navigator). */
+  function headerRight(): HeaderRight | undefined {
+    return nav.setOptions.mock.calls
+      .map(([o]) => (o as { headerRight?: HeaderRight }).headerRight)
+      .filter((h) => h !== undefined)
+      .at(-1);
+  }
+
+  it("registers a header + while the sheet is closed", () => {
+    renderOn("GroceryLists", false);
+    expect(headerRight()?.()).not.toBeNull();
+  });
+
+  it("empties the header + while the sheet is open so it leaves the screen-reader order", () => {
+    renderOn("GroceryLists", true);
+    expect(headerRight()?.()).toBeNull();
+  });
+
+  it("does not render a floating create button", () => {
+    renderOn("GroceryLists", false);
+    expect(
+      screen.queryAllByLabelText("Generate new grocery list"),
+    ).toHaveLength(0);
   });
 });
