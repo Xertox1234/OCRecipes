@@ -246,7 +246,11 @@ export default function MainTabNavigator() {
         <Tab.Navigator
           initialRouteName="HomeTab"
           screenOptions={{
-            // Cross-fade between tabs instead of instant swap
+            // Cross-fade between tabs instead of instant swap. Trade-off (owner
+            // ruling 2026-10-19): on iOS 26.1+ this fade stops UIKit from drawing
+            // the Liquid Glass pill behind native-stack back buttons, so they
+            // render as plain "‹ Back" text; "none" restores the pill. See
+            // docs/solutions/logic-errors/tab-fade-strips-ios26-glass-from-back-button-2026-10-19.md
             animation: reducedMotion ? "none" : "fade",
             tabBarActiveTintColor: theme.link,
             tabBarInactiveTintColor: theme.tabIconDefault,
