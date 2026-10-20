@@ -58,7 +58,7 @@ export default function CookbookListScreen() {
             haptics.impact();
             navigation.navigate("CookbookCreate");
           }}
-          hitSlop={8}
+          hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel="Create new cookbook"
           style={({ pressed }) => [

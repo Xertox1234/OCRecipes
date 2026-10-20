@@ -7,12 +7,13 @@ import CookbookListScreen from "../CookbookListScreen";
 import type { CookbookWithCount } from "@shared/schema";
 import { listStaggerMaxIndex, listStaggerStep } from "@/constants/animations";
 
-const { mockUseCookbooks } = vi.hoisted(() => ({
+const { mockUseCookbooks, mockSetOptions } = vi.hoisted(() => ({
   mockUseCookbooks: vi.fn(),
+  mockSetOptions: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn(), setOptions: vi.fn() }),
+  useNavigation: () => ({ navigate: vi.fn(), setOptions: mockSetOptions }),
   useFocusEffect: vi.fn(),
 }));
 
@@ -68,5 +69,28 @@ describe("CookbookListScreen row entrance", () => {
       ),
     );
     delaySpy.mockRestore();
+  });
+});
+
+// The header "+" is a 24pt icon; hitSlop must lift the tap target to 44pt.
+describe("CookbookListScreen header + hit area", () => {
+  it("has a tap target of at least 44pt (24pt icon + hitSlop on both sides)", () => {
+    mockUseCookbooks.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mockSetOptions.mockClear();
+    renderComponent(<CookbookListScreen />);
+
+    const headerRight = mockSetOptions.mock.calls
+      .map(
+        ([o]) => (o as { headerRight?: () => React.ReactElement }).headerRight,
+      )
+      .filter((h) => h !== undefined)
+      .at(-1);
+    const hitSlop = (headerRight!().props as { hitSlop: number }).hitSlop;
+    expect(24 + 2 * hitSlop).toBeGreaterThanOrEqual(44);
   });
 });

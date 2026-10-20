@@ -138,7 +138,7 @@ export default function GroceryListsScreen() {
                 haptics.impact();
                 setShowDatePicker(true);
               }}
-              hitSlop={8}
+              hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Generate new grocery list"
               style={({ pressed }) => [
