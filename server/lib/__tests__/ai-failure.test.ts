@@ -25,6 +25,27 @@ describe("classifyAiFailure", () => {
     expect(countsTowardBreaker(kind)).toBe(false);
   });
 
+  // The real SDK, unmocked: it wraps any non-OpenAIError thrown by an async
+  // apiKey setter in a generic OpenAIError, which would hide the login failure.
+  // The setter runs before every request, so models.list() exercises the same
+  // path as a chat call (chat.completions.create is lint-banned outside aiChat).
+  it("a Vertex login failure thrown through the real SDK stays config", async () => {
+    const client = new OpenAI({
+      baseURL: "http://127.0.0.1:9/v1",
+      maxRetries: 0,
+      apiKey: async () => {
+        throw new VertexAuthError("Vertex login failed");
+      },
+    });
+    const err = await client.models.list().then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(VertexAuthError);
+    expect((err as Error).message).toBe("Vertex login failed");
+    expect(classifyAiFailure(err)).toBe("config");
+  });
+
   it.each([
     [500, "transport"],
     [502, "transport"],

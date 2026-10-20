@@ -18,12 +18,17 @@ vi.mock("google-auth-library", () => ({
 }));
 
 const OpenAICtor = vi.fn();
-vi.mock("openai", () => ({
-  default: vi.fn().mockImplementation(function (opts: unknown) {
+// Keeps the real OpenAIError: VertexAuthError extends it at import time.
+vi.mock("openai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("openai")>();
+  const ctor = vi.fn().mockImplementation(function (opts: unknown) {
     OpenAICtor(opts);
     return { chat: { completions: { create: vi.fn() } } };
-  }),
-}));
+  });
+  return {
+    default: Object.assign(ctor, { OpenAIError: actual.default.OpenAIError }),
+  };
+});
 
 const FULL = {
   GOOGLE_VERTEX_PROJECT: "oc-vision",
