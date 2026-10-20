@@ -1,6 +1,6 @@
 ---
 title: "profile-hub-rate-limit test fails under the full suite, passes alone"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-19
 updated: 2026-10-19
@@ -34,9 +34,9 @@ What's left to check is the limiter's key and skip behaviour under load: the `cr
 
 ## Acceptance Criteria
 
-- [ ] Find the cause of the first-attempt 200, with evidence (for example, logging the key and hit count in a looped full-suite run).
-- [ ] The test builds its own limiter or resets the store between attempts, so retries don't inherit counts.
-- [ ] The test passes in 20 consecutive full-suite runs, or in a loop that reproduces the failing condition.
+- [x] Find the cause of the first-attempt 200, with evidence (for example, logging the key and hit count in a looped full-suite run).
+- [x] The test builds its own limiter or resets the store between attempts, so retries don't inherit counts.
+- [x] The test passes in 20 consecutive full-suite runs, or in a loop that reproduces the failing condition.
 
 ## Implementation Notes
 
@@ -58,3 +58,10 @@ What's left to check is the limiter's key and skip behaviour under load: the `cr
 ### 2026-10-19
 
 - Filed from the `/todo` Phase 5 verification (full suite 1 failed / 12,442 passed; isolated reruns 3/3 passed).
+
+### 2026-10-20
+
+- Cause found. Running the test file 12 to 80 times in parallel with `--retry=0` reproduced the failure (about 1 in 12 on the original test). A diagnostic loop that logged every response showed 1 to 3 of the 61 requests answered by a different server: a Dart `shelf` 403 ("missing or invalid authentication code"), a foreign Express 401 `Unauthorized`, and a 400 "WebSockets request was expected". Those never reach `hubRateLimit`, so it counted 60 or fewer hits and the 61st got 200.
+- Mechanism (inferred from those responses, not proven at socket level): `supertest(app)` opens a new wildcard listener on an ephemeral port per request, and on macOS another process can bind `127.0.0.1:<same port>` beside it. The client connects to 127.0.0.1 and reaches the other process. Ruled out: the limiter key (userId "1"), MemoryStore window expiry, and cross-file module sharing.
+- Fix: the test now binds one server to 127.0.0.1, builds a fresh module graph per attempt (`vi.resetModules` plus dynamic imports) so retries do not inherit counts, and requires every one of the 60 requests to be a 200 carrying `ratelimit-limit`, so a foreign response fails loudly.
+- Verified: 3 rounds of 40 parallel `--retry=0` runs, 120 of 120 passed. The full-suite 20-run criterion was met by this load loop instead.
