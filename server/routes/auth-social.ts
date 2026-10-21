@@ -870,16 +870,10 @@ export function register(app: Express): void {
             ErrorCode.LAST_SIGN_IN_METHOD,
           );
         }
-        if (provider.data === "apple") {
-          await revokeAppleIdentities(
-            (await storage.listIdentities(req.userId)).filter(
-              (i) => i.provider === "apple",
-            ),
-          );
-        }
         // The storage delete re-checks "not the last method" under a lock: a
         // concurrent disconnect that won the race refuses this one (audit L16).
-        if (!(await storage.deleteIdentity(req.userId, provider.data))) {
+        const removed = await storage.deleteIdentity(req.userId, provider.data);
+        if (!removed) {
           // Refused or already gone (a double tap): say which, truthfully.
           if (!(await storage.getSignInMethods(req.userId))[provider.data]) {
             return sendError(res, 404, "Not connected", ErrorCode.NOT_FOUND);
@@ -891,6 +885,10 @@ export function register(app: Express): void {
             ErrorCode.LAST_SIGN_IN_METHOD,
           );
         }
+        // Revoke only what was actually removed: revoking before a delete the
+        // lock then refuses would leave the kept Apple sign-in with a dead
+        // grant. The removed row still carries its stored token.
+        await revokeAppleIdentities([removed]);
         res.json({ signInMethods: await storage.getSignInMethods(req.userId) });
       } catch (error) {
         handleRouteError(res, error, "disconnect provider");
