@@ -73,7 +73,7 @@ pod-install time, and some only in an EAS or Release archive:
 | react-native-gesture-handler | ~2.28 | Use the version bundled with each SDK up to 57. At SDK 58, move to 3.x and migrate the 6 builder calls to the hook API, or stay on the `legacy` tag (2.33.x) if 3.x breaks the camera gestures. Whether the v2 builder API still works under v3 is **unverified**. |
 | keyboard-controller, screens, safe-area-context | — | Use the versions bundled with each SDK (`npx expo install --fix`). |
 | `expo-speech-recognition` | 3.1.1 | Use its SDK tags (`sdk-55` 3.1.3, then 56.x, then 58.x). |
-| `expo-iap` | 3.4.8 | **Out of scope; it gets its own spec** (§9 ruling 4, `2026-10-21-expo-iap-3-to-6-upgrade-design.md`). Stay on 3.4.8 as long as it builds. If an SDK step won't build with it, stop and bring the question to the owner. Don't upgrade IAP as a side effect. |
+| `expo-iap` | 3.4.8 | **Out of scope; it gets its own spec** (§9 ruling 4, `2026-10-21-expo-iap-3-to-6-upgrade-design.md`). It lands as its own PR right after step 3 (SDK 57), before step 3's EAS build. If 3.4.8 won't build at step 1 or 2, it moves forward to that step. Never upgrade IAP as a side effect of an SDK PR. |
 
 ## 3. Plan, step by step
 
@@ -136,8 +136,10 @@ change reaches the owner's device over the air on the existing build.
 
 - Reanimated 4.5 / worklets 0.10, VisionCamera 5.2.x / Nitro 0.37 and the
   VisionCamera patch decision, all in one commit.
+- The expo-iap 3 → 6 PR (its own spec) merges here, after this step's PR and
+  before the build.
 - **Ship:** EAS preview build, then about a week of daily use on the owner's
-  device before step 4. This is the fallback point if SDK 58 goes badly.
+  device before step 4. Re-run the IAP sandbox checks on this build. This is the fallback point if SDK 58 goes badly.
 
 ### Step 4: SDK 58 (RN 0.88, React 19.3)
 
