@@ -52,6 +52,8 @@ export type { UpdatableUserFields } from "./users";
 // "../users" directly). These two ARE load-bearing: server/routes/auth.ts
 // imports both from "../storage", matching the BatchStorageError precedent below.
 export { ReservedUsernameError, isReservedUsername } from "./users";
+// The link routes map it to "this sign-in expired" (auth-mfa.ts, auth-social.ts).
+export { TokenVersionChangedError } from "./identities";
 export type {
   NoncePurpose,
   ProviderName,

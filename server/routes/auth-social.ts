@@ -1,5 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { storage, ReservedUsernameError, isReservedUsername } from "../storage";
+import {
+  storage,
+  ReservedUsernameError,
+  isReservedUsername,
+  TokenVersionChangedError,
+} from "../storage";
 import type { ProviderName } from "../storage";
 import {
   generateToken,
@@ -696,8 +701,17 @@ export function register(app: Express): void {
         try {
           identity = await storage.completeLinkFromTicket(body.ticket, {
             markEmailVerified,
+            tokenVersion: target.tokenVersion,
           });
         } catch (err) {
+          // A reset landed after the proof: the link is rolled back, and the
+          // answer matches what issueSession gives for the same race.
+          if (err instanceof TokenVersionChangedError)
+            throw new HttpFailure(
+              401,
+              ErrorCode.MFA_CHALLENGE_EXPIRED,
+              "This sign-in expired. Please start again.",
+            );
           if (isUniqueViolation(err))
             throw new HttpFailure(
               409,

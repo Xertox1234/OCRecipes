@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
+import { storage, TokenVersionChangedError } from "../storage";
 import type { User } from "@shared/schema";
 import type { z } from "zod";
 import {
@@ -203,9 +203,20 @@ export function register(app: Express): void {
           try {
             identity = await storage.completeLinkByTicketHash(
               row.linkTicketHash!,
-              { markEmailVerified: row.linkMarkEmailVerified },
+              {
+                markEmailVerified: row.linkMarkEmailVerified,
+                tokenVersion: row.tokenVersion,
+              },
             );
           } catch (err) {
+            // A reset landed after the check above: the link is rolled back.
+            if (err instanceof TokenVersionChangedError) {
+              return fail(
+                401,
+                ErrorCode.MFA_CHALLENGE_EXPIRED,
+                CHALLENGE_EXPIRED,
+              );
+            }
             if (isUniqueViolation(err)) {
               return fail(
                 409,

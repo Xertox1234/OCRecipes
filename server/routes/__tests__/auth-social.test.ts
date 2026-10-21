@@ -25,6 +25,7 @@ import {
 
 vi.mock("../../storage", () => ({
   ReservedUsernameError: class ReservedUsernameErrorMock extends Error {},
+  TokenVersionChangedError: class TokenVersionChangedErrorMock extends Error {},
   isReservedUsername: (u: string) => u.toLowerCase() === "demo",
   storage: {
     issueNonce: vi.fn(),
@@ -732,6 +733,7 @@ describe("POST /api/auth/social/link", () => {
       id: "u1",
       emailVerified: true,
       mfaEnabledAt: null,
+      tokenVersion: 7,
       password: await bcrypt.hash("right-long-pass-1", 4),
     });
     vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
@@ -748,7 +750,30 @@ describe("POST /api/auth/social/link", () => {
     expect(res.body.status).toBe("signed_in");
     expect(storage.completeLinkFromTicket).toHaveBeenCalledWith("t", {
       markEmailVerified: false,
+      tokenVersion: 7,
     });
+  });
+
+  it("a password reset lands between the password check and the link → 401, no session", async () => {
+    const { TokenVersionChangedError } = await import("../../storage");
+    const user = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: null,
+      password: await bcrypt.hash("right-long-pass-1", 4),
+    });
+    vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    vi.mocked(storage.completeLinkFromTicket).mockRejectedValue(
+      new TokenVersionChangedError(),
+    );
+    const res = await request(app())
+      .post("/api/auth/social/link")
+      .send({ ticket: "t", password: "right-long-pass-1" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
+    expect(res.body.token).toBeUndefined();
   });
 
   it("no two-step, right 11-character password → links and signs in (owner ruling 2026-10-12)", async () => {

@@ -10,6 +10,7 @@ import type { MfaChallenge } from "@shared/schema";
 
 vi.mock("../../storage", () => ({
   ReservedUsernameError: class ReservedUsernameErrorMock extends Error {},
+  TokenVersionChangedError: class TokenVersionChangedErrorMock extends Error {},
   isReservedUsername: () => false,
   storage: {
     reserveMfaChallengeAttempt: vi.fn(),
@@ -223,7 +224,19 @@ describe("POST /api/auth/mfa/verify", () => {
       expect(res.body.status).toBe("signed_in");
       expect(storage.completeLinkByTicketHash).toHaveBeenCalledWith("th", {
         markEmailVerified: true,
+        tokenVersion: 4,
       });
+    });
+
+    it("a password reset landed before the link write → 401 MFA_CHALLENGE_EXPIRED, no session", async () => {
+      const { TokenVersionChangedError } = await import("../../storage");
+      vi.mocked(storage.completeLinkByTicketHash).mockRejectedValue(
+        new TokenVersionChangedError(),
+      );
+      const res = await verify();
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
+      expect(res.body.token).toBeUndefined();
     });
 
     it("trustDevice on a link returns no trust key", async () => {

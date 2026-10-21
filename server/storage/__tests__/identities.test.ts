@@ -368,6 +368,7 @@ describe("identities storage", () => {
       });
       const identity = await ids.completeLinkFromTicket(ticket, {
         markEmailVerified: true,
+        tokenVersion: target.tokenVersion,
       });
       expect(identity).toMatchObject({ userId: target.id, provider: "google" });
       const [row] = await getTestTx()
@@ -376,8 +377,39 @@ describe("identities storage", () => {
         .where(eq(users.id, target.id));
       expect(row.emailVerified).toBe(true);
       expect(
-        await ids.completeLinkFromTicket(ticket, { markEmailVerified: false }),
+        await ids.completeLinkFromTicket(ticket, {
+          markEmailVerified: false,
+          tokenVersion: target.tokenVersion,
+        }),
       ).toBeUndefined();
+    });
+
+    it("refuses the link when the account's token version moved since the proof", async () => {
+      // A password reset or sign-out-everywhere landed mid-request.
+      const target = await createTestUser(getTestTx());
+      const ticket = await ids.createPendingSignIn({
+        ...baseTicket,
+        kind: "link",
+        targetUserId: target.id,
+      });
+      await getTestTx()
+        .update(users)
+        .set({ tokenVersion: target.tokenVersion + 1 })
+        .where(eq(users.id, target.id));
+
+      await expect(
+        ids.completeLinkByTicketHash(sha256Hex(ticket), {
+          markEmailVerified: true,
+          tokenVersion: target.tokenVersion,
+        }),
+      ).rejects.toBeInstanceOf(ids.TokenVersionChangedError);
+
+      expect(await ids.listIdentities(target.id)).toEqual([]);
+      const [row] = await getTestTx()
+        .select()
+        .from(users)
+        .where(eq(users.id, target.id));
+      expect(row.emailVerified).toBe(false);
     });
   });
 
