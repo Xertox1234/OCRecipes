@@ -53,6 +53,21 @@ export async function getPushTokensForUsers(
     .where(inArray(pushTokens.userId, userIds));
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Remove every push token on the account. Called inside each tokenVersion
+ * bump: those end the account's sessions server-side, and a phone whose
+ * session is dead can't send its own DELETE. A caller that stays signed in
+ * gets a new session and re-registers its token (client establishSession).
+ */
+export async function deleteAllPushTokensForUser(
+  tx: Tx,
+  userId: string,
+): Promise<void> {
+  await tx.delete(pushTokens).where(eq(pushTokens.userId, userId));
+}
+
 /** Remove a specific token (e.g. on receipt of a delivery failure). */
 export async function deletePushToken(
   userId: string,

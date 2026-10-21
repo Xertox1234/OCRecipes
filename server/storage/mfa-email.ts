@@ -15,6 +15,7 @@ import {
   MFA_EMAIL_RESEND_COOLDOWN_SECONDS,
 } from "@shared/constants/mfa";
 import { GuardFailed, guarded } from "./mfa";
+import { deleteAllPushTokensForUser } from "./push-tokens";
 
 // Two-step by emailed code (owner ruling 4, 2026-10-12). Same shape as
 // password-change.ts: one row per user, every check one atomic statement on
@@ -139,6 +140,7 @@ export async function enableEmailMfa(
         .returning({ tokenVersion: users.tokenVersion });
       if (!u) throw new GuardFailed();
       await spendCode(tx, userId, codeHash);
+      await deleteAllPushTokensForUser(tx, userId);
       const fresh = { failedAttempts: 0, lockedUntil: null };
       await tx
         .insert(userMfa)

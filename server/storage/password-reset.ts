@@ -6,6 +6,7 @@ import {
 } from "@shared/constants/password-reset";
 import { db } from "../db";
 import { eq, and, sql, lt, isNotNull } from "drizzle-orm";
+import { deleteAllPushTokensForUser } from "./push-tokens";
 
 // Password reset by emailed 6-digit code — spec
 // docs/superpowers/specs/2026-10-03-password-reset-design.md §3–§4. Every
@@ -131,6 +132,7 @@ export async function completePasswordReset(
     await tx
       .delete(mfaTrustedDevices)
       .where(eq(mfaTrustedDevices.userId, userId));
+    await deleteAllPushTokensForUser(tx, userId);
     return true;
   });
 }

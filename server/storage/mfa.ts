@@ -15,6 +15,7 @@ import {
 } from "@shared/constants/mfa";
 import { db } from "../db";
 import { and, eq, gt, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { deleteAllPushTokensForUser } from "./push-tokens";
 
 // Second factor (an emailed code; the codes themselves are in mfa-email.ts) —
 // spec docs/superpowers/specs/2026-10-10-totp-second-factor-design.md.
@@ -86,6 +87,7 @@ export async function disableMfa(
       .delete(mfaTrustedDevices)
       .where(eq(mfaTrustedDevices.userId, userId));
     await tx.delete(mfaEmailCodes).where(eq(mfaEmailCodes.userId, userId));
+    await deleteAllPushTokensForUser(tx, userId);
     const [u] = await tx
       .update(users)
       .set({
