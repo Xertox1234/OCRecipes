@@ -1,6 +1,6 @@
 # Expo SDK upgrade, 54 → 58, one SDK at a time
 
-Date: 2026-10-21 · Status: draft, waiting on the owner's rulings in §9
+Date: 2026-10-21 · Status: owner rulings recorded 2026-10-21 (§9); ready for review
 
 ## 1. Goal
 
@@ -73,7 +73,7 @@ pod-install time, and some only in an EAS or Release archive:
 | react-native-gesture-handler | ~2.28 | Use the version bundled with each SDK up to 57. At SDK 58, move to 3.x and migrate the 6 builder calls to the hook API, or stay on the `legacy` tag (2.33.x) if 3.x breaks the camera gestures. Whether the v2 builder API still works under v3 is **unverified**. |
 | keyboard-controller, screens, safe-area-context | — | Use the versions bundled with each SDK (`npx expo install --fix`). |
 | `expo-speech-recognition` | 3.1.1 | Use its SDK tags (`sdk-55` 3.1.3, then 56.x, then 58.x). |
-| `expo-iap` | 3.4.8 | **Out of scope; it gets its own spec** (§9 Q4). Stay on 3.4.8 as long as it builds. If an SDK step won't build with it, stop and bring the question to the owner. Don't upgrade IAP as a side effect. |
+| `expo-iap` | 3.4.8 | **Out of scope; it gets its own spec** (§9 ruling 4, `2026-10-21-expo-iap-3-to-6-upgrade-design.md`). Stay on 3.4.8 as long as it builds. If an SDK step won't build with it, stop and bring the question to the owner. Don't upgrade IAP as a side effect. |
 
 ## 3. Plan, step by step
 
@@ -97,8 +97,9 @@ change reaches the owner's device over the air on the existing build.
    ordering each call site depends on, and test that ordering first (TDD).
 3. Add an explicit `Notifications.setNotificationHandler` that pins **today's**
    foreground behaviour, so SDK 58's new default doesn't change what users
-   see. If the owner wants foreground banners instead, that's a separate,
-   deliberate change (§9 Q2).
+   see. The owner ruled to keep them off (§9 ruling 2): the handler returns
+   no banner, no list entry, no sound and no badge change for notifications
+   that arrive while the app is open. A test asserts that.
 4. Add `npx expo-doctor` to CI as an information-only step that never fails
    the build. Each step can then compare its doctor output with the one
    before.
@@ -215,21 +216,23 @@ for users still on a 1.5.0 build gets published from a branch off that tag.
 | `expo/fetch` breaks a multipart upload | Medium | Smoke-test every upload in step 2. If one breaks, import RN's original `fetch` in `client/lib/query-client.ts` for that call. |
 | gesture-handler 3 breaks camera focus/zoom | Medium | Stay on the `legacy` 2.33.x tag and migrate later. |
 | An Xcode 26 build fix in our plugins stops applying, or is no longer needed | Medium | The anchors throw when they don't match. Delete fixes that no longer apply, with evidence. |
-| expo-iap 3.4.8 won't build on a new SDK | Unknown | Stop and ask the owner (§9 Q4). |
+| expo-iap 3.4.8 won't build on a new SDK | Unknown | Do the expo-iap upgrade first, following its own spec (§9 ruling 4), then resume the SDK step. |
 | Android-only breakage (edge-to-edge, AGP 9, compileSdk 37) | Unknown | The EAS Android build must succeed; runtime behaviour isn't checked (no device). |
 | The MLKit text-recognition advisory | Stays open | Out of reach here (no fixed version upstream); recorded in each step's audit numbers. |
 
-## 9. Questions for the owner
+## 9. Owner rulings (2026-10-21)
 
-1. **How far to go.** Stop at SDK 57 (the smaller step, before gesture-handler
-   3 and Sentry 8), or go on to SDK 58? Proposal: plan for 58, and treat 57
-   as a release that can stay in place.
-2. **Notifications that arrive while the app is open.** Keep today's
-   behaviour (pinned in step 0), or start showing them as banners?
-3. **When to cut builds.** Proposal: EAS preview builds after steps 1, 3 and
-   4 only. Each one uses EAS build credits and needs a reinstall on the
-   device.
-4. **expo-iap.** Write a separate spec now, or only if an SDK step forces it?
+1. **How far to go: plan for SDK 58.** SDK 57 stays a release that can stay
+   in place if step 4 goes badly.
+2. **Notifications that arrive while the app is open: leave them off.** Step
+   0 pins that behaviour, so SDK 58's new default (show them) never reaches
+   users.
+3. **When to cut builds: EAS preview builds after steps 1, 3 and 4.** Step 2
+   (SDK 56) is checked on the simulator and the device via `expo run:ios`
+   only.
+4. **expo-iap: its own plan, written now.** See
+   `docs/superpowers/specs/2026-10-21-expo-iap-3-to-6-upgrade-design.md`.
+   It decides where in this sequence the IAP upgrade lands.
 
 ## 10. Sources
 
