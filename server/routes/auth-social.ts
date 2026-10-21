@@ -609,6 +609,9 @@ export function register(app: Express): void {
         );
 
         let pending;
+        // The token version the password was checked under. A reset that
+        // lands before the re-read below must not let the old password link.
+        let proofVersion: number | undefined;
         if ("password" in body) {
           // Attempts are counted (max 5) so a wrong password keeps the ticket alive.
           pending = await storage.reservePendingLinkAttempt(body.ticket);
@@ -643,6 +646,7 @@ export function register(app: Express): void {
             );
           }
           await storage.refundLinkPasswordGuess(target.id);
+          proofVersion = target.tokenVersion;
         } else {
           pending = await storage.getPendingSignIn(body.ticket, "link");
           if (!pending?.targetUserId) throw expired;
@@ -671,6 +675,14 @@ export function register(app: Express): void {
 
         const target = await storage.getUserForAuth(pending.targetUserId);
         if (!target) throw expired;
+        // From here on target.tokenVersion is the version the proof holds
+        // under: the link write and any challenge are bound to it.
+        if (proofVersion !== undefined && target.tokenVersion !== proofVersion)
+          throw new HttpFailure(
+            401,
+            ErrorCode.MFA_CHALLENGE_EXPIRED,
+            "This sign-in expired. Please start again.",
+          );
         const markEmailVerified =
           pending.providerAuthoritative &&
           pending.email === target.email.toLowerCase();

@@ -757,7 +757,34 @@ describe("POST /api/auth/social/link", () => {
     });
   });
 
-  it("a password reset lands between the password check and the link → 401, no session", async () => {
+  it("a password reset lands between the password check and the re-read → 401, no link, no session", async () => {
+    const hash = await bcrypt.hash("right-long-pass-1", 4);
+    const before = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: null,
+      tokenVersion: 7,
+      password: hash,
+    });
+    vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
+    vi.mocked(storage.getUserForAuth)
+      .mockResolvedValueOnce(before)
+      .mockResolvedValueOnce({ ...before, tokenVersion: 8 });
+    vi.mocked(storage.getUser).mockResolvedValue({
+      ...before,
+      tokenVersion: 8,
+    });
+    const res = await request(app())
+      .post("/api/auth/social/link")
+      .send({ ticket: "t", password: "right-long-pass-1" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
+    expect(res.body.token).toBeUndefined();
+    expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
+    expect(storage.createMfaChallenge).not.toHaveBeenCalled();
+  });
+
+  it("the storage link guard refuses a moved token version → 401, no session", async () => {
     const { TokenVersionChangedError } = await import("../../storage");
     const user = createMockUser({
       id: "u1",
