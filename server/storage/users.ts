@@ -32,6 +32,7 @@ import {
 } from "drizzle-orm";
 import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
+import { deleteAllPushTokensForUser } from "./push-tokens";
 
 // ============================================================================
 // USER CRUD
@@ -415,12 +416,17 @@ export async function updateUserGoalsAndProfile(
 export async function incrementTokenVersion(
   id: string,
 ): Promise<User | undefined> {
-  const [user] = await db
-    .update(users)
-    .set({ tokenVersion: sql`${users.tokenVersion} + 1` })
-    .where(eq(users.id, id))
-    .returning();
-  return user || undefined;
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .update(users)
+      .set({ tokenVersion: sql`${users.tokenVersion} + 1` })
+      .where(eq(users.id, id))
+      .returning();
+    if (!user) return undefined;
+    // Every session just ended, so no phone may keep getting pushes.
+    await deleteAllPushTokensForUser(tx, id);
+    return user;
+  });
 }
 
 /**

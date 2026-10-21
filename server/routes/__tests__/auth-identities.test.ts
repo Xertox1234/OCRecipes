@@ -429,20 +429,20 @@ describe("DELETE /api/auth/identities/:provider", () => {
     expect(storage.deleteIdentity).not.toHaveBeenCalled();
   });
 
-  it("disconnects apple, revoking first; a revoke failure does not block", async () => {
+  it("disconnects apple, then revokes the removed row's token; a revoke failure does not block", async () => {
     vi.mocked(storage.getSignInMethods).mockResolvedValue({
       password: true,
       google: null,
       apple: { email: null, isPrivateRelay: true },
     });
-    vi.mocked(storage.listIdentities).mockResolvedValue([
+    vi.mocked(storage.deleteIdentity).mockResolvedValue(
       createMockUserIdentity({
         id: "i1",
         userId: "u1",
         provider: "apple",
         appleRefreshTokenEnc: encryptToken("r1"),
       }),
-    ]);
+    );
     vi.mocked(revokeAppleToken).mockRejectedValue(new Error("apple down"));
     const res = await request(app())
       .delete("/api/auth/identities/apple")
@@ -453,7 +453,31 @@ describe("DELETE /api/auth/identities/:provider", () => {
     const revokeOrder = vi.mocked(revokeAppleToken).mock.invocationCallOrder[0];
     const deleteOrder = vi.mocked(storage.deleteIdentity).mock
       .invocationCallOrder[0];
-    expect(revokeOrder).toBeLessThan(deleteOrder);
+    expect(deleteOrder).toBeLessThan(revokeOrder);
+  });
+
+  it("a refused apple delete (a concurrent disconnect won) never revokes the kept identity's grant", async () => {
+    vi.mocked(storage.getSignInMethods).mockResolvedValue({
+      password: false,
+      google: { email: "a@gmail.com" },
+      apple: { email: null, isPrivateRelay: true },
+    });
+    vi.mocked(storage.listIdentities).mockResolvedValue([
+      createMockUserIdentity({
+        id: "i1",
+        userId: "u1",
+        provider: "apple",
+        appleRefreshTokenEnc: encryptToken("r1"),
+      }),
+    ]);
+    vi.mocked(storage.deleteIdentity).mockResolvedValue(undefined);
+    const res = await request(app())
+      .delete("/api/auth/identities/apple")
+      .set(auth);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("LAST_SIGN_IN_METHOD");
+    expect(storage.deleteIdentity).toHaveBeenCalledWith("u1", "apple");
+    expect(revokeAppleToken).not.toHaveBeenCalled();
   });
 
   it("409 LAST_SIGN_IN_METHOD when a concurrent disconnect won the race (audit L16)", async () => {

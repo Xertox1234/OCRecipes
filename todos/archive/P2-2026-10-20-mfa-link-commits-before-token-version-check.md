@@ -1,6 +1,6 @@
 ---
 title: "A Google/Apple link from a 2FA challenge commits even when a password reset lands mid-request"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-20
 updated: 2026-10-20
@@ -40,3 +40,4 @@ Preconditions: the attacker has the password and the second factor, and the owne
 ### 2026-10-20
 
 - Initial creation (ultrareview of #1371, finding 1).
+- Done in PR #1530. `completeLinkFromTicket` / `completeLinkByTicketHash` take a required `tokenVersion`, lock `users FOR UPDATE` in the link transaction, and throw `TokenVersionChangedError` (rolled back). Both link routes answer 401 `MFA_CHALLENGE_EXPIRED`. Review of #1530 also found that `/api/auth/social/link` compared against a re-read version, not the one the password was checked under. The route now records `proofVersion` and refuses when the re-read differs.

@@ -1,6 +1,6 @@
 ---
 title: "Behind a shared IP, the social-config rate limit hides the Google/Apple buttons"
-status: backlog
+status: done
 priority: low
 created: 2026-10-20
 updated: 2026-10-20
@@ -34,3 +34,4 @@ Found by the ultrareview of PR #1371 (2026-10-20, re-verified on main `1b58bba6`
 ### 2026-10-20
 
 - Initial creation (ultrareview of #1371, finding 8).
+- Done in PR #1530 (server half). New `socialConfigLimiter`: its own per-IP bucket, 300/min (tested at the 301st request, separate from `crudRateLimit`). The client was left unchanged: TanStack Query keeps the last good data when a refetch fails, so only a cold first load could hide the buttons, and the higher ceiling covers that.

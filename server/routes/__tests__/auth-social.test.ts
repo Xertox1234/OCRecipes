@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import bcrypt from "bcrypt";
 import { storage } from "../../storage";
 import { register } from "../auth-social";
-import { crudRateLimit } from "../_rate-limiters";
+import { crudRateLimit, socialConfigLimiter } from "../_rate-limiters";
 import {
   verifyGoogleIdToken,
   verifyAppleIdToken,
@@ -25,6 +25,7 @@ import {
 
 vi.mock("../../storage", () => ({
   ReservedUsernameError: class ReservedUsernameErrorMock extends Error {},
+  TokenVersionChangedError: class TokenVersionChangedErrorMock extends Error {},
   isReservedUsername: (u: string) => u.toLowerCase() === "demo",
   storage: {
     issueNonce: vi.fn(),
@@ -134,7 +135,8 @@ describe("GET /api/auth/social/config", () => {
   });
   // Auth audit 2026-10-10 L18: the only route in this file without a limiter.
   // express-rate-limit is a pass-through here, so assert the wiring itself.
-  it("is mounted behind crudRateLimit", () => {
+  // Its own bucket, not crudRateLimit's (ultrareview of #1371, finding 8).
+  it("is mounted behind socialConfigLimiter", () => {
     const a = express();
     register(a);
     const layer = (
@@ -142,7 +144,9 @@ describe("GET /api/auth/social/config", () => {
         route?: { path: string; stack: { handle: unknown }[] };
       }[]
     ).find((l) => l.route?.path === "/api/auth/social/config");
-    expect(layer?.route?.stack.map((s) => s.handle)).toContain(crudRateLimit);
+    const handles = layer?.route?.stack.map((s) => s.handle);
+    expect(handles).toContain(socialConfigLimiter);
+    expect(handles).not.toContain(crudRateLimit);
   });
   it("reports apple false without the encryption key", async () => {
     delete process.env.IDENTITY_TOKEN_ENC_KEY;
@@ -732,6 +736,7 @@ describe("POST /api/auth/social/link", () => {
       id: "u1",
       emailVerified: true,
       mfaEnabledAt: null,
+      tokenVersion: 7,
       password: await bcrypt.hash("right-long-pass-1", 4),
     });
     vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
@@ -748,7 +753,57 @@ describe("POST /api/auth/social/link", () => {
     expect(res.body.status).toBe("signed_in");
     expect(storage.completeLinkFromTicket).toHaveBeenCalledWith("t", {
       markEmailVerified: false,
+      tokenVersion: 7,
     });
+  });
+
+  it("a password reset lands between the password check and the re-read → 401, no link, no session", async () => {
+    const hash = await bcrypt.hash("right-long-pass-1", 4);
+    const before = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: null,
+      tokenVersion: 7,
+      password: hash,
+    });
+    vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
+    vi.mocked(storage.getUserForAuth)
+      .mockResolvedValueOnce(before)
+      .mockResolvedValueOnce({ ...before, tokenVersion: 8 });
+    vi.mocked(storage.getUser).mockResolvedValue({
+      ...before,
+      tokenVersion: 8,
+    });
+    const res = await request(app())
+      .post("/api/auth/social/link")
+      .send({ ticket: "t", password: "right-long-pass-1" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
+    expect(res.body.token).toBeUndefined();
+    expect(storage.completeLinkFromTicket).not.toHaveBeenCalled();
+    expect(storage.createMfaChallenge).not.toHaveBeenCalled();
+  });
+
+  it("the storage link guard refuses a moved token version → 401, no session", async () => {
+    const { TokenVersionChangedError } = await import("../../storage");
+    const user = createMockUser({
+      id: "u1",
+      emailVerified: true,
+      mfaEnabledAt: null,
+      password: await bcrypt.hash("right-long-pass-1", 4),
+    });
+    vi.mocked(storage.reservePendingLinkAttempt).mockResolvedValue(ticketRow);
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    vi.mocked(storage.completeLinkFromTicket).mockRejectedValue(
+      new TokenVersionChangedError(),
+    );
+    const res = await request(app())
+      .post("/api/auth/social/link")
+      .send({ ticket: "t", password: "right-long-pass-1" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("MFA_CHALLENGE_EXPIRED");
+    expect(res.body.token).toBeUndefined();
   });
 
   it("no two-step, right 11-character password → links and signs in (owner ruling 2026-10-12)", async () => {

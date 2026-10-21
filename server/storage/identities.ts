@@ -283,9 +283,26 @@ export async function refundLinkPasswordGuess(userId: string): Promise<void> {
     .where(eq(socialLinkGuesses.userId, userId));
 }
 
+/**
+ * The account's token version moved (password reset, sign-out everywhere)
+ * after the caller proved who they are — the link is refused and rolled back.
+ */
+export class TokenVersionChangedError extends Error {
+  constructor() {
+    super("token version changed before the link was written");
+    this.name = "TokenVersionChangedError";
+  }
+}
+
+export interface CompleteLinkOptions {
+  markEmailVerified: boolean;
+  /** The token version the caller's proof was checked under. */
+  tokenVersion: number;
+}
+
 export async function completeLinkFromTicket(
   ticket: string,
-  opts: { markEmailVerified: boolean },
+  opts: CompleteLinkOptions,
 ): Promise<UserIdentity | undefined> {
   return completeLinkByTicketHash(sha256Hex(ticket), opts);
 }
@@ -294,10 +311,15 @@ export async function completeLinkFromTicket(
  * completeLinkFromTicket by the ticket's hash — an MFA link challenge stores
  * only the hash and completes the link after the code passes. Keeps the
  * kind = 'link' and unexpired guards, so a dead ticket fails closed.
+ *
+ * The users row is locked and its token version compared inside the same
+ * transaction as the insert: a reset that commits between the route's check
+ * and this write would otherwise leave the link behind while only the
+ * session is refused. Throws TokenVersionChangedError (and rolls back).
  */
 export async function completeLinkByTicketHash(
   ticketHash: string,
-  opts: { markEmailVerified: boolean },
+  opts: CompleteLinkOptions,
 ): Promise<UserIdentity | undefined> {
   return db.transaction(async (tx) => {
     const [t] = await tx
@@ -311,6 +333,14 @@ export async function completeLinkByTicketHash(
       )
       .returning();
     if (!t || !t.targetUserId) return undefined;
+    const [owner] = await tx
+      .select({ tokenVersion: users.tokenVersion })
+      .from(users)
+      .where(eq(users.id, t.targetUserId))
+      .for("update");
+    if (!owner || owner.tokenVersion !== opts.tokenVersion) {
+      throw new TokenVersionChangedError();
+    }
     const [identity] = await tx
       .insert(userIdentities)
       .values({

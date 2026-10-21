@@ -92,6 +92,17 @@ export const socialAuthLimiter = createRateLimiter({
   keyByUser: false,
 });
 
+// GET /api/auth/social/config: public, so IP-keyed, and one carrier-NAT or
+// campus IP carries many phones opening the login screen. Its own bucket, well
+// above crudRateLimit's 30/min, so the Google/Apple buttons never vanish under
+// a shared IP (ultrareview of #1371, finding 8). The route only reads env.
+export const socialConfigLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 300,
+  message: "Too many requests. Please wait.",
+  keyByUser: false,
+});
+
 export const loginLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 10,

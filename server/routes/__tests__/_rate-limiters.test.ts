@@ -229,3 +229,41 @@ describe("accountDeletionLimiter", () => {
     expect(other.status).toBe(401);
   });
 });
+
+// Ultrareview of #1371, finding 8: GET /api/auth/social/config is public, so
+// it keys on IP. On the shared 30/min crudRateLimit bucket a carrier-NAT or
+// campus IP filled it and the Google/Apple buttons vanished. It gets its own,
+// much higher bucket.
+describe("socialConfigLimiter", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("has its own per-IP bucket of 300/min, apart from crudRateLimit", async () => {
+    vi.resetModules();
+    vi.stubEnv("E2E_RELAXED_RATE_LIMITS", "");
+    const { socialConfigLimiter, crudRateLimit } = await import(
+      "../_rate-limiters"
+    );
+    const app = express();
+    app.get("/config", socialConfigLimiter, (_req, res) => {
+      res.json({ ok: true });
+    });
+    app.get("/crud", crudRateLimit, (_req, res) => {
+      res.json({ ok: true });
+    });
+    // Fill the general bucket from the same IP first.
+    for (let i = 0; i < 31; i++) await request(app).get("/crud");
+    expect((await request(app).get("/crud")).status).toBe(429);
+
+    for (let i = 0; i < 300; i++) {
+      const res = await request(app).get("/config");
+      expect(res.status).toBe(200);
+      expect(res.headers["ratelimit-limit"]).toBe("300");
+    }
+    const overflow = await request(app).get("/config");
+    expect(overflow.status).toBe(429);
+    expect(overflow.body.code).toBe("RATE_LIMITED");
+  });
+});

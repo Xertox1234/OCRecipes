@@ -1,5 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { storage, ReservedUsernameError, isReservedUsername } from "../storage";
+import {
+  storage,
+  ReservedUsernameError,
+  isReservedUsername,
+  TokenVersionChangedError,
+} from "../storage";
 import type { ProviderName } from "../storage";
 import {
   generateToken,
@@ -11,6 +16,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { handleRouteError, formatZodError } from "./_helpers";
 import {
   socialAuthLimiter,
+  socialConfigLimiter,
   SOCIAL_LINK_ACCOUNT_MAX,
   crudRateLimit,
   reauthLimiter,
@@ -277,11 +283,11 @@ function sweepAbandonedTickets(): void {
 }
 
 export function register(app: Express): void {
-  // Public and cheap (env read), but every route carries a limiter; the
-  // general limit, not socialAuthLimiter, so login-screen loads never trip it.
+  // Public and cheap (env read), but every route carries a limiter: its own
+  // high per-IP bucket, so login-screen loads behind a shared IP never trip it.
   app.get(
     "/api/auth/social/config",
-    crudRateLimit,
+    socialConfigLimiter,
     (_req: Request, res: Response) => {
       const cfg = getSocialConfig();
       res.json({ google: cfg.google !== null, apple: cfg.apple !== null });
@@ -603,6 +609,9 @@ export function register(app: Express): void {
         );
 
         let pending;
+        // The token version the password was checked under. A reset that
+        // lands before the re-read below must not let the old password link.
+        let proofVersion: number | undefined;
         if ("password" in body) {
           // Attempts are counted (max 5) so a wrong password keeps the ticket alive.
           pending = await storage.reservePendingLinkAttempt(body.ticket);
@@ -637,6 +646,7 @@ export function register(app: Express): void {
             );
           }
           await storage.refundLinkPasswordGuess(target.id);
+          proofVersion = target.tokenVersion;
         } else {
           pending = await storage.getPendingSignIn(body.ticket, "link");
           if (!pending?.targetUserId) throw expired;
@@ -665,6 +675,14 @@ export function register(app: Express): void {
 
         const target = await storage.getUserForAuth(pending.targetUserId);
         if (!target) throw expired;
+        // From here on target.tokenVersion is the version the proof holds
+        // under: the link write and any challenge are bound to it.
+        if (proofVersion !== undefined && target.tokenVersion !== proofVersion)
+          throw new HttpFailure(
+            401,
+            ErrorCode.MFA_CHALLENGE_EXPIRED,
+            "This sign-in expired. Please start again.",
+          );
         const markEmailVerified =
           pending.providerAuthoritative &&
           pending.email === target.email.toLowerCase();
@@ -696,8 +714,17 @@ export function register(app: Express): void {
         try {
           identity = await storage.completeLinkFromTicket(body.ticket, {
             markEmailVerified,
+            tokenVersion: target.tokenVersion,
           });
         } catch (err) {
+          // A reset landed after the proof: the link is rolled back, and the
+          // answer matches what issueSession gives for the same race.
+          if (err instanceof TokenVersionChangedError)
+            throw new HttpFailure(
+              401,
+              ErrorCode.MFA_CHALLENGE_EXPIRED,
+              "This sign-in expired. Please start again.",
+            );
           if (isUniqueViolation(err))
             throw new HttpFailure(
               409,
@@ -856,16 +883,10 @@ export function register(app: Express): void {
             ErrorCode.LAST_SIGN_IN_METHOD,
           );
         }
-        if (provider.data === "apple") {
-          await revokeAppleIdentities(
-            (await storage.listIdentities(req.userId)).filter(
-              (i) => i.provider === "apple",
-            ),
-          );
-        }
         // The storage delete re-checks "not the last method" under a lock: a
         // concurrent disconnect that won the race refuses this one (audit L16).
-        if (!(await storage.deleteIdentity(req.userId, provider.data))) {
+        const removed = await storage.deleteIdentity(req.userId, provider.data);
+        if (!removed) {
           // Refused or already gone (a double tap): say which, truthfully.
           if (!(await storage.getSignInMethods(req.userId))[provider.data]) {
             return sendError(res, 404, "Not connected", ErrorCode.NOT_FOUND);
@@ -877,6 +898,10 @@ export function register(app: Express): void {
             ErrorCode.LAST_SIGN_IN_METHOD,
           );
         }
+        // Revoke only what was actually removed: revoking before a delete the
+        // lock then refuses would leave the kept Apple sign-in with a dead
+        // grant. The removed row still carries its stored token.
+        await revokeAppleIdentities([removed]);
         res.json({ signInMethods: await storage.getSignInMethods(req.userId) });
       } catch (error) {
         handleRouteError(res, error, "disconnect provider");

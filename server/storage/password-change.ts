@@ -7,6 +7,7 @@ import {
   CHANGE_CODE_TTL_MINUTES,
 } from "@shared/constants/password-change";
 import { CLEARED_RESET_CODE } from "./password-reset";
+import { deleteAllPushTokensForUser } from "./push-tokens";
 
 /**
  * Store a new change-password code (replacing any live one, guesses back to
@@ -115,6 +116,7 @@ export async function changePassword(opts: {
         )
         .returning({ tokenVersion: users.tokenVersion });
       if (!row) return { ok: false, reason: "version_moved" } as const;
+      await deleteAllPushTokensForUser(tx, opts.userId);
       if (opts.consumeCodeHash !== undefined) {
         const [used] = await tx
           .update(passwordChangeCodes)
