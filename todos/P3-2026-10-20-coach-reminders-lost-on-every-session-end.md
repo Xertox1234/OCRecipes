@@ -7,6 +7,8 @@ updated: 2026-10-20
 assignee:
 labels: [deferred, mobile, notifications, auth]
 github_issue:
+human_led: true
+blocked_reason: "Needs an owner decision first: reschedule commitment reminders on sign-in from the server's notebook entries, or keep the reminder map per user and restore it on the same user's sign-in. Record the choice in this todo, then clear this gate."
 ---
 
 # Every session end wipes scheduled coach reminders, and nothing reschedules them on sign-in
