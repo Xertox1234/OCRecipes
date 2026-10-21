@@ -1,6 +1,6 @@
 ---
 title: "Disconnecting Apple revokes the Apple grant before the locked delete, which can still refuse"
-status: backlog
+status: done
 priority: low
 created: 2026-10-20
 updated: 2026-10-20
@@ -34,3 +34,4 @@ Found by the ultrareview of PR #1371 (2026-10-20, re-verified on main `1b58bba6`
 ### 2026-10-20
 
 - Initial creation (ultrareview of #1371, finding 6).
+- Done in PR #1530. The route calls `deleteIdentity` first and revokes only the row it returned. A refused delete never revokes (route test).

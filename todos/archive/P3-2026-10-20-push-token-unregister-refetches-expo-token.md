@@ -1,6 +1,6 @@
 ---
 title: "Sign-out's push-token DELETE is skipped on slow networks because it re-fetches the Expo token first"
-status: backlog
+status: done
 priority: low
 created: 2026-10-20
 updated: 2026-10-20
@@ -36,3 +36,4 @@ Found by the ultrareview of PR #1371 (2026-10-20, re-verified on main `1b58bba6`
 ### 2026-10-20
 
 - Initial creation (ultrareview of #1371, finding 4).
+- Closed by PR #1530 without building the stored-token change. The underlying problem (the token survives sign-out on a slow network) is fixed on the server: the logout POST has no cap, bumps `tokenVersion`, and the bump deletes the row. The client's capped DELETE stays as it is and is now redundant.
