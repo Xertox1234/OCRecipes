@@ -16,6 +16,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { handleRouteError, formatZodError } from "./_helpers";
 import {
   socialAuthLimiter,
+  socialConfigLimiter,
   SOCIAL_LINK_ACCOUNT_MAX,
   crudRateLimit,
   reauthLimiter,
@@ -282,11 +283,11 @@ function sweepAbandonedTickets(): void {
 }
 
 export function register(app: Express): void {
-  // Public and cheap (env read), but every route carries a limiter; the
-  // general limit, not socialAuthLimiter, so login-screen loads never trip it.
+  // Public and cheap (env read), but every route carries a limiter: its own
+  // high per-IP bucket, so login-screen loads behind a shared IP never trip it.
   app.get(
     "/api/auth/social/config",
-    crudRateLimit,
+    socialConfigLimiter,
     (_req: Request, res: Response) => {
       const cfg = getSocialConfig();
       res.json({ google: cfg.google !== null, apple: cfg.apple !== null });

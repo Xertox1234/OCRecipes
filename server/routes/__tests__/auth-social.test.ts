@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import bcrypt from "bcrypt";
 import { storage } from "../../storage";
 import { register } from "../auth-social";
-import { crudRateLimit } from "../_rate-limiters";
+import { crudRateLimit, socialConfigLimiter } from "../_rate-limiters";
 import {
   verifyGoogleIdToken,
   verifyAppleIdToken,
@@ -135,7 +135,8 @@ describe("GET /api/auth/social/config", () => {
   });
   // Auth audit 2026-10-10 L18: the only route in this file without a limiter.
   // express-rate-limit is a pass-through here, so assert the wiring itself.
-  it("is mounted behind crudRateLimit", () => {
+  // Its own bucket, not crudRateLimit's (ultrareview of #1371, finding 8).
+  it("is mounted behind socialConfigLimiter", () => {
     const a = express();
     register(a);
     const layer = (
@@ -143,7 +144,9 @@ describe("GET /api/auth/social/config", () => {
         route?: { path: string; stack: { handle: unknown }[] };
       }[]
     ).find((l) => l.route?.path === "/api/auth/social/config");
-    expect(layer?.route?.stack.map((s) => s.handle)).toContain(crudRateLimit);
+    const handles = layer?.route?.stack.map((s) => s.handle);
+    expect(handles).toContain(socialConfigLimiter);
+    expect(handles).not.toContain(crudRateLimit);
   });
   it("reports apple false without the encryption key", async () => {
     delete process.env.IDENTITY_TOKEN_ENC_KEY;
