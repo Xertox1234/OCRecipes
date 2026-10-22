@@ -1,14 +1,12 @@
 ---
 title: "Every session end wipes scheduled coach reminders, and nothing reschedules them on sign-in"
-status: backlog
+status: done
 priority: low
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-10-21
 assignee:
 labels: [deferred, mobile, notifications, auth]
 github_issue:
-human_led: true
-blocked_reason: "Needs an owner decision first: reschedule commitment reminders on sign-in from the server's notebook entries, or keep the reminder map per user and restore it on the same user's sign-in. Record the choice in this todo, then clear this gate."
 ---
 
 # Every session end wipes scheduled coach reminders, and nothing reschedules them on sign-in
@@ -25,7 +23,7 @@ Found by the ultrareview of PR #1371 (2026-10-20, re-verified on main `1b58bba6`
 
 ## Acceptance Criteria
 
-- [ ] **Needs a decision first:** reschedule on sign-in from the server's notebook entries (which have a commitment and a future reminder time), or keep the reminder map per user and restore it on the same user's sign-in. Record the choice here before building.
+- [x] **Needs a decision first:** reschedule on sign-in from the server's notebook entries (which have a commitment and a future reminder time), or keep the reminder map per user and restore it on the same user's sign-in. Record the choice here before building.
 - [ ] After sign-out then sign-in as the same user, their future commitment reminders are scheduled again.
 - [ ] A different user signing in on the phone never gets the previous user's reminders.
 - [ ] Tests cover both cases.
@@ -40,3 +38,8 @@ Found by the ultrareview of PR #1371 (2026-10-20, re-verified on main `1b58bba6`
 ### 2026-10-20
 
 - Initial creation (ultrareview of #1371, finding 5).
+
+### 2026-10-21
+
+- **Owner decision: close with no change.** The server already delivers these reminders. `server/services/notification-scheduler.ts` runs at 09:00 daily, pushes every due commitment to all of the user's registered devices, and records an in-app reminder through `notify()`. Signing back in re-registers the device's push token, so the same user still gets their reminders after a session ends. The wiped OS-scheduled reminder is only the client fallback for when push can't be delivered.
+- The remaining acceptance criteria are not built, by that decision. Audit M2's clear stays as it is, so a different user on the phone never sees the previous user's reminders.
