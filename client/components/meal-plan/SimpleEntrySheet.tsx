@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
-import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
+import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
@@ -296,7 +296,7 @@ function SimpleEntrySheetContentInner(
           ]}
         >
           <Feather name="edit-3" size={16} color={theme.textSecondary} />
-          <BottomSheetTextInput
+          <FocusBottomSheetTextInput
             ref={inputRef}
             style={[styles.input, { color: theme.text }]}
             placeholder={isListening ? "Listening..." : "e.g. chicken stir fry"}

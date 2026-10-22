@@ -2,12 +2,13 @@ import React, { useState, useCallback, useRef } from "react";
 import {
   StyleSheet,
   View,
-  TextInput,
   Pressable,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  type TextInput,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -163,7 +164,7 @@ export default function RecipeAIGenerateScreen() {
         )}
 
         {/* Prompt input */}
-        <TextInput
+        <FocusTextInput
           ref={inputRef}
           style={[
             styles.promptInput,

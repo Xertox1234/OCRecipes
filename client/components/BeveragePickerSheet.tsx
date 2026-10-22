@@ -11,8 +11,8 @@ import {
   BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetView,
-  BottomSheetTextInput,
 } from "@gorhom/bottom-sheet";
+import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -554,7 +554,7 @@ export function BeveragePickerSheet({
               >
                 Enter a beverage name or calorie amount
               </ThemedText>
-              <BottomSheetTextInput
+              <FocusBottomSheetTextInput
                 value={customInput}
                 onChangeText={setCustomInput}
                 placeholder="e.g. Matcha Latte or 150"

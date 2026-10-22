@@ -126,6 +126,51 @@ module.exports = defineConfig([
     },
   },
   {
+    // Every text-entry surface renders through a shared primitive that carries
+    // the focus feedback (TextInput, FocusTextInput, FocusBottomSheetTextInput).
+    // A bare react-native / gorhom / gesture-handler input shows only a cursor
+    // on tap. `import type` / inline `type` specifiers stay legal (refs).
+    files: ["client/**/*.{ts,tsx}"],
+    ignores: [
+      "**/__tests__/**",
+      "**/*.test.{ts,tsx}",
+      "client/components/TextInput.tsx",
+      "client/components/FocusTextInput.tsx",
+      "client/components/FocusBottomSheetTextInput.tsx",
+    ],
+    plugins: { "@typescript-eslint": tseslint.plugin },
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "react-native",
+              importNames: ["TextInput"],
+              allowTypeImports: true,
+              message:
+                "Use FocusTextInput (drop-in) or TextInput (boxed) from @/components — a bare react-native TextInput gives no focus feedback.",
+            },
+            {
+              name: "@gorhom/bottom-sheet",
+              importNames: ["BottomSheetTextInput"],
+              allowTypeImports: true,
+              message:
+                "Use FocusBottomSheetTextInput from @/components/FocusBottomSheetTextInput — it wraps BottomSheetTextInput with the shared focus feedback.",
+            },
+            {
+              name: "react-native-gesture-handler",
+              importNames: ["TextInput"],
+              allowTypeImports: true,
+              message:
+                "Use FocusTextInput or FocusBottomSheetTextInput from @/components.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.test.{ts,tsx}"],
     rules: {
       "no-restricted-syntax": [

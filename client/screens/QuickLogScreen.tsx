@@ -3,7 +3,6 @@ import {
   StyleSheet,
   View,
   ScrollView,
-  TextInput,
   Pressable,
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +10,7 @@ import {
   AccessibilityInfo,
   InteractionManager,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -216,7 +216,7 @@ export default function QuickLogScreen() {
             Type or speak what you ate
           </ThemedText>
           <View style={styles.inputRow}>
-            <TextInput
+            <FocusTextInput
               style={[
                 styles.textInput,
                 {

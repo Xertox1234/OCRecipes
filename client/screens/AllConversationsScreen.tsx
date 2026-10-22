@@ -2,12 +2,12 @@ import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   ScrollView,
-  TextInput,
   Pressable,
   Alert,
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
@@ -327,7 +327,7 @@ export default function AllConversationsScreen() {
           color={theme.textSecondary}
           accessible={false}
         />
-        <TextInput
+        <FocusTextInput
           style={[styles.searchInput, { color: theme.text }]}
           placeholder="Search conversations…"
           placeholderTextColor={theme.textSecondary}

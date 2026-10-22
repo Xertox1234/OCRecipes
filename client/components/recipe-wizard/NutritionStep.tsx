@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
-import { View, Text, TextInput, ScrollView, StyleSheet } from "react-native";
+import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import type { NutritionData } from "@/hooks/useRecipeForm";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -91,7 +92,7 @@ export default function NutritionStep({
             <Text style={[styles.cellLabel, { color: theme[field.colorKey] }]}>
               {field.label}
             </Text>
-            <TextInput
+            <FocusTextInput
               style={[styles.cellInput, { color: theme.text }]}
               value={nutrition[field.key]}
               onChangeText={(text) => handleChange(field.key, text)}

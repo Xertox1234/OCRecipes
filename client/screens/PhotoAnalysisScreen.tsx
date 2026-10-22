@@ -4,11 +4,11 @@ import {
   View,
   ScrollView,
   Image,
-  TextInput,
   Pressable,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -146,7 +146,7 @@ function FoodItemCard({
 
           {isEditing ? (
             <View style={styles.editFields}>
-              <TextInput
+              <FocusTextInput
                 style={[
                   styles.editInput,
                   {
@@ -160,7 +160,7 @@ function FoodItemCard({
                 placeholderTextColor={theme.textSecondary}
                 accessibilityLabel="Food name"
               />
-              <TextInput
+              <FocusTextInput
                 style={[
                   styles.editInput,
                   styles.quantityInput,
@@ -313,7 +313,7 @@ function FollowUpModal({
         {currentQuestion}
       </ThemedText>
 
-      <TextInput
+      <FocusTextInput
         style={[
           styles.followUpInput,
           { backgroundColor: theme.backgroundSecondary, color: theme.text },

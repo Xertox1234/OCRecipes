@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
-  TextInput,
   Pressable,
   ScrollView,
   Alert,
@@ -9,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -392,7 +392,7 @@ export default function NotebookEntryScreen() {
           >
             CONTENT
           </ThemedText>
-          <TextInput
+          <FocusTextInput
             style={[
               styles.contentInput,
               { backgroundColor: theme.backgroundSecondary, color: theme.text },

@@ -4,7 +4,8 @@ import React, {
   useLayoutEffect,
   useState,
 } from "react";
-import { StyleSheet, View, Pressable, FlatList, TextInput } from "react-native";
+import { StyleSheet, View, Pressable, FlatList } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -330,7 +331,7 @@ export default function GroceryListsScreen() {
                 </ThemedText>
               ) : null}
               <View style={styles.dateInputRow}>
-                <TextInput
+                <FocusTextInput
                   style={[
                     styles.dateInput,
                     {
@@ -350,7 +351,7 @@ export default function GroceryListsScreen() {
                 <ThemedText style={{ color: theme.textSecondary }}>
                   to
                 </ThemedText>
-                <TextInput
+                <FocusTextInput
                   style={[
                     styles.dateInput,
                     {

@@ -9,7 +9,6 @@ import {
   View,
   Text,
   FlatList,
-  TextInput,
   Pressable,
   StyleSheet,
   Platform,
@@ -17,6 +16,7 @@ import {
   ScrollView,
   AccessibilityInfo,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -1049,7 +1049,7 @@ export default function RecipeChatScreen() {
           },
         ]}
       >
-        <TextInput
+        <FocusTextInput
           value={inputText}
           onChangeText={setInputText}
           placeholder={

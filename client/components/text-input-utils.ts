@@ -36,6 +36,31 @@ export function resolvePlaceholder(
   return floated ? placeholder : undefined;
 }
 
+/**
+ * Focus border for a drop-in input that keeps the caller's own look.
+ *
+ * A style that already draws a border animates THAT border's colour toward the
+ * focus colour. A borderless style (a chat composer, an inline numeric field)
+ * gets a 1px border resting fully transparent, so focus still answers back
+ * without the caller restyling anything — the only cost is 1px of inset.
+ */
+export function resolveFocusBorder(
+  flat: { borderWidth?: number; borderColor?: unknown },
+  focusColor: string,
+  fallbackRestColor?: string,
+): { borderWidth: number; restColor: string; focusColor: string } {
+  const bordered = (flat.borderWidth ?? 0) > 0;
+  const own =
+    typeof flat.borderColor === "string" ? flat.borderColor : undefined;
+  return {
+    borderWidth: bordered ? (flat.borderWidth as number) : 1,
+    restColor: bordered
+      ? (own ?? fallbackRestColor ?? withOpacity(focusColor, 0))
+      : withOpacity(focusColor, 0),
+    focusColor,
+  };
+}
+
 /** The visible label doubles as the input's accessible name unless overridden. */
 export function resolveInputAccessibilityLabel(
   explicit: string | undefined,

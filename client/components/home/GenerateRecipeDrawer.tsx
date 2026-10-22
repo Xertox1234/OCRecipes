@@ -1,6 +1,7 @@
 // client/components/home/GenerateRecipeDrawer.tsx
 import React, { useState } from "react";
-import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
@@ -45,7 +46,7 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
           },
         ]}
       >
-        <TextInput
+        <FocusTextInput
           style={[styles.input, { color: theme.text }]}
           placeholder="Describe a recipe…"
           placeholderTextColor={theme.textSecondary}

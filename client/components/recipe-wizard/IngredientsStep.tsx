@@ -1,12 +1,12 @@
 import React, { useCallback, useMemo } from "react";
 import {
   Text,
-  TextInput,
   Pressable,
   FlatList,
   StyleSheet,
   AccessibilityInfo,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -67,7 +67,7 @@ const IngredientRowView = React.memo(function IngredientRowView({
       <Text style={[styles.bullet, { color: theme.link }]}>•</Text>
 
       {/* Ingredient input */}
-      <TextInput
+      <FocusTextInput
         style={[styles.rowInput, { color: theme.text }]}
         value={item.text}
         onChangeText={(text) => onUpdate(item.key, text)}

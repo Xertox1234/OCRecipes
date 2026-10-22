@@ -2,12 +2,12 @@ import React, { ReactNode } from "react";
 import {
   StyleSheet,
   View,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import Animated, { ZoomIn } from "react-native-reanimated";
 import { BorderRadius, FontFamily, Spacing } from "@/constants/theme";
 import { sendButtonEntrySpring } from "@/constants/animations";
@@ -131,7 +131,7 @@ export function CoachChatBase({
             inputBarStyle,
           ]}
         >
-          <TextInput
+          <FocusTextInput
             style={[
               styles.input,
               { backgroundColor: theme.backgroundDefault, color: theme.text },

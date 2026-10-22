@@ -2,12 +2,12 @@ import React, { useCallback, useMemo } from "react";
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   FlatList,
   StyleSheet,
   AccessibilityInfo,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -89,7 +89,7 @@ const InstructionRowView = React.memo(function InstructionRowView({
       </View>
 
       {/* Step text input */}
-      <TextInput
+      <FocusTextInput
         style={[styles.rowInput, { color: theme.text }]}
         value={item.text}
         onChangeText={(text) => onUpdate(item.key, text)}

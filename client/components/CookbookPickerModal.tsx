@@ -5,12 +5,12 @@ import {
   Modal,
   Pressable,
   FlatList,
-  TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Alert,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -286,7 +286,7 @@ export function CookbookPickerModal({
         {/* Footer: New cookbook input or button */}
         {showNewInput ? (
           <View style={[styles.newInputRow, { borderTopColor: theme.border }]}>
-            <TextInput
+            <FocusTextInput
               style={[
                 styles.newInput,
                 {

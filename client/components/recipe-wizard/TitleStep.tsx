@@ -1,5 +1,6 @@
 import React from "react";
-import { Text, TextInput, StyleSheet, ScrollView } from "react-native";
+import { Text, StyleSheet, ScrollView } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Spacing,
@@ -33,7 +34,7 @@ export default function TitleStep({
     >
       {/* Recipe Name */}
       <Text style={[styles.label, { color: theme.link }]}>RECIPE NAME</Text>
-      <TextInput
+      <FocusTextInput
         style={[
           styles.input,
           {
@@ -59,7 +60,7 @@ export default function TitleStep({
       >
         DESCRIPTION (optional)
       </Text>
-      <TextInput
+      <FocusTextInput
         style={[
           styles.textArea,
           {

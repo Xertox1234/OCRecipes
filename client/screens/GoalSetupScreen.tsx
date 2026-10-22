@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
-import { StyleSheet, View, ScrollView, TextInput } from "react-native";
+import { StyleSheet, View, ScrollView } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -185,7 +186,7 @@ function NumberInput({
         {label}
       </ThemedText>
       <View style={styles.inputRow}>
-        <TextInput
+        <FocusTextInput
           style={[
             styles.numberInput,
             { backgroundColor: theme.backgroundSecondary, color: theme.text },
@@ -555,7 +556,7 @@ export default function GoalSetupScreen() {
 
               <View style={styles.goalsGrid}>
                 <View style={styles.goalItem}>
-                  <TextInput
+                  <FocusTextInput
                     style={[
                       styles.goalInput,
                       {
@@ -580,7 +581,7 @@ export default function GoalSetupScreen() {
                   style={[styles.goalItem, !canSetMacros && { opacity: 0.6 }]}
                 >
                   <View>
-                    <TextInput
+                    <FocusTextInput
                       style={[
                         styles.goalInput,
                         {
@@ -611,7 +612,7 @@ export default function GoalSetupScreen() {
                   style={[styles.goalItem, !canSetMacros && { opacity: 0.6 }]}
                 >
                   <View>
-                    <TextInput
+                    <FocusTextInput
                       style={[
                         styles.goalInput,
                         {
@@ -642,7 +643,7 @@ export default function GoalSetupScreen() {
                   style={[styles.goalItem, !canSetMacros && { opacity: 0.6 }]}
                 >
                   <View>
-                    <TextInput
+                    <FocusTextInput
                       style={[
                         styles.goalInput,
                         {

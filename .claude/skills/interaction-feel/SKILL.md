@@ -56,8 +56,14 @@ loading row), not an omission.
 
 The animated focus border and floating label live in the shared
 `client/components/TextInput.tsx` (pure logic: `client/components/text-input-utils.ts`;
-timing token: `focusTimingConfig` in `client/constants/animations.ts`). Every screen gets
-the focus border automatically. Opt into the floating label with the `label` prop — it
+timing token: `focusTimingConfig` in `client/constants/animations.ts`). Focus feedback
+is NOT automatic for a bare react-native input — ESLint (`no-restricted-imports`, guard
+test `scripts/__tests__/no-bare-text-input.test.ts`) forbids importing `TextInput` from
+`react-native` or `BottomSheetTextInput` from gorhom in `client/`. Pick the primitive:
+boxed field → `TextInput`; composer / inline / any input that keeps its own look →
+`FocusTextInput` (drop-in, fades the input's own border to the link colour; a borderless
+style gets a 1px transparent border); inside a gorhom sheet → `FocusBottomSheetTextInput`.
+Shared logic lives in `client/components/useFocusBorder.ts`. Opt into the floating label with the `label` prop — it
 doubles as the input's accessible name unless `accessibilityLabel` is set, and suppresses
 the `placeholder` while resting. The label scale uses the `transformOrigin: "left"` style
 prop (supported on RN 0.81/Fabric). If you're writing `onFocus` state or a border

@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
-import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -88,7 +89,7 @@ export function ServingStepperChip({
       </Pressable>
 
       {isEditing ? (
-        <TextInput
+        <FocusTextInput
           style={[styles.editInput, { color: theme.text }]}
           value={editValue}
           onChangeText={setEditValue}
