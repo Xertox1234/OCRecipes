@@ -1,6 +1,6 @@
 ---
 title: "Two-thirds of text inputs show only a cursor on tap — 44 inputs bypass the shared animated TextInput"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-20
 updated: 2026-10-20

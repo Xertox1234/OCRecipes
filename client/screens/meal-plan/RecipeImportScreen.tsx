@@ -3,12 +3,12 @@ import {
   AccessibilityInfo,
   StyleSheet,
   View,
-  TextInput,
   Pressable,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -134,7 +134,7 @@ export default function RecipeImportScreen() {
               Paste a recipe URL and we&apos;ll extract the ingredients,
               nutrition, and instructions automatically.
             </ThemedText>
-            <TextInput
+            <FocusTextInput
               style={inputStyle}
               value={url}
               onChangeText={setUrl}

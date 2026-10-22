@@ -6,10 +6,11 @@ import {
   View,
   Pressable,
   SectionList,
-  TextInput,
   RefreshControl,
   Share,
+  type TextInput,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useHeaderHeight } from "@react-navigation/elements";
 import {
   useNavigation,
@@ -511,7 +512,7 @@ export default function GroceryListScreen() {
               />
             )}
             <View style={styles.addItemRow}>
-              <TextInput
+              <FocusTextInput
                 ref={addItemRef}
                 style={[
                   styles.addItemInput,

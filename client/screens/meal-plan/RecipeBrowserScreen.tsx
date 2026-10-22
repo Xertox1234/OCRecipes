@@ -9,13 +9,13 @@ import {
   AccessibilityInfo,
   StyleSheet,
   View,
-  TextInput,
   SectionList,
   Pressable,
   ActivityIndicator,
   ScrollView,
   type GestureResponderEvent,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -806,7 +806,7 @@ export default function RecipeBrowserScreen() {
           ]}
         >
           <Feather name="search" size={16} color={theme.textSecondary} />
-          <TextInput
+          <FocusTextInput
             style={[styles.searchInput, { color: theme.text }]}
             placeholder="Search recipes..."
             placeholderTextColor={theme.textSecondary}

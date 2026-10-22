@@ -1,12 +1,7 @@
 // client/components/home/RecipeSearchDrawer.tsx
 import React, { useEffect, useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useNavigation } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -113,7 +108,7 @@ export function RecipeSearchDrawer({
           },
         ]}
       >
-        <TextInput
+        <FocusTextInput
           style={[styles.input, { color: theme.text }]}
           placeholder="Search recipes…"
           placeholderTextColor={theme.textSecondary}

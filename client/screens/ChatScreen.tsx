@@ -9,12 +9,13 @@ import {
   StyleSheet,
   View,
   FlatList,
-  TextInput,
   Pressable,
   KeyboardAvoidingView,
   Platform,
   AccessibilityInfo,
+  type TextInput,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import {
   useRoute,
   useNavigation,
@@ -673,7 +674,7 @@ export default function ChatScreen() {
             { backgroundColor: theme.backgroundSecondary },
           ]}
         >
-          <TextInput
+          <FocusTextInput
             ref={inputRef}
             style={[styles.textInput, { color: theme.text }]}
             placeholder="Ask NutriCoach..."

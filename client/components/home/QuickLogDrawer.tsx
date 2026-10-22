@@ -2,13 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   ActivityIndicator,
   Keyboard,
   AccessibilityInfo,
   Platform,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
@@ -306,7 +306,7 @@ export function QuickLogDrawer({
           },
         ]}
       >
-        <TextInput
+        <FocusTextInput
           style={[styles.textInput, { color: theme.text }]}
           placeholder="What did you eat?"
           placeholderTextColor={theme.textSecondary}

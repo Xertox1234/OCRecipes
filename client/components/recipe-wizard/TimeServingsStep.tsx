@@ -1,12 +1,6 @@
 import React, { useCallback } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  StyleSheet,
-  ScrollView,
-} from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import type { TimeServingsData } from "@/hooks/useRecipeForm";
@@ -157,7 +151,7 @@ export default function TimeServingsStep({
           <Text style={[styles.sectionLabel, { color: theme.link }]}>
             PREP TIME
           </Text>
-          <TextInput
+          <FocusTextInput
             style={[
               styles.timeInput,
               {
@@ -186,7 +180,7 @@ export default function TimeServingsStep({
           <Text style={[styles.sectionLabel, { color: theme.link }]}>
             COOK TIME
           </Text>
-          <TextInput
+          <FocusTextInput
             style={[
               styles.timeInput,
               {

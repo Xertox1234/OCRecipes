@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
-import { View, Text, TextInput, ScrollView, StyleSheet } from "react-native";
+import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import type { TagsData } from "@/hooks/useRecipeForm";
 import { DIET_TAG_OPTIONS, type DietTag } from "./types";
 import { useTheme } from "@/hooks/useTheme";
@@ -51,7 +52,7 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
           CUISINE
         </Text>
         <View style={styles.cuisineRow}>
-          <TextInput
+          <FocusTextInput
             style={[
               styles.cuisineInput,
               {

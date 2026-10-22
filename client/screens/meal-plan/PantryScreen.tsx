@@ -10,9 +10,10 @@ import {
   View,
   Pressable,
   SectionList,
-  TextInput,
   RefreshControl,
+  type TextInput,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -471,7 +472,7 @@ export default function PantryScreen() {
         }
         ListFooterComponent={
           <View style={styles.addItemRow}>
-            <TextInput
+            <FocusTextInput
               ref={addItemInputRef}
               style={[
                 styles.addItemInput,

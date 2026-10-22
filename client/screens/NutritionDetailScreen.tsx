@@ -6,8 +6,8 @@ import {
   View,
   ScrollView,
   Pressable,
-  TextInput as RNTextInput,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useFocusEffect,
@@ -507,7 +507,7 @@ export default function NutritionDetailScreen() {
               </View>
             </View>
             <View style={styles.manualSearchRow}>
-              <RNTextInput
+              <FocusTextInput
                 style={[
                   styles.manualSearchInput,
                   {

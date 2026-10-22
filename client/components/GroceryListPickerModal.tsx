@@ -6,12 +6,12 @@ import {
   Modal,
   Pressable,
   FlatList,
-  TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Alert,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -242,7 +242,7 @@ export function GroceryListPickerModal({
           <View
             style={[styles.newListInputRow, { borderTopColor: theme.border }]}
           >
-            <TextInput
+            <FocusTextInput
               style={[
                 styles.newListInput,
                 {

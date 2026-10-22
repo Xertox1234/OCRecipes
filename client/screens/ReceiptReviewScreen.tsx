@@ -9,13 +9,13 @@ import {
   StyleSheet,
   View,
   FlatList,
-  TextInput,
   Pressable,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   AccessibilityInfo,
 } from "react-native";
+import { FocusTextInput } from "@/components/FocusTextInput";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -245,7 +245,7 @@ export default function ReceiptReviewScreen() {
             ]}
           >
             <View style={styles.itemMain}>
-              <TextInput
+              <FocusTextInput
                 style={[styles.itemName, { color: theme.text }]}
                 value={item.name}
                 onChangeText={(text) => handleUpdateName(item.id, text)}
@@ -261,7 +261,7 @@ export default function ReceiptReviewScreen() {
             </View>
 
             <View style={styles.itemMeta}>
-              <TextInput
+              <FocusTextInput
                 style={[
                   styles.qtyInput,
                   {

@@ -8,6 +8,7 @@ import {
   getFloatedLabelBounds,
   getInputFirstLineBounds,
   getContainerContentHeight,
+  resolveFocusBorder,
 } from "../text-input-utils";
 
 describe("shouldFloatLabel", () => {
@@ -124,5 +125,47 @@ describe("resolveInputAccessibilityLabel", () => {
     expect(resolveInputAccessibilityLabel(undefined, undefined)).toBe(
       undefined,
     );
+  });
+});
+
+describe("resolveFocusBorder", () => {
+  it("keeps an existing border width and rests on its own colour", () => {
+    expect(
+      resolveFocusBorder({ borderWidth: 2, borderColor: "#112233" }, "#AA0000"),
+    ).toEqual({
+      borderWidth: 2,
+      restColor: "#112233",
+      focusColor: "#AA0000",
+    });
+  });
+
+  it("falls back to the supplied rest colour when a bordered style names none", () => {
+    expect(
+      resolveFocusBorder({ borderWidth: 1 }, "#AA0000", "#CCCCCC"),
+    ).toEqual({ borderWidth: 1, restColor: "#CCCCCC", focusColor: "#AA0000" });
+  });
+
+  it("adds a 1px border that rests fully transparent when the style has none", () => {
+    expect(resolveFocusBorder({}, "#AA0000")).toEqual({
+      borderWidth: 1,
+      restColor: withOpacity("#AA0000", 0),
+      focusColor: "#AA0000",
+    });
+  });
+
+  it("treats a zero border width as borderless", () => {
+    expect(resolveFocusBorder({ borderWidth: 0 }, "#AA0000").borderWidth).toBe(
+      1,
+    );
+  });
+
+  it("ignores a non-string border colour", () => {
+    expect(
+      resolveFocusBorder(
+        { borderWidth: 1, borderColor: 5 as unknown as string },
+        "#AA0000",
+        "#CCCCCC",
+      ).restColor,
+    ).toBe("#CCCCCC");
   });
 });

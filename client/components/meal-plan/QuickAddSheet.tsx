@@ -8,10 +8,8 @@ import React, {
 } from "react";
 import { StyleSheet, View, Pressable } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
-import {
-  BottomSheetTextInput,
-  BottomSheetFlatList,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
@@ -418,7 +416,7 @@ function QuickAddSheetContentInner(
           ]}
         >
           <Feather name="search" size={16} color={theme.textSecondary} />
-          <BottomSheetTextInput
+          <FocusBottomSheetTextInput
             ref={inputRef}
             style={[styles.searchInput, { color: theme.text }]}
             placeholder="Search recipes..."
