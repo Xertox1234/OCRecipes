@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import { StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
-import {} from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
