@@ -105,44 +105,64 @@ export const dateStripSwipeThreshold = 50;
 /** Spring configuration for the date strip settling back after a swipe */
 export const dateStripSnapBackSpringConfig: WithSpringConfig = {
   damping: 20,
+  mass: 1,
   stiffness: 200,
 };
 
 /** Spring parameters for banner entrances (toast, offline banner), applied
- *  through a layout-animation builder's `.damping()` / `.stiffness()`. */
+ *  through a layout-animation builder's `.damping()` / `.stiffness()` /
+ *  `.mass()`. */
 export const bannerEntrySpring = {
   damping: 20,
+  mass: 1,
   stiffness: 200,
 } as const;
 
 /** Spring parameters for the speed-dial mini-FAB entrances (builder API). */
 export const speedDialEntrySpring = {
   damping: 16,
+  mass: 1,
   stiffness: 180,
 } as const;
 
-/** Spring for the step pill's check overshooting and settling back */
-export const stepCheckSpringConfig: WithSpringConfig = { damping: 10 };
+/** Spring for the step pill's check overshooting and settling back (damping
+ *  ratio 0.57, ~11% overshoot, visibly settled by ~530ms). `energyThreshold`
+ *  fires the return-to-1 callback at the visible settle, not seconds later. */
+export const stepCheckSpringConfig: WithSpringConfig = {
+  damping: 18,
+  mass: 1,
+  stiffness: 250,
+  energyThreshold: 0.001,
+};
 
-/** Spring for the scan reticle corners settling after the lock snap */
-export const reticleSettleSpringConfig: WithSpringConfig = { damping: 12 };
+/** Spring for the scan reticle corners settling after the lock snap (same
+ *  ratio and speed as the step check) */
+export const reticleSettleSpringConfig: WithSpringConfig = {
+  damping: 18,
+  mass: 1,
+  stiffness: 250,
+};
 
 /** Spring parameters for chat bubble entrances. Layout-animation builders
- *  take these through `.damping()` / `.stiffness()`, not a config object. */
+ *  take these through `.damping()` / `.stiffness()` / `.mass()`, not a config
+ *  object. */
 export const chatBubbleEntrySpring = {
   damping: 18,
+  mass: 1,
   stiffness: 150,
 } as const;
 
 /** How long a finished Coach reply's live blocks stay on screen before the
  *  saved copy takes over — long enough for the `chatBubbleEntrySpring`
- *  entrance to settle (~450ms at damping 18 / stiffness 150). */
-export const streamBlockEntranceHoldMs = 500;
+ *  entrance to settle (within 1% at ~540ms at damping 18 / mass 1 /
+ *  stiffness 150). */
+export const streamBlockEntranceHoldMs = 600;
 
 /** Spring parameters for the chat send button popping in as typing starts
  *  (builder API). */
 export const sendButtonEntrySpring = {
   damping: 14,
+  mass: 1,
   stiffness: 260,
 } as const;
 

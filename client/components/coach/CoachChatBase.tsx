@@ -156,6 +156,7 @@ export function CoachChatBase({
                   ? undefined
                   : ZoomIn.springify()
                       .damping(sendButtonEntrySpring.damping)
+                      .mass(sendButtonEntrySpring.mass)
                       .stiffness(sendButtonEntrySpring.stiffness)
               }
             >

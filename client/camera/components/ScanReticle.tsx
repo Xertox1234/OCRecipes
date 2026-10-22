@@ -21,9 +21,9 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 const CORNER_LEN = 24;
 const STROKE_WIDTH = 3;
-const SPRING_TRACK = { damping: 20, stiffness: 200 };
-const SPRING_MORPH = { damping: 16, stiffness: 220 };
-const SPRING_SNAP = { damping: 8, stiffness: 300 };
+const SPRING_TRACK = { damping: 20, mass: 1, stiffness: 200 };
+const SPRING_MORPH = { damping: 16, mass: 1, stiffness: 220 };
+const SPRING_SNAP = { damping: 8, mass: 1, stiffness: 300 };
 
 // Confidence colour stops — semantic design values, cannot use theme in worklet
 const CONFIDENCE_COLORS = ["#FFFFFF", "#f59e0b", "#22c55e"] as const; // hardcoded — live-camera overlay, not theme-able

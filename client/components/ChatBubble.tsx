@@ -43,10 +43,12 @@ export function ChatBubble({
       : isUser
         ? SlideInRight.springify()
             .damping(chatBubbleEntrySpring.damping)
+            .mass(chatBubbleEntrySpring.mass)
             .stiffness(chatBubbleEntrySpring.stiffness)
             .duration(200)
         : SlideInLeft.springify()
             .damping(chatBubbleEntrySpring.damping)
+            .mass(chatBubbleEntrySpring.mass)
             .stiffness(chatBubbleEntrySpring.stiffness)
             .delay(100);
 
