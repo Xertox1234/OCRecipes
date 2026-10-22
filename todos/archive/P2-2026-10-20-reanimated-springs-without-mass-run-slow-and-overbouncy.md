@@ -1,6 +1,6 @@
 ---
 title: "Seven spring configs omit mass, so Reanimated 4 runs them at mass 4 — 29–77% overshoot and 1.6–3.6 s settles instead of the ~450 ms their own comments assume"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-20
 updated: 2026-10-20
@@ -61,14 +61,14 @@ For scale: Apple calls bounce above ~0.4 (≈9.5% overshoot) "too exaggerated fo
 
 ## Acceptance Criteria
 
-- [ ] Every spring config and spring layout builder in `client/` states `mass` explicitly (or uses
+- [x] Every spring config and spring layout builder in `client/` states `mass` explicitly (or uses
       duration mode on purpose), so the library default can't silently apply.
-- [ ] The intended feel of each of the seven is decided — the documented intent (e.g. ~450 ms for
+- [x] The intended feel of each of the seven is decided — the documented intent (e.g. ~450 ms for
       the chat bubble) is the starting point; check with the owner before making any of them
       bouncier than a mass-1 reading.
-- [ ] `StepPill`'s pop returns to 1 when the pop visibly settles, not seconds later.
-- [ ] `streamBlockEntranceHoldMs` matches the bubble entrance's real settle time.
-- [ ] A Vitest test over `client/constants/animations.ts` fails when a `WithSpringConfig` (or a
+- [x] `StepPill`'s pop returns to 1 when the pop visibly settles, not seconds later.
+- [x] `streamBlockEntranceHoldMs` matches the bubble entrance's real settle time.
+- [x] A Vitest test over `client/constants/animations.ts` fails when a `WithSpringConfig` (or a
       `{ damping, stiffness }` builder spec) omits `mass` and is not in duration mode.
 - [ ] Simulator check (screen recording, not a still) of the StepPill pop, the reticle lock and
       a Coach reply bubble entrance.
@@ -94,3 +94,13 @@ For scale: Apple calls bounce above ~0.4 (≈9.5% overshoot) "too exaggerated fo
 
 - None blocking. Related: `todos/P2-2026-10-20-text-inputs-bypass-shared-focus-feedback.md`
   (same design research).
+
+## Updates
+
+- 2026-10-21: Every spring now states `mass: 1` (the mass-1 reading of the written numbers, never
+  bouncier than before). `stepCheckSpringConfig` and `reticleSettleSpringConfig` are now 18/250/1
+  (ratio 0.57, ~11% overshoot, settled ~530 ms); the step check also sets `energyThreshold: 0.001`
+  so its return-to-1 fires at the visible settle (was ~7.6 s). `streamBlockEntranceHoldMs` 500 -> 600
+  (bubble settles within 1% at ~540 ms). Also given `mass: 1` (out of the seven, same bug):
+  `CHIP_SPRING` (ProductChip) and `SPRING_TRACK/MORPH/SNAP` (ScanReticle). The simulator
+  screen-recording criterion is NOT done (no camera in the sim; needs the owner on a device).
