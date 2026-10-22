@@ -125,6 +125,7 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
             ? undefined
             : FadeInUp.springify()
                 .damping(speedDialEntrySpring.damping)
+                .mass(speedDialEntrySpring.mass)
                 .stiffness(speedDialEntrySpring.stiffness)
                 .delay(reverseIndex * speedDialStaggerDelay);
 

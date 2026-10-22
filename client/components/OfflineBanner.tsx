@@ -50,6 +50,7 @@ export function OfflineBanner() {
     ? undefined
     : SlideInUp.springify()
         .damping(bannerEntrySpring.damping)
+        .mass(bannerEntrySpring.mass)
         .stiffness(bannerEntrySpring.stiffness);
   const exiting = reducedMotion ? undefined : SlideOutUp.duration(200);
 

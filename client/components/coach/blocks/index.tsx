@@ -67,6 +67,7 @@ export default function BlockRenderer({
     <Animated.View
       entering={FadeInDown.springify()
         .damping(chatBubbleEntrySpring.damping)
+        .mass(chatBubbleEntrySpring.mass)
         .stiffness(chatBubbleEntrySpring.stiffness)}
     >
       {content}

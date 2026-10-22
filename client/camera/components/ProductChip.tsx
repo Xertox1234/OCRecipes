@@ -30,7 +30,7 @@ import {
   getChipConfidenceColor,
 } from "./ProductChip-utils";
 
-const CHIP_SPRING = { damping: 18, stiffness: 280 };
+const CHIP_SPRING = { damping: 18, mass: 1, stiffness: 280 };
 const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera-overlay primary button (styles.btnPrimary)
 // Off-screen distance for the enter/exit spring. Must clear the chip's own
 // rendered height PLUS the shutter-clearance raise (insets.bottom + 96, see

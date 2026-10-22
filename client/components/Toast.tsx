@@ -130,6 +130,7 @@ export function Toast({
     ? undefined
     : SlideInUp.springify()
         .damping(bannerEntrySpring.damping)
+        .mass(bannerEntrySpring.mass)
         .stiffness(bannerEntrySpring.stiffness);
 
   return (
