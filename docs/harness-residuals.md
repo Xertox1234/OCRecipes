@@ -148,3 +148,24 @@ expanded path literally avoids it. Fix shapes if reopened: drop a target whose f
 starts with`$` (git-safety.sh already does this for branch names -- "could not resolve a literal
 branch name … looks like an unexpanded shell variable"), or expand `$CLAUDE_CODE_SESSION_ID`-keyed
 spellings before storing. No new route: the real files were never shared.
+
+### HIT IN REAL USE 2026-10-22 — merge gate allowed an unstamped MCP merge (#1535)
+
+Observed, not constructed; root cause not investigated (harness frozen). Context: the laptop rebooted
+mid-session, which cleared `/tmp` (and with it any earlier review record for #1535's head), and Claude Code
+resumed under a new session id. A `code-reviewer` confirmation pass was then dispatched at head
+`29cfb753b47fbc2abe3cea6a0dbeb0758136fd54` with the AI_WORKFLOW dispatch prompt verbatim and the file list from
+`gh pr diff 1535 --name-only` (12 files); it handed back a well-formed report ending `No findings.`. Two hooks
+then misbehaved:
+
+- `review-stamp-writer.sh` (SubagentStop, `code-reviewer` matcher) wrote nothing:
+  `/tmp/ocrecipes-review-stamps-07d4e12e42b1/29cfb753…/` did not exist afterwards, checked both inside and
+  outside the command sandbox, and no `ocrecipes-review-stamps-*` directory existed at all.
+- `merge-review-guard.sh` (PreToolUse, `mcp__github__merge_pull_request` matcher) then ALLOWED
+  `merge_pull_request` for #1535 (owner/repo given, `expectedHeadSha` = that head); it merged as `400e6762`.
+
+The merge itself was sound (a full review before the reboot and a clean confirmation at the exact head), so
+nothing unreviewed landed. Unknown: whether either hook ran at all in the resumed session, and whether the
+reboot (missing stamp root) or the hand-back delivery path is the trigger. First check if reopened: dispatch a
+reviewer, then `ls` the stamp dir; then pipe a `merge_pull_request` payload for an open, unreviewed PR into the
+guard by hand and read its decision.
