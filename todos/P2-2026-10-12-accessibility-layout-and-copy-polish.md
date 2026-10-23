@@ -3,7 +3,7 @@ title: "Accessibility, layout bugs and copy polish from the visual QA sweep"
 status: backlog
 priority: medium
 created: 2026-10-12
-updated: 2026-10-18
+updated: 2026-10-23
 assignee:
 labels: [qa-sweep, ui, accessibility]
 github_issue:
@@ -115,3 +115,17 @@ Not reproduced: #23 — with the photo permission genuinely reset (`simctl priva
 Moved to `todos/P3-2026-10-18-screen-chrome-consistency-followups-from-qa-sweep.md` (owner: "file a todo for the out of scope items"): #3, #29, #66, #80 list cues, Favourites "Community" vs "Curated", #33 (Ask Coach is a Card like the Tips card above it; Community is the flat one — a section-style decision), #25 (the dairy category image is an AI-generated asset whose text reads "Boiry").
 
 Still open here, human-led: #32 on-device VoiceOver confirmation; #39/#39b.
+
+### 2026-10-23 — device pass on stale code, simulator checks, carousel fix (owner-led `/todo-fast`)
+
+The owner's first VoiceOver pass ran on the **TestFlight app**, i.e. an old bundle, not main. It saw no × on the open scan menu, which main draws. Treat those device results as stale. The owner then chose to wait for the Expo SDK 54→58 upgrade before the phone pass.
+
+Simulator checks on main (AXe `describe-ui`, which includes disabled and off-screen elements):
+
+- #39b: **not a bug.** "Calculate my goals" is in the tree, disabled, followed by a "Still needed: …" hint. "Save my goals" appears after calculating. The sweep's snapshot tool leaves out disabled buttons.
+- #39 heart/✕: by design. They are VoiceOver actions on the card (`CarouselRecipeCard.tsx`), not separate stops; each card carries both.
+- **New, fixed in this PR:** For You and Curated Recipes exposed only the visible card and the one peeking in. Card 3 entered the tree only after a manual scroll, because `removeClippedSubviews` detaches off-screen cells (the Discover row, which doesn't clip, exposed all its cards). The fix passes `removeClippedSubviews={false}` on the three horizontal recipe rows (`RecipeCarousel`, `CuratedRecipeCarousel`, `PresetRecipeRow`). An omitted prop still clips on Android. After the fix: For You 8/8 cards in the tree (was 2), Curated 10 (was 2; FlatList's default `initialNumToRender` is 10, the rest mount on scroll).
+- Scan menu (#32): the × is drawn, and "Close scan menu" comes right after "Batch Scan" in tree order.
+- Recipe detail: the whole page is in the tree, so the owner's "last item repeats, no scroll" (seen on old code) is not clipping. Side finding: ingredient checkmarks and the time/difficulty icons are focusable with empty labels.
+
+Still open here, human-led, after the SDK 58 upgrade lands: a phone VoiceOver pass on #32 (all five sheets, incl. the scan menu reaching "Close scan menu"), the recipe-detail scroll, swiping For You and Curated past card 10, and the empty-label icons.

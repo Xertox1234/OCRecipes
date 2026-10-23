@@ -175,7 +175,10 @@ export const CuratedRecipeCarousel = React.memo(
           contentContainerStyle={styles.listContent}
           getItemLayout={getItemLayout}
           windowSize={5}
-          removeClippedSubviews
+          // Clipping detaches off-screen cards from the native tree, so
+          // VoiceOver (and TalkBack) can't move past the second card.
+          // Explicit false: FlatList's default clips on Android.
+          removeClippedSubviews={false}
         />
       </View>
     );
