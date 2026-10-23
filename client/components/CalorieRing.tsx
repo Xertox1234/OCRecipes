@@ -10,7 +10,12 @@ import Animated, {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, FontFamily, withOpacity } from "@/constants/theme";
+import {
+  AbsoluteFill,
+  Spacing,
+  FontFamily,
+  withOpacity,
+} from "@/constants/theme";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -170,7 +175,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   centerContent: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
     justifyContent: "center",
     alignItems: "center",
   },

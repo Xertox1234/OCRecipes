@@ -123,6 +123,17 @@ module.exports = defineConfig([
             "Hermes has no global `crypto` — this throws on device while passing in Vitest. Use randomUuidV4() from @/lib/uuid.",
         },
       ],
+      // Same shape of trap: removed from React Native 0.85, still present in
+      // the RN the tests run against.
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "StyleSheet",
+          property: "absoluteFillObject",
+          message:
+            "Removed in React Native 0.85. Use AbsoluteFill from @/constants/theme.",
+        },
+      ],
     },
   },
   {

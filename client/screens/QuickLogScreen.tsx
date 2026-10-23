@@ -35,6 +35,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import { runAfterTransition } from "@/lib/run-after-transition";
 import {
+  AbsoluteFill,
   Spacing,
   BorderRadius,
   FontFamily,
@@ -485,7 +486,7 @@ const styles = StyleSheet.create({
   },
   exampleText: { fontSize: 14, fontFamily: FontFamily.regular },
   checkmarkOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
     justifyContent: "center",
     alignItems: "center",
   },

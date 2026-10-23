@@ -137,6 +137,20 @@ export const FAB_CLEARANCE = FAB_SIZE + 16; // FAB size + gap
 /** Max Dynamic Type scale for text in fixed-height containers (badges, chips, tab bar, toasts). */
 export const MAX_FONT_SCALE_CONSTRAINED = 1.5;
 
+/**
+ * Pins an element to all four edges of its parent. Spread it into a style
+ * (`{ ...AbsoluteFill, zIndex: 1 }`) or pass it as `style`. Replaces
+ * `StyleSheet.absoluteFillObject`, removed in React Native 0.85;
+ * `StyleSheet.absoluteFill` is typed as a registered style and can't be spread.
+ */
+export const AbsoluteFill = {
+  position: "absolute",
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+} as const;
+
 export const Spacing = {
   xs: 4,
   sm: 8,
