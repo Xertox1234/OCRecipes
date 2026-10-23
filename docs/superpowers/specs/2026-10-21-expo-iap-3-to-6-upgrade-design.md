@@ -1,7 +1,7 @@
 # expo-iap upgrade, 3.4.8 → 6.1.x
 
-Date: 2026-10-21 · Status: spec-reviewed 2026-10-22; corrections folded in
-and listed in §9. The verdict depends on one owner question (§5).
+Date: 2026-10-21 · Status: spec-reviewed 2026-10-22 (approve-with-edits);
+corrections and the owner's answer folded in and listed in §9.
 
 Companion to `2026-10-21-expo-sdk-54-to-58-upgrade-design.md` (the SDK
 spec). The owner ruled on 2026-10-21 that the in-app purchase library gets its
@@ -118,12 +118,11 @@ sandbox checks in §5 matter even more there.
 
 The usual CI gate, plus the following.
 
-**App Store Connect gate (owner question).** As of 2026-10-04, the Paid Apps
-agreement and the `com.ocrecipes.premium.annual` subscription were not set
-up. Until both are active, the store returns no products, the Release
+**App Store Connect gate (owner, 2026-10-22: not set up; the owner is the
+only user).** The Paid Apps agreement and the `com.ocrecipes.premium.annual`
+subscription don't exist yet. Until both are active, the store returns no products, the Release
 paywall shows "Price unavailable" by design, and none of the sandbox checks
-in item 2 can run. If that is still true when this PR is ready, the check that
-can actually run is: a Release build where the paywall shows "Price
+in item 2 can run. So the check this PR must pass is: a Release build where the paywall shows "Price
 unavailable" with the button disabled, no crash and no error toast, and
 Restore finishes with no crash. Plus the unit tests from 6.1.x shapes. The
 sandbox checks in item 2 then become a must-do before the first real sale,
@@ -185,9 +184,9 @@ not before this PR merges.
 
 ## 9. Spec review, 2026-10-22
 
-Verdict: **approve-with-edits if App Store Connect can serve the subscription
-by the time this PR is ready. If it can't, approve with the reduced check in
-§5's gate paragraph.** The design is unchanged. These are folded in above:
+Verdict: **approve-with-edits**, with the reduced check in §5's gate
+paragraph. The owner confirmed on 2026-10-22 that App Store Connect isn't set
+up to sell the subscription. The design is unchanged. These are folded in above:
 
 - **The sandbox checks depend on App Store Connect setup (§5).** That setup
   was not done as of 2026-10-04, so the spec now names the check that can run

@@ -53,17 +53,17 @@ code only (test files excluded).
 These are the parts most likely to break. In CI they fail only at prebuild or
 pod-install time, and some only in an EAS or Release archive:
 
-| Piece                                            | What to re-check each step                                                                                                                                                                                                                                                                                                                                                           |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `plugins/ios-podfile-fixes.js`                   | Its `mergeContents` anchors (`require 'json'`, `post_install do \|installer\|`) still match the new Podfile template. If an anchor is missing it throws, so a mismatch fails loudly at prebuild.                                                                                                                                                                                     |
-| `plugins/ios/ocrecipes_post_install.rb`          | (a) The deployment-target floor sweep must move from 16.0 to **16.4** at SDK 56. (b) The fmt-11 `FMT_USE_CONSTEVAL` fix for Xcode 26: check whether the RN version bundled by the new SDK still pins the broken fmt. Drop the fix once it no longer applies, rather than carrying dead patches. (c) The hook for the MLKit simulator re-tagger (`scripts/patch-mlkit-simulator.py`). |
-| `expo-build-properties` in `app.json`            | `deploymentTarget: "16.0"` becomes `"16.4"` at SDK 56. Keep `buildReactNativeFromSource: true` until the MLKit `EXCLUDED_ARCHS` workaround is gone (context in `docs/solutions/best-practices/visioncamera-5-upgrade-ios-xcode26-build-2026-06-02.md`). From SDK 56 on, the Expo CHANGELOG also makes it a requirement for opting out of Hermes V1.                                  |
-| `patches/react-native-vision-camera+5.1.1.patch` | Its file name pins 5.1.1. Moving to VisionCamera 5.2.x means the patch either no longer applies or is no longer needed. Check whether upstream already passes `RawPropsParser(true)`, and delete the patch or regenerate it.                                                                                                                                                         |
-| `patches/query-string+7.1.3.patch`               | Make sure it still applies. Patch-package fails loudly if it doesn't.                                                                                                                                                                                                                                                                                                                |
-| `modules/google-sign-in`                         | It uses `ExpoAppDelegateSubscriber`, not the `EXAppDelegateWrapper` that SDK 55 removes, and none of the JSI types that SDK 56 removes. Re-check that the podspec builds at the 16.4 minimum.                                                                                                                                                                                        |
-| `plugins/strip-push-entitlement.js`              | It deletes `aps-environment` from the entitlements plist through `withEntitlementsPlist`, so the SDK 55 pod rename can't reach it. Check only that prebuild output still has no `aps-environment`. While this plugin is in `app.json`, iOS can't register for remote push, so no step can test a push token (§5). Removing it is a provisioning decision outside this spec.          |
-| `metro.config.js` (`getSentryExpoConfig`)        | Unchanged up to SDK 57. Re-check against the Sentry 8 migration guide at SDK 58.                                                                                                                                                                                                                                                                                                     |
-| `babel.config.js`                                | babel-preset-expo forks away from `@react-native/babel-preset` at SDK 56. Make sure `module-resolver` and `react-native-reanimated/plugin` still run in that order. For Reanimated 4, the worklets plugin may need to replace the reanimated plugin; check the Reanimated docs for the version in use.                                                                               |
+| Piece                                            | What to re-check each step                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plugins/ios-podfile-fixes.js`                   | Its `mergeContents` anchors (`require 'json'`, `post_install do \|installer\|`) still match the new Podfile template. If an anchor is missing it throws, so a mismatch fails loudly at prebuild.                                                                                                                                                                                                                                                                                  |
+| `plugins/ios/ocrecipes_post_install.rb`          | (a) The deployment-target floor sweep must move from 16.0 to **16.4** at SDK 56. (b) The fmt-11 `FMT_USE_CONSTEVAL` fix for Xcode 26: check whether the RN version bundled by the new SDK still pins the broken fmt. Drop the fix once it no longer applies, rather than carrying dead patches. (c) The hook for the MLKit simulator re-tagger (`scripts/patch-mlkit-simulator.py`).                                                                                              |
+| `expo-build-properties` in `app.json`            | `deploymentTarget: "16.0"` becomes `"16.4"` at SDK 56. Keep `buildReactNativeFromSource: true` until the MLKit `EXCLUDED_ARCHS` workaround is gone (context in `docs/solutions/best-practices/visioncamera-5-upgrade-ios-xcode26-build-2026-06-02.md`). From SDK 56 on, the Expo CHANGELOG also makes it a requirement for opting out of Hermes V1.                                                                                                                               |
+| `patches/react-native-vision-camera+5.1.1.patch` | Its file name pins 5.1.1. Moving to VisionCamera 5.2.x means the patch either no longer applies or is no longer needed. Check whether upstream already passes `RawPropsParser(true)`, and delete the patch or regenerate it.                                                                                                                                                                                                                                                      |
+| `patches/query-string+7.1.3.patch`               | Make sure it still applies. Patch-package fails loudly if it doesn't.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `modules/google-sign-in`                         | It uses `ExpoAppDelegateSubscriber`, not the `EXAppDelegateWrapper` that SDK 55 removes, and none of the JSI types that SDK 56 removes. Re-check that the podspec builds at the 16.4 minimum.                                                                                                                                                                                                                                                                                     |
+| `plugins/strip-push-entitlement.js`              | It deletes `aps-environment` from the entitlements plist through `withEntitlementsPlist`, so the SDK 55 pod rename can't reach it. While it is in `app.json`, iOS can't register for remote push. Its own comment says to remove it once there's a paid Apple Developer membership, which the account now has. **Owner ruling 2026-10-22: push stays in this upgrade. Step 1 deletes the plugin** (§3), and from step 1 on, check that prebuild output **has** `aps-environment`. |
+| `metro.config.js` (`getSentryExpoConfig`)        | Unchanged up to SDK 57. Re-check against the Sentry 8 migration guide at SDK 58.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `babel.config.js`                                | babel-preset-expo forks away from `@react-native/babel-preset` at SDK 56. Make sure `module-resolver` and `react-native-reanimated/plugin` still run in that order. For Reanimated 4, the worklets plugin may need to replace the reanimated plugin; check the Reanimated docs for the version in use.                                                                                                                                                                            |
 
 ### 2.2 Third-party native packages, which move in step with the SDK
 
@@ -118,6 +118,15 @@ change reaches the owner's device over the air on the existing build.
 - Remove the `expo.install.exclude` exception from `package.json`: the
   version scheme now matches SDK 55. Remove `newArchEnabled` from `app.json`.
 - Bump `runtimeVersion` in `app.json` (§6).
+- Turn on remote push (§2.1, owner ruling 2026-10-22). Delete
+  `plugins/strip-push-entitlement.js` and its `app.json` entry, so
+  expo-notifications' `aps-environment` entitlement reaches the build. This
+  step cuts the first native build anyway, so it costs no extra build.
+  Owner setup before that build, since these are outside the repo: let EAS
+  create the APNs push key (`eas credentials`, iOS, Push Notifications), and
+  set `EXPO_ACCESS_TOKEN` and `EXPO_PUBLIC_PROJECT_ID` on Railway (without
+  them the server logs "server-driven push notifications disabled",
+  `server/lib/env.ts:190`).
 - Re-check every row in §2.1.
 - **Ship:** cut an EAS preview build and install it on the owner's iPhone.
   This is the first native build since SDK 54, and it also confirms the
@@ -216,9 +225,9 @@ or run the app, so every step also needs:
    - IAP: on a Release build, the paywall loads with no crash. Do the
      sandbox purchase and restore once App Store Connect can serve the
      subscription (see the expo-iap spec §5)
-   - notification permission, and a deep link from a tapped local
-     notification. Remote push tokens can't be tested while
-     `strip-push-entitlement` is in `app.json` (§2.1)
+   - notification permission, push token registration, a real push sent
+     from the server to the device, and a deep link from tapping it (from
+     step 1 on; before step 1, a local notification only)
    - receiving an OTA update on the new runtime
    - a Sentry test event whose stack trace shows source file names
 5. `npm audit --omit=dev` before and after, with the numbers in the PR body.
@@ -311,9 +320,10 @@ checked against HEAD `867aa105` and the upstream tarballs, are folded in above:
 - **CI and native builds (§1, §5).** CI builds no native code. Android compiles
   only in the EAS builds, and the nightly e2e run is the only CI-side iOS
   build.
-- **Push (§2.1, §5).** `strip-push-entitlement` keeps iOS from registering for
-  remote push, so the smoke list tests local notifications and deep links
-  instead.
+- **Push (§2.1, step 1, §5).** `strip-push-entitlement` kept iOS from
+  registering for remote push, so the old "push token" check could never
+  pass. The owner ruled on 2026-10-22 to turn push on, so step 1 deletes the
+  plugin, and the smoke list sends a real push from step 1 on.
 
 Reviewer's calls, for the owner to check:
 
@@ -322,3 +332,5 @@ Reviewer's calls, for the owner to check:
   because rewriting working uploads is a refactor this upgrade doesn't need
   (§4).
 - The gesture-handler hook API migration is deferred to a later todo.
+- Removing the push plugin goes in step 1, not step 0, because it changes the
+  native entitlements, and step 0 ships over the air only.
