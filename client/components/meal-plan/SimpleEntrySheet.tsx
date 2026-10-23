@@ -5,9 +5,18 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  ActivityIndicator,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
+import Animated from "react-native-reanimated";
 import type { TextInput } from "react-native-gesture-handler";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
+import { useFocusBorder } from "@/components/useFocusBorder";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
@@ -57,6 +66,11 @@ function SimpleEntrySheetContentInner(
   forwardedRef: React.Ref<SimpleEntrySheetContentHandle>,
 ) {
   const { theme } = useTheme();
+  // One focus ring for the whole box, not one nested around the inner input.
+  const inputBoxFocus = useFocusBorder([
+    styles.inputBox,
+    { backgroundColor: withOpacity(theme.text, 0.05) },
+  ]);
   const haptics = useHaptics();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -289,15 +303,13 @@ function SimpleEntrySheetContentInner(
 
       {/* Dish name input */}
       <View style={styles.inputContainer}>
-        <View
-          style={[
-            styles.inputBox,
-            { backgroundColor: withOpacity(theme.text, 0.05) },
-          ]}
-        >
+        <Animated.View style={inputBoxFocus.focusStyle as StyleProp<ViewStyle>}>
           <Feather name="edit-3" size={16} color={theme.textSecondary} />
           <FocusBottomSheetTextInput
             ref={inputRef}
+            focusRing={false}
+            onFocus={inputBoxFocus.onFocus}
+            onBlur={inputBoxFocus.onBlur}
             style={[styles.input, { color: theme.text }]}
             placeholder={isListening ? "Listening..." : "e.g. chicken stir fry"}
             placeholderTextColor={theme.textSecondary}
@@ -318,7 +330,7 @@ function SimpleEntrySheetContentInner(
               disabled={isAdding}
             />
           )}
-        </View>
+        </Animated.View>
       </View>
 
       {/* Error text */}

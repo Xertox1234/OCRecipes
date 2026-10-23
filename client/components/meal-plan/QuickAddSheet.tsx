@@ -6,10 +6,18 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet, View, Pressable } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
+import Animated from "react-native-reanimated";
 import type { TextInput } from "react-native-gesture-handler";
 import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
+import { useFocusBorder } from "@/components/useFocusBorder";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
@@ -71,6 +79,11 @@ function QuickAddSheetContentInner(
   forwardedRef: React.Ref<QuickAddSheetContentHandle>,
 ) {
   const { theme } = useTheme();
+  // One focus ring for the whole box, not one nested around the inner input.
+  const searchBoxFocus = useFocusBorder([
+    styles.searchBox,
+    { backgroundColor: withOpacity(theme.text, 0.05) },
+  ]);
   const haptics = useHaptics();
   const toast = useToast();
   const inputRef = useRef<TextInput>(null);
@@ -409,15 +422,15 @@ function QuickAddSheetContentInner(
 
       {/* Search */}
       <View style={styles.searchContainer}>
-        <View
-          style={[
-            styles.searchBox,
-            { backgroundColor: withOpacity(theme.text, 0.05) },
-          ]}
+        <Animated.View
+          style={searchBoxFocus.focusStyle as StyleProp<ViewStyle>}
         >
           <Feather name="search" size={16} color={theme.textSecondary} />
           <FocusBottomSheetTextInput
             ref={inputRef}
+            focusRing={false}
+            onFocus={searchBoxFocus.onFocus}
+            onBlur={searchBoxFocus.onBlur}
             style={[styles.searchInput, { color: theme.text }]}
             placeholder="Search recipes..."
             placeholderTextColor={theme.textSecondary}
@@ -425,7 +438,7 @@ function QuickAddSheetContentInner(
             onChangeText={setSearchQuery}
             accessibilityLabel="Search recipes"
           />
-        </View>
+        </Animated.View>
       </View>
 
       {/* Results */}

@@ -9,6 +9,7 @@ import {
   getInputFirstLineBounds,
   getContainerContentHeight,
   resolveFocusBorder,
+  compensateSyntheticBorder,
 } from "../text-input-utils";
 
 describe("shouldFloatLabel", () => {
@@ -167,5 +168,69 @@ describe("resolveFocusBorder", () => {
         "#CCCCCC",
       ).restColor,
     ).toBe("#CCCCCC");
+  });
+});
+
+describe("compensateSyntheticBorder", () => {
+  it("returns nothing when the style already draws a border", () => {
+    expect(
+      compensateSyntheticBorder({ borderWidth: 1, paddingVertical: 8 }),
+    ).toEqual({});
+  });
+
+  it("takes 1px back from every side's padding so the box keeps its size", () => {
+    expect(compensateSyntheticBorder({ padding: 8 })).toEqual({
+      paddingTop: 7,
+      paddingBottom: 7,
+      paddingLeft: 7,
+      paddingRight: 7,
+    });
+  });
+
+  it("lets a specific side beat the axis shorthand beat the all-sides shorthand", () => {
+    expect(
+      compensateSyntheticBorder({
+        padding: 10,
+        paddingVertical: 8,
+        paddingTop: 4,
+        paddingHorizontal: 12,
+      }),
+    ).toEqual({
+      paddingTop: 3,
+      paddingBottom: 7,
+      paddingLeft: 11,
+      paddingRight: 11,
+    });
+  });
+
+  it("uses a -1 margin on a side that has no padding to give back", () => {
+    expect(compensateSyntheticBorder({ padding: 0, minWidth: 24 })).toEqual({
+      marginTop: -1,
+      marginBottom: -1,
+      marginLeft: -1,
+      marginRight: -1,
+    });
+  });
+
+  it("adds the -1 to the caller's own margin on that side", () => {
+    expect(
+      compensateSyntheticBorder({ paddingHorizontal: 4, marginVertical: 6 }),
+    ).toEqual({
+      marginTop: 5,
+      marginBottom: 5,
+      paddingLeft: 3,
+      paddingRight: 3,
+    });
+  });
+
+  it("leaves a side alone when its padding or margin is not a plain number", () => {
+    const out = compensateSyntheticBorder({
+      paddingTop: "5%" as unknown as number,
+      paddingBottom: 6,
+      paddingHorizontal: 6,
+    });
+    expect(out.paddingTop).toBeUndefined();
+    expect(out.marginTop).toBeUndefined();
+    expect(out.paddingBottom).toBe(5);
   });
 });

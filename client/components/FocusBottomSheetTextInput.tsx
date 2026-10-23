@@ -18,6 +18,12 @@ const AnimatedSheetInput = Animated.createAnimatedComponent(
 interface FocusBottomSheetTextInputProps
   extends Omit<SheetInputProps, "style"> {
   style?: StyleProp<TextStyle>;
+  /**
+   * `false` when a container around the input draws the focus ring instead
+   * (call `useFocusBorder` on the container's style and pass its handlers as
+   * this input's `onFocus`/`onBlur`) — avoids a ring nested inside a box.
+   */
+  focusRing?: boolean;
 }
 
 /**
@@ -27,8 +33,8 @@ interface FocusBottomSheetTextInputProps
 export const FocusBottomSheetTextInput = forwardRef<
   TextInput,
   FocusBottomSheetTextInputProps
->(({ style, onFocus, onBlur, ...props }, ref) => {
-  const focus = useFocusBorder(style, onFocus, onBlur);
+>(({ style, onFocus, onBlur, focusRing = true, ...props }, ref) => {
+  const focus = useFocusBorder(style, onFocus, onBlur, focusRing);
   return (
     <AnimatedSheetInput
       ref={ref}
