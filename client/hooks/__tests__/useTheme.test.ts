@@ -32,8 +32,8 @@ describe("useTheme", () => {
     expect(result.current.colorScheme).toBe("dark");
   });
 
-  it("defaults to light when system returns null", () => {
-    vi.spyOn(RN, "useColorScheme").mockReturnValue(null);
+  it("defaults to light when system returns unspecified", () => {
+    vi.spyOn(RN, "useColorScheme").mockReturnValue("unspecified");
 
     const { result } = renderHook(() => useTheme());
 
