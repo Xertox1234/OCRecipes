@@ -6,12 +6,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // untestable here.
 import { Platform } from "react-native";
 
-import { setupNotificationChannel } from "../notifications";
+import {
+  installForegroundNotificationHandler,
+  setupNotificationChannel,
+} from "../notifications";
 
 const setNotificationChannelAsync = vi.fn();
+const setNotificationHandler = vi.fn();
 vi.mock("expo-notifications", () => ({
   setNotificationChannelAsync: (...args: unknown[]) =>
     setNotificationChannelAsync(...args),
+  setNotificationHandler: (...args: unknown[]) =>
+    setNotificationHandler(...args),
   AndroidImportance: { DEFAULT: 3 },
 }));
 
@@ -46,5 +52,31 @@ describe("setupNotificationChannel", () => {
     await setupNotificationChannel();
 
     expect(setNotificationChannelAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("installForegroundNotificationHandler", () => {
+  beforeEach(() => setNotificationHandler.mockClear());
+
+  // Owner ruling (SDK 58 upgrade spec §9, ruling 2): nothing shows while the
+  // app is open. Pinned explicitly, so a library default change can't flip it.
+  it("hides every notification that arrives while the app is open", async () => {
+    installForegroundNotificationHandler();
+    expect(setNotificationHandler).toHaveBeenCalledTimes(1);
+    const { handleNotification } = setNotificationHandler.mock.calls[0][0];
+    for (const data of [
+      {},
+      { type: "coach-reply" },
+      { url: "ocrecipes://plan" },
+    ]) {
+      await expect(
+        handleNotification({ request: { content: { data } } }),
+      ).resolves.toEqual({
+        shouldShowBanner: false,
+        shouldShowList: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      });
+    }
   });
 });
