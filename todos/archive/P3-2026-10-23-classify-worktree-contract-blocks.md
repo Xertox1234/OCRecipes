@@ -1,6 +1,6 @@
 ---
 title: "Sort the worktree-contract guard's real-world blocks into real catches and false alarms"
-status: backlog
+status: done
 priority: low
 created: 2026-10-23
 updated: 2026-10-23
@@ -29,13 +29,13 @@ This is analysis only. It changes no guard and costs no CI time.
 
 ## Acceptance Criteria
 
-- [ ] A script in the scratchpad joins each denied `tool_result` containing `Worktree contract violation`
+- [x] A script in the scratchpad joins each denied `tool_result` containing `Worktree contract violation`
       to its `tool_use` command (dedup by `tool_use_id`) and reports the denominator: files scanned,
       unique blocks, and distinct sessions.
-- [ ] Each block is labelled `real-catch` (it would have mutated the main checkout from a contracted worktree
+- [x] Each block is labelled `real-catch` (it would have mutated the main checkout from a contracted worktree
       session), `false-alarm` (blocked legitimate work), or `unclear`, with a one-line reason.
-- [ ] The 10-block session is explained: one recurring cause, or several.
-- [ ] Results are written up in the reply or a short note. If false alarms ≥ real catches, file a follow-up todo
+- [x] The 10-block session is explained: one recurring cause, or several.
+- [x] Results are written up in the reply or a short note. If false alarms ≥ real catches, file a follow-up todo
       with the commands as a fixture corpus (same shape as
       `todos/P2-2026-10-23-outward-cli-guard-false-alarms-help-and-prose.md`). Otherwise record "working
       as intended" in `docs/harness-residuals.md`.
@@ -70,3 +70,10 @@ This is analysis only. It changes no guard and costs no CI time.
 
 - Created from the harness-effectiveness review. Owner plans to do this next session alongside the
   outward-CLI false-alarm todo.
+- Done. 796 files, **39 unique blocks, 12 sessions** (one more needle hit was a grep quoting the message, excluded).
+  7 real catches (5 new todo/spec Writes into main, 2 detaches of main's HEAD), 27 false alarms (15 release
+  in the same command, 5 gitignored `.superpowers/sdd` appends, 4 leading `cd` not followed, 3 `cp` source read
+  as destination), 5 unclear (main `git pull` mid-contract). Each cause replayed through the real
+  `git-safety.sh`. The 10-block session had several causes (multi-day SDD run with two worktrees).
+- False alarms ≥ real catches, so filed `todos/P3-2026-10-23-worktree-contract-guard-false-alarms.md`
+  with the replay rows as its fixture corpus.
