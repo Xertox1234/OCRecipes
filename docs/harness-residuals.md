@@ -169,3 +169,24 @@ nothing unreviewed landed. Unknown: whether either hook ran at all in the resume
 reboot (missing stamp root) or the hand-back delivery path is the trigger. First check if reopened: dispatch a
 reviewer, then `ls` the stamp dir; then pipe a `merge_pull_request` payload for an open, unreviewed PR into the
 guard by hand and read its decision.
+
+### HIT IN REAL USE 2026-10-23 — `code-reviewer` hand-backs write no review record; `mobile-reviewer` does (#1541)
+
+Observed, not constructed; root cause not investigated (harness frozen). Three background reviewers were
+dispatched at head `c00524a4db3caf5f0f86a16ba15719216b7cbbb2`, each with the AI_WORKFLOW dispatch prompt
+verbatim: `mobile-reviewer` over 18 files, and `code-reviewer` over all 27 changed files, twice (the second a
+fresh dispatch). All three handed back a well-formed report ending `No findings.`. Only
+`/tmp/ocrecipes-review-stamps-07d4e12e42b1/c00524a4…/mobile-reviewer.json` was written (verdict clean,
+digest `a310edc52ff5da85`); neither `code-reviewer` run left a file. `merge-review-guard.sh` then correctly
+denied `merge_pull_request`: the one record's digest did not cover the PR's 27-file digest `94b7daa172c8abe0`.
+The owner merged #1541 on GitHub.
+
+Checked and ruled out, using `jq` on the three transcripts: each has exactly one `SubagentHandback`, none
+contains any of the three severity tags, and none has a trailing text wrapper. `.claude/settings.json`'s
+SubagentStop matcher includes `code-reviewer`. Differences between the passing and failing reports: the
+`code-reviewer` lists include `.github/workflows/ci.yml`, `eslint.config.js` and `test/mocks/…` paths, and
+their bodies quote shell commands containing `|` and `2>&1`. Together with the #1535 entry above (also
+`code-reviewer`, also no record), this is the second session in a row where the baseline reviewer cannot
+produce a merge record. First check if reopened: replay one of these hand-back payloads into
+`review-stamp-writer.sh` with tracing on (`bash -x`) against a throwaway stamp root, and see which `exit 0`
+it takes.
