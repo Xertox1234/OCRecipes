@@ -204,7 +204,7 @@
         "expo-build-properties",
         {
           "ios": {
-            "deploymentTarget": "16.0",
+            "deploymentTarget": "16.4",
             "buildReactNativeFromSource": true
           }
         }
@@ -227,7 +227,7 @@
       }
     },
     "owner": "xertox1234",
-    "runtimeVersion": "2.0.0",
+    "runtimeVersion": "3.0.0",
     "updates": {
       "url": "https://u.expo.dev/94fa8c8a-5f2e-4a4e-a781-25985a8c7bf5"
     }
