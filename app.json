@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "ocrecipes",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.williamtower.ocrecipes",
@@ -156,7 +155,6 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.ocrecipes.app",
       "permissions": [
@@ -188,7 +186,6 @@
           "speechRecognitionPermission": "OCRecipes uses speech recognition for voice food logging."
         }
       ],
-      "./plugins/strip-push-entitlement",
       "./plugins/ios-podfile-fixes",
       [
         "./modules/google-sign-in/app.plugin.js",
@@ -211,7 +208,9 @@
             "buildReactNativeFromSource": true
           }
         }
-      ]
+      ],
+      "expo-font",
+      "expo-image"
     ],
     "experiments": {
       "reactCompiler": true
@@ -222,7 +221,7 @@
       }
     },
     "owner": "xertox1234",
-    "runtimeVersion": "1.5.0",
+    "runtimeVersion": "2.0.0",
     "updates": {
       "url": "https://u.expo.dev/94fa8c8a-5f2e-4a4e-a781-25985a8c7bf5"
     }
