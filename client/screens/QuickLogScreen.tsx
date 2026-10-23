@@ -8,7 +8,6 @@ import {
   Platform,
   ActivityIndicator,
   AccessibilityInfo,
-  InteractionManager,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,6 +33,7 @@ import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
+import { runAfterTransition } from "@/lib/run-after-transition";
 import {
   Spacing,
   BorderRadius,
@@ -173,7 +173,7 @@ export default function QuickLogScreen() {
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.goBack();
-    InteractionManager.runAfterInteractions(() => {
+    runAfterTransition(() => {
       navigation.navigate("Scan");
     });
   }, [haptics, navigation]);

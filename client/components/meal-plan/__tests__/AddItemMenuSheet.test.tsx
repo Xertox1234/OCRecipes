@@ -64,7 +64,7 @@ describe("AddItemMenuSheet", () => {
 
   it("guards against a near-simultaneous double-tap on two different rows — only the first press fires", () => {
     // A near-simultaneous tap on two rows could otherwise present two
-    // sheets at once via the parent's InteractionManager.runAfterInteractions
+    // sheets at once via the parent's runAfterTransition
     // deferral (see the todo that added this guard).
     renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
     fireEvent.click(screen.getByLabelText("Choose recipe"));

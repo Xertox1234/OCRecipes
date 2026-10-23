@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import {
   AccessibilityInfo,
-  InteractionManager,
   Platform,
   StyleSheet,
   View,
@@ -81,6 +80,7 @@ import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
+import { runAfterTransition } from "@/lib/run-after-transition";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
 import {
@@ -696,7 +696,7 @@ export default function MealPlanHomeScreen() {
   // Opens/closes a sheet by kind. `closeSheet` is guarded (only clears when
   // its OWN kind is still active) because gorhom's `onDismiss` fires on
   // close-ANIMATION-complete, which is not guaranteed to run strictly before
-  // the destination sheet's InteractionManager-scheduled open during a
+  // the destination sheet's runAfterTransition-scheduled open during a
   // same-screen handoff (e.g. `handleChooseRecipe` below) — an unguarded
   // `setActiveSheet(null)` from a late-firing onDismiss would clobber the
   // sheet that opened in the meantime.
@@ -1002,7 +1002,7 @@ export default function MealPlanHomeScreen() {
   const handleChooseRecipe = useCallback(() => {
     const mt = addItemMenuMealType;
     closeSheet("addItemMenu");
-    InteractionManager.runAfterInteractions(() => {
+    runAfterTransition(() => {
       if (mt !== null) openSheet("quickAdd", mt);
     });
   }, [addItemMenuMealType, closeSheet, openSheet]);
@@ -1010,7 +1010,7 @@ export default function MealPlanHomeScreen() {
   const handleSimpleEntry = useCallback(() => {
     const mt = addItemMenuMealType;
     closeSheet("addItemMenu");
-    InteractionManager.runAfterInteractions(() => {
+    runAfterTransition(() => {
       if (mt !== null) openSheet("simpleEntry", mt);
     });
   }, [addItemMenuMealType, closeSheet, openSheet]);
@@ -1026,7 +1026,7 @@ export default function MealPlanHomeScreen() {
   const handleImportRecipe = useCallback(() => {
     const mt = addItemMenuMealType;
     closeSheet("addItemMenu");
-    InteractionManager.runAfterInteractions(() => {
+    runAfterTransition(() => {
       if (mt !== null) openSheet("importRecipe", mt);
     });
   }, [addItemMenuMealType, closeSheet, openSheet]);
@@ -1164,9 +1164,7 @@ export default function MealPlanHomeScreen() {
 
   const handleOpenImportSheet = useCallback(
     (mt: MealType) => {
-      InteractionManager.runAfterInteractions(() =>
-        openSheet("importRecipe", mt),
-      );
+      runAfterTransition(() => openSheet("importRecipe", mt));
     },
     [openSheet],
   );

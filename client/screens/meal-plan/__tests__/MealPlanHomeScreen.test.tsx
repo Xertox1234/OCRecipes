@@ -86,10 +86,10 @@ const {
   addItemMenuProps: {
     current: null as null | CapturedAddItemMenuProps,
   },
-  // InteractionManager.runAfterInteractions callbacks, queued instead of run
-  // immediately so a test can assert the two-step handoff's ordering (close
-  // the menu, THEN open the destination sheet) before flushing. See the
-  // local react-native mock below.
+  // runAfterTransition callbacks, queued instead of run immediately so a test
+  // can assert the two-step handoff's ordering (close the menu, THEN open the
+  // destination sheet) before flushing. See the @/lib/run-after-transition
+  // mock below.
   interactionQueue: [] as (() => void)[],
   // Recorded so the date-basis tests below can assert the ACTUAL query window
   // the screen requested, rather than re-deriving it (which would just restate
@@ -319,29 +319,23 @@ vi.mock("react-native", async (importOriginal) => {
     },
   );
   CapturingPressable.displayName = "Pressable";
-  // test/mocks/react-native.ts does not export InteractionManager at all (it
-  // is a hand-written mock, not a re-export of the real package), so the
-  // screen's `InteractionManager.runAfterInteractions` calls (the
-  // addItemMenu -> destination-sheet handoff) would throw `undefined is not
-  // a function` the first time a test actually reaches them — previously
-  // never exercised because AddItemMenuSheetContent was mocked to `() =>
-  // null`. Queue instead of running synchronously, so a test can assert the
-  // two-step handoff's ordering (menu closes, THEN the destination opens)
-  // before flushing via the interactionQueue hoisted array.
-  const InteractionManager = {
-    runAfterInteractions: (callback: () => void) => {
-      interactionQueue.push(callback);
-      return { then: () => {}, done: () => {}, cancel: () => {} };
-    },
-  };
   return {
     ...actual,
     RefreshControl,
     ScrollView,
     Pressable: CapturingPressable,
-    InteractionManager,
   };
 });
+
+// The screen defers the addItemMenu -> destination-sheet handoff with
+// runAfterTransition. Queue instead of running it, so a test can assert the
+// two-step handoff's ordering (menu closes, THEN the destination opens)
+// before flushing via the interactionQueue hoisted array.
+vi.mock("@/lib/run-after-transition", () => ({
+  runAfterTransition: (callback: () => void) => {
+    interactionQueue.push(callback);
+  },
+}));
 
 vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: () => null,
@@ -482,9 +476,9 @@ describe("MealPlanHomeScreen — unified activeSheet back-handler wiring", () =>
     return false;
   }
 
-  /** Drains InteractionManager.runAfterInteractions callbacks queued by the
-   *  local react-native mock (see above) — simulates the menu -> destination
-   *  sheet handoff completing. */
+  /** Drains runAfterTransition callbacks queued by the
+   *  @/lib/run-after-transition mock (see above) — simulates the menu ->
+   *  destination sheet handoff completing. */
   function flushInteractions() {
     const queued = interactionQueue.splice(0);
     for (const callback of queued) callback();
@@ -573,7 +567,7 @@ describe("MealPlanHomeScreen — unified activeSheet back-handler wiring", () =>
 
   it("a late onDismiss from the just-closed add-item-menu does not clobber the newly-opened quick-add sheet", () => {
     // gorhom's onDismiss fires on close-ANIMATION-complete; the menu ->
-    // quickAdd handoff's InteractionManager scheduling is not guaranteed to
+    // quickAdd handoff's runAfterTransition scheduling is not guaranteed to
     // run strictly after it in production. A naive shared `setActiveSheet(null)`
     // in the menu's onDismiss would clobber quickAdd's just-opened state.
     const addEventListenerSpy = renderScreenAndroid();

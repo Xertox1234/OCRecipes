@@ -36,7 +36,7 @@ function AddItemMenuSheetContentInner({
   const haptics = useHaptics();
   // Guards against a near-simultaneous double-tap on two different rows: each
   // handler synchronously clears the parent's menu state and defers opening
-  // the next sheet via InteractionManager, so two fast taps before the first
+  // the next sheet via runAfterTransition, so two fast taps before the first
   // dismissal lands could otherwise present two sheets at once. The guard set
   // (isActioning.current = true, read synchronously in the row handler)
   // mirrors ConfirmationModal's isActioning.current pattern; the reset is

@@ -130,6 +130,8 @@ module.exports = defineConfig([
     // the focus feedback (TextInput, FocusTextInput, FocusBottomSheetTextInput).
     // A bare react-native / gorhom / gesture-handler input shows only a cursor
     // on tap. `import type` / inline `type` specifiers stay legal (refs).
+    // The same block also bans InteractionManager (removed in React Native
+    // 0.87): one rule per file set, because a second block would replace it.
     files: ["client/**/*.{ts,tsx}"],
     ignores: [
       "**/__tests__/**",
@@ -164,6 +166,12 @@ module.exports = defineConfig([
               allowTypeImports: true,
               message:
                 "Use FocusTextInput or FocusBottomSheetTextInput from @/components.",
+            },
+            {
+              name: "react-native",
+              importNames: ["InteractionManager"],
+              message:
+                "InteractionManager is removed in React Native 0.87. Use runAfterTransition from @/lib/run-after-transition.",
             },
           ],
         },
