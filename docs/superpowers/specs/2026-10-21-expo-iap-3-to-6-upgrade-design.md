@@ -51,11 +51,17 @@ and its `connected`/`subscriptions`/`fetchProducts`/`finishTransaction` members,
 The 6.1.1 types still document `purchaseToken` as "Unified purchase token (iOS
 JWS, Android purchaseToken)", and `transactionId` is still there.
 
-**Already in 3.4.8:** `subscriptionOffers` (on iOS and Android products) and
-`subscriptionGroupIdIOS`. The `SubscriptionOffer` shape is the same in 3.4.8
-and 6.1.1, except that 6.1.1 adds `installmentPlanDetailsAndroid`. So the
-mapping move off the fields that 5.0 removes can happen before the version
-bump (§3.1).
+**Field placement (checked 2026-10-22).** In 6.1.1, `subscriptionGroupIdIOS`
+sits on `ProductSubscriptionIOS`. In 3.4.8 it exists only on `PurchaseIOS`, so
+a 3.4.8 product has no group id outside `subscriptionInfoIOS`. In both
+versions, the base billing period stays on the product's flat
+`subscriptionPeriodUnitIOS`/`subscriptionPeriodNumberIOS` fields.
+`SubscriptionOffer` has the same shape in both, except that 6.1.1 adds
+`installmentPlanDetailsAndroid`. The native conversion that fills in
+`subscriptionOffers` lives in the OpenIAP Apple/Google libraries
+(`openiap-versions.json`: apple 4.0.3, google 4.0.3), not in the npm tarball.
+So the exact runtime shape of a free-trial offer is captured from a real
+device before fixtures are written (§5).
 
 ## 3. What it touches in this app
 
@@ -82,19 +88,13 @@ The app's own `IAPPurchaseResult.platform` field (in `purchase-utils.ts` and
 `subscription.platform === "android"` check in `resolveProduct` reads a
 _product's_ `platform`, which 5.0 keeps.
 
-### 3.1 Reviewer's proposal: two slices instead of one
+### 3.1 One PR (a two-slice split was considered and dropped)
 
-The two `product-mapping.ts` rows and the `resolveProduct` row above can ship
-first, on 3.4.8, as a JavaScript-only PR that reaches the owner's phone over
-the air. It would move the reads to `subscriptionOffers`/`subscriptionGroupIdIOS`
-and keep the selection rule and the fail-closed eligibility rule, with fixtures
-from the shared shape. The 6.1.x PR then holds the version bump, the
-`storeId` fixtures and the two new error codes. One thing is **unverified**:
-whether 3.4.8's native side fills in `subscriptionOffers` on iOS at runtime.
-The types say it does. If it doesn't, the trial text disappears, which is
-the safe direction, but that can only be seen on a Release build with
-products loading (§5). The implementation plan decides whether to take this
-split.
+The review weighed moving the mapping onto `subscriptionOffers` first, on
+3.4.8, as an over-the-air PR. It was dropped. 3.4.8 products have no
+`subscriptionGroupIdIOS` (it exists only on purchases), so the iOS eligibility
+call would still need `subscriptionInfoIOS`. And whether 3.4.8's iOS native
+side fills in `subscriptionOffers` is unknown. The upgrade stays one PR.
 
 ## 4. Where it lands in the SDK sequence
 
@@ -196,8 +196,9 @@ unchanged. These are folded in above:
 - **The "unchanged" list was incomplete (§2).** It now covers the hook's
   `connected`/`subscriptions`, the Android offer-token request shape and
   `purchaseState`. All of them were checked in both versions' types.
-- **3.4.8 already exposes the replacement fields (§2, §3.1).** That makes a
-  JavaScript-first mapping slice possible. It's proposed, and the plan
-  decides.
+- **Where the fields sit (§2, §3.1).** 3.4.8 products have no
+  `subscriptionGroupIdIOS`, so the JavaScript-first split was considered and
+  dropped. The runtime offer shape is captured from a device first, because
+  the conversion lives in the OpenIAP native libraries.
 - **`purchase-utils.ts` is part of the contract (§3)** through its error-code
   literals, even though it doesn't import expo-iap.
