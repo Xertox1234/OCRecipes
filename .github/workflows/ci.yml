@@ -53,6 +53,13 @@ jobs:
       - name: Type check
         run: npm run check:types
 
+      # Information only, for the SDK 54 -> 58 upgrade: shows dependency drift
+      # in each run's log without failing the job. Pinned so the check is
+      # reproducible and CI never runs an unreviewed release.
+      - name: Expo doctor (information only)
+        continue-on-error: true
+        run: npx --yes expo-doctor@1.21.5
+
       - name: Accessibility patterns
         run: node scripts/check-accessibility.js
 
