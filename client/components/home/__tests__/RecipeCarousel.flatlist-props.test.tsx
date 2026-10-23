@@ -51,11 +51,12 @@ describe("RecipeCarousel FlatList props", () => {
 
   // On iOS, clipping detaches off-screen cards from the native view tree, so
   // VoiceOver can't move past the second card (owner's device pass and an
-  // AXe tree dump, 2026-10-23).
+  // AXe tree dump, 2026-10-23). It must be an explicit `false`: an omitted
+  // prop falls back to FlatList's default, which clips on Android.
   it("keeps off-screen cards in the accessibility tree (no clipping)", () => {
     renderComponent(<RecipeCarousel />);
     expect(captured.value).toBeDefined();
-    expect(captured.value?.removeClippedSubviews).toBeFalsy();
+    expect(captured.value?.removeClippedSubviews).toBe(false);
   });
 
   it("keeps its virtualization window", () => {

@@ -43,7 +43,7 @@ describe("CuratedRecipeCarousel FlatList props", () => {
   it("keeps off-screen cards in the accessibility tree (no clipping)", () => {
     renderComponent(<CuratedRecipeCarousel />);
     expect(captured.value).toBeDefined();
-    expect(captured.value?.removeClippedSubviews).toBeFalsy();
+    expect(captured.value?.removeClippedSubviews).toBe(false);
   });
 
   it("keeps its virtualization window", () => {

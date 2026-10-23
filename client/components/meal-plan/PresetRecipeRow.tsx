@@ -88,8 +88,10 @@ export function PresetRecipeRow({
           index,
         })}
         windowSize={5}
-        // No removeClippedSubviews: on iOS it detaches off-screen cards from
-        // the native tree, so VoiceOver can't move past the second card.
+        // Clipping detaches off-screen cards from the native tree, so VoiceOver
+        // (and TalkBack) can't move past the second card. Explicit false:
+        // FlatList's default clips on Android.
+        removeClippedSubviews={false}
       />
     </View>
   );
