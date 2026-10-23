@@ -139,7 +139,8 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
         contentContainerStyle={styles.listContent}
         getItemLayout={getItemLayout}
         windowSize={5}
-        removeClippedSubviews
+        // No removeClippedSubviews: on iOS it detaches off-screen cards from
+        // the native tree, so VoiceOver can't move past the second card.
       />
     </View>
   );

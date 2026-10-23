@@ -88,7 +88,8 @@ export function PresetRecipeRow({
           index,
         })}
         windowSize={5}
-        removeClippedSubviews
+        // No removeClippedSubviews: on iOS it detaches off-screen cards from
+        // the native tree, so VoiceOver can't move past the second card.
       />
     </View>
   );
