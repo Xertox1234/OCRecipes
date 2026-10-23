@@ -1,6 +1,6 @@
 ---
 title: "Focus treatment edge cases left by #1537: nested ring in two sheets, 2px growth in compact fields, untested animation"
-status: backlog
+status: done
 priority: low
 created: 2026-10-22
 updated: 2026-10-22
@@ -30,9 +30,9 @@ container". The focus treatment's look itself waits on the owner's identity-pass
 
 ## Acceptance Criteria
 
-- [ ] QuickAddSheet and SimpleEntrySheet show a single focus ring (the container's), not one inside another.
-- [ ] Compact fields (ServingStepperChip edit input, NutritionStep cells, chat composers) don't change size on focus.
-- [ ] A test fails if the focus border colour no longer changes on focus, and one fails if a borderless input
+- [x] QuickAddSheet and SimpleEntrySheet show a single focus ring (the container's), not one inside another.
+- [x] Compact fields (ServingStepperChip edit input, NutritionStep cells, chat composers) don't change size on focus.
+- [x] A test fails if the focus border colour no longer changes on focus, and one fails if a borderless input
       loses its resting transparent 1px border.
 - [ ] Device check (owner) of the Coach composer and one sheet input, light and dark.
 
@@ -47,3 +47,9 @@ container". The focus treatment's look itself waits on the owner's identity-pass
 ## Dependencies
 
 - None blocking. #1537 (merged 15c3fd20).
+
+## Updates
+
+### 2026-10-22
+
+- Done: `compensateSyntheticBorder` (padding - 1, or margin -1 on a zero-padding side) cancels the synthesized border; both sheets draw one container ring (`focusRing={false}` on the inner input); `useFocusBorder` tests follow the animated colour. The device check (last criterion) is left to the owner.
