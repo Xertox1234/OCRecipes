@@ -49,7 +49,20 @@ appId: com.ocrecipes.app
 # `adb reverse tcp:8081 tcp:8081` step tunnels the emulator's localhost to
 # the runner's Metro; the iOS simulator shares the host Mac's loopback
 # natively, no tunnel needed.
+#
+# 4. iOS only: stop the app before the openLink. From SDK 55 the dev client
+#    re-shows the native splash when an openLink switches the bundle of an
+#    already-running app, and never hides it, so the splash sits over a
+#    fully rendered Home and every gate below times out. A cold start via
+#    the same URL is fine. stopApp needs the iOS bundle id, so it runs under
+#    a platform condition (see 3). Android is unchanged: its nightly passed
+#    on SDK 54 and the Android dev client was not checked on SDK 55.
 ---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - stopApp: com.williamtower.ocrecipes
 - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
 
 # Readiness gate — see header (1). Also matches two stranded states a

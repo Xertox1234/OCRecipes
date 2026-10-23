@@ -210,7 +210,13 @@
         }
       ],
       "expo-font",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-dev-client",
+        {
+          "toolsButton": false
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": true
