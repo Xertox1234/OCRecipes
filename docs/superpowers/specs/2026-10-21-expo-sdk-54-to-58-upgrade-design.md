@@ -163,7 +163,7 @@ change reaches the owner's device over the air on the existing build.
 - The expo-iap 3 → 6 PR (its own spec) merges here, after this step's PR and
   before the build.
 - **Ship:** EAS preview build, then about a week of daily use on the owner's
-  device before step 4. Run the expo-iap spec's §5 checks on this build (the sandbox ones only once App Store Connect can serve the subscription). This is the fallback point if SDK 58 goes badly.
+  device before step 4. Run the expo-iap spec's §5 checks on this build (including the sandbox purchase and restore). This is the fallback point if SDK 58 goes badly.
 
 ### Step 4: SDK 58 (RN 0.88, React 19.3)
 
@@ -222,9 +222,7 @@ or run the app, so every step also needs:
    - coach chat streaming
    - Liquid Glass back buttons and the tab bar (iOS 26)
    - Apple and Google sign-in
-   - IAP: on a Release build, the paywall loads with no crash. Do the
-     sandbox purchase and restore once App Store Connect can serve the
-     subscription (see the expo-iap spec §5)
+   - IAP sandbox purchase and restore on a Release build (expo-iap spec §5)
    - notification permission, push token registration, a real push sent
      from the server to the device, and a deep link from tapping it (from
      step 1 on; before step 1, a local notification only)

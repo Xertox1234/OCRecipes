@@ -118,15 +118,17 @@ sandbox checks in §5 matter even more there.
 
 The usual CI gate, plus the following.
 
-**App Store Connect gate (owner, 2026-10-22: not set up; the owner is the
-only user).** The Paid Apps agreement and the `com.ocrecipes.premium.annual`
-subscription don't exist yet. Until both are active, the store returns no products, the Release
-paywall shows "Price unavailable" by design, and none of the sandbox checks
-in item 2 can run. So the check this PR must pass is: a Release build where the paywall shows "Price
-unavailable" with the button disabled, no crash and no error toast, and
-Restore finishes with no crash. Plus the unit tests from 6.1.x shapes. The
-sandbox checks in item 2 then become a must-do before the first real sale,
-not before this PR merges.
+**App Store Connect gate (owner, 2026-10-22: it should be set up).** The
+sandbox checks in item 2 are required. Run them before this PR merges.
+Item 2 needs three things: an active Paid Apps agreement, the
+`com.ocrecipes.premium.annual` subscription with its 3-day free intro offer,
+and a sandbox tester account. As of 2026-10-04 none of them existed, and none
+of them can be confirmed from the repo. So the first device check comes
+before anything else: on a Release build of the **current** 3.4.8 app, does
+the paywall show a real price? If it shows "Price unavailable", App Store
+Connect isn't serving the product. Stop and finish the setup (owner task)
+before starting this upgrade. That way, a missing product never gets
+mistaken for an upgrade bug.
 
 1. **A Release build, not a dev client.** `client/lib/iap/index.ts` swaps in
    `mock-iap` whenever `__DEV__` is true, so `npx expo run:ios` in debug
@@ -184,13 +186,13 @@ not before this PR merges.
 
 ## 9. Spec review, 2026-10-22
 
-Verdict: **approve-with-edits**, with the reduced check in §5's gate
-paragraph. The owner confirmed on 2026-10-22 that App Store Connect isn't set
-up to sell the subscription. The design is unchanged. These are folded in above:
+Verdict: **approve-with-edits**. The owner said on 2026-10-22 that App Store
+Connect should be set up, so the sandbox checks stay required. The design is
+unchanged. These are folded in above:
 
 - **The sandbox checks depend on App Store Connect setup (§5).** That setup
-  was not done as of 2026-10-04, so the spec now names the check that can run
-  without it.
+  was missing as of 2026-10-04, so the first device check confirms that the
+  current 3.4.8 build loads a real price before the upgrade starts.
 - **The "unchanged" list was incomplete (§2).** It now covers the hook's
   `connected`/`subscriptions`, the Android offer-token request shape and
   `purchaseState`. All of them were checked in both versions' types.
