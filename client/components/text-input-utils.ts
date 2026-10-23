@@ -61,6 +61,48 @@ export function resolveFocusBorder(
   };
 }
 
+type Side = "Top" | "Right" | "Bottom" | "Left";
+const SIDES: Side[] = ["Top", "Right", "Bottom", "Left"];
+
+/** A side's value: specific side, then axis shorthand, then all-sides shorthand. */
+function sideValue(
+  flat: Record<string, unknown>,
+  prop: "padding" | "margin",
+  side: Side,
+): unknown {
+  const axis = side === "Top" || side === "Bottom" ? "Vertical" : "Horizontal";
+  return flat[`${prop}${side}`] ?? flat[`${prop}${axis}`] ?? flat[prop];
+}
+
+/**
+ * Style overrides that cancel the 1px border `resolveFocusBorder` adds to a
+ * borderless style, so focusing a field never changes its size.
+ *
+ * Per side: padding of 1 or more gives the pixel back (the border sits inside
+ * the box, so padding - 1 + border = the old inset). A side with no padding
+ * gets a -1 margin instead, which leaves the layout footprint unchanged and
+ * lets the ring draw just outside it. A style that already draws a border
+ * grows by nothing, and a non-numeric value (a percentage) is left alone.
+ */
+export function compensateSyntheticBorder(
+  flat: object,
+): Record<string, number> {
+  const style = flat as Record<string, unknown>;
+  if (((style.borderWidth as number | undefined) ?? 0) > 0) return {};
+  const out: Record<string, number> = {};
+  for (const side of SIDES) {
+    const padding = sideValue(style, "padding", side) ?? 0;
+    const margin = sideValue(style, "margin", side) ?? 0;
+    if (typeof padding !== "number") continue;
+    if (padding >= 1) {
+      out[`padding${side}`] = padding - 1;
+    } else if (typeof margin === "number") {
+      out[`margin${side}`] = margin - 1;
+    }
+  }
+  return out;
+}
+
 /** The visible label doubles as the input's accessible name unless overridden. */
 export function resolveInputAccessibilityLabel(
   explicit: string | undefined,

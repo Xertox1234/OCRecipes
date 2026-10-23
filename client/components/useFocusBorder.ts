@@ -14,7 +14,10 @@ import {
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { focusTimingConfig } from "@/constants/animations";
-import { resolveFocusBorder } from "./text-input-utils";
+import {
+  compensateSyntheticBorder,
+  resolveFocusBorder,
+} from "./text-input-utils";
 
 /**
  * Focus feedback for a drop-in input that keeps the caller's own look: the
@@ -30,6 +33,8 @@ export function useFocusBorder(
   style: StyleProp<TextStyle>,
   onFocus?: TextInputProps["onFocus"],
   onBlur?: TextInputProps["onBlur"],
+  /** `false` leaves the style untouched: the ring is drawn by a container that calls this hook on its own style. */
+  ring = true,
 ) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -56,7 +61,14 @@ export function useFocusBorder(
   }));
 
   return {
-    focusStyle: [style, { borderWidth: border.borderWidth }, animatedStyle],
+    focusStyle: ring
+      ? [
+          style,
+          { borderWidth: border.borderWidth },
+          compensateSyntheticBorder(flat),
+          animatedStyle,
+        ]
+      : style,
     onFocus: ((e) => {
       progress.set(withTiming(1, timing));
       onFocus?.(e);
