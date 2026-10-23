@@ -6,7 +6,12 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, FontFamily, withOpacity } from "@/constants/theme";
+import {
+  AbsoluteFill,
+  Spacing,
+  FontFamily,
+  withOpacity,
+} from "@/constants/theme";
 import { resolveImageUrl } from "@/lib/query-client";
 import { getTierLabel } from "@/components/verification-badge-utils";
 
@@ -155,7 +160,7 @@ const styles = StyleSheet.create({
     borderRadius: AVATAR_SIZE / 2,
   },
   avatarOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
     justifyContent: "center",
     alignItems: "center",
   },

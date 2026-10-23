@@ -14,6 +14,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
+  AbsoluteFill,
   Spacing,
   BorderRadius,
   FontFamily,
@@ -101,7 +102,7 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
         )}
       </Animated.View>
       {/* Sighted tap-to-dismiss only. Hidden from the a11y tree: this is an
-          `absoluteFillObject` with no visual affordance, so it overlaps every
+          `AbsoluteFill` layer with no visual affordance, so it overlaps every
           action's frame and VoiceOver interleaved it between the items
           (device-confirmed 2026-08-17). Focus landing here and being activated
           dismissed the menu without navigating — the reported "it just closes
@@ -193,11 +194,11 @@ const MINI_FAB_SIZE = 44;
 
 const styles = StyleSheet.create({
   wrapper: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
     zIndex: 999,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
   },
   actionsContainer: {
     position: "absolute",

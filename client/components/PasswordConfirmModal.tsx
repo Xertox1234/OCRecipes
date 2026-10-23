@@ -16,7 +16,7 @@ import { SecondFactorField } from "@/components/SecondFactorField";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import type { SecondFactorInput } from "@shared/types/auth";
 import { useTheme } from "@/hooks/useTheme";
-import { BorderRadius, Spacing } from "@/constants/theme";
+import { AbsoluteFill, BorderRadius, Spacing } from "@/constants/theme";
 
 interface PasswordConfirmModalProps {
   visible: boolean;
@@ -164,7 +164,7 @@ export function PasswordConfirmModal({
 
 const styles = StyleSheet.create({
   kav: { flex: 1 },
-  backdrop: { ...StyleSheet.absoluteFillObject },
+  backdrop: { ...AbsoluteFill },
   center: {
     flex: 1,
     justifyContent: "center",

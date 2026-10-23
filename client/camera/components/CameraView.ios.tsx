@@ -22,7 +22,7 @@ import {
   type ScannedObjectType,
 } from "react-native-vision-camera";
 import type { ExpoBarcodeType } from "@shared/types/camera";
-import { Spacing } from "@/constants/theme";
+import { AbsoluteFill, Spacing } from "@/constants/theme";
 import { logger } from "@/lib/logger";
 import { useCameraFocusAndZoom } from "../hooks/useCameraFocusAndZoom";
 import { FocusRing } from "./FocusRing";
@@ -289,7 +289,7 @@ export function CameraUnavailable() {
 
 const styles = StyleSheet.create({
   unavailable: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
     justifyContent: "center",
     alignItems: "center",
     gap: Spacing.md,

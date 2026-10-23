@@ -26,7 +26,12 @@ import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { Spacing, BorderRadius, CameraColors } from "@/constants/theme";
+import {
+  AbsoluteFill,
+  Spacing,
+  BorderRadius,
+  CameraColors,
+} from "@/constants/theme";
 import { logger } from "@/lib/logger";
 import { CameraView, useCameraPermissions, type CameraRef } from "@/camera";
 import { useCreateCookSession, useAddCookPhoto } from "@/hooks/useCookSession";
@@ -443,7 +448,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   analyzingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
     backgroundColor: CameraColors.overlayMediumDark,
     justifyContent: "center",
     alignItems: "center",

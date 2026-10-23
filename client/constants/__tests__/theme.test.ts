@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { withOpacity } from "../theme";
+import { AbsoluteFill, withOpacity } from "../theme";
 
 describe("withOpacity", () => {
   it("appends correct alpha for full opacity", () => {
@@ -27,5 +27,17 @@ describe("withOpacity", () => {
 
   it("works with short hex colors", () => {
     expect(withOpacity("#FFF", 1)).toBe("#FFFff");
+  });
+});
+
+describe("AbsoluteFill", () => {
+  it("AbsoluteFill pins the element to all four edges", () => {
+    expect(AbsoluteFill).toEqual({
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    });
   });
 });

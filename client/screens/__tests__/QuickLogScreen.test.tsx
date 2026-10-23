@@ -5,7 +5,7 @@
 // premium gate lives on the screen itself, reading the server-resolved,
 // expiry-aware feature flag (todos/P2-2026-09-26-quick-log-locked-for-free-tier).
 import React from "react";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { Platform } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import QuickLogScreen from "../QuickLogScreen";
@@ -17,6 +17,8 @@ const {
   premiumHolder,
   sessionHolder,
   mockGoBack,
+  mockNavigate,
+  deferredTasks,
   mockToastInfo,
   mockToastError,
   mockAnnounce,
@@ -37,6 +39,8 @@ const {
     submitError: null as string | null,
   },
   mockGoBack: vi.fn(),
+  mockNavigate: vi.fn(),
+  deferredTasks: [] as (() => void)[],
   mockToastInfo: vi.fn(),
   mockToastError: vi.fn(),
   mockAnnounce: vi.fn(),
@@ -91,7 +95,15 @@ vi.mock("@/hooks/useQuickLogSession", () => ({
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack, navigate: vi.fn() }),
+  useNavigation: () => ({ goBack: mockGoBack, navigate: mockNavigate }),
+}));
+
+// Deferred work is queued, not run, so a test can check what happens before
+// the transition finishes and then flush the queue.
+vi.mock("@/lib/run-after-transition", () => ({
+  runAfterTransition: (task: () => void) => {
+    deferredTasks.push(task);
+  },
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -594,6 +606,30 @@ describe("QuickLogScreen — submit", () => {
     renderComponent(<QuickLogScreen />);
     const note = screen.getByText("Found 1 item. Log All to save.");
     expect(note.closest('[aria-live="polite"]')).not.toBeNull();
+  });
+});
+
+describe("QuickLogScreen — camera button", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    deferredTasks.length = 0;
+    premiumHolder.isPremium = true;
+    premiumHolder.textFoodParsing = true;
+    premiumHolder.isPremiumResolved = true;
+    sessionHolder.parseEmpty = false;
+    sessionHolder.parsedItems = [];
+    sessionHolder.parseGeneration = 0;
+    sessionHolder.parseError = null;
+    sessionHolder.submitError = null;
+  });
+
+  it("closes Quick Log before opening Scan from the camera button", () => {
+    renderComponent(<QuickLogScreen />);
+    fireEvent.click(screen.getByLabelText("Take a photo to log food"));
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled();
+    deferredTasks.splice(0).forEach((task) => task());
+    expect(mockNavigate).toHaveBeenCalledWith("Scan");
   });
 });
 

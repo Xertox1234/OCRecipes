@@ -31,6 +31,7 @@ import {
   secondFactorErrorMessage,
 } from "@/lib/second-factor-utils";
 import {
+  AbsoluteFill,
   Spacing,
   BorderRadius,
   FontFamily,
@@ -430,7 +431,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
   },
   centerWrap: {
     flex: 1,

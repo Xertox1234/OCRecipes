@@ -41,11 +41,15 @@ import { OfflineQueueBridge } from "@/components/OfflineQueueBridge";
 import { initOfflineQueue } from "@/lib/offline-queue";
 import { drainQueue } from "@/lib/offline-queue-drain";
 import { QUERY_KEYS } from "@/lib/query-keys";
-import { setupNotificationChannel } from "@/lib/notifications";
+import {
+  installForegroundNotificationHandler,
+  setupNotificationChannel,
+} from "@/lib/notifications";
 import { initReporter, reportError } from "@/lib/reporter";
 import { logger } from "@/lib/logger";
 
 initReporter();
+installForegroundNotificationHandler();
 
 // Persist ONLY the small, offline-critical reads — the centralized QUERY_KEYS
 // (food log, daily summary, frequent items, daily budget, dietary profile,

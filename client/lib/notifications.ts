@@ -21,6 +21,26 @@ export async function setupNotificationChannel(): Promise<void> {
   });
 }
 
+/**
+ * Keep notifications that arrive while the app is open hidden: no banner, no
+ * list entry, no sound, no badge change (owner ruling, SDK 58 upgrade spec §9
+ * ruling 2). Set explicitly so a library default can't change it. Tapping a
+ * notification from the background is untouched — that goes through the
+ * response listener in client/navigation/linking.ts. Call once at module
+ * scope, before any notification can arrive.
+ */
+export function installForegroundNotificationHandler(): void {
+  Notifications.setNotificationHandler({
+    handleNotification: () =>
+      Promise.resolve({
+        shouldShowBanner: false,
+        shouldShowList: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      }),
+  });
+}
+
 /** Request notification permissions. Returns true if granted. */
 export async function requestNotificationPermission(): Promise<boolean> {
   const { status: existing } = await Notifications.getPermissionsAsync();

@@ -27,6 +27,7 @@ import {
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
+  AbsoluteFill,
   Spacing,
   BorderRadius,
   FontFamily,
@@ -397,7 +398,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...AbsoluteFill,
   },
   centerWrap: {
     flex: 1,

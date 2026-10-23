@@ -25,6 +25,7 @@ export const getExpoPushTokenAsync = () => Promise.resolve({ data: "" });
 export const setNotificationChannelAsync = () => Promise.resolve(null);
 export const scheduleNotificationAsync = () => Promise.resolve("");
 export const cancelScheduledNotificationAsync = () => Promise.resolve();
+export const setNotificationHandler = () => {};
 export const getLastNotificationResponse = () => null;
 export const clearLastNotificationResponse = () => {};
 export const addNotificationResponseReceivedListener = () => ({

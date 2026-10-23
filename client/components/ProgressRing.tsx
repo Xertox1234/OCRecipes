@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet } from "react-native";
+import { View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import Animated, {
   useSharedValue,
@@ -9,6 +9,7 @@ import Animated, {
   cancelAnimation,
 } from "react-native-reanimated";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { AbsoluteFill } from "@/constants/theme";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -85,7 +86,7 @@ export const ProgressRing = React.memo(function ProgressRing({
         />
       </Svg>
       {children && (
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+        <View style={AbsoluteFill} pointerEvents="none">
           <View
             style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
           >

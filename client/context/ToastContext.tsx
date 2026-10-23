@@ -18,6 +18,7 @@ import { Toast } from "@/components/Toast";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import type { ToastVariant, ToastAction } from "@/components/toast-utils";
+import { AbsoluteFill } from "@/constants/theme";
 
 interface ToastOptions {
   action?: ToastAction;
@@ -222,5 +223,5 @@ export function ModalToastHost() {
 }
 
 const styles = StyleSheet.create({
-  fill: { ...StyleSheet.absoluteFillObject },
+  fill: { ...AbsoluteFill },
 });
