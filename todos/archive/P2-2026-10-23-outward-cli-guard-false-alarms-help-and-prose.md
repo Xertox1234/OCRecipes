@@ -1,6 +1,6 @@
 ---
 title: "Outward-CLI guard: stop blocking --help calls and commands that only mention a guarded command"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-23
 updated: 2026-10-23
@@ -45,17 +45,17 @@ Read them first. They record the shapes that earlier attempts got wrong.
 
 ## Acceptance Criteria
 
-- [ ] Re-run the transcript join (denied `tool_result` → its `tool_use` command) and save the 23 commands
+- [x] Re-run the transcript join (denied `tool_result` → its `tool_use` command) and save the 23 commands
       as a fixture corpus. Each one is labelled `deliberate` or `false-alarm`.
-- [ ] A help-only invocation (`<cli> … --help` / `-h`, with no other mutating clause) is allowed for the
+- [x] A help-only invocation (`<cli> … --help` / `-h`, with no other mutating clause) is allowed for the
       gated CLIs (`railway`, `eas`, `gh`).
-- [ ] Text that only names a guarded command is allowed: heredoc bodies fed to an interpreter, quoted
+- [x] Text that only names a guarded command is allowed: heredoc bodies fed to an interpreter, quoted
       grep patterns, and variable assignments.
-- [ ] All 11 deliberate commands from the corpus are still DENIED (regression rows in
+- [x] All 11 deliberate commands from the corpus are still DENIED (regression rows in
       `.claude/hooks/test-guard-outward-cli.sh`).
-- [ ] Old-vs-new differential over the existing guard test corpus shows **zero DENY→ALLOW** outside the
+- [x] Old-vs-new differential over the existing guard test corpus shows **zero DENY→ALLOW** outside the
       intended help/prose rows (`docs/solutions` → partial-parse / differential lessons).
-- [ ] Re-count after shipping: false alarms on the fixture corpus go from 12 to ≤ 2, with any residual
+- [x] Re-count after shipping: false alarms on the fixture corpus go from 12 to ≤ 2, with any residual
       recorded in `docs/harness-residuals.md`.
 
 ## Implementation Notes
@@ -89,3 +89,21 @@ Read them first. They record the shapes that earlier attempts got wrong.
 ### 2026-10-23
 
 - Created from the harness-effectiveness review (owner asked for todos; doing this one next session).
+
+### 2026-10-23 (done)
+
+- **Baseline corrected.** Joining each block to its full command (not a 160-char prefix) gave **22 real
+  blocks, 12 deliberate + 10 false alarms**, not 23 = 11 + 12: one "block" was a `grep` exiting 1 on the
+  guard's own source text, and the `R="…"` row was a real `gh api -X PATCH` alert dismissal (deliberate).
+- **Owner ruling** narrowed the 2026-09-22 heredoc ruling to two shapes: help-only clauses and quoted
+  heredocs fed to python/node. A guard-local pre-pass in `guard-outward-cli.sh` removes them before any
+  check; `lib/cmd-detect.sh` is untouched (no other guard changes).
+- **Result on the real corpus:** 6 of 10 false alarms now allow; all 12 deliberate actions still deny on
+  their own reason; the other 4 (heredoc text written with `cat` or used as data) stay denied by ruling.
+  The "≤ 2" target is replaced by this ruling's 4.
+- **Evidence:** suite 1302/1302 (62 new rows incl. the 22 real commands verbatim, RED first: exactly
+  the 20 allow rows failed). Old-vs-new corpus differential: 2160 rows × 4 paths, **0 verdict changes**
+  (1921 deny / 239 allow), aggregate pin passes. `scripts/run-hook-tests.sh` exit 0.
+- **Found on the way (pre-existing, not caused here):** a quote inside one heredoc's body desyncs the
+  quote scan and hides a later command. Recorded in `docs/harness-residuals.md`, pinned KNOWN-WRONG.
+- Note: the python shape is strict — `python3 -I - <<'EOF'` (an extra flag) is not it and stays visible.
