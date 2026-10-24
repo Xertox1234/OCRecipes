@@ -6,12 +6,15 @@
 #     worktree-contract registry (/tmp/claude-worktree-contracts-<session_id>/,
 #     written by scripts/declare-worktree.sh) is non-empty:
 #       - mutating git subcommands (commit|mv|rm|restore|checkout|stash|reset|
-#         rebase|merge|cherry-pick|apply|am|clean) whose EFFECTIVE repo (cwd, or
-#         the `git -C <path>` override; relative -C resolves against cwd) is not
+#         rebase|merge|cherry-pick|apply|am|clean; `stash list|show` excepted) whose
+#         EFFECTIVE repo (cwd — or the folder of ONE leading `cd <abs> &&` — or the
+#         `git -C <path>` override; relative -C resolves against that) is not
 #         a registered worktree and not allowlisted → DENY.
 #       - write-shaped shell commands (>/>> redirects, tee, rm, cp/mv destination,
 #         sed -i) with an absolute target UNDER THE MAIN CHECKOUT and outside
-#         every registered worktree → DENY. (Scoped to the main checkout — the
+#         every registered worktree → DENY. A cp's plain relative destination is
+#         resolved against the same folder. <main>/.superpowers/ (gitignored skill
+#         workspace) is exempt by physical path. (Scoped to the main checkout — the
 #         incident class — to avoid false positives elsewhere.)
 #     Bypass: SKIP_WORKTREE_CONTRACT=1.
 #
@@ -504,11 +507,11 @@ registered_list() { for e in "$REG_DIR"/*; do printf '  %s\n' "$(cat "$e" 2>/dev
 # fail closed). Used per tagged git-dir/work-tree/cwd target in the mutating-git branch below.
 check_repo_target() {
   local e="$1"
-  [ -n "$e" ] || e="$CWD"
+  [ -n "$e" ] || e="$EFF_CWD"
   case "$e" in
     "") RESOLVED=""; return 2 ;;
     /*) ;;
-    *)  e=$( (cd "$CWD" 2>/dev/null && cd "$e" 2>/dev/null && pwd) || printf '%s/%s' "$CWD" "$e") ;;
+    *)  e=$( (cd "$EFF_CWD" 2>/dev/null && cd "$e" 2>/dev/null && pwd) || printf '%s/%s' "$EFF_CWD" "$e") ;;
   esac
   RESOLVED="$e"
   allowlisted "$e" || in_registered "$e" || return 0
@@ -553,6 +556,38 @@ INLINE_BYPASS=""
 _GS_CD_BYPASS_RE='^cd[[:blank:]]+('"'"'[^'"'"']*'"'"'|"[^"$`\]*"|[^[:space:];&|<>()$`'"'"'"\]+)[[:blank:]]*(&&|;)[[:blank:]]*SKIP_WORKTREE_CONTRACT=1 '
 case "$CMD" in "SKIP_WORKTREE_CONTRACT=1 "*) INLINE_BYPASS=1 ;; esac
 [[ "$CMD" =~ $_GS_CD_BYPASS_RE ]] && INLINE_BYPASS=1
+
+# A cd/pushd/popd word (or a way to run one we cannot see) anywhere in $1. Quotes and
+# backslashes are deleted first so `c''d`/`\cd` still count. Any `$` counts too: `${y}d <main>`
+# (y=c) runs cd with no cd word in the text -- measured as an ALLOW before `$` was added. So does
+# the dot command at a command position (`. ./x.sh` runs a script that may cd, in this shell). Used
+# to decide whether the command's working folder is knowable from its text.
+_gs_has_cd_word() {
+  printf '%s' "$1" | tr -d "\"'\\\\" \
+    | grep -qE '(^|[^A-Za-z0-9_.-])(cd|pushd|popd|eval|source|exec|builtin|command)([^A-Za-z0-9_.-]|$)|\$|`|(^|[;&|(])[[:space:]]*\.[[:space:]]'
+}
+# Leading cd (2026-10-24): exactly ONE `cd <absolute folder> &&` at the very start, and no
+# cd/pushd/popd (or eval/source/exec/builtin/command, any `$`, backtick) anywhere after it, sets
+# the folder the contract judges against. `&&` only: after `;` the rest runs even when the cd
+# fails. The folder may not hold `$`, a backtick, `~`, globs, braces or a `..`/`.` segment.
+# Anything else keeps the session cwd, as before. Residual: a program run after the cd that
+# changes folder for a LATER git (a script, `bash -c` with no cd word visible) -- see
+# docs/harness-residuals.md.
+LEAD_CD=""
+_GS_LEAD_CD_RE='^cd[[:blank:]]+('"'"'[^'"'"'$`~*?{}[]*'"'"'|[^][:space:];&|<>()$`'"'"'"\~*?{}[]+)[[:blank:]]*&&'
+if [[ "$CMD" =~ $_GS_LEAD_CD_RE ]]; then
+  _lc=${BASH_REMATCH[1]}; _lc=${_lc#\'}; _lc=${_lc%\'}
+  if [[ "$_lc" == /* ]] && ! has_dot_segments "$_lc" && ! _gs_has_cd_word "${CMD#"${BASH_REMATCH[0]}"}"; then
+    LEAD_CD=${_lc%/}; [ -n "$LEAD_CD" ] || LEAD_CD=/
+  fi
+fi
+EFF_CWD=${LEAD_CD:-$CWD}
+
+# A release in the SAME command has not run when this hook judges it (15 of 39 real blocks).
+case "$CMD" in
+  *declare-worktree.sh*--remove*|*declare-worktree.sh*--clear*)
+    ESCAPES="$ESCAPES A --remove/--clear earlier in this same command has not run yet: the guard judges the whole command before any of it runs, so run it as its own command first, then this one." ;;
+esac
 
 if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_active; then
   # --- mutating git: EVERY mutating segment's effective repo must be a registered
@@ -775,8 +810,16 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     fi
     VIOLATION=""; UNRESOLVABLE=""
     SEGS=$(printf '%s' "$CMD" | split_segments)
+    # `git stash list|show` only read (2026-10-24). Exempt ONLY when the WHOLE segment is that
+    # verb plus plain words: no `$`, backtick, parens, redirect or env prefix, so a substitution
+    # or a second command cannot ride along, and a commit MESSAGE saying "stash list" never
+    # reaches this (the anchor puts `stash` in the verb slot). An exemption narrower than it
+    # could be only costs an over-deny.
+    _GS_STASH_ARG='[-A-Za-z0-9@{}._/:^~]+'
+    _GS_STASH_RO_RE="^[[:space:]]*git[[:space:]]+((-C|-c)[[:space:]]+${_GS_STASH_ARG}[[:space:]]+)*stash[[:space:]]+(list|show)([[:space:]]+(${_GS_STASH_ARG}|\"${_GS_STASH_ARG}\"|'${_GS_STASH_ARG}'))*[[:space:]]*\$"
     while IFS= read -r seg; do
       printf '%s' "$seg" | grep -qE "$MUTATING_GIT_SEG_RE" || continue
+      printf '%s' "$seg" | grep -qE "$_GS_STASH_RO_RE" && continue
       # git_c_target (defined above) emits the redirect COMPONENTS of this segment, quote-AWARE:
       #   g <path> = --git-dir/GIT_DIR   c <path> = the cumulative -C fold   w <path> = --work-tree/GIT_WORK_TREE
       # git resolves the git-dir and the work-tree INDEPENDENTLY, so we reconstruct BOTH and validate
@@ -846,9 +889,25 @@ Run it inside the assigned worktree (or with git -C <worktree>). ${ESCAPES}"
     # style the old strip existed for). See
     # docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md.
     declare -F emit_write_targets >/dev/null || deny "git-safety: lib/write-targets.sh did not load while a worktree contract is active — failing closed for write-shaped commands. Bypass: SKIP_WORKTREE_CONTRACT=1."
-    WRITE_TARGETS=$(printf '%s' "$CMD" | emit_write_targets | sort -u)
+    # The lib reports a RELATIVE line only for a cp whose destination is a plain relative word
+    # (2026-10-24; before, it reported the absolute SOURCE). Join it to the folder the command
+    # runs in: an honored leading cd, else the session cwd when the command has no cd at all.
+    # Otherwise the folder is unknowable, and the lib is asked for the OLD reading (the absolute
+    # source, `--cp-source`), so that case judges exactly as it did before this change.
+    _GS_REL_BASE=""
+    if [ -n "$LEAD_CD" ]; then _GS_REL_BASE=$LEAD_CD
+    elif ! _gs_has_cd_word "$CMD"; then _GS_REL_BASE=$CWD; fi
+    if [ -n "$_GS_REL_BASE" ]; then
+      WRITE_TARGETS=$(printf '%s' "$CMD" | emit_write_targets | sort -u)
+    else
+      WRITE_TARGETS=$(printf '%s' "$CMD" | emit_write_targets --cp-source | sort -u)
+    fi
     while IFS= read -r t; do
       [ -n "$t" ] || continue
+      case "$t" in
+        /*) ;;
+        *) [ -n "$_GS_REL_BASE" ] || continue; t="${_GS_REL_BASE%/}/${t#./}" ;;
+      esac
       # Judge dot-segment targets by where they LAND: an allowlist-prefixed
       # /tmp/../<main>/x lexically dodges the $MAIN_ROOT/* check below while
       # resolving into the main checkout.
@@ -859,8 +918,24 @@ Run it inside the assigned worktree (or with git -C <worktree>). ${ESCAPES}"
       # and a write INTO the main checkout is the incident class even when the
       # checkout lives under a temp prefix (as in the self-test fixture).
       in_registered "$TC" && continue
+      # The gitignored skill workspace <main>/.superpowers/ is writable during a contract (owner
+      # 2026-10-24). Judged by PHYSICAL path: the deepest existing folder must resolve inside
+      # <main>/.superpowers, and the target itself must not be a symlink, so a link inside the
+      # workspace cannot carry a write into the rest of main.
       case "$TC" in
-        "$MAIN_ROOT"/*)
+        "$MAIN_ROOT"/.superpowers/*)
+          if [ ! -L "$TC" ]; then
+            _anc=${TC%/*}
+            while [ ! -d "$_anc" ] && [ "${#_anc}" -gt "${#MAIN_ROOT}" ]; do _anc=${_anc%/*}; done
+            _phys=$(cd "$_anc" 2>/dev/null && pwd -P || echo "")
+            _want="$(cd "$MAIN_ROOT" 2>/dev/null && pwd -P || echo /nonexistent)/.superpowers"
+            case "$_phys/" in "$_want"/*) continue ;; esac
+          fi ;;
+      esac
+      # The main ROOT itself counts too (2026-10-24): `cp <src> .` run from main resolves to
+      # <main>/. and collapses to <main>, which `<main>/*` alone never matched.
+      case "$TC" in
+        "$MAIN_ROOT"|"$MAIN_ROOT"/*)
           deny "Worktree contract violation: a write-shaped command targets
   ${t}
 under the main checkout while worktree assignment(s) are active:

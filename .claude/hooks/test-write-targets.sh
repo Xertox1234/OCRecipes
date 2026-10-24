@@ -13,6 +13,17 @@ abs() { printf '%s' "$1" | emit_write_targets | tr '\n' ' '; }
 assert_eq "default: absolute rm target" "$(abs 'rm /abs/x.ts')" "/abs/x.ts "
 assert_eq "default: relative ignored"    "$(abs 'rm foo.ts /abs/x')" "/abs/x "
 assert_eq "default: quoted message"      "$(abs 'git commit -m "writes > /main/out"')" ""
+# 2026-10-24: a cp whose destination is a plain relative word reports THAT word, not the
+# absolute source; the caller resolves it. mv, -t, and ~/$ destinations keep the old reading.
+assert_eq "default: cp abs source, relative dest → the dest" "$(abs 'cp /abs/src.ts dst.ts')" "dst.ts "
+assert_eq "default: cp relative source, abs dest"            "$(abs 'cp src.ts /abs/dst.ts')" "/abs/dst.ts "
+assert_eq "default: mv abs source, relative dest → the source (mv deletes it)" "$(abs 'mv /abs/src.ts dst.ts')" "/abs/src.ts "
+assert_eq "default: cp -t dir first keeps the abs dir"      "$(abs 'cp -t /abs/d a.ts')" "/abs/d "
+assert_eq "default: cp to ~ keeps the abs source"            "$(abs 'cp /abs/a ~/b')" "/abs/a "
+assert_eq "default: cp to \$HOME keeps the abs source"       "$(abs 'cp /abs/a $HOME/b')" "/abs/a "
+assert_eq "default: fd digit before > is not the cp dest"    "$(abs 'cp a.ts /abs/b.ts 2>/dev/null')" "/dev/null /abs/b.ts "
+assert_eq "--cp-source: cp relative dest keeps the old abs-source reading" \
+  "$(printf '%s' 'cp /abs/src.ts dst.ts' | emit_write_targets --cp-source | tr '\n' ' ')" "/abs/src.ts "
 
 rel() { printf '%s' "$1" | emit_write_targets --relative | tr '\n' ' '; }
 res() { printf '%s' "$1" | resolve_write_targets "$2" | tr '\n' ' '; }
