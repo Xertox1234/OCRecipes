@@ -5,6 +5,7 @@ category: logic-errors
 module: client
 severity: medium
 tags: [react-navigation, native-stack, hooks, navigation]
+applies_to: [client/hooks/useFromHomeBackRedirect.ts, client/screens/meal-plan/RecipeCreateScreen.tsx]
 symptoms: ["Console error: '[Screen] was removed natively but didn't get removed from JS state'", "A screen intermittently renders blank after a back gesture, with the tab bar still responsive", "beforeRemove interception works empirically but produces a dev-only console warning"]
 created: '2026-07-07'
 ---

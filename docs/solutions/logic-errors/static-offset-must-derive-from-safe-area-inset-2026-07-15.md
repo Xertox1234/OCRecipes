@@ -3,6 +3,7 @@ title: A static pixel offset that clears a safe-area-dependent sibling under-cle
 track: bug
 category: logic-errors
 tags: [react-native, safe-area-insets, layout, positioning, camera]
+applies_to: [client/camera/components/ProductChip.tsx, client/camera/components/ZoomLabel.tsx, client/screens/ScanScreen.tsx]
 module: client
 symptoms: [element visually overlaps a sibling only on notch or home-indicator devices, a code-reviewed layout fix looks correct at insets.bottom=0 but not at insets.bottom>0, fixed pixel offset mirrors an existing sibling's static constant that itself never accounted for insets.bottom]
 severity: medium

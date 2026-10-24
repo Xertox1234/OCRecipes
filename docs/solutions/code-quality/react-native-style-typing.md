@@ -5,6 +5,7 @@ category: code-quality
 module: client
 severity: low
 tags: [typescript, react-native, styling, types]
+applies_to: [client/camera/components/CameraView.tsx, client/constants/theme.ts]
 symptoms: [No autocomplete for style properties, Style errors only caught at runtime, Type errors when passing style props]
 created: '2026-02-01'
 ---
