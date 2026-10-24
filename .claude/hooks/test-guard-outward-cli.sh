@@ -6008,7 +6008,7 @@ assert_allow "two path-qualified read-only gh api calls allow" \
   "$(json '/usr/bin/env gh api /repos/o/r; /usr/bin/env gh api /repos/o/r2')"
 
 # ---------- 2026-10-23: help-only clauses and quoted python/node heredocs are not invocations ----------
-# todos/P2-2026-10-23-outward-cli-guard-false-alarms-help-and-prose.md. Of 22 real blocks between
+# todos/archive/P2-2026-10-23-outward-cli-guard-false-alarms-help-and-prose.md. Of 22 real blocks between
 # 2026-10-12 and 2026-10-23, 12 were deliberate actions and 10 were false alarms. Owner ruling
 # 2026-10-23: two shapes stop being blocked, and the 2026-09-22 ruling (heredoc text stays visible)
 # holds for every other heredoc:
@@ -6596,6 +6596,57 @@ railway --help 2>&1 | grep -iE "restart|redeploy"; railway restart --help 2>&1 |
 OUTWARD_CORPUS_END
 C=${C%$'\n'}
 assert_allow 'corpus #22 false alarm now allows' "$(jsonc "$C")"
+# 2026-10-23 review of #1545: a python3/node REDEFINED earlier in the command runs the heredoc
+# body as shell, so the pre-pass must decline. `()` alone missed the spaced definition and
+# `hash -p`; these all denied before #1545 and allowed after it (measured).
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 ( ) { sh; }
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a spaced function definition makes python3 a shell' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 () { sh; }
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a function definition with a space before the parens' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+hash -p /bin/sh python3
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: hash -p points python3 at a shell' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+enable -n python3
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: enable before the heredoc declines' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+eval "python3 ( ) { sh; }"
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a definition inside eval declines' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+node ( ) { sh; }
+node <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a spaced node function definition' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
 
 # 975 -> 977 (2026-09-17, closer-class sweep): +2 structural rows. #991 fixed ONE hand-written
 # `([[:space:]]|$)` closer; the sibling todo's criterion is that leaving the others is this
@@ -6645,7 +6696,8 @@ assert_allow 'corpus #22 false alarm now allows' "$(jsonc "$C")"
 # 1240 -> 1302 (2026-10-23, help-only clauses and quoted python/node heredocs): +62 = 38 shape rows
 # (14 allow, 24 deny), the KNOWN-WRONG desync allow and its deny control, and the 22 real blocks
 # verbatim (12 deliberate deny, 6 false alarms now allow, 4 heredoc texts deny).
-EXPECTED_TOTAL=1302
+# 1302 -> 1308 (2026-10-23, #1545 review): +6 deny rows, a python3/node redefined before its heredoc.
+EXPECTED_TOTAL=1308
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
