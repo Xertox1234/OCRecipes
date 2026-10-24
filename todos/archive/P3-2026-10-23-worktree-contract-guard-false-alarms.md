@@ -1,9 +1,9 @@
 ---
 title: "Worktree-contract guard: cut the false alarms (same-command release, cp source, leading cd, skill workspace)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-23
-updated: 2026-10-23
+updated: 2026-10-24
 assignee:
 labels: [harness, deferred]
 github_issue:
@@ -69,22 +69,22 @@ transcripts.
 
 ## Acceptance Criteria
 
-- [ ] **Message only (no accept change):** the violation text says `--remove/--clear` takes effect only
+- [x] **Message only (no accept change):** the violation text says `--remove/--clear` takes effect only
       once it has run, so run it as its own command first. This targets the 15 same-command blocks.
-- [ ] **cp/mv destination:** when the last word of a `cp`/`mv` segment is a relative path, the absolute
+- [x] **cp/mv destination:** when the last word of a `cp`/`mv` segment is a relative path, the absolute
       source is not reported as the target. A relative destination after `cd` is already a documented
       residual, so this opens no new bypass class.
-- [ ] **Leading cd:** exactly one leading `cd <absolute-path>` joined by `&&` (and no later `cd`/`pushd`)
+- [x] **Leading cd:** exactly one leading `cd <absolute-path>` joined by `&&` (and no later `cd`/`pushd`)
       sets the cwd that the git-segment check uses. Reuse the leading-cd parse already behind
       `_GS_CD_BYPASS_RE`. `cd $W && cd $M && git commit` still denies.
-- [ ] **stash:** `git stash list|show` is not treated as mutating; `git stash`, `push`, `pop`, `apply`, `drop`
+- [x] **stash:** `git stash list|show` is not treated as mutating; `git stash`, `push`, `pop`, `apply`, `drop`
       and `clear` still are.
-- [ ] **`.superpowers/` workspace:** ask the owner whether the gitignored `<main>/.superpowers/` skill
+- [x] **`.superpowers/` workspace:** ask the owner whether the gitignored `<main>/.superpowers/` skill
       workspace is allowed like `/audit`'s writes, or stays denied. Implement the answer; record it in
       `docs/harness-residuals.md` if it stays denied.
-- [ ] Every corpus row above is a row in `.claude/hooks/test-git-safety.sh` (or `test-write-targets.sh`
+- [x] Every corpus row above is a row in `.claude/hooks/test-git-safety.sh` (or `test-write-targets.sh`
       for parser rows), and the real-catch and control rows still DENY.
-- [ ] Old-vs-new differential over the existing `test-git-safety.sh` / `test-write-targets.sh` corpora
+- [x] Old-vs-new differential over the existing `test-git-safety.sh` / `test-write-targets.sh` corpora
       shows **zero DENY→ALLOW** outside the intended rows.
 
 ## Implementation Notes
@@ -117,3 +117,31 @@ transcripts.
 ### 2026-10-23
 
 - Filed from the worktree-contract block classification (27 false alarms vs 7 real catches).
+
+### 2026-10-24 — done
+
+- Owner ruled `.superpowers/` allowed (2026-10-24). It is exempt in `git-safety.sh` by physical path:
+  the deepest existing folder must resolve inside `<main>/.superpowers`, and the target must not be a
+  symlink. The file-tool guard is unchanged (recorded in `docs/harness-residuals.md`).
+- **Same-command release:** the deny message adds one sentence when the command itself runs
+  `declare-worktree.sh --remove/--clear`. What the guard accepts is unchanged.
+- **Leading cd:** one `cd <abs> &&` at the start sets the folder the contract judges against. It is
+  honored only when nothing after it can change folder unseen (cd/pushd/popd/eval/source/exec/
+  builtin/command, any `$`, a backtick, a dot command). This also closes a false ALLOW: `cd <main> &&
+git commit` from a worktree session used to pass.
+- **stash:** `git stash list|show` with plain arguments is exempt. Any `$`, backtick, redirect or
+  second command keeps it denied.
+- **cp:** a plain relative destination is resolved against that same folder (or the session cwd when
+  the command has no cd at all). When the folder is unknowable, the lib's `--cp-source` gives exactly
+  the old reading. `mv` is unchanged on purpose, since it deletes its source in main. The main root
+  itself now counts as "in main" (`cp x .` from main, `cp x <main>`).
+- **Evidence:** `test-git-safety.sh` 324/324 (+44 rows; RED first: 12 failed). `test-write-targets.sh`
+  passes with 4/4 mutants killed. `test-session-coord.sh` passes. The hand-written suite differential
+  over 295 payloads changes 10 DENY→ALLOW (the 10 intended rows) and 4 ALLOW→DENY (intended
+  tightenings), and nothing else. Two generated corpora:
+  - 6,500 leading-cd rows: the only non-stash DENY→ALLOW is the exact honored shape. It found the
+    parameter-built `${y}d` cd, now closed.
+  - 5,184 cp/mv rows: 150 DENY→ALLOW, all copies into the worktree; 180 ALLOW→DENY, all cp writes
+    that really land in main. It found the main-root gap, now closed.
+- Residuals recorded: a profile shell function that changes folder after an honored cd (e.g.
+  zoxide `z`), and the pre-existing `cp --target-directory=<main>/d` allow.

@@ -10,18 +10,22 @@
 # op/command mentioned inside a commit MESSAGE (`git commit -m "writes > /main/out"`) is
 # never mined — the false-DENY this replaces. Emission mirrors the prior extractors:
 # rm/tee/sed -i → every abs-path arg; cp/mv → the last abs path (destination); redirect
-# → the following path. Quote-AWARE incl. bash ANSI-C `$'…'` (st==3) — a `$'…\'…'` used to
+# → the following path. Exception (2026-10-24): a cp whose LAST word is a plain relative path
+# reports that relative word, because the last abs path is then the SOURCE; git-safety.sh
+# resolves it against the command's folder. mv keeps the abs path: it deletes its source.
+# `--cp-source` turns that exception off (the old reading), for a caller that cannot know the folder. Quote-AWARE incl. bash ANSI-C `$'…'` (st==3) — a `$'…\'…'` used to
 # desync the scanner and hide a `>` into the main checkout (a pre-existing false-negative).
 # Residuals (guardrail, not sandbox): fd-dup `>&`/`2>&1` split on the `&`; arg-taking
 # wrappers still expose the command word; `$(…)`/`${…}`/here-docs unmodeled (over-split =
 # false-POSITIVE, not a bypass). Bypass remains SKIP_WORKTREE_CONTRACT=1.
 emit_write_targets() {
-  local rel=0
+  local rel=0 cpsrc=0
   [ "${1:-}" = "--relative" ] && rel=1
-  awk -v rel="$rel" '
+  [ "${1:-}" = "--cp-source" ] && cpsrc=1
+  awk -v rel="$rel" -v cpsrc="$cpsrc" '
     function addc(ch){ word = word ch; wstart = 1 }
     function addcq(ch){ word = word ch; wstart = 1; wtaint = 1 }
-    function seg_reset(){ np = 0; has_rm = 0; has_tee = 0; has_cp = 0; has_mv = 0; has_sed = 0; has_sedi = 0; nrp = 0; cmdseen = 0; sedpend = 0; skipnext = 0; lastrel = 0 }
+    function seg_reset(){ np = 0; has_rm = 0; has_tee = 0; has_cp = 0; has_mv = 0; has_sed = 0; has_sedi = 0; nrp = 0; cmdseen = 0; sedpend = 0; skipnext = 0; lastrel = 0; cplast = ""; cpt = 0 }
     function endword(   w, tnt, iscmd){
       if (!wstart) return
       w = word; tnt = wtaint; word = ""; wstart = 0; wtaint = 0
@@ -45,11 +49,21 @@ emit_write_targets() {
         else if (has_sed && sedpend) sedpend = 0
         else { rpaths[++nrp] = w; lastrel = 1 }
       }
+      # Plain mode, cp only (2026-10-24): remember the last word if it is a plain RELATIVE path, so
+      # segend can report that as the destination instead of an absolute SOURCE. A word with `~`,
+      # `$` or a backtick expands to something we cannot see, so it resets to the old reading;
+      # `-t`/`--target-directory` (destination FIRST) keeps the old reading too.
+      if (!rel && has_cp && cmdseen && !iscmd && w != "") {
+        if (substr(w, 1, 1) == "-") { if (w == "--target-directory" || w ~ /^-[A-Za-z]*t[A-Za-z]*$/) cpt = 1 }
+        else if (substr(w, 1, 1) == "/" || substr(w, 1, 1) == "~" || index(w, "$") || index(w, "`")) cplast = ""
+        else cplast = w
+      }
       if (iscmd) cmdseen = 1
     }
     function segend(   k){
       endword()
       if (has_rm || has_tee || (has_sed && has_sedi)) { for (k = 1; k <= np; k++) print paths[k]; if (rel) for (k = 1; k <= nrp; k++) relout[++nro] = rpaths[k] }
+      else if (!rel && !cpsrc && has_cp && !has_mv && !cpt && np > 0 && cplast != "") print cplast
       else if (has_cp || has_mv) { if (np > 0 && !(rel && lastrel)) print paths[np]; if (rel && lastrel && nrp > 0) relout[++nro] = rpaths[nrp] }
       redir = 0; skipword = 0; seg_reset()
     }
@@ -65,7 +79,7 @@ emit_write_targets() {
           else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { i++; st = 3; wstart = 1 }
           else if (c == SQ) { st = 1; wstart = 1 }
           else if (c == DQ) { st = 2; wstart = 1 }
-          else if (c == ">") { if (rel && wstart && !wtaint && word ~ /^[0-9]+$/) { word = ""; wstart = 0 } else endword(); if (i < n) { nx = substr(buf, i + 1, 1); if (nx == ">" || nx == "|") i++ } redir = 1 }
+          else if (c == ">") { if (wstart && !wtaint && word ~ /^[0-9]+$/) { word = ""; wstart = 0 } else endword(); if (i < n) { nx = substr(buf, i + 1, 1); if (nx == ">" || nx == "|") i++ } redir = 1 }
           else if (c == "<") { endword(); skipword = 1 }
           else if (c == "|" || c == ";" || c == "&" || c == "(" || c == ")" || c == "\n") { segend() }
           else if (c == " " || c == "\t") { endword() }

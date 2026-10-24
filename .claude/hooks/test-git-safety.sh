@@ -1089,6 +1089,12 @@ assert_deny "leading cd: a ~ folder is not honored" \
   "$(json "$SESSION" "$MAIN" "cd ~/x && git commit -m x")"
 assert_deny "leading cd: a \$ in the folder is not honored" \
   "$(jsonc "$SESSION" "$MAIN" "cd $WT_A/\$X && git commit -m x")"
+assert_deny "leading cd: a cd built from a parameter (\${y}d <main>) disqualifies it" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $WT_A && y=c && \${y}d $MAIN && git commit -m x")"
+assert_deny "leading cd: a dot-sourced script after it disqualifies it" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && . ./x.sh && git commit -m x")"
+assert_allow "leading cd: a dot ARGUMENT (git add .) does not disqualify it" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && git add . && git commit -m x")"
 assert_deny "leading cd: an explicit -C <main> still wins over the honored cd" \
   "$(json "$SESSION" "$MAIN" "cd $WT_A && git -C $MAIN commit -m x")"
 # stash: list/show with simple arguments are read-only; every other stash form still mutates.
@@ -1124,12 +1130,20 @@ assert_allow "cp: cp <main>/.env .env from a worktree cwd is allowed" \
   "$(json "$SESSION" "$R_WT" "cp $R_MAIN/.env .env")"
 assert_allow "cp: cd <worktree> && cp <main>/todos/a.md todos/ from a main cwd is allowed" \
   "$(json "$SESSION" "$R_MAIN" "cd $R_WT && cp $R_MAIN/todos/a.md todos/")"
-assert_allow "cp: unresolvable relative destination after a non-leading cd stays allowed (residual)" \
+assert_allow "cp: unknown folder (non-leading cd) falls back to the old reading — non-main source allowed" \
   "$(json "$SESSION" "$R_WT" 'cd sub && cp /tmp/x .')"
+assert_deny "cp: unknown folder (non-leading cd) falls back to the old reading — main source denied" \
+  "$(json "$SESSION" "$R_WT" "cd sub && cp $R_MAIN/a.txt .")"
+assert_deny "cp: a \$ anywhere makes the folder unknown — old reading, main source denied" \
+  "$(jsonc "$SESSION" "$R_MAIN" "cp $R_MAIN/a.txt b.txt; echo \$X")"
 assert_deny "cp: absolute destination in main still denies" \
   "$(json "$SESSION" "$R_WT" "cp .env $R_MAIN/.env")"
 assert_deny "cp: relative destination resolving into main (main cwd) denies" \
   "$(json "$SESSION" "$R_MAIN" "cp $R_MAIN/a.txt b.txt")"
+assert_deny "cp: a . destination resolving to the main ROOT denies (generated-corpus find)" \
+  "$(json "$SESSION" "$R_WT" "cd $R_MAIN && cp $R_WT/a.txt .")"
+assert_deny "cp: an absolute destination that IS the main root denies" \
+  "$(json "$SESSION" "$R_WT" "cp a.txt $R_MAIN")"
 assert_deny "cp: relative destination after an honored cd <main> denies" \
   "$(json "$SESSION" "$R_WT" "cd $R_MAIN && cp $R_WT/a.txt b.txt")"
 assert_deny "cp: a ~ destination keeps today's reading" \
@@ -1727,7 +1741,13 @@ fi
 # -- an axis not varied is an axis where a defect is invisible, which is how it shipped.
 # 270 -> 280 (2026-10-16, bypass after one leading cd): +10 = 3 cd allows, 1 no-bypass
 # control, 5 deny shapes, 1 pinned front-bypass-unlocks-later allow.
-EXPECTED_TOTAL=280
+# 280 -> 324 (2026-10-24, worktree-contract false alarms): +44 = 15 leading-cd (4 allows, 11
+# denies incl. the cd <main> tightening, the parameter-built cd found by the generated corpus
+# and the dot-sourced script), 9 stash (3 allows, 6 denies), 2 release-message, 14 cp/mv
+# (2 allows, the unknown-folder fallback pair, the $-makes-folder-unknown deny, the main-root
+# pair found by the generated cp corpus, 7 more denies incl. the cd <main> tightening),
+# 4 .superpowers (1 allow, 3 denies). RED before the guard change: 12 failed.
+EXPECTED_TOTAL=324
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

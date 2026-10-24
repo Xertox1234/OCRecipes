@@ -41,6 +41,8 @@ Review Policy → One review pass per PR).
 | P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-…   | A delivery above 1 MiB makes guard (c) write no record (fail-closed)                       |
 | _(no todo — #1436 confirmation review, 2026-10-13)_                                       | PR guard head pick scans the whole command: `echo --head X; gh pr create …` uses X's stamp |
 | _(no todo — outward-CLI false-alarm work, 2026-10-23)_                                    | A quote inside one heredoc's body throws off the quote scan and hides a later command      |
+| _(no todo — worktree-contract false-alarm work, 2026-10-24)_                              | After an honored leading `cd <worktree> &&`, a shell function that changes folder hides it |
+| _(no todo — found 2026-10-24, pre-existing)_                                              | `cp --target-directory=<main>/d x` is not read as a write into main                        |
 
 The 2026-10-23 heredoc row, measured: `cmd_bare` (and the renderings built like it) scan a heredoc body
 as shell text, so a lone `'` in a body flips its quote state for the rest of the command. Five lines are
@@ -50,6 +52,18 @@ allows it (on `HEAD` before that day's change and after it), and bash runs the l
 pre-pass declines whenever a command holds any other heredoc, so it neither causes nor widens this. Fix
 shape if reopened: have `cmd_bare` skip heredoc bodies (or treat any `<<` other than `<<<` as
 unparseable) instead of scanning them as shell.
+
+The 2026-10-24 rows, measured with `git-safety.sh` before and after that day's change. **Leading cd:**
+`git-safety.sh` now judges a command's git segments from the folder of one leading `cd <abs> &&`. It
+does so only when the text after it holds no cd/pushd/popd/eval/source/exec/builtin/command word,
+no `$`, no backtick and no dot command. A 6,500-row generated corpus (cwd × folder spelling × joiner ×
+13 second stages × 5 git commands) showed no other DENY→ALLOW. What the text cannot show is a
+function from the shell profile that changes folder, such as zoxide's `z`: `cd <wt> && z main &&
+git commit` from a main session was DENY and is now ALLOW. From a worktree session it was already
+ALLOW. **`--target-directory=`:** `cp --target-directory=<main>/d a` is ALLOW before and after; only
+the separate `-t <dir>` spelling is read. Over-denial left in place: the file-tool guard
+(`guard-worktree-isolation.sh`) does not share the new `.superpowers/` exemption, so a Write-tool
+write there is still denied. All 5 real blocks were shell appends.
 
 ### Over-denial and friction (the guard blocks legitimate work)
 
