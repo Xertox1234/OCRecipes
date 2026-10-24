@@ -577,8 +577,8 @@ LEAD_CD=""
 _GS_LEAD_CD_RE='^cd[[:blank:]]+('"'"'[^'"'"'$`~*?{}[]*'"'"'|[^][:space:];&|<>()$`'"'"'"\~*?{}[]+)[[:blank:]]*&&'
 # A cd that FAILS lets whatever follows `;`, a lone `&`, `||` or a newline run in the ORIGINAL
 # folder (review of #1552, measured: `cd <missing> && : || git commit` ran in main). So those
-# separators are honored only when the folder EXISTS, which is what makes the cd succeed; a missing
-# folder needs a pure `&&` chain. The text test is crude on purpose -- a separator inside quotes
+# separators are honored only when the folder exists AND can be entered (-d and -x: a chmod-000
+# folder fails the cd too, review of #1553); a missing folder needs a pure `&&` chain. The text test is crude on purpose -- a separator inside quotes
 # also counts, which only means the leading cd is not honored (the old rule).
 if [[ "$CMD" =~ $_GS_LEAD_CD_RE ]]; then
   _lc=${BASH_REMATCH[1]}; _lc=${_lc#\'}; _lc=${_lc%\'}
@@ -587,7 +587,7 @@ if [[ "$CMD" =~ $_GS_LEAD_CD_RE ]]; then
   case "$_rest" in *$'\n'*|*';'*|*'||'*) _rest_sep=1 ;; esac
   printf '%s' "$_rest" | grep -qE '(^|[^&])&([^&]|$)' && _rest_sep=1
   if [[ "$_lc" == /* ]] && ! has_dot_segments "$_lc" && ! _gs_has_cd_word "$_rest" \
-     && { [ "$_rest_sep" = 0 ] || [ -d "$_lc" ]; }; then
+     && { [ "$_rest_sep" = 0 ] || { [ -d "$_lc" ] && [ -x "$_lc" ]; }; }; then
     LEAD_CD=${_lc%/}; [ -n "$LEAD_CD" ] || LEAD_CD=/
   fi
 fi
@@ -826,8 +826,10 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     # reaches this (the anchor puts `stash` in the verb slot). An exemption narrower than it
     # could be only costs an over-deny. OPTIONS come from a closed read-only list: `stash list`
     # hands its options to `git log`, whose `--output <file>` WRITES a file (review of #1552,
-    # measured), so an open `-word` class was a write into main.
-    _GS_STASH_ARG='[A-Za-z0-9@{}._/:^~][-A-Za-z0-9@{}._/:^~]*'
+    # measured), so an open `-word` class was a write into main. A brace is allowed only as a
+    # closing `{N}` (stash@{0}, @{1}) -- digits alone never brace-expand -- because zsh expands
+    # `{-..-}-output` to `--output` (review of #1553).
+    _GS_STASH_ARG='[A-Za-z0-9@._/:^~][-A-Za-z0-9@._/:^~]*(\{[0-9]+\})?'
     _GS_STASH_OPT='(-p|--patch|--stat|--numstat|--shortstat|--name-only|--name-status|--oneline|-u|--include-untracked|--only-untracked|-q|--quiet|-n|-[0-9]+)'
     _GS_STASH_RO_RE="^[[:space:]]*git[[:space:]]+((-C|-c)[[:space:]]+${_GS_STASH_ARG}[[:space:]]+)*stash[[:space:]]+(list|show)([[:space:]]+(${_GS_STASH_OPT}|${_GS_STASH_ARG}|\"${_GS_STASH_ARG}\"|'${_GS_STASH_ARG}'))*[[:space:]]*\$"
     while IFS= read -r seg; do
