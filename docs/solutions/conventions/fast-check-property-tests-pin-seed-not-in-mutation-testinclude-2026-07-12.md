@@ -2,7 +2,7 @@
 title: 'fast-check property tests: pin the seed, keep them out of Stryker testInclude'
 track: knowledge
 category: conventions
-tags: [testing, property-based, fast-check, vitest, mutation-testing, flakiness]
+tags: [testing, property-based, fast-check, vitest, mutation-testing, flakiness, harness]
 module: shared
 applies_to: ['**/__tests__/**/*.property.test.ts', 'stryker*.mjs', 'scripts/mutation-explore.mjs', 'scripts/ci/mutation-on-diff.mjs']
 created: 2026-07-12

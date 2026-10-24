@@ -3,7 +3,7 @@ title: 'Wire offline queue drain via App.tsx, not query-client.ts, to avoid circ
 track: knowledge
 category: conventions
 module: client
-tags: [offline-queue, circular-import, tanstack-query, onlineManager, architecture]
+tags: [offline-queue, circular-import, tanstack-query, onlineManager, architecture, client-state]
 applies_to: [client/App.tsx, client/lib/offline-queue-drain.ts, client/lib/query-client.ts]
 created: '2026-06-12'
 ---

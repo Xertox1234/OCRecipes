@@ -3,7 +3,7 @@ title: Gated read-only mutation testing for Hard-Exclusion "crown jewel" modules
 track: knowledge
 category: best-practices
 module: server
-tags: [mutation-testing, stryker, testing, goal-safety, hard-exclusion, security, ci]
+tags: [mutation-testing, stryker, testing, goal-safety, hard-exclusion, security, ci, harness]
 applies_to: [stryker.targets.mjs, scripts/mutation-explore.mjs, server/services/adaptive-goals.ts, server/services/goal-calculator.ts]
 created: '2026-06-05'
 ---

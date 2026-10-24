@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: shared
 severity: high
-tags: [drizzle, typescript, schema, nullable, array-columns]
+tags: [drizzle, typescript, schema, nullable, array-columns, database]
 symptoms: [Calling .filter/.map on an array column crashes at runtime with `Cannot read properties of null`, 'TypeScript inferred type is string[] | null despite `.default([])`', Legacy NULL rows trigger TypeErrors after a column was migrated to have a default]
 applies_to: [shared/schema.ts]
 created: '2026-05-09'

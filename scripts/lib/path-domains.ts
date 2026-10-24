@@ -180,6 +180,19 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     domains: ["api", "security", "architecture", "typescript"],
     description: "`server/lib/**`",
   },
+  // server/index.ts + server/utils/** (2026-10-24): the Express entry and its utils matched no
+  // rule, so the docs anchored there (5xx messages, process handlers, graceful shutdown, log
+  // exclusions, profile hash) could not be delivered for any edit. Same set as server/lib/**.
+  {
+    match: { kind: "exact-file", path: "server/index.ts" },
+    domains: ["api", "security", "architecture", "typescript"],
+    description: "`server/index.ts`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "server/utils" },
+    domains: ["api", "security", "architecture", "typescript"],
+    description: "`server/utils/**`",
+  },
   {
     match: { kind: "recursive-dir", dir: "client/screens" },
     domains: ["react-native", "design-system", "accessibility"],

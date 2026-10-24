@@ -3,7 +3,7 @@ title: Guarding and forwarding npm-run args in a package.json script (sh -c '...
 track: knowledge
 category: design-patterns
 module: shared
-tags: [npm, package-json, shell, eas, tooling, devops]
+tags: [npm, package-json, shell, eas, tooling, devops, architecture]
 applies_to: [package.json]
 created: '2026-06-22'
 last_updated: '2026-08-16'

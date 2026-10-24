@@ -4,7 +4,7 @@ track: knowledge
 category: conventions
 module: client
 tags: [testing, vitest, react-native, mocks, alias, audit-triage]
-applies_to: [client/**/__tests__/**/*.test.ts, client/**/__tests__/**/*.test.tsx]
+applies_to: [client/**/__tests__/*.test.ts, client/**/__tests__/*.test.tsx]
 created: '2026-05-13'
 last_updated: '2026-09-25'
 ---

@@ -3,7 +3,7 @@ title: 'Verify WCAG color contrast (4.5:1 AA) before adding new color tokens'
 track: knowledge
 category: conventions
 module: client
-tags: [accessibility, wcag, colors, contrast, theme]
+tags: [accessibility, wcag, colors, contrast, theme, design-system]
 applies_to: [client/constants/theme.ts, client/constants/**/*colors*.ts]
 created: '2026-05-13'
 ---

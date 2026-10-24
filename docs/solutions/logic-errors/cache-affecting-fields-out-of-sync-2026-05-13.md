@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [cache-invalidation, dietary-profile, ai-suggestions, two-lists-drift, data-integrity]
+tags: [cache-invalidation, dietary-profile, ai-suggestions, two-lists-drift, data-integrity, api]
 symptoms: [User updates dietary profile but continues to see stale AI suggestions, Eager cache invalidation does not fire for some profile field updates, Two field lists exist in different files and have drifted out of sync]
 applies_to: [server/routes/profile.ts, server/utils/profile-hash.ts]
 created: '2026-04-09'

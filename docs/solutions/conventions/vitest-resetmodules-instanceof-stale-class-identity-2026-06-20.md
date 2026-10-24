@@ -4,7 +4,7 @@ track: knowledge
 category: conventions
 module: client
 tags: [testing, vitest, resetModules, instanceof, module-cache]
-applies_to: [client/**/__tests__/**/*.ts]
+applies_to: [client/**/__tests__/*.ts]
 created: '2026-06-20'
 ---
 

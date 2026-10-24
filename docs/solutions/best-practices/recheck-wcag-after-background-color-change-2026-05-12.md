@@ -4,7 +4,7 @@ track: knowledge
 category: best-practices
 module: client
 severity: medium
-tags: [accessibility, wcag, theme, colors, contrast, rebrand]
+tags: [accessibility, wcag, theme, colors, contrast, rebrand, design-system]
 symptoms: [Background colour changed (e.g. white → cream) without revisiting foreground contrast, Greens or mid-greys that 'looked fine on white' appearing low-contrast on the new background, WCAG ratio comments in theme.ts not updated to match the new background, A verified text token reused on a darker nested fill (tile/chip inside a card) without re-checking the new pair]
 applies_to: [client/constants/theme.ts, client/constants/**/*colors*.ts]
 created: '2026-05-12'

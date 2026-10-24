@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [database, race-condition, mutation-detection, ordering]
+tags: [database, race-condition, mutation-detection, ordering, api]
 symptoms: [Detection logic never fires because before/after values are identical, Reformulation flags always come back empty in happy-path tests, Route handler appears to work but produces zero side effects]
 applies_to: [server/routes/verification.ts, server/services/reformulation-detection.ts]
 created: '2026-03-25'
