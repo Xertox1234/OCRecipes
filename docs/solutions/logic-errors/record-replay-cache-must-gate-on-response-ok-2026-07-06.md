@@ -2,7 +2,8 @@
 title: 'Record/replay HTTP caches must gate writes on response.ok, not just response existing'
 track: bug
 category: logic-errors
-tags: [caching, fetch, http, error-handling, dev-tooling]
+tags: [caching, fetch, http, error-handling, dev-tooling, architecture]
+applies_to: [server/services/dev-api-cache.ts]
 module: server
 symptoms: [A transient 429/500 from an external API gets replayed as a permanent success indefinitely, A dev-only fixture/replay cache never "fixes itself" even after the real upstream recovers, Debugging a "broken" barcode/query for a while only to find the local cache recorded a rate-limit response]
 severity: medium

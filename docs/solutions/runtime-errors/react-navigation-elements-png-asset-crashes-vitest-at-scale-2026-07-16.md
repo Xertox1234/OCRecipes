@@ -4,6 +4,7 @@ track: bug
 category: runtime-errors
 module: client
 tags: [testing, vitest, vite, react-navigation, ci-only-flake]
+applies_to: [client/hooks/__tests__/useHeaderContentInset.test.ts]
 symptoms: ["TypeError: Unknown file extension \".png\" for node_modules/@react-navigation/elements/lib/module/assets/back-icon.png thrown while collecting a test file that never imports @react-navigation/elements itself", "Failure only reproduces at full CI shard scale (~140+ files); isolated or small-batch local runs of the same file pass clean", "3/3 identical reproduction on the same commit — not explainable as ordinary CPU-contention flake"]
 created: '2026-07-16'
 severity: low

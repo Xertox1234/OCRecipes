@@ -5,6 +5,7 @@ category: logic-errors
 module: camera
 severity: high
 tags: [react, hooks, useCallback, useRef, stale-closure, debouncing]
+applies_to: [client/camera/hooks/useCamera.ts]
 symptoms: [Duplicate barcode scans despite debounce implementation, Callback checks always see outdated state value, Debounce logic appears to not work]
 created: '2026-02-01'
 ---

@@ -4,6 +4,7 @@ track: knowledge
 category: conventions
 module: server
 tags: [mutation-testing, stryker, testing, test-quality, dead-code, integrity]
+applies_to: [server/lib/verification-consensus.ts, server/lib/__tests__/verification-consensus.test.ts]
 created: '2026-06-05'
 ---
 

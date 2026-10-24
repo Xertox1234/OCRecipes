@@ -5,6 +5,7 @@ category: logic-errors
 module: server
 severity: high
 tags: [recursion, redaction, security, code-review, contract-shape]
+applies_to: [server/lib/contract-shape.ts]
 symptoms: [An override/force parameter works correctly at the top level but silently has no effect for a case nested one level inside another already-overridden case, A code review finds the same bug independently from multiple unrelated angles (correctness scan, cross-file trace, reuse/duplication check) because the general-case recursion is correct and only the special-cased branch is wrong]
 created: '2026-07-08'
 ---

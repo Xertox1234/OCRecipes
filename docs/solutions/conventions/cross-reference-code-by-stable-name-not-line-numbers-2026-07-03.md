@@ -4,6 +4,7 @@ track: knowledge
 category: conventions
 module: shared
 tags: [harness, architecture, comments, documentation, cross-references, drift, maintenance, mirrors]
+applies_to: [scripts/preflight.sh]
 created: '2026-07-03'
 last_updated: '2026-08-28'
 ---
