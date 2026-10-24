@@ -575,9 +575,19 @@ _gs_has_cd_word() {
 # docs/harness-residuals.md.
 LEAD_CD=""
 _GS_LEAD_CD_RE='^cd[[:blank:]]+('"'"'[^'"'"'$`~*?{}[]*'"'"'|[^][:space:];&|<>()$`'"'"'"\~*?{}[]+)[[:blank:]]*&&'
+# A cd that FAILS lets whatever follows `;`, a lone `&`, `||` or a newline run in the ORIGINAL
+# folder (review of #1552, measured: `cd <missing> && : || git commit` ran in main). So those
+# separators are honored only when the folder EXISTS, which is what makes the cd succeed; a missing
+# folder needs a pure `&&` chain. The text test is crude on purpose -- a separator inside quotes
+# also counts, which only means the leading cd is not honored (the old rule).
 if [[ "$CMD" =~ $_GS_LEAD_CD_RE ]]; then
   _lc=${BASH_REMATCH[1]}; _lc=${_lc#\'}; _lc=${_lc%\'}
-  if [[ "$_lc" == /* ]] && ! has_dot_segments "$_lc" && ! _gs_has_cd_word "${CMD#"${BASH_REMATCH[0]}"}"; then
+  _rest=${CMD#"${BASH_REMATCH[0]}"}
+  _rest_sep=0
+  case "$_rest" in *$'\n'*|*';'*|*'||'*) _rest_sep=1 ;; esac
+  printf '%s' "$_rest" | grep -qE '(^|[^&])&([^&]|$)' && _rest_sep=1
+  if [[ "$_lc" == /* ]] && ! has_dot_segments "$_lc" && ! _gs_has_cd_word "$_rest" \
+     && { [ "$_rest_sep" = 0 ] || [ -d "$_lc" ]; }; then
     LEAD_CD=${_lc%/}; [ -n "$LEAD_CD" ] || LEAD_CD=/
   fi
 fi
@@ -814,9 +824,12 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     # verb plus plain words: no `$`, backtick, parens, redirect or env prefix, so a substitution
     # or a second command cannot ride along, and a commit MESSAGE saying "stash list" never
     # reaches this (the anchor puts `stash` in the verb slot). An exemption narrower than it
-    # could be only costs an over-deny.
-    _GS_STASH_ARG='[-A-Za-z0-9@{}._/:^~]+'
-    _GS_STASH_RO_RE="^[[:space:]]*git[[:space:]]+((-C|-c)[[:space:]]+${_GS_STASH_ARG}[[:space:]]+)*stash[[:space:]]+(list|show)([[:space:]]+(${_GS_STASH_ARG}|\"${_GS_STASH_ARG}\"|'${_GS_STASH_ARG}'))*[[:space:]]*\$"
+    # could be only costs an over-deny. OPTIONS come from a closed read-only list: `stash list`
+    # hands its options to `git log`, whose `--output <file>` WRITES a file (review of #1552,
+    # measured), so an open `-word` class was a write into main.
+    _GS_STASH_ARG='[A-Za-z0-9@{}._/:^~][-A-Za-z0-9@{}._/:^~]*'
+    _GS_STASH_OPT='(-p|--patch|--stat|--numstat|--shortstat|--name-only|--name-status|--oneline|-u|--include-untracked|--only-untracked|-q|--quiet|-n|-[0-9]+)'
+    _GS_STASH_RO_RE="^[[:space:]]*git[[:space:]]+((-C|-c)[[:space:]]+${_GS_STASH_ARG}[[:space:]]+)*stash[[:space:]]+(list|show)([[:space:]]+(${_GS_STASH_OPT}|${_GS_STASH_ARG}|\"${_GS_STASH_ARG}\"|'${_GS_STASH_ARG}'))*[[:space:]]*\$"
     while IFS= read -r seg; do
       printf '%s' "$seg" | grep -qE "$MUTATING_GIT_SEG_RE" || continue
       printf '%s' "$seg" | grep -qE "$_GS_STASH_RO_RE" && continue

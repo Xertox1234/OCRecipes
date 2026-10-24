@@ -43,6 +43,7 @@ Review Policy → One review pass per PR).
 | _(no todo — outward-CLI false-alarm work, 2026-10-23)_                                    | A quote inside one heredoc's body throws off the quote scan and hides a later command      |
 | _(no todo — worktree-contract false-alarm work, 2026-10-24)_                              | After an honored leading `cd <worktree> &&`, a shell function that changes folder hides it |
 | _(no todo — found 2026-10-24, pre-existing)_                                              | `cp --target-directory=<main>/d x` is not read as a write into main                        |
+| _(no todo — found 2026-10-24 by the #1552 review, pre-existing)_                          | `git log --output <main>/x` writes into main from any folder; neither layer reads it       |
 
 The 2026-10-23 heredoc row, measured: `cmd_bare` (and the renderings built like it) scan a heredoc body
 as shell text, so a lone `'` in a body flips its quote state for the rest of the command. Five lines are
@@ -64,6 +65,16 @@ ALLOW. **`--target-directory=`:** `cp --target-directory=<main>/d a` is ALLOW be
 the separate `-t <dir>` spelling is read. Over-denial left in place: the file-tool guard
 (`guard-worktree-isolation.sh`) does not share the new `.superpowers/` exemption, so a Write-tool
 write there is still denied. All 5 real blocks were shell appends.
+
+**Review fixes for #1552, same day.** The security review measured two DENY→ALLOW cases, both now closed
+with test rows. (1) After `cd <missing folder> && …`, anything following `;`, a lone `&`, `||` or a
+newline runs in the ORIGINAL folder. A leading cd with any of those separators is now honored only when
+its folder exists. A 672-row corpus (7 cd targets × 4 middles × 6 separators × 4 finals, against the
+guard before #1552) shows that missing folders now flip only in pure `&&`/`|` chains. (2) `git stash
+list --output <main>/x` writes a file, so stash options now come from a closed read-only list. **`git log
+--output`:** git writes the file itself, and neither the mutating-git check nor the write-target reader
+sees it. `git log --output <main>/p` is ALLOW from a main or worktree cwd, both before and after #1552.
+So a `stash list --output` run in a worktree after an honored cd is this same pre-existing class.
 
 ### Over-denial and friction (the guard blocks legitimate work)
 

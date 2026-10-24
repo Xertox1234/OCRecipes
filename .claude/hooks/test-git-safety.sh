@@ -1066,11 +1066,31 @@ assert_deny_reason() {  # $1=name $2=payload $3=needle $4=1 (must contain) | 0 (
 # word anywhere, sets the folder the git segments are judged from.
 assert_allow "leading cd: cd <worktree> && git rm from a main cwd is allowed" \
   "$(json "$SESSION" "$MAIN" "cd $WT_A && git rm -q a.txt")"
-assert_allow "leading cd: cd <worktree> && python heredoc, then git mv on its own line, is allowed" \
+# A cd that FAILS lets anything after `;`, `&`, `||` or a newline run in the ORIGINAL folder
+# (2026-10-24 review of #1552, measured). So those separators are honored only when the folder
+# exists; a missing folder needs a pure `&&` chain. RWT2 is a real, registered folder: under the
+# allowlisted temp prefix, so an honored cd allows and an unhonored one is judged against MAIN.
+RWT2=$(cd "$(mktemp -d)" && pwd -P)
+printf '%s' "$RWT2" > "$REG_DIR/eeee000000000005"
+assert_allow "leading cd: existing folder, python heredoc, then git mv on its own line, is allowed" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $RWT2 && python3 - <<'EOF'
+print(1)
+EOF
+git mv a b")"
+assert_allow "leading cd: existing folder with a later || is honored (the cd cannot fail)" \
+  "$(json "$SESSION" "$MAIN" "cd $RWT2 && false || git commit -m x")"
+assert_deny "leading cd: missing folder, then newline git, is not honored" \
   "$(jsonc "$SESSION" "$MAIN" "cd $WT_A && python3 - <<'EOF'
 print(1)
 EOF
 git mv a b")"
+assert_deny "leading cd: missing folder, then || git commit, is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd /nonexistent-zz && : || git commit -m x")"
+assert_deny "leading cd: missing folder under a worktree, then || git commit, is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A/nope && : || git commit -m x")"
+assert_deny "leading cd: missing folder, then & git commit, is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd /nonexistent-zz && : & git commit -m x")"
+rm -f "$REG_DIR/eeee000000000005"; rmdir "$RWT2" 2>/dev/null
 assert_allow "leading cd: single-quoted worktree folder is honored" \
   "$(json "$SESSION" "$MAIN" "cd '$WT_A' && git commit -m x")"
 assert_deny "leading cd: a second cd back into main still denies" \
@@ -1114,6 +1134,10 @@ assert_deny "stash: a command substitution after stash list still denies" \
   "$(jsonc "$SESSION" "$MAIN" 'git stash list $(git commit -m x)')"
 assert_deny "stash: a substitution inside a quoted stash show arg still denies" \
   "$(jsonc "$SESSION" "$MAIN" 'git stash show "$(git commit -m x)"')"
+assert_deny "stash: stash list --output <main>/x writes a file and still denies (review of #1552)" \
+  "$(json "$SESSION" "$MAIN" "git stash list --output $MAIN/pwned.txt")"
+assert_allow "stash: git stash show --stat stash@{1} (read-only option) is allowed" \
+  "$(json "$SESSION" "$MAIN" 'git stash show --stat stash@{1}')"
 assert_deny "stash: a commit whose MESSAGE says stash list still denies" \
   "$(jsonc "$SESSION" "$MAIN" "git commit -m 'stash list'")"
 # Same-command release: the deny message explains the release has not run yet.
@@ -1144,6 +1168,8 @@ assert_deny "cp: a . destination resolving to the main ROOT denies (generated-co
   "$(json "$SESSION" "$R_WT" "cd $R_MAIN && cp $R_WT/a.txt .")"
 assert_deny "cp: an absolute destination that IS the main root denies" \
   "$(json "$SESSION" "$R_WT" "cp a.txt $R_MAIN")"
+assert_deny "cp: missing-folder cd then || cp <main>/a b from main denies (review of #1552)" \
+  "$(json "$SESSION" "$R_MAIN" "cd /nonexistent-zz && : || cp $R_MAIN/a.txt b.txt")"
 assert_deny "cp: relative destination after an honored cd <main> denies" \
   "$(json "$SESSION" "$R_WT" "cd $R_MAIN && cp $R_WT/a.txt b.txt")"
 assert_deny "cp: a ~ destination keeps today's reading" \
@@ -1747,7 +1773,11 @@ fi
 # (2 allows, the unknown-folder fallback pair, the $-makes-folder-unknown deny, the main-root
 # pair found by the generated cp corpus, 7 more denies incl. the cd <main> tightening),
 # 4 .superpowers (1 allow, 3 denies). RED before the guard change: 12 failed.
-EXPECTED_TOTAL=324
+# 324 -> 332 (2026-10-24, #1552 review fixes): +8 = 1 existing-folder heredoc allow (replacing the
+# old fake-folder one, which now denies and stays as a deny row), 1 existing-folder || allow, 4
+# missing-folder separator denies (newline, ||, || under a worktree, &), 1 stash --output deny,
+# 1 stash --stat allow, 1 missing-folder || cp deny. Net +8 because the heredoc row became two.
+EXPECTED_TOTAL=332
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
