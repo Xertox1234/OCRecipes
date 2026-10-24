@@ -124,7 +124,7 @@
     "expo-secure-store": "~56.0.4",
     "expo-server-sdk": "^6.1.0",
     "expo-speech": "~56.0.3",
-    "expo-speech-recognition": "^3.1.1",
+    "expo-speech-recognition": "~56.0.4",
     "expo-splash-screen": "~56.0.16",
     "expo-status-bar": "~56.0.4",
     "expo-symbols": "~56.0.7",
