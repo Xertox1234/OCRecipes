@@ -13,8 +13,8 @@ import {
 describe("native sign-in config", () => {
   // The native projects are generated (CNG), so app.json is the only copy of
   // the runtime version — `expo prebuild` writes Expo.plist / strings.xml.
-  it("bumps the runtime version to 3.0.0 (SDK 56)", () => {
-    expect(appJson.expo.runtimeVersion).toBe("3.0.0");
+  it("bumps the runtime version to 4.0.0 (SDK 57)", () => {
+    expect(appJson.expo.runtimeVersion).toBe("4.0.0");
   });
 
   // The plugin writes the com.apple.developer.applesignin entitlement.
