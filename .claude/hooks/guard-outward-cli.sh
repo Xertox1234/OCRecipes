@@ -3337,6 +3337,116 @@ if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
   deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has been widened to span a separator, the wide form has lost the separate-arg value arm that closes unnamed root flags (or the grant form has gained it), _OUT_GH_GLOBALS_SEPSAFE has lost its value arm or gained the ability to span a separator (which silently un-does the gh api occurrence refusal), or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command; it must be the first text, or come right after a single leading cd <folder> &&)."
 fi
 
+# ---------- INERT-TEXT PRE-PASS (owner ruling 2026-10-23) ----------
+# Of 22 real blocks between 2026-10-12 and 2026-10-23, 10 were false alarms
+# (todos/P2-2026-10-23-outward-cli-guard-false-alarms-help-and-prose.md). Two of their shapes are
+# provably not invocations, and this pass REMOVES them from $CMD before any rendering. It only
+# ever deletes text, so every check below sees a subset of what it saw before.
+#
+#   1. The body of a QUOTED heredoc (`<<'EOF'` / `<<"EOF"`, `<<-` too) fed to python/python3/
+#      python3.N/node, on a start line holding nothing else but an optional leading
+#      `cd <folder> &&|;`. Python never runs a shell line written in its source; the shell
+#      strings it could run were already blanked by cmd_bare as quoted spans, so this costs no
+#      coverage. An UNQUOTED delimiter stays: the shell expands `$(...)` in that body first.
+#      Every other heredoc stays visible (the 2026-09-22 ruling: `bash <<EOF`, and a `cat >` file
+#      run later, ARE invocations).
+#   2. A help-only clause: `railway|eas|gh` + up to 3 lowercase subcommand words + `--help`/`-h`,
+#      at a command position (line start, or after an unescaped `; & | (`), with the help flag
+#      as the clause's LAST word. A word after `run`/`exec`/`x`/`dlx`/`shell`/`ssh`/`connect`
+#      is a program to run (`railway run psql --help` runs psql with the live env), so it is not
+#      the shape. Replaced by `true`.
+#
+# Pass 1 DECLINES (changes nothing) unless its line-by-line quote model provably matches the
+# shell's: any other `<<` in the command, any `$(` / `${` / backtick (quotes nest inside them),
+# a function, alias or PATH= (they can make `python3` a shell), a start line inside a quote or
+# continued from the line above, or a missing terminator. Without these, a quote the model
+# misreads could hide a real command in the "body". `#` comments are skipped as the shell skips
+# them. KNOWN pre-existing residual it does not touch: a quote inside another heredoc's body
+# already desyncs cmd_bare (docs/harness-residuals.md, 2026-10-23).
+# On any awk failure $CMD is kept as is; the checks below then run on the original text.
+_out_inert_prepass() {
+  awk '
+    # Is absolute column p of line s a command position? Line start (unless the line above ends
+    # in a backslash), or after an unescaped `; & | (` that is not part of a `>&` `<&` `>|`
+    # redirection (whose next word is a FILE name, not a command).
+    function cmdpos(s, p,   k, c, b) {
+      k = p - 1
+      while (k > 0 && (substr(s, k, 1) == " " || substr(s, k, 1) == "\t")) k--
+      if (k == 0) return !PREVCONT
+      c = substr(s, k, 1); b = (k > 1) ? substr(s, k - 1, 1) : ""
+      if (index(";&|(", c) == 0 || b == BS) return 0
+      return !((c == "&" || c == "|") && (b == ">" || b == "<"))
+    }
+    function helpfix(s,   base, last, p, q, e, w, nw, runlike, c, out) {
+      out = ""; last = 1; base = 0
+      while (match(substr(s, base + 1), /(railway|eas|gh)[[:blank:]]/)) {
+        p = base + RSTART; base = p
+        if (!cmdpos(s, p)) continue
+        q = p + RLENGTH - 1; nw = 0; runlike = 0; e = 0
+        while (1) {
+          while (substr(s, q, 1) == " " || substr(s, q, 1) == "\t") q++
+          w = ""
+          while (q <= length(s) && index(" \t;&|()<>", substr(s, q, 1)) == 0) { w = w substr(s, q, 1); q++ }
+          if (w == "--help" || w == "-h") { e = q; break }
+          if (w !~ /^[a-z][a-z0-9:-]*$/ || runlike || ++nw > 3) break
+          if (w ~ /^(run|exec|x|dlx|shell|ssh|connect)$/) runlike = 1
+        }
+        if (!e) continue
+        q = e
+        while (substr(s, q, 1) == " " || substr(s, q, 1) == "\t") q++
+        c = substr(s, q, 1)
+        if (q > length(s) || index(";&|)<>#", c) > 0 || substr(s, q) ~ /^[0-9]+[<>]/) {
+          out = out substr(s, last, p - last) "true"; last = e; base = e - 1
+        }
+      }
+      return out substr(s, last)
+    }
+    BEGIN {
+      SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"
+      F = "(" SQ "[^" SQ "]*" SQ "|" DQ "[^" DQ "$`" BS BS "]*" DQ "|[^[:space:];&|<>()$`" SQ DQ BS BS "]+)"
+      HD = "^[[:blank:]]*(cd[[:blank:]]+" F "[[:blank:]]*(&&|;)[[:blank:]]*)?(python|python3|python3\\.[0-9]+|node)([[:blank:]]+-)?[[:blank:]]+<<-?[[:blank:]]*(" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "|" DQ "[A-Za-z_][A-Za-z0-9_]*" DQ ")[[:blank:]]*$"
+    }
+    { L[++n] = $0 }
+    END {
+      qs = 0; cont = 0; ok = 1
+      for (i = 1; i <= n && ok; i++) {
+        s = L[i]
+        if (qs == 0 && !cont && s ~ HD) {
+          d = s; sub(/[[:blank:]]+$/, "", d)
+          qc = substr(d, length(d), 1); d = substr(d, 1, length(d) - 1)
+          k = length(d); while (k > 0 && substr(d, k, 1) != qc) k--
+          dl = substr(d, k + 1); dash = (s ~ /<<-/)
+          for (j = i + 1; j <= n; j++) { t = L[j]; if (dash) sub(/^\t+/, "", t); if (t == dl) break }
+          if (j > n) { ok = 0; break }
+          for (k = i + 1; k < j; k++) B[k] = 1
+          i = j; continue
+        }
+        t = s; gsub(/<<</, "", t)
+        if (index(t, "<<") || index(s, "$(") || index(s, "${") || index(s, "`") || index(s, "()") \
+            || s ~ /(^|[^A-Za-z0-9_])(alias|function)([^A-Za-z0-9_]|$)/ || s ~ /(^|[^A-Za-z0-9_])PATH=/) { ok = 0; break }
+        cont = 0
+        for (k = 1; k <= length(s); k++) {
+          c = substr(s, k, 1)
+          if (qs == 0) {
+            if (c == BS) { if (k == length(s)) cont = 1; k++; continue }
+            if (c == "#" && (k == 1 || index(" \t;&|()<>", substr(s, k - 1, 1)) > 0)) break
+            if (c == "$" && (substr(s, k + 1, 1) == SQ || substr(s, k + 1, 1) == DQ)) { qs = (substr(s, k + 1, 1) == SQ) ? 3 : 2; k++; continue }
+            if (c == SQ) qs = 1; else if (c == DQ) qs = 2
+          } else if (qs == 1) { if (c == SQ) qs = 0 }
+          else { if (c == BS) { k++; continue }; if ((qs == 2 && c == DQ) || (qs == 3 && c == SQ)) qs = 0 }
+        }
+      }
+      for (i = 1; i <= n; i++) {
+        s = (ok && (i in B)) ? "" : L[i]
+        PREVCONT = (i > 1 && L[i - 1] ~ /\\$/)
+        printf "%s%s", helpfix(s), (i < n ? "\n" : "")
+      }
+    }'
+}
+if _OUT_INERT=$(printf '%s' "$CMD" | _out_inert_prepass 2>/dev/null); then
+  CMD=$_OUT_INERT
+fi
+
 BARE=$(printf '%s' "$CMD" | cmd_bare)
 # WORDS is the argv-faithful rendering (lib/cmd-detect.sh): quote characters
 # deleted so `eas "update"` / `eas up"date"` read as the `eas update` the shell

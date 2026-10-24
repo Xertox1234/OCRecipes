@@ -40,6 +40,16 @@ Review Policy → One review pass per PR).
 | P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head   | A later objection from one reviewer cannot retract its earlier clean record                |
 | P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-…   | A delivery above 1 MiB makes guard (c) write no record (fail-closed)                       |
 | _(no todo — #1436 confirmation review, 2026-10-13)_                                       | PR guard head pick scans the whole command: `echo --head X; gh pr create …` uses X's stamp |
+| _(no todo — outward-CLI false-alarm work, 2026-10-23)_                                    | A quote inside one heredoc's body throws off the quote scan and hides a later command      |
+
+The 2026-10-23 heredoc row, measured: `cmd_bare` (and the renderings built like it) scan a heredoc body
+as shell text, so a lone `'` in a body flips its quote state for the rest of the command. Five lines are
+enough: `cat <<'X'`, `'`, `X`, `echo 'abc`, `' ; eas update --branch production`. `guard-outward-cli.sh`
+allows it (on `HEAD` before that day's change and after it), and bash runs the last line (checked with
+`echo` in place of `eas`). Pinned as a KNOWN-WRONG row in `test-guard-outward-cli.sh`. The 2026-10-23
+pre-pass declines whenever a command holds any other heredoc, so it neither causes nor widens this. Fix
+shape if reopened: have `cmd_bare` skip heredoc bodies (or treat any `<<` other than `<<<` as
+unparseable) instead of scanning them as shell.
 
 ### Over-denial and friction (the guard blocks legitimate work)
 
@@ -50,6 +60,12 @@ Review Policy → One review pass per PR).
 | P3-2026-08-16-command-guards-fire-on-heredoc-prose               | Writing _about_ a guarded command in a commit/PR body trips guards |
 
 Workaround for all three: commit messages and PR bodies go through the Write tool + `-F`.
+
+Narrowed 2026-10-23 (owner ruling, `guard-outward-cli.sh` only): help-only clauses
+(`railway|eas|gh <subcommand words> --help|-h`) and the body of a quoted heredoc fed to python/node
+no longer deny. Of the 10 false alarms from 2026-10-12 to 2026-10-23, those two shapes were 6. The
+other 4 were heredoc text written with `cat` or fed to a script as data. They stay denied under the
+2026-09-22 ruling, because a heredoc written to a file and run later is an invocation.
 
 Review-stamp writer, recorded from the #1019 review (no todo filed):
 
