@@ -4,7 +4,7 @@ track: knowledge
 category: conventions
 module: client
 tags: [testing, vitest, mocks, jsdom, alias, expo, context-providers]
-applies_to: [client/**/__tests__/**/*.test.ts, client/**/__tests__/**/*.test.tsx]
+applies_to: [client/**/__tests__/*.test.ts, client/**/__tests__/*.test.tsx]
 created: '2026-06-01'
 last_updated: '2026-10-02'
 ---

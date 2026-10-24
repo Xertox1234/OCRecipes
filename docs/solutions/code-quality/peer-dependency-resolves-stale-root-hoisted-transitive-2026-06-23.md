@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: shared
 severity: medium
-tags: [npm, dependencies, peer-dependencies, esbuild, vite, lockfile, hoisting, build-tooling]
+tags: [npm, dependencies, peer-dependencies, esbuild, vite, lockfile, hoisting, build-tooling, architecture]
 symptoms: ['`npm ls` exits non-zero with `ELSPROBLEMS` / `invalid: "<range>"` on a transitive package', A peer dependency (e.g. vite's `esbuild`) shows `invalid` even though a compatible version exists elsewhere in the tree, A CLI tool invoked from an npm script (e.g. `esbuild server/index.ts`) silently runs on a stale version nobody declared, npm `overrides` entries don't clear the warning — the wrong version stays hoisted at root]
 applies_to: [package.json, package-lock.json]
 created: '2026-06-23'

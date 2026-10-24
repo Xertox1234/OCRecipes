@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: high
-tags: [allergens, nutrition, safety, string-matching, regex, testing]
+tags: [allergens, nutrition, safety, string-matching, regex, testing, architecture]
 symptoms: [detectAllergens misses an allergen when the ingredient text uses the plural form (e.g. "roasted peanuts" with allergen keyword "peanut"), deriveRecipeAllergens under-derives a recipe's allergen cache for plural ingredient names, A recipe with "almonds"/"cashews"/"soybeans" in its ingredient list is not flagged for the corresponding allergen]
 applies_to: [shared/constants/allergens.ts]
 created: '2026-07-21'

@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: shared
 severity: medium
-tags: [typescript, eslint, rule-tester, type-safety, record]
+tags: [typescript, eslint, rule-tester, type-safety, record, testing]
 symptoms: [tsc --noEmit passes locally (Vitest transpiles without checking) but CI type check fails, 'TS2345: Argument of type ''object'' is not assignable to parameter of type ''RuleDefinition''', 'Property ''create'' is missing in type ''{}'' but required in type ''RuleDefinition''']
 applies_to: [eslint-plugin-ocrecipes/__tests__/*.test.ts]
 created: '2026-06-03'

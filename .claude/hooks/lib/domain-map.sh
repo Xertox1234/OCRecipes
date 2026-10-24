@@ -34,6 +34,8 @@ apply_domain_map() {
   [[ "$f" == */server/middleware/* || "$f" == server/middleware/* ]] && { _add security; _add api; }
   [[ "$f" == */server/services/* || "$f" == server/services/* ]] && { _add architecture; }
   [[ "$f" == */server/lib/* || "$f" == server/lib/* ]] && { _add api; _add security; _add architecture; _add typescript; }
+  [[ "$f" == */server/index.ts || "$f" == server/index.ts ]] && { _add api; _add security; _add architecture; _add typescript; }
+  [[ "$f" == */server/utils/* || "$f" == server/utils/* ]] && { _add api; _add security; _add architecture; _add typescript; }
   [[ "$f" == */client/screens/* || "$f" == client/screens/* ]] && { _add react-native; _add design-system; _add accessibility; }
   [[ "$f" == */client/components/* || "$f" == client/components/* ]] && { _add react-native; _add design-system; _add accessibility; _add performance; }
   [[ "$f" == */client/camera/* || "$f" == client/camera/* ]] && { _add react-native; }

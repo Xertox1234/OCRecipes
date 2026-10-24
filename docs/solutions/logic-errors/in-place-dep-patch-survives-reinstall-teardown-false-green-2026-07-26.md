@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [cocoapods, ios, react-native, native-build, dependency-patching, post-install, verification, tooling, fmt]
+tags: [cocoapods, ios, react-native, native-build, dependency-patching, post-install, verification, tooling, fmt, architecture]
 symptoms: ['Deleting a dependency patch and rebuilding "clean" succeeds locally, but CI/EAS fails with the exact errors the patch existed to suppress', 'A build hook that mutates a vendored file prints nothing on the second `pod install` / `npm install` — it silently takes an already-patched branch', 'The patched file is gitignored, so `git status` is clean and nothing signals that the tree is in a non-pristine state', 'Two developers on the same commit get different build results depending on whether they ever ran the patching version of the hook']
 applies_to: [ios/Podfile, package.json, patches/**]
 created: '2026-07-26'

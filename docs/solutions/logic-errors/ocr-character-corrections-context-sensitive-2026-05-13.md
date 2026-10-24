@@ -4,9 +4,9 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [architecture, ocr, character-correction, regex, false-positives, nutrition-label]
+tags: [architecture, ocr, character-correction, regex, false-positives, nutrition-label, typescript]
 symptoms: ['OCR replaces every uppercase S with 5, corrupting words like ''Sodium'' to ''5odium''', Label text is mangled outside numeric fields, Context-free character substitution applies globally]
-applies_to: [server/services/ocr/**/*.ts]
+applies_to: [client/lib/nutrition-ocr-parser.ts]
 created: '2026-04-07'
 ---
 
