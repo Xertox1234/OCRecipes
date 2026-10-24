@@ -5,18 +5,17 @@
 # ios/Pods, so the paths below still resolve from the repo root.
 def ocrecipes_post_install(installer)
   # react_native_post_install's own updateOSDeploymentTarget floors every
-  # pod target at RN 0.81's hardcoded min_ios_version_supported (15.1) --
-  # it takes max(RN's constant, the pod's own existing setting) and does
-  # NOT consult this Podfile's `platform :ios` line above. So raising the
-  # app's deployment target to 16.0 (Xcode 16.x's CxxStdlib C++-interop
-  # minimum, see ios/OCRecipes.xcodeproj/project.pbxproj and
-  # Podfile.properties.json) leaves every pod still compiling at 15.1
+  # pod target at RN's hardcoded min_ios_version_supported (15.1, still so
+  # in RN 0.85) -- it takes max(RN's constant, the pod's own existing
+  # setting) and does NOT consult this Podfile's `platform :ios` line above.
+  # So raising the app's deployment target to 16.4 (Expo SDK 56's minimum,
+  # set in app.json's expo-build-properties) leaves every pod still compiling at 15.1
   # unless swept again here. Same max-with-existing pattern, applied to
   # OUR floor instead of RN's.
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
-      if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 16.0
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+      if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 16.4
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.4'
       end
     end
   end
