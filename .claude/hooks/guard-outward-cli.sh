@@ -3339,15 +3339,16 @@ fi
 
 # ---------- INERT-TEXT PRE-PASS (owner ruling 2026-10-23) ----------
 # Of 22 real blocks between 2026-10-12 and 2026-10-23, 10 were false alarms
-# (todos/P2-2026-10-23-outward-cli-guard-false-alarms-help-and-prose.md). Two of their shapes are
-# provably not invocations, and this pass REMOVES them from $CMD before any rendering. It only
+# (todos/archive/P2-2026-10-23-outward-cli-guard-false-alarms-help-and-prose.md). Two of their
+# shapes are not invocations, and this pass REMOVES them from $CMD before any rendering. It only
 # ever deletes text, so every check below sees a subset of what it saw before.
 #
 #   1. The body of a QUOTED heredoc (`<<'EOF'` / `<<"EOF"`, `<<-` too) fed to python/python3/
 #      python3.N/node, on a start line holding nothing else but an optional leading
 #      `cd <folder> &&|;`. Python never runs a shell line written in its source; the shell
-#      strings it could run were already blanked by cmd_bare as quoted spans, so this costs no
-#      coverage. An UNQUOTED delimiter stays: the shell expands `$(...)` in that body first.
+#      strings it could run were already blanked by cmd_bare as quoted spans, so while
+#      `python3`/`node` IS python/node this costs no coverage. An UNQUOTED delimiter stays: the
+#      shell expands `$(...)` in that body first.
 #      Every other heredoc stays visible (the 2026-09-22 ruling: `bash <<EOF`, and a `cat >` file
 #      run later, ARE invocations).
 #   2. A help-only clause: `railway|eas|gh` + up to 3 lowercase subcommand words + `--help`/`-h`,
@@ -3356,13 +3357,18 @@ fi
 #      is a program to run (`railway run psql --help` runs psql with the live env), so it is not
 #      the shape. Replaced by `true`.
 #
-# Pass 1 DECLINES (changes nothing) unless its line-by-line quote model provably matches the
-# shell's: any other `<<` in the command, any `$(` / `${` / backtick (quotes nest inside them),
-# a function, alias or PATH= (they can make `python3` a shell), a start line inside a quote or
-# continued from the line above, or a missing terminator. Without these, a quote the model
-# misreads could hide a real command in the "body". `#` comments are skipped as the shell skips
-# them. KNOWN pre-existing residual it does not touch: a quote inside another heredoc's body
-# already desyncs cmd_bare (docs/harness-residuals.md, 2026-10-23).
+# Pass 1 DECLINES (changes nothing) on anything its line-by-line quote model does not cover: any
+# other `<<` in the command, any `$(` / `${` / backtick (quotes nest inside them), a start line
+# inside a quote or continued from the line above, or a missing terminator. Without these, a
+# quote the model misreads could hide a real command in the "body". `#` comments are skipped as
+# the shell skips them. It also declines on anything in the command text that can make
+# `python3`/`node` run something else: `()`, python/node followed by `(` (a spaced function
+# definition), `alias`, `function`, `hash`, `enable`, `PATH=` (the spaced definition and
+# `hash -p` were missed until the #1545 review). NOT visible from the text at all, so not
+# covered: a python3 that is something else before this command runs (an earlier session's
+# PATH, a wrapper on disk) -- the same class as a script written earlier and run now.
+# KNOWN pre-existing residual it does not touch: a quote inside another heredoc's body already
+# desyncs cmd_bare (docs/harness-residuals.md, 2026-10-23).
 # On any awk failure $CMD is kept as is; the checks below then run on the original text.
 _out_inert_prepass() {
   awk '
@@ -3423,7 +3429,8 @@ _out_inert_prepass() {
         }
         t = s; gsub(/<<</, "", t)
         if (index(t, "<<") || index(s, "$(") || index(s, "${") || index(s, "`") || index(s, "()") \
-            || s ~ /(^|[^A-Za-z0-9_])(alias|function)([^A-Za-z0-9_]|$)/ || s ~ /(^|[^A-Za-z0-9_])PATH=/) { ok = 0; break }
+            || s ~ /(^|[^A-Za-z0-9_])(alias|function|hash|enable)([^A-Za-z0-9_]|$)/ || s ~ /(^|[^A-Za-z0-9_])PATH=/ \
+            || s ~ /(python[0-9.]*|node)[[:blank:]]*\(/) { ok = 0; break }
         cont = 0
         for (k = 1; k <= length(s); k++) {
           c = substr(s, k, 1)
