@@ -1047,6 +1047,110 @@ assert_deny "registry: even-dollar-run \$\$'…\\' before a redirect into main i
   "$(jsonc "$SESSION" "$R_WT" "echo \$\$'a\\' > $R_MAIN/dd.txt")"
 assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' before a redirect into main is denied" \
   "$(jsonc "$SESSION" "$R_WT" "echo \$\$\$\$'a\\' > $R_MAIN/ee.txt")"
+
+# ---------- 2026-10-24: worktree-contract false alarms ----------
+# From the classification in todos/archive/P3-2026-10-23-classify-worktree-contract-blocks.md
+# (39 real blocks: 27 false alarms, 7 real catches). Each fix keeps its deny controls beside it.
+assert_deny_reason() {  # $1=name $2=payload $3=needle $4=1 (must contain) | 0 (must not)
+  local out reason; out=$(run_hook "$2")
+  reason=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)
+  if ! printf '%s' "$out" | grep -q '"permissionDecision": "deny"'; then
+    echo "FAIL: $1 (expected deny)"; FAIL=$((FAIL+1))
+  elif { [ "$4" = 1 ] && grep -qF -- "$3" <<<"$reason"; } || { [ "$4" = 0 ] && ! grep -qF -- "$3" <<<"$reason"; }; then
+    echo "PASS: $1"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $1 (reason $( [ "$4" = 1 ] && echo lacks || echo has ): $3)"; FAIL=$((FAIL+1))
+  fi
+}
+# Leading cd: exactly one `cd <absolute folder> &&` at the start, and no other cd/pushd/popd
+# word anywhere, sets the folder the git segments are judged from.
+assert_allow "leading cd: cd <worktree> && git rm from a main cwd is allowed" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && git rm -q a.txt")"
+assert_allow "leading cd: cd <worktree> && python heredoc, then git mv on its own line, is allowed" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $WT_A && python3 - <<'EOF'
+print(1)
+EOF
+git mv a b")"
+assert_allow "leading cd: single-quoted worktree folder is honored" \
+  "$(json "$SESSION" "$MAIN" "cd '$WT_A' && git commit -m x")"
+assert_deny "leading cd: a second cd back into main still denies" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && cd $MAIN && git commit -m x")"
+assert_deny "leading cd: cd <main> && git commit from a worktree cwd now denies (was a false ALLOW)" \
+  "$(json "$SESSION" "$WT_A" "cd $MAIN && git commit -m x")"
+assert_deny "leading cd: joined by ; is not honored (git still runs if the cd fails)" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A ; git commit -m x")"
+assert_deny "leading cd: a later pushd disqualifies it" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && pushd $MAIN && git commit -m x")"
+assert_deny "leading cd: a cd inside a later subshell disqualifies it" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && (cd $MAIN; git commit -m x)")"
+assert_deny "leading cd: a .. segment is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A/.. && git commit -m x")"
+assert_deny "leading cd: a ~ folder is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd ~/x && git commit -m x")"
+assert_deny "leading cd: a \$ in the folder is not honored" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $WT_A/\$X && git commit -m x")"
+assert_deny "leading cd: an explicit -C <main> still wins over the honored cd" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && git -C $MAIN commit -m x")"
+# stash: list/show with simple arguments are read-only; every other stash form still mutates.
+assert_allow "stash: git stash list in main is allowed" \
+  "$(json "$SESSION" "$MAIN" 'git stash list')"
+assert_allow "stash: git stash show -p stash@{0} in main is allowed" \
+  "$(json "$SESSION" "$MAIN" 'git stash show -p stash@{0}')"
+assert_allow "stash: git stash show -p with a double-quoted ref is allowed" \
+  "$(jsonc "$SESSION" "$MAIN" 'git stash show -p "stash@{0}"')"
+assert_deny "stash: bare git stash still denies" \
+  "$(json "$SESSION" "$MAIN" 'git stash')"
+assert_deny "stash: git stash pop still denies" \
+  "$(json "$SESSION" "$MAIN" 'git stash pop')"
+assert_deny "stash: git stash drop stash@{0} still denies" \
+  "$(json "$SESSION" "$MAIN" 'git stash drop stash@{0}')"
+assert_deny "stash: a command substitution after stash list still denies" \
+  "$(jsonc "$SESSION" "$MAIN" 'git stash list $(git commit -m x)')"
+assert_deny "stash: a substitution inside a quoted stash show arg still denies" \
+  "$(jsonc "$SESSION" "$MAIN" 'git stash show "$(git commit -m x)"')"
+assert_deny "stash: a commit whose MESSAGE says stash list still denies" \
+  "$(jsonc "$SESSION" "$MAIN" "git commit -m 'stash list'")"
+# Same-command release: the deny message explains the release has not run yet.
+assert_deny_reason "release: same-command --remove gets the run-it-first sentence" \
+  "$(json "$SESSION" "$MAIN" "bash scripts/declare-worktree.sh --remove $WT_A; git pull -q --ff-only")" \
+  "run it as its own command first" 1
+assert_deny_reason "release: a plain violation does not get that sentence" \
+  "$(json "$SESSION" "$MAIN" 'git commit -m x')" \
+  "run it as its own command first" 0
+# cp: a relative destination is resolved against the folder the command runs in, so an
+# absolute SOURCE in main is no longer read as the destination.
+mkdir -p "$R_MAIN/server" "$R_MAIN/.superpowers"
+assert_allow "cp: cp <main>/.env .env from a worktree cwd is allowed" \
+  "$(json "$SESSION" "$R_WT" "cp $R_MAIN/.env .env")"
+assert_allow "cp: cd <worktree> && cp <main>/todos/a.md todos/ from a main cwd is allowed" \
+  "$(json "$SESSION" "$R_MAIN" "cd $R_WT && cp $R_MAIN/todos/a.md todos/")"
+assert_allow "cp: unresolvable relative destination after a non-leading cd stays allowed (residual)" \
+  "$(json "$SESSION" "$R_WT" 'cd sub && cp /tmp/x .')"
+assert_deny "cp: absolute destination in main still denies" \
+  "$(json "$SESSION" "$R_WT" "cp .env $R_MAIN/.env")"
+assert_deny "cp: relative destination resolving into main (main cwd) denies" \
+  "$(json "$SESSION" "$R_MAIN" "cp $R_MAIN/a.txt b.txt")"
+assert_deny "cp: relative destination after an honored cd <main> denies" \
+  "$(json "$SESSION" "$R_WT" "cd $R_MAIN && cp $R_WT/a.txt b.txt")"
+assert_deny "cp: a ~ destination keeps today's reading" \
+  "$(json "$SESSION" "$R_WT" "cp $R_MAIN/a.txt ~/b.txt")"
+assert_deny "cp: -t <main dir> (target first) still denies" \
+  "$(json "$SESSION" "$R_WT" "cp -t $R_MAIN/server a.txt")"
+assert_deny "cp: a trailing 2>/dev/null does not make the fd digit the destination" \
+  "$(json "$SESSION" "$R_WT" "cp a.ts $R_MAIN/b.ts 2>/dev/null")"
+assert_deny "mv: an absolute source in main still denies (mv deletes its source)" \
+  "$(json "$SESSION" "$R_WT" "mv $R_MAIN/a.txt b.txt")"
+# .superpowers/: the gitignored skill workspace in main is writable during a contract
+# (owner 2026-10-24), judged by its PHYSICAL path so a symlink inside it cannot escape.
+ln -s "$R_MAIN/server" "$R_MAIN/.superpowers/linked"
+assert_allow "superpowers: append to <main>/.superpowers/sdd/p/progress.md is allowed" \
+  "$(json "$SESSION" "$R_WT" "echo x >> $R_MAIN/.superpowers/sdd/p/progress.md")"
+assert_deny "superpowers: a sibling .superpowers-x folder still denies" \
+  "$(json "$SESSION" "$R_WT" "echo x >> $R_MAIN/.superpowers-x/f")"
+assert_deny "superpowers: a .. escape out of the workspace still denies" \
+  "$(json "$SESSION" "$R_WT" "echo x > $R_MAIN/.superpowers/../server/app.ts")"
+assert_deny "superpowers: a symlink inside the workspace pointing into main still denies" \
+  "$(json "$SESSION" "$R_WT" "echo x > $R_MAIN/.superpowers/linked/app.ts")"
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry
