@@ -3,7 +3,7 @@ title: JWT over AsyncStorage Instead of Session Cookies in React Native
 track: knowledge
 category: design-patterns
 module: shared
-tags: [auth, jwt, react-native, expo, session, async-storage]
+tags: [auth, jwt, react-native, expo, session, async-storage, security]
 applies_to: [server/middleware/auth.ts, client/lib/token-storage.ts, shared/types/auth.ts]
 created: '2026-05-13'
 ---

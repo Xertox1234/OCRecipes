@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: high
-tags: [expo, eas-update, ota, runtime-version, ios, android, native-build, config-drift, prebuild, cross-platform, verification, tooling]
+tags: [expo, eas-update, ota, runtime-version, ios, android, native-build, config-drift, prebuild, cross-platform, verification, tooling, architecture]
 symptoms: ['A config bump is merged and the diff looks complete, but one platform behaves as if it never happened', 'OTA updates apply on iOS and silently never arrive on Android (or vice versa) — no error, no crash, just "no update available"', 'The source-of-truth file and a generated native file disagree, and nothing in CI notices', 'A value is correct in `app.json` but stale in `Expo.plist` / `strings.xml`, sometimes for days', 'The platform that drifted is the one no one runs locally']
 applies_to: [app.json, ios/OCRecipes/Supporting/Expo.plist, android/app/src/main/res/values/strings.xml, scripts/__tests__/runtime-version-parity.test.ts]
 created: '2026-07-27'

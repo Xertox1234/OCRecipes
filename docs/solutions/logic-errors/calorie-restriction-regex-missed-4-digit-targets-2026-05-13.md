@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: critical
-tags: [safety-classifier, regex, ai-coaching, guardrails, numeric-ranges]
+tags: [safety-classifier, regex, ai-coaching, guardrails, numeric-ranges, architecture]
 symptoms: [Coach safety guardrail allows '1000 calories a day' targets through, Regex catches 800-kcal targets but not 1100-kcal targets, parseInt < 1200 guard is correct but never reached for 4-digit values]
 applies_to: [server/services/coach-intent-classifier.ts]
 created: '2026-05-11'

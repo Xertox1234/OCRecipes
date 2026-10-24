@@ -22,6 +22,8 @@ When editing a file, identify its domain(s) using the table below. The correspon
 | `server/middleware/**` | security, api |
 | `server/services/**` (base — architecture only) | architecture |
 | `server/lib/**` | api, security, architecture, typescript |
+| `server/index.ts` | api, security, architecture, typescript |
+| `server/utils/**` | api, security, architecture, typescript |
 | `client/screens/**` | react-native, design-system, accessibility |
 | `client/components/**` | react-native, design-system, accessibility, performance |
 | `client/camera/**` | react-native |
