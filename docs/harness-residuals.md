@@ -76,6 +76,14 @@ list --output <main>/x` writes a file, so stash options now come from a closed r
 sees it. `git log --output <main>/p` is ALLOW from a main or worktree cwd, both before and after #1552.
 So a `stash list --output` run in a worktree after an honored cd is this same pre-existing class.
 
+**Review fixes for #1553, same day.** The #1553 review measured two cases the list above did not cover.
+(1) The Bash tool's shell is zsh, and zsh brace-expands `{-..-}-output` to `--output`. That plain-looking
+argument got past the closed list, so a brace in a stash argument is now allowed only as a closing `{N}`
+(`stash@{0}`, `@{1}`). This was not a regression: main allowed `--output` outright. (2) A folder that exists but
+cannot be entered (`chmod 000`) also fails the cd, so the separator rule now requires `-d` and `-x`. In
+a 612-row stash-argument corpus (2 verbs × 17 tokens × 18 second slots, against main), no row went from deny to allow. Every row that went from allow to deny
+holds a non-`{N}` brace.
+
 ### Over-denial and friction (the guard blocks legitimate work)
 
 | Todo                                                             | Gap                                                                |

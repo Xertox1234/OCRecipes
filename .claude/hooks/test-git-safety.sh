@@ -1090,6 +1090,14 @@ assert_deny "leading cd: missing folder under a worktree, then || git commit, is
   "$(json "$SESSION" "$MAIN" "cd $WT_A/nope && : || git commit -m x")"
 assert_deny "leading cd: missing folder, then & git commit, is not honored" \
   "$(json "$SESSION" "$MAIN" "cd /nonexistent-zz && : & git commit -m x")"
+# A folder that exists but cannot be entered (no search permission) also fails the cd (review of
+# #1553, measured), so "exists" means a folder the cd can enter: -d and -x.
+mkdir "$RWT2/locked" "$RWT2/open"; chmod 000 "$RWT2/locked"
+assert_deny "leading cd: unenterable folder (chmod 000), then ; git commit, is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd $RWT2/locked && : ; git commit -m x")"
+assert_allow "leading cd: enterable subfolder, then ; git commit, is honored (control)" \
+  "$(json "$SESSION" "$MAIN" "cd $RWT2/open && : ; git commit -m x")"
+chmod 700 "$RWT2/locked"; rmdir "$RWT2/locked" "$RWT2/open"
 rm -f "$REG_DIR/eeee000000000005"; rmdir "$RWT2" 2>/dev/null
 assert_allow "leading cd: single-quoted worktree folder is honored" \
   "$(json "$SESSION" "$MAIN" "cd '$WT_A' && git commit -m x")"
@@ -1138,6 +1146,12 @@ assert_deny "stash: stash list --output <main>/x writes a file and still denies 
   "$(json "$SESSION" "$MAIN" "git stash list --output $MAIN/pwned.txt")"
 assert_allow "stash: git stash show --stat stash@{1} (read-only option) is allowed" \
   "$(json "$SESSION" "$MAIN" 'git stash show --stat stash@{1}')"
+# zsh (the Bash tool's shell here) brace-expands {-..-}-output to --output (review of #1553,
+# measured), so a brace is allowed only as the @{N} of a stash ref.
+assert_deny "stash: a brace-built --output ({-..-}-output) still denies (review of #1553)" \
+  "$(json "$SESSION" "$MAIN" "git stash list {-..-}-output $MAIN/pwned.txt")"
+assert_deny "stash: a brace list ({a,b}) in a stash argument still denies" \
+  "$(json "$SESSION" "$MAIN" 'git stash show {stash@{0},x}')"
 assert_deny "stash: a commit whose MESSAGE says stash list still denies" \
   "$(jsonc "$SESSION" "$MAIN" "git commit -m 'stash list'")"
 # Same-command release: the deny message explains the release has not run yet.
@@ -1777,7 +1791,9 @@ fi
 # old fake-folder one, which now denies and stays as a deny row), 1 existing-folder || allow, 4
 # missing-folder separator denies (newline, ||, || under a worktree, &), 1 stash --output deny,
 # 1 stash --stat allow, 1 missing-folder || cp deny. Net +8 because the heredoc row became two.
-EXPECTED_TOTAL=332
+# 332 -> 336 (2026-10-24, #1553 review fixes): +4 = 1 unenterable-folder deny + its enterable
+# control, 2 stash brace denies (the measured {-..-}-output and a {a,b} list).
+EXPECTED_TOTAL=336
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
