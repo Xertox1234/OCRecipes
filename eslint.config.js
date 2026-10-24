@@ -6,8 +6,26 @@ const ocrecipesPlugin = require("./eslint-plugin-ocrecipes");
 const tseslint = require("typescript-eslint");
 const path = require("path");
 
+// eslint-plugin-react-hooks 7 (from eslint-config-expo 56) puts the React
+// Compiler rules in its recommended set, which expoConfig spreads in. They
+// flagged ~100 existing call sites at the SDK 56 upgrade, so they stay off
+// until adopted one by one; only the two pre-compiler hooks rules stay on.
+// The plugin is read from expoConfig, which owns that dependency.
+const KEPT_REACT_HOOKS_RULES = new Set([
+  "react-hooks/rules-of-hooks",
+  "react-hooks/exhaustive-deps",
+]);
+const reactHooksPlugin = expoConfig.find((c) => c.plugins?.["react-hooks"])
+  .plugins["react-hooks"];
+const reactCompilerRulesOff = Object.fromEntries(
+  Object.keys(reactHooksPlugin.configs.recommended.rules)
+    .filter((name) => !KEPT_REACT_HOOKS_RULES.has(name))
+    .map((name) => [name, "off"]),
+);
+
 module.exports = defineConfig([
   expoConfig,
+  { rules: reactCompilerRulesOff },
   eslintPluginPrettierRecommended,
   {
     // Global ignores (this object has no other key). ESLint never reads .gitignore, so the
