@@ -5,6 +5,7 @@ category: runtime-errors
 module: server
 severity: high
 tags: [typescript, zod, type-safety, validation, database]
+applies_to: [shared/types/premium.ts, server/storage/users.ts]
 symptoms: [Runtime crashes with "Cannot read property of undefined", Type errors not caught at compile time, Invalid database values causing unexpected behavior]
 created: '2026-02-01'
 ---

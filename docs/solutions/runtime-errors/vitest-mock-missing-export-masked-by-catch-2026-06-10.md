@@ -5,6 +5,7 @@ category: runtime-errors
 module: server
 severity: low
 tags: [vitest, vi.mock, mock-factory, testing, misleading-errors]
+applies_to: [server/services/__tests__/receipt-analysis.test.ts]
 symptoms: [Tests fail inside the SUT catch block with its user-facing message, Nothing in the failure output mentions the mock or the missing export]
 created: '2026-06-10'
 source: '2026-06-10 full audit (L18 fix fallout, receipt-analysis tests)'

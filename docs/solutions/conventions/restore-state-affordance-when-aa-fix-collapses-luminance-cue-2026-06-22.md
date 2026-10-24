@@ -4,6 +4,7 @@ track: knowledge
 category: conventions
 module: client
 tags: [accessibility, dark-mode, affordance, disabled-state, ui, wcag]
+applies_to: [client/components/coach/CoachChatBase.tsx, client/screens/ChatScreen.tsx, client/screens/RecipeChatScreen.tsx]
 created: '2026-06-22'
 ---
 

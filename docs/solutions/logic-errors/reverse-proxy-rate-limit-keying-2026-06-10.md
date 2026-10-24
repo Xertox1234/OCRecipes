@@ -5,6 +5,7 @@ category: logic-errors
 module: server
 severity: high
 tags: [security, rate-limiting, deployment, railway, express, cors]
+applies_to: [server/index.ts, server/routes/_rate-limiters.ts]
 symptoms: [All IP-keyed rate limiters share one global bucket behind the proxy, Failed logins from any client lock out every user, express-rate-limit misconfig warning suppressed by a custom keyGenerator]
 created: '2026-06-10'
 source: 2026-06-10 security audit (S1/S2/S3)

@@ -4,6 +4,7 @@ track: knowledge
 category: best-practices
 module: client
 tags: [react-native, simplicity, code-review, yagni, duplication, process]
+applies_to: [client/components/home/action-config.ts, client/components/home/ActionRow.tsx, client/hooks/useHomeActions.ts]
 created: '2026-03-19'
 ---
 

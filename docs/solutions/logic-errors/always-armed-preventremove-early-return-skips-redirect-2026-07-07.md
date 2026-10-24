@@ -5,6 +5,7 @@ category: logic-errors
 module: client
 severity: high
 tags: [react-navigation, hooks, navigation, code-review]
+applies_to: [client/hooks/useFromHomeBackRedirect.ts, client/screens/meal-plan/RecipeCreateScreen.tsx]
 symptoms: [A conditional navigation redirect works for the plain back-button case but silently reverts to default behavior after a successful save/submit, One exit path out of a multi-branch beforeRemove handler forgets to check the same guard condition as the others]
 created: '2026-07-07'
 ---
