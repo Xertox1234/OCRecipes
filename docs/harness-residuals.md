@@ -67,8 +67,18 @@ in the guard, not in the four lib scanners, so every rendering reads the same te
   2 joins): every row unchanged. The draft failed it. An arithmetic `$((1<<3))` was read as a heredoc,
   and a quoted line that only looked like its terminator caused a false close, so a later command went
   from deny to allow. The pass now skips a `<<` inside `((`…`))` or `$[`…`]` and a `<<` written after a
-  word-start `#`. A second draft declined the whole pass on any `((`, and then one unrelated `echo
-$((1))` brought the bypass back. Pre-push review found it, and a test row now pins it.
+  word-start `#`. A second draft declined the whole pass on any `((`, and then one unrelated
+  `echo $((1))` brought the bypass back. Pre-push review found it, and a test row now pins it.
+- **The security review of #1555** found 3 more contexts that corpus lacked: `${x:-<<X}`, `${x/<<X/y}`
+  and `a[1<<X]=1`. Each went from deny on main to allow on the PR, and bash ran the last line. The pass
+  now also skips a `<<` inside `${…}` or inside an unclosed `[` of the current word. To stop relying on
+  a hand-picked context list, a **self-grading corpus** of 1,984 rows (31 `<<` contexts × 2 delimiters ×
+  2 quote kinds × 8 terminator shapes × 2 commands) checks each flip against real bash, with the
+  outward command swapped for `echo RAN`. Result: 0 rows where main denied, this change allows, and bash
+  runs the command. A positive control (the review's row) runs under both bash and zsh. 96 rows did go
+  from deny to allow, and in every one neither bash nor zsh 5.9 runs the command. They are real
+  heredocs followed by a line whose own quotes close (`' ; eas update … #'`), so the outward text is one
+  quoted word, not a command. Main denied them only because of the desync.
 
 The pass keeps its result only when every quote ends up closed. When a close would leave a quote open
 to the end, the command stops at that syntax error and nothing after it runs. Main's reading of such a

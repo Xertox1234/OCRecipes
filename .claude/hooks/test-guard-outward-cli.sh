@@ -6355,6 +6355,33 @@ echo 'abc
 OUTWARD_CORPUS_END
 C=${C%$'\n'}
 assert_deny 'heredoc close: an unrelated $((1)) does not switch the pass off' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# A `<<` inside `${…}` or an array subscript is not a redirection either (security review of #1555,
+# measured main-DENY -> head-ALLOW, and bash runs the last line). The term line is what the pass
+# would have read as the delimiter.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo ${x:-<<X}
+echo 'abc
+X}
+' ; eas update --branch production #'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside ${x:-…} is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo a${x/<<X/y}b
+echo "abc
+X/y}b
+" ; eas update --branch production #"
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside ${x/…/…} is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+a[1<<X]=1
+echo 'abc
+X]=1
+' ; eas update --branch production #'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside an array subscript is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
 # A REAL heredoc whose close would leave a quote open to the end: the shell stops at that syntax
 # error, so nothing after it runs. The pass keeps its result only when every quote closes, so these
 # keep main's reading (deny) rather than flipping to allow.
@@ -6805,7 +6832,9 @@ assert_deny 'help/heredoc: a spaced node function definition' "$(jsonc "$C")" 'c
 # place, +11 = 4 deny shapes (apostrophe, unquoted-delimiter double quote, <<- tab terminator, second
 # heredoc), 2 no-new-block allows (cat body + plain command, data heredoc to a file), 3 phantom
 # `<<` denies (two arithmetic, one comment), 1 unrelated-arithmetic deny, 1 unclosed-result deny.
-EXPECTED_TOTAL=1319
+# 1319 -> 1322 (2026-10-25, #1555 security review): +3 phantom `<<` denies (${x:-…}, ${x/…/…}, array
+# subscript).
+EXPECTED_TOTAL=1322
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

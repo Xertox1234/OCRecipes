@@ -3496,7 +3496,9 @@ _out_heredoc_close() {
       # real closing quote after it then opened a span (measured on the draft: `echo $((1<<3))` + a
       # quoted `3` line hid a later eas update). Only the `<<` there is skipped; declining the whole
       # pass instead let one `echo $((1))` anywhere bring the desync back.
-      n = length(buf); st = 0; out = ""; nq = 0; qh = 1; body = 0; cm = 0; ar = 0; sb = 0
+      # pb/bk: inside `${`…`}` (brace depth) or an unclosed `[` in the current word (`a[1<<X]=1`),
+      # where `<<` is not a redirection either (security review of #1555, measured DENY->ALLOW).
+      n = length(buf); st = 0; out = ""; nq = 0; qh = 1; body = 0; cm = 0; ar = 0; sb = 0; pb = 0; bk = 0
       for (i = 1; i <= n; i++) {
         if (body && (i == 1 || substr(buf, i - 1, 1) == "\n")) {
           e = index(substr(buf, i), "\n"); line = (e ? substr(buf, i, e - 1) : substr(buf, i))
@@ -3520,7 +3522,10 @@ _out_heredoc_close() {
           if (ar && c == "(") ar++; else if (ar && c == ")") ar--
           if (!sb && c == "$" && substr(buf, i + 1, 1) == "[") { sb = 1; out = out "$["; i++; continue }
           if (sb && c == "]") sb = 0
-          if (!body && !cm && !ar && !sb && c == "<" && substr(buf, i + 1, 1) == "<" && substr(buf, i + 2, 1) != "<" \
+          if (c == "$" && substr(buf, i + 1, 1) == "{") { pb++; out = out "${"; i++; continue }
+          if (pb && c == "}") pb--
+          if (c == "[") bk = 1; else if (c == "]" || index(" \t\n;&|()", c)) bk = 0
+          if (!body && !cm && !ar && !sb && !pb && !bk && c == "<" && substr(buf, i + 1, 1) == "<" && substr(buf, i + 2, 1) != "<" \
               && (i == 1 || substr(buf, i - 1, 1) != "<")) {
             w = delim(i + 2); if (w != "") { nq++; QW[nq] = w; QD[nq] = DASH }
             out = out "<<"; i++; continue
