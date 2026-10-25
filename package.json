@@ -42,7 +42,7 @@
     "coverage:ratchet": "tsx scripts/coverage-ratchet.ts",
     "test:mutation": "stryker run",
     "mutation:explore": "node scripts/mutation-explore.mjs",
-    "prepare": "husky",
+    "prepare": "bash scripts/install-git-hooks.sh",
     "postinstall": "patch-package",
     "preandroid": "tsx scripts/check-api-domain.ts",
     "android": "expo run:android",
