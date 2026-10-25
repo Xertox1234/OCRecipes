@@ -481,4 +481,52 @@ else
   echo "FAIL: could not create the temp branch ref for the head-branch tests"; FAIL=1
 fi
 
+# --- The deny names the missing condition it found (2026-10-25) ---
+# After #1436, 5 of 8 stamp denies followed pushes from linked worktrees where git ran NO
+# hooks: husky writes a RELATIVE core.hooksPath, git resolves it against each worktree's own
+# root, and the generated .husky/_ is absent there, so the push wrote no stamp. 3 retries
+# also prefixed SKIP_PR_PREFLIGHT=1 to the command, which never reaches this hook (it reads
+# its own environment). The deny now says both. What the gate accepts is unchanged.
+assert_not_contains() { case "$3" in *"$2"*) echo "FAIL: $1 — did not expect '$2' in: $3"; FAIL=1;; *) echo "ok: $1";; esac; }
+HWT=$(mktemp -d)
+trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}" "${AWKSTUB:-}" "${DREPO:-}" "${DORIGIN:-}" "${DCLONE:-}" "${HWT:-}"' EXIT
+hgit() { env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+  GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git "$@"; }
+run_in() { (cd "$1" && printf '{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"x","body":"y"}}' \
+  | env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE bash "$HOOK"); }
+hgit -C "$HWT" init -q main
+hgit -C "$HWT/main" commit -q --allow-empty -m init
+hgit -C "$HWT/main" worktree add -q "$HWT/wt" -b wt
+mkdir -p "$HWT/main/.husky/_"
+printf '#!/bin/sh\n' > "$HWT/main/.husky/_/pre-push"
+chmod +x "$HWT/main/.husky/_/pre-push"
+hgit -C "$HWT/main" config core.hooksPath .husky/_
+rm -f "$STAMP_FILE"
+
+OUT=$(run_in "$HWT/wt")
+assert_contains "worktree with no runnable pre-push hook: still denies" '"permissionDecision": "deny"' "$OUT"
+assert_contains "worktree with no runnable pre-push hook: the deny says git runs no pre-push hook here" \
+  'runs no pre-push hook' "$OUT"
+assert_contains "worktree with no runnable pre-push hook: the deny says to run preflight:fast here" \
+  'npm run preflight:fast' "$OUT"
+# Control: the main checkout, same relative value, shim present there — deny without the note.
+OUT=$(run_in "$HWT/main")
+assert_contains "control: main checkout with a runnable pre-push hook still denies" '"permissionDecision": "deny"' "$OUT"
+assert_not_contains "control: main checkout with a runnable pre-push hook gets no hooks note" \
+  'runs no pre-push hook' "$OUT"
+# An absolute path reaches the shim from the worktree too — no note.
+hgit -C "$HWT/main" config core.hooksPath "$HWT/main/.husky/_"
+OUT=$(run_in "$HWT/wt")
+assert_not_contains "worktree with an absolute hooksPath to a real shim gets no hooks note" \
+  'runs no pre-push hook' "$OUT"
+assert_contains "the deny says the bypass must come from Claude Code's environment, not a command prefix" \
+  'a prefix on the command does not reach this hook' "$OUT"
+# Acceptance unchanged: a stamp for the worktree's HEAD allows even where hooks cannot run.
+hgit -C "$HWT/main" config core.hooksPath .husky/_
+hgit -C "$HWT/wt" rev-parse HEAD > "$STAMP_FILE"
+OUT=$(run_in "$HWT/wt")
+assert_empty "worktree with no hooks but a fresh stamp for its HEAD still allows" "" "$OUT"
+rm -f "$STAMP_FILE"
+rm -rf "$HWT"
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

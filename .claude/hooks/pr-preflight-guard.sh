@@ -161,9 +161,23 @@ if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
   STAMP=$(cat "$(preflight_stamp_path)" 2>/dev/null || echo "")
 fi
 
+# Read by the agent, which acts on it: a prefix on the command never reaches this hook (it
+# reads its own environment), and 3 of the 24 measured denies (2026-10-12..25) were retries
+# that tried one.
+BYPASS_HINT="Emergency bypass: SKIP_PR_PREFLIGHT=1 in the environment Claude Code was launched from (a prefix on the command does not reach this hook)."
+
 if [ -z "$HEAD" ] || [ "$STAMP" != "$HEAD" ]; then
   FOUND="${STAMP:0:7}"; [ -z "$FOUND" ] && FOUND="none"
-  REASON="Blocked: no fresh preflight pass-stamp for HEAD ${HEAD:0:7} (found: ${FOUND}). Push the branch first — the pre-push fast gate stamps a verified HEAD — or run \`npm run preflight\` for full local parity. Coverage is enforced by CI's required checks, not here. Emergency bypass: SKIP_PR_PREFLIGHT=1."
+  # Message only, never acceptance: when git can run no pre-push hook in this tree, "push
+  # first" cannot produce a stamp. A relative core.hooksPath (husky's default) resolves per
+  # worktree, so a linked worktree without the generated .husky/_ silently runs no hooks —
+  # 5 of the 8 denies after #1436. `--git-path hooks` applies git's own resolution.
+  HOOKS_NOTE=""
+  HOOKS_DIR=$(git rev-parse --git-path hooks 2>/dev/null || echo "")
+  if [ -n "$HOOKS_DIR" ] && [ ! -x "$HOOKS_DIR/pre-push" ]; then
+    HOOKS_NOTE=" Git runs no pre-push hook in $(git rev-parse --show-toplevel 2>/dev/null) (no runnable ${HOOKS_DIR}/pre-push), so a push from here writes no stamp: run \`npm run preflight:fast\` in this tree, then retry."
+  fi
+  REASON="Blocked: no fresh preflight pass-stamp for HEAD ${HEAD:0:7} (found: ${FOUND}). Push the branch first — the pre-push fast gate stamps a verified HEAD — or run \`npm run preflight\` for full local parity.${HOOKS_NOTE} Coverage is enforced by CI's required checks, not here. ${BYPASS_HINT}"
 
   jq -n --arg r "$REASON" '{
     "hookSpecificOutput": {
@@ -205,7 +219,7 @@ if [ -z "${SKIP_PR_DRIFT_CHECK:-}" ]; then
       OVERLAP=$(comm -12 <(printf '%s\n' "$MISSED" | sort) <(printf '%s\n' "$MINE" | sort))
       if [ -n "$OVERLAP" ]; then
         FIRST=$(printf '%s\n' "$OVERLAP" | head -1)
-        REASON="Blocked: '${FIRST}' changed on origin/${BASE} since this branch forked, and this PR also changes it — the same work may already be merged there. Check \`git log origin/${BASE} -- '${FIRST}'\` before opening. Reconcile with \`git fetch origin ${BASE} && git merge --ff-only origin/${BASE}\`, then retry. Emergency bypass: SKIP_PR_PREFLIGHT=1 (or SKIP_PR_DRIFT_CHECK=1 for just this check)."
+        REASON="Blocked: '${FIRST}' changed on origin/${BASE} since this branch forked, and this PR also changes it — the same work may already be merged there. Check \`git log origin/${BASE} -- '${FIRST}'\` before opening. Reconcile with \`git fetch origin ${BASE} && git merge --ff-only origin/${BASE}\`, then retry. ${BYPASS_HINT} SKIP_PR_DRIFT_CHECK=1 skips just this check, the same way."
         jq -n --arg r "$REASON" '{
           "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
