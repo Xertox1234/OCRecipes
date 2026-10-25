@@ -28,31 +28,59 @@ Review Policy → One review pass per PR).
 
 ### Bypass shapes (constructed, not seen in real use)
 
-| Todo                                                                                      | Gap                                                                                        |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow                         | Unparseable `gh pr merge` spellings are silently allowed by the merge gate                 |
-| P1-2026-09-15-a-root-flag-whose-value-is-a-bare-dash-hides-the-namespace-from-both-guards | A root flag with a bare-dash value hides the namespace from both merge guards              |
-| P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers     | A parameter expansion in the fd slot defeats the git-safety matcher (shape 2)              |
-| P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag                       | A brace list at flag position rebuilds a gated flag on PR merge                            |
-| P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list     | Post-verb flag walker hand-enumerates gh flags, twice; one real flag missing               |
-| P3-2026-09-15-brace-range-third-word-verb-unreachable                                     | Brace-range denial never reaches a third-word verb                                         |
-| P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position                           | Endpoint check keys on path shape, not argv position                                       |
-| P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head   | A later objection from one reviewer cannot retract its earlier clean record                |
-| P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-…   | A delivery above 1 MiB makes guard (c) write no record (fail-closed)                       |
-| _(no todo — #1436 confirmation review, 2026-10-13)_                                       | PR guard head pick scans the whole command: `echo --head X; gh pr create …` uses X's stamp |
-| _(no todo — outward-CLI false-alarm work, 2026-10-23)_                                    | A quote inside one heredoc's body throws off the quote scan and hides a later command      |
-| _(no todo — worktree-contract false-alarm work, 2026-10-24)_                              | After an honored leading `cd <worktree> &&`, a shell function that changes folder hides it |
-| _(no todo — found 2026-10-24, pre-existing)_                                              | `cp --target-directory=<main>/d x` is not read as a write into main                        |
-| _(no todo — found 2026-10-24 by the #1552 review, pre-existing)_                          | `git log --output <main>/x` writes into main from any folder; neither layer reads it       |
+| Todo                                                                                      | Gap                                                                                                  |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow                         | Unparseable `gh pr merge` spellings are silently allowed by the merge gate                           |
+| P1-2026-09-15-a-root-flag-whose-value-is-a-bare-dash-hides-the-namespace-from-both-guards | A root flag with a bare-dash value hides the namespace from both merge guards                        |
+| P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers     | A parameter expansion in the fd slot defeats the git-safety matcher (shape 2)                        |
+| P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag                       | A brace list at flag position rebuilds a gated flag on PR merge                                      |
+| P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list     | Post-verb flag walker hand-enumerates gh flags, twice; one real flag missing                         |
+| P3-2026-09-15-brace-range-third-word-verb-unreachable                                     | Brace-range denial never reaches a third-word verb                                                   |
+| P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position                           | Endpoint check keys on path shape, not argv position                                                 |
+| P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head   | A later objection from one reviewer cannot retract its earlier clean record                          |
+| P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-…   | A delivery above 1 MiB makes guard (c) write no record (fail-closed)                                 |
+| _(no todo — #1436 confirmation review, 2026-10-13)_                                       | PR guard head pick scans the whole command: `echo --head X; gh pr create …` uses X's stamp           |
+| _(no todo — outward-CLI false-alarm work, 2026-10-23)_                                    | FIXED 2026-10-24: a quote inside one heredoc's body threw off the quote scan, hiding a later command |
+| _(no todo — worktree-contract false-alarm work, 2026-10-24)_                              | After an honored leading `cd <worktree> &&`, a shell function that changes folder hides it           |
+| _(no todo — found 2026-10-24, pre-existing)_                                              | `cp --target-directory=<main>/d x` is not read as a write into main                                  |
+| _(no todo — found 2026-10-24 by the #1552 review, pre-existing)_                          | `git log --output <main>/x` writes into main from any folder; neither layer reads it                 |
 
 The 2026-10-23 heredoc row, measured: `cmd_bare` (and the renderings built like it) scan a heredoc body
 as shell text, so a lone `'` in a body flips its quote state for the rest of the command. Five lines are
 enough: `cat <<'X'`, `'`, `X`, `echo 'abc`, `' ; eas update --branch production`. `guard-outward-cli.sh`
 allows it (on `HEAD` before that day's change and after it), and bash runs the last line (checked with
 `echo` in place of `eas`). Pinned as a KNOWN-WRONG row in `test-guard-outward-cli.sh`. The 2026-10-23
-pre-pass declines whenever a command holds any other heredoc, so it neither causes nor widens this. Fix
-shape if reopened: have `cmd_bare` skip heredoc bodies (or treat any `<<` other than `<<<` as
-unparseable) instead of scanning them as shell.
+pre-pass declines whenever a command holds any other heredoc, so it neither causes nor widens this.
+
+**Fixed 2026-10-24** (owner ruling: fix it, keep heredoc text visible). A new pass in
+`guard-outward-cli.sh`, HEREDOC QUOTE CLOSE, finds each heredoc using `cmd_bare`'s own flat quote model.
+When a body leaves a quote open, the pass inserts the matching closing quote just before the terminator.
+Body text is unchanged, so cat, data and bash heredoc bodies stay as visible as before. The fix lives
+in the guard, not in the four lib scanners, so every rendering reads the same text. Measured against main:
+
+- **Heredoc corpus**, 6,480 rows (3 arithmetic prefixes [none, `echo $((1))`, `: $[1]`] × 8 starts ×
+  9 bodies × 3 terminators × 5 after-lines × 0 or 1 extra heredoc): no row went from deny to allow. All
+  1,028 rows that went from allow to deny are the bypass shape: a real heredoc whose body leaves a quote
+  open, followed by a real command. That is 336 per prefix, plus 20 python heredoc rows under
+  `echo $((1))`, where the inert pre-pass declines on `$(` and leaves the body visible.
+- **Phantom-`<<` corpus**, 756 rows (14 `<<` contexts × 3 delimiters × 3 quote kinds × 3 finals ×
+  2 joins): every row unchanged. The draft failed it. An arithmetic `$((1<<3))` was read as a heredoc,
+  and a quoted line that only looked like its terminator caused a false close, so a later command went
+  from deny to allow. The pass now skips a `<<` inside `((`…`))` or `$[`…`]` and a `<<` written after a
+  word-start `#`. A second draft declined the whole pass on any `((`, and then one unrelated `echo
+$((1))` brought the bypass back. Pre-push review found it, and a test row now pins it.
+
+The pass keeps its result only when every quote ends up closed. When a close would leave a quote open
+to the end, the command stops at that syntax error and nothing after it runs. Main's reading of such a
+command (a deny) is kept rather than flipped to allow.
+
+Still not covered: other hooks that use `lib/cmd-detect.sh` (git-safety, merge-review-guard and others)
+do not run this pass. The owner's ruling covered the outward-CLI guard only. Also still open, and present
+before this change: `cmd_bare` has no comment model, so one `'` inside a `#` comment flips its quote
+state. The pass follows `cmd_bare` here on purpose, because its inserted quote must match what
+`cmd_bare` thinks is open, so it then misses the heredoc on the next line. Measured: `echo # '`, then
+`cat <<'X'` with two `'` lines in its body, `X`, `echo 'abc`, `' ; eas update …` is ALLOW on both main
+and this change. Closing it needs a comment model that all the scanners share.
 
 The 2026-10-24 rows, measured with `git-safety.sh` before and after that day's change. **Leading cd:**
 `git-safety.sh` now judges a command's git segments from the folder of one leading `cd <abs> &&`. It
