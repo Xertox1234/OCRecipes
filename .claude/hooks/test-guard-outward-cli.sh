@@ -6239,10 +6239,10 @@ EOF
 OUTWARD_CORPUS_END
 C=${C%$'\n'}
 assert_deny 'help/heredoc: heredoc line continued from sh -s' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
-# A quote inside ANOTHER heredoc's body desyncs the quote scanner (pre-existing, recorded in
-# docs/harness-residuals.md 2026-10-23): it ALLOWs on main too. The pre-pass declines here (a second
-# heredoc), so it neither causes nor widens this; the control below is the same text without the
-# first heredoc.
+# A quote inside ANOTHER heredoc's body used to desync the quote scanner (recorded in
+# docs/harness-residuals.md 2026-10-23, pinned KNOWN-WRONG until 2026-10-24). The heredoc
+# quote-close pass now ends the body's span at its terminator (owner ruling 2026-10-24); the
+# control below is the same text without the first heredoc.
 IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
 cat <<'X'
 '
@@ -6253,7 +6253,7 @@ python3 - <<'EOF'
 EOF
 OUTWARD_CORPUS_END
 C=${C%$'\n'}
-assert_allow 'KNOWN-WRONG (residual): a quote inside another heredoc body hides a later command' "$(jsonc "$C")"
+assert_deny 'heredoc close: a quote inside another heredoc body no longer hides a later command' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
 IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
 echo 'abc
 python3 - <<'EOF'
@@ -6262,6 +6262,137 @@ EOF
 OUTWARD_CORPUS_END
 C=${C%$'\n'}
 assert_deny 'CONTROL: the same text without the first heredoc denies' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# Heredoc quote-close pass (2026-10-24): the shapes its generated corpora varied, each with the
+# direction the pass must take. Payloads are text fed to the guard; nothing here runs them.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X'
+it's
+X
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an apostrophe in a cat body does not hide the next line' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<X
+say "hi
+X
+gh pr merge 1 --squash
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an open double quote in an unquoted-delimiter body ends at the terminator' "$(jsonc "$C")" 'gh pr merge'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<-'X'
+	'
+	X
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: <<- matches a tab-indented terminator' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X'
+ok
+X
+cat <<'Y'
+'
+Y
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: the second of two heredocs is closed too' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X'
+'
+X
+echo ok
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'heredoc close: a quote in a cat body followed by a plain command still allows (no new block)' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X' > notes.txt
+it's "quoted
+X
+echo done
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'heredoc close: a data heredoc to a file with open quotes still allows' "$(jsonc "$C")"
+# An arithmetic `<<` is a shift, not a heredoc. Read as one, a quoted line that only looked like its
+# terminator was a false close and the real closing quote then opened a span (measured on the
+# draft: these were main-DENY -> draft-ALLOW). The pass declines on `((` / `$[`, and a `<<` after a
+# word-start `#` is comment text.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo $((1<<3))
+echo 'a
+3
+' ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an arithmetic $((1<<3)) is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+(( a<<b ))
+echo "a
+b
+" ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an arithmetic (( a<<b )) is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo hi # a<<b
+echo 'a
+b
+' ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside a comment is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# Only the `<<` inside arithmetic is skipped: an unrelated `$((1))` must not switch the pass off
+# (the draft declined on any `((` and this reopened the desync, found in pre-push review).
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo $((1))
+cat <<'X'
+'
+X
+echo 'abc
+' ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an unrelated $((1)) does not switch the pass off' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# A `<<` inside `${…}` or an array subscript is not a redirection either (security review of #1555,
+# measured main-DENY -> head-ALLOW, and bash runs the last line). The term line is what the pass
+# would have read as the delimiter.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo ${x:-<<X}
+echo 'abc
+X}
+' ; eas update --branch production #'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside ${x:-…} is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo a${x/<<X/y}b
+echo "abc
+X/y}b
+" ; eas update --branch production #"
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside ${x/…/…} is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+a[1<<X]=1
+echo 'abc
+X]=1
+' ; eas update --branch production #'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside an array subscript is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# A REAL heredoc whose close would leave a quote open to the end: the shell stops at that syntax
+# error, so nothing after it runs. The pass keeps its result only when every quote closes, so these
+# keep main's reading (deny) rather than flipping to allow.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<3
+echo 'a
+3
+' ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a close that would leave a quote open is not applied (main reading kept)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
 IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
 cat > x.sh <<'EOF'
 eas update --branch production
@@ -6697,7 +6828,13 @@ assert_deny 'help/heredoc: a spaced node function definition' "$(jsonc "$C")" 'c
 # (14 allow, 24 deny), the KNOWN-WRONG desync allow and its deny control, and the 22 real blocks
 # verbatim (12 deliberate deny, 6 false alarms now allow, 4 heredoc texts deny).
 # 1302 -> 1308 (2026-10-23, #1545 review): +6 deny rows, a python3/node redefined before its heredoc.
-EXPECTED_TOTAL=1308
+# 1308 -> 1319 (2026-10-24, heredoc quote-close): the KNOWN-WRONG desync row flips to a deny in
+# place, +11 = 4 deny shapes (apostrophe, unquoted-delimiter double quote, <<- tab terminator, second
+# heredoc), 2 no-new-block allows (cat body + plain command, data heredoc to a file), 3 phantom
+# `<<` denies (two arithmetic, one comment), 1 unrelated-arithmetic deny, 1 unclosed-result deny.
+# 1319 -> 1322 (2026-10-25, #1555 security review): +3 phantom `<<` denies (${x:-…}, ${x/…/…}, array
+# subscript).
+EXPECTED_TOTAL=1322
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

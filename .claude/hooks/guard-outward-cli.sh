@@ -3367,8 +3367,8 @@ fi
 # `hash -p` were missed until the #1545 review). NOT visible from the text at all, so not
 # covered: a python3 that is something else before this command runs (an earlier session's
 # PATH, a wrapper on disk) -- the same class as a script written earlier and run now.
-# KNOWN pre-existing residual it does not touch: a quote inside another heredoc's body already
-# desyncs cmd_bare (docs/harness-residuals.md, 2026-10-23).
+# A quote inside another heredoc's body used to desync cmd_bare (docs/harness-residuals.md,
+# 2026-10-23); the HEREDOC QUOTE CLOSE pass below now ends that span at the terminator.
 # On any awk failure $CMD is kept as is; the checks below then run on the original text.
 _out_inert_prepass() {
   awk '
@@ -3453,6 +3453,108 @@ _out_inert_prepass() {
 if _OUT_INERT=$(printf '%s' "$CMD" | _out_inert_prepass 2>/dev/null); then
   CMD=$_OUT_INERT
 fi
+
+# ---------- HEREDOC QUOTE CLOSE (owner ruling 2026-10-24) ----------
+# The renderings below (cmd_bare, cmd_words and the deep/vanish passes) carry quote state across
+# lines and know nothing of heredocs, so a lone quote in one heredoc's BODY (`cat <<'X'` / `'` /
+# `X`) opened a span that ran past the terminator and hid a later `eas update`
+# (docs/harness-residuals.md, 2026-10-23). The shell ends a heredoc body at its terminator line
+# whatever quotes the body holds. This pass finds each heredoc with the same flat quote model as
+# cmd_bare (an unquoted `<<`, not `<<<`; delimiter quotes and backslashes removed; `<<-` strips
+# leading tabs; bodies start after the line that opened them, in order) and, when the body has left
+# a quote open, INSERTS the matching closing quote just before the terminator. Body text is left
+# exactly as it was, so cat/data/bash heredoc bodies stay visible (2026-09-22 ruling) and quotes
+# inside a body still blank what they blanked before; only the carry past the terminator is cut.
+# It only ever adds one quote character before a terminator line. Fixed in this one place, not in
+# each scanner, so every rendering sees the same text. When nothing was inserted (or awk fails)
+# the pass exits non-zero and $CMD is kept byte for byte.
+_out_heredoc_close() {
+  awk '
+    # Delimiter of the heredoc whose `<<` ends just before position p; sets DASH for `<<-`.
+    function delim(p,   w, c, q) {
+      DASH = 0
+      if (substr(buf, p, 1) == "-") { DASH = 1; p++ }
+      while (substr(buf, p, 1) == " " || substr(buf, p, 1) == "\t") p++
+      w = ""; q = ""
+      while (p <= n) {
+        c = substr(buf, p, 1)
+        if (q != "") { if (c == q) q = ""; else w = w c; p++; continue }
+        if (c == SQ || c == DQ) { q = c; p++; continue }
+        if (c == BS) { w = w substr(buf, p + 1, 1); p += 2; continue }
+        if (index(" \t\n;&|()<>", c)) break
+        w = w c; p++
+      }
+      return w
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\" }
+    { buf = buf $0 "\n" }
+    END {
+      # st: cmd_bare states (0 none, 1 single, 2 double, 3 ANSI-C). QW/QD: queued delimiters and
+      # their `<<-` flags; qh: the one whose body is being read; body: inside a body.
+      # ar/sb: inside `((`…`))` (paren depth) or `$[`…`]`, where `<<` is a shift, not a heredoc. A
+      # misread one turned a line that only LOOKED like its terminator into a false close, and the
+      # real closing quote after it then opened a span (measured on the draft: `echo $((1<<3))` + a
+      # quoted `3` line hid a later eas update). Only the `<<` there is skipped; declining the whole
+      # pass instead let one `echo $((1))` anywhere bring the desync back.
+      # pb/bk: inside `${`…`}` (brace depth) or an unclosed `[` in the current word (`a[1<<X]=1`),
+      # where `<<` is not a redirection either (security review of #1555, measured DENY->ALLOW).
+      n = length(buf); st = 0; out = ""; nq = 0; qh = 1; body = 0; cm = 0; ar = 0; sb = 0; pb = 0; bk = 0
+      for (i = 1; i <= n; i++) {
+        if (body && (i == 1 || substr(buf, i - 1, 1) == "\n")) {
+          e = index(substr(buf, i), "\n"); line = (e ? substr(buf, i, e - 1) : substr(buf, i))
+          t = line; if (QD[qh]) sub(/^\t+/, "", t)
+          if (t == QW[qh]) {
+            if (st == 1 || st == 3) { out = out SQ; ins = 1 } else if (st == 2) { out = out DQ; ins = 1 }
+            st = 0; out = out line; i += length(line)
+            if (i <= n) out = out "\n"
+            qh++; if (qh > nq) body = 0
+            continue
+          }
+        }
+        c = substr(buf, i, 1)
+        if (c == "\n") cm = 0
+        if (st == 0) {
+          if (c == BS) { out = out c substr(buf, i + 1, 1); i++; continue }
+          # A `<<` after a word-start `#` is comment text. Quotes there still toggle st, because
+          # st must track cmd_bare (which has no comment model) for the inserted close to match.
+          if (c == "#" && (i == 1 || index(" \t\n;&|()<>", substr(buf, i - 1, 1)))) cm = 1
+          if (!ar && c == "(" && substr(buf, i + 1, 1) == "(") { ar = 2; out = out "(("; i++; continue }
+          if (ar && c == "(") ar++; else if (ar && c == ")") ar--
+          if (!sb && c == "$" && substr(buf, i + 1, 1) == "[") { sb = 1; out = out "$["; i++; continue }
+          if (sb && c == "]") sb = 0
+          if (c == "$" && substr(buf, i + 1, 1) == "{") { pb++; out = out "${"; i++; continue }
+          if (pb && c == "}") pb--
+          if (c == "[") bk = 1; else if (c == "]" || index(" \t\n;&|()", c)) bk = 0
+          if (!body && !cm && !ar && !sb && !pb && !bk && c == "<" && substr(buf, i + 1, 1) == "<" && substr(buf, i + 2, 1) != "<" \
+              && (i == 1 || substr(buf, i - 1, 1) != "<")) {
+            w = delim(i + 2); if (w != "") { nq++; QW[nq] = w; QD[nq] = DASH }
+            out = out "<<"; i++; continue
+          }
+          if (c == "\n" && !body && nq >= qh) body = 1
+          if (c == "$" && (substr(buf, i + 1, 1) == SQ || substr(buf, i + 1, 1) == DQ)) {
+            st = (substr(buf, i + 1, 1) == SQ) ? 3 : 2; out = out c substr(buf, i + 1, 1); i++; continue
+          }
+          if (c == SQ) st = 1; else if (c == DQ) st = 2
+        } else if (st == 1) { if (c == SQ) st = 0 }
+        else {
+          if (c == BS) { out = out c substr(buf, i + 1, 1); i++; continue }
+          if ((st == 2 && c == DQ) || (st == 3 && c == SQ)) st = 0
+        }
+        out = out c
+      }
+      # Keep the result only if it ends with every quote closed. A command whose quotes do not
+      # close is a syntax error the shell stops at, so nothing after it runs; declining there keeps
+      # the old reading (which denied), and the bypass needs closed quotes to run at all.
+      if (!ins || st != 0) exit 1
+      printf "%s", out
+    }'
+}
+# No `<<`, no heredoc: skip the extra awk process on the common path.
+case "$CMD" in *'<<'*)
+  if _OUT_HDC=$(printf '%s' "$CMD" | _out_heredoc_close 2>/dev/null); then
+    CMD=$_OUT_HDC
+  fi ;;
+esac
 
 BARE=$(printf '%s' "$CMD" | cmd_bare)
 # WORDS is the argv-faithful rendering (lib/cmd-detect.sh): quote characters
