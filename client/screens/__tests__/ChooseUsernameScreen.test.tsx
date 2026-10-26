@@ -127,3 +127,15 @@ describe("ChooseUsernameScreen — shake on validation reject", () => {
     expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ChooseUsernameScreen — floating labels", () => {
+  it("floats Username with no repeated placeholder", () => {
+    renderScreen();
+    expect(fieldLabels()).toEqual(["Username"]);
+    fireEvent.focus(screen.getByLabelText("Username"));
+    expect(screen.queryByPlaceholderText("Username")).toBeNull();
+  });
+});

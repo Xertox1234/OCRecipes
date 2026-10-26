@@ -262,14 +262,9 @@ export function ChangeEmailModal({
                 </ThemedText>
               ) : null}
 
-              <ThemedText
-                type="small"
-                style={[styles.label, { color: theme.textSecondary }]}
-              >
-                New email address
-              </ThemedText>
               <TextInput
                 leftIcon="mail"
+                label="New email"
                 placeholder="you@example.com"
                 value={newEmail}
                 onChangeText={(text) => {
@@ -287,14 +282,9 @@ export function ChangeEmailModal({
                 testID="change-email-new-email-input"
               />
 
-              <ThemedText
-                type="small"
-                style={[styles.label, { color: theme.textSecondary }]}
-              >
-                Confirm new email address
-              </ThemedText>
               <TextInput
                 leftIcon="mail"
+                label="Confirm new email"
                 placeholder="you@example.com"
                 value={confirmEmail}
                 onChangeText={(text) => {
@@ -312,12 +302,6 @@ export function ChangeEmailModal({
                 testID="change-email-confirm-email-input"
               />
 
-              <ThemedText
-                type="small"
-                style={[styles.label, { color: theme.textSecondary }]}
-              >
-                Current password
-              </ThemedText>
               <TextInput
                 leftIcon="lock"
                 rightIcon={showPassword ? "eye-off" : "eye"}
@@ -325,7 +309,7 @@ export function ChangeEmailModal({
                   showPassword ? "Hide password" : "Show password"
                 }
                 onRightIconPress={() => setShowPassword((s) => !s)}
-                placeholder="Password"
+                label="Password"
                 value={password}
                 onChangeText={(text) => {
                   setPassword(text);

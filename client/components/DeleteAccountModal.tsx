@@ -304,12 +304,6 @@ export function DeleteAccountModal({
 
               {mode.kind === "password" ? (
                 <>
-                  <ThemedText
-                    type="small"
-                    style={[styles.label, { color: theme.textSecondary }]}
-                  >
-                    Enter your password to confirm
-                  </ThemedText>
                   <TextInput
                     leftIcon="lock"
                     rightIcon={showPassword ? "eye-off" : "eye"}
@@ -317,7 +311,7 @@ export function DeleteAccountModal({
                       showPassword ? "Hide password" : "Show password"
                     }
                     onRightIconPress={() => setShowPassword((s) => !s)}
-                    placeholder="Password"
+                    label="Password"
                     value={password}
                     onChangeText={(text) => {
                       setPassword(text);
@@ -328,7 +322,6 @@ export function DeleteAccountModal({
                     autoComplete="current-password"
                     textContentType="password"
                     editable={!isDeleting}
-                    accessibilityLabel="Password"
                     accessibilityHint="Enter your current password to confirm account deletion"
                     error={!!error}
                     errorMessage={error ?? undefined}

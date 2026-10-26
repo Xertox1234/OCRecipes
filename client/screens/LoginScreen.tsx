@@ -256,7 +256,7 @@ export default function LoginScreen() {
               needs a username (registerSchema rejects an email there). */}
           <TextInput
             leftIcon="user"
-            placeholder={mode === "login" ? "Username or email" : "Username"}
+            label={mode === "login" ? "Username or email" : "Username"}
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
@@ -264,9 +264,6 @@ export default function LoginScreen() {
             textContentType="username"
             autoComplete="username"
             testID="input-username"
-            accessibilityLabel={
-              mode === "login" ? "Username or email" : "Username"
-            }
             accessibilityHint={
               mode === "login"
                 ? "Enter your username or email address"
@@ -277,7 +274,8 @@ export default function LoginScreen() {
           {mode === "register" ? (
             <TextInput
               leftIcon="mail"
-              placeholder="Email"
+              label="Email"
+              placeholder="you@example.com"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -286,7 +284,6 @@ export default function LoginScreen() {
               textContentType="emailAddress"
               autoComplete="email"
               testID="input-email"
-              accessibilityLabel="Email"
               accessibilityHint="Enter your email address"
               error={!!emailError}
               errorMessage={emailError ?? undefined}
@@ -300,7 +297,7 @@ export default function LoginScreen() {
               showPassword ? "Hide password" : "Show password"
             }
             onRightIconPress={() => setShowPassword(!showPassword)}
-            placeholder="Password"
+            label="Password"
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
@@ -311,7 +308,6 @@ export default function LoginScreen() {
               mode === "register" ? registerPasswordRules() : undefined
             }
             testID="input-password"
-            accessibilityLabel="Password"
             accessibilityHint={
               mode === "register"
                 ? registerPasswordHint()
@@ -346,7 +342,7 @@ export default function LoginScreen() {
           {mode === "register" ? (
             <TextInput
               leftIcon="lock"
-              placeholder="Confirm Password"
+              label="Confirm password"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry={!showPassword}
@@ -355,7 +351,6 @@ export default function LoginScreen() {
               autoComplete="new-password"
               passwordRules={registerPasswordRules()}
               testID="input-confirm-password"
-              accessibilityLabel="Confirm password"
               accessibilityHint="Re-enter your password to confirm"
             />
           ) : null}

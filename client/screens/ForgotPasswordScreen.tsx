@@ -94,7 +94,8 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
         <View style={styles.form}>
           <TextInput
             leftIcon="mail"
-            placeholder="Email"
+            label="Email"
+            placeholder="you@example.com"
             value={email}
             onChangeText={(text) => {
               setEmail(text);
@@ -110,7 +111,6 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
             onSubmitEditing={onSend}
             editable={!busy}
             testID="input-forgot-email"
-            accessibilityLabel="Email"
             accessibilityHint="Enter the email address on your account"
             error={!!error}
             errorMessage={error || undefined}

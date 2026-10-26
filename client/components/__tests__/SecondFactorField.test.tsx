@@ -127,3 +127,17 @@ describe("SecondFactorField", () => {
     expect(announceSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("SecondFactorField — floating label", () => {
+  it("floats 6-digit code with no repeated placeholder", () => {
+    renderComponent(
+      <SecondFactorField onChange={vi.fn()} emailCode={{ send }} />,
+    );
+    expect(fieldLabels()).toEqual(["6-digit code"]);
+    fireEvent.focus(screen.getByLabelText("6-digit code"));
+    expect(screen.queryByPlaceholderText("6-digit code")).toBeNull();
+  });
+});

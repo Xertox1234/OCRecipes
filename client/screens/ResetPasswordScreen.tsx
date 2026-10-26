@@ -149,7 +149,8 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
         <View style={styles.form}>
           <TextInput
             leftIcon="hash"
-            placeholder="6-digit code"
+            label="6-digit code"
+            placeholder="123456"
             value={code}
             onChangeText={(v) => setCode(normalizeResetCode(v))}
             keyboardType="number-pad"
@@ -162,7 +163,6 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             error={errorField === "code"}
             errorMessage={errorField === "code" ? error : undefined}
             testID="input-reset-code"
-            accessibilityLabel="6-digit code"
             accessibilityHint="Enter the code from the email"
           />
           <TextInput
@@ -172,7 +172,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
               showPassword ? "Hide password" : "Show password"
             }
             onRightIconPress={() => setShowPassword(!showPassword)}
-            placeholder="New password"
+            label="New password"
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
@@ -184,12 +184,11 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             error={errorField === "password"}
             errorMessage={errorField === "password" ? error : undefined}
             testID="input-reset-password"
-            accessibilityLabel="New password"
             accessibilityHint={`At least ${PASSWORD_MIN} characters`}
           />
           <TextInput
             leftIcon="lock"
-            placeholder="Confirm new password"
+            label="Confirm password"
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry={!showPassword}

@@ -82,7 +82,7 @@ describe("ConnectAccountScreen — shake on validation reject", () => {
       new ApiError("x", "UNAUTHORIZED", 401),
     );
     renderScreen();
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
+    fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: "pw" },
     });
     fireEvent.click(screen.getByText("Connect and sign in"));
@@ -113,5 +113,17 @@ describe("ConnectAccountScreen — two-step verification", () => {
         purpose: "link",
       }),
     );
+  });
+});
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ConnectAccountScreen — floating labels", () => {
+  it("floats Password with no repeated placeholder", () => {
+    renderScreen();
+    expect(fieldLabels()).toEqual(["Password"]);
+    fireEvent.focus(screen.getByLabelText("Password"));
+    expect(screen.queryByPlaceholderText("Password")).toBeNull();
   });
 });

@@ -12,6 +12,15 @@ import { renderComponent } from "../../../test/utils/render-component";
 import LoginScreen from "../LoginScreen";
 import * as Haptics from "expo-haptics";
 import { ApiError } from "@/lib/api-error";
+import { FocusField } from "@/components/FocusField";
+import { shouldFloatLabel } from "@/components/text-input-utils";
+
+// Spy on FocusField so the floating-label tests can read each field's state.
+vi.mock("@/components/FocusField", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/FocusField")>();
+  return { FocusField: vi.fn(actual.FocusField) };
+});
 
 const { withSequenceSpy } = vi.hoisted(() => ({
   withSequenceSpy: vi.fn((...vals: number[]) => vals[vals.length - 1]),
@@ -541,5 +550,55 @@ describe("LoginScreen — status bar over the hero photo", () => {
     renderComponent(<LoginScreen />);
 
     expect(screen.queryByTestId("status-bar")).toBeNull();
+  });
+});
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("LoginScreen — floating labels", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRoute.params = undefined;
+  });
+
+  it("labels sign-in and sign-up fields verbatim", () => {
+    renderComponent(<LoginScreen />);
+    expect(fieldLabels()).toEqual(["Username or email", "Password"]);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    expect(fieldLabels()).toEqual([
+      "Username",
+      "Email",
+      "Password",
+      "Confirm password",
+    ]);
+  });
+
+  it("drops placeholders that repeat their label", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.focus(screen.getByLabelText("Password"));
+    expect(screen.queryByPlaceholderText("Password")).toBeNull();
+  });
+
+  // Review Focus 5: focusing Password with Username empty must leave the
+  // Username label resting and float Password.
+  it("floats only the focused field when the other is empty", () => {
+    renderComponent(<LoginScreen />);
+    const username = screen.getByLabelText("Username or email");
+    const password = screen.getByLabelText("Password");
+    const floatedOf = (label: string) => {
+      const props = vi
+        .mocked(FocusField)
+        .mock.calls.map(([p]) => p)
+        .filter((p) => p.label === label)
+        .at(-1)!;
+      return shouldFloatLabel(props.focus.focused, props.hasValue ? "x" : "");
+    };
+    fireEvent.focus(username);
+    expect(floatedOf("Username or email")).toBe(true);
+    fireEvent.blur(username);
+    fireEvent.focus(password);
+    expect(floatedOf("Username or email")).toBe(false);
+    expect(floatedOf("Password")).toBe(true);
   });
 });

@@ -167,7 +167,8 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
             </ThemedText>
             <TextInput
               leftIcon="mail"
-              placeholder="Email"
+              label="Email"
+              placeholder="you@example.com"
               accessibilityLabel="Email address"
               value={email}
               onChangeText={setEmail}
@@ -198,7 +199,8 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
             </ThemedText>
             <TextInput
               leftIcon="mail"
-              placeholder="Email"
+              label="Email"
+              placeholder="you@example.com"
               accessibilityLabel="Email address"
               value={email}
               onChangeText={setEmail}
