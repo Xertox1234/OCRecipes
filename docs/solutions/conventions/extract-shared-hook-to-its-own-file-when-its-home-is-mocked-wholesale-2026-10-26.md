@@ -24,7 +24,7 @@ A factory mock replaces the whole module. Any export the factory does not list i
 
 ## Examples
 
-- `useMakeSuggestionFlow` (2026-10-25 maintainability audit, M1). The natural home was `client/hooks/useInspiredSuggestions.ts` beside `useMakeSuggestion`, but 11 test files (CoachChat, RecipeChatScreen, every RecipeBrowserScreen suite, recipe-finder offer tests) mock that module with only `useMakeSuggestion` / the listing hook. Placed in `client/hooks/useMakeSuggestionFlow.ts`, which imports `useMakeSuggestion`, the three migrated screens' 39 suites passed with no mock edits.
+- `useMakeSuggestionFlow` (2026-10-25 maintainability audit, M1). The natural home was `client/hooks/useInspiredSuggestions.ts` beside `useMakeSuggestion`, but 12 test files (CoachChat, RecipeChatScreen, every RecipeBrowserScreen suite, recipe-finder offer tests) mock that module with only `useMakeSuggestion` / the listing hook. Placed in `client/hooks/useMakeSuggestionFlow.ts`, which imports `useMakeSuggestion`, the three migrated screens' 39 suites passed with no mock edits.
 - `useParsedItemsAnnouncement` (L4): both Quick Log surfaces' tests mock `@/hooks/useQuickLogSession` wholesale, so the announcer went to its own file rather than into the session hook.
 
 ## Related Files
