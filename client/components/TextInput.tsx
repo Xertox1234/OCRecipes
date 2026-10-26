@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useState } from "react";
+import React, { forwardRef, useState } from "react";
 import {
   TextInput as RNTextInput,
   TextInputProps as RNTextInputProps,
@@ -9,18 +9,9 @@ import {
   Pressable,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import Animated, {
-  interpolate,
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
 
 import { useTheme } from "@/hooks/useTheme";
-import { useAccessibility } from "@/hooks/useAccessibility";
 import { BorderRadius, Spacing, FontFamily } from "@/constants/theme";
-import { focusTimingConfig } from "@/constants/animations";
 import {
   shouldFloatLabel,
   getRestBorderColor,
@@ -28,8 +19,12 @@ import {
   resolveInputAccessibilityLabel,
   LABELLED_INPUT_GEOMETRY,
 } from "./text-input-utils";
+import { FocusField } from "./FocusField";
+import { useFieldFocus } from "./useFieldFocus";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
+
+const ICON_SIZE = 20;
 
 interface TextInputProps extends Omit<RNTextInputProps, "style"> {
   /** Left icon name from Feather icons */
@@ -82,46 +77,13 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
     ref,
   ) => {
     const { theme, isDark } = useTheme();
-    const { reducedMotion } = useAccessibility();
+    const focus = useFieldFocus({ onFocus, onBlur });
 
-    const [isFocused, setIsFocused] = useState(false);
     // Uncontrolled inputs still float the label correctly: track the text
     // locally and prefer the controlled `value` when provided.
     const [internalValue, setInternalValue] = useState(defaultValue ?? "");
     const effectiveValue = value !== undefined ? value : internalValue;
-    const floated = shouldFloatLabel(isFocused, effectiveValue);
-
-    const focusProgress = useSharedValue(0);
-    const labelProgress = useSharedValue(floated ? 1 : 0);
-
-    // Reduced motion snaps to the end state instead of animating — the state
-    // change itself must never be dropped.
-    const focusTiming = {
-      ...focusTimingConfig,
-      duration: reducedMotion ? 0 : focusTimingConfig.duration,
-    };
-
-    useEffect(() => {
-      // Deliberately duplicates focusTiming rather than referencing it: the
-      // local is a fresh object every render, and depending on it would make
-      // this effect re-fire per render.
-      labelProgress.value = withTiming(floated ? 1 : 0, {
-        ...focusTimingConfig,
-        duration: reducedMotion ? 0 : focusTimingConfig.duration,
-      });
-    }, [floated, reducedMotion, labelProgress]);
-
-    const handleFocus: RNTextInputProps["onFocus"] = (e) => {
-      setIsFocused(true);
-      focusProgress.value = withTiming(1, focusTiming);
-      onFocus?.(e);
-    };
-
-    const handleBlur: RNTextInputProps["onBlur"] = (e) => {
-      setIsFocused(false);
-      focusProgress.value = withTiming(0, focusTiming);
-      onBlur?.(e);
-    };
+    const floated = shouldFloatLabel(focus.focused, effectiveValue);
 
     const handleChangeText = (text: string) => {
       setInternalValue(text);
@@ -132,90 +94,48 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
     const backgroundColor = isDark
       ? theme.backgroundSecondary // #2C2420 in dark
       : theme.backgroundDefault; // #FAF6F0 in light
-
-    // Captured as plain strings OUTSIDE the worklets below — never call an
-    // imported function inside a worklet body without its own directive.
-    const restBorderColor = getRestBorderColor(
-      isDark,
-      theme.border,
-      theme.link,
-    );
-    const focusedColor = theme.link;
-    const errorColor = theme.error;
-    const labelRestColor = theme.textSecondary;
     const hasError = !!error;
-    // Same rule as the colors above — captured as plain numbers outside the
-    // worklet rather than reached through the imported geometry object.
-    const labelFloatTranslateY = LABELLED_INPUT_GEOMETRY.labelFloatTranslateY;
-    const labelFloatScale = LABELLED_INPUT_GEOMETRY.labelFloatScale;
+    // The 1px edge at rest; focus and error draw FocusField's ring over it.
+    const borderColor = hasError
+      ? theme.error
+      : getRestBorderColor(isDark, theme.border, theme.link);
 
-    const animatedBorderStyle = useAnimatedStyle(() => ({
-      borderColor: hasError
-        ? errorColor
-        : interpolateColor(
-            focusProgress.value,
-            [0, 1],
-            [restBorderColor, focusedColor],
-          ),
-    }));
-
-    const animatedLabelStyle = useAnimatedStyle(() => ({
-      transform: [
-        {
-          translateY: interpolate(
-            labelProgress.value,
-            [0, 1],
-            [0, labelFloatTranslateY],
-          ),
-        },
-        {
-          scale: interpolate(labelProgress.value, [0, 1], [1, labelFloatScale]),
-        },
-      ],
-      color: hasError
-        ? errorColor
-        : interpolateColor(
-            focusProgress.value,
-            [0, 1],
-            [labelRestColor, focusedColor],
-          ),
-    }));
+    // The label sits where the text starts: past the container's padding and
+    // the input's own inset, or past a left icon and its gap. The inset stays
+    // on the input so the whole width remains tappable.
+    const containerFlat = StyleSheet.flatten(containerStyle) ?? {};
+    const containerPadding =
+      containerFlat.paddingLeft ??
+      containerFlat.paddingHorizontal ??
+      containerFlat.padding;
+    const containerLeft =
+      typeof containerPadding === "number" ? containerPadding : Spacing.md;
+    const textInset = leftIcon ? ICON_SIZE + Spacing.sm : Spacing.lg;
 
     const placeholderColor = theme.textSecondary;
 
     return (
-      <Animated.View
+      <FocusField
+        focus={focus}
         style={[
           styles.container,
-          label ? styles.labelledContainer : null,
-          { backgroundColor },
-          animatedBorderStyle,
+          { backgroundColor, borderColor },
           containerStyle,
         ]}
+        label={label}
+        labelLeft={containerLeft + textInset}
+        hasValue={effectiveValue.length > 0}
+        error={hasError}
       >
         {leftIcon && (
           <Feather
             name={leftIcon}
-            size={20}
+            size={ICON_SIZE}
             color={theme.textSecondary}
             style={styles.leftIcon}
           />
         )}
         <View style={styles.inputArea}>
-          {label ? (
-            <Animated.Text
-              accessible={false}
-              importantForAccessibility="no"
-              numberOfLines={1}
-              style={[
-                styles.label,
-                { left: leftIcon ? 0 : Spacing.lg },
-                animatedLabelStyle,
-              ]}
-            >
-              {label}
-            </Animated.Text>
-          ) : null}
           <RNTextInput
             ref={ref}
             placeholder={resolvePlaceholder(label, placeholder, floated)}
@@ -223,8 +143,8 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
             value={value}
             defaultValue={defaultValue}
             onChangeText={handleChangeText}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
+            onFocus={focus.onFocus}
+            onBlur={focus.onBlur}
             accessibilityLabel={resolveInputAccessibilityLabel(
               accessibilityLabel,
               label,
@@ -260,17 +180,21 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
               }
               style={styles.rightIcon}
             >
-              <Feather name={rightIcon} size={20} color={theme.textSecondary} />
+              <Feather
+                name={rightIcon}
+                size={ICON_SIZE}
+                color={theme.textSecondary}
+              />
             </Pressable>
           ) : (
             <Feather
               name={rightIcon}
-              size={20}
+              size={ICON_SIZE}
               color={theme.textSecondary}
               style={styles.rightIcon}
             />
           ))}
-      </Animated.View>
+      </FocusField>
     );
   },
 );
@@ -292,11 +216,6 @@ const styles = StyleSheet.create({
     // layout — dark mode rests on a transparent border color instead of
     // the previous borderWidth: 0.
     borderWidth: LABELLED_INPUT_GEOMETRY.borderWidth,
-  },
-  // A labelled field stacks the floated label above the value, so it needs
-  // more room than a plain single-row input.
-  labelledContainer: {
-    minHeight: LABELLED_INPUT_GEOMETRY.containerMinHeight,
   },
   leftIcon: {
     marginRight: Spacing.sm,
@@ -327,13 +246,5 @@ const styles = StyleSheet.create({
     // Padding above now positions the text on both platforms; `top` keeps
     // Android's EditText from re-centering it and reintroducing the overlap.
     textAlignVertical: "top",
-  },
-  label: {
-    position: "absolute",
-    top: LABELLED_INPUT_GEOMETRY.labelRestTop,
-    fontSize: 14,
-    lineHeight: LABELLED_INPUT_GEOMETRY.labelLineHeight,
-    fontFamily: FontFamily.regular,
-    transformOrigin: "left",
   },
 });

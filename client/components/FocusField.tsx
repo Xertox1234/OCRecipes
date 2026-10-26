@@ -35,6 +35,12 @@ interface FocusFieldProps {
   hasValue?: boolean;
   /** Error state: the ring shows in the error colour at full strength. */
   error?: boolean;
+  /**
+   * The label's x inside the field's edge, for a field whose text starts past
+   * its own left padding (an inner input inset, a left icon). Defaults to the
+   * field's numeric left padding.
+   */
+  labelLeft?: number;
   /** Test id for the field container (the element that draws the field). */
   testID?: string;
   children: React.ReactNode;
@@ -53,6 +59,7 @@ export function FocusField({
   label,
   hasValue,
   error,
+  labelLeft,
   testID,
   children,
 }: FocusFieldProps) {
@@ -119,11 +126,13 @@ export function FocusField({
         ),
   }));
 
-  // The label lines up with the field's own left padding; a field that pads
-  // its inner input instead gets the boxed TextInput's text inset.
+  // The label lines up with the field's own left padding unless the caller
+  // says where its text starts; a field that pads its inner input instead and
+  // passes neither gets the boxed TextInput's text inset.
   const paddingLeft =
     flat.paddingLeft ?? flat.paddingHorizontal ?? flat.padding;
-  const labelLeft = typeof paddingLeft === "number" ? paddingLeft : Spacing.lg;
+  const resolvedLabelLeft =
+    labelLeft ?? (typeof paddingLeft === "number" ? paddingLeft : Spacing.lg);
 
   return (
     <Animated.View
@@ -149,7 +158,7 @@ export function FocusField({
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
           numberOfLines={1}
-          style={[styles.label, { left: labelLeft }, labelStyle]}
+          style={[styles.label, { left: resolvedLabelLeft }, labelStyle]}
         >
           {label}
         </Animated.Text>

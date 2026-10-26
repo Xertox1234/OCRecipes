@@ -1,4 +1,4 @@
-// Pure logic for TextInput's animated focus border and floating label,
+// Pure logic for TextInput's resting border and floating label,
 // extracted so Vitest can cover it (see client/components/*-utils.ts pattern).
 import { withOpacity } from "@/constants/theme";
 
@@ -11,9 +11,9 @@ export function shouldFloatLabel(
 }
 
 /**
- * Rest-state border color for the focus interpolation. Light mode keeps the
- * subtle theme border; dark mode rests on a fully transparent link tint so the
- * focus transition stays in-hue instead of fading through gray.
+ * Rest-state border color of the boxed TextInput (focus draws FocusField's
+ * ring over it). Light mode keeps the subtle theme border; dark mode rests on
+ * a fully transparent link tint, so no edge shows at rest.
  */
 export function getRestBorderColor(
   isDark: boolean,
