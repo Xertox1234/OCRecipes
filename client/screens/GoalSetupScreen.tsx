@@ -261,15 +261,27 @@ export default function GoalSetupScreen() {
 
   const scrollViewRef = useRef<ScrollView>(null);
   // Calculate/Save move focus to the first field they flag (form-fields
-  // spec §5.1).
-  const fieldRefs: Record<GoalField, React.RefObject<RNTextInput | null>> = {
-    age: useRef<RNTextInput>(null),
-    weight: useRef<RNTextInput>(null),
-    height: useRef<RNTextInput>(null),
-    calories: useRef<RNTextInput>(null),
-    protein: useRef<RNTextInput>(null),
-    carbs: useRef<RNTextInput>(null),
-    fat: useRef<RNTextInput>(null),
+  // spec §5.1). Separate refs, not one object read in render: React Compiler
+  // treats an object holding refs as a ref and would skip this screen.
+  const ageRef = useRef<RNTextInput>(null);
+  const weightRef = useRef<RNTextInput>(null);
+  const heightRef = useRef<RNTextInput>(null);
+  const caloriesRef = useRef<RNTextInput>(null);
+  const proteinRef = useRef<RNTextInput>(null);
+  const carbsRef = useRef<RNTextInput>(null);
+  const fatRef = useRef<RNTextInput>(null);
+  /** Event handlers only — focuses the field's input. */
+  const focusField = (field: GoalField) => {
+    const refs = {
+      age: ageRef,
+      weight: weightRef,
+      height: heightRef,
+      calories: caloriesRef,
+      protein: proteinRef,
+      carbs: carbsRef,
+      fat: fatRef,
+    };
+    refs[field].current?.focus();
   };
 
   // Number messages show on leaving a field or on Calculate/Save, never per
@@ -423,7 +435,7 @@ export default function GoalSetupScreen() {
     const target = numberFields.find(
       (field) => refused.includes(field) || !fieldValues[field],
     );
-    if (target) fieldRefs[target].current?.focus();
+    if (target) focusField(target);
     if (!isFormComplete) {
       // checkFields already buzzed when a value was refused.
       if (refused.length === 0) {
@@ -454,7 +466,7 @@ export default function GoalSetupScreen() {
     // Empty fields are named too: the "Still needed" line is gone by now.
     const refused = checkFields(allFields, goalSubmitError);
     if (refused.length > 0) {
-      fieldRefs[refused[0]].current?.focus();
+      focusField(refused[0]);
       return;
     }
     saveMutation.mutate();
@@ -509,7 +521,7 @@ export default function GoalSetupScreen() {
 
             <View style={styles.inputGrid}>
               <NumberInput
-                inputRef={fieldRefs.age}
+                inputRef={ageRef}
                 label="Age"
                 value={age}
                 onChange={changeField("age", setAge)}
@@ -519,7 +531,7 @@ export default function GoalSetupScreen() {
                 placeholder="e.g. 25"
               />
               <NumberInput
-                inputRef={fieldRefs.weight}
+                inputRef={weightRef}
                 label="Weight"
                 value={weight}
                 onChange={changeField("weight", setWeight)}
@@ -529,7 +541,7 @@ export default function GoalSetupScreen() {
                 placeholder={unit === "imperial" ? "e.g. 154" : "e.g. 70"}
               />
               <NumberInput
-                inputRef={fieldRefs.height}
+                inputRef={heightRef}
                 label="Height"
                 value={height}
                 onChange={changeField("height", setHeight)}
@@ -690,7 +702,7 @@ export default function GoalSetupScreen() {
               <View style={styles.goalsGrid}>
                 <View style={styles.goalItem}>
                   <FocusTextInput
-                    ref={fieldRefs.calories}
+                    ref={caloriesRef}
                     style={[
                       styles.goalInput,
                       {
@@ -717,7 +729,7 @@ export default function GoalSetupScreen() {
                 >
                   <View>
                     <FocusTextInput
-                      ref={fieldRefs.protein}
+                      ref={proteinRef}
                       style={[
                         styles.goalInput,
                         {
@@ -750,7 +762,7 @@ export default function GoalSetupScreen() {
                 >
                   <View>
                     <FocusTextInput
-                      ref={fieldRefs.carbs}
+                      ref={carbsRef}
                       style={[
                         styles.goalInput,
                         {
@@ -783,7 +795,7 @@ export default function GoalSetupScreen() {
                 >
                   <View>
                     <FocusTextInput
-                      ref={fieldRefs.fat}
+                      ref={fatRef}
                       style={[
                         styles.goalInput,
                         {

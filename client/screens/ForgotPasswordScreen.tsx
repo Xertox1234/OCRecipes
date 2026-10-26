@@ -45,6 +45,9 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
           : "Please enter a valid email address.",
     route.params?.email ?? "",
   );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: emailRef } = email;
   // Server/flow errors only; field errors come from `email.error`.
   const [error, setError] = useState("");
   // Bumped on each validation reject (not server errors) to shake the error.
@@ -107,7 +110,7 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
             leftIcon="mail"
             label="Email"
             placeholder="you@example.com"
-            ref={email.ref}
+            ref={emailRef}
             value={email.value}
             onChangeText={(text) => {
               email.onChangeText(text);

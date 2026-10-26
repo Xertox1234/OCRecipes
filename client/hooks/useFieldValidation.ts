@@ -34,6 +34,11 @@ export type FieldValidation = {
  * - Leaving the field with text shows its error; leaving it empty does not —
  *   an empty required field waits for the main button (`markSubmitted`).
  * - After `markSubmitted`, every error shows.
+ *
+ * Destructure the ref (`const { ref: emailRef } = email`) and never write
+ * `email.ref` in render: React Compiler then treats the whole object as a
+ * ref, flags every `email.value` / `email.error` read as ref access during
+ * render, and skips the component (scripts/check-react-compiler-bailouts.js).
  */
 export function useFieldValidation(
   validate: (value: string) => string | null,

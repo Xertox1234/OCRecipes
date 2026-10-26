@@ -85,7 +85,9 @@ export default function RecipeAIGenerateScreen() {
   );
   const prompt = promptField.value;
   const setPrompt = promptField.onChangeText;
-  const inputRef = promptField.ref;
+  // Destructured, never read as `promptField.ref` in render: React Compiler
+  // treats an object read through `.ref` as a ref and skips the component.
+  const { ref: inputRef } = promptField;
 
   const handleChipPress = (chip: string) => {
     haptics.impact(ImpactFeedbackStyle.Light);

@@ -48,6 +48,9 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
           : "Please enter a valid email address.",
     route.params?.email ?? "",
   );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: emailRef } = emailField;
   const email = emailField.value;
   // Server/flow errors only; field errors come from `emailField.error`.
   const [error, setError] = useState("");
@@ -184,7 +187,7 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               label="Email"
               placeholder="you@example.com"
               accessibilityLabel="Email address"
-              ref={emailField.ref}
+              ref={emailRef}
               value={email}
               onChangeText={emailField.onChangeText}
               onBlur={emailField.onBlur}
@@ -218,7 +221,7 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               label="Email"
               placeholder="you@example.com"
               accessibilityLabel="Email address"
-              ref={emailField.ref}
+              ref={emailRef}
               value={email}
               onChangeText={emailField.onChangeText}
               onBlur={emailField.onBlur}

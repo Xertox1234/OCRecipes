@@ -98,6 +98,11 @@ export function ChangeEmailModal({
   const passwordField = useFieldValidation((value) =>
     value ? null : "Password is required",
   );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: newEmailRef } = newEmailField;
+  const { ref: confirmEmailRef } = confirmEmailField;
+  const { ref: passwordRef } = passwordField;
   const newEmail = newEmailField.value;
   const password = passwordField.value;
   const [showPassword, setShowPassword] = useState(false);
@@ -282,7 +287,7 @@ export function ChangeEmailModal({
                 leftIcon="mail"
                 label="New email"
                 placeholder="you@example.com"
-                ref={newEmailField.ref}
+                ref={newEmailRef}
                 value={newEmail}
                 onChangeText={(text) => {
                   newEmailField.onChangeText(text);
@@ -309,7 +314,7 @@ export function ChangeEmailModal({
                 leftIcon="mail"
                 label="Confirm new email"
                 placeholder="you@example.com"
-                ref={confirmEmailField.ref}
+                ref={confirmEmailRef}
                 value={confirmEmailField.value}
                 onChangeText={(text) => {
                   confirmEmailField.onChangeText(text);
@@ -340,7 +345,7 @@ export function ChangeEmailModal({
                 }
                 onRightIconPress={() => setShowPassword((s) => !s)}
                 label="Password"
-                ref={passwordField.ref}
+                ref={passwordRef}
                 value={password}
                 onChangeText={(text) => {
                   passwordField.onChangeText(text);

@@ -97,6 +97,12 @@ export default function LoginScreen() {
     if (mode === "login" || value === passwordField.value) return null;
     return value === "" ? "Re-enter your password." : PASSWORD_MISMATCH_MESSAGE;
   });
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: usernameRef } = usernameField;
+  const { ref: emailRef } = emailField;
+  const { ref: passwordRef } = passwordField;
+  const { ref: confirmRef } = confirmField;
   const username = usernameField.value;
   const password = passwordField.value;
   const confirmPassword = confirmField.value;
@@ -309,7 +315,7 @@ export default function LoginScreen() {
           <TextInput
             leftIcon="user"
             label={mode === "login" ? "Username or email" : "Username"}
-            ref={usernameField.ref}
+            ref={usernameRef}
             value={username}
             onChangeText={usernameField.onChangeText}
             onBlur={usernameField.onBlur}
@@ -336,7 +342,7 @@ export default function LoginScreen() {
               leftIcon="mail"
               label="Email"
               placeholder="you@example.com"
-              ref={emailField.ref}
+              ref={emailRef}
               value={email}
               onChangeText={emailField.onChangeText}
               onBlur={emailField.onBlur}
@@ -366,7 +372,7 @@ export default function LoginScreen() {
             }
             onRightIconPress={() => setShowPassword(!showPassword)}
             label="Password"
-            ref={passwordField.ref}
+            ref={passwordRef}
             value={password}
             onChangeText={passwordField.onChangeText}
             onBlur={passwordField.onBlur}
@@ -419,7 +425,7 @@ export default function LoginScreen() {
             <TextInput
               leftIcon="lock"
               label="Confirm password"
-              ref={confirmField.ref}
+              ref={confirmRef}
               value={confirmPassword}
               onChangeText={confirmField.onChangeText}
               onBlur={confirmField.onBlur}

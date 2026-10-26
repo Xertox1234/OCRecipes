@@ -80,6 +80,11 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const newField = useFieldValidation((value) =>
     value ? null : "Enter a new password.",
   );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: currentRef } = currentField;
+  const { ref: codeRef } = codeField;
+  const { ref: newRef } = newField;
   const current = currentField.value;
   const emailCode = codeField.value;
   const newPassword = newField.value;
@@ -205,7 +210,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             <TextInput
               accessibilityLabel="Current password"
               label="Current password"
-              ref={currentField.ref}
+              ref={currentRef}
               value={current}
               onChangeText={currentField.onChangeText}
               onBlur={currentField.onBlur}
@@ -235,7 +240,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               accessibilityLabel="Code from the email"
               label="Code from the email"
               placeholder="6-digit code"
-              ref={codeField.ref}
+              ref={codeRef}
               value={emailCode}
               onChangeText={(t) =>
                 codeField.onChangeText(normalizeCodeInput(t))
@@ -263,7 +268,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
         <TextInput
           accessibilityLabel="New password"
           label="New password"
-          ref={newField.ref}
+          ref={newRef}
           value={newPassword}
           onChangeText={newField.onChangeText}
           onBlur={newField.onBlur}

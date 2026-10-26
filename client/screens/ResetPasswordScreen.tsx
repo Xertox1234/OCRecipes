@@ -59,6 +59,11 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
   const confirm = useFieldValidation((value) =>
     resetConfirmError(value, password.value),
   );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: codeRef } = code;
+  const { ref: passwordRef } = password;
+  const { ref: confirmRef } = confirm;
   const [showPassword, setShowPassword] = useState(false);
   // Server/flow errors only; each field shows its own validation message.
   const [error, setError] = useState("");
@@ -156,7 +161,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             leftIcon="hash"
             label="6-digit code"
             placeholder="123456"
-            ref={code.ref}
+            ref={codeRef}
             value={code.value}
             onChangeText={(v) => code.onChangeText(normalizeResetCode(v))}
             onBlur={code.onBlur}
@@ -183,7 +188,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             }
             onRightIconPress={() => setShowPassword(!showPassword)}
             label="New password"
-            ref={password.ref}
+            ref={passwordRef}
             value={password.value}
             onChangeText={password.onChangeText}
             onBlur={password.onBlur}
@@ -202,7 +207,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
           <TextInput
             leftIcon="lock"
             label="Confirm new password"
-            ref={confirm.ref}
+            ref={confirmRef}
             value={confirm.value}
             onChangeText={confirm.onChangeText}
             onBlur={confirm.onBlur}
