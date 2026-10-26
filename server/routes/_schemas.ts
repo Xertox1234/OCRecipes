@@ -9,6 +9,11 @@ import {
   PASSWORD_MIN,
   passwordLength,
 } from "@shared/constants/password-policy";
+import {
+  USERNAME_MAX,
+  USERNAME_MIN,
+  USERNAME_PATTERN,
+} from "@shared/constants/username";
 
 // Raw UTF-16 cap on every password field, new or current. 128 code points can
 // be up to 256 UTF-16 units (emoji), so the cap sits well above that: any
@@ -67,10 +72,10 @@ export const newPasswordSchema = z
 export const registerSchema = z.object({
   username: z
     .string()
-    .min(3, "Username must be at least 3 characters")
-    .max(30, "Username must be at most 30 characters")
+    .min(USERNAME_MIN, `Username must be at least ${USERNAME_MIN} characters`)
+    .max(USERNAME_MAX, `Username must be at most ${USERNAME_MAX} characters`)
     .regex(
-      /^[a-zA-Z0-9_]+$/,
+      USERNAME_PATTERN,
       "Username can only contain letters, numbers, and underscores",
     ),
   password: newPasswordSchema,

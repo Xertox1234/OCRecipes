@@ -244,7 +244,8 @@ describe("LoginScreen — email field", () => {
     mockRegister.mockResolvedValue({ status: "verification_pending" });
     renderComponent(<LoginScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
-    expect(screen.getByText("At least 8 characters.")).toBeTruthy();
+    fireEvent.focus(screen.getByLabelText("Password"));
+    expect(screen.getByText("At least 8 characters")).toBeTruthy();
     expect(screen.queryByTestId("switch-two-step")).toBeNull();
     expect(screen.queryByText(/two-step/i)).toBeNull();
 
@@ -676,5 +677,80 @@ describe("LoginScreen — validation timing", () => {
       "Incorrect username or password. Please try again.",
     );
     expect(screen.queryByText("Enter your password.")).toBeNull();
+  });
+});
+
+// A checklist line on show: mounted AND not hidden from screen readers (a
+// closed checklist keeps its lines mounted under a zero height).
+function shownRule(label: string): HTMLElement | null {
+  const el = screen.queryByLabelText(label);
+  return el && !el.closest('[aria-hidden="true"]') ? el : null;
+}
+
+// Form-fields spec §5.2: sign-up fields with rules show a checklist that
+// ticks as you type; the field's own error (§5.1) carries the unmet news.
+describe("LoginScreen — rule checklist", () => {
+  const signUp = () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+  };
+
+  it("shows the password rule on focus and ticks it at the minimum", () => {
+    signUp();
+    const input = screen.getByLabelText("Password");
+    expect(shownRule("At least 8 characters")).toBeNull();
+    fireEvent.focus(input);
+    expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.getByLabelText("At least 8 characters, done")).toBeTruthy();
+  });
+
+  it("shows the username rules on focus in sign-up only", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.focus(screen.getByLabelText("Username or email"));
+    expect(shownRule("3–30 characters")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    const input = screen.getByLabelText("Username");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "chef_1" } });
+    expect(screen.getByLabelText("3–30 characters, done")).toBeTruthy();
+    expect(screen.getByLabelText("Letters, numbers or _, done")).toBeTruthy();
+  });
+
+  it("ticks Matches on the confirm field when it equals the password", () => {
+    signUp();
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "abcdefgh" },
+    });
+    const confirm = screen.getByLabelText("Confirm password");
+    fireEvent.focus(confirm);
+    fireEvent.change(confirm, { target: { value: "abcdefg" } });
+    expect(screen.getByLabelText("Matches")).toBeTruthy();
+    fireEvent.change(confirm, { target: { value: "abcdefgh" } });
+    expect(screen.getByLabelText("Matches, done")).toBeTruthy();
+  });
+
+  it("drops the unmet line while the field's own error says it", () => {
+    signUp();
+    const input = screen.getByLabelText("Password");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.blur(input);
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(shownRule("At least 8 characters")).toBeNull();
+    fireEvent.focus(input);
+    expect(shownRule("At least 8 characters")).toBeNull();
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
+    expect(screen.getByLabelText("At least 8 characters, done")).toBeTruthy();
+  });
+
+  it("hides the checklist after leaving with every rule met", () => {
+    signUp();
+    const input = screen.getByLabelText("Password");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    fireEvent.blur(input);
+    expect(shownRule("At least 8 characters")).toBeNull();
   });
 });

@@ -18,11 +18,11 @@
  *    we must never render `error.message` (it is the raw server body) — branch
  *    on `ApiError.code` instead.
  *
- * KEEP IN SYNC (manual): the username/email rules below mirror
- * `registerSchema`. If the server schema changes, update both. They are
+ * KEEP IN SYNC (manual): the email rule below mirrors `registerSchema`. It is
  * intentionally NOT shared from the server module, which pulls in server-only
- * imports. The PASSWORD rule is not mirrored: it is imported from
- * `@shared/constants/password-policy`, the same module the server uses.
+ * imports. The USERNAME and PASSWORD rules are not mirrored: they are imported
+ * from `@shared/constants/username` and `@shared/constants/password-policy`,
+ * the same modules the server uses.
  */
 import { ApiError } from "@/lib/api-error";
 import {
@@ -31,16 +31,16 @@ import {
   newPasswordProblem,
   passwordMessage,
 } from "@shared/constants/password-policy";
+import {
+  USERNAME_MAX,
+  USERNAME_MIN,
+  USERNAME_PATTERN,
+} from "@shared/constants/username";
 
 export type AuthMode = "login" | "register";
 
-// Mirrors registerSchema.username: 3–30 chars, letters/numbers/underscore only.
-const USERNAME_PATTERN = /^[a-zA-Z0-9_]+$/;
 // Pragmatic client mirror of registerSchema.email (server re-validates, zero trust).
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const USERNAME_MIN = 3;
-const USERNAME_MAX = 30;
 
 /** Exported so the reset screen can tell a mismatch (confirm field) apart. */
 export const PASSWORD_MISMATCH_MESSAGE = "Passwords do not match";

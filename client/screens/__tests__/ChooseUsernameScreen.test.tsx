@@ -174,3 +174,28 @@ describe("ChooseUsernameScreen — validation timing", () => {
     expect(cont.getAttribute("aria-disabled")).toBe("true");
   });
 });
+
+// A checklist line on show: mounted AND not hidden from screen readers (a
+// closed checklist keeps its lines mounted under a zero height).
+function shownRule(label: string): HTMLElement | null {
+  const el = screen.queryByLabelText(label);
+  return el && !el.closest('[aria-hidden="true"]') ? el : null;
+}
+
+// Form-fields spec §5.2: the username rules tick as you type.
+describe("ChooseUsernameScreen — rule checklist", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("shows the rules on focus and ticks each as it is met", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Username");
+    expect(shownRule("3–30 characters")).toBeNull();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "ab" } });
+    expect(screen.getByLabelText("3–30 characters")).toBeTruthy();
+    expect(screen.getByLabelText("Letters, numbers or _, done")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "ab-c" } });
+    expect(screen.getByLabelText("3–30 characters, done")).toBeTruthy();
+    expect(screen.getByLabelText("Letters, numbers or _")).toBeTruthy();
+  });
+});
