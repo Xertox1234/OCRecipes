@@ -129,7 +129,7 @@ export function RecipeSearchDrawer({
           // The label rests where the placeholder would; it shows once floated.
           placeholder={resolvePlaceholder(
             SEARCH_LABEL,
-            "Search recipes…",
+            "e.g. pasta or high protein",
             shouldFloatLabel(searchFocus.focused, text),
           )}
           placeholderTextColor={theme.textSecondary}

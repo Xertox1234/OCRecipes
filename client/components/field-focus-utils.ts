@@ -3,6 +3,8 @@
 // (see the client/components/*-utils.ts pattern).
 import type { TextStyle, ViewStyle } from "react-native";
 
+import { LABELLED_INPUT_GEOMETRY } from "./text-input-utils";
+
 /** Width of the focus ring drawn over the visible field's edge. */
 export const FOCUS_RING_WIDTH = 2;
 
@@ -66,3 +68,25 @@ export function splitFieldStyle(style: object): {
  * The basis stays auto, so an auto-height box still sizes to the text.
  */
 export const FIELD_INPUT_FILL: TextStyle = { flexGrow: 1, flexShrink: 1 };
+
+/**
+ * The input's text style once a floating label sits in its field: the value
+ * drops below the floated label's row (these beat the caller's own vertical
+ * padding and line height), and the label lines up with the text's left edge —
+ * the input carries the padding after `splitFieldStyle`, not the field.
+ */
+export function labelFieldText(text: TextStyle): {
+  text: TextStyle;
+  labelLeft: number;
+} {
+  const left = text.paddingLeft ?? text.paddingHorizontal ?? text.padding;
+  return {
+    text: {
+      ...text,
+      paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
+      paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
+      lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
+    },
+    labelLeft: typeof left === "number" ? left : 0,
+  };
+}

@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, StyleSheet, ScrollView } from "react-native";
+import { StyleSheet, ScrollView } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -32,9 +32,8 @@ export default function TitleStep({
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
-      {/* Recipe Name */}
-      <Text style={[styles.label, { color: theme.link }]}>RECIPE NAME</Text>
       <FocusTextInput
+        label="Recipe title"
         style={[
           styles.input,
           {
@@ -50,17 +49,11 @@ export default function TitleStep({
         autoFocus
         returnKeyType="next"
         maxLength={TITLE_MAX_LENGTH}
-        accessibilityLabel="Recipe name"
         accessibilityHint="Enter a name for your recipe"
       />
 
-      {/* Description */}
-      <Text
-        style={[styles.label, { color: theme.link, marginTop: Spacing.lg }]}
-      >
-        DESCRIPTION (optional)
-      </Text>
       <FocusTextInput
+        label="Description"
         style={[
           styles.textArea,
           {
@@ -71,12 +64,11 @@ export default function TitleStep({
         ]}
         value={description}
         onChangeText={setDescription}
-        placeholder="Briefly describe your recipe…"
+        placeholder="Optional · e.g. a weeknight family favourite"
         placeholderTextColor={theme.textSecondary}
         multiline
         textAlignVertical="top"
         maxLength={DESCRIPTION_MAX_LENGTH}
-        accessibilityLabel="Recipe description"
         accessibilityHint="Optional description of your recipe"
       />
     </ScrollView>
@@ -86,12 +78,6 @@ export default function TitleStep({
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingBottom: Spacing.xl },
-  label: {
-    fontFamily: FontFamily.semiBold,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    marginBottom: Spacing.xs,
-  },
   input: {
     height: 48,
     borderWidth: 1,
@@ -101,11 +87,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   textArea: {
+    marginTop: Spacing.lg,
     borderWidth: 1,
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
     fontFamily: FontFamily.regular,
     fontSize: 15,
     minHeight: 120,

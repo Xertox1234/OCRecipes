@@ -386,13 +386,8 @@ export default function NotebookEntryScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText
-            type="caption"
-            style={[styles.label, { color: theme.textSecondary }]}
-          >
-            CONTENT
-          </ThemedText>
           <FocusTextInput
+            label="Note"
             style={[
               styles.contentInput,
               { backgroundColor: theme.backgroundSecondary, color: theme.text },
@@ -401,9 +396,8 @@ export default function NotebookEntryScreen() {
             onChangeText={setContent}
             multiline
             maxLength={500}
-            placeholder="Enter content…"
+            placeholder="e.g. Oat milk keeps my morning smoothie lighter"
             placeholderTextColor={theme.textSecondary}
-            accessibilityLabel="Entry content"
           />
           <ThemedText
             type="caption"

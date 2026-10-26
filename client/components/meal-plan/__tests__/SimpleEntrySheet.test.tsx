@@ -477,3 +477,34 @@ describe("SimpleEntrySheet", () => {
     });
   });
 });
+
+describe("SimpleEntrySheet — dish name label", () => {
+  const props = {
+    mealType: "lunch" as const,
+    plannedDate: "2025-06-01",
+    onDismiss: vi.fn(),
+  };
+
+  beforeEach(() => {
+    mockIsListening = false;
+  });
+
+  it('floats "Dish name" on the field and holds the example back until focus', () => {
+    renderComponent(<SimpleEntrySheetContent {...props} />);
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Dish name");
+    const input = screen.getByLabelText("Dish name");
+    expect(input.getAttribute("placeholder")).toBeNull();
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe("e.g. chicken stir fry");
+  });
+
+  it("floats the label while listening so the Listening placeholder shows", () => {
+    mockIsListening = true;
+    renderComponent(<SimpleEntrySheetContent {...props} />);
+    expect(screen.getByLabelText("Dish name").getAttribute("placeholder")).toBe(
+      "Listening...",
+    );
+  });
+});

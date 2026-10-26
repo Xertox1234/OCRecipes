@@ -303,3 +303,16 @@ describe("AllConversationsScreen — refetch on refocus (P3-2026-09-26)", () => 
     expect(screen.queryByText("Pre-settle title")).toBeNull();
   });
 });
+
+describe("AllConversationsScreen — search field label", () => {
+  it('floats "Search conversations" on the search bar and shows an example once focused', () => {
+    renderComponent(<AllConversationsScreen />);
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Search conversations");
+    const input = screen.getByLabelText("Search conversations");
+    expect(input.getAttribute("placeholder")).toBeNull();
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe("e.g. meal prep");
+  });
+});

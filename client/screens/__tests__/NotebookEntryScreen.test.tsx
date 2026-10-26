@@ -298,3 +298,25 @@ describe("NotebookEntryScreen — one selection tick per type pick", () => {
     expect(Haptics.impactAsync).not.toHaveBeenCalled();
   });
 });
+
+describe("NotebookEntryScreen — note field label", () => {
+  it('floats "Note" on the content field and shows an example once focused', () => {
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    renderComponent(<NotebookEntryScreen />);
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Note");
+    const input = screen.getByLabelText("Note");
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toMatch(/^e\.g\. /);
+  });
+
+  it("drops the CONTENT caps caption the floating label replaces", () => {
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    renderComponent(<NotebookEntryScreen />);
+    expect(screen.queryByText("CONTENT")).toBeNull();
+    expect(screen.getByText("TYPE")).toBeDefined();
+  });
+});

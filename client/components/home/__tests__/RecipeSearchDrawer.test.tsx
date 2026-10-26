@@ -93,6 +93,8 @@ describe("RecipeSearchDrawer search field", () => {
     const input = screen.getByLabelText("Search recipes");
     expect(input.getAttribute("placeholder")).toBeNull();
     fireEvent.focus(input);
-    expect(input.getAttribute("placeholder")).toBe("Search recipes…");
+    expect(input.getAttribute("placeholder")).toBe(
+      "e.g. pasta or high protein",
+    );
   });
 });

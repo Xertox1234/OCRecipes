@@ -196,3 +196,69 @@ describe("FocusBottomSheetTextInput", () => {
     expect(onBlur).toHaveBeenCalledOnce();
   });
 });
+
+describe.each([
+  ["FocusTextInput", FocusTextInput],
+  ["FocusBottomSheetTextInput", FocusBottomSheetTextInput],
+] as const)("%s with a label", (_name, Input) => {
+  function renderLabelled(props: Record<string, unknown> = {}) {
+    return renderComponent(
+      <Input
+        label="Cookbook name"
+        placeholder="e.g. Weeknight dinners"
+        value=""
+        style={callerStyle}
+        {...props}
+      />,
+    );
+  }
+
+  it("floats the label on the field and names the input with it", () => {
+    renderLabelled();
+    expect(screen.getByTestId("focus-field-label").textContent).toBe(
+      "Cookbook name",
+    );
+    expect(screen.getByLabelText("Cookbook name").tagName).toMatch(
+      /INPUT|TEXTAREA/,
+    );
+  });
+
+  it("keeps an explicit accessibilityLabel over the label", () => {
+    renderLabelled({ accessibilityLabel: "Cookbook name for the new book" });
+    expect(
+      screen.getByLabelText("Cookbook name for the new book"),
+    ).toBeDefined();
+  });
+
+  it("hides the placeholder while the label rests and shows it once floated", () => {
+    renderLabelled();
+    const input = screen.getByLabelText("Cookbook name");
+    expect(input.getAttribute("placeholder")).toBeNull();
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe("e.g. Weeknight dinners");
+  });
+
+  it("shows the placeholder when the field has a value", () => {
+    renderLabelled({ value: "Soups" });
+    expect(
+      screen.getByLabelText("Cookbook name").getAttribute("placeholder"),
+    ).toBe("e.g. Weeknight dinners");
+  });
+
+  it("pads the input under the floated label and makes the field two rows tall", () => {
+    renderLabelled({
+      style: { ...callerStyle, paddingTop: 4, lineHeight: 30 },
+    });
+    const input = screen.getByLabelText("Cookbook name");
+    expect(input.style.paddingTop).toBe("26px");
+    expect(input.style.paddingBottom).toBe("10px");
+    expect(input.style.lineHeight).toBe("18"); // jsdom keeps it unitless
+    expect(input.style.paddingLeft).toBe("12px");
+    // The field reserves the two-row height.
+    expect(
+      viewProps
+        .map((p) => flattenDeep(p.style))
+        .some((s) => s.minHeight === 56),
+    ).toBe(true);
+  });
+});

@@ -7,6 +7,7 @@ import {
 } from "../../../test/utils/wcag-contrast";
 import {
   FOCUS_RING_WIDTH,
+  labelFieldText,
   resolveFieldColors,
   resolveFieldRadius,
   splitFieldStyle,
@@ -146,4 +147,36 @@ describe("focus tokens", () => {
       );
     },
   );
+});
+
+describe("labelFieldText", () => {
+  it("drops the value under the floated label, over the caller's own padding", () => {
+    const { text } = labelFieldText({
+      fontSize: 15,
+      padding: 12,
+      paddingVertical: 8,
+      lineHeight: 20,
+    });
+    expect(text).toMatchObject({
+      fontSize: 15,
+      padding: 12,
+      paddingTop: 26,
+      paddingBottom: 10,
+      lineHeight: 18,
+    });
+  });
+
+  it("lines the label up with the text's left padding", () => {
+    expect(labelFieldText({ paddingLeft: 10 }).labelLeft).toBe(10);
+    expect(labelFieldText({ paddingHorizontal: 12 }).labelLeft).toBe(12);
+    expect(labelFieldText({ padding: 14 }).labelLeft).toBe(14);
+    expect(
+      labelFieldText({ paddingLeft: 4, paddingHorizontal: 12 }).labelLeft,
+    ).toBe(4);
+  });
+
+  it("puts the label at the field's edge when the text has no numeric left padding", () => {
+    expect(labelFieldText({}).labelLeft).toBe(0);
+    expect(labelFieldText({ paddingLeft: "5%" }).labelLeft).toBe(0);
+  });
 });

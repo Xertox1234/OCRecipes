@@ -18,6 +18,11 @@ import {
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
+import {
+  LABELLED_INPUT_GEOMETRY,
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -103,6 +108,11 @@ import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnounce
 const RECIPE_HEADER_EXPANDED = 60;
 const RECIPE_HEADER_COLLAPSED = 0;
 const RECIPE_COLLAPSE_THRESHOLD = 100;
+
+const SEARCH_LABEL = "Search recipes";
+const SEARCH_ICON_SIZE = 16;
+// The search bar's text starts past its left padding, the icon and the gap.
+const SEARCH_LABEL_LEFT = Spacing.md + SEARCH_ICON_SIZE + Spacing.sm;
 
 type RecipeBrowserRouteProp = RouteProp<
   MealPlanStackParamList,
@@ -801,6 +811,9 @@ export default function RecipeBrowserScreen() {
         <FocusField
           focus={searchFocus}
           testID="recipe-search-bar"
+          label={SEARCH_LABEL}
+          hasValue={searchText.length > 0}
+          labelLeft={SEARCH_LABEL_LEFT}
           style={[
             styles.searchBar,
             {
@@ -809,13 +822,22 @@ export default function RecipeBrowserScreen() {
             },
           ]}
         >
-          <Feather name="search" size={16} color={theme.textSecondary} />
+          <Feather
+            name="search"
+            size={SEARCH_ICON_SIZE}
+            color={theme.textSecondary}
+          />
           <FocusTextInput
             focusRing={false}
             onFocus={searchFocus.onFocus}
             onBlur={searchFocus.onBlur}
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search recipes..."
+            // The label rests where the placeholder would; it shows once floated.
+            placeholder={resolvePlaceholder(
+              SEARCH_LABEL,
+              "e.g. pasta or high protein",
+              shouldFloatLabel(searchFocus.focused, searchText),
+            )}
             placeholderTextColor={theme.textSecondary}
             value={searchText}
             onChangeText={handleSearchChange}
@@ -823,7 +845,7 @@ export default function RecipeBrowserScreen() {
             autoCorrect={false}
             returnKeyType="search"
             onSubmitEditing={handleSubmitSearch}
-            accessibilityLabel="Search recipes"
+            accessibilityLabel={SEARCH_LABEL}
           />
           {searchText.length > 0 && (
             <Pressable
@@ -1260,14 +1282,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
   },
+  // Labelled: FocusField makes it 56 tall, which also leaves room for the
+  // Clear search button's 44pt box (below), so the bar keeps its height when
+  // that button appears on the first keystroke. No vertical padding — the
+  // input's own padding puts the value under the floated label.
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    // Room for the Clear search button's 44pt box (below) without the bar
-    // changing height when that button appears on the first keystroke.
-    minHeight: 44,
     borderRadius: BorderRadius.card,
     gap: Spacing.sm,
     marginBottom: Spacing.md,
@@ -1289,6 +1311,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FontFamily.regular,
     padding: 0,
+    paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
+    paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
+    lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
   },
   filterBar: {
     flexDirection: "row",

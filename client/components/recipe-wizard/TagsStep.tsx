@@ -48,11 +48,9 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
     >
       {/* Cuisine section */}
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.link }]}>
-          CUISINE
-        </Text>
         <View style={styles.cuisineRow}>
           <FocusTextInput
+            label="Cuisine"
             style={[
               styles.cuisineInput,
               {

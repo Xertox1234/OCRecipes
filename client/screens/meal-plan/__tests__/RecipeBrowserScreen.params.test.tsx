@@ -469,3 +469,19 @@ describe("RecipeBrowserScreen — Android TalkBack background trap", () => {
     ).toBeNull();
   });
 });
+
+describe("RecipeBrowserScreen — search field label", () => {
+  it('floats "Search recipes" on the search bar and shows an example once focused', () => {
+    mockRouteParams.value = {};
+    renderComponent(<RecipeBrowserScreen />);
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Search recipes");
+    const input = screen.getByLabelText("Search recipes");
+    expect(input.getAttribute("placeholder")).toBeNull();
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe(
+      "e.g. pasta or high protein",
+    );
+  });
+});
