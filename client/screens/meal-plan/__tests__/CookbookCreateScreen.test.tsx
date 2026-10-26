@@ -7,10 +7,12 @@
 // cover failure after the cookbook row is committed must not read as "creation
 // failed".
 import React from "react";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AccessibilityInfo } from "react-native";
+import * as Haptics from "expo-haptics";
 
 import { renderComponent } from "../../../../test/utils/render-component";
+import { reactProps } from "../../../../test/utils/react-props";
 import CookbookCreateScreen from "../CookbookCreateScreen";
 
 const {
@@ -449,5 +451,47 @@ describe("CookbookCreateScreen — edit-mode load guard", () => {
         "Couldn't load this cookbook to edit. Saving is disabled until it loads.",
       ),
     ).toBeTruthy();
+  });
+});
+
+// Spec §5.6: Name's Next moves on to the description.
+describe("CookbookCreateScreen — Return keys", () => {
+  it("Next on Name focuses the description", () => {
+    renderComponent(<CookbookCreateScreen />);
+    const name = screen.getByLabelText("Name");
+    expect(reactProps(name).returnKeyType).toBe("next");
+    act(() => {
+      (reactProps(name).onSubmitEditing as () => void)();
+    });
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Description (optional)"),
+    );
+  });
+});
+
+// Spec §5.1: the main button is pressable while the name is empty; pressing
+// it names the missing field instead of doing nothing.
+describe("CookbookCreateScreen — empty name", () => {
+  it("Create with no name flags and focuses Name, buzzes, and never creates", () => {
+    renderComponent(<CookbookCreateScreen />);
+    const button = screen.getByLabelText("Create cookbook");
+    expect(button.getAttribute("aria-disabled")).not.toBe("true");
+    fireEvent.click(button);
+
+    const name = screen.getByLabelText("Name");
+    expect(screen.getByText("Enter a name for your cookbook.")).toBeTruthy();
+    expect(name.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(name);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("typing a name clears the message", () => {
+    renderComponent(<CookbookCreateScreen />);
+    fireEvent.click(screen.getByLabelText("Create cookbook"));
+    typeName("Weeknight Dinners");
+    expect(screen.queryByText("Enter a name for your cookbook.")).toBeNull();
   });
 });

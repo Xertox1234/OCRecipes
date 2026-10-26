@@ -265,6 +265,31 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     expect(screen.getByText(/^Still needed: /)).toBeTruthy();
   });
 
+  // Spec §5.1: while a field shows an error it is re-checked every keystroke —
+  // the error clears only once the value is valid.
+  it("a shown age error stays (re-checked) while another invalid value is typed, and clears once valid", () => {
+    renderComponent(<GoalSetupScreen />);
+    const age = screen.getByLabelText("Age");
+    fireEvent.change(age, { target: { value: "5" } });
+    fireEvent.blur(age);
+    expect(screen.getByText("Age must be 13–120")).toBeTruthy();
+    mockNotification.mockClear();
+
+    fireEvent.change(age, { target: { value: "500" } });
+    expect(screen.getByText("Age must be 13–120")).toBeTruthy();
+    // Keystrokes never buzz.
+    expect(mockNotification).not.toHaveBeenCalled();
+
+    fireEvent.change(age, { target: { value: "30" } });
+    expect(screen.queryByText("Age must be 13–120")).toBeNull();
+  });
+
+  it("an age with no error shown stays quiet while an invalid value is typed", () => {
+    renderComponent(<GoalSetupScreen />);
+    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "5" } });
+    expect(screen.queryByText("Age must be 13–120")).toBeNull();
+  });
+
   // Spec §5.8 guard: the field's InlineError is the one announcement — the
   // input's hint never repeats the message.
   it("a refused field's message appears once in the a11y tree", () => {
@@ -349,7 +374,7 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     mockNotification.mockClear();
     fireEvent.click(screen.getByLabelText("Save my goals"));
 
-    expect(screen.getByText("Calories must be 800–6000")).toBeTruthy();
+    expect(screen.getByText("Calories must be 800–10000")).toBeTruthy();
     expect(mockApiRequest).not.toHaveBeenCalledWith(
       "PUT",
       "/api/goals",

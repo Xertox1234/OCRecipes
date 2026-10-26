@@ -69,16 +69,19 @@ function fieldRange(field: GoalField, unit: MeasurementUnit): FieldRange {
             suffix: heightUnitLabel(unit),
             integer: false,
           };
+    // Ceilings match the server's updateGoalsSchema (server/routes/goals.ts):
+    // calories 10000 (its own calculator can propose more than 6000, and the
+    // client must never refuse a value the app itself filled in), protein and
+    // fat 500 g, carbs 1000 g. The calorie floor stays at 800, above the
+    // server's 500.
     case "calories":
       return {
         label: "Calories",
         min: 800,
-        max: 6000,
+        max: 10000,
         suffix: "",
         integer: true,
       };
-    // Macro ceilings match the server's updateGoalsSchema
-    // (server/routes/goals.ts): protein and fat 500 g, carbs 1000 g.
     case "protein":
       return {
         label: "Protein",

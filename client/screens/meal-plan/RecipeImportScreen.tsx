@@ -9,6 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { InlineError } from "@/components/InlineError";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -19,6 +20,8 @@ import { NotificationFeedbackType } from "expo-haptics";
 import { useTheme } from "@/hooks/useTheme";
 import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
 import {
   Spacing,
   BorderRadius,
@@ -48,7 +51,15 @@ export default function RecipeImportScreen() {
   useFromHomeBackRedirect(navigation, fromHome);
   const parseMutation = useParseRecipeFromUrl();
 
-  const [url, setUrl] = useState("");
+  // Import stays pressable with an empty link; pressing it names the field
+  // (form-fields spec §5.1).
+  const urlField = useFieldValidation((value) =>
+    value.trim() === "" ? "Paste a recipe link." : null,
+  );
+  // Destructured, never read as `urlField.ref` in render: React Compiler
+  // treats an object read through `.ref` as a ref and skips the component.
+  const { ref: urlRef } = urlField;
+  const url = urlField.value;
   const [state, setState] = useState<ImportState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -65,7 +76,10 @@ export default function RecipeImportScreen() {
 
   const handleImport = useCallback(async () => {
     const trimmed = url.trim();
-    if (!trimmed) return;
+    if (!focusFirstInvalid([urlField])) {
+      haptics.notification(NotificationFeedbackType.Error);
+      return;
+    }
 
     haptics.selection();
     setState("loading");
@@ -84,7 +98,15 @@ export default function RecipeImportScreen() {
       haptics.notification(NotificationFeedbackType.Error);
       setErrorMessage(urlImportErrorCopy(error));
     }
-  }, [url, haptics, parseMutation, returnToMealPlan, fromHome, navigation]);
+  }, [
+    url,
+    urlField,
+    haptics,
+    parseMutation,
+    returnToMealPlan,
+    fromHome,
+    navigation,
+  ]);
 
   const handleTryAgain = useCallback(() => {
     setState("idle");
@@ -135,10 +157,12 @@ export default function RecipeImportScreen() {
               nutrition, and instructions automatically.
             </ThemedText>
             <FocusTextInput
+              ref={urlRef}
               label="Recipe link"
               style={inputStyle}
               value={url}
-              onChangeText={setUrl}
+              onChangeText={urlField.onChangeText}
+              onBlur={urlField.onBlur}
               placeholder="https://example.com/recipe"
               placeholderTextColor={theme.textSecondary}
               autoCapitalize="none"
@@ -147,16 +171,17 @@ export default function RecipeImportScreen() {
               returnKeyType="go"
               onSubmitEditing={handleImport}
             />
+            <InlineError
+              message={urlField.error}
+              shakeKey={urlField.shakeKey}
+            />
+            {/* Never disabled: the form swaps for the loading view while
+                importing, and an empty link says what's missing. */}
             <Pressable
               onPress={handleImport}
-              disabled={!url.trim()}
               style={[
                 styles.actionButton,
-                {
-                  backgroundColor: url.trim()
-                    ? theme.accentSolid
-                    : withOpacity(theme.link, 0.3),
-                },
+                { backgroundColor: theme.accentSolid },
               ]}
               accessibilityRole="button"
               accessibilityLabel="Import recipe"

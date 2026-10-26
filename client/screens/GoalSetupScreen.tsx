@@ -284,8 +284,10 @@ export default function GoalSetupScreen() {
     refs[field].current?.focus();
   };
 
-  // A number message shows on leaving a field or on Calculate/Save, never per
-  // keystroke, and hides while the field is retyped. An empty field gets no
+  // A number message first shows on leaving a field or on Calculate/Save,
+  // never while first typing. Once shown, the field is re-checked on every
+  // keystroke: the message updates while the value is still invalid and
+  // clears the moment it is valid (spec §5.1). An empty field gets no
   // message on leaving it or on Calculate — the "Still needed" line names it
   // and Calculate focuses it — but Save names it ("Enter calories"), since
   // that line only sits under Calculate.
@@ -326,15 +328,21 @@ export default function GoalSetupScreen() {
     return refused;
   };
 
-  /** Hide a field's message while it is retyped; it is checked again on blur. */
+  /**
+   * While a field shows a message, re-check it on every keystroke: keep (and
+   * update) the message while the value is invalid, clear it once valid. A
+   * keystroke never buzzes — only blur, Calculate and Save do.
+   */
   const changeField =
     (field: GoalField, setValue: (value: string) => void) =>
     (value: string) => {
       setValue(value);
       if (fieldErrors[field]) {
+        const message = goalFieldError(field, value, unit);
         setFieldErrors((prev) => {
           const next = { ...prev };
-          delete next[field];
+          if (message) next[field] = message;
+          else delete next[field];
           return next;
         });
       }

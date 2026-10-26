@@ -8,8 +8,13 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import * as Haptics from "expo-haptics";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FieldCounter } from "@/components/FieldCounter";
+import { InlineError } from "@/components/InlineError";
+import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -91,7 +96,18 @@ export default function NotebookEntryScreen() {
   );
 
   const [type, setType] = useState(entry?.type ?? "insight");
-  const [content, setContent] = useState(entry?.content ?? "");
+  // Save stays pressable with an empty note; pressing it names the field
+  // (form-fields spec §5.1).
+  const contentField = useFieldValidation(
+    (value) => (value.trim() === "" ? "Write something to save." : null),
+    entry?.content ?? "",
+  );
+  // Destructured, never read as `contentField.ref` in render: React Compiler
+  // treats an object read through `.ref` as a ref and skips the component.
+  const { ref: contentRef } = contentField;
+  const content = contentField.value;
+  const setContent = contentField.setValue;
+  const haptics = useHaptics();
   const [contentFocused, setContentFocused] = useState(false);
   const [followUpDate, setFollowUpDate] = useState<string | null>(
     entry?.followUpDate
@@ -131,10 +147,15 @@ export default function NotebookEntryScreen() {
           ? new Date(entry.followUpDate).toISOString().slice(0, 10)
           : null);
 
-  const canSave = isDirty && !isSaving && content.trim().length > 0;
+  // Disabled only while saving, or when an edit changed nothing. An empty
+  // note is a press that says what's missing.
+  const canSave = !isSaving && (isDirty || content.trim().length === 0);
 
   const handleSave = useCallback(async () => {
-    if (!content.trim()) return;
+    if (!focusFirstInvalid([contentField])) {
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
     let savedEntry: NotebookEntry | undefined;
     try {
       if (isCreate) {
@@ -170,6 +191,8 @@ export default function NotebookEntryScreen() {
     }
     goBack();
   }, [
+    contentField,
+    haptics,
     isCreate,
     entryId,
     type,
@@ -396,12 +419,16 @@ export default function NotebookEntryScreen() {
               styles.contentInput,
               { backgroundColor: theme.backgroundSecondary, color: theme.text },
             ]}
+            ref={contentRef}
             value={content}
-            onChangeText={setContent}
+            onChangeText={contentField.onChangeText}
             multiline
             maxLength={NOTE_MAX_LENGTH}
             onFocus={() => setContentFocused(true)}
-            onBlur={() => setContentFocused(false)}
+            onBlur={() => {
+              setContentFocused(false);
+              contentField.onBlur();
+            }}
             placeholder="e.g. Oat milk keeps my morning smoothie lighter"
             placeholderTextColor={theme.textSecondary}
           />
@@ -410,6 +437,10 @@ export default function NotebookEntryScreen() {
             max={NOTE_MAX_LENGTH}
             visible={contentFocused}
             style={styles.charCount}
+          />
+          <InlineError
+            message={contentField.error}
+            shakeKey={contentField.shakeKey}
           />
         </View>
 

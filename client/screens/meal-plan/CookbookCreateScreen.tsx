@@ -3,9 +3,11 @@ import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useRef,
 } from "react";
 import {
   AccessibilityInfo,
+  type TextInput as RNTextInput,
   StyleSheet,
   View,
   ScrollView,
@@ -38,6 +40,8 @@ import {
 } from "@/components/cookbook/cookbook-cover-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { ApiError } from "@/lib/api-error";
@@ -93,7 +97,17 @@ export default function CookbookCreateScreen() {
   // overwrite the cookbook with blank values, so block submit until it loads.
   const editLoadBlocked = isEditMode && (loadError || !existingCookbook);
 
-  const [name, setName] = useState("");
+  // Create stays pressable with an empty name; pressing it names the field
+  // (form-fields spec §5.1).
+  const nameField = useFieldValidation((value) =>
+    value.trim() === "" ? "Enter a name for your cookbook." : null,
+  );
+  // Destructured, never read as `nameField.ref` in render: React Compiler
+  // treats an object read through `.ref` as a ref and skips the component.
+  const { ref: nameRef } = nameField;
+  const name = nameField.value;
+  const setName = nameField.setValue;
+  const descriptionRef = useRef<RNTextInput>(null);
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -142,11 +156,12 @@ export default function CookbookCreateScreen() {
       setDescription(existingCookbook.description || "");
       setInitialized(true);
     }
-  }, [isEditMode, existingCookbook, initialized]);
+  }, [isEditMode, existingCookbook, initialized, setName]);
 
   const trimmedName = name.trim();
+  // The name is not in here: an empty name is a press that says what's
+  // missing, not a disabled button.
   const canSubmit =
-    trimmedName.length > 0 &&
     !mutation.isPending &&
     !editLoadBlocked &&
     // An in-flight cover step owns the screen — submitting under it would
@@ -337,8 +352,11 @@ export default function CookbookCreateScreen() {
   );
 
   const handleSubmit = useCallback(async () => {
-    if (!trimmedName) return;
     setError(null);
+    if (!focusFirstInvalid([nameField])) {
+      haptics.notification(NotificationFeedbackType.Error);
+      return;
+    }
 
     if (isEditMode && cookbookId) {
       try {
@@ -423,6 +441,7 @@ export default function CookbookCreateScreen() {
     }
     dismiss();
   }, [
+    nameField,
     trimmedName,
     description,
     isEditMode,
@@ -524,13 +543,25 @@ export default function CookbookCreateScreen() {
         <View>
           <TextInput
             label="Name"
+            ref={nameRef}
             value={name}
-            onChangeText={(text) => setName(text.slice(0, NAME_MAX))}
-            onFocus={() => handleFieldFocus("name")}
-            onBlur={() => handleFieldBlur("name")}
+            onChangeText={(text) =>
+              nameField.onChangeText(text.slice(0, NAME_MAX))
+            }
+            onFocus={() => {
+              handleFieldFocus("name");
+              nameField.onFocus();
+            }}
+            onBlur={() => {
+              handleFieldBlur("name");
+              nameField.onBlur();
+            }}
             maxLength={NAME_MAX}
-            error={!!error && !trimmedName}
+            error={!!nameField.error}
             returnKeyType="next"
+            // Keep the keyboard up while focus moves on (spec §5.6).
+            submitBehavior="submit"
+            onSubmitEditing={() => descriptionRef.current?.focus()}
             // Deliberately NOT autofocused: the cover is the first thing this
             // screen has to say, and opening with the keyboard up buries it.
           />
@@ -540,8 +571,13 @@ export default function CookbookCreateScreen() {
             visible={focusedFields.has("name")}
             style={styles.charCount}
           />
+          <InlineError
+            message={nameField.error}
+            shakeKey={nameField.shakeKey}
+          />
 
           <TextInput
+            ref={descriptionRef}
             label="Description (optional)"
             value={description}
             onChangeText={(text) =>
