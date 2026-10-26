@@ -139,3 +139,38 @@ describe("ChooseUsernameScreen — floating labels", () => {
     expect(screen.queryByPlaceholderText("Username")).toBeNull();
   });
 });
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; an empty field is flagged (and focused) by Continue. The age
+// checkbox keeps gating Continue — it's a legal confirmation, not a field.
+describe("ChooseUsernameScreen — validation timing", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("shows no error while a bad username is typed, and shows it on leaving", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Username");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "me@x.com" } });
+    expect(screen.queryByText(/can only contain letters/)).toBeNull();
+    fireEvent.blur(input);
+    expect(screen.getByText(/can only contain letters/)).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("Continue with an empty username flags and focuses the field", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Username");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(input);
+    expect(mockComplete).not.toHaveBeenCalled();
+  });
+
+  it("Continue stays disabled until the age box is ticked", () => {
+    renderScreen();
+    const cont = screen.getByRole("button", { name: "Continue" });
+    expect(cont.getAttribute("aria-disabled")).toBe("true");
+  });
+});

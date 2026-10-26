@@ -368,7 +368,11 @@ describe("VerifyEmailScreen — onResend validation", () => {
   it("shows an inline error and does not resend for an invalid email", () => {
     renderScreen(undefined);
 
-    // No email param → input starts empty, which is an invalid shape.
+    // An empty field gets its own "enter your email" copy (validation
+    // timing test below); a typed bad shape gets this one.
+    fireEvent.change(screen.getByTestId("input-resend-email"), {
+      target: { value: "nope" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
 
     // InlineError renders role="alert"; TextInput's errorMessage is a11y-only
@@ -510,5 +514,35 @@ describe("VerifyEmailScreen — floating labels", () => {
     expect(screen.getByLabelText("Email address")).toBeTruthy();
     fireEvent.focus(screen.getByLabelText("Email address"));
     expect(screen.queryByPlaceholderText("Email")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; an empty field is flagged (and focused) by the resend button.
+describe("VerifyEmailScreen — validation timing", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const MESSAGE = "Please enter a valid email address.";
+
+  it("shows no error while an invalid email is typed, and shows it on leaving", () => {
+    renderScreen(undefined);
+    const input = screen.getByLabelText("Email address");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "nope" } });
+    expect(screen.queryAllByText(MESSAGE)).toHaveLength(0);
+    fireEvent.blur(input);
+    expect(screen.getAllByText(MESSAGE).length).toBeGreaterThan(0);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("Resend email with an empty email flags the field and moves focus to it", () => {
+    renderScreen(undefined);
+    fireEvent.click(screen.getByText("Resend email"));
+    const input = screen.getByLabelText("Email address");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(input);
+    expect(
+      screen.getAllByText("Please enter your email address.").length,
+    ).toBeGreaterThan(0);
+    expect(mockResendVerificationRequest).not.toHaveBeenCalled();
   });
 });
