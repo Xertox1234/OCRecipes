@@ -1,6 +1,5 @@
 import React, { useRef, useState } from "react";
 import {
-  AccessibilityInfo,
   StyleSheet,
   View,
   ScrollView,
@@ -441,12 +440,6 @@ export default function GoalSetupScreen() {
       if (refused.length === 0) {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
       }
-      // Only choices are missing: nothing to focus, so say what's needed.
-      if (!target) {
-        AccessibilityInfo.announceForAccessibility(
-          `Still needed: ${missingFields.join(", ")}`,
-        );
-      }
       return;
     }
     if (refused.length > 0) return;
@@ -464,9 +457,9 @@ export default function GoalSetupScreen() {
       "fat",
     ];
     // Empty fields are named too: the "Still needed" line is gone by now.
-    const refused = checkFields(allFields, goalSubmitError);
-    if (refused.length > 0) {
-      focusField(refused[0]);
+    const [firstRefused] = checkFields(allFields, goalSubmitError);
+    if (firstRefused) {
+      focusField(firstRefused);
       return;
     }
     saveMutation.mutate();

@@ -230,3 +230,31 @@ describe("ChangeEmailModal — validation timing", () => {
     expect(screen.queryByText("Email addresses do not match")).toBeNull();
   });
 });
+
+describe("ChangeEmailModal — reopening starts clean", () => {
+  it("clears the fields and their messages when reopened", () => {
+    const onConfirm = vi.fn();
+    const ui = (visible: boolean) => (
+      <ChangeEmailModal
+        visible={visible}
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />
+    );
+    const { rerender } = renderComponent(ui(true));
+    type("New email address", "nope");
+    submit();
+    expect(screen.getByText("Enter a valid email address")).toBeTruthy();
+
+    rerender(ui(false));
+    rerender(ui(true));
+
+    const input = screen.getByLabelText(
+      "New email address",
+    ) as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(screen.queryByText("Enter a valid email address")).toBeNull();
+    expect(screen.queryByText("Enter your new email address")).toBeNull();
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+  });
+});

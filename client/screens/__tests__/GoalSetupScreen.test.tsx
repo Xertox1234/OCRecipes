@@ -3,7 +3,6 @@ import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
-import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 
 import GoalSetupScreen from "../GoalSetupScreen";
@@ -390,8 +389,7 @@ describe("GoalSetupScreen — Calculate and Save point at what's missing", () =>
     expect(document.activeElement).toBe(screen.getByLabelText("Weight"));
   });
 
-  it("with only a choice missing, says what's still needed", () => {
-    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  it("with only a choice missing, refuses with the error haptic", () => {
     renderComponent(<GoalSetupScreen />);
     fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
     fireEvent.change(screen.getByLabelText("Weight"), {
@@ -405,9 +403,11 @@ describe("GoalSetupScreen — Calculate and Save point at what's missing", () =>
 
     fireEvent.click(screen.getByLabelText("Calculate my goals"));
 
-    expect(announce).toHaveBeenCalledWith("Still needed: primary goal");
+    expect(mockNotification).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(screen.getByText("Still needed: primary goal")).toBeTruthy();
     expect(mockApiRequest).not.toHaveBeenCalled();
-    announce.mockRestore();
   });
 
   it("an out-of-range weight on Calculate moves focus to Weight", () => {
