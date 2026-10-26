@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -64,10 +58,8 @@ import {
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
 import { useRecipeSearch } from "@/hooks/useRecipeSearch";
-import {
-  useCreateSuggestionListing,
-  useMakeSuggestion,
-} from "@/hooks/useInspiredSuggestions";
+import { useCreateSuggestionListing } from "@/hooks/useInspiredSuggestions";
+import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import {
   SearchFilterSheet,
   type SearchFilters,
@@ -94,7 +86,6 @@ import {
   createListingBodySchema,
   type Suggestion,
 } from "@shared/schemas/inspired-recipes";
-import { ApiError } from "@/lib/api-error";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
@@ -526,9 +517,7 @@ export default function RecipeBrowserScreen() {
     mutate: requestIdeas,
     reset: resetIdeas,
   } = useCreateSuggestionListing();
-  const { mutateAsync: makeSuggestion } = useMakeSuggestion();
-  const [makingId, setMakingId] = useState<number | null>(null);
-  const makingRef = useRef<number | null>(null);
+  const { make: makeSuggestion, makingId } = useMakeSuggestionFlow();
 
   const ideas: Suggestion[] = useMemo(() => ideasData ?? [], [ideasData]);
 
@@ -635,39 +624,10 @@ export default function RecipeBrowserScreen() {
     mealType,
   ]);
 
+  // A 410 means this idea list expired; clear it so the CTA can re-ask.
   const handleMakeIdea = useCallback(
-    (suggestion: Suggestion) => {
-      // One make at a time — a second card's tap is ignored while one runs.
-      // A ref, not state: two taps in the same frame must not both pass.
-      if (makingRef.current !== null) return;
-      makingRef.current = suggestion.id;
-      setMakingId(suggestion.id);
-      makeSuggestion(suggestion.id)
-        .then(({ recipeId }) => {
-          navigation.navigate("FeaturedRecipeDetail", {
-            recipeId,
-            recipeType: "community",
-          });
-        })
-        .catch((error: unknown) => {
-          const status = error instanceof ApiError ? error.status : undefined;
-          if (status === 429) {
-            toast.error("You've reached today's recipe limit.");
-          } else if (status === 410) {
-            toast.error("These ideas expired — search again.");
-            resetIdeas();
-          } else {
-            toast.error("Couldn't make this recipe. Try again.");
-          }
-        })
-        .finally(() => {
-          if (makingRef.current === suggestion.id) makingRef.current = null;
-          setMakingId((current) =>
-            current === suggestion.id ? null : current,
-          );
-        });
-    },
-    [makeSuggestion, navigation, toast, resetIdeas],
+    (suggestion: Suggestion) => makeSuggestion(suggestion.id, resetIdeas),
+    [makeSuggestion, resetIdeas],
   );
 
   const handleRecipePress = useCallback(

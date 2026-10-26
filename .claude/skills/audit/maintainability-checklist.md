@@ -160,3 +160,21 @@ Prioritize findings in this order:
 Do not flood the manifest with low-value nits when larger structural issues
 exist. Prefer a small number of high-conviction findings over a long list of
 cosmetic notes.
+
+## Coverage and proof (learned 2026-10-25)
+
+- **Return a verdict for every target you were pointed at** — a finding, or
+  "examined, no high-conviction finding — <reason>". A pass that silently skips
+  the large files is not a clean result: the 2026-10-25 run's first pass read 4
+  files and skipped 7; the second, per-target pass produced the High finding and
+  three of the six fixes.
+- **A "this block is independent, move it" claim needs the type checker, not a
+  read.** "CNF depends only on shared types" was wrong — the USDA matcher used
+  CNF's word helpers. Sketch the move, then let `tsc` name the real edges; the
+  shared edge is usually its own small module.
+- **Check what a re-export barrel imports back.** A module importing a helper
+  through a sibling's re-export, while that sibling imports it, is a value
+  cycle; import from the defining module (`barcodeVariants` via
+  `barcode-lookup` → `barcode-policy`).
+- **Before proposing a new shared hook's home, grep for wholesale `vi.mock` of
+  that module** — see `docs/solutions/conventions/extract-shared-hook-to-its-own-file-when-its-home-is-mocked-wholesale-2026-10-26.md`.
