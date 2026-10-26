@@ -134,6 +134,13 @@ class MockXHR {
     this.onreadystatechange?.();
   }
 
+  /** Simulate a raw network chunk — may end mid-line, as TCP can split. */
+  emitRaw(chunk: string) {
+    this.responseText += chunk;
+    this.readyState = 3;
+    this.onreadystatechange?.();
+  }
+
   /** Simulate the connection completing cleanly: readystatechange, then load. */
   complete() {
     this.readyState = 4;
@@ -540,6 +547,27 @@ describe("useCoachStream onDone", () => {
 
     expect(onDone).toHaveBeenCalledWith("Hi", undefined);
     expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("keeps an event whose line is split across two network chunks", async () => {
+    const { result, onDone } = await setupHook();
+    await startAndFlush(result);
+
+    const line = `data: ${JSON.stringify({ content: "Hello" })}\n\n`;
+    const cut = line.indexOf("Hel") + 2;
+    act(() => {
+      mockXhr.emit({ content: "Say " });
+      mockXhr.emitRaw(line.slice(0, cut));
+      mockXhr.emitRaw(line.slice(cut));
+      mockXhr.emit({ done: true });
+      mockXhr.complete();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 20);
+    });
+
+    expect(onDone).toHaveBeenCalledWith("Say Hello", undefined);
   });
 });
 

@@ -108,6 +108,16 @@ export interface RecipeDetailContentProps {
   cuisineOrigin?: string | null;
 }
 
+/** The recipe's own content — what a host normalizes from its source row. */
+export type RecipeDetailData = Omit<
+  RecipeDetailContentProps,
+  | "onScrollOffset"
+  | "recipeId"
+  | "recipeType"
+  | "contentPaddingTop"
+  | "contentPaddingBottom"
+>;
+
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function RecipeDetailContent(props: RecipeDetailContentProps) {

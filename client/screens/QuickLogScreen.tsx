@@ -29,6 +29,10 @@ import {
   useQuickLogSession,
   EMPTY_PARSE_MESSAGE,
 } from "@/hooks/useQuickLogSession";
+import {
+  foundItemsMessage,
+  useParsedItemsAnnouncement,
+} from "@/hooks/useParsedItemsAnnouncement";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -52,11 +56,6 @@ const QUICK_LOG_TIPS = [
 
 function randomTip() {
   return QUICK_LOG_TIPS[Math.floor(Math.random() * QUICK_LOG_TIPS.length)];
-}
-
-/** Shown/announced when a parse finds food (see the success-announce effect). */
-function foundItemsMessage(count: number) {
-  return `Found ${count} item${count === 1 ? "" : "s"}. Log All to save.`;
 }
 
 const EXAMPLE_ITEMS = [
@@ -131,45 +130,10 @@ export default function QuickLogScreen() {
     if (session.capWarning) toast.info(session.capWarning);
   }, [session.capWarning, toast]);
 
-  // A successful parse announces its item count — every parse, not just the
-  // first: a later parse can replace the results without `parsedItems`
-  // passing back through empty, and a discriminator keyed on
-  // `parsedItems.length > 0` alone misses that case
-  // (docs/solutions/logic-errors/imperative-announce-must-be-content-keyed-
-  // not-variant-keyed-2026-06-24.md, "Second manifestation"). iOS has no
-  // live region here, so it always gets the imperative announce. Android's
-  // note below (accessibilityLiveRegion="polite") re-reads automatically
-  // whenever the count changes the rendered text; only a same-count replace
-  // leaves that text identical, so it needs the explicit announce too —
-  // never both, on either platform (docs/rules/accessibility.md →
-  // Announcements).
-  //
-  // `lastRenderedCountRef` must be written on EVERY run of this effect, not
-  // only when the generation changes: removeItem changes `parsedItems.length`
-  // — and so the live region's own rendered text — without bumping
-  // `parseGeneration`. A version gated behind the generation check went
-  // stale across exactly that change, producing a false negative (a
-  // same-count replace after a removeItem stayed silent) and a false
-  // positive (the next parse double-announced when its count happened to
-  // match the pre-removal count) — caught by review with a constructed
-  // probe.
-  const announcedGenerationRef = React.useRef(0);
-  const lastRenderedCountRef = React.useRef(0);
-  React.useEffect(() => {
-    const count = session.parsedItems.length;
-    const prevRenderedCount = lastRenderedCountRef.current;
-    lastRenderedCountRef.current = count;
-
-    const generation = session.parseGeneration;
-    if (generation === 0 || generation === announcedGenerationRef.current) {
-      return;
-    }
-    announcedGenerationRef.current = generation;
-    if (count === 0) return;
-    if (Platform.OS === "ios" || count === prevRenderedCount) {
-      AccessibilityInfo.announceForAccessibility(foundItemsMessage(count));
-    }
-  }, [session.parseGeneration, session.parsedItems.length]);
+  useParsedItemsAnnouncement(
+    session.parseGeneration,
+    session.parsedItems.length,
+  );
 
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);

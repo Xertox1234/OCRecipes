@@ -50,7 +50,7 @@ import {
 } from "@shared/schemas/recipe-finder";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
-import { useMakeSuggestion } from "@/hooks/useInspiredSuggestions";
+import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -73,7 +73,6 @@ import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import StreamingBubble from "@/components/coach/StreamingBubble";
 import { apiRequest } from "@/lib/query-client";
-import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
@@ -132,12 +131,8 @@ export default function CoachChat({
   // useMutation returns a new object identity every render, which would
   // make every useCallback below that depends on it re-create every render.
   const { mutateAsync: deleteChatMessage } = useDeleteChatMessageForRetry();
-  const { mutateAsync: makeSuggestion } = useMakeSuggestion();
-  // The idea card whose recipe is being made; one make at a time.
-  const [makingFinderItemId, setMakingFinderItemId] = useState<number | null>(
-    null,
-  );
-  const makingFinderRef = useRef<number | null>(null);
+  const { make: makeFinderItem, makingId: makingFinderItemId } =
+    useMakeSuggestionFlow();
   // Flows whose idea cards came back expired (410).
   const [expiredFinderFlowIds, setExpiredFinderFlowIds] = useState<
     ReadonlySet<string>
@@ -760,44 +755,13 @@ export default function CoachChat({
     [navigation],
   );
 
-  // "Make this mine" on an idea card: generate the recipe, then open it.
+  // "Make this mine" on an idea card; a 410 retires this list's cards.
   const handleMakeFinderItem = useCallback(
-    (item: FinderItem, flowId: string) => {
-      // One make at a time — a second card's tap is ignored while one runs.
-      // A ref, not state: two taps in the same frame must not both pass.
-      if (makingFinderRef.current !== null) return;
-      makingFinderRef.current = item.id;
-      setMakingFinderItemId(item.id);
-      makeSuggestion(item.id)
-        .then(({ recipeId }) => {
-          navigation.navigate("FeaturedRecipeDetail", {
-            recipeId,
-            recipeType: "community",
-          });
-        })
-        .catch((error: unknown) => {
-          // The toast announces itself for screen readers.
-          const status = error instanceof ApiError ? error.status : undefined;
-          if (status === 429) {
-            toast.error("You've reached today's recipe limit.");
-          } else if (status === 410) {
-            toast.error("These ideas expired — search again.");
-            // Keep this list's idea buttons from being tapped again.
-            setExpiredFinderFlowIds((prev) => new Set(prev).add(flowId));
-          } else {
-            toast.error("Couldn't make this recipe. Try again.");
-          }
-        })
-        .finally(() => {
-          if (makingFinderRef.current === item.id) {
-            makingFinderRef.current = null;
-          }
-          setMakingFinderItemId((current) =>
-            current === item.id ? null : current,
-          );
-        });
-    },
-    [makeSuggestion, navigation, toast],
+    (item: FinderItem, flowId: string) =>
+      makeFinderItem(item.id, () =>
+        setExpiredFinderFlowIds((prev) => new Set(prev).add(flowId)),
+      ),
+    [makeFinderItem],
   );
 
   const openUpgrade = useCallback(() => setShowUpgrade(true), []);
