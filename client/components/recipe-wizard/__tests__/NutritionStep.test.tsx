@@ -8,6 +8,7 @@ import {
   hasAnyNutritionValue,
   sanitizeNumericInput,
 } from "../nutrition-step-utils";
+import { parseDecimalInput } from "@/lib/number-input";
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -26,6 +27,19 @@ describe("sanitizeNumericInput", () => {
 
   it("returns an empty string when all characters are non-numeric", () => {
     expect(sanitizeNumericInput("abc")).toBe("");
+  });
+
+  // A comma-decimal keypad sends ",": stripping it turned 12,5 into 125.
+  it("treats a comma as the decimal separator", () => {
+    expect(sanitizeNumericInput("12,5")).toBe("12.5");
+    expect(sanitizeNumericInput("12.5")).toBe("12.5");
+    expect(parseDecimalInput(sanitizeNumericInput("12,5"))).toBe(12.5);
+    expect(parseDecimalInput(sanitizeNumericInput("12.5"))).toBe(12.5);
+  });
+
+  it("keeps only the first separator, comma or point", () => {
+    expect(sanitizeNumericInput("1,2.3")).toBe("1.23");
+    expect(sanitizeNumericInput("1.2,3")).toBe("1.23");
   });
 
   it("returns empty input unchanged (skip flow)", () => {

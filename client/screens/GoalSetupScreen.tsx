@@ -23,6 +23,8 @@ import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
+import { parseDecimalInput } from "@/lib/number-input";
+import { goalFieldError, type GoalField } from "./GoalSetupScreen-utils";
 import {
   weightToKg,
   heightToCm,
@@ -169,12 +171,16 @@ function NumberInput({
   label,
   value,
   onChange,
+  onBlur,
+  error,
   unit,
   placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onBlur: () => void;
+  error: string | null;
   unit: string;
   placeholder: string;
 }) {
@@ -193,6 +199,7 @@ function NumberInput({
           ]}
           value={value}
           onChangeText={onChange}
+          onBlur={onBlur}
           keyboardType="numeric"
           placeholder={placeholder}
           placeholderTextColor={withOpacity(theme.textSecondary, 0.6)}
@@ -202,6 +209,7 @@ function NumberInput({
           {unit}
         </ThemedText>
       </View>
+      <InlineError message={error} style={styles.fieldError} />
     </View>
   );
 }
@@ -240,6 +248,55 @@ export default function GoalSetupScreen() {
 
   const scrollViewRef = useRef<ScrollView>(null);
 
+  // Number messages show on leaving a field or on Calculate/Save, never per
+  // keystroke. Empty fields stay with the "Still needed" line.
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<GoalField, string>>
+  >({});
+  const fieldValues: Record<GoalField, string> = {
+    age,
+    weight,
+    height,
+    calories: manualCalories,
+    protein: manualProtein,
+    carbs: manualCarbs,
+    fat: manualFat,
+  };
+
+  /** Show (or clear) these fields' messages; one error buzz when any refuses. */
+  const checkFields = (fields: GoalField[]): boolean => {
+    const found: Partial<Record<GoalField, string>> = {};
+    for (const field of fields) {
+      const message = goalFieldError(field, fieldValues[field], unit);
+      if (message) found[field] = message;
+    }
+    const ok = Object.keys(found).length === 0;
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      for (const field of fields) delete next[field];
+      return { ...next, ...found };
+    });
+    if (!ok) haptics.notification(Haptics.NotificationFeedbackType.Error);
+    return ok;
+  };
+
+  /** Hide a field's message while it is retyped; it is checked again on blur. */
+  const changeField =
+    (field: GoalField, setValue: (value: string) => void) =>
+    (value: string) => {
+      setValue(value);
+      if (fieldErrors[field]) {
+        setFieldErrors((prev) => {
+          const next = { ...prev };
+          delete next[field];
+          return next;
+        });
+      }
+    };
+
+  /** A value the field check accepted, as the number it reads as. */
+  const numberOf = (text: string) => parseDecimalInput(text) ?? NaN;
+
   const isFormComplete =
     age && weight && height && gender && activityLevel && primaryGoal;
   const missingFields = [
@@ -254,10 +311,10 @@ export default function GoalSetupScreen() {
   const calculateMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/goals/calculate", {
-        age: parseInt(age),
+        age: numberOf(age),
         // Inputs are in the user's preferred unit; the API expects kg/cm.
-        weight: weightToKg(parseFloat(weight), unit),
-        height: heightToCm(parseFloat(height), unit),
+        weight: weightToKg(numberOf(weight), unit),
+        height: heightToCm(numberOf(height), unit),
         gender,
         activityLevel,
         primaryGoal,
@@ -293,14 +350,14 @@ export default function GoalSetupScreen() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("PUT", "/api/goals", {
-        dailyCalorieGoal: parseInt(manualCalories),
-        dailyProteinGoal: parseInt(manualProtein),
-        dailyCarbsGoal: parseInt(manualCarbs),
-        dailyFatGoal: parseInt(manualFat),
+        dailyCalorieGoal: numberOf(manualCalories),
+        dailyProteinGoal: numberOf(manualProtein),
+        dailyCarbsGoal: numberOf(manualCarbs),
+        dailyFatGoal: numberOf(manualFat),
         // Inputs are in the user's preferred unit; the API expects kg/cm.
-        weight: weightToKg(parseFloat(weight), unit),
-        height: heightToCm(parseFloat(height), unit),
-        age: parseInt(age),
+        weight: weightToKg(numberOf(weight), unit),
+        height: heightToCm(numberOf(height), unit),
+        age: numberOf(age),
         gender,
       });
       return response.json();
@@ -308,7 +365,7 @@ export default function GoalSetupScreen() {
     onSuccess: async () => {
       // Update local user state
       await updateUser({
-        dailyCalorieGoal: parseInt(manualCalories),
+        dailyCalorieGoal: numberOf(manualCalories),
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
@@ -328,10 +385,21 @@ export default function GoalSetupScreen() {
 
   const handleCalculate = () => {
     if (!isFormComplete) return;
+    if (!checkFields(["age", "weight", "height"])) return;
     calculateMutation.mutate();
   };
 
   const handleSave = () => {
+    const allFields: GoalField[] = [
+      "age",
+      "weight",
+      "height",
+      "calories",
+      "protein",
+      "carbs",
+      "fat",
+    ];
+    if (!checkFields(allFields)) return;
     saveMutation.mutate();
   };
 
@@ -386,21 +454,27 @@ export default function GoalSetupScreen() {
               <NumberInput
                 label="Age"
                 value={age}
-                onChange={setAge}
+                onChange={changeField("age", setAge)}
+                onBlur={() => checkFields(["age"])}
+                error={fieldErrors.age ?? null}
                 unit="years"
                 placeholder="e.g. 25"
               />
               <NumberInput
                 label="Weight"
                 value={weight}
-                onChange={setWeight}
+                onChange={changeField("weight", setWeight)}
+                onBlur={() => checkFields(["weight"])}
+                error={fieldErrors.weight ?? null}
                 unit={weightUnitLabel(unit)}
                 placeholder={unit === "imperial" ? "e.g. 154" : "e.g. 70"}
               />
               <NumberInput
                 label="Height"
                 value={height}
-                onChange={setHeight}
+                onChange={changeField("height", setHeight)}
+                onBlur={() => checkFields(["height"])}
+                error={fieldErrors.height ?? null}
                 unit={heightUnitLabel(unit)}
                 placeholder={unit === "imperial" ? "e.g. 67" : "e.g. 170"}
               />
@@ -565,7 +639,8 @@ export default function GoalSetupScreen() {
                       },
                     ]}
                     value={manualCalories}
-                    onChangeText={setManualCalories}
+                    onChangeText={changeField("calories", setManualCalories)}
+                    onBlur={() => checkFields(["calories"])}
                     keyboardType="numeric"
                     accessibilityLabel="Daily calorie target"
                   />
@@ -590,7 +665,8 @@ export default function GoalSetupScreen() {
                         },
                       ]}
                       value={manualProtein}
-                      onChangeText={setManualProtein}
+                      onChangeText={changeField("protein", setManualProtein)}
+                      onBlur={() => checkFields(["protein"])}
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
@@ -621,7 +697,8 @@ export default function GoalSetupScreen() {
                         },
                       ]}
                       value={manualCarbs}
-                      onChangeText={setManualCarbs}
+                      onChangeText={changeField("carbs", setManualCarbs)}
+                      onBlur={() => checkFields(["carbs"])}
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
@@ -652,7 +729,8 @@ export default function GoalSetupScreen() {
                         },
                       ]}
                       value={manualFat}
-                      onChangeText={setManualFat}
+                      onChangeText={changeField("fat", setManualFat)}
+                      onBlur={() => checkFields(["fat"])}
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
@@ -670,6 +748,16 @@ export default function GoalSetupScreen() {
                   </ThemedText>
                 </View>
               </View>
+
+              {(["calories", "protein", "carbs", "fat"] as const).map(
+                (field) => (
+                  <InlineError
+                    key={field}
+                    message={fieldErrors[field] ?? null}
+                    style={styles.goalError}
+                  />
+                ),
+              )}
 
               {!canSetMacros && (
                 <View style={styles.premiumNote}>
@@ -755,6 +843,12 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     marginBottom: Spacing.xs,
+  },
+  fieldError: {
+    marginTop: Spacing.xs,
+  },
+  goalError: {
+    marginBottom: Spacing.sm,
   },
   inputRow: {
     flexDirection: "row",

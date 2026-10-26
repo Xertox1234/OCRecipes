@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { StyleSheet, View, ScrollView, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -10,9 +11,11 @@ import Animated, {
 import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Chip } from "@/components/Chip";
+import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { parseDecimalInput } from "@/lib/number-input";
 import { Spacing } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
 import { OPTION_MATCH_TOLERANCE } from "@/screens/nutrition-detail-utils";
@@ -39,6 +42,8 @@ interface ServingControlsProps {
    */
   recalculateNutrition: (grams: number | null, quantity: number) => void;
 }
+
+const CUSTOM_GRAMS_ERROR = "Enter an amount above 0 g";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -99,6 +104,21 @@ export const ServingControls = React.memo(function ServingControls({
 }: ServingControlsProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const [customGramsError, setCustomGramsError] = useState<string | null>(null);
+
+  const commitCustomGrams = () => {
+    // Nothing typed yet is not a refusal.
+    if (customGramsInput.trim() === "") return;
+    const parsed = parseDecimalInput(customGramsInput);
+    if (parsed !== null && parsed > 0) {
+      setCustomGramsError(null);
+      setServingSizeGrams(parsed);
+      recalculateNutrition(parsed, servingQuantity);
+      return;
+    }
+    haptics.notification(Haptics.NotificationFeedbackType.Error);
+    setCustomGramsError(CUSTOM_GRAMS_ERROR);
+  };
 
   return (
     <View style={styles.container}>
@@ -156,13 +176,9 @@ export const ServingControls = React.memo(function ServingControls({
               containerStyle={styles.customInput}
               value={customGramsInput}
               onChangeText={setCustomGramsInput}
-              onEndEditing={() => {
-                const parsed = parseFloat(customGramsInput);
-                if (parsed > 0 && isFinite(parsed)) {
-                  setServingSizeGrams(parsed);
-                  recalculateNutrition(parsed, servingQuantity);
-                }
-              }}
+              onBlur={commitCustomGrams}
+              error={customGramsError !== null}
+              errorMessage={customGramsError ?? undefined}
               placeholder="grams"
               keyboardType="decimal-pad"
               returnKeyType="done"
@@ -172,6 +188,12 @@ export const ServingControls = React.memo(function ServingControls({
               g
             </ThemedText>
           </View>
+        ) : null}
+        {showCustomInput ? (
+          <InlineError
+            message={customGramsError}
+            style={styles.customInputError}
+          />
         ) : null}
       </View>
 
@@ -246,6 +268,9 @@ const styles = StyleSheet.create({
   },
   customInput: {
     flex: 1,
+  },
+  customInputError: {
+    marginTop: Spacing.sm,
   },
   quantityRow: {
     flexDirection: "row",
