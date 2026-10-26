@@ -18,6 +18,8 @@ import { ApiError } from "@/lib/api-error";
 import { useAuthContext } from "@/context/AuthContext";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import { useTheme } from "@/hooks/useTheme";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
 import type { ChangePasswordProof } from "@/hooks/useAuth";
 import {
   isSecondFactorRequired,
@@ -65,9 +67,22 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const { changePassword, requestPasswordChangeCode } = useAuthContext();
   const twoStepEmail = useSignedInEmailCode();
   const [mode, setMode] = useState<Mode>(hasPassword ? "current" : "forgot");
-  const [current, setCurrent] = useState("");
-  const [emailCode, setEmailCode] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  // An empty field would go to the server and come back as a bare 400 that
+  // reads "Something went wrong" — say which field instead. Flagged by Save
+  // (empty fields wait for the button — form-fields spec §5.1); a flagged
+  // field clears as soon as it is filled.
+  const currentField = useFieldValidation((value) =>
+    value ? null : "Enter your current password.",
+  );
+  const codeField = useFieldValidation((value) =>
+    value ? null : "Enter the code from the email.",
+  );
+  const newField = useFieldValidation((value) =>
+    value ? null : "Enter a new password.",
+  );
+  const current = currentField.value;
+  const emailCode = codeField.value;
+  const newPassword = newField.value;
   // Two-step on: ask for the code with the first submit (the server would
   // otherwise refuse it — and an emailed-code guess would be spent finding out).
   const [needsFactor, setNeedsFactor] = useState(mfaEnabled);
@@ -115,26 +130,21 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     navigation.goBack();
   };
 
-  // An empty field would go to the server and come back as a bare 400 that
-  // reads "Something went wrong" — say which field instead. A Google/Apple
-  // proof needs only the new password, so this also keeps that sheet shut.
-  const missingField = (
-    provider?: SocialProvider,
-  ): { field: ErrorField; message: string } | null => {
-    if (!provider && mode === "current" && !current)
-      return { field: "current", message: "Enter your current password." };
-    if (!provider && mode === "code" && !emailCode)
-      return { field: "code", message: "Enter the code from the email." };
-    if (!newPassword) return { field: "new", message: "Enter a new password." };
-    return null;
-  };
-
   const save = async (provider?: SocialProvider) => {
     if (busyRef.current) return;
-    const missing = missingField(provider);
-    if (missing) {
-      setErrorField(missing.field);
-      setError(missing.message);
+    // A Google/Apple proof needs only the new password, so this also keeps
+    // that sheet shut while it is empty.
+    const fields = provider
+      ? [newField]
+      : mode === "code"
+        ? [codeField, newField]
+        : mode === "current"
+          ? [currentField, newField]
+          : [newField];
+    if (!focusFirstInvalid(fields)) {
+      // The field messages say what's missing; drop a stale server message.
+      setErrorField(null);
+      setError(null);
       return;
     }
     // Never send without the two-step code once it's asked for: the server
@@ -195,13 +205,17 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             <TextInput
               accessibilityLabel="Current password"
               label="Current password"
+              ref={currentField.ref}
               value={current}
-              onChangeText={setCurrent}
-              error={errorField === "current"}
+              onChangeText={currentField.onChangeText}
+              onBlur={currentField.onBlur}
+              error={!!currentField.error || errorField === "current"}
+              errorMessage={currentField.error ?? undefined}
               secureTextEntry
               autoCapitalize="none"
               autoComplete="current-password"
             />
+            <InlineError message={currentField.error} />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="I forgot it"
@@ -221,12 +235,18 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               accessibilityLabel="Code from the email"
               label="Code from the email"
               placeholder="6-digit code"
+              ref={codeField.ref}
               value={emailCode}
-              onChangeText={(t) => setEmailCode(normalizeCodeInput(t))}
-              error={errorField === "code"}
+              onChangeText={(t) =>
+                codeField.onChangeText(normalizeCodeInput(t))
+              }
+              onBlur={codeField.onBlur}
+              error={!!codeField.error || errorField === "code"}
+              errorMessage={codeField.error ?? undefined}
               keyboardType="number-pad"
               autoComplete="one-time-code"
             />
+            <InlineError message={codeField.error} />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Send a new code"
@@ -243,13 +263,17 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
         <TextInput
           accessibilityLabel="New password"
           label="New password"
+          ref={newField.ref}
           value={newPassword}
-          onChangeText={setNewPassword}
-          error={errorField === "new"}
+          onChangeText={newField.onChangeText}
+          onBlur={newField.onBlur}
+          error={!!newField.error || errorField === "new"}
+          errorMessage={newField.error ?? undefined}
           secureTextEntry
           autoCapitalize="none"
           autoComplete="new-password"
         />
+        <InlineError message={newField.error} />
         <ThemedText type="small" style={{ color: theme.textSecondary }}>
           {passwordMessage("too_short")}
         </ThemedText>

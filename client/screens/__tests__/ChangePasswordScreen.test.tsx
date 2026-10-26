@@ -398,3 +398,36 @@ describe("ChangePasswordScreen", () => {
     );
   });
 });
+
+// Form-fields spec §5.1: Save flags every empty field and moves focus to the
+// first; a field's message clears on the keystroke that fills it.
+describe("ChangePasswordScreen — validation timing", () => {
+  it("Save with both fields empty flags both and focuses the current password", async () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    await act(async () => tap("Save new password"));
+    expect(screen.getByText("Enter your current password.")).toBeTruthy();
+    expect(screen.getByText("Enter a new password.")).toBeTruthy();
+    expect(
+      screen.getByLabelText("New password").getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Current password"),
+    );
+  });
+
+  it("a flagged field's message clears as soon as it is filled", async () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    await act(async () => tap("Save new password"));
+    type("Current password", "old-pass");
+    expect(screen.queryByText("Enter your current password.")).toBeNull();
+    expect(
+      screen.getByLabelText("Current password").getAttribute("aria-invalid"),
+    ).not.toBe("true");
+  });
+
+  it("Confirm with Google with no new password focuses the new password", async () => {
+    renderScreen({ hasPassword: false, providers: ["google"] });
+    await act(async () => tap("Confirm with Google"));
+    expect(document.activeElement).toBe(screen.getByLabelText("New password"));
+  });
+});
