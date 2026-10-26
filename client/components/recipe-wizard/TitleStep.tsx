@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { StyleSheet, ScrollView } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FieldCounter } from "@/components/FieldCounter";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Spacing,
@@ -24,6 +25,9 @@ export default function TitleStep({
   setDescription,
 }: TitleStepProps) {
   const { theme } = useTheme();
+  const [focusedField, setFocusedField] = useState<
+    "title" | "description" | null
+  >(null);
 
   return (
     <ScrollView
@@ -49,7 +53,14 @@ export default function TitleStep({
         autoFocus
         returnKeyType="next"
         maxLength={TITLE_MAX_LENGTH}
+        onFocus={() => setFocusedField("title")}
+        onBlur={() => setFocusedField(null)}
         accessibilityHint="Enter a name for your recipe"
+      />
+      <FieldCounter
+        length={title.length}
+        max={TITLE_MAX_LENGTH}
+        visible={focusedField === "title"}
       />
 
       <FocusTextInput
@@ -69,7 +80,14 @@ export default function TitleStep({
         multiline
         textAlignVertical="top"
         maxLength={DESCRIPTION_MAX_LENGTH}
+        onFocus={() => setFocusedField("description")}
+        onBlur={() => setFocusedField(null)}
         accessibilityHint="Optional description of your recipe"
+      />
+      <FieldCounter
+        length={description.length}
+        max={DESCRIPTION_MAX_LENGTH}
+        visible={focusedField === "description"}
       />
     </ScrollView>
   );
@@ -87,7 +105,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   textArea: {
-    marginTop: Spacing.lg,
+    marginTop: Spacing.sm,
     borderWidth: 1,
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing.md,

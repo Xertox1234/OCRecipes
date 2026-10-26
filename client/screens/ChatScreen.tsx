@@ -16,6 +16,11 @@ import {
   type TextInput,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import {
+  FieldCounter,
+  CHAT_MESSAGE_MAX_LENGTH,
+  counterTone,
+} from "@/components/FieldCounter";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import {
@@ -690,7 +695,7 @@ export default function ChatScreen() {
             onChangeText={setInputText}
             onSubmitEditing={() => handleSend()}
             multiline
-            maxLength={2000}
+            maxLength={CHAT_MESSAGE_MAX_LENGTH}
             returnKeyType="default"
             editable={!isStreaming}
             accessibilityLabel="Message input"
@@ -703,6 +708,15 @@ export default function ChatScreen() {
             style={styles.sendButton}
           />
         </FocusField>
+        <FieldCounter
+          overlay
+          length={inputText.length}
+          max={CHAT_MESSAGE_MAX_LENGTH}
+          visible={
+            composerFocus.focused &&
+            counterTone(inputText.length, CHAT_MESSAGE_MAX_LENGTH) !== "normal"
+          }
+        />
       </View>
     </KeyboardAvoidingView>
   );

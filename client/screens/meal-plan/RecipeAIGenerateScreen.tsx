@@ -9,6 +9,7 @@ import {
   type TextInput,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FieldCounter } from "@/components/FieldCounter";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -45,6 +46,8 @@ type AIGenerateRouteProp = RouteProp<
   "RecipeAIGenerate"
 >;
 
+const PROMPT_MAX_LENGTH = 500;
+
 const SUGGESTION_CHIPS = [
   "Quick dinner",
   "Healthy lunch",
@@ -74,6 +77,7 @@ export default function RecipeAIGenerateScreen() {
   const tappedRef = useRef(false);
 
   const [prompt, setPrompt] = useState("");
+  const [promptFocused, setPromptFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   const handleChipPress = useCallback(
@@ -181,9 +185,16 @@ export default function RecipeAIGenerateScreen() {
           placeholderTextColor={theme.textSecondary}
           multiline
           autoFocus
-          maxLength={500}
+          maxLength={PROMPT_MAX_LENGTH}
+          onFocus={() => setPromptFocused(true)}
+          onBlur={() => setPromptFocused(false)}
           returnKeyType="default"
           blurOnSubmit={false}
+        />
+        <FieldCounter
+          length={prompt.length}
+          max={PROMPT_MAX_LENGTH}
+          visible={promptFocused}
         />
 
         {/* Suggestion chips */}

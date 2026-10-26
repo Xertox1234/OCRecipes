@@ -17,6 +17,11 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import {
+  FieldCounter,
+  CHAT_MESSAGE_MAX_LENGTH,
+  counterTone,
+} from "@/components/FieldCounter";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -228,6 +233,7 @@ export default function RecipeChatScreen() {
     route.params?.conversationId ?? null,
   );
   const [inputText, setInputText] = useState("");
+  const [inputFocused, setInputFocused] = useState(false);
   const [hasStarted, setHasStarted] = useState(!!route.params?.conversationId);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
     null,
@@ -1066,7 +1072,9 @@ export default function RecipeChatScreen() {
             },
           ]}
           multiline
-          maxLength={2000}
+          maxLength={CHAT_MESSAGE_MAX_LENGTH}
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
           editable={!isStreaming}
           onSubmitEditing={() => handleSend()}
           returnKeyType="send"
@@ -1078,6 +1086,15 @@ export default function RecipeChatScreen() {
           onPress={() => handleSend()}
           canSend={inputText.trim().length > 0}
           busy={isStreaming}
+        />
+        <FieldCounter
+          overlay
+          length={inputText.length}
+          max={CHAT_MESSAGE_MAX_LENGTH}
+          visible={
+            inputFocused &&
+            counterTone(inputText.length, CHAT_MESSAGE_MAX_LENGTH) !== "normal"
+          }
         />
       </View>
       <UpgradeModal
