@@ -75,7 +75,7 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
           onChangeText={setText}
           onSubmitEditing={() => generate(text)}
           returnKeyType="go"
-          accessibilityLabel="Describe a recipe to generate"
+          accessibilityLabel={PROMPT_LABEL}
         />
         <Pressable
           onPress={() => generate(text)}

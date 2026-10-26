@@ -43,6 +43,17 @@ const BOX_KEYS = new Set([
 const BOX_PREFIXES = ["border", "margin", "flex"];
 
 /**
+ * Minimum height of a labelled field: the floated label needs the two-row
+ * height (56px), but a caller's taller `minHeight` (a multi-line box) wins.
+ */
+export function labelledMinHeight(callerMinHeight: unknown): number {
+  const min = LABELLED_INPUT_GEOMETRY.containerMinHeight;
+  return typeof callerMinHeight === "number"
+    ? Math.max(min, callerMinHeight)
+    : min;
+}
+
+/**
  * Split one input style into the part that draws the visible box (fill, edge,
  * size, placement — goes on the FocusField container) and the part that styles
  * the text (font, colour, padding — stays on the input).

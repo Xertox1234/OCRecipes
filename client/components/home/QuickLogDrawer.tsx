@@ -300,7 +300,7 @@ export function QuickLogDrawer({
           onChangeText={session.setInputText}
           onSubmitEditing={handleTextSubmit}
           returnKeyType="done"
-          accessibilityLabel="Food description"
+          accessibilityLabel={INPUT_LABEL}
         />
         <Pressable
           onPress={handleSubmitPress}

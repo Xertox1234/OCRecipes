@@ -128,8 +128,9 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
             editable={!busy}
             testID="input-forgot-email"
             accessibilityHint="Enter the email address on your account"
+            // The InlineError below announces the message; repeating it as
+            // this field's errorMessage made VoiceOver read it twice.
             error={!!(email.error ?? error)}
-            errorMessage={email.error ?? (error || undefined)}
           />
           <InlineError message={email.error ?? error} shakeKey={shakeKey} />
           <Button

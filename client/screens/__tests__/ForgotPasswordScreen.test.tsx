@@ -74,6 +74,21 @@ describe("ForgotPasswordScreen", () => {
     ).toBeGreaterThan(0);
   });
 
+  // Single announcement: the InlineError below the field says it; the field
+  // only turns red, so VoiceOver does not read the message twice.
+  it("puts the error in the accessibility tree once, not also in the field's hint", () => {
+    renderScreen();
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "nope" },
+    });
+    fireEvent.click(screen.getByText("Send code"));
+    const msg = "Please enter a valid email address.";
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    const input = screen.getByLabelText("Email");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(msg);
+  });
+
   // #44: the red border and message used to stay after the email was fixed,
   // until the next tap of Send code.
   it("clears the error as soon as the email is edited", () => {

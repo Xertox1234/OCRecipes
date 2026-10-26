@@ -183,6 +183,40 @@ describe("FocusField", () => {
     });
   });
 
+  it("gives a labelled field at least 56px, keeping a taller caller minHeight", () => {
+    function Sized(props: { minHeight?: number }) {
+      const focus = useFieldFocus();
+      return (
+        <FocusField
+          focus={focus}
+          testID="sized-field"
+          style={{ borderRadius: 8, minHeight: props.minHeight }}
+          label="Note"
+        >
+          <RNTextInput placeholder="Type here" />
+        </FocusField>
+      );
+    }
+    // The test StyleSheet.flatten is identity, so merge the array by hand.
+    const merge = (s: unknown): Record<string, unknown> =>
+      Array.isArray(s)
+        ? Object.assign({}, ...s.map(merge))
+        : ((s as Record<string, unknown>) ?? {});
+    const minHeightOf = () =>
+      merge(viewProps.get("sized-field")?.style).minHeight;
+
+    renderComponent(<Sized minHeight={100} />);
+    expect(minHeightOf()).toBe(100);
+
+    viewProps.clear();
+    renderComponent(<Sized />);
+    expect(minHeightOf()).toBe(56);
+
+    viewProps.clear();
+    renderComponent(<Sized minHeight={40} />);
+    expect(minHeightOf()).toBe(56);
+  });
+
   it("calls the caller's onFocus and onBlur once each through useFieldFocus", () => {
     const onFocus = vi.fn();
     const onBlur = vi.fn();

@@ -15,6 +15,7 @@ import { focusTimingConfig } from "@/constants/animations";
 import { LABELLED_INPUT_GEOMETRY, shouldFloatLabel } from "./text-input-utils";
 import {
   FOCUS_RING_WIDTH,
+  labelledMinHeight,
   resolveFieldColors,
   resolveFieldRadius,
 } from "./field-focus-utils";
@@ -28,7 +29,8 @@ interface FocusFieldProps {
   /**
    * Floating label: rests in the value position and floats up on focus or
    * content. Hidden from screen readers — the input carries the accessible
-   * name. A labelled field is at least 56px tall.
+   * name. A labelled field is at least 56px tall (a taller `minHeight` in
+   * `style` wins).
    */
   label?: string;
   /** Whether the input has text — keeps the label floated after blur. */
@@ -137,7 +139,10 @@ export function FocusField({
   return (
     <Animated.View
       testID={testID}
-      style={[style, label ? styles.labelled : null]}
+      style={[
+        style,
+        label ? { minHeight: labelledMinHeight(flat.minHeight) } : null,
+      ]}
     >
       <Animated.View
         testID="focus-field-fill"
@@ -180,10 +185,6 @@ export function FocusField({
 }
 
 const styles = StyleSheet.create({
-  // After the caller's style: the floated label needs the two-row height.
-  labelled: {
-    minHeight: LABELLED_INPUT_GEOMETRY.containerMinHeight,
-  },
   label: {
     position: "absolute",
     top: LABELLED_INPUT_GEOMETRY.labelRestTop,

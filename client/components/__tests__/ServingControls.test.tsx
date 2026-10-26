@@ -137,6 +137,15 @@ describe("ServingControls — custom grams say why they refuse a value", () => {
     },
   );
 
+  it("puts the message in the accessibility tree once, not also in the field's hint", () => {
+    renderCustom("0");
+    const msg = "Enter an amount above 0 g";
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    const input = screen.getByLabelText("Custom serving size in grams");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(msg);
+  });
+
   it("accepts a comma decimal", () => {
     const { setServingSizeGrams, recalculateNutrition } = renderCustom("12,5");
     expect(setServingSizeGrams).toHaveBeenCalledWith(12.5);
