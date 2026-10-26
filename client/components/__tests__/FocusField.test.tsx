@@ -28,9 +28,16 @@ vi.mock("react-native-reanimated", async (importOriginal) => {
     },
   );
   View.displayName = "Animated.View";
+  const Text = React.forwardRef<unknown, Record<string, unknown>>(
+    (props, ref) => {
+      if (typeof props.testID === "string") viewProps.set(props.testID, props);
+      return React.createElement(Animated.Text, { ...props, ref });
+    },
+  );
+  Text.displayName = "Animated.Text";
   return {
     ...actual,
-    default: { ...Animated, View },
+    default: { ...Animated, View, Text },
     useSharedValue: vi.fn(actual.useSharedValue as (n: number) => unknown),
     useAnimatedStyle: vi.fn(
       actual.useAnimatedStyle as (fn: () => unknown) => unknown,
@@ -42,6 +49,8 @@ function Field(props: {
   label?: string;
   hasValue?: boolean;
   error?: boolean;
+  labelLeft?: number;
+  paddingLeft?: number;
   onFocus?: () => void;
   onBlur?: () => void;
 }) {
@@ -49,8 +58,9 @@ function Field(props: {
   return (
     <FocusField
       focus={focus}
-      style={{ borderRadius: 8 }}
+      style={{ borderRadius: 8, paddingLeft: props.paddingLeft }}
       label={props.label}
+      labelLeft={props.labelLeft}
       hasValue={props.hasValue}
       error={props.error}
     >
@@ -127,6 +137,23 @@ describe("FocusField", () => {
     expect(screen.queryByTestId("focus-field-label")).toBeNull();
     renderComponent(<Field label="Recipe title" />);
     expect(screen.getByTestId("focus-field-label")).toBeDefined();
+  });
+
+  it("sets the label at the container's paddingLeft, or at labelLeft when given", () => {
+    // The label's style array, merged in order (the inline `left` is plain).
+    const labelLeftOf = () =>
+      Object.assign(
+        {},
+        ...(viewProps.get("focus-field-label")?.style as object[]),
+      ).left;
+    renderComponent(<Field label="Recipe title" paddingLeft={12} />);
+    expect(labelLeftOf()).toBe(12);
+
+    viewProps.clear();
+    renderComponent(
+      <Field label="Recipe title" paddingLeft={12} labelLeft={28} />,
+    );
+    expect(labelLeftOf()).toBe(28);
   });
 
   it("starts the label floated when the field already has a value", () => {
