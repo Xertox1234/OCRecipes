@@ -1,6 +1,8 @@
 import React, { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -56,13 +58,17 @@ export function ServingStepperChip({
     // If invalid, reverts to current servingCount (no-op)
   }, [editValue, onSetServings]);
 
+  // The chip is the visible field while the count is being typed.
+  const chipFocus = useFieldFocus({ onBlur: handleSubmitEditing });
+
   const pillBackground = isAdjusted
     ? withOpacity(theme.link, 0.1)
     : withOpacity(theme.text, 0.06);
 
   return (
+    // The outer view keeps the adjustable semantics; the FocusField inside
+    // draws the pill, so the ring follows its rounded edge while typing.
     <View
-      style={[styles.chip, { backgroundColor: pillBackground }]}
       accessibilityRole="adjustable"
       accessibilityLabel={`${servingCount} servings`}
       accessibilityHint="Tap plus or minus to adjust servings"
@@ -75,68 +81,75 @@ export function ServingStepperChip({
         if (event.nativeEvent.actionName === "decrement") onDecrement();
       }}
     >
-      <Pressable
-        onPress={handleDecrement}
-        hitSlop={8}
-        accessibilityLabel="Decrease servings"
-        accessibilityRole="button"
+      <FocusField
+        focus={chipFocus}
+        style={[styles.chip, { backgroundColor: pillBackground }]}
       >
-        <Feather
-          name="minus"
-          size={12}
-          color={isAdjusted ? theme.link : theme.textSecondary}
-        />
-      </Pressable>
-
-      {isEditing ? (
-        <FocusTextInput
-          style={[styles.editInput, { color: theme.text }]}
-          value={editValue}
-          onChangeText={setEditValue}
-          onBlur={handleSubmitEditing}
-          onSubmitEditing={handleSubmitEditing}
-          keyboardType="number-pad"
-          selectTextOnFocus
-          autoFocus
-          maxLength={2}
-          accessibilityLabel="Number of servings"
-        />
-      ) : (
         <Pressable
-          onPress={handleNumberPress}
-          accessibilityLabel="Edit serving count"
+          onPress={handleDecrement}
+          hitSlop={8}
+          accessibilityLabel="Decrease servings"
           accessibilityRole="button"
         >
-          <ThemedText
-            style={[
-              styles.countText,
-              {
-                color: isAdjusted ? theme.link : theme.textSecondary,
-              },
-            ]}
-          >
-            <Feather
-              name="users"
-              size={12}
-              color={isAdjusted ? theme.link : theme.textSecondary}
-            />{" "}
-            {servingCount}
-          </ThemedText>
+          <Feather
+            name="minus"
+            size={12}
+            color={isAdjusted ? theme.link : theme.textSecondary}
+          />
         </Pressable>
-      )}
 
-      <Pressable
-        onPress={handleIncrement}
-        hitSlop={8}
-        accessibilityLabel="Increase servings"
-        accessibilityRole="button"
-      >
-        <Feather
-          name="plus"
-          size={12}
-          color={isAdjusted ? theme.link : theme.textSecondary}
-        />
-      </Pressable>
+        {isEditing ? (
+          <FocusTextInput
+            focusRing={false}
+            onFocus={chipFocus.onFocus}
+            onBlur={chipFocus.onBlur}
+            style={[styles.editInput, { color: theme.text }]}
+            value={editValue}
+            onChangeText={setEditValue}
+            onSubmitEditing={handleSubmitEditing}
+            keyboardType="number-pad"
+            selectTextOnFocus
+            autoFocus
+            maxLength={2}
+            accessibilityLabel="Number of servings"
+          />
+        ) : (
+          <Pressable
+            onPress={handleNumberPress}
+            accessibilityLabel="Edit serving count"
+            accessibilityRole="button"
+          >
+            <ThemedText
+              style={[
+                styles.countText,
+                {
+                  color: isAdjusted ? theme.link : theme.textSecondary,
+                },
+              ]}
+            >
+              <Feather
+                name="users"
+                size={12}
+                color={isAdjusted ? theme.link : theme.textSecondary}
+              />{" "}
+              {servingCount}
+            </ThemedText>
+          </Pressable>
+        )}
+
+        <Pressable
+          onPress={handleIncrement}
+          hitSlop={8}
+          accessibilityLabel="Increase servings"
+          accessibilityRole="button"
+        >
+          <Feather
+            name="plus"
+            size={12}
+            color={isAdjusted ? theme.link : theme.textSecondary}
+          />
+        </Pressable>
+      </FocusField>
     </View>
   );
 }

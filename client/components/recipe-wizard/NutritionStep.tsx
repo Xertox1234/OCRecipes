@@ -1,6 +1,8 @@
 import React, { useCallback } from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import type { NutritionData } from "@/hooks/useRecipeForm";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -56,12 +58,60 @@ const FIELDS: NutrientField[] = [
   },
 ];
 
+// One grid box: its own focus state, so the ring follows the rounded cell
+// (caption, value and unit) rather than boxing the number inside it.
+function NutritionCell({
+  field,
+  value,
+  onChange,
+}: {
+  field: NutrientField;
+  value: string;
+  onChange: (key: keyof NutritionData, raw: string) => void;
+}) {
+  const { theme } = useTheme();
+  const cellFocus = useFieldFocus();
+
+  return (
+    <FocusField
+      focus={cellFocus}
+      style={[
+        styles.cell,
+        {
+          backgroundColor: theme.backgroundSecondary,
+          borderColor: withOpacity(theme.border, 0.5),
+        },
+      ]}
+    >
+      <Text style={[styles.cellLabel, { color: theme[field.colorKey] }]}>
+        {field.label}
+      </Text>
+      <FocusTextInput
+        focusRing={false}
+        onFocus={cellFocus.onFocus}
+        onBlur={cellFocus.onBlur}
+        style={[styles.cellInput, { color: theme.text }]}
+        value={value}
+        onChangeText={(text) => onChange(field.key, text)}
+        placeholder="0"
+        placeholderTextColor={theme.textSecondary}
+        keyboardType="decimal-pad"
+        textAlign="center"
+        maxLength={7}
+        accessibilityLabel={`${field.label.toLowerCase()} per serving`}
+        accessibilityHint={`Enter ${field.label.toLowerCase()} in ${field.unit}`}
+      />
+      <Text style={[styles.unitText, { color: theme.textSecondary }]}>
+        {field.unit}
+      </Text>
+    </FocusField>
+  );
+}
+
 export default function NutritionStep({
   nutrition,
   setNutrition,
 }: NutritionStepProps) {
-  const { theme } = useTheme();
-
   const handleChange = useCallback(
     (key: keyof NutritionData, raw: string) => {
       const sanitized = sanitizeNumericInput(raw);
@@ -79,35 +129,12 @@ export default function NutritionStep({
     >
       <View style={styles.grid}>
         {FIELDS.map((field) => (
-          <View
+          <NutritionCell
             key={field.key}
-            style={[
-              styles.cell,
-              {
-                backgroundColor: theme.backgroundSecondary,
-                borderColor: withOpacity(theme.border, 0.5),
-              },
-            ]}
-          >
-            <Text style={[styles.cellLabel, { color: theme[field.colorKey] }]}>
-              {field.label}
-            </Text>
-            <FocusTextInput
-              style={[styles.cellInput, { color: theme.text }]}
-              value={nutrition[field.key]}
-              onChangeText={(text) => handleChange(field.key, text)}
-              placeholder="0"
-              placeholderTextColor={theme.textSecondary}
-              keyboardType="decimal-pad"
-              textAlign="center"
-              maxLength={7}
-              accessibilityLabel={`${field.label.toLowerCase()} per serving`}
-              accessibilityHint={`Enter ${field.label.toLowerCase()} in ${field.unit}`}
-            />
-            <Text style={[styles.unitText, { color: theme.textSecondary }]}>
-              {field.unit}
-            </Text>
-          </View>
+            field={field}
+            value={nutrition[field.key]}
+            onChange={handleChange}
+          />
         ))}
       </View>
     </ScrollView>

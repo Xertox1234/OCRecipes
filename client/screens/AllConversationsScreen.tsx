@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
@@ -60,6 +62,7 @@ export default function AllConversationsScreen() {
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const [search, setSearch] = useState("");
+  const searchFocus = useFieldFocus();
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   useEffect(() => {
@@ -315,7 +318,8 @@ export default function AllConversationsScreen() {
         })}
       </View>
 
-      <View
+      <FocusField
+        focus={searchFocus}
         style={[
           styles.searchBar,
           { backgroundColor: theme.backgroundSecondary },
@@ -328,6 +332,9 @@ export default function AllConversationsScreen() {
           accessible={false}
         />
         <FocusTextInput
+          focusRing={false}
+          onFocus={searchFocus.onFocus}
+          onBlur={searchFocus.onBlur}
           style={[styles.searchInput, { color: theme.text }]}
           placeholder="Search conversations…"
           placeholderTextColor={theme.textSecondary}
@@ -336,7 +343,7 @@ export default function AllConversationsScreen() {
           returnKeyType="search"
           accessibilityLabel="Search conversations"
         />
-      </View>
+      </FocusField>
 
       {isLoading ? (
         <ActivityIndicator style={styles.loading} color={theme.link} />

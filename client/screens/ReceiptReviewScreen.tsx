@@ -627,9 +627,14 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: Spacing.sm,
   },
+  // Rounded at rest-invisible field shape so the focus ring follows a radius;
+  // the inset is cancelled by the negative margin so the text does not move.
   itemName: {
     fontSize: 15,
     fontFamily: FontFamily.medium,
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 4,
+    marginHorizontal: -4,
   },
   originalName: {
     fontSize: 12,

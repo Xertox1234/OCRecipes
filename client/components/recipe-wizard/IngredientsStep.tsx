@@ -7,6 +7,8 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -50,47 +52,58 @@ const IngredientRowView = React.memo(function IngredientRowView({
   onSubmit,
 }: IngredientRowViewProps) {
   const { theme } = useTheme();
+  const rowFocus = useFieldFocus();
 
   return (
+    // The outer view only carries the add/remove animation; the field is the
+    // FocusField inside it, so the ring follows the whole rounded row.
     <Animated.View
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
-      style={[
-        styles.row,
-        {
-          backgroundColor: theme.backgroundSecondary,
-          borderColor: withOpacity(theme.border, 0.5),
-        },
-      ]}
+      style={styles.rowOuter}
     >
-      {/* Purple bullet */}
-      <Text style={[styles.bullet, { color: theme.link }]}>•</Text>
+      <FocusField
+        focus={rowFocus}
+        style={[
+          styles.row,
+          {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: withOpacity(theme.border, 0.5),
+          },
+        ]}
+      >
+        {/* Purple bullet */}
+        <Text style={[styles.bullet, { color: theme.link }]}>•</Text>
 
-      {/* Ingredient input */}
-      <FocusTextInput
-        style={[styles.rowInput, { color: theme.text }]}
-        value={item.text}
-        onChangeText={(text) => onUpdate(item.key, text)}
-        placeholder="e.g. 2 cups flour"
-        placeholderTextColor={theme.textSecondary}
-        returnKeyType="done"
-        onSubmitEditing={onSubmit}
-        accessibilityLabel="Ingredient"
-        accessibilityHint="Enter an ingredient. Press return to add another."
-      />
+        {/* Ingredient input */}
+        <FocusTextInput
+          focusRing={false}
+          onFocus={rowFocus.onFocus}
+          onBlur={rowFocus.onBlur}
+          style={[styles.rowInput, { color: theme.text }]}
+          value={item.text}
+          onChangeText={(text) => onUpdate(item.key, text)}
+          placeholder="e.g. 2 cups flour"
+          placeholderTextColor={theme.textSecondary}
+          returnKeyType="done"
+          onSubmitEditing={onSubmit}
+          accessibilityLabel="Ingredient"
+          accessibilityHint="Enter an ingredient. Press return to add another."
+        />
 
-      {/* Delete button — hidden when only 1 row */}
-      {showDelete && (
-        <Pressable
-          onPress={() => onRemove(item.key)}
-          style={styles.deleteButton}
-          accessibilityRole="button"
-          accessibilityLabel="Remove ingredient"
-          hitSlop={12}
-        >
-          <Feather name="x" size={18} color={theme.error} />
-        </Pressable>
-      )}
+        {/* Delete button — hidden when only 1 row */}
+        {showDelete && (
+          <Pressable
+            onPress={() => onRemove(item.key)}
+            style={styles.deleteButton}
+            accessibilityRole="button"
+            accessibilityLabel="Remove ingredient"
+            hitSlop={12}
+          >
+            <Feather name="x" size={18} color={theme.error} />
+          </Pressable>
+        )}
+      </FocusField>
     </Animated.View>
   );
 });
@@ -174,13 +187,13 @@ export default function IngredientsStep({
 
 const styles = StyleSheet.create({
   listContent: { paddingBottom: Spacing.xl },
+  rowOuter: { marginBottom: Spacing.sm },
   row: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.sm,
     minHeight: 48,
   },
   bullet: {

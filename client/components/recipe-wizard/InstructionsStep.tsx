@@ -8,6 +8,8 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -65,87 +67,98 @@ const InstructionRowView = React.memo(function InstructionRowView({
   const isFirst = !canUp;
   const isLast = !canDown;
   const disabledColor = withOpacity(theme.textSecondary, 0.3);
+  const rowFocus = useFieldFocus();
 
   return (
+    // The outer view only carries the add/remove animation; the field is the
+    // FocusField inside it, so the ring follows the whole rounded row.
     <Animated.View
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
-      style={[
-        styles.row,
-        {
-          backgroundColor: theme.backgroundSecondary,
-          borderColor: withOpacity(theme.border, 0.5),
-        },
-      ]}
+      style={styles.rowOuter}
     >
-      {/* Step number badge */}
-      <View
-        style={[styles.badge, { backgroundColor: theme.accentSolid }]}
-        accessibilityLabel={`Step ${index + 1}`}
+      <FocusField
+        focus={rowFocus}
+        style={[
+          styles.row,
+          {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: withOpacity(theme.border, 0.5),
+          },
+        ]}
       >
-        <Text style={[styles.badgeText, { color: theme.buttonText }]}>
-          {index + 1}
-        </Text>
-      </View>
-
-      {/* Step text input */}
-      <FocusTextInput
-        style={[styles.rowInput, { color: theme.text }]}
-        value={item.text}
-        onChangeText={(text) => onUpdate(item.key, text)}
-        placeholder="Describe this step…"
-        placeholderTextColor={theme.textSecondary}
-        multiline
-        textAlignVertical="top"
-        returnKeyType="default"
-        accessibilityLabel={`Step ${index + 1} instruction`}
-        accessibilityHint="Describe what to do in this step"
-      />
-
-      {/* Reorder and delete controls — 44x44 tap targets (WCAG 2.5.5) */}
-      <View style={styles.controls}>
-        <Pressable
-          onPress={() => onMove(item.key, "up")}
-          disabled={isFirst}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Move step up"
-          accessibilityState={{ disabled: isFirst }}
-          hitSlop={12}
+        {/* Step number badge */}
+        <View
+          style={[styles.badge, { backgroundColor: theme.accentSolid }]}
+          accessibilityLabel={`Step ${index + 1}`}
         >
-          <Feather
-            name="chevron-up"
-            size={20}
-            color={isFirst ? disabledColor : theme.textSecondary}
-          />
-        </Pressable>
-        <Pressable
-          onPress={() => onMove(item.key, "down")}
-          disabled={isLast}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Move step down"
-          accessibilityState={{ disabled: isLast }}
-          hitSlop={12}
-        >
-          <Feather
-            name="chevron-down"
-            size={20}
-            color={isLast ? disabledColor : theme.textSecondary}
-          />
-        </Pressable>
-        {showDelete && (
+          <Text style={[styles.badgeText, { color: theme.buttonText }]}>
+            {index + 1}
+          </Text>
+        </View>
+
+        {/* Step text input */}
+        <FocusTextInput
+          focusRing={false}
+          onFocus={rowFocus.onFocus}
+          onBlur={rowFocus.onBlur}
+          style={[styles.rowInput, { color: theme.text }]}
+          value={item.text}
+          onChangeText={(text) => onUpdate(item.key, text)}
+          placeholder="Describe this step…"
+          placeholderTextColor={theme.textSecondary}
+          multiline
+          textAlignVertical="top"
+          returnKeyType="default"
+          accessibilityLabel={`Step ${index + 1} instruction`}
+          accessibilityHint="Describe what to do in this step"
+        />
+
+        {/* Reorder and delete controls — 44x44 tap targets (WCAG 2.5.5) */}
+        <View style={styles.controls}>
           <Pressable
-            onPress={() => onRemove(item.key)}
+            onPress={() => onMove(item.key, "up")}
+            disabled={isFirst}
             style={styles.controlButton}
             accessibilityRole="button"
-            accessibilityLabel="Remove step"
+            accessibilityLabel="Move step up"
+            accessibilityState={{ disabled: isFirst }}
             hitSlop={12}
           >
-            <Feather name="x" size={20} color={theme.error} />
+            <Feather
+              name="chevron-up"
+              size={20}
+              color={isFirst ? disabledColor : theme.textSecondary}
+            />
           </Pressable>
-        )}
-      </View>
+          <Pressable
+            onPress={() => onMove(item.key, "down")}
+            disabled={isLast}
+            style={styles.controlButton}
+            accessibilityRole="button"
+            accessibilityLabel="Move step down"
+            accessibilityState={{ disabled: isLast }}
+            hitSlop={12}
+          >
+            <Feather
+              name="chevron-down"
+              size={20}
+              color={isLast ? disabledColor : theme.textSecondary}
+            />
+          </Pressable>
+          {showDelete && (
+            <Pressable
+              onPress={() => onRemove(item.key)}
+              style={styles.controlButton}
+              accessibilityRole="button"
+              accessibilityLabel="Remove step"
+              hitSlop={12}
+            >
+              <Feather name="x" size={20} color={theme.error} />
+            </Pressable>
+          )}
+        </View>
+      </FocusField>
     </Animated.View>
   );
 });
@@ -248,6 +261,7 @@ export default function InstructionsStep({
 
 const styles = StyleSheet.create({
   listContent: { paddingBottom: Spacing.xl },
+  rowOuter: { marginBottom: Spacing.sm },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -255,7 +269,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    marginBottom: Spacing.sm,
     minHeight: 64,
     gap: Spacing.sm,
   },

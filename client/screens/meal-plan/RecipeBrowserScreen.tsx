@@ -16,6 +16,8 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -380,6 +382,7 @@ export default function RecipeBrowserScreen() {
   const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
 
   const [searchText, setSearchText] = useState(searchQuery || "");
+  const searchFocus = useFieldFocus();
   const [addingId, setAddingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<RecipeFilters>(DEFAULT_FILTERS);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -795,7 +798,8 @@ export default function RecipeBrowserScreen() {
         ]}
       >
         {/* Search bar always visible */}
-        <View
+        <FocusField
+          focus={searchFocus}
           testID="recipe-search-bar"
           style={[
             styles.searchBar,
@@ -807,6 +811,9 @@ export default function RecipeBrowserScreen() {
         >
           <Feather name="search" size={16} color={theme.textSecondary} />
           <FocusTextInput
+            focusRing={false}
+            onFocus={searchFocus.onFocus}
+            onBlur={searchFocus.onBlur}
             style={[styles.searchInput, { color: theme.text }]}
             placeholder="Search recipes..."
             placeholderTextColor={theme.textSecondary}
@@ -834,7 +841,7 @@ export default function RecipeBrowserScreen() {
               <Feather name="x" size={16} color={theme.textSecondary} />
             </Pressable>
           )}
-        </View>
+        </FocusField>
       </View>
       <Animated.View
         // When the header collapses (opacity interpolates to 0), the invisible

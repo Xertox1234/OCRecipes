@@ -16,6 +16,8 @@ import {
   type TextInput,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import {
   useRoute,
   useNavigation,
@@ -331,6 +333,7 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState("");
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  const composerFocus = useFieldFocus();
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
@@ -668,7 +671,8 @@ export default function ChatScreen() {
           },
         ]}
       >
-        <View
+        <FocusField
+          focus={composerFocus}
           style={[
             styles.inputBar,
             { backgroundColor: theme.backgroundSecondary },
@@ -676,6 +680,9 @@ export default function ChatScreen() {
         >
           <FocusTextInput
             ref={inputRef}
+            focusRing={false}
+            onFocus={composerFocus.onFocus}
+            onBlur={composerFocus.onBlur}
             style={[styles.textInput, { color: theme.text }]}
             placeholder="Ask NutriCoach..."
             placeholderTextColor={theme.textSecondary}
@@ -695,7 +702,7 @@ export default function ChatScreen() {
             busy={isStreaming}
             style={styles.sendButton}
           />
-        </View>
+        </FocusField>
       </View>
     </KeyboardAvoidingView>
   );
