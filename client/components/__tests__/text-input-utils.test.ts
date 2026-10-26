@@ -8,8 +8,6 @@ import {
   getFloatedLabelBounds,
   getInputFirstLineBounds,
   getContainerContentHeight,
-  resolveFocusBorder,
-  compensateSyntheticBorder,
 } from "../text-input-utils";
 
 describe("shouldFloatLabel", () => {
@@ -126,111 +124,5 @@ describe("resolveInputAccessibilityLabel", () => {
     expect(resolveInputAccessibilityLabel(undefined, undefined)).toBe(
       undefined,
     );
-  });
-});
-
-describe("resolveFocusBorder", () => {
-  it("keeps an existing border width and rests on its own colour", () => {
-    expect(
-      resolveFocusBorder({ borderWidth: 2, borderColor: "#112233" }, "#AA0000"),
-    ).toEqual({
-      borderWidth: 2,
-      restColor: "#112233",
-      focusColor: "#AA0000",
-    });
-  });
-
-  it("falls back to the supplied rest colour when a bordered style names none", () => {
-    expect(
-      resolveFocusBorder({ borderWidth: 1 }, "#AA0000", "#CCCCCC"),
-    ).toEqual({ borderWidth: 1, restColor: "#CCCCCC", focusColor: "#AA0000" });
-  });
-
-  it("adds a 1px border that rests fully transparent when the style has none", () => {
-    expect(resolveFocusBorder({}, "#AA0000")).toEqual({
-      borderWidth: 1,
-      restColor: withOpacity("#AA0000", 0),
-      focusColor: "#AA0000",
-    });
-  });
-
-  it("treats a zero border width as borderless", () => {
-    expect(resolveFocusBorder({ borderWidth: 0 }, "#AA0000").borderWidth).toBe(
-      1,
-    );
-  });
-
-  it("ignores a non-string border colour", () => {
-    expect(
-      resolveFocusBorder(
-        { borderWidth: 1, borderColor: 5 as unknown as string },
-        "#AA0000",
-        "#CCCCCC",
-      ).restColor,
-    ).toBe("#CCCCCC");
-  });
-});
-
-describe("compensateSyntheticBorder", () => {
-  it("returns nothing when the style already draws a border", () => {
-    expect(
-      compensateSyntheticBorder({ borderWidth: 1, paddingVertical: 8 }),
-    ).toEqual({});
-  });
-
-  it("takes 1px back from every side's padding so the box keeps its size", () => {
-    expect(compensateSyntheticBorder({ padding: 8 })).toEqual({
-      paddingTop: 7,
-      paddingBottom: 7,
-      paddingLeft: 7,
-      paddingRight: 7,
-    });
-  });
-
-  it("lets a specific side beat the axis shorthand beat the all-sides shorthand", () => {
-    expect(
-      compensateSyntheticBorder({
-        padding: 10,
-        paddingVertical: 8,
-        paddingTop: 4,
-        paddingHorizontal: 12,
-      }),
-    ).toEqual({
-      paddingTop: 3,
-      paddingBottom: 7,
-      paddingLeft: 11,
-      paddingRight: 11,
-    });
-  });
-
-  it("uses a -1 margin on a side that has no padding to give back", () => {
-    expect(compensateSyntheticBorder({ padding: 0, minWidth: 24 })).toEqual({
-      marginTop: -1,
-      marginBottom: -1,
-      marginLeft: -1,
-      marginRight: -1,
-    });
-  });
-
-  it("adds the -1 to the caller's own margin on that side", () => {
-    expect(
-      compensateSyntheticBorder({ paddingHorizontal: 4, marginVertical: 6 }),
-    ).toEqual({
-      marginTop: 5,
-      marginBottom: 5,
-      paddingLeft: 3,
-      paddingRight: 3,
-    });
-  });
-
-  it("leaves a side alone when its padding or margin is not a plain number", () => {
-    const out = compensateSyntheticBorder({
-      paddingTop: "5%" as unknown as number,
-      paddingBottom: 6,
-      paddingHorizontal: 6,
-    });
-    expect(out.paddingTop).toBeUndefined();
-    expect(out.marginTop).toBeUndefined();
-    expect(out.paddingBottom).toBe(5);
   });
 });

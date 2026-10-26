@@ -58,3 +58,11 @@ export function splitFieldStyle(style: object): {
   }
   return { box: box as ViewStyle, text: text as TextStyle };
 }
+
+/**
+ * Added to an input's text style once `splitFieldStyle` has moved its box keys
+ * to the FocusField: the input grows into a box with a set height and shrinks
+ * under a `maxHeight` cap (so a multiline composer still scrolls inside it).
+ * The basis stays auto, so an auto-height box still sizes to the text.
+ */
+export const FIELD_INPUT_FILL: TextStyle = { flexGrow: 1, flexShrink: 1 };
