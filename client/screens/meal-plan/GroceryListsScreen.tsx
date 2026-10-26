@@ -51,6 +51,10 @@ import {
 } from "@/lib/format";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
+function startOfLocalDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 /**
  * A tappable date drawn through FocusField: shows as focused while its picker
  * is open. There is no text input, so focus is driven by `open`.
@@ -186,16 +190,18 @@ export default function GroceryListsScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   // Dates are held as local `Date`s and become `YYYY-MM-DD` only in the
   // request payload — never parse such a string with `new Date(str)` (UTC).
-  const [startDate, setStartDate] = useState(() => new Date());
+  // Every date in state is local midnight, so comparisons are by day only.
+  const [startDate, setStartDate] = useState(() => startOfLocalDay(new Date()));
   const [endDate, setEndDate] = useState(() => {
-    const d = new Date();
+    const d = startOfLocalDay(new Date());
     d.setDate(d.getDate() + 6);
     return d;
   });
   // iOS only: which field's inline picker is open (one at a time).
   const [openPicker, setOpenPicker] = useState<"start" | "end" | null>(null);
 
-  const handleDateChange = (which: "start" | "end", picked: Date) => {
+  const handleDateChange = (which: "start" | "end", raw: Date) => {
+    const picked = startOfLocalDay(raw);
     if (which === "start") {
       setStartDate(picked);
       if (picked > endDate) setEndDate(picked);
@@ -256,6 +262,7 @@ export default function GroceryListsScreen() {
       {
         onSuccess: (list) => {
           setShowDatePicker(false);
+          setOpenPicker(null);
           navigation.navigate("GroceryList", { listId: list.id });
         },
       },
@@ -456,7 +463,10 @@ export default function GroceryListsScreen() {
               ) : null}
               <View style={styles.datePickerActions}>
                 <PressableScale
-                  onPress={() => setShowDatePicker(false)}
+                  onPress={() => {
+                    setShowDatePicker(false);
+                    setOpenPicker(null);
+                  }}
                   style={[styles.cancelButton, { borderColor: theme.border }]}
                   accessibilityRole="button"
                   accessibilityLabel="Cancel"

@@ -198,6 +198,38 @@ describe("GroceryListsScreen — date picker", () => {
     );
   });
 
+  it("closes any open picker on Cancel, so reopening starts with none", () => {
+    open();
+    fireEvent.click(screen.getByLabelText("End date, Tue, Sep 8"));
+    expect(screen.getByTestId("date-picker-stub")).toBeTruthy();
+    fireEvent.click(screen.getAllByLabelText("Cancel")[0]);
+    fireEvent.click(screen.getByLabelText("Generate new grocery list"));
+    expect(screen.queryByTestId("date-picker-stub")).toBeNull();
+  });
+
+  it("closes any open picker after a successful Generate", () => {
+    createMutate.mockImplementation((_p, opts) => opts.onSuccess({ id: 1 }));
+    open();
+    fireEvent.click(screen.getByLabelText("End date, Tue, Sep 8"));
+    fireEvent.click(screen.getByLabelText("Generate grocery list"));
+    fireEvent.click(screen.getByLabelText("Generate new grocery list"));
+    expect(screen.queryByTestId("date-picker-stub")).toBeNull();
+    createMutate.mockReset();
+  });
+
+  it("compares days only: a start picked later on the end's day leaves end unchanged", () => {
+    open();
+    fireEvent.click(screen.getByLabelText("Start date, Wed, Sep 2"));
+    act(() => {
+      lastPicker().onValueChange({}, new Date(2026, 8, 8, 23, 0));
+    });
+    fireEvent.click(screen.getByLabelText("Start date, Tue, Sep 8"));
+    fireEvent.click(screen.getByLabelText("End date, Tue, Sep 8"));
+    // End stays its own local midnight; start is normalized to midnight too.
+    expect(lastPicker().value).toEqual(new Date(2026, 8, 8));
+    expect(lastPicker().minimumDate).toEqual(new Date(2026, 8, 8));
+  });
+
   it("opens the imperative Android picker with minimumDate for End, rendering nothing inline", () => {
     Platform.OS = "android";
     open();
