@@ -9,6 +9,13 @@ import {
   Platform,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import {
+  LABELLED_INPUT_GEOMETRY,
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
@@ -143,6 +150,8 @@ interface QuickLogDrawerProps {
   onResultsShown?: () => void;
 }
 
+const INPUT_LABEL = "What did you eat?";
+
 export function QuickLogDrawer({
   action,
   isOpen,
@@ -155,6 +164,7 @@ export function QuickLogDrawer({
   const haptics = useHaptics();
   const toast = useToast();
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const inputFocus = useFieldFocus();
 
   const handleLogSuccess = useCallback(
     ({ firstName, totalCalories }: LogSummary) => {
@@ -297,7 +307,10 @@ export function QuickLogDrawer({
       bodyBackgroundColor={withOpacity(theme.link, 0.04)}
     >
       {/* Text input row */}
-      <View
+      <FocusField
+        focus={inputFocus}
+        label={INPUT_LABEL}
+        hasValue={session.inputText.length > 0}
         style={[
           styles.inputRow,
           {
@@ -307,8 +320,16 @@ export function QuickLogDrawer({
         ]}
       >
         <FocusTextInput
+          focusRing={false}
+          onFocus={inputFocus.onFocus}
+          onBlur={inputFocus.onBlur}
           style={[styles.textInput, { color: theme.text }]}
-          placeholder="What did you eat?"
+          // The label rests where the placeholder would; it shows once floated.
+          placeholder={resolvePlaceholder(
+            INPUT_LABEL,
+            "e.g. 2 eggs and toast",
+            shouldFloatLabel(inputFocus.focused, session.inputText),
+          )}
           placeholderTextColor={theme.textSecondary}
           value={session.inputText}
           onChangeText={session.setInputText}
@@ -370,7 +391,7 @@ export function QuickLogDrawer({
             accessible={false}
           />
         </Pressable>
-      </View>
+      </FocusField>
 
       {/* Parse error, or a parse that found no food */}
       <InlineError message={session.parseError} />
@@ -465,11 +486,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     gap: Spacing.xs,
   },
+  // Labelled field: the value sits under the floated label's row.
   textInput: {
     flex: 1,
-    height: 40,
     fontSize: 14,
     fontFamily: FontFamily.regular,
+    paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
+    paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
+    lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
   },
   iconButton: {
     width: 36,

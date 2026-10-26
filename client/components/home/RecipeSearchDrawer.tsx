@@ -2,6 +2,13 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import {
+  LABELLED_INPUT_GEOMETRY,
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { useNavigation } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -51,6 +58,8 @@ function Chip({ label, onPress }: { label: string; onPress: () => void }) {
   );
 }
 
+const SEARCH_LABEL = "Search recipes";
+
 interface RecipeSearchDrawerProps {
   isOpen: boolean;
   onUsed: () => void;
@@ -65,6 +74,7 @@ export function RecipeSearchDrawer({
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [text, setText] = useState("");
   const [recent, setRecent] = useState<string[]>(getRecentSearches);
+  const searchFocus = useFieldFocus();
 
   // Refresh recent list whenever the drawer opens
   useEffect(() => {
@@ -99,7 +109,10 @@ export function RecipeSearchDrawer({
 
   return (
     <View style={styles.container}>
-      <View
+      <FocusField
+        focus={searchFocus}
+        label={SEARCH_LABEL}
+        hasValue={text.length > 0}
         style={[
           styles.inputRow,
           {
@@ -109,17 +122,25 @@ export function RecipeSearchDrawer({
         ]}
       >
         <FocusTextInput
+          focusRing={false}
+          onFocus={searchFocus.onFocus}
+          onBlur={searchFocus.onBlur}
           style={[styles.input, { color: theme.text }]}
-          placeholder="Search recipes…"
+          // The label rests where the placeholder would; it shows once floated.
+          placeholder={resolvePlaceholder(
+            SEARCH_LABEL,
+            "Search recipes…",
+            shouldFloatLabel(searchFocus.focused, text),
+          )}
           placeholderTextColor={theme.textSecondary}
           value={text}
           onChangeText={setText}
           onSubmitEditing={() => runSearch(text)}
           returnKeyType="search"
-          accessibilityLabel="Search recipes"
+          accessibilityLabel={SEARCH_LABEL}
           // No auto-focus: keep chips/trending visible until the user taps in.
         />
-      </View>
+      </FocusField>
 
       {recent.length > 0 && (
         <View style={styles.section}>
@@ -186,7 +207,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: Spacing.sm,
   },
-  input: { flex: 1, height: 40, fontSize: 14, fontFamily: FontFamily.regular },
+  // Labelled field: the value sits under the floated label's row.
+  input: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
+    paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
+    lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
+  },
   section: { gap: Spacing.xs },
   sectionLabel: {
     fontFamily: FontFamily.medium,

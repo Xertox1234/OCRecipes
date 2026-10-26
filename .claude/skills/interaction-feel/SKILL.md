@@ -20,16 +20,16 @@ For every interactive element you build or touch, walk this table and implement 
 applicable row. A row you skip must be a deliberate N/A (e.g. no async work → no
 loading row), not an omission.
 
-| Trigger                                                 | Required feedback                                                                                                           | House idiom                                                                                                                                                                                      |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Press in/out                                            | Visible response: scale 0.98 spring                                                                                         | `withSpring(pressSpringConfig)` gated `!reducedMotion` — `client/components/Button.tsx` (`handlePressIn`/`handlePressOut`). Prefer the shared `Button`; only hand-roll for non-button pressables |
-| Input focus/blur                                        | Animated border-color transition (and floating label where the design uses in-field labels)                                 | Shipped in the shared `client/components/TextInput.tsx` — see below; opt in with the `label` prop where the design uses in-field labels                                                          |
-| Selection (chips, pickers, toggles, segmented rows)     | `selection()` haptic + selected-state visual                                                                                | `useHaptics().selection()`                                                                                                                                                                       |
-| Submit start                                            | Button `loading` + `loadingText`, inputs `editable={false}`, concurrent-submit guard                                        | `Button` props; guard pattern in `client/components/ChangeEmailModal.tsx`                                                                                                                        |
-| Success                                                 | A _moment_: success haptic + iOS announce + visible confirmation (toast or inline flash)                                    | `notification(Success)` + `AccessibilityInfo.announceForAccessibility` + `Toast` or a `FadeInDown` inline pill                                                                                   |
-| Error                                                   | Error haptic + `InlineError` (announces internally — never double-announce) + draft preserved; shake for validation rejects | `notification(Error)`; shake pattern below                                                                                                                                                       |
-| Celebratory confirm (favourite, goal hit, scan success) | Overshoot pop, not the clamped press spring                                                                                 | `successPopConfig` (bouncy) — press feedback uses `pressSpringConfig` (clamped). Two tiers; don't swap them                                                                                      |
-| Expand/collapse                                         | Asymmetric timing (out-cubic in, in-cubic out)                                                                              | `expandTimingConfig` / `collapseTimingConfig`                                                                                                                                                    |
+| Trigger                                                 | Required feedback                                                                                                                 | House idiom                                                                                                                                                                                                                  |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Press in/out                                            | Visible response: scale 0.98 spring                                                                                               | `withSpring(pressSpringConfig)` gated `!reducedMotion` — `client/components/Button.tsx` (`handlePressIn`/`handlePressOut`). Prefer the shared `Button`; only hand-roll for non-button pressables                             |
+| Input focus/blur                                        | 2px ring + warm fill on the visible field, following its corner radius (and floating label where the design uses in-field labels) | Shipped as `FocusField` + `useFieldFocus` (behind `FocusTextInput` / `FocusBottomSheetTextInput`) — see below for which to use and the boxed `TextInput`'s status; opt in with `label` where the design uses in-field labels |
+| Selection (chips, pickers, toggles, segmented rows)     | `selection()` haptic + selected-state visual                                                                                      | `useHaptics().selection()`                                                                                                                                                                                                   |
+| Submit start                                            | Button `loading` + `loadingText`, inputs `editable={false}`, concurrent-submit guard                                              | `Button` props; guard pattern in `client/components/ChangeEmailModal.tsx`                                                                                                                                                    |
+| Success                                                 | A _moment_: success haptic + iOS announce + visible confirmation (toast or inline flash)                                          | `notification(Success)` + `AccessibilityInfo.announceForAccessibility` + `Toast` or a `FadeInDown` inline pill                                                                                                               |
+| Error                                                   | Error haptic + `InlineError` (announces internally — never double-announce) + draft preserved; shake for validation rejects       | `notification(Error)`; shake pattern below                                                                                                                                                                                   |
+| Celebratory confirm (favourite, goal hit, scan success) | Overshoot pop, not the clamped press spring                                                                                       | `successPopConfig` (bouncy) — press feedback uses `pressSpringConfig` (clamped). Two tiers; don't swap them                                                                                                                  |
+| Expand/collapse                                         | Asymmetric timing (out-cubic in, in-cubic out)                                                                                    | `expandTimingConfig` / `collapseTimingConfig`                                                                                                                                                                                |
 
 ## House rules
 
@@ -54,20 +54,48 @@ loading row), not an omission.
 
 ## Shipped focus patterns (extend, don't re-implement)
 
-The animated focus border and floating label live in the shared
-`client/components/TextInput.tsx` (pure logic: `client/components/text-input-utils.ts`;
-timing token: `focusTimingConfig` in `client/constants/animations.ts`). Focus feedback
-is NOT automatic for a bare react-native input — ESLint (`no-restricted-imports`, guard
+**The look:** on focus a 2px ring (`theme.focusRing`, `FOCUS_RING_WIDTH`) and a warm
+fill (`theme.focusFill`, a low-opacity link tint over the field's own resting fill) fade
+in over `focusTimingConfig` (reduced motion snaps, never drops). Both follow the
+**visible field's** corner radius. The resting look (fill, edge, radius) stays the
+caller's. An error keeps precedence: the ring shows in `theme.error` at full strength.
+
+**The primitive:** `client/components/FocusField.tsx` draws the fill under and the ring
+over its children; `client/components/useFieldFocus.ts` holds the state
+(`{ focused, progress, onFocus, onBlur }`). Pure logic: `field-focus-utils.ts`
+(`splitFieldStyle`, `resolveFieldRadius`) and `text-input-utils.ts`. Focus feedback is
+NOT automatic for a bare react-native input — ESLint (`no-restricted-imports`, guard
 test `scripts/__tests__/no-bare-text-input.test.ts`) forbids importing `TextInput` from
-`react-native` or `BottomSheetTextInput` from gorhom in `client/`. Pick the primitive:
-boxed field → `TextInput`; composer / inline / any input that keeps its own look →
-`FocusTextInput` (drop-in, fades the input's own border to the link colour; a borderless
-style gets a 1px transparent border); inside a gorhom sheet → `FocusBottomSheetTextInput`.
-Shared logic lives in `client/components/useFocusBorder.ts`. Opt into the floating label with the `label` prop — it
-doubles as the input's accessible name unless `accessibilityLabel` is set, and suppresses
-the `placeholder` while resting. The label scale uses the `transformOrigin: "left"` style
-prop (supported on RN 0.81/Fabric). If you're writing `onFocus` state or a border
-interpolation in a screen file, stop — extend the shared component instead.
+`react-native` or `BottomSheetTextInput` from gorhom in `client/`. Pick by **what draws
+the visible field**:
+
+- **The input itself** (its style has the fill/edge/radius) → `FocusTextInput`, or
+  `FocusBottomSheetTextInput` inside a gorhom sheet. They split the style: box keys go on
+  a `FocusField`, text keys stay on the input.
+- **A wrapper `View`** around the input plus icons/buttons (search bars, Quick Log row,
+  composers whose pill holds the send button, wizard rows/cells, stepper chips) → make
+  the wrapper a `FocusField` with the wrapper's style, call `useFieldFocus()` once, and
+  render the input with `focusRing={false}` + the field's `onFocus`/`onBlur` (pass your
+  own handlers through `useFieldFocus({ onFocus, onBlur })`). Never a ring inside a ring.
+  Reference: `client/components/meal-plan/QuickAddSheet.tsx`,
+  `client/components/home/RecipeSearchDrawer.tsx`. `FocusField` takes no animation
+  props — keep an outer `Animated.View` for `entering`/`exiting` and an outer `View` for
+  accessibility roles/actions.
+- **A boxed form field** → `client/components/TextInput.tsx` (still animates its own
+  border to the link colour; it has not moved onto `FocusField` yet).
+
+**Floating label (the split):** labelled = the field's plain name (`label` on
+`FocusField` / `TextInput`); example text stays the `placeholder`, suppressed while the
+label rests (`resolvePlaceholder(label, placeholder, shouldFloatLabel(focused, value))`).
+Pass `hasValue` so the label stays floated after blur. A labelled wrapper is at least
+56px (`FocusField` adds the minHeight); its inner input drops any fixed height and takes
+`LABELLED_INPUT_GEOMETRY` padding (`inputPaddingTop` 26, `inputPaddingBottom` 10,
+`inputLineHeight` 18). The label sits at the wrapper's numeric `paddingLeft` (else 16).
+**No label** on chat composers, tiny inline number boxes, and repeated rows/grid boxes
+(wizard rows, nutrition cells) — ring + fill only; they keep their placeholder, unit or
+caption. The label is hidden from screen readers — the input's `accessibilityLabel`
+carries the name. The label scale uses `transformOrigin: "left"`. If you're writing
+`onFocus` state or a border interpolation in a screen file, stop — use the primitive.
 
 ## Shipped shake pattern (extend, don't re-implement)
 
@@ -93,14 +121,14 @@ commit is lost).
 
 ## Common mistakes
 
-| Mistake                                             | Fix                                                                                                              |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Task didn't say "polished," so the form ships inert | The inventory is unconditional — walk it for every interactive element                                           |
-| Focus ring hand-rolled per screen with `useState`   | Delete the hand-rolled version — the shared `TextInput` already animates focus; extend it if something's missing |
-| `await`-less `onSave(...)` then immediate clear     | `await`, show `loading`, clear only on success, preserve draft on failure                                        |
-| Silent success (form just resets)                   | Success is a moment: haptic + announce + visible confirmation                                                    |
-| `Haptics.impactAsync()` called directly             | `useHaptics()` — Android toggle + reduced-motion gating live there                                               |
-| One spring config for everything                    | Press = clamped `pressSpringConfig`; celebration = overshoot `successPopConfig`                                  |
+| Mistake                                             | Fix                                                                                                                       |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Task didn't say "polished," so the form ships inert | The inventory is unconditional — walk it for every interactive element                                                    |
+| Focus ring hand-rolled per screen with `useState`   | Delete the hand-rolled version — `FocusField` + `useFieldFocus` already animate focus; extend them if something's missing |
+| `await`-less `onSave(...)` then immediate clear     | `await`, show `loading`, clear only on success, preserve draft on failure                                                 |
+| Silent success (form just resets)                   | Success is a moment: haptic + announce + visible confirmation                                                             |
+| `Haptics.impactAsync()` called directly             | `useHaptics()` — Android toggle + reduced-motion gating live there                                                        |
+| One spring config for everything                    | Press = clamped `pressSpringConfig`; celebration = overshoot `successPopConfig`                                           |
 
 ## Verify
 

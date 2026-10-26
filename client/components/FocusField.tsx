@@ -35,6 +35,8 @@ interface FocusFieldProps {
   hasValue?: boolean;
   /** Error state: the ring shows in the error colour at full strength. */
   error?: boolean;
+  /** Test id for the field container (the element that draws the field). */
+  testID?: string;
   children: React.ReactNode;
 }
 
@@ -51,6 +53,7 @@ export function FocusField({
   label,
   hasValue,
   error,
+  testID,
   children,
 }: FocusFieldProps) {
   const { theme } = useTheme();
@@ -123,7 +126,10 @@ export function FocusField({
   const labelLeft = typeof paddingLeft === "number" ? paddingLeft : Spacing.lg;
 
   return (
-    <Animated.View style={[style, label ? styles.labelled : null]}>
+    <Animated.View
+      testID={testID}
+      style={[style, label ? styles.labelled : null]}
+    >
       <Animated.View
         testID="focus-field-fill"
         pointerEvents="none"

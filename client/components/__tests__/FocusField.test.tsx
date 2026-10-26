@@ -101,6 +101,21 @@ describe("FocusField", () => {
     expect(kids.indexOf(ring)).toBeGreaterThan(kids.indexOf(input));
   });
 
+  it("puts the caller's testID on the field container that holds the overlays", () => {
+    function Tagged() {
+      const focus = useFieldFocus();
+      return (
+        <FocusField focus={focus} testID="search-field">
+          <RNTextInput placeholder="Type here" />
+        </FocusField>
+      );
+    }
+    renderComponent(<Tagged />);
+    const field = screen.getByTestId("search-field");
+    expect(field).toBe(screen.getByTestId("focus-field-ring").parentElement);
+    expect(field.contains(screen.getByPlaceholderText("Type here"))).toBe(true);
+  });
+
   it("renders the label text hidden from the accessibility tree", () => {
     renderComponent(<Field label="Recipe title" />);
     const label = screen.getByText("Recipe title");
