@@ -3,6 +3,7 @@ import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 
 import GoalSetupScreen from "../GoalSetupScreen";
@@ -455,5 +456,48 @@ describe("GoalSetupScreen — Calculate and Save point at what's missing", () =>
     expect(mockNotification).toHaveBeenCalledExactlyOnceWith(
       Haptics.NotificationFeedbackType.Error,
     );
+  });
+});
+
+// Controller ruling (fix round 1): with only a choice missing, nothing on
+// screen changes on Calculate, so a screen-reader user hears the "Still
+// needed" line — once per press.
+describe("GoalSetupScreen — Calculate with only a choice missing", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("announces what's still needed once per press", async () => {
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderComponent(<GoalSetupScreen />);
+    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("Weight"), {
+      target: { value: "70" },
+    });
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "170" },
+    });
+    fireEvent.click(screen.getByLabelText("Male"));
+    fireEvent.click(screen.getByLabelText("Sedentary"));
+    announce.mockClear();
+
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    await waitFor(() => expect(announce).toHaveBeenCalledTimes(1));
+    expect(announce).toHaveBeenCalledWith("Still needed: primary goal");
+
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    await waitFor(() => expect(announce).toHaveBeenCalledTimes(2));
+    expect(mockApiRequest).not.toHaveBeenCalled();
+    announce.mockRestore();
+  });
+
+  it("does not announce when a number field takes focus instead", async () => {
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderComponent(<GoalSetupScreen />);
+    announce.mockClear();
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(announce).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^Still needed/),
+    );
+    announce.mockRestore();
   });
 });

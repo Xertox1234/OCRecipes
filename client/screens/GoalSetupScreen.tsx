@@ -29,6 +29,7 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
 import { parseDecimalInput } from "@/lib/number-input";
+import { announceTogether } from "@/lib/announce-together";
 import {
   goalFieldError,
   goalSubmitError,
@@ -440,6 +441,11 @@ export default function GoalSetupScreen() {
       if (refused.length === 0) {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
       }
+      // Only a choice is missing: no field takes focus and nothing on screen
+      // changes, so say what's still needed — once per press (a submit, not
+      // typing). Both platforms: the "Still needed" line has no live region.
+      if (!target)
+        announceTogether(`Still needed: ${missingFields.join(", ")}`);
       return;
     }
     if (refused.length > 0) return;
