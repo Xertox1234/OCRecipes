@@ -54,7 +54,9 @@ vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-function iosTrialSubscription(): ProductSubscriptionIOS {
+function iosTrialSubscription(
+  overrides: Partial<ProductSubscriptionIOS> = {},
+): ProductSubscriptionIOS {
   return {
     currency: "USD",
     description: "Premium",
@@ -68,19 +70,22 @@ function iosTrialSubscription(): ProductSubscriptionIOS {
     title: "Premium",
     type: "subs",
     typeIOS: "auto-renewable-subscription",
-    subscriptionInfoIOS: {
-      subscriptionGroupId: "group-1",
-      subscriptionPeriod: { unit: "year", value: 1 },
-      introductoryOffer: {
+    subscriptionGroupIdIOS: "group-1",
+    subscriptionPeriodNumberIOS: "1",
+    subscriptionPeriodUnitIOS: "year",
+    subscriptionOffers: [
+      {
         displayPrice: "$0.00",
         id: "intro",
+        numberOfPeriodsIOS: 1,
         paymentMode: "free-trial",
         period: { unit: "day", value: 3 },
         periodCount: 1,
         price: 0,
         type: "introductory",
       },
-    },
+    ],
+    ...overrides,
   };
 }
 
@@ -88,21 +93,21 @@ function iosPurchase(overrides: Partial<PurchaseIOS> = {}): PurchaseIOS {
   return {
     id: "1",
     isAutoRenewing: true,
-    platform: "ios",
     productId: SKU,
     purchaseState: "purchased",
     purchaseToken: "eyJ.jws.sig",
     quantity: 1,
     store: "apple",
+    storeId: "1",
     transactionDate: 1000,
     transactionId: "2000000001",
     ...overrides,
   };
 }
 
-async function connectedWithProduct() {
+async function connectedWithProduct(subscription = iosTrialSubscription()) {
   hookState.connected = true;
-  hookState.subscriptions = [iosTrialSubscription()];
+  hookState.subscriptions = [subscription];
   const hook = renderHook(() => useExpoIAP());
   await waitFor(() => expect(hook.result.current.products).toHaveLength(1));
   return hook;
@@ -156,6 +161,24 @@ describe("useExpoIAP — loading the subscription", () => {
     );
     const { result } = await connectedWithProduct();
 
+    expect(result.current.products[0].introOffer).toBeNull();
+  });
+
+  it("skips the eligibility call and shows no trial when the product has no group id", async () => {
+    const { result } = await connectedWithProduct(
+      iosTrialSubscription({ subscriptionGroupIdIOS: null }),
+    );
+
+    expect(storeMock.isEligibleForIntroOfferIOS).not.toHaveBeenCalled();
+    expect(result.current.products[0].introOffer).toBeNull();
+  });
+
+  it("skips the eligibility call when the store lists no free trial", async () => {
+    const { result } = await connectedWithProduct(
+      iosTrialSubscription({ subscriptionOffers: null }),
+    );
+
+    expect(storeMock.isEligibleForIntroOfferIOS).not.toHaveBeenCalled();
     expect(result.current.products[0].introOffer).toBeNull();
   });
 });
@@ -353,6 +376,21 @@ describe("useExpoIAP — restoring", () => {
 
     expect(storeMock.restorePurchases).toHaveBeenCalled();
     expect(restored?.transactionId).toBe("new");
+  });
+
+  it("restoring twice returns the same purchase", async () => {
+    // expo-iap 6 runs the store's own restore first on Android, so a second
+    // tap must read the same result rather than fail.
+    storeMock.getAvailablePurchases.mockImplementation(() =>
+      Promise.resolve([iosPurchase({ transactionId: "only" })]),
+    );
+    const { result } = await connectedWithProduct();
+
+    const first = await result.current.restorePurchases();
+    const second = await result.current.restorePurchases();
+
+    expect(first?.transactionId).toBe("only");
+    expect(second).toEqual(first);
   });
 
   it("returns null when the store has nothing of ours", async () => {

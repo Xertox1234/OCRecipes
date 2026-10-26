@@ -1,5 +1,5 @@
 // The real store path: implements the app's UseIAPResult on top of expo-iap
-// 3.x. Loaded only outside __DEV__ (see ./index.ts), because importing
+// 6.x. Loaded only outside __DEV__ (see ./index.ts), because importing
 // expo-iap loads its native module. TypeScript checks this module against
 // UseIAPResult, which the old direct `useIAP` assignment never did.
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,6 +13,7 @@ import type { ProductSubscription, Purchase } from "expo-iap";
 import { logger } from "../logger";
 import { PRODUCT_IDS } from "./constants";
 import {
+  freeTrialOfferIOS,
   toIAPProductAndroid,
   toIAPProductIOS,
   toPurchaseResult,
@@ -53,11 +54,12 @@ async function resolveProduct(
   if (subscription.platform === "android") {
     return toIAPProductAndroid(subscription);
   }
-  const info = subscription.subscriptionInfoIOS;
+  const groupId = subscription.subscriptionGroupIdIOS;
   let eligible = false;
-  if (info?.introductoryOffer) {
+  // No group id means eligibility can't be asked: show no trial.
+  if (freeTrialOfferIOS(subscription) && groupId) {
     try {
-      eligible = await isEligibleForIntroOfferIOS(info.subscriptionGroupId);
+      eligible = await isEligibleForIntroOfferIOS(groupId);
     } catch (error) {
       // Unknown eligibility: never promise a free trial the store may not give.
       logger.warn("Intro offer eligibility check failed:", error);
