@@ -6,18 +6,12 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
-import Animated from "react-native-reanimated";
+import { StyleSheet, View, Pressable } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
 import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
-import { useFocusBorder } from "@/components/useFocusBorder";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
@@ -80,10 +74,7 @@ function QuickAddSheetContentInner(
 ) {
   const { theme } = useTheme();
   // One focus ring for the whole box, not one nested around the inner input.
-  const searchBoxFocus = useFocusBorder([
-    styles.searchBox,
-    { backgroundColor: withOpacity(theme.text, 0.05) },
-  ]);
+  const searchBoxFocus = useFieldFocus();
   const haptics = useHaptics();
   const toast = useToast();
   const inputRef = useRef<TextInput>(null);
@@ -422,8 +413,12 @@ function QuickAddSheetContentInner(
 
       {/* Search */}
       <View style={styles.searchContainer}>
-        <Animated.View
-          style={searchBoxFocus.focusStyle as StyleProp<ViewStyle>}
+        <FocusField
+          focus={searchBoxFocus}
+          style={[
+            styles.searchBox,
+            { backgroundColor: withOpacity(theme.text, 0.05) },
+          ]}
         >
           <Feather name="search" size={16} color={theme.textSecondary} />
           <FocusBottomSheetTextInput
@@ -438,7 +433,7 @@ function QuickAddSheetContentInner(
             onChangeText={setSearchQuery}
             accessibilityLabel="Search recipes"
           />
-        </Animated.View>
+        </FocusField>
       </View>
 
       {/* Results */}

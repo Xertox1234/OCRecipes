@@ -1,48 +1,59 @@
 import React, { forwardRef } from "react";
-import type { StyleProp, TextStyle } from "react-native";
+import { StyleSheet, type StyleProp, type TextStyle } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
-import Animated from "react-native-reanimated";
 
-import { useFocusBorder } from "./useFocusBorder";
+import { FocusField } from "./FocusField";
+import { FIELD_INPUT_FILL, splitFieldStyle } from "./field-focus-utils";
+import { useFieldFocus } from "./useFieldFocus";
 
 type SheetInputProps = React.ComponentProps<typeof BottomSheetTextInput>;
-
-// Keep gorhom's component as the actual input — it tracks keyboard focus for
-// the sheet. Reanimated 4.3 types createAnimatedComponent loosely, so restore
-// the original props/ref.
-const AnimatedSheetInput = Animated.createAnimatedComponent(
-  BottomSheetTextInput,
-) as unknown as typeof BottomSheetTextInput;
 
 interface FocusBottomSheetTextInputProps
   extends Omit<SheetInputProps, "style"> {
   style?: StyleProp<TextStyle>;
   /**
-   * `false` when a container around the input draws the focus ring instead
-   * (call `useFocusBorder` on the container's style and pass its handlers as
-   * this input's `onFocus`/`onBlur`) — avoids a ring nested inside a box.
+   * `false` when a container around the input draws the visible field: wrap it
+   * in `FocusField` (with `useFieldFocus`) and pass the field's handlers as
+   * this input's `onFocus`/`onBlur` — never a ring inside a ring.
    */
   focusRing?: boolean;
 }
 
 /**
  * `BottomSheetTextInput` with the shared focus feedback — the sibling of
- * `FocusTextInput` for inputs inside a gorhom bottom sheet.
+ * `FocusTextInput` for inputs inside a gorhom bottom sheet. gorhom's component
+ * stays the actual input: it tracks keyboard focus for the sheet.
  */
 export const FocusBottomSheetTextInput = forwardRef<
   TextInput,
   FocusBottomSheetTextInputProps
 >(({ style, onFocus, onBlur, focusRing = true, ...props }, ref) => {
-  const focus = useFocusBorder(style, onFocus, onBlur, focusRing);
+  const field = useFieldFocus({ onFocus, onBlur });
+
+  if (!focusRing) {
+    return (
+      <BottomSheetTextInput
+        ref={ref}
+        {...props}
+        style={style}
+        onFocus={onFocus}
+        onBlur={onBlur}
+      />
+    );
+  }
+
+  const { box, text } = splitFieldStyle(StyleSheet.flatten(style) ?? {});
   return (
-    <AnimatedSheetInput
-      ref={ref}
-      {...props}
-      style={focus.focusStyle as StyleProp<TextStyle>}
-      onFocus={focus.onFocus}
-      onBlur={focus.onBlur}
-    />
+    <FocusField focus={field} style={box}>
+      <BottomSheetTextInput
+        ref={ref}
+        {...props}
+        style={{ ...text, ...FIELD_INPUT_FILL }}
+        onFocus={field.onFocus}
+        onBlur={field.onBlur}
+      />
+    </FocusField>
   );
 });
 
