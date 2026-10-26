@@ -433,12 +433,19 @@ describe("ChangePasswordScreen — validation timing", () => {
   });
 });
 
+// A checklist line on show: mounted AND not hidden from screen readers (a
+// closed checklist keeps its lines mounted under a zero height).
+function shownRule(label: string): HTMLElement | null {
+  const el = screen.queryByLabelText(label);
+  return el && !el.closest('[aria-hidden="true"]') ? el : null;
+}
+
 // Form-fields spec §5.2: the new password's rule ticks as you type.
 describe("ChangePasswordScreen — rule checklist", () => {
   it("shows the length rule on focus and ticks it at the minimum", () => {
     renderScreen({ hasPassword: true, providers: [] });
     const input = screen.getByLabelText("New password");
-    expect(screen.queryByText("At least 8 characters")).toBeNull();
+    expect(shownRule("At least 8 characters")).toBeNull();
     fireEvent.focus(input);
     expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
     fireEvent.change(input, { target: { value: NEW } });
@@ -467,6 +474,6 @@ describe("ChangePasswordScreen — rule checklist", () => {
     type("New password", "abc");
     await act(async () => tap("Save new password"));
     expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
-    expect(screen.queryByLabelText("At least 8 characters")).toBeNull();
+    expect(shownRule("At least 8 characters")).toBeNull();
   });
 });

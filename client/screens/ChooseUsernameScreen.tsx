@@ -109,35 +109,38 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
         </View>
 
         <View style={styles.form}>
-          <TextInput
-            leftIcon="user"
-            label="Username"
-            ref={usernameRef}
-            value={username.value}
-            onChangeText={username.onChangeText}
-            onFocus={username.onFocus}
-            onBlur={username.onBlur}
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="username"
-            autoComplete="username"
-            returnKeyType="done"
-            onSubmitEditing={onSubmit}
-            editable={!busy}
-            testID="input-choose-username"
-            error={!!shownError}
-            errorMessage={shownError || undefined}
-          />
-          <FieldRules
-            rules={checklist}
-            visible={rulesVisible({
-              focused: username.focused,
-              checked: username.checked,
-              rules: checklist,
-            })}
-            checked={username.checked}
-            hideUnmet={username.error !== null}
-          />
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="user"
+              label="Username"
+              ref={usernameRef}
+              value={username.value}
+              onChangeText={username.onChangeText}
+              onFocus={username.onFocus}
+              onBlur={username.onBlur}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="username"
+              autoComplete="username"
+              returnKeyType="done"
+              onSubmitEditing={onSubmit}
+              editable={!busy}
+              testID="input-choose-username"
+              error={!!shownError}
+              errorMessage={shownError || undefined}
+            />
+            <FieldRules
+              rules={checklist}
+              visible={rulesVisible({
+                focused: username.focused,
+                checked: username.checked,
+                rules: checklist,
+              })}
+              checked={username.checked}
+              hideUnmet={username.error !== null}
+            />
+          </View>
           <InlineError message={shownError} shakeKey={shakeKey} />
 
           <Pressable

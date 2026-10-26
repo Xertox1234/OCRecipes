@@ -186,72 +186,78 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             accessibilityHint="Enter the code from the email"
           />
           <InlineError message={code.error} shakeKey={code.shakeKey} />
-          <TextInput
-            leftIcon="lock"
-            rightIcon={showPassword ? "eye-off" : "eye"}
-            rightIconAccessibilityLabel={
-              showPassword ? "Hide password" : "Show password"
-            }
-            onRightIconPress={() => setShowPassword(!showPassword)}
-            label="New password"
-            ref={passwordRef}
-            value={password.value}
-            onChangeText={password.onChangeText}
-            onFocus={password.onFocus}
-            onBlur={password.onBlur}
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            textContentType="newPassword"
-            autoComplete="new-password"
-            passwordRules={RESET_PASSWORD_RULES}
-            editable={!busy}
-            error={!!password.error}
-            errorMessage={password.error ?? undefined}
-            testID="input-reset-password"
-            accessibilityHint={`At least ${PASSWORD_MIN} characters`}
-          />
-          <FieldRules
-            rules={passwordChecklist}
-            visible={rulesVisible({
-              focused: password.focused,
-              checked: password.checked,
-              rules: passwordChecklist,
-            })}
-            checked={password.checked}
-            hideUnmet={password.error !== null}
-          />
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="lock"
+              rightIcon={showPassword ? "eye-off" : "eye"}
+              rightIconAccessibilityLabel={
+                showPassword ? "Hide password" : "Show password"
+              }
+              onRightIconPress={() => setShowPassword(!showPassword)}
+              label="New password"
+              ref={passwordRef}
+              value={password.value}
+              onChangeText={password.onChangeText}
+              onFocus={password.onFocus}
+              onBlur={password.onBlur}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              textContentType="newPassword"
+              autoComplete="new-password"
+              passwordRules={RESET_PASSWORD_RULES}
+              editable={!busy}
+              error={!!password.error}
+              errorMessage={password.error ?? undefined}
+              testID="input-reset-password"
+              accessibilityHint={`At least ${PASSWORD_MIN} characters`}
+            />
+            <FieldRules
+              rules={passwordChecklist}
+              visible={rulesVisible({
+                focused: password.focused,
+                checked: password.checked,
+                rules: passwordChecklist,
+              })}
+              checked={password.checked}
+              hideUnmet={password.error !== null}
+            />
+          </View>
           <InlineError message={password.error} shakeKey={password.shakeKey} />
-          <TextInput
-            leftIcon="lock"
-            label="Confirm new password"
-            ref={confirmRef}
-            value={confirm.value}
-            onChangeText={confirm.onChangeText}
-            onFocus={confirm.onFocus}
-            onBlur={confirm.onBlur}
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            textContentType="newPassword"
-            autoComplete="new-password"
-            passwordRules={RESET_PASSWORD_RULES}
-            returnKeyType="go"
-            onSubmitEditing={onSubmit}
-            editable={!busy}
-            error={!!confirm.error}
-            errorMessage={confirm.error ?? undefined}
-            testID="input-reset-confirm"
-            accessibilityHint="Re-enter the new password"
-          />
-          <FieldRules
-            rules={confirmChecklist}
-            visible={rulesVisible({
-              focused: confirm.focused,
-              checked: confirm.checked,
-              rules: confirmChecklist,
-            })}
-            checked={confirm.checked}
-            hideUnmet={confirm.error !== null}
-          />
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="lock"
+              label="Confirm new password"
+              ref={confirmRef}
+              value={confirm.value}
+              onChangeText={confirm.onChangeText}
+              onFocus={confirm.onFocus}
+              onBlur={confirm.onBlur}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              textContentType="newPassword"
+              autoComplete="new-password"
+              passwordRules={RESET_PASSWORD_RULES}
+              returnKeyType="go"
+              onSubmitEditing={onSubmit}
+              editable={!busy}
+              error={!!confirm.error}
+              errorMessage={confirm.error ?? undefined}
+              testID="input-reset-confirm"
+              accessibilityHint="Re-enter the new password"
+            />
+            <FieldRules
+              rules={confirmChecklist}
+              visible={rulesVisible({
+                focused: confirm.focused,
+                checked: confirm.checked,
+                rules: confirmChecklist,
+              })}
+              checked={confirm.checked}
+              hideUnmet={confirm.error !== null}
+            />
+          </View>
           <InlineError message={confirm.error} shakeKey={confirm.shakeKey} />
           {/* Server and resend errors; field messages sit under each field. */}
           <InlineError message={error} />

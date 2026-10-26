@@ -18,11 +18,35 @@ describe("FieldRules", () => {
     announce.mockRestore();
   });
 
-  it("renders nothing when not visible", () => {
+  // Closed, the lines stay mounted (the height animates shut over them) but
+  // must be out of reach of VoiceOver/TalkBack.
+  const hiddenFromA11y = (el: Element) =>
+    el.closest('[aria-hidden="true"]') !== null;
+
+  it("hides its lines from screen readers when not visible", () => {
     renderComponent(
       <FieldRules rules={passwordRules("abc")} visible={false} />,
     );
-    expect(screen.queryByText("At least 8 characters")).toBeNull();
+    expect(hiddenFromA11y(screen.getByLabelText("At least 8 characters"))).toBe(
+      true,
+    );
+  });
+
+  it("exposes its lines to screen readers when visible", () => {
+    renderComponent(<FieldRules rules={passwordRules("abc")} visible />);
+    expect(hiddenFromA11y(screen.getByLabelText("At least 8 characters"))).toBe(
+      false,
+    );
+  });
+
+  it("re-hides the lines when it closes", () => {
+    const { rerender } = renderComponent(
+      <FieldRules rules={passwordRules("abc")} visible />,
+    );
+    rerender(<FieldRules rules={passwordRules("abc")} visible={false} />);
+    expect(hiddenFromA11y(screen.getByLabelText("At least 8 characters"))).toBe(
+      true,
+    );
   });
 
   it("shows each rule's label when visible", () => {

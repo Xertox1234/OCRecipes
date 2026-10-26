@@ -325,40 +325,43 @@ export default function LoginScreen() {
         <View style={styles.form}>
           {/* Sign-in accepts a username OR the account email; sign-up still
               needs a username (registerSchema rejects an email there). */}
-          <TextInput
-            leftIcon="user"
-            label={mode === "login" ? "Username or email" : "Username"}
-            ref={usernameRef}
-            value={username}
-            onChangeText={usernameField.onChangeText}
-            onFocus={usernameField.onFocus}
-            onBlur={usernameField.onBlur}
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="username"
-            autoComplete="username"
-            testID="input-username"
-            accessibilityHint={
-              mode === "login"
-                ? "Enter your username or email address"
-                : "Enter your username"
-            }
-            error={!!usernameField.error}
-            errorMessage={usernameField.error ?? undefined}
-          />
-          <FieldRules
-            rules={usernameChecklist}
-            visible={
-              mode === "register" &&
-              rulesVisible({
-                focused: usernameField.focused,
-                checked: usernameField.checked,
-                rules: usernameChecklist,
-              })
-            }
-            checked={usernameField.checked}
-            hideUnmet={usernameField.error !== null}
-          />
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="user"
+              label={mode === "login" ? "Username or email" : "Username"}
+              ref={usernameRef}
+              value={username}
+              onChangeText={usernameField.onChangeText}
+              onFocus={usernameField.onFocus}
+              onBlur={usernameField.onBlur}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="username"
+              autoComplete="username"
+              testID="input-username"
+              accessibilityHint={
+                mode === "login"
+                  ? "Enter your username or email address"
+                  : "Enter your username"
+              }
+              error={!!usernameField.error}
+              errorMessage={usernameField.error ?? undefined}
+            />
+            <FieldRules
+              rules={usernameChecklist}
+              visible={
+                mode === "register" &&
+                rulesVisible({
+                  focused: usernameField.focused,
+                  checked: usernameField.checked,
+                  rules: usernameChecklist,
+                })
+              }
+              checked={usernameField.checked}
+              hideUnmet={usernameField.error !== null}
+            />
+          </View>
           <InlineError
             message={usernameField.error}
             shakeKey={usernameField.shakeKey}
@@ -391,48 +394,51 @@ export default function LoginScreen() {
             />
           ) : null}
 
-          <TextInput
-            leftIcon="lock"
-            rightIcon={showPassword ? "eye-off" : "eye"}
-            rightIconAccessibilityLabel={
-              showPassword ? "Hide password" : "Show password"
-            }
-            onRightIconPress={() => setShowPassword(!showPassword)}
-            label="Password"
-            ref={passwordRef}
-            value={password}
-            onChangeText={passwordField.onChangeText}
-            onFocus={passwordField.onFocus}
-            onBlur={passwordField.onBlur}
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            textContentType={mode === "register" ? "newPassword" : "password"}
-            autoComplete={mode === "register" ? "new-password" : undefined}
-            passwordRules={
-              mode === "register" ? registerPasswordRules() : undefined
-            }
-            testID="input-password"
-            accessibilityHint={
-              mode === "register"
-                ? registerPasswordHint()
-                : "Enter your password"
-            }
-            error={!!passwordField.error}
-            errorMessage={passwordField.error ?? undefined}
-          />
-          <FieldRules
-            rules={passwordChecklist}
-            visible={
-              mode === "register" &&
-              rulesVisible({
-                focused: passwordField.focused,
-                checked: passwordField.checked,
-                rules: passwordChecklist,
-              })
-            }
-            checked={passwordField.checked}
-            hideUnmet={passwordField.error !== null}
-          />
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="lock"
+              rightIcon={showPassword ? "eye-off" : "eye"}
+              rightIconAccessibilityLabel={
+                showPassword ? "Hide password" : "Show password"
+              }
+              onRightIconPress={() => setShowPassword(!showPassword)}
+              label="Password"
+              ref={passwordRef}
+              value={password}
+              onChangeText={passwordField.onChangeText}
+              onFocus={passwordField.onFocus}
+              onBlur={passwordField.onBlur}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              textContentType={mode === "register" ? "newPassword" : "password"}
+              autoComplete={mode === "register" ? "new-password" : undefined}
+              passwordRules={
+                mode === "register" ? registerPasswordRules() : undefined
+              }
+              testID="input-password"
+              accessibilityHint={
+                mode === "register"
+                  ? registerPasswordHint()
+                  : "Enter your password"
+              }
+              error={!!passwordField.error}
+              errorMessage={passwordField.error ?? undefined}
+            />
+            <FieldRules
+              rules={passwordChecklist}
+              visible={
+                mode === "register" &&
+                rulesVisible({
+                  focused: passwordField.focused,
+                  checked: passwordField.checked,
+                  rules: passwordChecklist,
+                })
+              }
+              checked={passwordField.checked}
+              hideUnmet={passwordField.error !== null}
+            />
+          </View>
           <InlineError
             message={passwordField.error}
             shakeKey={passwordField.shakeKey}
@@ -457,36 +463,36 @@ export default function LoginScreen() {
           ) : null}
 
           {mode === "register" ? (
-            <TextInput
-              leftIcon="lock"
-              label="Confirm password"
-              ref={confirmRef}
-              value={confirmPassword}
-              onChangeText={confirmField.onChangeText}
-              onFocus={confirmField.onFocus}
-              onBlur={confirmField.onBlur}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              textContentType="newPassword"
-              autoComplete="new-password"
-              passwordRules={registerPasswordRules()}
-              testID="input-confirm-password"
-              accessibilityHint="Re-enter your password to confirm"
-              error={!!confirmField.error}
-              errorMessage={confirmField.error ?? undefined}
-            />
-          ) : null}
-          {mode === "register" ? (
-            <FieldRules
-              rules={confirmChecklist}
-              visible={rulesVisible({
-                focused: confirmField.focused,
-                checked: confirmField.checked,
-                rules: confirmChecklist,
-              })}
-              checked={confirmField.checked}
-              hideUnmet={confirmField.error !== null}
-            />
+            <View>
+              <TextInput
+                leftIcon="lock"
+                label="Confirm password"
+                ref={confirmRef}
+                value={confirmPassword}
+                onChangeText={confirmField.onChangeText}
+                onFocus={confirmField.onFocus}
+                onBlur={confirmField.onBlur}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                textContentType="newPassword"
+                autoComplete="new-password"
+                passwordRules={registerPasswordRules()}
+                testID="input-confirm-password"
+                accessibilityHint="Re-enter your password to confirm"
+                error={!!confirmField.error}
+                errorMessage={confirmField.error ?? undefined}
+              />
+              <FieldRules
+                rules={confirmChecklist}
+                visible={rulesVisible({
+                  focused: confirmField.focused,
+                  checked: confirmField.checked,
+                  rules: confirmChecklist,
+                })}
+                checked={confirmField.checked}
+                hideUnmet={confirmField.error !== null}
+              />
+            </View>
           ) : null}
           {mode === "register" ? (
             <InlineError

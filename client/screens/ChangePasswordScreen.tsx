@@ -270,31 +270,34 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           </View>
         ) : null}
 
-        <TextInput
-          accessibilityLabel="New password"
-          label="New password"
-          ref={newRef}
-          value={newPassword}
-          onChangeText={newField.onChangeText}
-          onFocus={newField.onFocus}
-          onBlur={newField.onBlur}
-          error={!!newField.error || errorField === "new"}
-          errorMessage={newField.error ?? undefined}
-          secureTextEntry
-          autoCapitalize="none"
-          autoComplete="new-password"
-        />
-        <FieldRules
-          rules={newChecklist}
-          visible={rulesVisible({
-            focused: newField.focused,
-            checked: newField.checked,
-            rules: newChecklist,
-          })}
-          checked={newField.checked}
-          // The server's too-short refusal lands as this field's error too.
-          hideUnmet={newField.error !== null || errorField === "new"}
-        />
+        {/* No form gap between a field and its checklist. */}
+        <View>
+          <TextInput
+            accessibilityLabel="New password"
+            label="New password"
+            ref={newRef}
+            value={newPassword}
+            onChangeText={newField.onChangeText}
+            onFocus={newField.onFocus}
+            onBlur={newField.onBlur}
+            error={!!newField.error || errorField === "new"}
+            errorMessage={newField.error ?? undefined}
+            secureTextEntry
+            autoCapitalize="none"
+            autoComplete="new-password"
+          />
+          <FieldRules
+            rules={newChecklist}
+            visible={rulesVisible({
+              focused: newField.focused,
+              checked: newField.checked,
+              rules: newChecklist,
+            })}
+            checked={newField.checked}
+            // The server's too-short refusal lands as this field's error too.
+            hideUnmet={newField.error !== null || errorField === "new"}
+          />
+        </View>
         <InlineError message={newField.error} />
 
         {factorNeeded && mode !== "forgot" ? (

@@ -680,6 +680,13 @@ describe("LoginScreen — validation timing", () => {
   });
 });
 
+// A checklist line on show: mounted AND not hidden from screen readers (a
+// closed checklist keeps its lines mounted under a zero height).
+function shownRule(label: string): HTMLElement | null {
+  const el = screen.queryByLabelText(label);
+  return el && !el.closest('[aria-hidden="true"]') ? el : null;
+}
+
 // Form-fields spec §5.2: sign-up fields with rules show a checklist that
 // ticks as you type; the field's own error (§5.1) carries the unmet news.
 describe("LoginScreen — rule checklist", () => {
@@ -691,7 +698,7 @@ describe("LoginScreen — rule checklist", () => {
   it("shows the password rule on focus and ticks it at the minimum", () => {
     signUp();
     const input = screen.getByLabelText("Password");
-    expect(screen.queryByText("At least 8 characters")).toBeNull();
+    expect(shownRule("At least 8 characters")).toBeNull();
     fireEvent.focus(input);
     expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
     fireEvent.change(input, { target: { value: "abcdefgh" } });
@@ -701,7 +708,7 @@ describe("LoginScreen — rule checklist", () => {
   it("shows the username rules on focus in sign-up only", () => {
     renderComponent(<LoginScreen />);
     fireEvent.focus(screen.getByLabelText("Username or email"));
-    expect(screen.queryByText("3–30 characters")).toBeNull();
+    expect(shownRule("3–30 characters")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
     const input = screen.getByLabelText("Username");
     fireEvent.focus(input);
@@ -730,9 +737,9 @@ describe("LoginScreen — rule checklist", () => {
     fireEvent.change(input, { target: { value: "abc" } });
     fireEvent.blur(input);
     expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
-    expect(screen.queryByText("At least 8 characters")).toBeNull();
+    expect(shownRule("At least 8 characters")).toBeNull();
     fireEvent.focus(input);
-    expect(screen.queryByText("At least 8 characters")).toBeNull();
+    expect(shownRule("At least 8 characters")).toBeNull();
     fireEvent.change(input, { target: { value: "abcdefgh" } });
     expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
     expect(screen.getByLabelText("At least 8 characters, done")).toBeTruthy();
@@ -744,6 +751,6 @@ describe("LoginScreen — rule checklist", () => {
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "abcdefgh" } });
     fireEvent.blur(input);
-    expect(screen.queryByText("At least 8 characters")).toBeNull();
+    expect(shownRule("At least 8 characters")).toBeNull();
   });
 });

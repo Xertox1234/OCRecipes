@@ -283,12 +283,19 @@ describe("ResetPasswordScreen — validation timing", () => {
   });
 });
 
+// A checklist line on show: mounted AND not hidden from screen readers (a
+// closed checklist keeps its lines mounted under a zero height).
+function shownRule(label: string): HTMLElement | null {
+  const el = screen.queryByLabelText(label);
+  return el && !el.closest('[aria-hidden="true"]') ? el : null;
+}
+
 // Form-fields spec §5.2: the new password and its confirm tick as you type.
 describe("ResetPasswordScreen — rule checklist", () => {
   it("shows the length rule on focus and ticks it at the minimum", () => {
     renderScreen();
     const input = screen.getByLabelText("New password");
-    expect(screen.queryByText("At least 8 characters")).toBeNull();
+    expect(shownRule("At least 8 characters")).toBeNull();
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "abcdefg" } });
     expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
