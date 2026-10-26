@@ -10,10 +10,12 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
 import { InlineError } from "@/components/InlineError";
+import { FieldRules } from "@/components/FieldRules";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
+import { confirmRules, passwordRules, rulesVisible } from "@/lib/field-rules";
 import { Spacing } from "@/constants/theme";
 import { ApiError } from "@/lib/api-error";
 import { RESET_CODE_LENGTH } from "@shared/constants/password-reset";
@@ -73,6 +75,10 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
   // The code was just sent by ForgotPassword, so the cooldown starts now.
   const [lastSentAt, setLastSentAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
+
+  // The live checklist under each new-password field (spec §5.2).
+  const passwordChecklist = passwordRules(password.value);
+  const confirmChecklist = confirmRules(password.value, confirm.value);
 
   const secondsLeft = resendSecondsRemaining(lastSentAt, now);
   useEffect(() => {
@@ -191,6 +197,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             ref={passwordRef}
             value={password.value}
             onChangeText={password.onChangeText}
+            onFocus={password.onFocus}
             onBlur={password.onBlur}
             secureTextEntry={!showPassword}
             autoCapitalize="none"
@@ -203,6 +210,16 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             testID="input-reset-password"
             accessibilityHint={`At least ${PASSWORD_MIN} characters`}
           />
+          <FieldRules
+            rules={passwordChecklist}
+            visible={rulesVisible({
+              focused: password.focused,
+              checked: password.checked,
+              rules: passwordChecklist,
+            })}
+            checked={password.checked}
+            hideUnmet={password.error !== null}
+          />
           <InlineError message={password.error} shakeKey={password.shakeKey} />
           <TextInput
             leftIcon="lock"
@@ -210,6 +227,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             ref={confirmRef}
             value={confirm.value}
             onChangeText={confirm.onChangeText}
+            onFocus={confirm.onFocus}
             onBlur={confirm.onBlur}
             secureTextEntry={!showPassword}
             autoCapitalize="none"
@@ -223,6 +241,16 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             errorMessage={confirm.error ?? undefined}
             testID="input-reset-confirm"
             accessibilityHint="Re-enter the new password"
+          />
+          <FieldRules
+            rules={confirmChecklist}
+            visible={rulesVisible({
+              focused: confirm.focused,
+              checked: confirm.checked,
+              rules: confirmChecklist,
+            })}
+            checked={confirm.checked}
+            hideUnmet={confirm.error !== null}
           />
           <InlineError message={confirm.error} shakeKey={confirm.shakeKey} />
           {/* Server and resend errors; field messages sit under each field. */}

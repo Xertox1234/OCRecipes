@@ -13,6 +13,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
+import { FieldRules } from "@/components/FieldRules";
 import { SecondFactorField } from "@/components/SecondFactorField";
 import { ApiError } from "@/lib/api-error";
 import { useAuthContext } from "@/context/AuthContext";
@@ -20,6 +21,7 @@ import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import { useTheme } from "@/hooks/useTheme";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
+import { passwordRules, rulesVisible } from "@/lib/field-rules";
 import type { ChangePasswordProof } from "@/hooks/useAuth";
 import {
   isSecondFactorRequired,
@@ -32,7 +34,6 @@ import {
   codeRequestErrorMessage,
   forgotOptions,
 } from "./ChangePasswordScreen-utils";
-import { passwordMessage } from "@shared/constants/password-policy";
 import type { SecondFactorInput, SocialProvider } from "@shared/types/auth";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import { Spacing } from "@/constants/theme";
@@ -88,6 +89,10 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const current = currentField.value;
   const emailCode = codeField.value;
   const newPassword = newField.value;
+  // The live checklist under the new password (spec §5.2). Only emptiness is
+  // a client-side error here, so a short password left behind shows its unmet
+  // line until Save brings back the server's own message.
+  const newChecklist = passwordRules(newPassword);
   // Two-step on: ask for the code with the first submit (the server would
   // otherwise refuse it — and an emailed-code guess would be spent finding out).
   const [needsFactor, setNeedsFactor] = useState(mfaEnabled);
@@ -271,6 +276,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           ref={newRef}
           value={newPassword}
           onChangeText={newField.onChangeText}
+          onFocus={newField.onFocus}
           onBlur={newField.onBlur}
           error={!!newField.error || errorField === "new"}
           errorMessage={newField.error ?? undefined}
@@ -278,10 +284,18 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           autoCapitalize="none"
           autoComplete="new-password"
         />
+        <FieldRules
+          rules={newChecklist}
+          visible={rulesVisible({
+            focused: newField.focused,
+            checked: newField.checked,
+            rules: newChecklist,
+          })}
+          checked={newField.checked}
+          // The server's too-short refusal lands as this field's error too.
+          hideUnmet={newField.error !== null || errorField === "new"}
+        />
         <InlineError message={newField.error} />
-        <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          {passwordMessage("too_short")}
-        </ThemedText>
 
         {factorNeeded && mode !== "forgot" ? (
           <SecondFactorField

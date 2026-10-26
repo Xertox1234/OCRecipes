@@ -115,4 +115,29 @@ describe("useFieldValidation", () => {
     });
     expect(result.current.shakeKey).toBe(2);
   });
+
+  it("tracks focus: onFocus sets focused, onBlur clears it", () => {
+    const { result } = renderHook(() => useFieldValidation(minThree));
+    expect(result.current.focused).toBe(false);
+    act(() => result.current.onFocus());
+    expect(result.current.focused).toBe(true);
+    act(() => result.current.onBlur());
+    expect(result.current.focused).toBe(false);
+  });
+
+  it("is checked once left with text or submitted, the same gate as its error", () => {
+    const { result } = renderHook(() => useFieldValidation(minThree));
+    expect(result.current.checked).toBe(false);
+    act(() => result.current.onBlur());
+    expect(result.current.checked).toBe(false);
+    act(() => result.current.onChangeText("abcd"));
+    act(() => result.current.onBlur());
+    expect(result.current.checked).toBe(true);
+    act(() => result.current.reset(""));
+    expect(result.current.checked).toBe(false);
+    act(() => {
+      result.current.markSubmitted();
+    });
+    expect(result.current.checked).toBe(true);
+  });
 });

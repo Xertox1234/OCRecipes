@@ -10,6 +10,7 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { ThemedText } from "@/components/ThemedText";
 import { LegalConsentCaption } from "@/components/LegalConsentCaption";
 import { InlineError } from "@/components/InlineError";
+import { FieldRules } from "@/components/FieldRules";
 import { SocialSignInButtons } from "@/components/SocialSignInButtons";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
@@ -18,6 +19,12 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
+import {
+  confirmRules,
+  passwordRules,
+  rulesVisible,
+  usernameRules,
+} from "@/lib/field-rules";
 import { useAuthContext } from "@/context/AuthContext";
 import { twoStepCodeParams } from "@/lib/second-factor-utils";
 import { Spacing, withOpacity } from "@/constants/theme";
@@ -237,6 +244,12 @@ export default function LoginScreen() {
 
   const isSubmitDisabled = mode === "register" && !ageConfirmed;
 
+  // Sign-up only: the live checklist under each field with rules (spec §5.2).
+  // Sign-in shows none — its fields have no format to meet.
+  const usernameChecklist = usernameRules(username.trim());
+  const passwordChecklist = passwordRules(password);
+  const confirmChecklist = confirmRules(password, confirmPassword);
+
   return (
     <ThemedView style={styles.container}>
       {/* Light content over the dark hero photo. Focus-gated: Login stays
@@ -318,6 +331,7 @@ export default function LoginScreen() {
             ref={usernameRef}
             value={username}
             onChangeText={usernameField.onChangeText}
+            onFocus={usernameField.onFocus}
             onBlur={usernameField.onBlur}
             autoCapitalize="none"
             autoCorrect={false}
@@ -331,6 +345,19 @@ export default function LoginScreen() {
             }
             error={!!usernameField.error}
             errorMessage={usernameField.error ?? undefined}
+          />
+          <FieldRules
+            rules={usernameChecklist}
+            visible={
+              mode === "register" &&
+              rulesVisible({
+                focused: usernameField.focused,
+                checked: usernameField.checked,
+                rules: usernameChecklist,
+              })
+            }
+            checked={usernameField.checked}
+            hideUnmet={usernameField.error !== null}
           />
           <InlineError
             message={usernameField.error}
@@ -375,6 +402,7 @@ export default function LoginScreen() {
             ref={passwordRef}
             value={password}
             onChangeText={passwordField.onChangeText}
+            onFocus={passwordField.onFocus}
             onBlur={passwordField.onBlur}
             secureTextEntry={!showPassword}
             autoCapitalize="none"
@@ -392,16 +420,23 @@ export default function LoginScreen() {
             error={!!passwordField.error}
             errorMessage={passwordField.error ?? undefined}
           />
+          <FieldRules
+            rules={passwordChecklist}
+            visible={
+              mode === "register" &&
+              rulesVisible({
+                focused: passwordField.focused,
+                checked: passwordField.checked,
+                rules: passwordChecklist,
+              })
+            }
+            checked={passwordField.checked}
+            hideUnmet={passwordField.error !== null}
+          />
           <InlineError
             message={passwordField.error}
             shakeKey={passwordField.shakeKey}
           />
-
-          {mode === "register" ? (
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              {registerPasswordHint()}
-            </ThemedText>
-          ) : null}
 
           {mode === "login" ? (
             <Pressable
@@ -428,6 +463,7 @@ export default function LoginScreen() {
               ref={confirmRef}
               value={confirmPassword}
               onChangeText={confirmField.onChangeText}
+              onFocus={confirmField.onFocus}
               onBlur={confirmField.onBlur}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
@@ -438,6 +474,18 @@ export default function LoginScreen() {
               accessibilityHint="Re-enter your password to confirm"
               error={!!confirmField.error}
               errorMessage={confirmField.error ?? undefined}
+            />
+          ) : null}
+          {mode === "register" ? (
+            <FieldRules
+              rules={confirmChecklist}
+              visible={rulesVisible({
+                focused: confirmField.focused,
+                checked: confirmField.checked,
+                rules: confirmChecklist,
+              })}
+              checked={confirmField.checked}
+              hideUnmet={confirmField.error !== null}
             />
           ) : null}
           {mode === "register" ? (

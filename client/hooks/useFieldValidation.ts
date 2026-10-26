@@ -8,7 +8,15 @@ export type FieldValidation = {
   /** The error to show now, or null — already timed per spec §5.1. */
   error: string | null;
   onChangeText: (t: string) => void;
+  onFocus: () => void;
   onBlur: () => void;
+  /** The field has focus — callers show its rule checklist (spec §5.2). */
+  focused: boolean;
+  /**
+   * Left with text, or the main button pressed: the gate that lets `error`
+   * show, also used to colour unmet checklist lines.
+   */
+  checked: boolean;
   /** The main button's check: show this field's error; true when valid. */
   markSubmitted: () => boolean;
   ref: RefObject<RNTextInput | null>;
@@ -49,9 +57,11 @@ export function useFieldValidation(
   const [leftNonEmpty, setLeftNonEmpty] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
+  const [focused, setFocused] = useState(false);
   const ref = useRef<RNTextInput | null>(null);
 
   const rawError = validate(value);
+  const checked = leftNonEmpty || submitAttempted;
   const error = shouldShowError({
     value,
     leftNonEmpty,
@@ -65,9 +75,15 @@ export function useFieldValidation(
     value,
     error,
     onChangeText: setValue,
+    onFocus: () => setFocused(true),
     // Assigned, not sticky: a field emptied and left goes quiet again until
     // the main button flags it.
-    onBlur: () => setLeftNonEmpty(value.trim() !== ""),
+    onBlur: () => {
+      setFocused(false);
+      setLeftNonEmpty(value.trim() !== "");
+    },
+    focused,
+    checked,
     markSubmitted: () => {
       setSubmitAttempted(true);
       const valid = validate(value) === null;

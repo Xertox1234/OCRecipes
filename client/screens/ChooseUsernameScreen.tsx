@@ -11,11 +11,13 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
 import { InlineError } from "@/components/InlineError";
+import { FieldRules } from "@/components/FieldRules";
 import { LegalConsentCaption } from "@/components/LegalConsentCaption";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
+import { rulesVisible, usernameRules } from "@/lib/field-rules";
 import { useAuthContext } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { Spacing } from "@/constants/theme";
@@ -45,6 +47,8 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
   // Destructured, never read as `field.ref` in render: React Compiler treats an
   // object read through `.ref` as a ref and skips the whole component.
   const { ref: usernameRef } = username;
+  // The live checklist under the field (spec §5.2).
+  const checklist = usernameRules(username.value.trim());
   // COPPA 13+ attestation — the person's own checkbox; server enforces true.
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   // Server/flow errors only; field errors come from `username.error`.
@@ -111,6 +115,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
             ref={usernameRef}
             value={username.value}
             onChangeText={username.onChangeText}
+            onFocus={username.onFocus}
             onBlur={username.onBlur}
             autoCapitalize="none"
             autoCorrect={false}
@@ -122,6 +127,16 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
             testID="input-choose-username"
             error={!!shownError}
             errorMessage={shownError || undefined}
+          />
+          <FieldRules
+            rules={checklist}
+            visible={rulesVisible({
+              focused: username.focused,
+              checked: username.checked,
+              rules: checklist,
+            })}
+            checked={username.checked}
+            hideUnmet={username.error !== null}
           />
           <InlineError message={shownError} shakeKey={shakeKey} />
 

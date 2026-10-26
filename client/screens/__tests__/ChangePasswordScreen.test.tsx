@@ -249,7 +249,8 @@ describe("ChangePasswordScreen", () => {
   // asked for the two-step code with the first submit.
   it("two-step on: the 8-character hint and the code field from the start", () => {
     renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
-    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    fireEvent.focus(screen.getByLabelText("New password"));
+    expect(screen.getByText("At least 8 characters")).toBeTruthy();
     expect(screen.getByLabelText("6-digit code")).toBeTruthy();
   });
 
@@ -429,5 +430,43 @@ describe("ChangePasswordScreen — validation timing", () => {
     renderScreen({ hasPassword: false, providers: ["google"] });
     await act(async () => tap("Confirm with Google"));
     expect(document.activeElement).toBe(screen.getByLabelText("New password"));
+  });
+});
+
+// Form-fields spec §5.2: the new password's rule ticks as you type.
+describe("ChangePasswordScreen — rule checklist", () => {
+  it("shows the length rule on focus and ticks it at the minimum", () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    const input = screen.getByLabelText("New password");
+    expect(screen.queryByText("At least 8 characters")).toBeNull();
+    fireEvent.focus(input);
+    expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
+    fireEvent.change(input, { target: { value: NEW } });
+    expect(screen.getByLabelText("At least 8 characters, done")).toBeTruthy();
+  });
+
+  it("keeps a short password's unmet rule on show after leaving", () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    const input = screen.getByLabelText("New password");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.blur(input);
+    expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
+  });
+
+  it("drops the unmet line once the server's too-short error says it", async () => {
+    auth.changePassword.mockRejectedValueOnce(
+      new ApiError(
+        '400: {"error":"Use at least 8 characters.","code":"PASSWORD_TOO_SHORT"}',
+        "PASSWORD_TOO_SHORT",
+        400,
+      ),
+    );
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "old-pass");
+    type("New password", "abc");
+    await act(async () => tap("Save new password"));
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(screen.queryByLabelText("At least 8 characters")).toBeNull();
   });
 });
