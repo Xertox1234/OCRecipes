@@ -51,8 +51,14 @@ import {
 } from "@/lib/format";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
-function startOfLocalDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+/**
+ * The day of `d`, anchored at local NOON. Not midnight: the iOS picker keeps
+ * the UTC time of day when the day changes, so across a DST change (a ±1h
+ * shift) a midnight anchor lands on the previous local day. Noon is far from
+ * both day boundaries.
+ */
+function localNoon(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
 }
 
 /**
@@ -190,10 +196,11 @@ export default function GroceryListsScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   // Dates are held as local `Date`s and become `YYYY-MM-DD` only in the
   // request payload — never parse such a string with `new Date(str)` (UTC).
-  // Every date in state is local midnight, so comparisons are by day only.
-  const [startDate, setStartDate] = useState(() => startOfLocalDay(new Date()));
+  // Every date in state is anchored at local noon (see localNoon), so
+  // comparisons are by day only.
+  const [startDate, setStartDate] = useState(() => localNoon(new Date()));
   const [endDate, setEndDate] = useState(() => {
-    const d = startOfLocalDay(new Date());
+    const d = localNoon(new Date());
     d.setDate(d.getDate() + 6);
     return d;
   });
@@ -201,7 +208,7 @@ export default function GroceryListsScreen() {
   const [openPicker, setOpenPicker] = useState<"start" | "end" | null>(null);
 
   const handleDateChange = (which: "start" | "end", raw: Date) => {
-    const picked = startOfLocalDay(raw);
+    const picked = localNoon(raw);
     if (which === "start") {
       setStartDate(picked);
       if (picked > endDate) setEndDate(picked);

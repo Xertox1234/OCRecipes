@@ -225,9 +225,9 @@ describe("GroceryListsScreen — date picker", () => {
     });
     fireEvent.click(screen.getByLabelText("Start date, Tue, Sep 8"));
     fireEvent.click(screen.getByLabelText("End date, Tue, Sep 8"));
-    // End stays its own local midnight; start is normalized to midnight too.
-    expect(lastPicker().value).toEqual(new Date(2026, 8, 8));
-    expect(lastPicker().minimumDate).toEqual(new Date(2026, 8, 8));
+    // End stays its own local noon; start is normalized to noon too.
+    expect(lastPicker().value).toEqual(new Date(2026, 8, 8, 12));
+    expect(lastPicker().minimumDate).toEqual(new Date(2026, 8, 8, 12));
   });
 
   it("opens the imperative Android picker with minimumDate for End, rendering nothing inline", () => {
@@ -240,5 +240,58 @@ describe("GroceryListsScreen — date picker", () => {
     expect(arg.mode).toBe("date");
     expect(day(arg.value)).toBe("2026-09-08");
     expect(day(arg.minimumDate)).toBe("2026-09-02");
+  });
+});
+
+describe("GroceryListsScreen — dates survive a DST crossing (America/Denver)", () => {
+  const originalOS = Platform.OS;
+  const originalTz = process.env.TZ;
+
+  beforeEach(() => {
+    process.env.TZ = "America/Denver"; // DST ends Sun 2026-11-01
+    // Local Mon 2026-10-26 10:00 MDT == 16:00Z.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-26T16:00:00Z"));
+    pickerProps.length = 0;
+    createMutate.mockReset();
+    Platform.OS = "ios";
+    renderComponent(<GroceryListsScreen />);
+    const headerRight = setOptions.mock.calls
+      .map(([o]) => o?.headerRight)
+      .filter(Boolean)
+      .at(-1);
+    renderComponent(<>{headerRight()}</>);
+    fireEvent.click(screen.getByLabelText("Generate new grocery list"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    Platform.OS = originalOS;
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  it("anchors the dates it hands the picker at local noon", () => {
+    fireEvent.click(screen.getByLabelText("Start date, Mon, Oct 26"));
+    const props = pickerProps.at(-1) as Record<string, any>;
+    expect(props.value.getHours()).toBe(12);
+    expect(props.value.getDate()).toBe(26);
+  });
+
+  it("keeps the picked day when iOS returns the old UTC time of day across DST", () => {
+    fireEvent.click(screen.getByLabelText("Start date, Mon, Oct 26"));
+    // iOS keeps the UTC time of day of the value it was given: noon MDT is
+    // 18:00Z, which on Nov 5 is 11:00 MST (still Nov 5). A midnight anchor
+    // would be 06:00Z, i.e. 23:00 MST on Nov 4.
+    act(() => {
+      const shown = (pickerProps.at(-1) as Record<string, any>).value as Date;
+      (pickerProps.at(-1) as Record<string, any>).onValueChange(
+        {},
+        new Date(Date.UTC(2026, 10, 5, shown.getUTCHours())),
+      );
+    });
+    expect(screen.getByLabelText("Start date, Thu, Nov 5")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Generate grocery list"));
+    expect(createMutate.mock.calls[0][0].startDate).toBe("2026-11-05");
   });
 });
