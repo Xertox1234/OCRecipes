@@ -440,12 +440,16 @@ describe("LoginScreen — shake on validation reject", () => {
 
   it("the same validation reject twice shakes twice", () => {
     renderComponent(<LoginScreen />);
+    // One invalid field, so one message shakes per press.
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
     const signIn = screen.getByRole("button", { name: "Sign In" });
 
     fireEvent.click(signIn);
     fireEvent.click(signIn);
 
-    expect(screen.getByText("Please fill in all fields")).toBeTruthy();
+    expect(screen.getByText("Enter your password.")).toBeTruthy();
     expect(withSequenceSpy).toHaveBeenCalledTimes(2);
     expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
     expect(mockLogin).not.toHaveBeenCalled();
@@ -600,5 +604,77 @@ describe("LoginScreen — floating labels", () => {
     fireEvent.focus(password);
     expect(floatedOf("Username or email")).toBe(false);
     expect(floatedOf("Password")).toBe(true);
+  });
+});
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; empty fields are flagged by the main button, focus on the
+// first. Sign-up's age checkbox keeps gating Create Account.
+describe("LoginScreen — validation timing", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("Sign In with empty fields names each field and focuses the first", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+    const username = screen.getByLabelText("Username or email");
+    expect(screen.getByText("Enter your username or email.")).toBeTruthy();
+    expect(screen.getByText("Enter your password.")).toBeTruthy();
+    // No form-level copy repeating the field messages.
+    expect(screen.queryByText("Please fill in all fields")).toBeNull();
+    expect(username.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+    expect(document.activeElement).toBe(username);
+    expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  it("sign-up: a bad username shows nothing while typed, and its message on leaving", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    const input = screen.getByLabelText("Username");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "me@x.com" } });
+    expect(screen.queryByText(/letters, numbers, and underscores/i)).toBeNull();
+    fireEvent.blur(input);
+    expect(screen.getByText(/letters, numbers, and underscores/i)).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("sign-up: a short password clears on the keystroke that makes it valid", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    const input = screen.getByLabelText("Password");
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.blur(input);
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
+  });
+
+  it("sign-up: Create Account stays disabled until the age box is ticked", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    expect(
+      screen
+        .getByRole("button", { name: "Create Account" })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
+  });
+
+  it("a cleared wrong password does not show its own error over the server message", async () => {
+    mockLogin.mockRejectedValue(new Error("401: invalid_credentials"));
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "wrongpass" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+    await screen.findByText(
+      "Incorrect username or password. Please try again.",
+    );
+    expect(screen.queryByText("Enter your password.")).toBeNull();
   });
 });
