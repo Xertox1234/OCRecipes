@@ -104,3 +104,50 @@ describe("ServingControls — serving chip haptics", () => {
     },
   );
 });
+
+describe("ServingControls — custom grams say why they refuse a value", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function renderCustom(customGramsInput: string) {
+    const setServingSizeGrams = vi.fn();
+    const recalculateNutrition = vi.fn();
+    renderComponent(
+      <ServingControls
+        {...baseProps}
+        showCustomInput
+        customGramsInput={customGramsInput}
+        setServingSizeGrams={setServingSizeGrams}
+        recalculateNutrition={recalculateNutrition}
+      />,
+    );
+    const input = screen.getByLabelText("Custom serving size in grams");
+    fireEvent.blur(input);
+    return { setServingSizeGrams, recalculateNutrition };
+  }
+
+  it.each(["0", "abc", "."])(
+    "refuses %j with a message and an error buzz",
+    (text) => {
+      const { setServingSizeGrams } = renderCustom(text);
+      expect(screen.getByText("Enter an amount above 0 g")).toBeTruthy();
+      expect(setServingSizeGrams).not.toHaveBeenCalled();
+      expect(Haptics.notificationAsync).toHaveBeenCalledExactlyOnceWith(
+        Haptics.NotificationFeedbackType.Error,
+      );
+    },
+  );
+
+  it("accepts a comma decimal", () => {
+    const { setServingSizeGrams, recalculateNutrition } = renderCustom("12,5");
+    expect(setServingSizeGrams).toHaveBeenCalledWith(12.5);
+    expect(recalculateNutrition).toHaveBeenCalledWith(12.5, 1);
+    expect(screen.queryByText("Enter an amount above 0 g")).toBeNull();
+  });
+
+  it("leaves an empty field alone", () => {
+    const { setServingSizeGrams } = renderCustom("");
+    expect(setServingSizeGrams).not.toHaveBeenCalled();
+    expect(screen.queryByText("Enter an amount above 0 g")).toBeNull();
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+  });
+});
