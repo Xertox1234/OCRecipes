@@ -114,7 +114,7 @@
     "expo-font": "~57.0.4",
     "expo-glass-effect": "~57.0.4",
     "expo-haptics": "~57.0.3",
-    "expo-iap": "^3.4.8",
+    "expo-iap": "^6.3.0",
     "expo-image": "~57.0.5",
     "expo-image-manipulator": "~57.0.21",
     "expo-image-picker": "~57.0.20",
