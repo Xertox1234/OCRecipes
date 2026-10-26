@@ -199,3 +199,37 @@ describe("ChooseUsernameScreen — rule checklist", () => {
     expect(screen.getByLabelText("Letters, numbers or _")).toBeTruthy();
   });
 });
+
+// Follow-up from review (spec §5.8): the same text went to both the field's
+// errorMessage (its hint) and the InlineError, so VoiceOver read it twice.
+describe("ChooseUsernameScreen — one announcement per error", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("a username error is announced once, by the alert only", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Username");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getAllByText(/Username must be between/)).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toMatch(
+      /Username must be between/,
+    );
+  });
+
+  it("a server error is announced once, by the alert only", async () => {
+    mockComplete.mockRejectedValue(new ApiError("raw", "USERNAME_TAKEN", 409));
+    renderScreen();
+    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const message = "That username is taken — try another.";
+    await screen.findByText(message);
+    const input = screen.getByLabelText("Username");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(message);
+  });
+});

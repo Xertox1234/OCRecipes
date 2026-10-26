@@ -258,3 +258,33 @@ describe("ChangeEmailModal — reopening starts clean", () => {
     expect(input.getAttribute("aria-invalid")).toBeNull();
   });
 });
+
+// Follow-up from Task 8 review: before it, a server refusal marked all three
+// fields invalid (main's `error={!!error}`); restore that. Typing clears it
+// with the message.
+describe("ChangeEmailModal — a server refusal marks the fields", () => {
+  const labels = [
+    "New email address",
+    "Confirm new email address",
+    "Current password",
+  ];
+  const invalid = () =>
+    labels.map((l) => screen.getByLabelText(l).getAttribute("aria-invalid"));
+
+  it("marks all three fields invalid until the next keystroke", async () => {
+    renderModal(
+      vi.fn().mockRejectedValue(new Error("401: Invalid credentials")),
+    );
+    type("New email address", "a@b.com");
+    type("Confirm new email address", "a@b.com");
+    type("Current password", "wrongpass");
+    expect(invalid()).toEqual([null, null, null]);
+    submit();
+
+    await screen.findByText("Incorrect password. Please try again.");
+    expect(invalid()).toEqual(["true", "true", "true"]);
+
+    type("Current password", "wrongpass2");
+    expect(invalid()).toEqual([null, null, null]);
+  });
+});

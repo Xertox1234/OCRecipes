@@ -1254,10 +1254,11 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
-  // 44pt touch target for a 16pt icon. A hitSlop can't do it here: RN clips
-  // hitSlop to the parent's bounds, and the bar is only ~36pt of content +
-  // padding. The negative margins let the box fill the bar's padding instead
-  // of growing it (bar stays at its 44pt minHeight).
+  // 44pt touch target for a 16pt icon — a real box, not a hitSlop, which RN
+  // clips to the parent's bounds. It fits inside the labelled bar's 56pt
+  // height (searchBar above), so the bar keeps its height when it appears.
+  // The negative right margin lets the box sit in the bar's right padding;
+  // the negative vertical margin keeps it out of the bar's height sum.
   clearSearchButton: {
     width: 44,
     height: 44,

@@ -104,8 +104,12 @@ export function ServingStepperChip({
           { name: "decrement", label: "Decrease servings" },
         ]}
         onAccessibilityAction={(event) => {
-          if (event.nativeEvent.actionName === "increment") onIncrement();
-          if (event.nativeEvent.actionName === "decrement") onDecrement();
+          const { actionName } = event.nativeEvent;
+          if (actionName !== "increment" && actionName !== "decrement") return;
+          // A new count answers a shown refusal, as a +/- tap does.
+          setError(null);
+          if (actionName === "increment") onIncrement();
+          else onDecrement();
         }}
       >
         <FocusField
