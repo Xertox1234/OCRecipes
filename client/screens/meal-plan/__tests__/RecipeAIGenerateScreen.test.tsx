@@ -156,7 +156,9 @@ describe("RecipeAIGenerateScreen — validation timing", () => {
     fireEvent.click(generate);
 
     expect(screen.getByText(MESSAGE)).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByLabelText("What should we make?"));
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("What should we make?"),
+    );
     expect(mockStart).not.toHaveBeenCalled();
   });
 

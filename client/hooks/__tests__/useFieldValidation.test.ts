@@ -73,7 +73,9 @@ describe("useFieldValidation", () => {
       useFieldValidation((v) => (v === other ? null : "No match")),
     );
     act(() => result.current.onChangeText("secret1"));
-    act(() => result.current.markSubmitted());
+    act(() => {
+      result.current.markSubmitted();
+    });
     expect(result.current.error).toBeNull();
     other = "secret2";
     rerender();
@@ -85,7 +87,9 @@ describe("useFieldValidation", () => {
     expect(result.current.value).toBe("abc");
     act(() => result.current.setValue(""));
     expect(result.current.value).toBe("");
-    act(() => result.current.markSubmitted());
+    act(() => {
+      result.current.markSubmitted();
+    });
     expect(result.current.error).toBe("Required");
     act(() => result.current.reset());
     expect(result.current.value).toBe("abc");
@@ -98,11 +102,17 @@ describe("useFieldValidation", () => {
     act(() => result.current.onChangeText("a"));
     act(() => result.current.onBlur());
     expect(result.current.shakeKey).toBe(0);
-    act(() => result.current.markSubmitted());
-    act(() => result.current.markSubmitted());
+    act(() => {
+      result.current.markSubmitted();
+    });
+    act(() => {
+      result.current.markSubmitted();
+    });
     expect(result.current.shakeKey).toBe(2);
     act(() => result.current.onChangeText("abc"));
-    act(() => result.current.markSubmitted());
+    act(() => {
+      result.current.markSubmitted();
+    });
     expect(result.current.shakeKey).toBe(2);
   });
 });
