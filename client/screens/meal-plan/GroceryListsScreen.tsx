@@ -4,8 +4,16 @@ import React, {
   useLayoutEffect,
   useState,
 } from "react";
-import { StyleSheet, View, Pressable, FlatList } from "react-native";
-import { FocusTextInput } from "@/components/FocusTextInput";
+import { StyleSheet, View, Pressable, FlatList, Platform } from "react-native";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from "@react-native-community/datetimepicker";
+import { useSharedValue, withTiming } from "react-native-reanimated";
+import { FocusField } from "@/components/FocusField";
+import type { FieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { focusTimingConfig } from "@/constants/animations";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -36,8 +44,70 @@ import { VERIFICATION_STREAK_UNLOCK_THRESHOLD } from "@shared/types/premium";
 import type { GroceryListsScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { GroceryList } from "@shared/schema";
-import { formatDateRange, formatGroceryListTitle } from "@/lib/format";
+import {
+  formatDateRange,
+  formatDateWithWeekday,
+  formatGroceryListTitle,
+} from "@/lib/format";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
+
+/**
+ * A tappable date drawn through FocusField: shows as focused while its picker
+ * is open. There is no text input, so focus is driven by `open`.
+ */
+function DateField({
+  label,
+  date,
+  open,
+  onPress,
+}: {
+  label: string;
+  date: Date;
+  open: boolean;
+  onPress: () => void;
+}) {
+  const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.set(
+      withTiming(open ? 1 : 0, {
+        ...focusTimingConfig,
+        duration: reducedMotion ? 0 : focusTimingConfig.duration,
+      }),
+    );
+  }, [open, reducedMotion, progress]);
+  const focus: FieldFocus = {
+    focused: open,
+    progress,
+    onFocus: () => {},
+    onBlur: () => {},
+  };
+  const formatted = formatDateWithWeekday(date);
+
+  return (
+    <FocusField
+      focus={focus}
+      label={label}
+      hasValue
+      style={[styles.dateInput, { borderColor: withOpacity(theme.text, 0.15) }]}
+    >
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}, ${formatted}`}
+        accessibilityHint="Opens a date picker"
+        accessibilityState={{ expanded: open }}
+      >
+        <ThemedText
+          style={[styles.dateValue, LABELLED_INPUT_TEXT, { color: theme.text }]}
+        >
+          {formatted}
+        </ThemedText>
+      </Pressable>
+    </FocusField>
+  );
+}
 
 export default function GroceryListsScreen() {
   const navigation = useNavigation<GroceryListsScreenNavigationProp>();
@@ -114,15 +184,38 @@ export default function GroceryListsScreen() {
     streakUnlocks.includes("extendedPlanRange");
 
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    return toLocalDateString(d);
-  });
+  // Dates are held as local `Date`s and become `YYYY-MM-DD` only in the
+  // request payload — never parse such a string with `new Date(str)` (UTC).
+  const [startDate, setStartDate] = useState(() => new Date());
   const [endDate, setEndDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 6);
-    return toLocalDateString(d);
+    return d;
   });
+  // iOS only: which field's inline picker is open (one at a time).
+  const [openPicker, setOpenPicker] = useState<"start" | "end" | null>(null);
+
+  const handleDateChange = (which: "start" | "end", picked: Date) => {
+    if (which === "start") {
+      setStartDate(picked);
+      if (picked > endDate) setEndDate(picked);
+    } else {
+      setEndDate(picked);
+    }
+  };
+
+  const handleDateFieldPress = (which: "start" | "end") => {
+    if (Platform.OS === "android") {
+      DateTimePickerAndroid.open({
+        value: which === "start" ? startDate : endDate,
+        mode: "date",
+        minimumDate: which === "end" ? startDate : undefined,
+        onValueChange: (_event, picked) => handleDateChange(which, picked),
+      });
+      return;
+    }
+    setOpenPicker((current) => (current === which ? null : which));
+  };
 
   // Header "+" instead of a floating button (avoids collision with the Scan
   // FAB; same as CookbookListScreen). Declared before the back-button effect
@@ -156,7 +249,10 @@ export default function GroceryListsScreen() {
   const handleGenerate = useCallback(() => {
     haptics.impact();
     createListMutate(
-      { startDate, endDate },
+      {
+        startDate: toLocalDateString(startDate),
+        endDate: toLocalDateString(endDate),
+      },
       {
         onSuccess: (list) => {
           setShowDatePicker(false);
@@ -331,44 +427,33 @@ export default function GroceryListsScreen() {
                 </ThemedText>
               ) : null}
               <View style={styles.dateInputRow}>
-                <FocusTextInput
-                  style={[
-                    styles.dateInput,
-                    {
-                      color: theme.text,
-                      borderColor: withOpacity(theme.text, 0.15),
-                    },
-                  ]}
-                  value={startDate}
-                  onChangeText={setStartDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  accessibilityLabel="Start date"
-                  accessibilityHint="Enter date in YYYY-MM-DD format"
+                <DateField
+                  label="Start date"
+                  date={startDate}
+                  open={openPicker === "start"}
+                  onPress={() => handleDateFieldPress("start")}
                 />
                 <ThemedText style={{ color: theme.textSecondary }}>
                   to
                 </ThemedText>
-                <FocusTextInput
-                  style={[
-                    styles.dateInput,
-                    {
-                      color: theme.text,
-                      borderColor: withOpacity(theme.text, 0.15),
-                    },
-                  ]}
-                  value={endDate}
-                  onChangeText={setEndDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  accessibilityLabel="End date"
-                  accessibilityHint="Enter date in YYYY-MM-DD format"
+                <DateField
+                  label="End date"
+                  date={endDate}
+                  open={openPicker === "end"}
+                  onPress={() => handleDateFieldPress("end")}
                 />
               </View>
+              {Platform.OS !== "android" && openPicker ? (
+                <DateTimePicker
+                  value={openPicker === "start" ? startDate : endDate}
+                  mode="date"
+                  display="inline"
+                  minimumDate={openPicker === "end" ? startDate : undefined}
+                  onValueChange={(_event, picked) =>
+                    handleDateChange(openPicker, picked)
+                  }
+                />
+              ) : null}
               <View style={styles.datePickerActions}>
                 <PressableScale
                   onPress={() => setShowDatePicker(false)}
@@ -477,7 +562,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: BorderRadius.xs,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+  },
+  dateValue: {
     fontSize: 14,
   },
   datePickerActions: {

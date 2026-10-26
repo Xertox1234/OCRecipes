@@ -32,6 +32,13 @@ const nav = vi.hoisted(() => ({
   isOpen: false,
 }));
 
+// The native picker is Flow source and cannot load in jsdom; the header tests
+// never open it.
+vi.mock("@react-native-community/datetimepicker", () => ({
+  default: () => null,
+  DateTimePickerAndroid: { open: vi.fn(), dismiss: vi.fn() },
+}));
+
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     navigate: vi.fn(),
