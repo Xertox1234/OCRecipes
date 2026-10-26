@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  type TextInput,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -14,12 +13,15 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import { ImpactFeedbackStyle } from "expo-haptics";
+import { ImpactFeedbackStyle, NotificationFeedbackType } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
+import { InlineError } from "@/components/InlineError";
 import {
   Spacing,
   BorderRadius,
@@ -44,6 +46,9 @@ type AIGenerateRouteProp = RouteProp<
   MealPlanStackParamList,
   "RecipeAIGenerate"
 >;
+
+const PROMPT_MIN = 3;
+const PROMPT_TOO_SHORT = `Describe the recipe in at least ${PROMPT_MIN} characters.`;
 
 const SUGGESTION_CHIPS = [
   "Quick dinner",
@@ -73,21 +78,27 @@ export default function RecipeAIGenerateScreen() {
   // reaches React.
   const tappedRef = useRef(false);
 
-  const [prompt, setPrompt] = useState("");
-  const inputRef = useRef<TextInput>(null);
-
-  const handleChipPress = useCallback(
-    (chip: string) => {
-      haptics.impact(ImpactFeedbackStyle.Light);
-      setPrompt(chip);
-      inputRef.current?.focus();
-    },
-    [haptics],
+  // Generate stays pressable; a short prompt is named on leaving the field or
+  // on Generate, which also moves focus to it (form-fields spec §5.1).
+  const promptField = useFieldValidation((value) =>
+    value.trim().length < PROMPT_MIN ? PROMPT_TOO_SHORT : null,
   );
+  const prompt = promptField.value;
+  const setPrompt = promptField.onChangeText;
+  const inputRef = promptField.ref;
 
-  const handleGenerate = useCallback(() => {
+  const handleChipPress = (chip: string) => {
+    haptics.impact(ImpactFeedbackStyle.Light);
+    setPrompt(chip);
+    inputRef.current?.focus();
+  };
+
+  const handleGenerate = () => {
     const trimmed = prompt.trim();
-    if (trimmed.length < 3) return;
+    if (!focusFirstInvalid([promptField])) {
+      haptics.notification(NotificationFeedbackType.Error);
+      return;
+    }
     if (tappedRef.current) return;
     tappedRef.current = true;
     requestAnimationFrame(() => {
@@ -97,13 +108,13 @@ export default function RecipeAIGenerateScreen() {
     haptics.selection();
     start(trimmed, returnToMealPlan);
     navigation.goBack();
-  }, [prompt, haptics, start, returnToMealPlan, navigation]);
+  };
 
   const handleReview = useCallback(() => {
     if (heldDraft) openRecipeCreate(queryClient, heldDraft);
   }, [heldDraft, queryClient]);
 
-  const isDisabled = prompt.trim().length < 3 || isPending;
+  const isDisabled = isPending;
 
   return (
     <KeyboardAvoidingView
@@ -184,7 +195,9 @@ export default function RecipeAIGenerateScreen() {
           maxLength={500}
           returnKeyType="default"
           blurOnSubmit={false}
+          onBlur={promptField.onBlur}
         />
+        <InlineError message={promptField.error} style={styles.promptError} />
 
         {/* Suggestion chips */}
         <ThemedText style={[styles.chipLabel, { color: theme.textSecondary }]}>
@@ -253,6 +266,9 @@ export default function RecipeAIGenerateScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  promptError: {
+    marginTop: Spacing.sm,
   },
   scrollContent: {
     flexGrow: 1,
