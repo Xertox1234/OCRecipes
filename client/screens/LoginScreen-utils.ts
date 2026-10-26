@@ -49,8 +49,10 @@ export const BREACHED_PASSWORD_MESSAGE =
   "That password has appeared in a data breach. Choose a different one.";
 
 /**
- * New-password check shared by sign-up and the reset screen: length
- * (counted in characters, no composition rule), then the match.
+ * Sign-up's new-password check inside `validateAuthForm`: length (counted in
+ * characters, no composition rule), then the match with the confirm field.
+ * The password and confirm fields show their own messages through
+ * `useFieldValidation` first, so this only backs them up.
  */
 export function validateNewPassword(
   password: string,
@@ -80,7 +82,10 @@ export function registerPasswordRules(): string {
   return `minlength: ${PASSWORD_MIN}; maxlength: ${PASSWORD_MAX};`;
 }
 
-/** The hint under the sign-up password field. */
+/**
+ * The sign-up password field's `accessibilityHint` (the visible rules are the
+ * live checklist under the field).
+ */
 export function registerPasswordHint(): string {
   return `At least ${PASSWORD_MIN} characters.`;
 }
@@ -102,9 +107,12 @@ export function validateUsername(username: string): string | null {
 
 /**
  * Returns a static, user-facing message for the FIRST failing rule, or null
- * when the input passes client-side checks. Login is intentionally lenient
- * (only "fields present") — the server is the authority and a generic failure
- * avoids a username-enumeration oracle.
+ * when the input passes client-side checks. LoginScreen runs it after the
+ * per-field checks pass, as a second guard over the whole form; in practice
+ * its message (shown in the form-level InlineError) is the sign-up age
+ * confirmation. Login is intentionally lenient (only "fields present") — the
+ * server is the authority and a generic failure avoids a username-enumeration
+ * oracle.
  */
 export function validateAuthForm(input: AuthFormInput): string | null {
   const username = input.username.trim();
@@ -139,21 +147,23 @@ export function validateAuthForm(input: AuthFormInput): string | null {
 }
 
 /**
- * Per-field validation errors. Currently only the email field is attributed,
- * which is all the email `TextInput` needs to set `aria-invalid` on itself
- * (the form-level banner still uses `validateAuthForm`). `email` is `null` when
- * the email field is valid or not applicable to the current mode.
+ * Per-field validation errors. Only the email field is attributed here — the
+ * username and password fields carry their own checks in LoginScreen. `email`
+ * is `null` when the email field is valid or not shown in the current mode.
  */
 export interface AuthFieldErrors {
   email: string | null;
 }
 
 /**
- * Field-attributed validation, used to set `error`/`errorMessage` (and thus
- * `aria-invalid`) on individual inputs. Login stays LENIENT — in login mode the
- * email field is not shown, so this never produces an email error and never
- * introduces a username-enumeration oracle. The email rules MIRROR the
- * email checks in `validateAuthForm` above (KEEP IN SYNC, same `EMAIL_PATTERN`).
+ * The sign-up email field's check: LoginScreen's `useFieldValidation` for the
+ * email field runs it, shows the message in the InlineError under the field
+ * and sets only `error` (colour, `aria-invalid`) on the input — never
+ * `errorMessage`, or VoiceOver would read it twice. Login stays LENIENT — in
+ * login mode the email field is not shown, so this never produces an email
+ * error and never introduces a username-enumeration oracle. The email rules
+ * MIRROR the email checks in `validateAuthForm` above (KEEP IN SYNC, same
+ * `EMAIL_PATTERN`).
  */
 export function validateAuthFormFields(input: AuthFormInput): AuthFieldErrors {
   if (input.mode === "login") {

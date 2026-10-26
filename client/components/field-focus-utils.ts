@@ -81,6 +81,17 @@ export function splitFieldStyle(style: object): {
 export const FIELD_INPUT_FILL: TextStyle = { flexGrow: 1, flexShrink: 1 };
 
 /**
+ * The value text's vertical padding and line height under a floated label —
+ * spread into a labelled input's own text style (a wrapper field whose inner
+ * input has `focusRing={false}`), so the value sits under the label's row.
+ */
+export const LABELLED_INPUT_TEXT: TextStyle = {
+  paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
+  paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
+  lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
+};
+
+/**
  * The input's text style once a floating label sits in its field: the value
  * drops below the floated label's row (these beat the caller's own vertical
  * padding and line height), and the label lines up with the text's left edge —
@@ -92,12 +103,7 @@ export function labelFieldText(text: TextStyle): {
 } {
   const left = text.paddingLeft ?? text.paddingHorizontal ?? text.padding;
   return {
-    text: {
-      ...text,
-      paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
-      paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
-      lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
-    },
+    text: { ...text, ...LABELLED_INPUT_TEXT },
     labelLeft: typeof left === "number" ? left : 0,
   };
 }

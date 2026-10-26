@@ -12,8 +12,8 @@ import {
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
 import {
-  LABELLED_INPUT_GEOMETRY,
   resolvePlaceholder,
   shouldFloatLabel,
 } from "@/components/text-input-utils";
@@ -430,9 +430,7 @@ const styles = StyleSheet.create({
   textInput: {
     flexGrow: 1,
     paddingHorizontal: Spacing.md,
-    paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
-    paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
-    lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
+    ...LABELLED_INPUT_TEXT,
     fontSize: 16,
     fontFamily: FontFamily.regular,
     textAlignVertical: "top",
