@@ -9,6 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FieldCounter } from "@/components/FieldCounter";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -35,6 +36,8 @@ import type { NotebookEntryNavigationProp } from "@/types/navigation";
 import { safeGoBack } from "@/navigation/safeGoBack";
 
 type RouteProps = RouteProp<RootStackParamList, "NotebookEntry">;
+
+const NOTE_MAX_LENGTH = 500;
 
 const QUICK_DATES = [
   { label: "Tomorrow", days: 1 },
@@ -89,6 +92,7 @@ export default function NotebookEntryScreen() {
 
   const [type, setType] = useState(entry?.type ?? "insight");
   const [content, setContent] = useState(entry?.content ?? "");
+  const [contentFocused, setContentFocused] = useState(false);
   const [followUpDate, setFollowUpDate] = useState<string | null>(
     entry?.followUpDate
       ? new Date(entry.followUpDate).toISOString().slice(0, 10)
@@ -395,16 +399,18 @@ export default function NotebookEntryScreen() {
             value={content}
             onChangeText={setContent}
             multiline
-            maxLength={500}
+            maxLength={NOTE_MAX_LENGTH}
+            onFocus={() => setContentFocused(true)}
+            onBlur={() => setContentFocused(false)}
             placeholder="e.g. Oat milk keeps my morning smoothie lighter"
             placeholderTextColor={theme.textSecondary}
           />
-          <ThemedText
-            type="caption"
-            style={[styles.charCount, { color: theme.textSecondary }]}
-          >
-            {content.length}/500
-          </ThemedText>
+          <FieldCounter
+            length={content.length}
+            max={NOTE_MAX_LENGTH}
+            visible={contentFocused}
+            style={styles.charCount}
+          />
         </View>
 
         {type === "commitment" && (
@@ -596,7 +602,7 @@ const styles = StyleSheet.create({
     minHeight: 100,
     textAlignVertical: "top",
   },
-  charCount: { textAlign: "right", marginTop: 4 },
+  charCount: { marginTop: 4 },
   dateRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   dateStep: {
     width: 44,

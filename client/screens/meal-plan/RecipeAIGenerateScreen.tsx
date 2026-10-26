@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -8,6 +8,7 @@ import {
   ScrollView,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FieldCounter } from "@/components/FieldCounter";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -49,6 +50,7 @@ type AIGenerateRouteProp = RouteProp<
 
 const PROMPT_MIN = 3;
 const PROMPT_TOO_SHORT = `Describe the recipe in at least ${PROMPT_MIN} characters.`;
+const PROMPT_MAX_LENGTH = 500;
 
 const SUGGESTION_CHIPS = [
   "Quick dinner",
@@ -88,6 +90,8 @@ export default function RecipeAIGenerateScreen() {
   // Destructured, never read as `promptField.ref` in render: React Compiler
   // treats an object read through `.ref` as a ref and skips the component.
   const { ref: inputRef } = promptField;
+  // The counter shows only while the prompt is focused.
+  const [promptFocused, setPromptFocused] = useState(false);
 
   const handleChipPress = (chip: string) => {
     haptics.impact(ImpactFeedbackStyle.Light);
@@ -194,10 +198,19 @@ export default function RecipeAIGenerateScreen() {
           placeholderTextColor={theme.textSecondary}
           multiline
           autoFocus
-          maxLength={500}
+          maxLength={PROMPT_MAX_LENGTH}
+          onFocus={() => setPromptFocused(true)}
+          onBlur={() => {
+            setPromptFocused(false);
+            promptField.onBlur();
+          }}
           returnKeyType="default"
           blurOnSubmit={false}
-          onBlur={promptField.onBlur}
+        />
+        <FieldCounter
+          length={prompt.length}
+          max={PROMPT_MAX_LENGTH}
+          visible={promptFocused}
         />
         <InlineError message={promptField.error} style={styles.promptError} />
 
