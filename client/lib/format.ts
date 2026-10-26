@@ -54,6 +54,15 @@ export function formatDateRange(start: string, end: string): string {
   return `${s.toLocaleDateString("en-US", opts)} - ${e.toLocaleDateString("en-US", opts)}`;
 }
 
+/** One local-calendar date for people: "Mon, Oct 27". */
+export function formatDateWithWeekday(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /**
  * Generated grocery-list titles embed raw ISO dates
  * ("Grocery List 2024-01-05 to 2024-01-12", written by server/routes/grocery.ts).
