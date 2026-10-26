@@ -3,6 +3,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import ResetPasswordScreen from "../ResetPasswordScreen";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -354,5 +355,26 @@ describe("ResetPasswordScreen — rule checklist", () => {
     expect(pw.getAttribute("aria-hint") ?? "").not.toContain(
       "Use at least 8 characters.",
     );
+  });
+});
+
+// Spec §5.6: code → new password → confirm on Next; confirm's Go submits.
+describe("ResetPasswordScreen — Return keys", () => {
+  it("Next moves code → new password → confirm", () => {
+    renderScreen();
+    const code = screen.getByLabelText("6-digit code");
+    const pw = screen.getByLabelText("New password");
+    const confirm = screen.getByLabelText("Confirm new password");
+    expect(reactProps(code).returnKeyType).toBe("next");
+    expect(reactProps(pw).returnKeyType).toBe("next");
+    expect(reactProps(confirm).returnKeyType).toBe("go");
+    act(() => {
+      (reactProps(code).onSubmitEditing as () => void)();
+    });
+    expect(document.activeElement).toBe(pw);
+    act(() => {
+      (reactProps(pw).onSubmitEditing as () => void)();
+    });
+    expect(document.activeElement).toBe(confirm);
   });
 });

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
+import { act, screen, fireEvent } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import { ChangeEmailModal } from "../ChangeEmailModal";
 import { ApiError } from "@/lib/api-error";
 
@@ -306,5 +307,49 @@ describe("ChangeEmailModal — one announcement per field error", () => {
     expect(input.getAttribute("aria-hint") ?? "").not.toContain(
       "Enter a valid email address",
     );
+  });
+});
+
+// Spec §5.6: Next through the three fields; the password's Go submits.
+describe("ChangeEmailModal — Return keys", () => {
+  const ret = (label: string) =>
+    act(() => {
+      (
+        reactProps(screen.getByLabelText(label)).onSubmitEditing as () => void
+      )();
+    });
+
+  it("new email → confirm → password on Next, and Go on the password submits", async () => {
+    const onConfirm = renderModal(vi.fn(() => new Promise(() => {})));
+    const order = [
+      "New email address",
+      "Confirm new email address",
+      "Current password",
+    ];
+    expect(reactProps(screen.getByLabelText(order[0])).returnKeyType).toBe(
+      "next",
+    );
+    expect(reactProps(screen.getByLabelText(order[1])).returnKeyType).toBe(
+      "next",
+    );
+    expect(reactProps(screen.getByLabelText(order[2])).returnKeyType).toBe(
+      "go",
+    );
+
+    ret(order[0]);
+    expect(document.activeElement).toBe(screen.getByLabelText(order[1]));
+    ret(order[1]);
+    expect(document.activeElement).toBe(screen.getByLabelText(order[2]));
+
+    type(order[0], "new@example.com");
+    type(order[1], "new@example.com");
+    type(order[2], "pw");
+    await act(async () => {
+      (
+        reactProps(screen.getByLabelText(order[2]))
+          .onSubmitEditing as () => void
+      )();
+    });
+    expect(onConfirm).toHaveBeenCalled();
   });
 });

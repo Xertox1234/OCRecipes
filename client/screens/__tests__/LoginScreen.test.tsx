@@ -7,7 +7,7 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { reactProps } from "../../../test/utils/react-props";
 import LoginScreen from "../LoginScreen";
@@ -810,5 +810,66 @@ describe("LoginScreen — one announcement per field error", () => {
     expect(password.getAttribute("aria-hint") ?? "").not.toContain(
       "Enter your password.",
     );
+  });
+});
+
+// Spec §5.6: Next moves to the next visible field; the last field's Return
+// submits through the same handler as the main button.
+describe("LoginScreen — Return keys", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const submit = (el: HTMLElement) =>
+    act(() => {
+      (reactProps(el).onSubmitEditing as () => void)();
+    });
+
+  it("sign-in: Next on the username focuses the password; Go on the password signs in", async () => {
+    mockLogin.mockReturnValue(new Promise(() => {}));
+    renderComponent(<LoginScreen />);
+    const username = screen.getByLabelText("Username or email");
+    const password = screen.getByLabelText("Password");
+    expect(reactProps(username).returnKeyType).toBe("next");
+    expect(reactProps(password).returnKeyType).toBe("go");
+
+    fireEvent.change(username, { target: { value: "demo" } });
+    submit(username);
+    expect(document.activeElement).toBe(password);
+    expect(mockLogin).not.toHaveBeenCalled();
+
+    fireEvent.change(password, { target: { value: "demo-password" } });
+    submit(password);
+    expect(mockLogin).toHaveBeenCalledWith("demo", "demo-password");
+  });
+
+  it("sign-in: Go on an empty password runs the main button's checks", () => {
+    renderComponent(<LoginScreen />);
+    submit(screen.getByLabelText("Password"));
+    expect(screen.getByText("Enter your username or email.")).toBeTruthy();
+    expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  it("sign-up: username → email → password → confirm, and Go on confirm submits", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    const username = screen.getByLabelText("Username");
+    const email = screen.getByLabelText("Email");
+    const password = screen.getByLabelText("Password");
+    const confirm = screen.getByLabelText("Confirm password");
+    for (const el of [username, email, password]) {
+      expect(reactProps(el).returnKeyType).toBe("next");
+    }
+    expect(reactProps(confirm).returnKeyType).toBe("go");
+
+    submit(username);
+    expect(document.activeElement).toBe(email);
+    submit(email);
+    expect(document.activeElement).toBe(password);
+    submit(password);
+    expect(document.activeElement).toBe(confirm);
+
+    // Empty form: Go runs the same checks as Create Account.
+    submit(confirm);
+    expect(screen.getByText("Enter a username.")).toBeTruthy();
+    expect(mockRegister).not.toHaveBeenCalled();
   });
 });

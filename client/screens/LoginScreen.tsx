@@ -342,6 +342,12 @@ export default function LoginScreen() {
               autoCorrect={false}
               textContentType="username"
               autoComplete="username"
+              returnKeyType="next"
+              // Keep the keyboard up while focus moves on (spec §5.6).
+              submitBehavior="submit"
+              onSubmitEditing={() =>
+                (mode === "register" ? emailRef : passwordRef).current?.focus()
+              }
               editable={!isLoading}
               testID="input-username"
               accessibilityHint={
@@ -384,6 +390,9 @@ export default function LoginScreen() {
               autoCorrect={false}
               textContentType="emailAddress"
               autoComplete="email"
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => passwordRef.current?.focus()}
               editable={!isLoading}
               testID="input-email"
               accessibilityHint="Enter your email address"
@@ -418,6 +427,15 @@ export default function LoginScreen() {
               autoComplete={mode === "register" ? "new-password" : undefined}
               passwordRules={
                 mode === "register" ? registerPasswordRules() : undefined
+              }
+              // Sign-in ends here: Go submits as Sign In does. Sign-up moves
+              // on to the confirm field.
+              returnKeyType={mode === "register" ? "next" : "go"}
+              submitBehavior={mode === "register" ? "submit" : undefined}
+              onSubmitEditing={
+                mode === "register"
+                  ? () => confirmRef.current?.focus()
+                  : handleSubmit
               }
               editable={!isLoading}
               testID="input-password"
@@ -480,6 +498,8 @@ export default function LoginScreen() {
                 textContentType="newPassword"
                 autoComplete="new-password"
                 passwordRules={registerPasswordRules()}
+                returnKeyType="go"
+                onSubmitEditing={handleSubmit}
                 editable={!isLoading}
                 testID="input-confirm-password"
                 accessibilityHint="Re-enter your password to confirm"
