@@ -94,7 +94,7 @@ appId: com.ocrecipes.app
           id: "input-password"
       - inputText: ${PASSWORD}
       # Drop the keyboard so the Sign In button's coordinates are tappable.
-      # Once the app's "Please fill in all fields" validation renders, it pushes
+      # Once the app's empty-field messages ("Enter your password." etc.) render, they push
       # the submit button down UNDER the iOS keyboard (button [24,525][369,577]
       # vs keyboard top y=517 — run 33930429696 step-037 dump), so a coordinate
       # tap lands on the keyboard's autofill bar and silently no-ops (Maestro
@@ -107,7 +107,7 @@ appId: com.ocrecipes.app
       - tapOn: "Sign In"
       # Outcome-oracle retry (same pattern as the register flow): run
       # 33397038006 submitted an EMPTY form — both fields blank, the app's
-      # own "Please fill in all fields" validation showing — because the
+      # own empty-field messages showing — because the
       # typing never landed (fields tapped mid-transition). Instead of
       # fighting the timing, use the validation message as the oracle and
       # retype + resubmit, bounded. No-op when the first submit worked.
@@ -123,7 +123,10 @@ appId: com.ocrecipes.app
       - repeat:
           times: 2
           while:
-            visible: "Please fill in all fields"
+            # Per-field messages since the form-fields validation timing;
+            # Maestro text is a full-match regex, so the hints ("Enter your
+            # password", no period) never match.
+            visible: "Enter your (username or email|password)\\."
           commands:
             - tapOn:
                 id: "input-username"

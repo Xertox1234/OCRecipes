@@ -14,6 +14,8 @@ import { InlineError } from "@/components/InlineError";
 import { LegalConsentCaption } from "@/components/LegalConsentCaption";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
 import { useAuthContext } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { Spacing } from "@/constants/theme";
@@ -35,10 +37,19 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
   const haptics = useHaptics();
   const toast = useToast();
   const { completeSocialSignUp } = useAuthContext();
-  const [username, setUsername] = useState(suggestedUsername);
+  // Checked on leaving the field or on Continue (form-fields spec §5.1).
+  const username = useFieldValidation(
+    (value) => validateUsername(value.trim()),
+    suggestedUsername,
+  );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: usernameRef } = username;
   // COPPA 13+ attestation — the person's own checkbox; server enforces true.
   const [ageConfirmed, setAgeConfirmed] = useState(false);
+  // Server/flow errors only; field errors come from `username.error`.
   const [error, setError] = useState("");
+  const shownError = username.error ?? error;
   // Bumped on each validation reject (not server errors) to shake the error.
   const [shakeKey, setShakeKey] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -46,10 +57,8 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
   const onSubmit = async () => {
     if (busy || !ageConfirmed) return;
     setError("");
-    const trimmed = username.trim();
-    const invalid = validateUsername(trimmed);
-    if (invalid) {
-      setError(invalid);
+    const trimmed = username.value.trim();
+    if (!focusFirstInvalid([username])) {
       setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
@@ -99,8 +108,10 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
           <TextInput
             leftIcon="user"
             label="Username"
-            value={username}
-            onChangeText={setUsername}
+            ref={usernameRef}
+            value={username.value}
+            onChangeText={username.onChangeText}
+            onBlur={username.onBlur}
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="username"
@@ -109,10 +120,10 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
             onSubmitEditing={onSubmit}
             editable={!busy}
             testID="input-choose-username"
-            error={!!error}
-            errorMessage={error || undefined}
+            error={!!shownError}
+            errorMessage={shownError || undefined}
           />
-          <InlineError message={error} shakeKey={shakeKey} />
+          <InlineError message={shownError} shakeKey={shakeKey} />
 
           <Pressable
             onPress={() => {

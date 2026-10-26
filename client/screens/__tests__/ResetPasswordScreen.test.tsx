@@ -221,10 +221,64 @@ describe("ResetPasswordScreen — floating labels", () => {
     expect(fieldLabels()).toEqual([
       "6-digit code",
       "New password",
-      "Confirm password",
+      "Confirm new password",
     ]);
+    // The visible label is the accessible name (label-in-name).
+    expect(screen.getByLabelText("Confirm new password")).toBeTruthy();
     expect(screen.getByLabelText("New password")).toBeTruthy();
     fireEvent.focus(screen.getByLabelText("New password"));
     expect(screen.queryByPlaceholderText("New password")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; empty fields are flagged by Reset password, focus on the first.
+describe("ResetPasswordScreen — validation timing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("shows no error while a short password is typed, and shows it on leaving", () => {
+    renderScreen();
+    const input = screen.getByLabelText("New password");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abc" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
+    fireEvent.blur(input);
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("clears the shown error on the keystroke that makes it valid", () => {
+    renderScreen();
+    const input = screen.getByLabelText("New password");
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.blur(input);
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("Reset password with empty fields flags them all and focuses the code", () => {
+    renderScreen();
+    fireEvent.click(screen.getByText("Reset password"));
+    const code = screen.getByLabelText("6-digit code");
+    expect(code.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      screen.getByLabelText("New password").getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(document.activeElement).toBe(code);
+    expect(mockReset).not.toHaveBeenCalled();
+  });
+
+  it("focuses the confirm field when only it is wrong", () => {
+    renderScreen();
+    fill("123456", "newpass99", "newpass98");
+    fireEvent.click(screen.getByText("Reset password"));
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Confirm new password"),
+    );
   });
 });

@@ -16,16 +16,24 @@ import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
 import { useAuthContext } from "@/context/AuthContext";
 import { twoStepCodeParams } from "@/lib/second-factor-utils";
 import { Spacing, withOpacity } from "@/constants/theme";
 import {
   validateAuthForm,
   validateAuthFormFields,
+  validateUsername,
   getAuthErrorMessage,
   registerPasswordHint,
   registerPasswordRules,
+  PASSWORD_MISMATCH_MESSAGE,
 } from "./LoginScreen-utils";
+import {
+  newPasswordProblem,
+  passwordMessage,
+} from "@shared/constants/password-policy";
 import {
   useIsFocused,
   useNavigation,
@@ -53,20 +61,59 @@ export default function LoginScreen() {
   const isFocused = useIsFocused();
 
   const [mode, setMode] = useState<Mode>("login");
+  // Each field shows its own message: on leaving it with text, live once
+  // shown, and on the main button for empty fields (form-fields spec §5.1).
+  // Sign-in only checks that fields are filled — the server is the authority
+  // and a format check there would be a username-enumeration hint.
   // Prefilled with the email after a password reset (ResetPasswordScreen).
-  const [username, setUsername] = useState(route.params?.email ?? "");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [email, setEmail] = useState("");
+  const usernameField = useFieldValidation((value) => {
+    if (value.trim() === "") {
+      return mode === "login"
+        ? "Enter your username or email."
+        : "Enter a username.";
+    }
+    return mode === "login" ? null : validateUsername(value.trim());
+  }, route.params?.email ?? "");
+  const emailField = useFieldValidation(
+    (value) =>
+      validateAuthFormFields({
+        mode,
+        username: "",
+        password: "",
+        confirmPassword: "",
+        ageConfirmed: false,
+        email: value,
+      }).email,
+  );
+  const passwordField = useFieldValidation((value) => {
+    if (mode === "login") {
+      return value.trim() === "" ? "Enter your password." : null;
+    }
+    if (value === "") return "Enter a password.";
+    const problem = newPasswordProblem(value);
+    return problem ? passwordMessage(problem) : null;
+  });
+  const confirmField = useFieldValidation((value) => {
+    if (mode === "login" || value === passwordField.value) return null;
+    return value === "" ? "Re-enter your password." : PASSWORD_MISMATCH_MESSAGE;
+  });
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: usernameRef } = usernameField;
+  const { ref: emailRef } = emailField;
+  const { ref: passwordRef } = passwordField;
+  const { ref: confirmRef } = confirmField;
+  const username = usernameField.value;
+  const password = passwordField.value;
+  const confirmPassword = confirmField.value;
+  const email = emailField.value;
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Server/flow errors (and the age confirmation); field messages sit under
+  // each field.
   const [error, setError] = useState("");
   // Bumped on each validation reject (not server errors) to shake the error.
   const [shakeKey, setShakeKey] = useState(0);
-  // Field-attributed error for the email input only (sets its aria-invalid).
-  // Set on submit, mirroring `error`'s lifecycle — never validated live as the
-  // user types. Stays null in login mode (no email field shown).
-  const [emailError, setEmailError] = useState<string | null>(null);
   // COPPA 13+ age attestation — gated by checkbox; server enforces ageConfirmed:true
   const [ageConfirmed, setAgeConfirmed] = useState(false);
 
@@ -99,7 +146,16 @@ export default function LoginScreen() {
 
   const handleSubmit = async () => {
     setError("");
-    setEmailError(null);
+
+    const fields =
+      mode === "register"
+        ? [usernameField, emailField, passwordField, confirmField]
+        : [usernameField, passwordField];
+    if (!focusFirstInvalid(fields)) {
+      // Each invalid field's message shakes via its own shakeKey.
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
 
     const formInput = {
       mode,
@@ -109,10 +165,7 @@ export default function LoginScreen() {
       ageConfirmed,
       email,
     };
-    // Attribute the email-specific failure to the email input (aria-invalid),
-    // while the form-level banner still shows the first failing rule overall.
-    setEmailError(validateAuthFormFields(formInput).email);
-
+    // Second guard over the whole form (it also covers the age confirmation).
     const validationError = validateAuthForm(formInput);
     if (validationError) {
       setError(validationError);
@@ -162,7 +215,9 @@ export default function LoginScreen() {
       setError(getAuthErrorMessage(err, mode));
       // A rejected password left in the field is what iOS offers to save when
       // the user leaves. Register keeps it: a taken username isn't a bad password.
-      if (mode === "login") setPassword("");
+      // reset, not setValue: the emptied field must not then show its own
+      // "Enter your password." over the server's message.
+      if (mode === "login") passwordField.reset("");
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsLoading(false);
@@ -172,8 +227,11 @@ export default function LoginScreen() {
   const toggleMode = () => {
     setMode(mode === "login" ? "register" : "login");
     setError("");
-    setEmailError(null);
-    setConfirmPassword("");
+    // The other mode has other rules: start its fields with no error showing.
+    usernameField.reset(username);
+    emailField.reset(email);
+    passwordField.reset(password);
+    confirmField.reset("");
     setAgeConfirmed(false);
   };
 
@@ -257,8 +315,10 @@ export default function LoginScreen() {
           <TextInput
             leftIcon="user"
             label={mode === "login" ? "Username or email" : "Username"}
+            ref={usernameRef}
             value={username}
-            onChangeText={setUsername}
+            onChangeText={usernameField.onChangeText}
+            onBlur={usernameField.onBlur}
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="username"
@@ -269,6 +329,12 @@ export default function LoginScreen() {
                 ? "Enter your username or email address"
                 : "Enter your username"
             }
+            error={!!usernameField.error}
+            errorMessage={usernameField.error ?? undefined}
+          />
+          <InlineError
+            message={usernameField.error}
+            shakeKey={usernameField.shakeKey}
           />
 
           {mode === "register" ? (
@@ -276,8 +342,10 @@ export default function LoginScreen() {
               leftIcon="mail"
               label="Email"
               placeholder="you@example.com"
+              ref={emailRef}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={emailField.onChangeText}
+              onBlur={emailField.onBlur}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -285,8 +353,14 @@ export default function LoginScreen() {
               autoComplete="email"
               testID="input-email"
               accessibilityHint="Enter your email address"
-              error={!!emailError}
-              errorMessage={emailError ?? undefined}
+              error={!!emailField.error}
+              errorMessage={emailField.error ?? undefined}
+            />
+          ) : null}
+          {mode === "register" ? (
+            <InlineError
+              message={emailField.error}
+              shakeKey={emailField.shakeKey}
             />
           ) : null}
 
@@ -298,8 +372,10 @@ export default function LoginScreen() {
             }
             onRightIconPress={() => setShowPassword(!showPassword)}
             label="Password"
+            ref={passwordRef}
             value={password}
-            onChangeText={setPassword}
+            onChangeText={passwordField.onChangeText}
+            onBlur={passwordField.onBlur}
             secureTextEntry={!showPassword}
             autoCapitalize="none"
             textContentType={mode === "register" ? "newPassword" : "password"}
@@ -313,6 +389,12 @@ export default function LoginScreen() {
                 ? registerPasswordHint()
                 : "Enter your password"
             }
+            error={!!passwordField.error}
+            errorMessage={passwordField.error ?? undefined}
+          />
+          <InlineError
+            message={passwordField.error}
+            shakeKey={passwordField.shakeKey}
           />
 
           {mode === "register" ? (
@@ -343,8 +425,10 @@ export default function LoginScreen() {
             <TextInput
               leftIcon="lock"
               label="Confirm password"
+              ref={confirmRef}
               value={confirmPassword}
-              onChangeText={setConfirmPassword}
+              onChangeText={confirmField.onChangeText}
+              onBlur={confirmField.onBlur}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
               textContentType="newPassword"
@@ -352,6 +436,14 @@ export default function LoginScreen() {
               passwordRules={registerPasswordRules()}
               testID="input-confirm-password"
               accessibilityHint="Re-enter your password to confirm"
+              error={!!confirmField.error}
+              errorMessage={confirmField.error ?? undefined}
+            />
+          ) : null}
+          {mode === "register" ? (
+            <InlineError
+              message={confirmField.error}
+              shakeKey={confirmField.shakeKey}
             />
           ) : null}
 

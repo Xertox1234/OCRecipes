@@ -3,6 +3,7 @@ import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 
 import GoalSetupScreen from "../GoalSetupScreen";
@@ -344,5 +345,159 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     expect(mockNotification).toHaveBeenCalledExactlyOnceWith(
       Haptics.NotificationFeedbackType.Error,
     );
+  });
+});
+
+// Form-fields spec §5.1: Calculate is pressable before the form is complete;
+// pressing it points at what's missing. Save flags an emptied field.
+describe("GoalSetupScreen — Calculate and Save point at what's missing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApiRequest.mockImplementation(async (method: string, url: string) => {
+      if (method === "POST" && url === "/api/goals/calculate") {
+        return {
+          json: async () => ({
+            dailyCalories: 2200,
+            dailyProtein: 150,
+            dailyCarbs: 220,
+            dailyFat: 70,
+          }),
+        };
+      }
+      return { json: async () => ({}) };
+    });
+  });
+
+  it("Calculate is pressable on an empty form; pressing focuses Age and keeps Still needed", () => {
+    renderComponent(<GoalSetupScreen />);
+    const calculate = screen.getByLabelText("Calculate my goals");
+    expect(calculate.getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(calculate);
+
+    expect(document.activeElement).toBe(screen.getByLabelText("Age"));
+    expect(mockNotification).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(screen.getByText(/^Still needed: /)).toBeTruthy();
+    expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
+  it("focuses the first missing number field, skipping filled ones", () => {
+    renderComponent(<GoalSetupScreen />);
+    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    expect(document.activeElement).toBe(screen.getByLabelText("Weight"));
+  });
+
+  it("with only a choice missing, refuses with the error haptic", () => {
+    renderComponent(<GoalSetupScreen />);
+    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("Weight"), {
+      target: { value: "70" },
+    });
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "170" },
+    });
+    fireEvent.click(screen.getByLabelText("Male"));
+    fireEvent.click(screen.getByLabelText("Sedentary"));
+
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+
+    expect(mockNotification).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(screen.getByText("Still needed: primary goal")).toBeTruthy();
+    expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
+  it("an out-of-range weight on Calculate moves focus to Weight", () => {
+    renderComponent(<GoalSetupScreen />);
+    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("Weight"), {
+      target: { value: "500" },
+    });
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "170" },
+    });
+    fireEvent.click(screen.getByLabelText("Male"));
+    fireEvent.click(screen.getByLabelText("Sedentary"));
+    fireEvent.click(screen.getByLabelText("Lose Weight"));
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    expect(document.activeElement).toBe(screen.getByLabelText("Weight"));
+  });
+
+  it("Save with a cleared calorie target names it and focuses it", async () => {
+    renderComponent(<GoalSetupScreen />);
+    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("Weight"), {
+      target: { value: "70" },
+    });
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "170" },
+    });
+    fireEvent.click(screen.getByLabelText("Male"));
+    fireEvent.click(screen.getByLabelText("Sedentary"));
+    fireEvent.click(screen.getByLabelText("Lose Weight"));
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+
+    const calories = await screen.findByLabelText("Daily calorie target");
+    fireEvent.change(calories, { target: { value: "" } });
+    mockNotification.mockClear();
+    fireEvent.click(screen.getByLabelText("Save my goals"));
+
+    expect(screen.getByText("Enter calories")).toBeTruthy();
+    expect(document.activeElement).toBe(calories);
+    expect(mockApiRequest).not.toHaveBeenCalledWith(
+      "PUT",
+      "/api/goals",
+      expect.anything(),
+    );
+    expect(mockNotification).toHaveBeenCalledExactlyOnceWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+  });
+});
+
+// Controller ruling (fix round 1): with only a choice missing, nothing on
+// screen changes on Calculate, so a screen-reader user hears the "Still
+// needed" line — once per press.
+describe("GoalSetupScreen — Calculate with only a choice missing", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("announces what's still needed once per press", async () => {
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderComponent(<GoalSetupScreen />);
+    fireEvent.change(screen.getByLabelText("Age"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("Weight"), {
+      target: { value: "70" },
+    });
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "170" },
+    });
+    fireEvent.click(screen.getByLabelText("Male"));
+    fireEvent.click(screen.getByLabelText("Sedentary"));
+    announce.mockClear();
+
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    await waitFor(() => expect(announce).toHaveBeenCalledTimes(1));
+    expect(announce).toHaveBeenCalledWith("Still needed: primary goal");
+
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    await waitFor(() => expect(announce).toHaveBeenCalledTimes(2));
+    expect(mockApiRequest).not.toHaveBeenCalled();
+    announce.mockRestore();
+  });
+
+  it("does not announce when a number field takes focus instead", async () => {
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderComponent(<GoalSetupScreen />);
+    announce.mockClear();
+    fireEvent.click(screen.getByLabelText("Calculate my goals"));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(announce).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^Still needed/),
+    );
+    announce.mockRestore();
   });
 });

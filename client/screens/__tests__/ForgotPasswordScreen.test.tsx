@@ -187,3 +187,43 @@ describe("ForgotPasswordScreen — floating labels", () => {
     expect(screen.queryByPlaceholderText("Email")).toBeNull();
   });
 });
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; an empty field is flagged (and focused) by Send code.
+describe("ForgotPasswordScreen — validation timing", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const MESSAGE = "Please enter a valid email address.";
+
+  it("shows no error while an invalid email is typed, and shows it on leaving", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Email");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "nope" } });
+    expect(screen.queryAllByText(MESSAGE)).toHaveLength(0);
+    expect(input.getAttribute("aria-invalid")).not.toBe("true");
+
+    fireEvent.blur(input);
+    expect(screen.getAllByText(MESSAGE).length).toBeGreaterThan(0);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("leaving the email empty shows nothing", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Email");
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    expect(input.getAttribute("aria-invalid")).not.toBe("true");
+  });
+
+  it("Send code with an empty email flags the field and moves focus to it", () => {
+    renderScreen();
+    fireEvent.click(screen.getByText("Send code"));
+    const input = screen.getByLabelText("Email");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(input);
+    expect(
+      screen.getAllByText("Please enter your email address.").length,
+    ).toBeGreaterThan(0);
+    expect(mockRequestResetCode).not.toHaveBeenCalled();
+  });
+});

@@ -115,3 +115,19 @@ export function goalFieldError(
   const suffix = range.suffix ? ` ${range.suffix}` : "";
   return `${range.label} must be ${range.min}–${range.max}${suffix}`;
 }
+
+/**
+ * Save's check: like `goalFieldError`, but an empty field is named too —
+ * the "Still needed" line only sits under Calculate, so after it a cleared
+ * field would otherwise refuse with no word said (form-fields spec §5.1).
+ */
+export function goalSubmitError(
+  field: GoalField,
+  value: string,
+  unit: MeasurementUnit,
+): string | null {
+  if (value.trim() === "") {
+    return `Enter ${fieldRange(field, unit).label.toLowerCase()}`;
+  }
+  return goalFieldError(field, value, unit);
+}

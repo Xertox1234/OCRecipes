@@ -10,6 +10,8 @@ import { TextInput } from "@/components/TextInput";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
 import { Spacing } from "@/constants/theme";
 import { useAuthContext } from "@/context/AuthContext";
 import { safeGoBack } from "@/navigation/safeGoBack";
@@ -35,8 +37,24 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
   const [status, setStatus] = useState<Status>(
     tokenParam ? "confirming" : "pending",
   );
-  const [email, setEmail] = useState(route.params?.email ?? "");
+  // Checked on leaving the field or on resend (form-fields spec §5.1). Only
+  // one of the two email inputs is ever mounted, so they share this field.
+  const emailField = useFieldValidation(
+    (value) =>
+      value.trim() === ""
+        ? "Please enter your email address."
+        : isValidEmailShape(value)
+          ? null
+          : "Please enter a valid email address.",
+    route.params?.email ?? "",
+  );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: emailRef } = emailField;
+  const email = emailField.value;
+  // Server/flow errors only; field errors come from `emailField.error`.
   const [error, setError] = useState("");
+  const shownError = emailField.error ?? error;
   const [shakeKey, setShakeKey] = useState(0);
   const [busy, setBusy] = useState(false);
   // A verification email was actually sent only when a caller explicitly says so
@@ -87,8 +105,7 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
 
   const onResend = async () => {
     setError("");
-    if (!isValidEmailShape(email)) {
-      setError("Please enter a valid email address.");
+    if (!focusFirstInvalid([emailField])) {
       setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
@@ -170,16 +187,18 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               label="Email"
               placeholder="you@example.com"
               accessibilityLabel="Email address"
+              ref={emailRef}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={emailField.onChangeText}
+              onBlur={emailField.onBlur}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
               testID="input-resend-email"
-              error={!!error}
-              errorMessage={error || undefined}
+              error={!!shownError}
+              errorMessage={shownError || undefined}
             />
-            <InlineError message={error} shakeKey={shakeKey} />
+            <InlineError message={shownError} shakeKey={shakeKey} />
             <Button onPress={onResend} loading={busy} style={styles.button}>
               Resend verification email
             </Button>
@@ -202,16 +221,18 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               label="Email"
               placeholder="you@example.com"
               accessibilityLabel="Email address"
+              ref={emailRef}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={emailField.onChangeText}
+              onBlur={emailField.onBlur}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
               testID="input-resend-email"
-              error={!!error}
-              errorMessage={error || undefined}
+              error={!!shownError}
+              errorMessage={shownError || undefined}
             />
-            <InlineError message={error} shakeKey={shakeKey} />
+            <InlineError message={shownError} shakeKey={shakeKey} />
             {/* Prominence follows intent within the pending state. In the
                 not-sent sub-state ("Verify your email") resending is the primary
                 action, so Resend is the solid primary and Back-to-sign-in is the

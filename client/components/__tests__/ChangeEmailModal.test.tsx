@@ -188,3 +188,73 @@ describe("ChangeEmailModal — floating labels", () => {
     expect(screen.getAllByPlaceholderText("you@example.com")).toHaveLength(1);
   });
 });
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; empty fields are flagged by Update email, focus on the first.
+describe("ChangeEmailModal — validation timing", () => {
+  it("shows no error while a bad email is typed, and shows it on leaving", () => {
+    renderModal();
+    const input = screen.getByLabelText("New email address");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "nope" } });
+    expect(screen.queryByText("Enter a valid email address")).toBeNull();
+    fireEvent.blur(input);
+    expect(screen.getByText("Enter a valid email address")).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    // Only the field at fault is marked.
+    expect(
+      screen.getByLabelText("Current password").getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
+  it("Update email with empty fields flags them and focuses the new email", () => {
+    const onConfirm = renderModal();
+    submit();
+    const input = screen.getByLabelText("New email address");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      screen.getByLabelText("Current password").getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(document.activeElement).toBe(input);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("the mismatch clears on the keystroke that makes the emails match", () => {
+    renderModal();
+    type("New email address", "a@b.com");
+    type("Confirm new email address", "a@c.com");
+    type("Current password", "pw");
+    submit();
+    expect(screen.getByText("Email addresses do not match")).toBeTruthy();
+    type("Confirm new email address", "a@b.com");
+    expect(screen.queryByText("Email addresses do not match")).toBeNull();
+  });
+});
+
+describe("ChangeEmailModal — reopening starts clean", () => {
+  it("clears the fields and their messages when reopened", () => {
+    const onConfirm = vi.fn();
+    const ui = (visible: boolean) => (
+      <ChangeEmailModal
+        visible={visible}
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />
+    );
+    const { rerender } = renderComponent(ui(true));
+    type("New email address", "nope");
+    submit();
+    expect(screen.getByText("Enter a valid email address")).toBeTruthy();
+
+    rerender(ui(false));
+    rerender(ui(true));
+
+    const input = screen.getByLabelText(
+      "New email address",
+    ) as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(screen.queryByText("Enter a valid email address")).toBeNull();
+    expect(screen.queryByText("Enter your new email address")).toBeNull();
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+  });
+});

@@ -1,4 +1,4 @@
-import { goalFieldError } from "../GoalSetupScreen-utils";
+import { goalFieldError, goalSubmitError } from "../GoalSetupScreen-utils";
 
 describe("goalFieldError", () => {
   it("refuses an age below the range with the range message", () => {
@@ -78,5 +78,17 @@ describe("goalFieldError", () => {
   it("leaves an empty field to the 'Still needed' line", () => {
     expect(goalFieldError("age", "", "metric")).toBeNull();
     expect(goalFieldError("weight", "  ", "imperial")).toBeNull();
+  });
+});
+
+// Save's check: an emptied field is named too (no "Still needed" line there).
+describe("goalSubmitError", () => {
+  it("names an empty field", () => {
+    expect(goalSubmitError("calories", "", "metric")).toBe("Enter calories");
+    expect(goalSubmitError("age", "  ", "metric")).toBe("Enter age");
+  });
+  it("otherwise answers as goalFieldError", () => {
+    expect(goalSubmitError("age", "5", "metric")).toBe("Age must be 13–120");
+    expect(goalSubmitError("age", "30", "metric")).toBeNull();
   });
 });
