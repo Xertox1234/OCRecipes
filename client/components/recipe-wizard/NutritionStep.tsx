@@ -1,5 +1,11 @@
-import React, { useCallback } from "react";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
+import React, { useCallback, useRef } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  type TextInput as RNTextInput,
+} from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
@@ -64,10 +70,15 @@ function NutritionCell({
   field,
   value,
   onChange,
+  inputRef,
+  onNext,
 }: {
   field: NutrientField;
   value: string;
   onChange: (key: keyof NutritionData, raw: string) => void;
+  inputRef: React.Ref<RNTextInput>;
+  /** Moves to the next box; omitted on the last one, whose key says Done. */
+  onNext?: () => void;
 }) {
   const { theme } = useTheme();
   const cellFocus = useFieldFocus();
@@ -87,6 +98,7 @@ function NutritionCell({
         {field.label}
       </Text>
       <FocusTextInput
+        ref={inputRef}
         focusRing={false}
         onFocus={cellFocus.onFocus}
         onBlur={cellFocus.onBlur}
@@ -96,6 +108,11 @@ function NutritionCell({
         placeholder="0"
         placeholderTextColor={theme.textSecondary}
         keyboardType="decimal-pad"
+        // Where the keyboard shows a Return key (Android, hardware
+        // keyboards), Next moves to the next box.
+        returnKeyType={onNext ? "next" : "done"}
+        submitBehavior={onNext ? "submit" : "blurAndSubmit"}
+        onSubmitEditing={onNext}
         textAlign="center"
         maxLength={7}
         accessibilityLabel={`${field.label.toLowerCase()} per serving`}
@@ -112,6 +129,7 @@ export default function NutritionStep({
   nutrition,
   setNutrition,
 }: NutritionStepProps) {
+  const inputs = useRef<(RNTextInput | null)[]>([]);
   const handleChange = useCallback(
     (key: keyof NutritionData, raw: string) => {
       const sanitized = sanitizeNumericInput(raw);
@@ -128,12 +146,20 @@ export default function NutritionStep({
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.grid}>
-        {FIELDS.map((field) => (
+        {FIELDS.map((field, i) => (
           <NutritionCell
             key={field.key}
             field={field}
             value={nutrition[field.key]}
             onChange={handleChange}
+            inputRef={(el) => {
+              inputs.current[i] = el;
+            }}
+            onNext={
+              i < FIELDS.length - 1
+                ? () => inputs.current[i + 1]?.focus()
+                : undefined
+            }
           />
         ))}
       </View>

@@ -15,7 +15,6 @@ import {
 import {
   BREACHED_PASSWORD_MESSAGE,
   PASSWORD_MISMATCH_MESSAGE,
-  validateNewPassword,
 } from "./LoginScreen-utils";
 
 /**
@@ -31,30 +30,6 @@ export function normalizeResetCode(raw: string): string {
 }
 
 export type ResetFormField = "code" | "password" | "confirm";
-
-export interface ResetFormError {
-  field: ResetFormField;
-  message: string;
-}
-
-/** First failing field + its message, or null when the form is valid. */
-export function validateResetForm(input: {
-  code: string;
-  password: string;
-  confirmPassword: string;
-}): ResetFormError | null {
-  if (input.code.length !== RESET_CODE_LENGTH) {
-    return { field: "code", message: "Enter the 6-digit code from the email" };
-  }
-  // 8 for everyone (owner ruling 2026-10-12); the server checks again.
-  const message = validateNewPassword(input.password, input.confirmPassword);
-  if (!message) return null;
-  // validateNewPassword checks length (password field) before the mismatch
-  // (confirm field), so a mismatch message means the password itself passed.
-  const field: ResetFormField =
-    message === PASSWORD_MISMATCH_MESSAGE ? "confirm" : "password";
-  return { field, message };
-}
 
 /** The code field's message, or null when it holds 6 digits. */
 export function resetCodeError(code: string): string | null {
@@ -79,23 +54,6 @@ export function resetConfirmError(
   return confirmPassword === ""
     ? "Re-enter the new password."
     : PASSWORD_MISMATCH_MESSAGE;
-}
-
-/**
- * Every field's own message (null when that field is fine), for the
- * per-field validation timing (form-fields spec §5.1). Empty fields get an
- * "enter …" message; the screen shows them only after Reset password.
- */
-export function resetFieldErrors(input: {
-  code: string;
-  password: string;
-  confirmPassword: string;
-}): Record<ResetFormField, string | null> {
-  return {
-    code: resetCodeError(input.code),
-    password: resetPasswordError(input.password),
-    confirm: resetConfirmError(input.confirmPassword, input.password),
-  };
 }
 
 /** Static copy keyed on ApiError.code/status — never error.message. */

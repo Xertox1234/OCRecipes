@@ -151,3 +151,35 @@ describe("ServingControls — custom grams say why they refuse a value", () => {
     expect(Haptics.notificationAsync).not.toHaveBeenCalled();
   });
 });
+
+// Follow-up from Task 11 review: a refused amount stayed in state while the
+// custom field was hidden, and came back when Custom was tapped again.
+describe("ServingControls — hiding the custom field drops its message", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function Harness() {
+    const [show, setShow] = React.useState(true);
+    return (
+      <ServingControls
+        {...baseProps}
+        showCustomInput={show}
+        setShowCustomInput={setShow}
+        customGramsInput="0"
+      />
+    );
+  }
+
+  it("a preset chip hides the field and its message; reopening starts clean", () => {
+    renderComponent(<Harness />);
+    fireEvent.blur(screen.getByLabelText("Custom serving size in grams"));
+    expect(screen.getByText("Enter an amount above 0 g")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Set serving to 1 cup"));
+    expect(screen.queryByLabelText("Custom serving size in grams")).toBeNull();
+    expect(screen.queryByText("Enter an amount above 0 g")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Enter custom serving size"));
+    expect(screen.getByLabelText("Custom serving size in grams")).toBeTruthy();
+    expect(screen.queryByText("Enter an amount above 0 g")).toBeNull();
+  });
+});

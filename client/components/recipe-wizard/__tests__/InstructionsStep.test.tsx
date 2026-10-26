@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
+import { reactProps } from "../../../../test/utils/react-props";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import InstructionsStep from "../InstructionsStep";
@@ -195,5 +196,71 @@ describe("InstructionsStep — render", () => {
     const input = screen.getByLabelText("Step 1 instruction");
     fireEvent.change(input, { target: { value: "Mix well" } });
     expect(updateStep).toHaveBeenCalledWith("s_1", "Mix well");
+  });
+});
+
+describe("InstructionsStep — Return key", () => {
+  it("Return on a step adds a new step instead of a line break", () => {
+    const addStep = vi.fn();
+    renderComponent(
+      <InstructionsStep
+        steps={[step("s_1", "Mix")]}
+        addStep={addStep}
+        removeStep={vi.fn()}
+        updateStep={vi.fn()}
+        moveStep={vi.fn()}
+      />,
+    );
+    const props = reactProps(screen.getByLabelText("Step 1 instruction"));
+    expect(props.returnKeyType).toBe("next");
+    expect(props.submitBehavior).toBe("submit");
+    act(() => {
+      (props.onSubmitEditing as () => void)();
+    });
+    expect(addStep).toHaveBeenCalledTimes(1);
+  });
+
+  it("focuses the step that Return added", () => {
+    const steps = [step("s_1", "Mix")];
+    const { rerender } = renderComponent(
+      <InstructionsStep
+        steps={steps}
+        addStep={vi.fn()}
+        removeStep={vi.fn()}
+        updateStep={vi.fn()}
+        moveStep={vi.fn()}
+      />,
+    );
+    const props = reactProps(screen.getByLabelText("Step 1 instruction"));
+    act(() => {
+      (props.onSubmitEditing as () => void)();
+    });
+    rerender(
+      <InstructionsStep
+        steps={[...steps, step("s_2", "")]}
+        addStep={vi.fn()}
+        removeStep={vi.fn()}
+        updateStep={vi.fn()}
+        moveStep={vi.fn()}
+      />,
+    );
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Step 2 instruction"),
+    );
+
+    // One-shot: a row added later another way (the Add step button) does
+    // not take focus.
+    rerender(
+      <InstructionsStep
+        steps={[...steps, step("s_2", ""), step("s_3", "")]}
+        addStep={vi.fn()}
+        removeStep={vi.fn()}
+        updateStep={vi.fn()}
+        moveStep={vi.fn()}
+      />,
+    );
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Step 2 instruction"),
+    );
   });
 });

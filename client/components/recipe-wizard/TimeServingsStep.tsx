@@ -1,5 +1,12 @@
-import React, { useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
+import React, { useCallback, useRef } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ScrollView,
+  type TextInput as RNTextInput,
+} from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -34,6 +41,7 @@ export default function TimeServingsStep({
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { servings, prepTime, cookTime } = timeServings;
+  const cookRef = useRef<RNTextInput>(null);
 
   const handleServingsChange = useCallback(
     (delta: number) => {
@@ -165,6 +173,11 @@ export default function TimeServingsStep({
             placeholder="0"
             placeholderTextColor={theme.textSecondary}
             keyboardType="number-pad"
+            // Where the keyboard shows a Return key (Android, hardware
+            // keyboards), Next moves on to cook time.
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => cookRef.current?.focus()}
             textAlign="center"
             maxLength={3}
             accessibilityLabel="Prep time in minutes"
@@ -181,6 +194,7 @@ export default function TimeServingsStep({
             COOK TIME
           </Text>
           <FocusTextInput
+            ref={cookRef}
             style={[
               styles.timeInput,
               {
@@ -194,6 +208,7 @@ export default function TimeServingsStep({
             placeholder="0"
             placeholderTextColor={theme.textSecondary}
             keyboardType="number-pad"
+            returnKeyType="done"
             textAlign="center"
             maxLength={3}
             accessibilityLabel="Cook time in minutes"

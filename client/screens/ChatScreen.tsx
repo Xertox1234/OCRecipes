@@ -696,7 +696,10 @@ export default function ChatScreen() {
             onSubmitEditing={() => handleSend()}
             multiline
             maxLength={CHAT_MESSAGE_MAX_LENGTH}
-            returnKeyType="default"
+            // Return sends, as in the coach composer (CoachChatBase with
+            // submitOnReturn) — never a line break.
+            returnKeyType="send"
+            submitBehavior="blurAndSubmit"
             editable={!isStreaming}
             accessibilityLabel="Message input"
             accessibilityHint="Type your question for NutriCoach"

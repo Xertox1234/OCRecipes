@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
+import { reactProps } from "../../../../test/utils/react-props";
 import { renderComponent } from "../../../../test/utils/render-component";
 import TitleStep from "../TitleStep";
 import {
@@ -221,5 +222,25 @@ describe("TitleStep counters", () => {
     expect(screen.getByText(counter)).toBeTruthy();
     fireEvent.blur(input);
     expect(screen.queryByText(counter)).toBeNull();
+  });
+});
+
+describe("TitleStep — Return key", () => {
+  it("Return on the title moves to the description", () => {
+    renderComponent(
+      <TitleStep
+        title="Pasta"
+        setTitle={vi.fn()}
+        description=""
+        setDescription={vi.fn()}
+      />,
+    );
+    const title = screen.getByLabelText("Recipe title");
+    const props = reactProps(title);
+    expect(props.returnKeyType).toBe("next");
+    act(() => {
+      (props.onSubmitEditing as () => void)();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText("Description"));
   });
 });

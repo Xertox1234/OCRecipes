@@ -127,8 +127,9 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
               onSubmitEditing={onSubmit}
               editable={!busy}
               testID="input-choose-username"
+              // The InlineError below announces the message; repeating it as
+              // errorMessage made VoiceOver read it twice.
               error={!!shownError}
-              errorMessage={shownError || undefined}
             />
             <FieldRules
               rules={checklist}

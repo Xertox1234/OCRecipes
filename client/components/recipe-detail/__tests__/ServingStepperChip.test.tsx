@@ -3,6 +3,7 @@ import React from "react";
 import { screen, fireEvent, act } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
+import { reactProps } from "../../../../test/utils/react-props";
 import { ServingStepperChip } from "../ServingStepperChip";
 
 const { mockNotification } = vi.hoisted(() => ({
@@ -118,5 +119,26 @@ describe("ServingStepperChip — typed servings", () => {
     expect(onSetServings).not.toHaveBeenCalled();
     expect(screen.queryByText("Servings must be 1–99")).toBeNull();
     expect(mockNotification).not.toHaveBeenCalled();
+  });
+});
+
+// Follow-up from Task 11 review: VoiceOver's adjust (swipe up/down on the
+// chip) changed the count but left a refusal message on screen; a tap on
+// +/- clears it.
+describe("ServingStepperChip — VoiceOver adjust clears the message", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each(["increment", "decrement"])("%s clears a shown refusal", (name) => {
+    renderChip();
+    typeAndSubmit("0");
+    expect(screen.getByText("Servings must be 1–99")).toBeTruthy();
+
+    const chip = screen.getByLabelText("4 servings");
+    act(() => {
+      (reactProps(chip).onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: name },
+      });
+    });
+    expect(screen.queryByText("Servings must be 1–99")).toBeNull();
   });
 });

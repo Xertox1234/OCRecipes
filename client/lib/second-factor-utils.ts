@@ -4,6 +4,12 @@ import type { MfaChallengeResult } from "@shared/types/auth";
 // Two-step verification helpers shared by the challenge screen and the inline
 // code fields (change email, delete account, connect a sign-in method).
 
+/** A password-proof form refused because its password field is empty. */
+export const ENTER_PASSWORD = "Enter your password.";
+
+/** A password form refused because its two-step code field is still empty. */
+export const ENTER_TWO_STEP_CODE = "Enter the two-step code we email you.";
+
 /** Digits only, at most 6 — the emailed code. */
 export function normalizeCodeInput(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 6);

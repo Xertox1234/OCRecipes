@@ -326,6 +326,8 @@ function FollowUpModal({
         accessibilityLabel="Follow-up question about food"
         multiline
         returnKeyType="done"
+        // Return submits (as QuickLogScreen does) instead of a line break.
+        submitBehavior="blurAndSubmit"
         onSubmitEditing={handleSubmit}
       />
 

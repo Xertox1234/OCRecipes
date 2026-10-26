@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
+import { reactProps } from "../../../../test/utils/react-props";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import TimeServingsStep from "../TimeServingsStep";
@@ -234,5 +235,21 @@ describe("TimeServingsStep — render", () => {
       />,
     );
     expect(screen.getByText("Total: 30 minutes")).toBeDefined();
+  });
+});
+
+describe("TimeServingsStep — Return key", () => {
+  it("Next on prep time moves to cook time", () => {
+    renderComponent(
+      <TimeServingsStep timeServings={makeData()} setTimeServings={vi.fn()} />,
+    );
+    const props = reactProps(screen.getByLabelText("Prep time in minutes"));
+    expect(props.returnKeyType).toBe("next");
+    act(() => {
+      (props.onSubmitEditing as () => void)();
+    });
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Cook time in minutes"),
+    );
   });
 });

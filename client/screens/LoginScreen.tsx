@@ -104,6 +104,9 @@ export default function LoginScreen() {
     if (mode === "login" || value === passwordField.value) return null;
     return value === "" ? "Re-enter your password." : PASSWORD_MISMATCH_MESSAGE;
   });
+  // Each field's message is announced by the InlineError under it; the field
+  // takes only `error` (colour, invalid mark), never the same text as
+  // `errorMessage`, or VoiceOver reads it twice (spec §5.8).
   // Destructured, never read as `field.ref` in render: React Compiler treats an
   // object read through `.ref` as a ref and skips the whole component.
   const { ref: usernameRef } = usernameField;
@@ -339,6 +342,7 @@ export default function LoginScreen() {
               autoCorrect={false}
               textContentType="username"
               autoComplete="username"
+              editable={!isLoading}
               testID="input-username"
               accessibilityHint={
                 mode === "login"
@@ -346,7 +350,6 @@ export default function LoginScreen() {
                   : "Enter your username"
               }
               error={!!usernameField.error}
-              errorMessage={usernameField.error ?? undefined}
             />
             <FieldRules
               rules={usernameChecklist}
@@ -381,10 +384,10 @@ export default function LoginScreen() {
               autoCorrect={false}
               textContentType="emailAddress"
               autoComplete="email"
+              editable={!isLoading}
               testID="input-email"
               accessibilityHint="Enter your email address"
               error={!!emailField.error}
-              errorMessage={emailField.error ?? undefined}
             />
           ) : null}
           {mode === "register" ? (
@@ -416,6 +419,7 @@ export default function LoginScreen() {
               passwordRules={
                 mode === "register" ? registerPasswordRules() : undefined
               }
+              editable={!isLoading}
               testID="input-password"
               accessibilityHint={
                 mode === "register"
@@ -423,7 +427,6 @@ export default function LoginScreen() {
                   : "Enter your password"
               }
               error={!!passwordField.error}
-              errorMessage={passwordField.error ?? undefined}
             />
             <FieldRules
               rules={passwordChecklist}
@@ -477,10 +480,10 @@ export default function LoginScreen() {
                 textContentType="newPassword"
                 autoComplete="new-password"
                 passwordRules={registerPasswordRules()}
+                editable={!isLoading}
                 testID="input-confirm-password"
                 accessibilityHint="Re-enter your password to confirm"
                 error={!!confirmField.error}
-                errorMessage={confirmField.error ?? undefined}
               />
               <FieldRules
                 rules={confirmChecklist}

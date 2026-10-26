@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
+import { reactProps } from "../../../../test/utils/react-props";
 import { renderComponent } from "../../../../test/utils/render-component";
 import NutritionStep from "../NutritionStep";
 import {
@@ -174,5 +175,25 @@ describe("NutritionStep — render", () => {
       carbs: "40",
       fat: "5",
     });
+  });
+});
+
+describe("NutritionStep — Return key", () => {
+  it("Next moves through the boxes in order; the last says Done", () => {
+    renderComponent(
+      <NutritionStep nutrition={makeNutrition()} setNutrition={vi.fn()} />,
+    );
+    const order = ["calories", "protein", "carbs", "fat"].map((n) =>
+      screen.getByLabelText(`${n} per serving`),
+    );
+    for (let i = 0; i < order.length - 1; i++) {
+      const props = reactProps(order[i]);
+      expect(props.returnKeyType).toBe("next");
+      act(() => {
+        (props.onSubmitEditing as () => void)();
+      });
+      expect(document.activeElement).toBe(order[i + 1]);
+    }
+    expect(reactProps(order[order.length - 1]).returnKeyType).toBe("done");
   });
 });

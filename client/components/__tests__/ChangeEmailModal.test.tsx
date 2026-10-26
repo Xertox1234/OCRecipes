@@ -258,3 +258,53 @@ describe("ChangeEmailModal — reopening starts clean", () => {
     expect(input.getAttribute("aria-invalid")).toBeNull();
   });
 });
+
+// Follow-up from Task 8 review: before it, a server refusal marked all three
+// fields invalid (main's `error={!!error}`); restore that. Typing clears it
+// with the message.
+describe("ChangeEmailModal — a server refusal marks the fields", () => {
+  const labels = [
+    "New email address",
+    "Confirm new email address",
+    "Current password",
+  ];
+  const invalid = () =>
+    labels.map((l) => screen.getByLabelText(l).getAttribute("aria-invalid"));
+
+  it("marks all three fields invalid until the next keystroke", async () => {
+    renderModal(
+      vi.fn().mockRejectedValue(new Error("401: Invalid credentials")),
+    );
+    type("New email address", "a@b.com");
+    type("Confirm new email address", "a@b.com");
+    type("Current password", "wrongpass");
+    expect(invalid()).toEqual([null, null, null]);
+    submit();
+
+    await screen.findByText("Incorrect password. Please try again.");
+    expect(invalid()).toEqual(["true", "true", "true"]);
+
+    type("Current password", "wrongpass2");
+    expect(invalid()).toEqual([null, null, null]);
+  });
+});
+
+// Fix round 1 (spec §5.8): a field message is announced by its InlineError
+// only — the field's hint must not repeat it. The field keeps its name and
+// its invalid mark.
+describe("ChangeEmailModal — one announcement per field error", () => {
+  it("an invalid email's message appears once in the a11y tree", () => {
+    renderModal();
+    type("New email address", "nope");
+    type("Confirm new email address", "nope");
+    type("Current password", "pw");
+    submit();
+
+    const input = screen.getByLabelText("New email address");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByText("Enter a valid email address")).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Enter a valid email address",
+    );
+  });
+});

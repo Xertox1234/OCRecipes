@@ -9,6 +9,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import LoginScreen from "../LoginScreen";
 import * as Haptics from "expo-haptics";
 import { ApiError } from "@/lib/api-error";
@@ -308,8 +309,8 @@ describe("LoginScreen — email field", () => {
 
   // AC: the email input is marked invalid ONLY when the email field itself is
   // the failure — not when a different field (e.g. mismatched passwords) fails.
-  // The TextInput surfaces its error via the merged accessibility hint
-  // (aria-hint in the jsdom shim), so we assert on that.
+  // The field carries aria-invalid; its message is the InlineError's alone
+  // (the hint stays plain), so we assert on both.
   it("marks the email input invalid only when the email itself is invalid", async () => {
     renderComponent(<LoginScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
@@ -343,7 +344,8 @@ describe("LoginScreen — email field", () => {
       "Enter your email address",
     );
 
-    // A bad email DOES mark the email input invalid (aria-invalid + merged hint).
+    // A bad email DOES mark the email input invalid. Its message is read by
+    // the InlineError, not merged into the hint (spec §5.8: once, not twice).
     fireEvent.change(screen.getByLabelText("Confirm password"), {
       target: { value: "recipe-passphrase-1" },
     });
@@ -357,8 +359,11 @@ describe("LoginScreen — email field", () => {
       ),
     );
     expect(screen.getByLabelText("Email").getAttribute("aria-hint")).toBe(
-      "Enter your email address. Please enter a valid email address",
+      "Enter your email address",
     );
+    expect(
+      screen.getAllByText("Please enter a valid email address"),
+    ).toHaveLength(1);
     expect(mockRegister).not.toHaveBeenCalled();
   });
 
@@ -752,5 +757,58 @@ describe("LoginScreen — rule checklist", () => {
     fireEvent.change(input, { target: { value: "abcdefgh" } });
     fireEvent.blur(input);
     expect(shownRule("At least 8 characters")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.7: nothing can be edited while the request runs.
+describe("LoginScreen — fields lock while signing in", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("the fields cannot be edited while sign-in is pending, and unlock after", async () => {
+    let fail: (e: Error) => void = () => {};
+    mockLogin.mockReturnValue(
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+    );
+    renderComponent(<LoginScreen />);
+    const username = screen.getByLabelText("Username or email");
+    const password = screen.getByLabelText("Password");
+    expect(reactProps(username).editable).not.toBe(false);
+    fireEvent.change(username, { target: { value: "demo" } });
+    fireEvent.change(password, { target: { value: "wrongpass" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    expect(
+      reactProps(screen.getByLabelText("Username or email")).editable,
+    ).toBe(false);
+    expect(reactProps(screen.getByLabelText("Password")).editable).toBe(false);
+
+    fail(new Error("401: invalid_credentials"));
+    await screen.findByText(
+      "Incorrect username or password. Please try again.",
+    );
+    expect(reactProps(screen.getByLabelText("Password")).editable).toBe(true);
+  });
+});
+
+// Fix round 1 (spec §5.8): a field message is announced by its InlineError
+// only — the field's hint must not repeat it, or VoiceOver reads it twice.
+describe("LoginScreen — one announcement per field error", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("an empty password's message appears once in the a11y tree", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    const password = screen.getByLabelText("Password");
+    expect(password.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByText("Enter your password.")).toHaveLength(1);
+    expect(password.getAttribute("aria-hint") ?? "").not.toContain(
+      "Enter your password.",
+    );
   });
 });

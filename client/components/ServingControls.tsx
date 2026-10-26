@@ -147,6 +147,9 @@ export const ServingControls = React.memo(function ServingControls({
                 selected={isActive}
                 style={styles.servingChip}
                 onPress={() => {
+                  // The hidden field's refusal goes with it, so reopening
+                  // Custom starts clean.
+                  setCustomGramsError(null);
                   setShowCustomInput(false);
                   setServingSizeGrams(opt.grams);
                   recalculateNutrition(opt.grams, servingQuantity);

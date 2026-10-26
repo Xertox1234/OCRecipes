@@ -98,6 +98,9 @@ export function ChangeEmailModal({
   const passwordField = useFieldValidation((value) =>
     value ? null : "Password is required",
   );
+  // Each field's message is announced by the InlineError under it; the field
+  // takes only `error` (colour, invalid mark), never the same text as
+  // `errorMessage`, or VoiceOver reads it twice (spec §5.8).
   // Destructured, never read as `field.ref` in render: React Compiler treats an
   // object read through `.ref` as a ref and skips the whole component.
   const { ref: newEmailRef } = newEmailField;
@@ -107,6 +110,10 @@ export function ChangeEmailModal({
   const password = passwordField.value;
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The server refused the email/password pair: all three fields are marked
+  // invalid while that message shows (it clears with the next keystroke).
+  const [serverRefused, setServerRefused] = useState(false);
+  const fieldsRefused = serverRefused && error !== null;
   // Bumped on each validation reject (not server errors) to shake the error.
   const [shakeKey, setShakeKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -149,6 +156,7 @@ export function ChangeEmailModal({
     // Concurrent-submission guard: state updates may lag rapid taps, so don't
     // rely on `disabled` alone.
     if (isSubmitting) return;
+    setServerRefused(false);
     const rejectInput = (message: string) => {
       setError(message);
       setShakeKey((k) => k + 1);
@@ -200,6 +208,7 @@ export function ChangeEmailModal({
             : "Could not change your email. Please try again.";
       // A server error: Error haptic (above), no shake (the input wasn't rejected).
       setError(friendly);
+      setServerRefused(true);
     }
   };
 
@@ -283,90 +292,90 @@ export function ChangeEmailModal({
                 </ThemedText>
               ) : null}
 
-              <TextInput
-                leftIcon="mail"
-                label="New email"
-                placeholder="you@example.com"
-                ref={newEmailRef}
-                value={newEmail}
-                onChangeText={(text) => {
-                  newEmailField.onChangeText(text);
-                  if (error) setError(null);
-                }}
-                onBlur={newEmailField.onBlur}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                textContentType="emailAddress"
-                editable={!isSubmitting}
-                accessibilityLabel="New email address"
-                error={!!newEmailField.error}
-                errorMessage={newEmailField.error ?? undefined}
-                testID="change-email-new-email-input"
-              />
-              <InlineError
-                message={newEmailField.error}
-                shakeKey={newEmailField.shakeKey}
-              />
+              {/* The house gap between fields (as on Change password). */}
+              <View style={styles.fields}>
+                <TextInput
+                  leftIcon="mail"
+                  label="New email"
+                  placeholder="you@example.com"
+                  ref={newEmailRef}
+                  value={newEmail}
+                  onChangeText={(text) => {
+                    newEmailField.onChangeText(text);
+                    if (error) setError(null);
+                  }}
+                  onBlur={newEmailField.onBlur}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  editable={!isSubmitting}
+                  accessibilityLabel="New email address"
+                  error={!!newEmailField.error || fieldsRefused}
+                  testID="change-email-new-email-input"
+                />
+                <InlineError
+                  message={newEmailField.error}
+                  shakeKey={newEmailField.shakeKey}
+                />
 
-              <TextInput
-                leftIcon="mail"
-                label="Confirm new email"
-                placeholder="you@example.com"
-                ref={confirmEmailRef}
-                value={confirmEmailField.value}
-                onChangeText={(text) => {
-                  confirmEmailField.onChangeText(text);
-                  if (error) setError(null);
-                }}
-                onBlur={confirmEmailField.onBlur}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                textContentType="emailAddress"
-                editable={!isSubmitting}
-                accessibilityLabel="Confirm new email address"
-                error={!!confirmEmailField.error}
-                errorMessage={confirmEmailField.error ?? undefined}
-                testID="change-email-confirm-email-input"
-              />
-              <InlineError
-                message={confirmEmailField.error}
-                shakeKey={confirmEmailField.shakeKey}
-              />
+                <TextInput
+                  leftIcon="mail"
+                  label="Confirm new email"
+                  placeholder="you@example.com"
+                  ref={confirmEmailRef}
+                  value={confirmEmailField.value}
+                  onChangeText={(text) => {
+                    confirmEmailField.onChangeText(text);
+                    if (error) setError(null);
+                  }}
+                  onBlur={confirmEmailField.onBlur}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  editable={!isSubmitting}
+                  accessibilityLabel="Confirm new email address"
+                  error={!!confirmEmailField.error || fieldsRefused}
+                  testID="change-email-confirm-email-input"
+                />
+                <InlineError
+                  message={confirmEmailField.error}
+                  shakeKey={confirmEmailField.shakeKey}
+                />
 
-              <TextInput
-                leftIcon="lock"
-                rightIcon={showPassword ? "eye-off" : "eye"}
-                rightIconAccessibilityLabel={
-                  showPassword ? "Hide password" : "Show password"
-                }
-                onRightIconPress={() => setShowPassword((s) => !s)}
-                label="Password"
-                ref={passwordRef}
-                value={password}
-                onChangeText={(text) => {
-                  passwordField.onChangeText(text);
-                  if (error) setError(null);
-                }}
-                onBlur={passwordField.onBlur}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoComplete="current-password"
-                textContentType="password"
-                editable={!isSubmitting}
-                accessibilityLabel="Current password"
-                accessibilityHint="Enter your current password to confirm the email change"
-                error={!!passwordField.error}
-                errorMessage={passwordField.error ?? undefined}
-                testID="change-email-password-input"
-              />
-              <InlineError
-                message={passwordField.error}
-                shakeKey={passwordField.shakeKey}
-              />
+                <TextInput
+                  leftIcon="lock"
+                  rightIcon={showPassword ? "eye-off" : "eye"}
+                  rightIconAccessibilityLabel={
+                    showPassword ? "Hide password" : "Show password"
+                  }
+                  onRightIconPress={() => setShowPassword((s) => !s)}
+                  label="Password"
+                  ref={passwordRef}
+                  value={password}
+                  onChangeText={(text) => {
+                    passwordField.onChangeText(text);
+                    if (error) setError(null);
+                  }}
+                  onBlur={passwordField.onBlur}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoComplete="current-password"
+                  textContentType="password"
+                  editable={!isSubmitting}
+                  accessibilityLabel="Current password"
+                  accessibilityHint="Enter your current password to confirm the email change"
+                  error={!!passwordField.error || fieldsRefused}
+                  testID="change-email-password-input"
+                />
+                <InlineError
+                  message={passwordField.error}
+                  shakeKey={passwordField.shakeKey}
+                />
+              </View>
 
               {needsCode ? (
                 <ThemedText
@@ -466,6 +475,9 @@ const styles = StyleSheet.create({
   currentEmail: {
     textAlign: "center",
     marginBottom: Spacing.lg,
+  },
+  fields: {
+    gap: Spacing.md,
   },
   label: {
     marginBottom: Spacing.sm,

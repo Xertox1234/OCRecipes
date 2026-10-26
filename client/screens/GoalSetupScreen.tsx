@@ -284,8 +284,11 @@ export default function GoalSetupScreen() {
     refs[field].current?.focus();
   };
 
-  // Number messages show on leaving a field or on Calculate/Save, never per
-  // keystroke. Empty fields stay with the "Still needed" line.
+  // A number message shows on leaving a field or on Calculate/Save, never per
+  // keystroke, and hides while the field is retyped. An empty field gets no
+  // message on leaving it or on Calculate — the "Still needed" line names it
+  // and Calculate focuses it — but Save names it ("Enter calories"), since
+  // that line only sits under Calculate.
   const [fieldErrors, setFieldErrors] = useState<
     Partial<Record<GoalField, string>>
   >({});

@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import VerifyEmailScreen from "../VerifyEmailScreen";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -375,8 +376,8 @@ describe("VerifyEmailScreen — onResend validation", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
 
-    // InlineError renders role="alert"; TextInput's errorMessage is a11y-only
-    // (aria-hint), so this is the sole visible occurrence of the copy.
+    // InlineError renders role="alert" — the one place the copy appears (the
+    // field takes only `error`, so its hint never repeats it).
     expect(screen.getByRole("alert").textContent).toContain(
       "Please enter a valid email address.",
     );
@@ -544,5 +545,53 @@ describe("VerifyEmailScreen — validation timing", () => {
       screen.getAllByText("Please enter your email address.").length,
     ).toBeGreaterThan(0);
     expect(mockResendVerificationRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("VerifyEmailScreen — one announcement, locked while sending", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // Form-fields spec §5.8: the InlineError announces the message; the
+  // field's hint must not carry it too, or VoiceOver reads it twice.
+  it("an invalid email is announced once, by the alert only", () => {
+    renderScreen(undefined);
+    const input = screen.getByTestId("input-resend-email");
+    fireEvent.change(input, { target: { value: "nope" } });
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Please enter a valid email address.",
+    );
+  });
+
+  it("a failed resend is announced once, by the alert only", async () => {
+    mockResendVerificationRequest.mockRejectedValue(new Error("network"));
+    renderScreen(undefined);
+    const input = screen.getByTestId("input-resend-email");
+    fireEvent.change(input, { target: { value: "valid@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+
+    await screen.findByText(
+      "Couldn't resend right now. Please try again shortly.",
+    );
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Couldn't resend",
+    );
+  });
+
+  // Form-fields spec §5.7: nothing can be edited while the request runs.
+  it("the email field cannot be edited while the resend is pending", () => {
+    mockResendVerificationRequest.mockReturnValue(new Promise(() => {}));
+    renderScreen(undefined);
+    const input = screen.getByTestId("input-resend-email");
+    expect(reactProps(input).editable).not.toBe(false);
+    fireEvent.change(input, { target: { value: "valid@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+    expect(reactProps(screen.getByTestId("input-resend-email")).editable).toBe(
+      false,
+    );
   });
 });
