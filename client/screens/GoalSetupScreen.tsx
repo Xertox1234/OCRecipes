@@ -1,5 +1,11 @@
 import React, { useRef, useState } from "react";
-import { StyleSheet, View, ScrollView } from "react-native";
+import {
+  AccessibilityInfo,
+  StyleSheet,
+  View,
+  ScrollView,
+  type TextInput as RNTextInput,
+} from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -24,7 +30,11 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
 import { parseDecimalInput } from "@/lib/number-input";
-import { goalFieldError, type GoalField } from "./GoalSetupScreen-utils";
+import {
+  goalFieldError,
+  goalSubmitError,
+  type GoalField,
+} from "./GoalSetupScreen-utils";
 import {
   weightToKg,
   heightToCm,
@@ -168,6 +178,7 @@ function SelectableChip({
 }
 
 function NumberInput({
+  inputRef,
   label,
   value,
   onChange,
@@ -176,6 +187,7 @@ function NumberInput({
   unit,
   placeholder,
 }: {
+  inputRef: React.RefObject<RNTextInput | null>;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -193,6 +205,7 @@ function NumberInput({
       </ThemedText>
       <View style={styles.inputRow}>
         <FocusTextInput
+          ref={inputRef}
           style={[
             styles.numberInput,
             { backgroundColor: theme.backgroundSecondary, color: theme.text },
@@ -247,6 +260,17 @@ export default function GoalSetupScreen() {
   const [manualFat, setManualFat] = useState("");
 
   const scrollViewRef = useRef<ScrollView>(null);
+  // Calculate/Save move focus to the first field they flag (form-fields
+  // spec §5.1).
+  const fieldRefs: Record<GoalField, React.RefObject<RNTextInput | null>> = {
+    age: useRef<RNTextInput>(null),
+    weight: useRef<RNTextInput>(null),
+    height: useRef<RNTextInput>(null),
+    calories: useRef<RNTextInput>(null),
+    protein: useRef<RNTextInput>(null),
+    carbs: useRef<RNTextInput>(null),
+    fat: useRef<RNTextInput>(null),
+  };
 
   // Number messages show on leaving a field or on Calculate/Save, never per
   // keystroke. Empty fields stay with the "Still needed" line.
@@ -263,21 +287,28 @@ export default function GoalSetupScreen() {
     fat: manualFat,
   };
 
-  /** Show (or clear) these fields' messages; one error buzz when any refuses. */
-  const checkFields = (fields: GoalField[]): boolean => {
+  /**
+   * Show (or clear) these fields' messages; one error buzz when any refuses.
+   * Returns the refusing fields, in the order given.
+   */
+  const checkFields = (
+    fields: GoalField[],
+    check: typeof goalFieldError = goalFieldError,
+  ): GoalField[] => {
     const found: Partial<Record<GoalField, string>> = {};
     for (const field of fields) {
-      const message = goalFieldError(field, fieldValues[field], unit);
+      const message = check(field, fieldValues[field], unit);
       if (message) found[field] = message;
     }
-    const ok = Object.keys(found).length === 0;
+    const refused = fields.filter((field) => found[field]);
+    const ok = refused.length === 0;
     setFieldErrors((prev) => {
       const next = { ...prev };
       for (const field of fields) delete next[field];
       return { ...next, ...found };
     });
     if (!ok) haptics.notification(Haptics.NotificationFeedbackType.Error);
-    return ok;
+    return refused;
   };
 
   /** Hide a field's message while it is retyped; it is checked again on blur. */
@@ -383,9 +414,30 @@ export default function GoalSetupScreen() {
     meta: { silentError: true },
   });
 
+  // Calculate stays pressable while the form is incomplete; pressing it
+  // points at the first number field that is empty or refused, and the
+  // "Still needed" line keeps naming everything missing.
   const handleCalculate = () => {
-    if (!isFormComplete) return;
-    if (!checkFields(["age", "weight", "height"])) return;
+    const numberFields: GoalField[] = ["age", "weight", "height"];
+    const refused = checkFields(numberFields);
+    const target = numberFields.find(
+      (field) => refused.includes(field) || !fieldValues[field],
+    );
+    if (target) fieldRefs[target].current?.focus();
+    if (!isFormComplete) {
+      // checkFields already buzzed when a value was refused.
+      if (refused.length === 0) {
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+      }
+      // Only choices are missing: nothing to focus, so say what's needed.
+      if (!target) {
+        AccessibilityInfo.announceForAccessibility(
+          `Still needed: ${missingFields.join(", ")}`,
+        );
+      }
+      return;
+    }
+    if (refused.length > 0) return;
     calculateMutation.mutate();
   };
 
@@ -399,7 +451,12 @@ export default function GoalSetupScreen() {
       "carbs",
       "fat",
     ];
-    if (!checkFields(allFields)) return;
+    // Empty fields are named too: the "Still needed" line is gone by now.
+    const refused = checkFields(allFields, goalSubmitError);
+    if (refused.length > 0) {
+      fieldRefs[refused[0]].current?.focus();
+      return;
+    }
     saveMutation.mutate();
   };
 
@@ -452,6 +509,7 @@ export default function GoalSetupScreen() {
 
             <View style={styles.inputGrid}>
               <NumberInput
+                inputRef={fieldRefs.age}
                 label="Age"
                 value={age}
                 onChange={changeField("age", setAge)}
@@ -461,6 +519,7 @@ export default function GoalSetupScreen() {
                 placeholder="e.g. 25"
               />
               <NumberInput
+                inputRef={fieldRefs.weight}
                 label="Weight"
                 value={weight}
                 onChange={changeField("weight", setWeight)}
@@ -470,6 +529,7 @@ export default function GoalSetupScreen() {
                 placeholder={unit === "imperial" ? "e.g. 154" : "e.g. 70"}
               />
               <NumberInput
+                inputRef={fieldRefs.height}
                 label="Height"
                 value={height}
                 onChange={changeField("height", setHeight)}
@@ -572,7 +632,6 @@ export default function GoalSetupScreen() {
           >
             <Button
               onPress={handleCalculate}
-              disabled={!isFormComplete}
               loading={calculateMutation.isPending}
               accessibilityLabel="Calculate my goals"
               style={[
@@ -631,6 +690,7 @@ export default function GoalSetupScreen() {
               <View style={styles.goalsGrid}>
                 <View style={styles.goalItem}>
                   <FocusTextInput
+                    ref={fieldRefs.calories}
                     style={[
                       styles.goalInput,
                       {
@@ -657,6 +717,7 @@ export default function GoalSetupScreen() {
                 >
                   <View>
                     <FocusTextInput
+                      ref={fieldRefs.protein}
                       style={[
                         styles.goalInput,
                         {
@@ -689,6 +750,7 @@ export default function GoalSetupScreen() {
                 >
                   <View>
                     <FocusTextInput
+                      ref={fieldRefs.carbs}
                       style={[
                         styles.goalInput,
                         {
@@ -721,6 +783,7 @@ export default function GoalSetupScreen() {
                 >
                   <View>
                     <FocusTextInput
+                      ref={fieldRefs.fat}
                       style={[
                         styles.goalInput,
                         {
