@@ -12,6 +12,12 @@ export type FieldValidation = {
   /** The main button's check: show this field's error; true when valid. */
   markSubmitted: () => boolean;
   ref: RefObject<RNTextInput | null>;
+  /**
+   * Bumped by each `markSubmitted` that finds the value invalid — pass to
+   * this field's `InlineError` so a submit reject shakes it and a blur never
+   * does (interaction-feel "Shipped shake pattern").
+   */
+  shakeKey: number;
   /** Replace the text without touching the timing (e.g. clear a rejected password). */
   setValue: (t: string) => void;
   /** Back to `next` (default: the initial value) with no error showing. */
@@ -37,6 +43,7 @@ export function useFieldValidation(
   const [value, setValue] = useState(initialValue);
   const [leftNonEmpty, setLeftNonEmpty] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [shakeKey, setShakeKey] = useState(0);
   const ref = useRef<RNTextInput | null>(null);
 
   const rawError = validate(value);
@@ -58,9 +65,12 @@ export function useFieldValidation(
     onBlur: () => setLeftNonEmpty(value.trim() !== ""),
     markSubmitted: () => {
       setSubmitAttempted(true);
-      return validate(value) === null;
+      const valid = validate(value) === null;
+      if (!valid) setShakeKey((k) => k + 1);
+      return valid;
     },
     ref,
+    shakeKey,
     setValue,
     reset: (next = initial) => {
       setValue(next);

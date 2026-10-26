@@ -8,7 +8,10 @@ import {
   RESET_CODE_LENGTH,
   RESET_RESEND_COOLDOWN_SECONDS,
 } from "@shared/constants/password-reset";
-import { passwordMessage } from "@shared/constants/password-policy";
+import {
+  newPasswordProblem,
+  passwordMessage,
+} from "@shared/constants/password-policy";
 import {
   BREACHED_PASSWORD_MESSAGE,
   PASSWORD_MISMATCH_MESSAGE,
@@ -51,6 +54,48 @@ export function validateResetForm(input: {
   const field: ResetFormField =
     message === PASSWORD_MISMATCH_MESSAGE ? "confirm" : "password";
   return { field, message };
+}
+
+/** The code field's message, or null when it holds 6 digits. */
+export function resetCodeError(code: string): string | null {
+  return code.length === RESET_CODE_LENGTH
+    ? null
+    : "Enter the 6-digit code from the email";
+}
+
+/** The new-password field's message, or null when it passes the policy. */
+export function resetPasswordError(password: string): string | null {
+  if (password === "") return "Enter a new password.";
+  const problem = newPasswordProblem(password);
+  return problem ? passwordMessage(problem) : null;
+}
+
+/** The confirm field's message, or null when it matches. */
+export function resetConfirmError(
+  confirmPassword: string,
+  password: string,
+): string | null {
+  if (confirmPassword === password) return null;
+  return confirmPassword === ""
+    ? "Re-enter the new password."
+    : PASSWORD_MISMATCH_MESSAGE;
+}
+
+/**
+ * Every field's own message (null when that field is fine), for the
+ * per-field validation timing (form-fields spec §5.1). Empty fields get an
+ * "enter …" message; the screen shows them only after Reset password.
+ */
+export function resetFieldErrors(input: {
+  code: string;
+  password: string;
+  confirmPassword: string;
+}): Record<ResetFormField, string | null> {
+  return {
+    code: resetCodeError(input.code),
+    password: resetPasswordError(input.password),
+    confirm: resetConfirmError(input.confirmPassword, input.password),
+  };
 }
 
 /** Static copy keyed on ApiError.code/status — never error.message. */

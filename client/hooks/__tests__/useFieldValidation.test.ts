@@ -91,4 +91,18 @@ describe("useFieldValidation", () => {
     expect(result.current.value).toBe("abc");
     expect(result.current.error).toBeNull();
   });
+
+  it("counts invalid submits in shakeKey; blur and valid submits leave it", () => {
+    const { result } = renderHook(() => useFieldValidation(minThree));
+    expect(result.current.shakeKey).toBe(0);
+    act(() => result.current.onChangeText("a"));
+    act(() => result.current.onBlur());
+    expect(result.current.shakeKey).toBe(0);
+    act(() => result.current.markSubmitted());
+    act(() => result.current.markSubmitted());
+    expect(result.current.shakeKey).toBe(2);
+    act(() => result.current.onChangeText("abc"));
+    act(() => result.current.markSubmitted());
+    expect(result.current.shakeKey).toBe(2);
+  });
 });

@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api-error";
 import {
   normalizeResetCode,
   validateResetForm,
+  resetFieldErrors,
   getResetErrorMessage,
   resendSecondsRemaining,
   INVALID_RESET_CODE_MESSAGE,
@@ -99,5 +100,40 @@ describe("ResetPasswordScreen-utils", () => {
     expect(resendSecondsRemaining(1_000, 31_500)).toBe(30);
     expect(resendSecondsRemaining(1_000, 61_000)).toBe(0);
     expect(resendSecondsRemaining(1_000, 999_999)).toBe(0);
+  });
+});
+
+// Each field's own message, for the per-field validation timing (§5.1).
+describe("resetFieldErrors", () => {
+  it("names each empty field", () => {
+    expect(
+      resetFieldErrors({ code: "", password: "", confirmPassword: "" }),
+    ).toEqual({
+      code: "Enter the 6-digit code from the email",
+      password: "Enter a new password.",
+      confirm: null,
+    });
+  });
+  it("flags a short password and a mismatch independently", () => {
+    expect(
+      resetFieldErrors({
+        code: "123456",
+        password: "short1",
+        confirmPassword: "short2",
+      }),
+    ).toEqual({
+      code: null,
+      password: "Use at least 8 characters.",
+      confirm: "Passwords do not match",
+    });
+  });
+  it("asks for the confirmation when it is empty", () => {
+    expect(
+      resetFieldErrors({
+        code: "123456",
+        password: "abcdefgh",
+        confirmPassword: "",
+      }).confirm,
+    ).toBe("Re-enter the new password.");
   });
 });
