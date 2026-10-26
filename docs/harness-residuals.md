@@ -236,6 +236,14 @@ starts with`$` (git-safety.sh already does this for branch names -- "could not r
 branch name … looks like an unexpanded shell variable"), or expand `$CLAUDE_CODE_SESSION_ID`-keyed
 spellings before storing. No new route: the real files were never shared.
 
+`guard-outward-cli.sh` latency on `gh pr merge`, measured 2026-10-25 (#1558, no todo filed):
+about 183 ms (median of 5), the slowest Bash PreToolUse hook on that payload. Claude Code runs
+matching hooks in parallel, so this one hook sets that call's wall time; the other hooks finish
+inside it. On `ls` and `git commit` the slowest hook is 25 ms and 50 ms. Merging the hooks into
+one dispatcher would be slower (closed no-go, full table in
+`todos/archive/P3-2026-10-23-single-dispatcher-for-bash-hooks.md`). Reopen only if merge calls
+feel slow in real use; the lever is this guard's own work on `gh` commands, not the hook count.
+
 ### HIT IN REAL USE 2026-10-22 — merge gate allowed an unstamped MCP merge (#1535)
 
 Observed, not constructed; root cause not investigated (harness frozen). Context: the laptop rebooted
