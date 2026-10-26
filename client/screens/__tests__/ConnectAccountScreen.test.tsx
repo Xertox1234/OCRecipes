@@ -77,6 +77,16 @@ describe("ConnectAccountScreen — shake on validation reject", () => {
     expect(mockLinkWithPassword).not.toHaveBeenCalled();
   });
 
+  it("puts the error in the accessibility tree once, not also in the field's hint", () => {
+    renderScreen();
+    fireEvent.click(screen.getByText("Connect and sign in"));
+    const input = screen.getByLabelText("Password");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    const msg = "Please enter your password.";
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(msg);
+  });
+
   it("a server error buzzes once but does not shake", async () => {
     mockLinkWithPassword.mockRejectedValue(
       new ApiError("x", "UNAUTHORIZED", 401),

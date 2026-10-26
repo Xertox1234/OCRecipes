@@ -159,7 +159,7 @@ describe("QuickLogDrawer", () => {
     renderComponent(<Harness />);
     expect(screen.getByRole("button", { name: /^quick log$/i })).toBeTruthy();
     // Input is always mounted but hidden via aria-hidden when collapsed
-    const input = screen.queryByLabelText("Food description");
+    const input = screen.queryByLabelText("What did you eat?");
     if (input) {
       // If the element exists, it must be inside an aria-hidden container
       expect(input.closest('[aria-hidden="true"]')).not.toBeNull();
@@ -169,7 +169,7 @@ describe("QuickLogDrawer", () => {
   it("shows input and chips after tapping header", () => {
     renderComponent(<Harness />);
     openDrawer();
-    expect(screen.getByLabelText("Food description")).toBeTruthy();
+    expect(screen.getByLabelText("What did you eat?")).toBeTruthy();
     expect(screen.getByText("Coffee")).toBeTruthy();
     expect(screen.getByText("Eggs")).toBeTruthy();
   });
@@ -194,7 +194,7 @@ describe("QuickLogDrawer", () => {
     );
     openDrawer();
     expect(onToggle).toHaveBeenCalledTimes(1);
-    const input = screen.getByLabelText("Food description");
+    const input = screen.getByLabelText("What did you eat?");
     expect(input.closest('[aria-hidden="true"]')).not.toBeNull();
   });
 
@@ -250,7 +250,7 @@ describe("QuickLogDrawer", () => {
   it("uses a return key that reads as submitting, not search", () => {
     renderComponent(<Harness />);
     openDrawer();
-    const input = screen.getByLabelText("Food description");
+    const input = screen.getByLabelText("What did you eat?");
     expect(input.getAttribute("returnKeyType")).toBe("done");
   });
 
@@ -835,7 +835,7 @@ describe("QuickLogDrawer", () => {
   it("shows example text, not the label again, once the label floats", () => {
     renderComponent(<Harness />);
     openDrawer();
-    const input = screen.getByLabelText("Food description");
+    const input = screen.getByLabelText("What did you eat?");
     expect(input.getAttribute("placeholder")).toBeNull();
     fireEvent.focus(input);
     expect(input.getAttribute("placeholder")).toBe("e.g. 2 eggs and toast");
@@ -849,7 +849,7 @@ describe("QuickLogDrawer", () => {
     // One ring on the rounded row, never a second square one on the input.
     expect(rings).toHaveLength(1);
     const row = rings[0].parentElement!;
-    expect(row.contains(screen.getByLabelText("Food description"))).toBe(true);
+    expect(row.contains(screen.getByLabelText("What did you eat?"))).toBe(true);
     expect(row.contains(screen.getByLabelText("Find food"))).toBe(true);
     expect(row.contains(screen.getByLabelText("Start voice input"))).toBe(true);
     expect(

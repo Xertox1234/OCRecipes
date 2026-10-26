@@ -244,6 +244,10 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               secureTextEntry
               autoCapitalize="none"
               autoComplete="current-password"
+              returnKeyType="next"
+              // Keep the keyboard up while focus moves on (spec §5.6).
+              submitBehavior="submit"
+              onSubmitEditing={() => newRef.current?.focus()}
             />
             <InlineError
               message={currentField.error}
@@ -278,6 +282,10 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               error={!!codeField.error || errorField === "code"}
               keyboardType="number-pad"
               autoComplete="one-time-code"
+              returnKeyType="next"
+              // Keep the keyboard up while focus moves on (spec §5.6).
+              submitBehavior="submit"
+              onSubmitEditing={() => newRef.current?.focus()}
             />
             <InlineError
               message={codeField.error}
@@ -311,6 +319,10 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             secureTextEntry
             autoCapitalize="none"
             autoComplete="new-password"
+            // The last field: Go saves through the button's own checks. With
+            // no Save button (forgot mode) Return just closes the keyboard.
+            returnKeyType={mode === "forgot" ? "done" : "go"}
+            onSubmitEditing={mode === "forgot" ? undefined : () => void save()}
           />
           <FieldRules
             rules={newChecklist}

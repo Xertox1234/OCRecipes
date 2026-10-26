@@ -11,8 +11,8 @@ import {
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
 import {
-  LABELLED_INPUT_GEOMETRY,
   resolvePlaceholder,
   shouldFloatLabel,
 } from "@/components/text-input-utils";
@@ -300,7 +300,7 @@ export function QuickLogDrawer({
           onChangeText={session.setInputText}
           onSubmitEditing={handleTextSubmit}
           returnKeyType="done"
-          accessibilityLabel="Food description"
+          accessibilityLabel={INPUT_LABEL}
         />
         <Pressable
           onPress={handleSubmitPress}
@@ -456,9 +456,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontFamily: FontFamily.regular,
-    paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
-    paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
-    lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
+    ...LABELLED_INPUT_TEXT,
   },
   iconButton: {
     width: 36,

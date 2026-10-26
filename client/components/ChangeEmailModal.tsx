@@ -313,6 +313,10 @@ export function ChangeEmailModal({
                   editable={!isSubmitting}
                   accessibilityLabel="New email address"
                   error={!!newEmailField.error || fieldsRefused}
+                  returnKeyType="next"
+                  // Keep the keyboard up while focus moves on (spec §5.6).
+                  submitBehavior="submit"
+                  onSubmitEditing={() => confirmEmailRef.current?.focus()}
                   testID="change-email-new-email-input"
                 />
                 <InlineError
@@ -339,6 +343,9 @@ export function ChangeEmailModal({
                   editable={!isSubmitting}
                   accessibilityLabel="Confirm new email address"
                   error={!!confirmEmailField.error || fieldsRefused}
+                  returnKeyType="next"
+                  submitBehavior="submit"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
                   testID="change-email-confirm-email-input"
                 />
                 <InlineError
@@ -369,6 +376,8 @@ export function ChangeEmailModal({
                   accessibilityLabel="Current password"
                   accessibilityHint="Enter your current password to confirm the email change"
                   error={!!passwordField.error || fieldsRefused}
+                  returnKeyType="go"
+                  onSubmitEditing={() => void handleConfirm()}
                   testID="change-email-password-input"
                 />
                 <InlineError

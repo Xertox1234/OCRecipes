@@ -63,7 +63,9 @@ caller's. An error keeps precedence: the ring shows in `theme.error` at full str
 **The primitive:** `client/components/FocusField.tsx` draws the fill under and the ring
 over its children; `client/components/useFieldFocus.ts` holds the state
 (`{ focused, progress, onFocus, onBlur }`). Pure logic: `field-focus-utils.ts`
-(`splitFieldStyle`, `resolveFieldRadius`) and `text-input-utils.ts`. Focus feedback is
+(`splitFieldStyle`, `resolveFieldRadius`, `labelFieldText`, `LABELLED_INPUT_TEXT`) and
+`text-input-utils.ts` (`LABELLED_INPUT_GEOMETRY`). Every text primitive draws through
+`FocusField` — there is no second focus look. Focus feedback is
 NOT automatic for a bare react-native input — ESLint (`no-restricted-imports`, guard
 test `scripts/__tests__/no-bare-text-input.test.ts`) forbids importing `TextInput` from
 `react-native` or `BottomSheetTextInput` from gorhom in `client/`. Pick by **what draws
@@ -81,16 +83,22 @@ the visible field**:
   `client/components/home/RecipeSearchDrawer.tsx`. `FocusField` takes no animation
   props — keep an outer `Animated.View` for `entering`/`exiting` and an outer `View` for
   accessibility roles/actions.
-- **A boxed form field** → `client/components/TextInput.tsx` (still animates its own
-  border to the link colour; it has not moved onto `FocusField` yet).
+- **A boxed form field** → `client/components/TextInput.tsx`. It draws its box as a
+  `FocusField` (1px edge at rest, the ring over it on focus or error) and lines the
+  label up past its left icon itself.
 
-**Floating label (the split):** labelled = the field's plain name (`label` on
-`FocusField` / `TextInput`); example text stays the `placeholder`, suppressed while the
-label rests (`resolvePlaceholder(label, placeholder, shouldFloatLabel(focused, value))`).
-Pass `hasValue` so the label stays floated after blur. A labelled wrapper is at least
-56px (`FocusField` adds the minHeight); its inner input drops any fixed height and takes
-`LABELLED_INPUT_GEOMETRY` padding (`inputPaddingTop` 26, `inputPaddingBottom` 10,
-`inputLineHeight` 18). The label sits at the wrapper's numeric `paddingLeft` (else 16).
+**Floating label (the split):** labelled = the field's plain name — the `label` prop on
+`TextInput`, `FocusTextInput` and `FocusBottomSheetTextInput` (they do the rest), or on
+`FocusField` for the wrapper pattern. Example text stays the `placeholder`, suppressed
+while the label rests (the primitives do this; a wrapper calls
+`resolvePlaceholder(label, placeholder, shouldFloatLabel(focused, value))`). Pass `value`
+to the primitives, or `hasValue` to `FocusField`, so the label stays floated after blur.
+A labelled field is at least 56px (`FocusField` adds the minHeight; a taller caller
+`minHeight` wins). Labelled text sits under the label's row: the primitives apply
+`labelFieldText`; a wrapper's inner input drops any fixed height and spreads
+`LABELLED_INPUT_TEXT` (the `LABELLED_INPUT_GEOMETRY` padding: top 26, bottom 10, line
+height 18) into its style. The label sits at the field's numeric `paddingLeft` (else
+16); pass `labelLeft` when the text starts further in (an inner inset, a left icon).
 **No label** on chat composers, tiny inline number boxes, and repeated rows/grid boxes
 (wizard rows, nutrition cells) — ring + fill only; they keep their placeholder, unit or
 caption. The label is hidden from screen readers — the input's `accessibilityLabel`

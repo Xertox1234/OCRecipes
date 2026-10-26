@@ -17,9 +17,10 @@ import {
   beforeEach,
   afterEach,
 } from "vitest";
-import { waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import { CoachOverlayContent } from "../CoachOverlayContent";
 
 const { stream } = vi.hoisted(() => ({
@@ -102,5 +103,33 @@ describe("CoachOverlayContent — dismiss mid-answer (H6)", () => {
       queryKey: ["/api/chat/conversations"],
       refetchType: "none",
     });
+  });
+});
+
+// Spec §5.6: the follow-up composer's "send" key sends, as the Coach tab's
+// composer does — never a line break.
+describe("CoachOverlayContent — Return sends", () => {
+  const proto = HTMLElement.prototype as unknown as {
+    scrollToEnd?: () => void;
+  };
+  beforeAll(() => {
+    proto.scrollToEnd = vi.fn();
+  });
+  afterAll(() => {
+    delete proto.scrollToEnd;
+  });
+
+  it("the composer submits on Return instead of adding a line", async () => {
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "How much protein?", question: "protein_today" }}
+        screenContext="home"
+        onDismiss={vi.fn()}
+      />,
+    );
+    const input = await screen.findByLabelText("Type a follow-up question");
+    const props = reactProps(input);
+    expect(props.returnKeyType).toBe("send");
+    expect(props.blurOnSubmit).toBe(true);
   });
 });

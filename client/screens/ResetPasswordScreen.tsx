@@ -181,6 +181,10 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             // Messages are announced by the InlineErrors below — never also
             // as a field's errorMessage, or VoiceOver reads them twice.
             error={!!code.error || errorField === "code"}
+            returnKeyType="next"
+            // Keep the keyboard up while focus moves on (spec §5.6).
+            submitBehavior="submit"
+            onSubmitEditing={() => passwordRef.current?.focus()}
             testID="input-reset-code"
             accessibilityHint="Enter the code from the email"
           />
@@ -207,6 +211,9 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
               passwordRules={RESET_PASSWORD_RULES}
               editable={!busy}
               error={!!password.error}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => confirmRef.current?.focus()}
               testID="input-reset-password"
               accessibilityHint={`At least ${PASSWORD_MIN} characters`}
             />

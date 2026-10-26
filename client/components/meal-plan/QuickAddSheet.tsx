@@ -12,8 +12,8 @@ import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
 import {
-  LABELLED_INPUT_GEOMETRY,
   resolvePlaceholder,
   shouldFloatLabel,
 } from "@/components/text-input-utils";
@@ -528,9 +528,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontFamily: FontFamily.regular,
-    paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
-    paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
-    lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
+    ...LABELLED_INPUT_TEXT,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,

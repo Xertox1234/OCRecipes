@@ -78,9 +78,22 @@ beforeEach(() => {
 });
 
 const qty = async () =>
-  (await screen.findByLabelText("Quantity for Milk")) as HTMLInputElement;
+  (await screen.findByLabelText("Quantity for Milk, each")) as HTMLInputElement;
 
 describe("ReceiptReviewScreen — quantity box", () => {
+  // Spec §5.4: the unit is always visible right after the box, and — with no
+  // floating label — named in the box's accessible name.
+  it("shows the unit right after the box and names it in the box's label", async () => {
+    renderComponent(<ReceiptReviewScreen />);
+    const input = await qty();
+    const unit = screen.getByTestId("receipt-qty-unit-Milk");
+    expect(unit.textContent).toBe("each");
+    // Right after the box: the next sibling of the field the input sits in.
+    expect(input.parentElement?.nextElementSibling).toBe(unit);
+    // The box's label already says it; the text is not read a second time.
+    expect(unit.getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("keeps '1.' while typing, commits 1.5, and may be emptied until blur", async () => {
     renderComponent(<ReceiptReviewScreen />);
     const input = await qty();

@@ -1,4 +1,4 @@
-import { parseDecimalInput, isPartialDecimal } from "../number-input";
+import { parseDecimalInput } from "../number-input";
 
 describe("parseDecimalInput", () => {
   it.each([
@@ -15,14 +15,5 @@ describe("parseDecimalInput", () => {
     ["1.2.3", null],
   ])("parseDecimalInput(%j) → %j", (input, out) =>
     expect(parseDecimalInput(input)).toBe(out),
-  );
-});
-
-describe("isPartialDecimal", () => {
-  it.each(["", "1.", "1,", "."])("isPartialDecimal(%j) is true", (t) =>
-    expect(isPartialDecimal(t)).toBe(true),
-  );
-  it.each(["1.5", "abc"])("isPartialDecimal(%j) is false", (t) =>
-    expect(isPartialDecimal(t)).toBe(false),
   );
 });

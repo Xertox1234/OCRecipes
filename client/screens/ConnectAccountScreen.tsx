@@ -144,8 +144,9 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
                 onSubmitEditing={onPassword}
                 editable={!busy}
                 testID="input-connect-password"
+                // The InlineError below announces the message; repeating it as
+                // this field's errorMessage made VoiceOver read it twice.
                 error={!!error}
-                errorMessage={error || undefined}
               />
               <InlineError message={error} shakeKey={shakeKey} />
               <Button

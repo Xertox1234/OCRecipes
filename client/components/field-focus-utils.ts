@@ -43,6 +43,17 @@ const BOX_KEYS = new Set([
 const BOX_PREFIXES = ["border", "margin", "flex"];
 
 /**
+ * Minimum height of a labelled field: the floated label needs the two-row
+ * height (56px), but a caller's taller `minHeight` (a multi-line box) wins.
+ */
+export function labelledMinHeight(callerMinHeight: unknown): number {
+  const min = LABELLED_INPUT_GEOMETRY.containerMinHeight;
+  return typeof callerMinHeight === "number"
+    ? Math.max(min, callerMinHeight)
+    : min;
+}
+
+/**
  * Split one input style into the part that draws the visible box (fill, edge,
  * size, placement — goes on the FocusField container) and the part that styles
  * the text (font, colour, padding — stays on the input).
@@ -70,6 +81,17 @@ export function splitFieldStyle(style: object): {
 export const FIELD_INPUT_FILL: TextStyle = { flexGrow: 1, flexShrink: 1 };
 
 /**
+ * The value text's vertical padding and line height under a floated label —
+ * spread into a labelled input's own text style (a wrapper field whose inner
+ * input has `focusRing={false}`), so the value sits under the label's row.
+ */
+export const LABELLED_INPUT_TEXT: TextStyle = {
+  paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
+  paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
+  lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
+};
+
+/**
  * The input's text style once a floating label sits in its field: the value
  * drops below the floated label's row (these beat the caller's own vertical
  * padding and line height), and the label lines up with the text's left edge —
@@ -81,12 +103,7 @@ export function labelFieldText(text: TextStyle): {
 } {
   const left = text.paddingLeft ?? text.paddingHorizontal ?? text.padding;
   return {
-    text: {
-      ...text,
-      paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
-      paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
-      lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
-    },
+    text: { ...text, ...LABELLED_INPUT_TEXT },
     labelLeft: typeof left === "number" ? left : 0,
   };
 }

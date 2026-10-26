@@ -180,8 +180,9 @@ export const ServingControls = React.memo(function ServingControls({
               value={customGramsInput}
               onChangeText={setCustomGramsInput}
               onBlur={commitCustomGrams}
+              // The InlineError below announces the message; repeating it as
+              // this field's errorMessage made VoiceOver read it twice.
               error={customGramsError !== null}
-              errorMessage={customGramsError ?? undefined}
               placeholder="grams"
               keyboardType="decimal-pad"
               returnKeyType="done"

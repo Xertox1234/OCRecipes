@@ -47,7 +47,14 @@ describe("goalFieldError", () => {
 
   it("checks calories and macros, which do not depend on the unit", () => {
     expect(goalFieldError("calories", "500", "metric")).toBe(
-      "Calories must be 800–6000",
+      "Calories must be 800–10000",
+    );
+    // The server accepts up to 10000 (server/routes/goals.ts) and its own
+    // calculator can propose more than 6000 — the client must not refuse it.
+    expect(goalFieldError("calories", "7500", "metric")).toBeNull();
+    expect(goalFieldError("calories", "10000", "metric")).toBeNull();
+    expect(goalFieldError("calories", "10001", "metric")).toBe(
+      "Calories must be 800–10000",
     );
     expect(goalFieldError("calories", "2200", "imperial")).toBeNull();
     expect(goalFieldError("carbs", "1000", "metric")).toBeNull();

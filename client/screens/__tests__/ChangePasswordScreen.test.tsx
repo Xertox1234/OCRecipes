@@ -586,3 +586,49 @@ describe("ChangePasswordScreen — one announcement per field error", () => {
     );
   });
 });
+
+// Spec §5.6: Next moves on; the new password's Go saves as the button does.
+describe("ChangePasswordScreen — Return keys", () => {
+  const submit = (label: string) =>
+    act(() => {
+      (
+        reactProps(screen.getByLabelText(label)).onSubmitEditing as () => void
+      )();
+    });
+
+  it("current → new on Next, and Go on the new password saves", async () => {
+    auth.changePassword.mockReturnValue(new Promise(() => {}));
+    renderScreen({ hasPassword: true, providers: [] });
+    expect(
+      reactProps(screen.getByLabelText("Current password")).returnKeyType,
+    ).toBe("next");
+    expect(
+      reactProps(screen.getByLabelText("New password")).returnKeyType,
+    ).toBe("go");
+
+    type("Current password", "old-pass-1");
+    submit("Current password");
+    expect(document.activeElement).toBe(screen.getByLabelText("New password"));
+    expect(auth.changePassword).not.toHaveBeenCalled();
+
+    type("New password", NEW);
+    await act(async () => {
+      (
+        reactProps(screen.getByLabelText("New password"))
+          .onSubmitEditing as () => void
+      )();
+    });
+    expect(auth.changePassword).toHaveBeenCalledWith(
+      { password: "old-pass-1" },
+      NEW,
+      undefined,
+    );
+  });
+
+  it("Go on an empty form runs Save's checks and sends nothing", () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    submit("New password");
+    expect(screen.getByText("Enter your current password.")).toBeTruthy();
+    expect(auth.changePassword).not.toHaveBeenCalled();
+  });
+});

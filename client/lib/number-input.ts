@@ -9,12 +9,3 @@ export function parseDecimalInput(text: string): number | null {
   if (!/^(\d+[.,]?\d*|[.,]\d+)$/.test(t)) return null;
   return Number(t.replace(",", "."));
 }
-
-/**
- * True for text a person may still be typing toward a number: empty, or digits
- * followed by a lone separator ("1.", "1,", ".").
- */
-export function isPartialDecimal(text: string): boolean {
-  const t = text.trim();
-  return t === "" || /^\d*[.,]$/.test(t);
-}

@@ -288,8 +288,20 @@ export default function ReceiptReviewScreen() {
                 onChangeText={(text) => handleUpdateQuantity(item.id, text)}
                 onBlur={() => handleQuantityBlur(item.id)}
                 keyboardType="numeric"
-                accessibilityLabel={`Quantity for ${item.name}`}
+                // No floating label here, so the name carries the unit.
+                accessibilityLabel={`Quantity for ${item.name}, ${item.unit}`}
               />
+              {/* The unit is always visible right after the box (spec §5.4);
+                  the box's name already says it, so it is not read twice. */}
+              <ThemedText
+                type="small"
+                style={{ color: theme.textSecondary }}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                testID={`receipt-qty-unit-${item.name}`}
+              >
+                {item.unit}
+              </ThemedText>
 
               <View
                 style={[
