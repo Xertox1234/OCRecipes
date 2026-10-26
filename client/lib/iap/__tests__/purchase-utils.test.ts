@@ -148,6 +148,8 @@ describe("mapIAPError — expo-iap error codes", () => {
     ["user-cancelled", "USER_CANCELLED"],
     ["network-error", "NETWORK"],
     ["already-owned", "ALREADY_OWNED"],
+    ["duplicate-purchase", "ALREADY_OWNED"],
+    ["service-timeout", "NETWORK"],
     ["item-unavailable", "STORE_UNAVAILABLE"],
     ["iap-not-available", "STORE_UNAVAILABLE"],
     ["billing-unavailable", "STORE_UNAVAILABLE"],
@@ -164,6 +166,13 @@ describe("mapIAPError — expo-iap error codes", () => {
     [{ code: "service-error", message: "Network down" }, "NETWORK"],
   ])("maps a plain store payload %o to %s", (payload, expected) => {
     expect(mapIAPError(payload).code).toBe(expected);
+  });
+
+  it("tells the user they already own it on a duplicate purchase", () => {
+    // Android forwards the store provider's own codes since expo-iap 6.
+    expect(mapIAPError(storeError("duplicate-purchase")).message).toBe(
+      "You already own this subscription.",
+    );
   });
 
   it("falls back to the message for an unrecognized code", () => {

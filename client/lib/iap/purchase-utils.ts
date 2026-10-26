@@ -45,14 +45,14 @@ export function mapIAPError(error: unknown): PurchaseError {
     if (code === "user-cancelled") {
       return { code: "USER_CANCELLED", message: "Purchase cancelled" };
     }
-    if (code === "network-error") {
+    if (code === "network-error" || code === "service-timeout") {
       return {
         code: "NETWORK",
         message: "Network error. Check your connection and try again.",
         originalError: error,
       };
     }
-    if (code === "already-owned") {
+    if (code === "already-owned" || code === "duplicate-purchase") {
       return {
         code: "ALREADY_OWNED",
         message: "You already own this subscription.",
