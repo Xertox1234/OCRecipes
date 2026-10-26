@@ -91,6 +91,9 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     const problem = newPasswordProblem(value);
     return problem ? passwordMessage(problem) : null;
   });
+  // Each field's message is announced by the InlineError under it; the field
+  // takes only `error` (colour, invalid mark), never the same text as
+  // `errorMessage`, or VoiceOver reads it twice (spec §5.8).
   // Destructured, never read as `field.ref` in render: React Compiler treats an
   // object read through `.ref` as a ref and skips the whole component.
   const { ref: currentRef } = currentField;
@@ -238,7 +241,6 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               onBlur={currentField.onBlur}
               editable={!busy}
               error={!!currentField.error || errorField === "current"}
-              errorMessage={currentField.error ?? undefined}
               secureTextEntry
               autoCapitalize="none"
               autoComplete="current-password"
@@ -274,7 +276,6 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               onBlur={codeField.onBlur}
               editable={!busy}
               error={!!codeField.error || errorField === "code"}
-              errorMessage={codeField.error ?? undefined}
               keyboardType="number-pad"
               autoComplete="one-time-code"
             />
@@ -307,7 +308,6 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             onBlur={newField.onBlur}
             editable={!busy}
             error={!!newField.error || errorField === "new"}
-            errorMessage={newField.error ?? undefined}
             secureTextEntry
             autoCapitalize="none"
             autoComplete="new-password"

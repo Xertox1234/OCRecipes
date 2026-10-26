@@ -288,3 +288,23 @@ describe("ChangeEmailModal — a server refusal marks the fields", () => {
     expect(invalid()).toEqual([null, null, null]);
   });
 });
+
+// Fix round 1 (spec §5.8): a field message is announced by its InlineError
+// only — the field's hint must not repeat it. The field keeps its name and
+// its invalid mark.
+describe("ChangeEmailModal — one announcement per field error", () => {
+  it("an invalid email's message appears once in the a11y tree", () => {
+    renderModal();
+    type("New email address", "nope");
+    type("Confirm new email address", "nope");
+    type("Current password", "pw");
+    submit();
+
+    const input = screen.getByLabelText("New email address");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByText("Enter a valid email address")).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Enter a valid email address",
+    );
+  });
+});

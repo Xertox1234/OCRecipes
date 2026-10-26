@@ -376,8 +376,8 @@ describe("VerifyEmailScreen — onResend validation", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
 
-    // InlineError renders role="alert"; TextInput's errorMessage is a11y-only
-    // (aria-hint), so this is the sole visible occurrence of the copy.
+    // InlineError renders role="alert" — the one place the copy appears (the
+    // field takes only `error`, so its hint never repeats it).
     expect(screen.getByRole("alert").textContent).toContain(
       "Please enter a valid email address.",
     );

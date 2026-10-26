@@ -265,6 +265,19 @@ describe("GoalSetupScreen — number fields say why they refuse a value", () => 
     expect(screen.getByText(/^Still needed: /)).toBeTruthy();
   });
 
+  // Spec §5.8 guard: the field's InlineError is the one announcement — the
+  // input's hint never repeats the message.
+  it("a refused field's message appears once in the a11y tree", () => {
+    renderComponent(<GoalSetupScreen />);
+    const age = screen.getByLabelText("Age");
+    fireEvent.change(age, { target: { value: "5" } });
+    fireEvent.blur(age);
+    expect(screen.getAllByText("Age must be 13–120")).toHaveLength(1);
+    expect(age.getAttribute("aria-hint") ?? "").not.toContain(
+      "Age must be 13–120",
+    );
+  });
+
   it("refuses to calculate with an out-of-range field and says why", () => {
     renderComponent(<GoalSetupScreen />);
     fireEvent.change(screen.getByLabelText("Age"), {

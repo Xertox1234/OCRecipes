@@ -98,6 +98,9 @@ export function ChangeEmailModal({
   const passwordField = useFieldValidation((value) =>
     value ? null : "Password is required",
   );
+  // Each field's message is announced by the InlineError under it; the field
+  // takes only `error` (colour, invalid mark), never the same text as
+  // `errorMessage`, or VoiceOver reads it twice (spec §5.8).
   // Destructured, never read as `field.ref` in render: React Compiler treats an
   // object read through `.ref` as a ref and skips the whole component.
   const { ref: newEmailRef } = newEmailField;
@@ -310,7 +313,6 @@ export function ChangeEmailModal({
                   editable={!isSubmitting}
                   accessibilityLabel="New email address"
                   error={!!newEmailField.error || fieldsRefused}
-                  errorMessage={newEmailField.error ?? undefined}
                   testID="change-email-new-email-input"
                 />
                 <InlineError
@@ -337,7 +339,6 @@ export function ChangeEmailModal({
                   editable={!isSubmitting}
                   accessibilityLabel="Confirm new email address"
                   error={!!confirmEmailField.error || fieldsRefused}
-                  errorMessage={confirmEmailField.error ?? undefined}
                   testID="change-email-confirm-email-input"
                 />
                 <InlineError
@@ -368,7 +369,6 @@ export function ChangeEmailModal({
                   accessibilityLabel="Current password"
                   accessibilityHint="Enter your current password to confirm the email change"
                   error={!!passwordField.error || fieldsRefused}
-                  errorMessage={passwordField.error ?? undefined}
                   testID="change-email-password-input"
                 />
                 <InlineError

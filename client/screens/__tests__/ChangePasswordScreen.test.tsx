@@ -569,3 +569,20 @@ describe("ChangePasswordScreen — shake on validation reject", () => {
     expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
+
+// Fix round 1 (spec §5.8): a field message is announced by its InlineError
+// only — the field's hint must not repeat it, or VoiceOver reads it twice.
+describe("ChangePasswordScreen — one announcement per field error", () => {
+  it("a missing new password's message appears once in the a11y tree", async () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "old-pass");
+    await act(async () => tap("Save new password"));
+
+    const input = screen.getByLabelText("New password");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByText("Enter a new password.")).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Enter a new password.",
+    );
+  });
+});
