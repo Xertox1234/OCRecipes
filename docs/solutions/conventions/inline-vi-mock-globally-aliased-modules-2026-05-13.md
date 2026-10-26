@@ -6,7 +6,7 @@ module: client
 tags: [testing, vitest, react-native, mocks, alias, audit-triage]
 applies_to: [client/**/__tests__/*.test.ts, client/**/__tests__/*.test.tsx]
 created: '2026-05-13'
-last_updated: '2026-09-25'
+last_updated: '2026-10-26'
 ---
 
 # When inline `vi.mock` of globally-aliased modules IS correct
@@ -27,7 +27,7 @@ The general guidance ("do NOT inline-mock `react-native` / `react-native-reanima
    });
    ```
 
-2. **Stateful behavior the simple alias can't provide** — Tests of hooks like `useScrollLinkedHeader` or `useCollapsibleHeight` need `useSharedValue` to persist across re-renders (backed by `useRef`). The global alias returns a fresh `{value: init}` each call, which mutates fine but doesn't persist. The inline mock provides the ref-backed version.
+2. **Stateful behavior the simple alias can't provide** — Tests of hooks like `useScrollLinkedHeader` or `useCollapsibleHeight` need `useSharedValue` to persist across re-renders (backed by `useRef`). The global alias returns a fresh `{value: init}` each call, which mutates fine but doesn't persist. The inline mock provides the ref-backed version. **Under the global alias an assertion on an effect-written shared value passes vacuously** whenever the expected value equals the initial one (e.g. "scale settles to 1", "holds at 1 under reduced motion") — the next render rebuilds the value at `init`, whatever the effect wrote. Mutation-check such tests (write the wrong value in the branch, watch the test fail). Precedent: `client/hooks/__tests__/useMicPulse.test.ts` (2026-10-25 — only the non-initial-value test failed under the alias, which is what exposed it).
 
 3. **Missing exports** — The global mock covers commonly-rendered APIs but not every RN export. `AppState`, `Share`, and certain platform APIs may not be in the global alias. Inline mock fills the gap.
 
