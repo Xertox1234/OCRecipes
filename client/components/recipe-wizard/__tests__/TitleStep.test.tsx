@@ -202,3 +202,24 @@ describe("TitleStep — render", () => {
     );
   });
 });
+
+describe("TitleStep counters", () => {
+  it("shows the title counter only while the title is focused", () => {
+    renderComponent(
+      <TitleStep
+        title="Soup"
+        setTitle={vi.fn()}
+        description=""
+        setDescription={vi.fn()}
+      />,
+    );
+    const counter = `4/${TITLE_MAX_LENGTH}`;
+    const input = screen.getByLabelText("Recipe title");
+    fireEvent.blur(input);
+    expect(screen.queryByText(counter)).toBeNull();
+    fireEvent.focus(input);
+    expect(screen.getByText(counter)).toBeTruthy();
+    fireEvent.blur(input);
+    expect(screen.queryByText(counter)).toBeNull();
+  });
+});

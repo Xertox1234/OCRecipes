@@ -1,4 +1,4 @@
-import React, { ReactNode } from "react";
+import React, { ReactNode, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -8,6 +8,11 @@ import {
   type ViewStyle,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import {
+  FieldCounter,
+  CHAT_MESSAGE_MAX_LENGTH,
+  counterTone,
+} from "@/components/FieldCounter";
 import Animated, { ZoomIn } from "react-native-reanimated";
 import { BorderRadius, FontFamily, Spacing } from "@/constants/theme";
 import { sendButtonEntrySpring } from "@/constants/animations";
@@ -104,6 +109,7 @@ export function CoachChatBase({
       : inputText.trim().length > 0 && !isStreaming;
 
   const showSendButton = inputText.trim().length > 0;
+  const [inputFocused, setInputFocused] = useState(false);
 
   return (
     <KeyboardAvoidingView
@@ -146,7 +152,9 @@ export function CoachChatBase({
             blurOnSubmit={submitOnReturn}
             editable={!isStreaming}
             accessibilityLabel={inputAccessibilityLabel}
-            maxLength={2000}
+            maxLength={CHAT_MESSAGE_MAX_LENGTH}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
           />
           {showSendButton ? (
             // Pops in as it replaces the input adornment (mic) on first keystroke.
@@ -165,6 +173,16 @@ export function CoachChatBase({
           ) : (
             (inputAdornment ?? null)
           )}
+          <FieldCounter
+            overlay
+            length={inputText.length}
+            max={CHAT_MESSAGE_MAX_LENGTH}
+            visible={
+              inputFocused &&
+              counterTone(inputText.length, CHAT_MESSAGE_MAX_LENGTH) !==
+                "normal"
+            }
+          />
         </View>
       )}
 

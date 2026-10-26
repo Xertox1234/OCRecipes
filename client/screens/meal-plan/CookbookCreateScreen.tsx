@@ -25,6 +25,7 @@ import { NotificationFeedbackType } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
+import { FieldCounter } from "@/components/FieldCounter";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -533,11 +534,12 @@ export default function CookbookCreateScreen() {
             // Deliberately NOT autofocused: the cover is the first thing this
             // screen has to say, and opening with the keyboard up buries it.
           />
-          <ThemedText
-            style={[styles.charCount, { color: theme.textSecondary }]}
-          >
-            {name.length}/{NAME_MAX}
-          </ThemedText>
+          <FieldCounter
+            length={name.length}
+            max={NAME_MAX}
+            visible={focusedFields.has("name")}
+            style={styles.charCount}
+          />
 
           <TextInput
             label="Description (optional)"
@@ -554,11 +556,12 @@ export default function CookbookCreateScreen() {
             style={styles.multilineInput}
             containerStyle={{ marginTop: Spacing.md }}
           />
-          <ThemedText
-            style={[styles.charCount, { color: theme.textSecondary }]}
-          >
-            {description.length}/{DESCRIPTION_MAX}
-          </ThemedText>
+          <FieldCounter
+            length={description.length}
+            max={DESCRIPTION_MAX}
+            visible={focusedFields.has("description")}
+            style={styles.charCount}
+          />
         </View>
 
         <InlineError message={error} />
@@ -616,8 +619,6 @@ const styles = StyleSheet.create({
     minHeight: 92,
   },
   charCount: {
-    fontSize: 12,
-    textAlign: "right",
     marginTop: Spacing.xs,
   },
   loadErrorRow: {
