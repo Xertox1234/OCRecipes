@@ -113,7 +113,7 @@ export function PasswordConfirmModal({
                 showPassword ? "Hide password" : "Show password"
               }
               onRightIconPress={() => setShowPassword((s) => !s)}
-              placeholder="Password"
+              label="Password"
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
@@ -121,7 +121,6 @@ export function PasswordConfirmModal({
               autoComplete="current-password"
               textContentType="password"
               editable={!busy}
-              accessibilityLabel="Password"
               error={!!error}
             />
             {askCode ? (

@@ -499,3 +499,16 @@ describe("VerifyEmailScreen — shake on validation reject", () => {
     expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("VerifyEmailScreen — floating labels", () => {
+  it("floats Email on the pending-state field, keeping Email address as its name", () => {
+    renderScreen(undefined);
+    expect(fieldLabels()).toEqual(["Email"]);
+    expect(screen.getByLabelText("Email address")).toBeTruthy();
+    fireEvent.focus(screen.getByLabelText("Email address"));
+    expect(screen.queryByPlaceholderText("Email")).toBeNull();
+  });
+});

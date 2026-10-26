@@ -162,3 +162,29 @@ describe("ChangeEmailModal — two-step verification", () => {
     );
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ChangeEmailModal — floating labels", () => {
+  it("labels the fields in place of the static captions", () => {
+    renderModal();
+    expect(fieldLabels()).toEqual([
+      "New email",
+      "Confirm new email",
+      "Password",
+    ]);
+    // The captions above each field are gone: the label text is the only
+    // visible copy.
+    expect(screen.queryByText("New email address")).toBeNull();
+    expect(screen.queryByText("Confirm new email address")).toBeNull();
+    expect(screen.queryByText("Current password")).toBeNull();
+  });
+
+  it("shows the email example once the label floats", () => {
+    renderModal();
+    expect(screen.queryByPlaceholderText("you@example.com")).toBeNull();
+    fireEvent.focus(screen.getByLabelText("New email address"));
+    expect(screen.getAllByPlaceholderText("you@example.com")).toHaveLength(1);
+  });
+});

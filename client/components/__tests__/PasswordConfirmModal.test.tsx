@@ -36,3 +36,15 @@ describe("PasswordConfirmModal", () => {
     expect(screen.queryByLabelText("Use a recovery code instead")).toBeNull();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("PasswordConfirmModal — floating labels", () => {
+  it("floats Password and 6-digit code, naming the inputs", () => {
+    renderModal(true);
+    expect(fieldLabels()).toEqual(["Password", "6-digit code"]);
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+    expect(screen.getByLabelText("6-digit code")).toBeTruthy();
+  });
+});

@@ -210,3 +210,15 @@ describe("TwoStepSetupScreen — managing it", () => {
     ).toBeTruthy();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("TwoStepSetupScreen — floating labels", () => {
+  it("floats Password with no repeated placeholder", () => {
+    renderScreen("setup");
+    expect(fieldLabels()).toEqual(["Password"]);
+    fireEvent.focus(screen.getByLabelText("Password"));
+    expect(screen.queryByPlaceholderText("Password")).toBeNull();
+  });
+});

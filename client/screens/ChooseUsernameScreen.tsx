@@ -98,7 +98,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
         <View style={styles.form}>
           <TextInput
             leftIcon="user"
-            placeholder="Username"
+            label="Username"
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
@@ -109,7 +109,6 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
             onSubmitEditing={onSubmit}
             editable={!busy}
             testID="input-choose-username"
-            accessibilityLabel="Username"
             error={!!error}
             errorMessage={error || undefined}
           />

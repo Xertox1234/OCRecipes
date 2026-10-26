@@ -250,3 +250,15 @@ describe("DeleteAccountModal — two-step verification", () => {
     expect(screen.queryByLabelText("6-digit code")).toBeNull();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("DeleteAccountModal — floating label", () => {
+  it("labels Password in place of the static caption", () => {
+    renderModal({ password: true, google: null, apple: relay });
+    expect(fieldLabels()).toEqual(["Password"]);
+    expect(screen.queryByText("Enter your password to confirm")).toBeNull();
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+  });
+});

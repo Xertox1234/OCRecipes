@@ -175,3 +175,15 @@ describe("ForgotPasswordScreen — shake on validation reject", () => {
     expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ForgotPasswordScreen — floating labels", () => {
+  it("floats Email as the field name, with no repeated placeholder", () => {
+    renderScreen();
+    expect(fieldLabels()).toEqual(["Email"]);
+    fireEvent.focus(screen.getByLabelText("Email"));
+    expect(screen.queryByPlaceholderText("Email")).toBeNull();
+  });
+});

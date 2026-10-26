@@ -149,7 +149,7 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
           </ThemedText>
           <TextInput
             leftIcon="lock"
-            placeholder="Password"
+            label="Password"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -157,7 +157,6 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
             autoComplete="current-password"
             textContentType="password"
             editable={!busy}
-            accessibilityLabel="Password"
           />
           {needsFactor ? (
             <SecondFactorField

@@ -211,3 +211,20 @@ describe("ResetPasswordScreen — shake on validation reject", () => {
     expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ResetPasswordScreen — floating labels", () => {
+  it("labels the three fields and names them for screen readers", () => {
+    renderScreen();
+    expect(fieldLabels()).toEqual([
+      "6-digit code",
+      "New password",
+      "Confirm password",
+    ]);
+    expect(screen.getByLabelText("New password")).toBeTruthy();
+    fireEvent.focus(screen.getByLabelText("New password"));
+    expect(screen.queryByPlaceholderText("New password")).toBeNull();
+  });
+});
