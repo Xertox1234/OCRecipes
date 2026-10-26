@@ -135,13 +135,13 @@ export default function RecipeImportScreen() {
               nutrition, and instructions automatically.
             </ThemedText>
             <FocusTextInput
+              label="Recipe link"
               style={inputStyle}
               value={url}
               onChangeText={setUrl}
               placeholder="https://example.com/recipe"
               placeholderTextColor={theme.textSecondary}
               autoCapitalize="none"
-              accessibilityLabel="Recipe URL"
               autoCorrect={false}
               keyboardType="url"
               returnKeyType="go"

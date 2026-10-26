@@ -166,6 +166,7 @@ export default function RecipeAIGenerateScreen() {
         {/* Prompt input */}
         <FocusTextInput
           ref={inputRef}
+          label="What should we make?"
           style={[
             styles.promptInput,
             {
@@ -176,12 +177,11 @@ export default function RecipeAIGenerateScreen() {
           ]}
           value={prompt}
           onChangeText={setPrompt}
-          placeholder="What do you want to make? e.g., 'Chicken stir fry with vegetables' or 'a quick weeknight pasta'"
+          placeholder="e.g. chicken stir fry with vegetables, or a quick weeknight pasta"
           placeholderTextColor={theme.textSecondary}
           multiline
           autoFocus
           maxLength={500}
-          accessibilityLabel="Recipe prompt"
           returnKeyType="default"
           blurOnSubmit={false}
         />

@@ -555,6 +555,7 @@ export function BeveragePickerSheet({
                 Enter a beverage name or calorie amount
               </ThemedText>
               <FocusBottomSheetTextInput
+                label="Drink or calories"
                 value={customInput}
                 onChangeText={setCustomInput}
                 placeholder="e.g. Matcha Latte or 150"
@@ -563,7 +564,6 @@ export function BeveragePickerSheet({
                 onSubmitEditing={handleCustomSubmit}
                 autoFocus
                 maxLength={MAX_CUSTOM_NAME_LENGTH}
-                accessibilityLabel="Beverage name or calories"
                 style={[
                   styles.customInput,
                   {

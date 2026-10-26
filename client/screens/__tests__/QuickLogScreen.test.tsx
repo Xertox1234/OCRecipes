@@ -37,6 +37,7 @@ const {
     parseGeneration: 0,
     parseError: null as string | null,
     submitError: null as string | null,
+    isListening: false,
   },
   mockGoBack: vi.fn(),
   mockNavigate: vi.fn(),
@@ -73,7 +74,7 @@ vi.mock("@/hooks/useQuickLogSession", () => ({
   useQuickLogSession: vi.fn(() => ({
     inputText: "",
     setInputText: vi.fn(),
-    isListening: false,
+    isListening: sessionHolder.isListening,
     volume: -2,
     isParsing: false,
     parsedItems: sessionHolder.parsedItems,
@@ -134,7 +135,7 @@ vi.mock("@/components/AnimatedCheckmark", () => ({
 }));
 
 const upgradeCalls = () => vi.mocked(UpgradeModal).mock.calls;
-const foodInput = () => screen.queryByLabelText("Food description");
+const foodInput = () => screen.queryByLabelText("What did you eat?");
 
 describe("QuickLogScreen — premium guard", () => {
   beforeEach(() => {
@@ -663,5 +664,37 @@ describe("QuickLogScreen — idle query gating", () => {
       .mocked(useQuickLogSessionModule.useQuickLogSession)
       .mock.calls.at(-1)![0];
     expect(lastCall!.isOpen).toBe(true);
+  });
+});
+
+describe("QuickLogScreen — food field label", () => {
+  it('floats "What did you eat?" on the field and names the input with it', () => {
+    premiumHolder.isPremium = true;
+    premiumHolder.textFoodParsing = true;
+    premiumHolder.isPremiumResolved = true;
+    renderComponent(<QuickLogScreen />);
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("What did you eat?");
+    const input = screen.getByLabelText("What did you eat?");
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe(
+      "e.g., 2 eggs and toast with butter",
+    );
+  });
+
+  it("keeps Listening... visible while voice input runs, unfocused and empty", () => {
+    premiumHolder.isPremium = true;
+    premiumHolder.textFoodParsing = true;
+    premiumHolder.isPremiumResolved = true;
+    sessionHolder.isListening = true;
+    try {
+      renderComponent(<QuickLogScreen />);
+      expect(
+        screen.getByLabelText("What did you eat?").getAttribute("placeholder"),
+      ).toBe("Listening...");
+    } finally {
+      sessionHolder.isListening = false;
+    }
   });
 });

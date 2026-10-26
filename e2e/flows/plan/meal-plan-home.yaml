@@ -76,7 +76,7 @@ env:
 
 # Check add item input
 - assertVisible:
-    text: "Add pantry item..."
+    text: "Add to pantry"
     optional: true
 
 # (No trailing `back` — that command is Android-only and fails the flow on

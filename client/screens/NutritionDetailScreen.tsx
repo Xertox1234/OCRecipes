@@ -508,6 +508,7 @@ export default function NutritionDetailScreen() {
             </View>
             <View style={styles.manualSearchRow}>
               <FocusTextInput
+                label="Search products"
                 style={[
                   styles.manualSearchInput,
                   {
@@ -524,7 +525,6 @@ export default function NutritionDetailScreen() {
                 returnKeyType="search"
                 autoFocus
                 editable={!isSearching}
-                accessibilityLabel="Search for a product"
               />
               <Pressable
                 style={({ pressed }) => [

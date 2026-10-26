@@ -514,6 +514,7 @@ export default function GroceryListScreen() {
             <View style={styles.addItemRow}>
               <FocusTextInput
                 ref={addItemRef}
+                label="Add item"
                 style={[
                   styles.addItemInput,
                   {
@@ -524,11 +525,10 @@ export default function GroceryListScreen() {
                 ]}
                 value={newItemName}
                 onChangeText={setNewItemName}
-                placeholder="Add item..."
+                placeholder="e.g. 2 lemons"
                 placeholderTextColor={theme.textSecondary}
                 returnKeyType="done"
                 onSubmitEditing={handleAddItem}
-                accessibilityLabel="Add grocery item"
               />
               <Pressable
                 onPress={handleAddItem}

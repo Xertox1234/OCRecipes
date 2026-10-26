@@ -243,6 +243,7 @@ export function GroceryListPickerModal({
             style={[styles.newListInputRow, { borderTopColor: theme.border }]}
           >
             <FocusTextInput
+              label="List name"
               style={[
                 styles.newListInput,
                 {
@@ -253,12 +254,11 @@ export function GroceryListPickerModal({
               ]}
               value={newListTitle}
               onChangeText={setNewListTitle}
-              placeholder="List name (optional)"
+              placeholder="Optional, e.g. Weekend shop"
               placeholderTextColor={theme.textSecondary}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={handleCreateAndAdd}
-              accessibilityLabel="New grocery list name"
             />
             <Pressable
               onPress={handleCreateAndAdd}

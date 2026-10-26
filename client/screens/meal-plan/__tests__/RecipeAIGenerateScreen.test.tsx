@@ -127,3 +127,17 @@ describe("RecipeAIGenerateScreen — Generate lets go", () => {
     expect(mockOpen).toHaveBeenCalledExactlyOnceWith(queryClient, draft);
   });
 });
+
+describe("RecipeAIGenerateScreen — prompt field label", () => {
+  it('names the prompt "What should we make?" and keeps only an example as the placeholder', () => {
+    renderScreen();
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("What should we make?");
+    const input = screen.getByLabelText("What should we make?");
+    fireEvent.focus(input);
+    const placeholder = input.getAttribute("placeholder") ?? "";
+    expect(placeholder).toMatch(/^e\.g\. /);
+    expect(placeholder).not.toMatch(/what do you want/i);
+  });
+});

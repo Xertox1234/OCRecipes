@@ -45,7 +45,7 @@ function renderSheet() {
 function triggerCalorieError() {
   fireEvent.click(screen.getByRole("button", { name: /custom beverage/i }));
 
-  const input = screen.getByLabelText("Beverage name or calories");
+  const input = screen.getByLabelText("Drink or calories");
   fireEvent.change(input, { target: { value: "9999" } });
 
   fireEvent.click(

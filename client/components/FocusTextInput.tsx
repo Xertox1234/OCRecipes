@@ -8,7 +8,16 @@ import {
 } from "react-native";
 
 import { FocusField } from "./FocusField";
-import { FIELD_INPUT_FILL, splitFieldStyle } from "./field-focus-utils";
+import {
+  FIELD_INPUT_FILL,
+  labelFieldText,
+  splitFieldStyle,
+} from "./field-focus-utils";
+import {
+  resolveInputAccessibilityLabel,
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "./text-input-utils";
 import { useFieldFocus } from "./useFieldFocus";
 
 interface FocusTextInputProps extends Omit<TextInputProps, "style"> {
@@ -19,6 +28,13 @@ interface FocusTextInputProps extends Omit<TextInputProps, "style"> {
    * this input's `onFocus`/`onBlur` — never a ring inside a ring.
    */
   focusRing?: boolean;
+  /**
+   * Floating label drawn on the input's own field (needs `focusRing`): it
+   * names the input for screen readers unless `accessibilityLabel` says more,
+   * holds back the placeholder until it floats, and makes the field at least
+   * 56px tall. Pass `value` so the label stays floated over typed text.
+   */
+  label?: string;
 }
 
 /**
@@ -30,7 +46,7 @@ interface FocusTextInputProps extends Omit<TextInputProps, "style"> {
  * `TextInput` — never a bare RN `TextInput` (enforced by ESLint).
  */
 export const FocusTextInput = forwardRef<RNTextInput, FocusTextInputProps>(
-  ({ style, onFocus, onBlur, focusRing = true, ...props }, ref) => {
+  ({ style, onFocus, onBlur, focusRing = true, label, ...props }, ref) => {
     const field = useFieldFocus({ onFocus, onBlur });
 
     if (!focusRing) {
@@ -45,12 +61,31 @@ export const FocusTextInput = forwardRef<RNTextInput, FocusTextInputProps>(
       );
     }
 
-    const { box, text } = splitFieldStyle(StyleSheet.flatten(style) ?? {});
+    const { box, text: ownText } = splitFieldStyle(
+      StyleSheet.flatten(style) ?? {},
+    );
+    const labelled = label ? labelFieldText(ownText) : null;
+    const text = labelled?.text ?? ownText;
     return (
-      <FocusField focus={field} style={box}>
+      <FocusField
+        focus={field}
+        style={box}
+        label={label}
+        hasValue={(props.value?.length ?? 0) > 0}
+        labelLeft={labelled?.labelLeft}
+      >
         <RNTextInput
           ref={ref}
           {...props}
+          placeholder={resolvePlaceholder(
+            label,
+            props.placeholder,
+            shouldFloatLabel(field.focused, props.value),
+          )}
+          accessibilityLabel={resolveInputAccessibilityLabel(
+            props.accessibilityLabel,
+            label,
+          )}
           style={{ ...text, ...FIELD_INPUT_FILL }}
           onFocus={field.onFocus}
           onBlur={field.onBlur}

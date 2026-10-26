@@ -172,3 +172,24 @@ describe("TagsStep — render", () => {
     });
   });
 });
+
+describe("TagsStep — cuisine field label", () => {
+  it('floats "Cuisine" on the field, inside the input\'s accessible name', () => {
+    renderComponent(<TagsStep tags={makeTags()} setTags={vi.fn()} />);
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Cuisine");
+    const input = screen.getByLabelText("Cuisine type");
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe(
+      "e.g., Italian, Mexican, Thai",
+    );
+  });
+
+  it("drops the CUISINE caps caption the floating label replaces", () => {
+    renderComponent(<TagsStep tags={makeTags()} setTags={vi.fn()} />);
+    expect(screen.queryByText("CUISINE")).toBeNull();
+    // Other sections keep their captions.
+    expect(screen.getByText("DIET TAGS")).toBeDefined();
+  });
+});
