@@ -9,6 +9,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import LoginScreen from "../LoginScreen";
 import * as Haptics from "expo-haptics";
 import { ApiError } from "@/lib/api-error";
@@ -752,5 +753,37 @@ describe("LoginScreen — rule checklist", () => {
     fireEvent.change(input, { target: { value: "abcdefgh" } });
     fireEvent.blur(input);
     expect(shownRule("At least 8 characters")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.7: nothing can be edited while the request runs.
+describe("LoginScreen — fields lock while signing in", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("the fields cannot be edited while sign-in is pending, and unlock after", async () => {
+    let fail: (e: Error) => void = () => {};
+    mockLogin.mockReturnValue(
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+    );
+    renderComponent(<LoginScreen />);
+    const username = screen.getByLabelText("Username or email");
+    const password = screen.getByLabelText("Password");
+    expect(reactProps(username).editable).not.toBe(false);
+    fireEvent.change(username, { target: { value: "demo" } });
+    fireEvent.change(password, { target: { value: "wrongpass" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    expect(
+      reactProps(screen.getByLabelText("Username or email")).editable,
+    ).toBe(false);
+    expect(reactProps(screen.getByLabelText("Password")).editable).toBe(false);
+
+    fail(new Error("401: invalid_credentials"));
+    await screen.findByText(
+      "Incorrect username or password. Please try again.",
+    );
+    expect(reactProps(screen.getByLabelText("Password")).editable).toBe(true);
   });
 });

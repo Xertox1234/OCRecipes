@@ -195,8 +195,10 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               autoCapitalize="none"
               autoCorrect={false}
               testID="input-resend-email"
+              editable={!busy}
+              // The InlineError below announces the message; repeating it as
+              // this field's errorMessage made VoiceOver read it twice.
               error={!!shownError}
-              errorMessage={shownError || undefined}
             />
             <InlineError message={shownError} shakeKey={shakeKey} />
             <Button onPress={onResend} loading={busy} style={styles.button}>
@@ -229,8 +231,10 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               autoCapitalize="none"
               autoCorrect={false}
               testID="input-resend-email"
+              editable={!busy}
+              // The InlineError below announces the message; repeating it as
+              // this field's errorMessage made VoiceOver read it twice.
               error={!!shownError}
-              errorMessage={shownError || undefined}
             />
             <InlineError message={shownError} shakeKey={shakeKey} />
             {/* Prominence follows intent within the pending state. In the

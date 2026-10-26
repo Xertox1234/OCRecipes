@@ -339,6 +339,7 @@ export default function LoginScreen() {
               autoCorrect={false}
               textContentType="username"
               autoComplete="username"
+              editable={!isLoading}
               testID="input-username"
               accessibilityHint={
                 mode === "login"
@@ -381,6 +382,7 @@ export default function LoginScreen() {
               autoCorrect={false}
               textContentType="emailAddress"
               autoComplete="email"
+              editable={!isLoading}
               testID="input-email"
               accessibilityHint="Enter your email address"
               error={!!emailField.error}
@@ -416,6 +418,7 @@ export default function LoginScreen() {
               passwordRules={
                 mode === "register" ? registerPasswordRules() : undefined
               }
+              editable={!isLoading}
               testID="input-password"
               accessibilityHint={
                 mode === "register"
@@ -477,6 +480,7 @@ export default function LoginScreen() {
                 textContentType="newPassword"
                 autoComplete="new-password"
                 passwordRules={registerPasswordRules()}
+                editable={!isLoading}
                 testID="input-confirm-password"
                 accessibilityHint="Re-enter your password to confirm"
                 error={!!confirmField.error}

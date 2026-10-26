@@ -1,15 +1,27 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import * as RN from "react-native";
+import * as Haptics from "expo-haptics";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import TwoStepSetupScreen from "../TwoStepSetupScreen";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import { ApiError } from "@/lib/api-error";
 
 type Props = NativeStackScreenProps<ProfileStackParamList, "TwoStepSetup">;
+
+const { withSequenceSpy } = vi.hoisted(() => ({
+  withSequenceSpy: vi.fn((...vals: number[]) => vals[vals.length - 1]),
+}));
+
+// The InlineError shake runs one withSequence per validation reject.
+vi.mock("react-native-reanimated", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, default: actual.default, withSequence: withSequenceSpy };
+});
 
 const h = vi.hoisted(() => ({
   startEmailTwoStep: vi.fn(),
@@ -189,9 +201,12 @@ describe("TwoStepSetupScreen — managing it", () => {
     h.disableTwoStep.mockResolvedValue(undefined);
     const navigation = renderScreen("disable");
     type("Password", "pw-1");
+    // Without the code, Turn off says what's missing and sends nothing.
+    press("Turn off");
     expect(
-      screen.getByRole("button", { name: "Turn off" }).hasAttribute("disabled"),
-    ).toBe(true);
+      screen.getByText("Enter the two-step code we email you."),
+    ).toBeTruthy();
+    expect(h.disableTwoStep).not.toHaveBeenCalled();
     type("6-digit code", "123456");
     press("Turn off");
     await waitFor(() =>
@@ -220,5 +235,48 @@ describe("TwoStepSetupScreen — floating labels", () => {
     expect(fieldLabels()).toEqual(["Password"]);
     fireEvent.focus(screen.getByLabelText("Password"));
     expect(screen.queryByPlaceholderText("Password")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.8: a validation reject shakes and buzzes, as on the
+// other forms (ConnectAccount's password step); a server error never shakes.
+describe("TwoStepSetupScreen — shake on validation reject", () => {
+  it("Continue with no password twice: says why, shakes and buzzes twice", () => {
+    renderScreen("setup");
+    press("Continue");
+    press("Continue");
+    expect(screen.getByText("Enter your password.")).toBeTruthy();
+    expect(withSequenceSpy).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(h.startEmailTwoStep).not.toHaveBeenCalled();
+  });
+
+  it("Return on the password field continues", async () => {
+    h.startEmailTwoStep.mockReturnValue(new Promise(() => {}));
+    renderScreen("setup");
+    type("Password", "pw-1");
+    const props = reactProps(screen.getByLabelText("Password"));
+    expect(props.returnKeyType).toBe("go");
+    await act(async () => {
+      (props.onSubmitEditing as () => void)();
+    });
+    expect(h.startEmailTwoStep).toHaveBeenCalledWith("pw-1");
+  });
+
+  it("a wrong password buzzes but does not shake", async () => {
+    h.startEmailTwoStep.mockRejectedValue(
+      new ApiError("401", "UNAUTHORIZED", 401),
+    );
+    renderScreen("setup");
+    type("Password", "pw-1");
+    press("Continue");
+    await screen.findByText("Incorrect password. Please try again.");
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });

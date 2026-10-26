@@ -4,8 +4,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, act } from "@testing-library/react";
 import { ApiError } from "@/lib/api-error";
 import type { SocialProvider } from "@shared/types/auth";
+import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import ChangePasswordScreen from "../ChangePasswordScreen";
+
+const { withSequenceSpy } = vi.hoisted(() => ({
+  withSequenceSpy: vi.fn((...vals: number[]) => vals[vals.length - 1]),
+}));
+
+// The InlineError shake runs one withSequence per validation reject.
+vi.mock("react-native-reanimated", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, default: actual.default, withSequence: withSequenceSpy };
+});
 
 const auth = vi.hoisted(() => ({
   changePassword: vi.fn(),
@@ -452,28 +464,108 @@ describe("ChangePasswordScreen — rule checklist", () => {
     expect(screen.getByLabelText("At least 8 characters, done")).toBeTruthy();
   });
 
-  it("keeps a short password's unmet rule on show after leaving", () => {
+  // Follow-up from Task 9 review: leaving a short password showed only a
+  // silent red checklist line until Save. Task 8 timing — leaving a non-empty
+  // field checks it — gives it the same field error as the other password
+  // screens, and the checklist hides the line the error now says.
+  it("leaving a short password shows its field error and hides the unmet line", () => {
     renderScreen({ hasPassword: true, providers: [] });
     const input = screen.getByLabelText("New password");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "abc" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
     fireEvent.blur(input);
-    expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(shownRule("At least 8 characters")).toBeNull();
   });
 
-  it("drops the unmet line once the server's too-short error says it", async () => {
-    auth.changePassword.mockRejectedValueOnce(
-      new ApiError(
-        '400: {"error":"Use at least 8 characters.","code":"PASSWORD_TOO_SHORT"}',
-        "PASSWORD_TOO_SHORT",
-        400,
-      ),
-    );
+  it("a short password never goes to the server", async () => {
     renderScreen({ hasPassword: true, providers: [] });
     type("Current password", "old-pass");
     type("New password", "abc");
     await act(async () => tap("Save new password"));
+    expect(auth.changePassword).not.toHaveBeenCalled();
     expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
     expect(shownRule("At least 8 characters")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.7: nothing can be edited while the request runs.
+describe("ChangePasswordScreen — fields lock while saving", () => {
+  it("the fields cannot be edited while the save is pending", async () => {
+    auth.changePassword.mockReturnValue(new Promise(() => {}));
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "old-pass");
+    type("New password", NEW);
+    expect(reactProps(screen.getByLabelText("New password")).editable).not.toBe(
+      false,
+    );
+    await act(async () => tap("Save new password"));
+    expect(reactProps(screen.getByLabelText("Current password")).editable).toBe(
+      false,
+    );
+    expect(reactProps(screen.getByLabelText("New password")).editable).toBe(
+      false,
+    );
+  });
+
+  it("the emailed-code field locks too", async () => {
+    auth.requestPasswordChangeCode.mockResolvedValue(undefined);
+    auth.changePassword.mockReturnValue(new Promise(() => {}));
+    renderScreen({ hasPassword: false, providers: [] });
+    await act(async () => tap("Email me a code"));
+    type("Code from the email", "123456");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(
+      reactProps(screen.getByLabelText("Code from the email")).editable,
+    ).toBe(false);
+  });
+});
+
+// Form-fields spec §5.8: a validation reject shakes and buzzes, as on the
+// other forms; a server error buzzes but never shakes.
+describe("ChangePasswordScreen — shake on validation reject", () => {
+  it("the same empty Save twice shakes twice and buzzes twice", async () => {
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "old-pass");
+    await act(async () => tap("Save new password"));
+    await act(async () => tap("Save new password"));
+    expect(screen.getByText("Enter a new password.")).toBeTruthy();
+    expect(withSequenceSpy).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(auth.changePassword).not.toHaveBeenCalled();
+  });
+
+  it("a missing two-step code shakes and buzzes", async () => {
+    renderScreen({ hasPassword: true, providers: [], mfaEnabled: true });
+    type("Current password", "old-pass");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(
+      screen.getByText("Enter the two-step code we email you."),
+    ).toBeTruthy();
+    expect(withSequenceSpy).toHaveBeenCalledTimes(1);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+  });
+
+  it("a server error buzzes but does not shake", async () => {
+    auth.changePassword.mockRejectedValueOnce(
+      new ApiError('401: {"code":"UNAUTHORIZED"}', "UNAUTHORIZED", 401),
+    );
+    renderScreen({ hasPassword: true, providers: [] });
+    type("Current password", "wrong-pass");
+    type("New password", NEW);
+    await act(async () => tap("Save new password"));
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });

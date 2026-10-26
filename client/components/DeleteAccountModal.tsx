@@ -323,8 +323,9 @@ export function DeleteAccountModal({
                     textContentType="password"
                     editable={!isDeleting}
                     accessibilityHint="Enter your current password to confirm account deletion"
+                    // The InlineError below announces the message; repeating
+                    // it as errorMessage made VoiceOver read it twice.
                     error={!!error}
-                    errorMessage={error ?? undefined}
                     testID="delete-account-password-input"
                   />
                   {needsCode ? (

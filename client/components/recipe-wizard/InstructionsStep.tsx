@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -48,9 +48,14 @@ interface InstructionRowViewProps {
   canUp: boolean;
   canDown: boolean;
   showDelete: boolean;
+  /** Focus on mount: the row that Return just added. */
+  autoFocus: boolean;
+  /** Called once that row has taken focus, so a later remount never refocuses. */
+  onAutoFocused: () => void;
   onUpdate: (key: string, text: string) => void;
   onRemove: (key: string) => void;
   onMove: (key: string, direction: "up" | "down") => void;
+  onSubmit: () => void;
 }
 
 const InstructionRowView = React.memo(function InstructionRowView({
@@ -59,15 +64,20 @@ const InstructionRowView = React.memo(function InstructionRowView({
   canUp,
   canDown,
   showDelete,
+  autoFocus,
+  onAutoFocused,
   onUpdate,
   onRemove,
   onMove,
+  onSubmit,
 }: InstructionRowViewProps) {
   const { theme } = useTheme();
   const isFirst = !canUp;
   const isLast = !canDown;
   const disabledColor = withOpacity(theme.textSecondary, 0.3);
-  const rowFocus = useFieldFocus();
+  const rowFocus = useFieldFocus({
+    onFocus: autoFocus ? onAutoFocused : undefined,
+  });
 
   return (
     // The outer view only carries the add/remove animation; the field is the
@@ -109,9 +119,14 @@ const InstructionRowView = React.memo(function InstructionRowView({
           placeholderTextColor={theme.textSecondary}
           multiline
           textAlignVertical="top"
-          returnKeyType="default"
+          // Return adds the next step instead of a line break; the text
+          // still wraps onto more lines as it grows.
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={onSubmit}
+          autoFocus={autoFocus}
           accessibilityLabel={`Step ${index + 1} instruction`}
-          accessibilityHint="Describe what to do in this step"
+          accessibilityHint="Describe what to do in this step. Press return to add another."
         />
 
         {/* Reorder and delete controls — 44x44 tap targets (WCAG 2.5.5) */}
@@ -178,6 +193,16 @@ export default function InstructionsStep({
     addStep();
   }, [addStep, haptics]);
 
+  // Set by Return: the row that Return adds mounts focused, so typing
+  // carries straight on into the next step. Cleared once it has focus — the
+  // list unmounts far-off rows, and a remount must not pop the keyboard.
+  const [focusAddedRow, setFocusAddedRow] = useState(false);
+  const handleSubmitStep = useCallback(() => {
+    setFocusAddedRow(true);
+    handleAdd();
+  }, [handleAdd]);
+  const handleAutoFocused = useCallback(() => setFocusAddedRow(false), []);
+
   const handleRemove = useCallback(
     (key: string) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -215,13 +240,25 @@ export default function InstructionsStep({
           canUp={canUp}
           canDown={canDown}
           showDelete={showDelete}
+          autoFocus={focusAddedRow && index === stepCount - 1}
+          onAutoFocused={handleAutoFocused}
           onUpdate={updateStep}
           onRemove={handleRemove}
           onMove={handleMove}
+          onSubmit={handleSubmitStep}
         />
       );
     },
-    [stepCount, showDelete, updateStep, handleRemove, handleMove],
+    [
+      stepCount,
+      showDelete,
+      focusAddedRow,
+      updateStep,
+      handleRemove,
+      handleMove,
+      handleSubmitStep,
+      handleAutoFocused,
+    ],
   );
 
   const ListFooterComponent = useMemo(

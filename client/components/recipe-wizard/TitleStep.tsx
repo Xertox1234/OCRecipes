@@ -1,5 +1,9 @@
-import React, { useState } from "react";
-import { StyleSheet, ScrollView } from "react-native";
+import React, { useRef, useState } from "react";
+import {
+  StyleSheet,
+  ScrollView,
+  type TextInput as RNTextInput,
+} from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FieldCounter } from "@/components/FieldCounter";
 import { useTheme } from "@/hooks/useTheme";
@@ -28,6 +32,7 @@ export default function TitleStep({
   const [focusedField, setFocusedField] = useState<
     "title" | "description" | null
   >(null);
+  const descriptionRef = useRef<RNTextInput>(null);
 
   return (
     <ScrollView
@@ -52,6 +57,9 @@ export default function TitleStep({
         placeholderTextColor={theme.textSecondary}
         autoFocus
         returnKeyType="next"
+        // Keep the keyboard up while focus moves on to the description.
+        submitBehavior="submit"
+        onSubmitEditing={() => descriptionRef.current?.focus()}
         maxLength={TITLE_MAX_LENGTH}
         onFocus={() => setFocusedField("title")}
         onBlur={() => setFocusedField(null)}
@@ -64,6 +72,7 @@ export default function TitleStep({
       />
 
       <FocusTextInput
+        ref={descriptionRef}
         label="Description"
         style={[
           styles.textArea,

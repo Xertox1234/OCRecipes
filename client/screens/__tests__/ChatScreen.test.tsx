@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  screen,
+  fireEvent,
+  render,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import { SlideInRight } from "react-native-reanimated";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import {
   getUnreadCoachReplyIds,
@@ -809,4 +816,21 @@ describe("ChatScreen — Coach reply ready (viewed conversation + unread marks)"
       expect(getViewedCoachConversation(queryClient)).toBeNull();
     },
   );
+});
+
+// Same Return as the coach composer (CoachChatBase with submitOnReturn): the
+// key says Send and sends, instead of adding a line break.
+describe("ChatScreen — Return key", () => {
+  it("Return says Send and sends the message", () => {
+    renderComponent(<ChatScreen />);
+    const input = screen.getByPlaceholderText("Ask NutriCoach...");
+    fireEvent.change(input, { target: { value: "Hello" } });
+    const props = reactProps(input);
+    expect(props.returnKeyType).toBe("send");
+    expect(props.submitBehavior).toBe("blurAndSubmit");
+    act(() => {
+      (props.onSubmitEditing as () => void)();
+    });
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+  });
 });

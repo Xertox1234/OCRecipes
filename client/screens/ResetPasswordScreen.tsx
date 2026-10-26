@@ -178,10 +178,9 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             // normalizeResetCode strips the separator.
             maxLength={RESET_CODE_LENGTH + 2}
             editable={!busy}
+            // Messages are announced by the InlineErrors below — never also
+            // as a field's errorMessage, or VoiceOver reads them twice.
             error={!!code.error || errorField === "code"}
-            errorMessage={
-              code.error ?? (errorField === "code" ? error : undefined)
-            }
             testID="input-reset-code"
             accessibilityHint="Enter the code from the email"
           />
@@ -208,7 +207,6 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
               passwordRules={RESET_PASSWORD_RULES}
               editable={!busy}
               error={!!password.error}
-              errorMessage={password.error ?? undefined}
               testID="input-reset-password"
               accessibilityHint={`At least ${PASSWORD_MIN} characters`}
             />
@@ -243,7 +241,6 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
               onSubmitEditing={onSubmit}
               editable={!busy}
               error={!!confirm.error}
-              errorMessage={confirm.error ?? undefined}
               testID="input-reset-confirm"
               accessibilityHint="Re-enter the new password"
             />

@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -19,11 +20,13 @@ import { ApiError } from "@/lib/api-error";
 import { useAuthContext } from "@/context/AuthContext";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
 import { passwordRules, rulesVisible } from "@/lib/field-rules";
 import type { ChangePasswordProof } from "@/hooks/useAuth";
 import {
+  ENTER_TWO_STEP_CODE,
   isSecondFactorRequired,
   isTwoStepCheckError,
   normalizeCodeInput,
@@ -35,6 +38,10 @@ import {
   forgotOptions,
 } from "./ChangePasswordScreen-utils";
 import type { SecondFactorInput, SocialProvider } from "@shared/types/auth";
+import {
+  newPasswordProblem,
+  passwordMessage,
+} from "@shared/constants/password-policy";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import { Spacing } from "@/constants/theme";
 
@@ -42,8 +49,6 @@ type Props = NativeStackScreenProps<ProfileStackParamList, "ChangePassword">;
 type Mode = "current" | "forgot" | "code";
 type SaveResult = { done: boolean };
 type ErrorField = "current" | "code" | "new";
-
-const ENTER_AUTH_CODE = "Enter the two-step code we email you.";
 
 /** Which input an error belongs to, so that field is marked invalid. */
 function fieldFor(err: unknown): ErrorField | null {
@@ -65,22 +70,27 @@ function fieldFor(err: unknown): ErrorField | null {
 export default function ChangePasswordScreen({ route, navigation }: Props) {
   const { hasPassword, providers, mfaEnabled } = route.params;
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const { changePassword, requestPasswordChangeCode } = useAuthContext();
   const twoStepEmail = useSignedInEmailCode();
   const [mode, setMode] = useState<Mode>(hasPassword ? "current" : "forgot");
   // An empty field would go to the server and come back as a bare 400 that
   // reads "Something went wrong" — say which field instead. Flagged by Save
   // (empty fields wait for the button — form-fields spec §5.1); a flagged
-  // field clears as soon as it is filled.
+  // field clears as soon as it is filled. The new password is also checked
+  // against the password policy on leaving it with text, as on sign-up and
+  // reset.
   const currentField = useFieldValidation((value) =>
     value ? null : "Enter your current password.",
   );
   const codeField = useFieldValidation((value) =>
     value ? null : "Enter the code from the email.",
   );
-  const newField = useFieldValidation((value) =>
-    value ? null : "Enter a new password.",
-  );
+  const newField = useFieldValidation((value) => {
+    if (!value) return "Enter a new password.";
+    const problem = newPasswordProblem(value);
+    return problem ? passwordMessage(problem) : null;
+  });
   // Destructured, never read as `field.ref` in render: React Compiler treats an
   // object read through `.ref` as a ref and skips the whole component.
   const { ref: currentRef } = currentField;
@@ -89,9 +99,8 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const current = currentField.value;
   const emailCode = codeField.value;
   const newPassword = newField.value;
-  // The live checklist under the new password (spec §5.2). Only emptiness is
-  // a client-side error here, so a short password left behind shows its unmet
-  // line until Save brings back the server's own message.
+  // The live checklist under the new password (spec §5.2). Once the field's
+  // own error says what is wrong, the checklist hides its unmet line.
   const newChecklist = passwordRules(newPassword);
   // Two-step on: ask for the code with the first submit (the server would
   // otherwise refuse it — and an emailed-code guess would be spent finding out).
@@ -100,6 +109,9 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<ErrorField | null>(null);
   const [busy, setBusy] = useState(false);
+  // Bumped on each form-level validation reject (never a server error) to
+  // shake that message; field rejects shake through each field's shakeKey.
+  const [shakeKey, setShakeKey] = useState(0);
   // A ref, not state: a second tap in the same frame must see it.
   const busyRef = useRef(false);
 
@@ -122,10 +134,11 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
 
   // Outside the try (React Compiler: no conditionals inside a try).
   const handleSaveError = (err: unknown) => {
+    haptics.notification(Haptics.NotificationFeedbackType.Error);
     if (isSecondFactorRequired(err)) {
       setNeedsFactor(true);
       setErrorField(null);
-      setError(ENTER_AUTH_CODE);
+      setError(ENTER_TWO_STEP_CODE);
       return;
     }
     setErrorField(fieldFor(err));
@@ -152,16 +165,20 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           ? [currentField, newField]
           : [newField];
     if (!focusFirstInvalid(fields)) {
-      // The field messages say what's missing; drop a stale server message.
+      // The field messages say what's missing (each shakes via its own
+      // shakeKey); drop a stale server message.
       setErrorField(null);
       setError(null);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
     // Never send without the two-step code once it's asked for: the server
     // would refuse, and a guess at the code would be spent on it.
     if (!provider && factorNeeded && !factor) {
       setErrorField(null);
-      setError(ENTER_AUTH_CODE);
+      setError(ENTER_TWO_STEP_CODE);
+      setShakeKey((k) => k + 1);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
     busyRef.current = true;
@@ -219,13 +236,17 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               value={current}
               onChangeText={currentField.onChangeText}
               onBlur={currentField.onBlur}
+              editable={!busy}
               error={!!currentField.error || errorField === "current"}
               errorMessage={currentField.error ?? undefined}
               secureTextEntry
               autoCapitalize="none"
               autoComplete="current-password"
             />
-            <InlineError message={currentField.error} />
+            <InlineError
+              message={currentField.error}
+              shakeKey={currentField.shakeKey}
+            />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="I forgot it"
@@ -251,12 +272,16 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
                 codeField.onChangeText(normalizeCodeInput(t))
               }
               onBlur={codeField.onBlur}
+              editable={!busy}
               error={!!codeField.error || errorField === "code"}
               errorMessage={codeField.error ?? undefined}
               keyboardType="number-pad"
               autoComplete="one-time-code"
             />
-            <InlineError message={codeField.error} />
+            <InlineError
+              message={codeField.error}
+              shakeKey={codeField.shakeKey}
+            />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Send a new code"
@@ -280,6 +305,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             onChangeText={newField.onChangeText}
             onFocus={newField.onFocus}
             onBlur={newField.onBlur}
+            editable={!busy}
             error={!!newField.error || errorField === "new"}
             errorMessage={newField.error ?? undefined}
             secureTextEntry
@@ -298,7 +324,7 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             hideUnmet={newField.error !== null || errorField === "new"}
           />
         </View>
-        <InlineError message={newField.error} />
+        <InlineError message={newField.error} shakeKey={newField.shakeKey} />
 
         {factorNeeded && mode !== "forgot" ? (
           <SecondFactorField
@@ -308,7 +334,9 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             emailCode={twoStepEmail}
           />
         ) : null}
-        {error ? <InlineError message={error} /> : null}
+        {/* Always mounted: InlineError shakes on a shakeKey change, which a
+            message view mounted by the same reject would never see. */}
+        <InlineError message={error} shakeKey={shakeKey} />
 
         {mode === "forgot" ? (
           <View style={styles.group}>

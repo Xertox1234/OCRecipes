@@ -314,4 +314,45 @@ describe("ResetPasswordScreen — rule checklist", () => {
     fireEvent.change(confirm, { target: { value: "abcdefgh" } });
     expect(screen.getByLabelText("Matches, done")).toBeTruthy();
   });
+
+  // Form-fields spec §5.8: each message is announced by its InlineError
+  // alone — the field's hint must not repeat it, or VoiceOver reads it twice.
+  it("a field error renders once in the a11y tree", () => {
+    renderScreen();
+    fill("123");
+    fireEvent.click(screen.getByText("Reset password"));
+    const codeInput = screen.getByLabelText("6-digit code");
+    expect(codeInput.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      screen.getAllByText("Enter the 6-digit code from the email"),
+    ).toHaveLength(1);
+    expect(codeInput.getAttribute("aria-hint") ?? "").not.toContain(
+      "Enter the 6-digit code from the email",
+    );
+  });
+
+  it("a wrong-code server error renders once in the a11y tree", async () => {
+    mockReset.mockRejectedValue(new ApiError("x", "INVALID_RESET_CODE", 400));
+    renderScreen();
+    fill("000000");
+    fireEvent.click(screen.getByText("Reset password"));
+    const message =
+      "That code is incorrect or expired. After 5 wrong tries, request a new code.";
+    await screen.findByText(message);
+    const codeInput = screen.getByLabelText("6-digit code");
+    expect(codeInput.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(codeInput.getAttribute("aria-hint") ?? "").not.toContain(message);
+  });
+
+  it("a password error is not repeated in the field's hint", () => {
+    renderScreen();
+    fill("123456", "short", "short");
+    fireEvent.click(screen.getByText("Reset password"));
+    const pw = screen.getByLabelText("New password");
+    expect(pw.getAttribute("aria-invalid")).toBe("true");
+    expect(pw.getAttribute("aria-hint") ?? "").not.toContain(
+      "Use at least 8 characters.",
+    );
+  });
 });
