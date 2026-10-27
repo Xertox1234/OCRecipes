@@ -1,6 +1,6 @@
 ---
 title: "Decompose the 690-line chat send-message route handler"
-status: in-progress
+status: done
 priority: high
 created: 2026-10-26
 updated: 2026-10-26
@@ -23,12 +23,12 @@ Deferred from the 2026-10-25 `/audit maintainability` run (user triage: the larg
 
 ## Acceptance Criteria
 
-- [ ] A `conversationType`-keyed config table replaces the ternary chains for featureKey / featureLabel / dailyLimit / limit message / stream function
-- [ ] The handler body is split into `admitTurn()`, `streamRecipeTurn()`, `streamCoachTurn()` and an SSE sink that owns write + byte cap + abort/timeout; the byte-cap block exists once
-- [ ] `server/routes/chat.ts` is under 600 lines (helpers in `server/routes/chat-stream.ts` or a service module)
-- [ ] Quota / TOCTOU / refund semantics are byte-for-byte unchanged — `server-reviewer` + `security-auditor` review
-- [ ] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
-- [ ] No file in scope ends above 600 lines unless it started there and shrank
+- [x] A `conversationType`-keyed config table replaces the ternary chains for featureKey / featureLabel / dailyLimit / limit message / stream function
+- [x] The handler body is split into `admitTurn()`, `streamRecipeTurn()`, `streamCoachTurn()` and an SSE sink that owns write + byte cap + abort/timeout; the byte-cap block exists once
+- [x] `server/routes/chat.ts` is under 600 lines (helpers in `server/routes/chat-stream.ts` or a service module)
+- [x] Quota / TOCTOU / refund semantics are byte-for-byte unchanged — `server-reviewer` + `security-auditor` review
+- [x] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
+- [x] No file in scope ends above 600 lines unless it started there and shrank
 
 ## Implementation Notes
 
@@ -54,3 +54,7 @@ Pass the settle-phase closure state (`streamedContent`, `aborted`, `alreadyPersi
 ### 2026-10-26
 
 - Initial creation from the 2026-10-25 maintainability audit
+
+### 2026-10-26 (executed)
+
+- Handler split into `chat-admit.ts` (finder entry + quota), `chat-stream.ts` (SSE sink with the single byte-cap block, recipe/coach loops, H6 settle, `CONVERSATION_CONFIG` table); `chat.ts` 1078 -> 461 lines. A second new file (`chat-admit.ts`) was needed to keep every file under 600.
