@@ -74,8 +74,10 @@ appId: com.ocrecipes.app
 #    in run 40518026548). The gate below therefore also accepts that screen,
 #    and a bounded loop relaunches (stopApp + openLink, the same cold start
 #    as (4)) up to 3 times. A load that still fails after that fails the
-#    final gate loudly. Android never shows this screen, so the loop's
-#    `while` is false there and its iOS-only stopApp never runs.
+#    final gate loudly. Android's dev launcher has the same error screen
+#    (ErrorScreen.kt) but has not been seen to show it on CI; if it does,
+#    the loop still relaunches there, and its stopApp is iOS-gated because
+#    the bundle id is iOS-only (see 3).
 ---
 - runFlow:
     when:
@@ -110,7 +112,11 @@ appId: com.ocrecipes.app
     while:
       visible: "There was a problem loading the project.*"
     commands:
-      - stopApp: com.williamtower.ocrecipes
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            - stopApp: com.williamtower.ocrecipes
       - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
       - extendedWaitUntil:
           visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back|There was a problem loading the project.*)"
