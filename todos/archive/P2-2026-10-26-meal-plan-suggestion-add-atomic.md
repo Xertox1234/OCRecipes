@@ -1,6 +1,6 @@
 ---
 title: "Make "add suggestion to plan" one server call instead of two"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-26
 updated: 2026-10-26
@@ -54,3 +54,9 @@ Prefer extending the existing meal-plan item route over a new path if the payloa
 ### 2026-10-26
 
 - Initial creation from the 2026-10-25 maintainability audit
+
+### 2026-10-27
+
+- Done: POST /api/meal-plan/items accepts an inline `recipe` and creates recipe + ingredients + plan item via `createMealPlanFromSuggestions` (one transaction); client sends one call; ref and double invalidation removed.
+- Out of contract: new `server/routes/_meal-plan-schemas.ts` (schemas + date validator moved out so meal-plan.ts ends at 777 < its 808 start, AC #6).
+- The plan-add "retry reuses the recipe" test pinned the retired ref behaviour and was rewritten.
