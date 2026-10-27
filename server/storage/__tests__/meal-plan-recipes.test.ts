@@ -419,6 +419,37 @@ describe("meal-plan-recipes storage", () => {
       expect(result).toEqual([]);
     });
 
+    it.each([
+      ["with ingredients", [makeIngredient({ name: "Oats" })]],
+      ["without ingredients", []],
+    ])(
+      "single-meal call rolls back the recipe when the plan-item insert fails (%s)",
+      async (_label, ingredients) => {
+        const title = `Rollback ${_label} ${Date.now()}`;
+        await expect(
+          createMealPlanFromSuggestions([
+            {
+              recipe: makeRecipeInput(testUser.id, { title }),
+              ingredients,
+              planItem: {
+                userId: testUser.id,
+                // Not a calendar date: the plan-item insert throws after the
+                // recipe row has been written.
+                plannedDate: "not-a-date",
+                mealType: "dinner",
+              },
+            },
+          ]),
+        ).rejects.toThrow();
+
+        const rows = await tx
+          .select()
+          .from(mealPlanRecipes)
+          .where(eq(mealPlanRecipes.title, title));
+        expect(rows).toHaveLength(0);
+      },
+    );
+
     it("atomically creates recipes, ingredients and plan items", async () => {
       const result = await createMealPlanFromSuggestions([
         {

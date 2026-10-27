@@ -81,7 +81,6 @@ import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { runAfterTransition } from "@/lib/run-after-transition";
-import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
 import {
   QuickAddSheetContent,
@@ -725,7 +724,6 @@ export default function MealPlanHomeScreen() {
   // (and, since those callbacks feed the memoized MealSlotSection/
   // MealSlotItem rows, defeat their React.memo). See CoachChat.tsx for the
   // same pattern.
-  const { mutateAsync: createRecipe } = useCreateMealPlanRecipe();
   const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
   const { mutate: confirmItem } = useConfirmMealPlanItem();
   const { data: expiringItems } = useExpiringPantryItems(
@@ -1183,69 +1181,44 @@ export default function MealPlanHomeScreen() {
     [features.aiMealSuggestions, haptics],
   );
 
-  const createdSuggestionRecipeRef = useRef<{
-    title: string;
-    id: number;
-  } | null>(null);
-
   const handleSelectSuggestion = useCallback(
     async (suggestion: MealSuggestion) => {
       try {
-        // A failed add leaves the modal open with the recipe already created;
-        // tapping the same suggestion again reuses it instead of a new copy.
-        const pending = createdSuggestionRecipeRef.current;
-        const recipe =
-          pending?.title === suggestion.title
-            ? { id: pending.id }
-            : await createRecipe({
-                title: suggestion.title,
-                description: suggestion.description,
-                difficulty: suggestion.difficulty,
-                prepTimeMinutes: suggestion.prepTimeMinutes,
-                instructions: suggestion.instructions,
-                dietTags: suggestion.dietTags,
-                sourceType: "ai_suggestion",
-                caloriesPerServing: suggestion.calories,
-                proteinPerServing: suggestion.protein,
-                carbsPerServing: suggestion.carbs,
-                fatPerServing: suggestion.fat,
-                ingredients: suggestion.ingredients?.map((ing) => ({
-                  name: ing.name,
-                  quantity: ing.quantity,
-                  unit: ing.unit,
-                })),
-              });
-        createdSuggestionRecipeRef.current = {
-          title: suggestion.title,
-          id: recipe.id,
-        };
-
-        // Add to meal plan
+        // One server call: the recipe and its plan item are created in a
+        // single transaction, so a failure leaves nothing behind.
         await addMealPlanItem({
-          recipeId: recipe.id,
+          recipe: {
+            title: suggestion.title,
+            description: suggestion.description,
+            difficulty: suggestion.difficulty,
+            prepTimeMinutes: suggestion.prepTimeMinutes,
+            instructions: suggestion.instructions,
+            dietTags: suggestion.dietTags,
+            sourceType: "ai_suggestion",
+            caloriesPerServing: suggestion.calories,
+            proteinPerServing: suggestion.protein,
+            carbsPerServing: suggestion.carbs,
+            fatPerServing: suggestion.fat,
+            ingredients: suggestion.ingredients?.map((ing) => ({
+              name: ing.name,
+              quantity: ing.quantity,
+              unit: ing.unit,
+            })),
+          },
           plannedDate: selectedDateStr,
           mealType: suggestMealType,
         });
 
-        createdSuggestionRecipeRef.current = null;
         // The modal closes, so confirm with a toast (fires its own Success).
         toast.success(formatPlanAddSuccess(selectedDateStr, suggestMealType));
         setSuggestModalVisible(false);
-        invalidateMealPlanItems(queryClient);
       } catch {
         toast.error(
           "Couldn't add the suggestion to your plan. Please try again.",
         );
       }
     },
-    [
-      createRecipe,
-      addMealPlanItem,
-      selectedDateStr,
-      suggestMealType,
-      toast,
-      queryClient,
-    ],
+    [addMealPlanItem, selectedDateStr, suggestMealType, toast],
   );
 
   const handleConfirmItem = useCallback(

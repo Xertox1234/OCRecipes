@@ -440,6 +440,85 @@ describe("Meal Plan Routes", () => {
 
       expect(res.status).toBe(404);
     });
+
+    describe("inline recipe (atomic create + plan)", () => {
+      const inlineBody = {
+        recipe: {
+          title: "Overnight oats",
+          instructions: ["Soak the oats overnight"],
+          sourceType: "ai_suggestion",
+          ingredients: [{ name: "oats", quantity: "1", unit: "cup" }],
+        },
+        plannedDate: "2025-01-01",
+        mealType: "breakfast",
+      };
+
+      it("creates recipe and plan item in one storage call, scoped to the caller", async () => {
+        vi.mocked(storage.createMealPlanFromSuggestions).mockResolvedValue([
+          { recipeId: 31, mealPlanItemId: 7 },
+        ]);
+
+        const res = await request(app)
+          .post("/api/meal-plan/items")
+          .set("Authorization", "Bearer token")
+          .send({
+            ...inlineBody,
+            userId: "attacker",
+            recipe: { ...inlineBody.recipe, userId: "attacker" },
+          });
+
+        expect(res.status).toBe(201);
+        expect(res.body).toMatchObject({ id: 7, recipeId: 31 });
+        expect(storage.createMealPlanFromSuggestions).toHaveBeenCalledOnce();
+        const [meals] = vi.mocked(storage.createMealPlanFromSuggestions).mock
+          .calls[0];
+        expect(meals).toHaveLength(1);
+        expect(meals[0].recipe.userId).toBe("1");
+        expect(meals[0].planItem.userId).toBe("1");
+        expect(meals[0].recipe.sourceType).toBe("ai_suggestion");
+        expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
+        expect(storage.addMealPlanItem).not.toHaveBeenCalled();
+        expect(storage.getMealPlanRecipe).not.toHaveBeenCalled();
+      });
+
+      it("returns 400 when recipe is combined with recipeId", async () => {
+        const res = await request(app)
+          .post("/api/meal-plan/items")
+          .set("Authorization", "Bearer token")
+          .send({ ...inlineBody, recipeId: 1 });
+
+        expect(res.status).toBe(400);
+        expect(storage.createMealPlanFromSuggestions).not.toHaveBeenCalled();
+      });
+
+      it("returns 400 when the recipe fails the quality gate", async () => {
+        const res = await request(app)
+          .post("/api/meal-plan/items")
+          .set("Authorization", "Bearer token")
+          .send({
+            ...inlineBody,
+            recipe: { title: "Oats", sourceType: "ai_suggestion" },
+          });
+
+        expect(res.status).toBe(400);
+        expect(storage.createMealPlanFromSuggestions).not.toHaveBeenCalled();
+      });
+
+      it("returns 500 and creates nothing else when the transaction fails", async () => {
+        vi.mocked(storage.createMealPlanFromSuggestions).mockRejectedValue(
+          new Error("db down"),
+        );
+
+        const res = await request(app)
+          .post("/api/meal-plan/items")
+          .set("Authorization", "Bearer token")
+          .send(inlineBody);
+
+        expect(res.status).toBe(500);
+        expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
+        expect(storage.addMealPlanItem).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe("DELETE /api/meal-plan/items/:id", () => {
