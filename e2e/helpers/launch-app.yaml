@@ -60,6 +60,22 @@ appId: com.ocrecipes.app
 #    the same URL is fine. stopApp needs the iOS bundle id, so it runs under
 #    a platform condition (see 3). Android is unchanged: its nightly passed
 #    on SDK 54 and the Android dev client was not checked on SDK 55.
+#
+# 5. iOS dev-client load timeout. The dev launcher fetches Metro's manifest
+#    with a hard-coded 10s timeout (EXDevLauncherDefaultRequestTimeout in
+#    expo-dev-launcher's EXDevLauncherController.m, same value in SDK 56 and
+#    57). On the macos-26 runner (3 CPUs, load average 150-290 with the iOS
+#    26 simulator up) a manifest request took 1.1s median but over 10s in
+#    8 of 118 samples, max 22.7s (diagnostic run 40559576171). A launch that
+#    lands in such a spike stops on "There was a problem loading the
+#    project." / "Failed to load app from http://localhost:8081 with error:
+#    The request timed out." and never retries by itself, so the 240s gate
+#    used to wait out the full budget on a dead screen (8 of 18 iOS launches
+#    in run 40518026548). The gate below therefore also accepts that screen,
+#    and a bounded loop relaunches (stopApp + openLink, the same cold start
+#    as (4)) up to 3 times. A load that still fails after that fails the
+#    final gate loudly. Android never shows this screen, so the loop's
+#    `while` is false there and its iOS-only stopApp never runs.
 ---
 - runFlow:
     when:
@@ -85,8 +101,23 @@ appId: com.ocrecipes.app
 # that, not a property to rely on (see
 # todos/archive/P3-2026-09-03-launch-app-comment-claims-auth-login-runs-first.md)).
 - extendedWaitUntil:
-    visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back)"
+    visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back|There was a problem loading the project.*)"
     timeout: 240000
+
+# Dev-client load-timeout recovery — see header (5).
+- repeat:
+    times: 3
+    while:
+      visible: "There was a problem loading the project.*"
+    commands:
+      - stopApp: com.williamtower.ocrecipes
+      - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - extendedWaitUntil:
+          visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back|There was a problem loading the project.*)"
+          timeout: 240000
+- extendedWaitUntil:
+    visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back)"
+    timeout: 10000
 
 # Finish an interrupted logout: the in-app confirmation sheet (issue #908 —
 # see ensure-logged-out.yaml for why this is no longer a native alert) may
