@@ -1,6 +1,6 @@
 ---
 title: "Make "add suggestion to plan" one server call instead of two"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-26
 updated: 2026-10-26

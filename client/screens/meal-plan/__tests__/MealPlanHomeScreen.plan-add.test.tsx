@@ -193,9 +193,32 @@ describe("MealPlanHomeScreen — adding a meal suggestion", () => {
     expect(mockToastSuccess).not.toHaveBeenCalled();
   });
 
-  // The recipe was created before the add failed, and the modal stays open,
-  // so tapping the suggestion again must reuse it, not create a second copy.
-  it("retrying the same suggestion after a failed add reuses the recipe", async () => {
+  // The recipe and plan item are one server call (one transaction), so a
+  // failed add leaves no recipe behind and a retry just sends the same call.
+  it("adds via ONE call carrying the inline recipe — no separate recipe create", async () => {
+    mockAddItem.mockResolvedValue({ id: 1 });
+    renderComponent(<MealPlanHomeScreen />);
+
+    fireEvent.click(screen.getByLabelText("Pick suggestion"));
+
+    await waitFor(() => {
+      expect(mockToastSuccess).toHaveBeenCalledOnce();
+    });
+    expect(mockCreateRecipe).not.toHaveBeenCalled();
+    expect(mockAddItem).toHaveBeenCalledOnce();
+    expect(mockAddItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipe: expect.objectContaining({
+          title: "Overnight oats",
+          sourceType: "ai_suggestion",
+        }),
+        mealType: "breakfast",
+      }),
+    );
+    expect(mockAddItem.mock.calls[0][0]).not.toHaveProperty("recipeId");
+  });
+
+  it("retrying after a failed add sends the same single call again", async () => {
     mockAddItem
       .mockRejectedValueOnce(new Error("500"))
       .mockResolvedValueOnce({ id: 1 });
@@ -211,10 +234,7 @@ describe("MealPlanHomeScreen — adding a meal suggestion", () => {
     await waitFor(() => {
       expect(mockToastSuccess).toHaveBeenCalledOnce();
     });
-    expect(mockCreateRecipe).toHaveBeenCalledOnce();
+    expect(mockCreateRecipe).not.toHaveBeenCalled();
     expect(mockAddItem).toHaveBeenCalledTimes(2);
-    expect(mockAddItem).toHaveBeenLastCalledWith(
-      expect.objectContaining({ recipeId: 31 }),
-    );
   });
 });
