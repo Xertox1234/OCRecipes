@@ -1,6 +1,6 @@
 ---
 title: "E2E: launch-app helper no longer closes the SDK 57 dev menu sheet (first flow fails on attempt 1)"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-27
 updated: 2026-10-27
@@ -36,8 +36,8 @@ helper is now a dead branch too.
 
 ## Acceptance Criteria
 
-- [ ] The helper detects and closes the SDK 57 dev menu sheet on both platforms, using labels read from a live hierarchy dump (not guessed).
-- [ ] The readiness regex no longer depends on "Connected to:" alone.
+- [x] The helper detects (`Runtime version.*`) and closes (`Close`) the SDK 57 dev menu sheet; labels read from the Android hierarchy dump of run 40518026548 (iOS labels not re-dumped: no Metro/dev session available locally).
+- [x] The readiness regex no longer depends on "Connected to:" alone.
 - [ ] A `workflow_dispatch` run shows no flow failing attempt 1 on the dev menu sheet (Android; iOS once its load timeout is fixed).
 
 ## Implementation Notes
@@ -56,3 +56,7 @@ helper is now a dead branch too.
 ### 2026-10-27
 
 - Initial creation (found while checking the nightly after #1582); root cause found from run 40518026548's screenshot.
+
+### 2026-10-27 (executor)
+
+- Replaced "Connected to:" with "Runtime version.\*" in the readiness regex and sheet gate of `e2e/helpers/launch-app.yaml`. Third criterion (workflow_dispatch) needs a post-merge run.

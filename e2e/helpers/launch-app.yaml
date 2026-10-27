@@ -19,13 +19,16 @@ appId: com.ocrecipes.app
 #                        previous flow's login/registration submit; while it is
 #                        up the app hierarchy is entirely absent, so it MUST be
 #                        part of this gate or the gate itself times out
-#      Connected to:   — dev menu sheet left open (see 3)
+#      Runtime version.* — dev menu sheet left open (see 2). SDK 57 sheet shows
+#                        "Runtime version: 4.0.0", Reload / Go home tiles and a
+#                        "Close" X (labels from run 40518026548's hierarchy
+#                        dump). The pre-SDK-57 "Connected to:" text is gone.
 #    The gate is NOT optional: if none of these appears in 240s the app is
 #    genuinely broken and the flow should fail loudly right here.
 #
 # 2. The welcome banner sits ON TOP of the auto-opened dev menu on the first
 #    cold connect after install. Tapping "Continue" dismisses only the banner
-#    — the dev menu sheet ("Connected to: http://localhost:8081", Reload,
+#    — the dev menu sheet ("Runtime version: …", Reload,
 #    Go home, …) stays covering the app. That two-layer state, confirmed in
 #    the run-33292071278 hierarchy dumps, is why earlier single-overlay fixes
 #    kept half-working. The gated block closes the menu; its inner tap is
@@ -82,7 +85,7 @@ appId: com.ocrecipes.app
 # that, not a property to rely on (see
 # todos/archive/P3-2026-09-03-launch-app-comment-claims-auth-login-runs-first.md)).
 - extendedWaitUntil:
-    visible: "(Continue|Sign In|Hello.*|Not Now|Connected to:|Are you sure you want to sign out.*|Get Started|Go back)"
+    visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back)"
     timeout: 240000
 
 # Finish an interrupted logout: the in-app confirmation sheet (issue #908 —
@@ -113,12 +116,12 @@ appId: com.ocrecipes.app
 # close it. The inner tap stays optional: the `when:` gate only guards entry,
 # it does not soften a failing command inside.
 - extendedWaitUntil:
-    visible: "Connected to:"
+    visible: "Runtime version.*"
     timeout: 3000
     optional: true
 - runFlow:
     when:
-      visible: "Connected to:"
+      visible: "Runtime version.*"
     commands:
       - tapOn:
           text: "Close"
