@@ -1,6 +1,6 @@
 ---
 title: "Decompose the 690-line chat send-message route handler"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-10-26
 updated: 2026-10-26
