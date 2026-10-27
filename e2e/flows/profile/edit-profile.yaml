@@ -32,8 +32,8 @@ env:
 # Verify profile sections are visible. Tile counts depend on the account's
 # data, and a premium tile appends ". Premium feature, locked" for a free-tier
 # account, so match the label shape rather than the whole string.
-- assertVisible: "Favourites: \\d+ items.*"
-- assertVisible: "Recipes: \\d+ items.*"
+- assertVisible: "Favourites: \\d+ items?.*"
+- assertVisible: "Recipe Catalog: \\d+ items?.*"
 - assertVisible: "Dietary Profile"
 - assertVisible: "Appearance.*"
 

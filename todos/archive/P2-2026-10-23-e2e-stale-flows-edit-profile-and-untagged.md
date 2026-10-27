@@ -1,6 +1,6 @@
 ---
 title: "E2E: fix edit-profile's stale tile assertions (nightly red since 10-20) and the five stale untagged flows"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-23
 updated: 2026-10-23
@@ -71,3 +71,9 @@ Maestro alone.
 
 - Initial creation (from the SDK 55 upgrade check, PR for
   `chore/sdk-step1-sdk55`).
+
+### 2026-10-27
+
+- edit-profile.yaml now asserts "Favourites: \d+ items?._" and "Recipe Catalog: \d+ items?._".
+- Deleted the five untagged flows (exercise-log, goal-setup, import-recipe, browse-recipes, create-recipe). Source check: no Exercise/Cardio UI in client/, Nutrition Goals moved to Settings, the Plan chip accessibilityLabel is "Browse Recipes", and "Recipe link" / "What are you making?" no longer exist in client/. A rewrite needs a live hierarchy dump on a com.ocrecipes.app build, which was not available.
+- Not verified: nightly 10/10 on iOS + Android (CI-only).
