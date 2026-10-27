@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Keyboard } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import type { TagsData } from "@/hooks/useRecipeForm";
 import { DIET_TAG_OPTIONS, type DietTag } from "./types";
@@ -48,11 +48,9 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
     >
       {/* Cuisine section */}
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.link }]}>
-          CUISINE
-        </Text>
         <View style={styles.cuisineRow}>
           <FocusTextInput
+            label="Cuisine"
             style={[
               styles.cuisineInput,
               {
@@ -68,6 +66,7 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
             placeholderTextColor={theme.textSecondary}
             autoCapitalize="words"
             returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
             accessibilityLabel="Cuisine type"
             accessibilityHint="Enter the cuisine type for this recipe"
           />

@@ -159,7 +159,7 @@ describe("QuickLogDrawer", () => {
     renderComponent(<Harness />);
     expect(screen.getByRole("button", { name: /^quick log$/i })).toBeTruthy();
     // Input is always mounted but hidden via aria-hidden when collapsed
-    const input = screen.queryByPlaceholderText(/what did you eat/i);
+    const input = screen.queryByLabelText("What did you eat?");
     if (input) {
       // If the element exists, it must be inside an aria-hidden container
       expect(input.closest('[aria-hidden="true"]')).not.toBeNull();
@@ -169,7 +169,7 @@ describe("QuickLogDrawer", () => {
   it("shows input and chips after tapping header", () => {
     renderComponent(<Harness />);
     openDrawer();
-    expect(screen.getByPlaceholderText(/what did you eat/i)).toBeTruthy();
+    expect(screen.getByLabelText("What did you eat?")).toBeTruthy();
     expect(screen.getByText("Coffee")).toBeTruthy();
     expect(screen.getByText("Eggs")).toBeTruthy();
   });
@@ -194,7 +194,7 @@ describe("QuickLogDrawer", () => {
     );
     openDrawer();
     expect(onToggle).toHaveBeenCalledTimes(1);
-    const input = screen.getByPlaceholderText(/what did you eat/i);
+    const input = screen.getByLabelText("What did you eat?");
     expect(input.closest('[aria-hidden="true"]')).not.toBeNull();
   });
 
@@ -250,7 +250,7 @@ describe("QuickLogDrawer", () => {
   it("uses a return key that reads as submitting, not search", () => {
     renderComponent(<Harness />);
     openDrawer();
-    const input = screen.getByPlaceholderText(/what did you eat/i);
+    const input = screen.getByLabelText("What did you eat?");
     expect(input.getAttribute("returnKeyType")).toBe("done");
   });
 
@@ -830,5 +830,33 @@ describe("QuickLogDrawer", () => {
     // would silently clip the list and the Log All button on small devices.
     expect(props.maxHeight).toBeUndefined();
     expect(typeof props.onToggle).toBe("function");
+  });
+
+  it("shows example text, not the label again, once the label floats", () => {
+    renderComponent(<Harness />);
+    openDrawer();
+    const input = screen.getByLabelText("What did you eat?");
+    expect(input.getAttribute("placeholder")).toBeNull();
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe("e.g. 2 eggs and toast");
+    expect(input.getAttribute("placeholder")).not.toBe("What did you eat?");
+  });
+
+  it("rings the whole input row — text, find, mic and camera — under one label", () => {
+    renderComponent(<Harness />);
+    openDrawer();
+    const rings = screen.getAllByTestId("focus-field-ring");
+    // One ring on the rounded row, never a second square one on the input.
+    expect(rings).toHaveLength(1);
+    const row = rings[0].parentElement!;
+    expect(row.contains(screen.getByLabelText("What did you eat?"))).toBe(true);
+    expect(row.contains(screen.getByLabelText("Find food"))).toBe(true);
+    expect(row.contains(screen.getByLabelText("Start voice input"))).toBe(true);
+    expect(
+      row.contains(screen.getByLabelText("Open camera to scan food")),
+    ).toBe(true);
+    expect(
+      row.querySelector('[data-testid="focus-field-label"]')?.textContent,
+    ).toBe("What did you eat?");
   });
 });

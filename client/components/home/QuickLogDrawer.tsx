@@ -9,6 +9,13 @@ import {
   Platform,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import {
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
@@ -24,6 +31,10 @@ import {
   useQuickLogSession,
   EMPTY_PARSE_MESSAGE,
 } from "@/hooks/useQuickLogSession";
+import {
+  foundItemsMessage,
+  useParsedItemsAnnouncement,
+} from "@/hooks/useParsedItemsAnnouncement";
 import type { ParsedFoodItem, LogSummary } from "@/hooks/useQuickLogSession";
 import {
   Spacing,
@@ -34,11 +45,6 @@ import {
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 import type { HomeAction } from "./action-config";
 import { formatIngredientLine } from "@/lib/format";
-
-/** Shown/announced when parsed items first appear (see the success-announce effect). */
-function foundItemsMessage(count: number) {
-  return `Found ${count} item${count === 1 ? "" : "s"}. Log All to save.`;
-}
 
 interface FrequentChipProps {
   productName: string;
@@ -143,6 +149,8 @@ interface QuickLogDrawerProps {
   onResultsShown?: () => void;
 }
 
+const INPUT_LABEL = "What did you eat?";
+
 export function QuickLogDrawer({
   action,
   isOpen,
@@ -155,6 +163,7 @@ export function QuickLogDrawer({
   const haptics = useHaptics();
   const toast = useToast();
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const inputFocus = useFieldFocus();
 
   const handleLogSuccess = useCallback(
     ({ firstName, totalCalories }: LogSummary) => {
@@ -247,44 +256,10 @@ export function QuickLogDrawer({
     hadParsedItemsRef.current = hasParsedItems;
   }, [hasParsedItems, onResultsShown]);
 
-  // A successful parse announces its item count — every parse, not just the
-  // first: a later parse can replace the results without `hasParsedItems`
-  // passing back through false, and the previous discriminator-keyed guard
-  // (above) missed that case (docs/solutions/logic-errors/imperative-
-  // announce-must-be-content-keyed-not-variant-keyed-2026-06-24.md, "Second
-  // manifestation"). iOS has no live region here, so it always gets the
-  // imperative announce. Android's <ThemedText accessibilityLiveRegion=
-  // "polite"> below re-reads automatically whenever the count changes the
-  // rendered text; only a same-count replace leaves that text identical, so
-  // it needs the explicit announce too — never both, on either platform
-  // (docs/rules/accessibility.md → Announcements).
-  //
-  // `lastRenderedCountRef` must be written on EVERY run of this effect, not
-  // only when the generation changes: removeItem (and reset()) change
-  // `parsedItems.length` — and so the live region's own rendered text —
-  // without bumping `parseGeneration`. A version gated behind the
-  // generation check went stale across exactly those changes, producing a
-  // false negative (a same-count replace after a removeItem stayed silent)
-  // and a false positive (a fresh session's first parse double-announced
-  // when its count happened to match a prior session's last one) —
-  // caught by review with a constructed probe.
-  const announcedGenerationRef = useRef(0);
-  const lastRenderedCountRef = useRef(0);
-  useEffect(() => {
-    const count = session.parsedItems.length;
-    const prevRenderedCount = lastRenderedCountRef.current;
-    lastRenderedCountRef.current = count;
-
-    const generation = session.parseGeneration;
-    if (generation === 0 || generation === announcedGenerationRef.current) {
-      return;
-    }
-    announcedGenerationRef.current = generation;
-    if (count === 0) return;
-    if (Platform.OS === "ios" || count === prevRenderedCount) {
-      AccessibilityInfo.announceForAccessibility(foundItemsMessage(count));
-    }
-  }, [session.parseGeneration, session.parsedItems.length]);
+  useParsedItemsAnnouncement(
+    session.parseGeneration,
+    session.parsedItems.length,
+  );
 
   return (
     <HomeInlineDrawer
@@ -297,7 +272,10 @@ export function QuickLogDrawer({
       bodyBackgroundColor={withOpacity(theme.link, 0.04)}
     >
       {/* Text input row */}
-      <View
+      <FocusField
+        focus={inputFocus}
+        label={INPUT_LABEL}
+        hasValue={session.inputText.length > 0}
         style={[
           styles.inputRow,
           {
@@ -307,14 +285,22 @@ export function QuickLogDrawer({
         ]}
       >
         <FocusTextInput
+          focusRing={false}
+          onFocus={inputFocus.onFocus}
+          onBlur={inputFocus.onBlur}
           style={[styles.textInput, { color: theme.text }]}
-          placeholder="What did you eat?"
+          // The label rests where the placeholder would; it shows once floated.
+          placeholder={resolvePlaceholder(
+            INPUT_LABEL,
+            "e.g. 2 eggs and toast",
+            shouldFloatLabel(inputFocus.focused, session.inputText),
+          )}
           placeholderTextColor={theme.textSecondary}
           value={session.inputText}
           onChangeText={session.setInputText}
           onSubmitEditing={handleTextSubmit}
           returnKeyType="done"
-          accessibilityLabel="Food description"
+          accessibilityLabel={INPUT_LABEL}
         />
         <Pressable
           onPress={handleSubmitPress}
@@ -370,7 +356,7 @@ export function QuickLogDrawer({
             accessible={false}
           />
         </Pressable>
-      </View>
+      </FocusField>
 
       {/* Parse error, or a parse that found no food */}
       <InlineError message={session.parseError} />
@@ -465,11 +451,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     gap: Spacing.xs,
   },
+  // Labelled field: the value sits under the floated label's row.
   textInput: {
     flex: 1,
-    height: 40,
     fontSize: 14,
     fontFamily: FontFamily.regular,
+    ...LABELLED_INPUT_TEXT,
   },
   iconButton: {
     width: 36,

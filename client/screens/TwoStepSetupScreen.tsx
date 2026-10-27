@@ -16,6 +16,8 @@ import { useAuthContext } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { ApiError } from "@/lib/api-error";
 import {
+  ENTER_PASSWORD,
+  ENTER_TWO_STEP_CODE,
   emailCodeSendError,
   isTwoStepCheckError,
   secondFactorErrorMessage,
@@ -65,6 +67,8 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Bumped on each validation reject (never a server error) to shake it.
+  const [shakeKey, setShakeKey] = useState(0);
   // Email setup: set once the first code went out (the masked address).
   const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
 
@@ -84,7 +88,15 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
 
   // No try/finally in the handlers: React Compiler cannot lower a `finally`.
   const onConfirmIdentity = async () => {
-    if (busy || !password || (needsFactor && !factor)) return;
+    if (busy) return;
+    // The button stays pressable: an empty field waits for it, then says
+    // what's missing (form-fields spec §5.1, as ConnectAccount does).
+    if (!password || (needsFactor && !factor)) {
+      setError(password ? ENTER_TWO_STEP_CODE : ENTER_PASSWORD);
+      setShakeKey((k) => k + 1);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -149,15 +161,16 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
           </ThemedText>
           <TextInput
             leftIcon="lock"
-            placeholder="Password"
+            label="Password"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
             autoCapitalize="none"
             autoComplete="current-password"
             textContentType="password"
+            returnKeyType="go"
+            onSubmitEditing={() => void onConfirmIdentity()}
             editable={!busy}
-            accessibilityLabel="Password"
           />
           {needsFactor ? (
             <SecondFactorField
@@ -167,10 +180,9 @@ export default function TwoStepSetupScreen({ route, navigation }: Props) {
               emailCode={twoStepEmail}
             />
           ) : null}
-          <InlineError message={error} />
+          <InlineError message={error} shakeKey={shakeKey} />
           <Button
             onPress={() => void onConfirmIdentity()}
-            disabled={!password || (needsFactor && !factor)}
             loading={busy}
             variant={mode === "disable" ? "secondary" : "primary"}
           >

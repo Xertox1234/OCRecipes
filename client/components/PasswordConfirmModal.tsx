@@ -13,7 +13,10 @@ import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
+import * as Haptics from "expo-haptics";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
+import { useHaptics } from "@/hooks/useHaptics";
+import { ENTER_PASSWORD, ENTER_TWO_STEP_CODE } from "@/lib/second-factor-utils";
 import type { SecondFactorInput } from "@shared/types/auth";
 import { useTheme } from "@/hooks/useTheme";
 import { AbsoluteFill, BorderRadius, Spacing } from "@/constants/theme";
@@ -50,9 +53,14 @@ export function PasswordConfirmModal({
 }: PasswordConfirmModalProps) {
   const twoStepEmail = useSignedInEmailCode();
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
+  // This modal's own validation reject; the caller's `error` is the server's.
+  const [rejectError, setRejectError] = useState<string | null>(null);
+  // Bumped on each validation reject (never a server error) to shake it.
+  const [shakeKey, setShakeKey] = useState(0);
 
   // Start clean every time it opens.
   useEffect(() => {
@@ -60,8 +68,24 @@ export function PasswordConfirmModal({
       setPassword("");
       setShowPassword(false);
       setFactor(null);
+      setRejectError(null);
     }
   }, [visible]);
+
+  // The button stays pressable: an empty field waits for it, then says
+  // what's missing (form-fields spec §5.1, as ConnectAccount does).
+  const submit = () => {
+    if (busy) return;
+    if (!password || (askCode && !factor)) {
+      setRejectError(password ? ENTER_TWO_STEP_CODE : ENTER_PASSWORD);
+      setShakeKey((k) => k + 1);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    setRejectError(null);
+    if (askCode && factor) onSubmit(password, factor);
+    else onSubmit(password);
+  };
 
   const cancel = () => {
     if (!busy) onCancel();
@@ -113,16 +137,20 @@ export function PasswordConfirmModal({
                 showPassword ? "Hide password" : "Show password"
               }
               onRightIconPress={() => setShowPassword((s) => !s)}
-              placeholder="Password"
+              label="Password"
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(text) => {
+                setPassword(text);
+                setRejectError(null);
+              }}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
               autoComplete="current-password"
               textContentType="password"
+              returnKeyType="go"
+              onSubmitEditing={submit}
               editable={!busy}
-              accessibilityLabel="Password"
-              error={!!error}
+              error={!!error || rejectError === ENTER_PASSWORD}
             />
             {askCode ? (
               <SecondFactorField
@@ -132,7 +160,7 @@ export function PasswordConfirmModal({
                 emailCode={twoStepEmail}
               />
             ) : null}
-            <InlineError message={error} />
+            <InlineError message={rejectError ?? error} shakeKey={shakeKey} />
             <View style={styles.buttons}>
               <Button
                 variant="secondary"
@@ -142,16 +170,7 @@ export function PasswordConfirmModal({
               >
                 Cancel
               </Button>
-              <Button
-                onPress={() =>
-                  askCode && factor
-                    ? onSubmit(password, factor)
-                    : onSubmit(password)
-                }
-                disabled={!password || (askCode && !factor)}
-                loading={busy}
-                style={styles.flex}
-              >
+              <Button onPress={submit} loading={busy} style={styles.flex}>
                 Continue
               </Button>
             </View>

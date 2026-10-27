@@ -474,6 +474,7 @@ export default function PantryScreen() {
           <View style={styles.addItemRow}>
             <FocusTextInput
               ref={addItemInputRef}
+              label="Add to pantry"
               style={[
                 styles.addItemInput,
                 {
@@ -484,11 +485,10 @@ export default function PantryScreen() {
               ]}
               value={newItemName}
               onChangeText={setNewItemName}
-              placeholder="Add pantry item..."
+              placeholder="e.g. olive oil"
               placeholderTextColor={theme.textSecondary}
               returnKeyType="done"
               onSubmitEditing={handleAddItem}
-              accessibilityLabel="Add pantry item"
             />
             <PressableScale
               onPress={handleAddItem}

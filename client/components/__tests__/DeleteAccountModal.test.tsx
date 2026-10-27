@@ -250,3 +250,47 @@ describe("DeleteAccountModal — two-step verification", () => {
     expect(screen.queryByLabelText("6-digit code")).toBeNull();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("DeleteAccountModal — floating label", () => {
+  it("labels Password in place of the static caption", () => {
+    renderModal({ password: true, google: null, apple: relay });
+    expect(fieldLabels()).toEqual(["Password"]);
+    expect(screen.queryByText("Enter your password to confirm")).toBeNull();
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+  });
+});
+
+// Form-fields spec §5.8: the InlineError announces the message; the
+// password field's hint must not carry it too, or VoiceOver reads it twice.
+describe("DeleteAccountModal — one announcement per error", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("an empty password is announced once, by the alert only", () => {
+    renderModal({ password: true, google: null, apple: null });
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    const input = screen.getByTestId("delete-account-password-input");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Password is required",
+    );
+  });
+
+  it("a wrong password is announced once, by the alert only", async () => {
+    onConfirm.mockRejectedValue(new Error("Invalid credentials"));
+    renderModal({ password: true, google: null, apple: null });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await screen.findByText(/Incorrect password/);
+    const input = screen.getByTestId("delete-account-password-input");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Incorrect password",
+    );
+  });
+});

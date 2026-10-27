@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,13 +14,19 @@ import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
+import { FieldRules } from "@/components/FieldRules";
 import { SecondFactorField } from "@/components/SecondFactorField";
 import { ApiError } from "@/lib/api-error";
 import { useAuthContext } from "@/context/AuthContext";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
+import { passwordRules, rulesVisible } from "@/lib/field-rules";
 import type { ChangePasswordProof } from "@/hooks/useAuth";
 import {
+  ENTER_TWO_STEP_CODE,
   isSecondFactorRequired,
   isTwoStepCheckError,
   normalizeCodeInput,
@@ -30,8 +37,11 @@ import {
   codeRequestErrorMessage,
   forgotOptions,
 } from "./ChangePasswordScreen-utils";
-import { passwordMessage } from "@shared/constants/password-policy";
 import type { SecondFactorInput, SocialProvider } from "@shared/types/auth";
+import {
+  newPasswordProblem,
+  passwordMessage,
+} from "@shared/constants/password-policy";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import { Spacing } from "@/constants/theme";
 
@@ -39,8 +49,6 @@ type Props = NativeStackScreenProps<ProfileStackParamList, "ChangePassword">;
 type Mode = "current" | "forgot" | "code";
 type SaveResult = { done: boolean };
 type ErrorField = "current" | "code" | "new";
-
-const ENTER_AUTH_CODE = "Enter the two-step code we email you.";
 
 /** Which input an error belongs to, so that field is marked invalid. */
 function fieldFor(err: unknown): ErrorField | null {
@@ -62,12 +70,41 @@ function fieldFor(err: unknown): ErrorField | null {
 export default function ChangePasswordScreen({ route, navigation }: Props) {
   const { hasPassword, providers, mfaEnabled } = route.params;
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const { changePassword, requestPasswordChangeCode } = useAuthContext();
   const twoStepEmail = useSignedInEmailCode();
   const [mode, setMode] = useState<Mode>(hasPassword ? "current" : "forgot");
-  const [current, setCurrent] = useState("");
-  const [emailCode, setEmailCode] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  // An empty field would go to the server and come back as a bare 400 that
+  // reads "Something went wrong" — say which field instead. Flagged by Save
+  // (empty fields wait for the button — form-fields spec §5.1); a flagged
+  // field clears as soon as it is filled. The new password is also checked
+  // against the password policy on leaving it with text, as on sign-up and
+  // reset.
+  const currentField = useFieldValidation((value) =>
+    value ? null : "Enter your current password.",
+  );
+  const codeField = useFieldValidation((value) =>
+    value ? null : "Enter the code from the email.",
+  );
+  const newField = useFieldValidation((value) => {
+    if (!value) return "Enter a new password.";
+    const problem = newPasswordProblem(value);
+    return problem ? passwordMessage(problem) : null;
+  });
+  // Each field's message is announced by the InlineError under it; the field
+  // takes only `error` (colour, invalid mark), never the same text as
+  // `errorMessage`, or VoiceOver reads it twice (spec §5.8).
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: currentRef } = currentField;
+  const { ref: codeRef } = codeField;
+  const { ref: newRef } = newField;
+  const current = currentField.value;
+  const emailCode = codeField.value;
+  const newPassword = newField.value;
+  // The live checklist under the new password (spec §5.2). Once the field's
+  // own error says what is wrong, the checklist hides its unmet line.
+  const newChecklist = passwordRules(newPassword);
   // Two-step on: ask for the code with the first submit (the server would
   // otherwise refuse it — and an emailed-code guess would be spent finding out).
   const [needsFactor, setNeedsFactor] = useState(mfaEnabled);
@@ -75,6 +112,9 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<ErrorField | null>(null);
   const [busy, setBusy] = useState(false);
+  // Bumped on each form-level validation reject (never a server error) to
+  // shake that message; field rejects shake through each field's shakeKey.
+  const [shakeKey, setShakeKey] = useState(0);
   // A ref, not state: a second tap in the same frame must see it.
   const busyRef = useRef(false);
 
@@ -97,10 +137,11 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
 
   // Outside the try (React Compiler: no conditionals inside a try).
   const handleSaveError = (err: unknown) => {
+    haptics.notification(Haptics.NotificationFeedbackType.Error);
     if (isSecondFactorRequired(err)) {
       setNeedsFactor(true);
       setErrorField(null);
-      setError(ENTER_AUTH_CODE);
+      setError(ENTER_TWO_STEP_CODE);
       return;
     }
     setErrorField(fieldFor(err));
@@ -115,33 +156,32 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
     navigation.goBack();
   };
 
-  // An empty field would go to the server and come back as a bare 400 that
-  // reads "Something went wrong" — say which field instead. A Google/Apple
-  // proof needs only the new password, so this also keeps that sheet shut.
-  const missingField = (
-    provider?: SocialProvider,
-  ): { field: ErrorField; message: string } | null => {
-    if (!provider && mode === "current" && !current)
-      return { field: "current", message: "Enter your current password." };
-    if (!provider && mode === "code" && !emailCode)
-      return { field: "code", message: "Enter the code from the email." };
-    if (!newPassword) return { field: "new", message: "Enter a new password." };
-    return null;
-  };
-
   const save = async (provider?: SocialProvider) => {
     if (busyRef.current) return;
-    const missing = missingField(provider);
-    if (missing) {
-      setErrorField(missing.field);
-      setError(missing.message);
+    // A Google/Apple proof needs only the new password, so this also keeps
+    // that sheet shut while it is empty.
+    const fields = provider
+      ? [newField]
+      : mode === "code"
+        ? [codeField, newField]
+        : mode === "current"
+          ? [currentField, newField]
+          : [newField];
+    if (!focusFirstInvalid(fields)) {
+      // The field messages say what's missing (each shakes via its own
+      // shakeKey); drop a stale server message.
+      setErrorField(null);
+      setError(null);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
     // Never send without the two-step code once it's asked for: the server
     // would refuse, and a guess at the code would be spent on it.
     if (!provider && factorNeeded && !factor) {
       setErrorField(null);
-      setError(ENTER_AUTH_CODE);
+      setError(ENTER_TWO_STEP_CODE);
+      setShakeKey((k) => k + 1);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
     busyRef.current = true;
@@ -195,12 +235,23 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             <TextInput
               accessibilityLabel="Current password"
               label="Current password"
+              ref={currentRef}
               value={current}
-              onChangeText={setCurrent}
-              error={errorField === "current"}
+              onChangeText={currentField.onChangeText}
+              onBlur={currentField.onBlur}
+              editable={!busy}
+              error={!!currentField.error || errorField === "current"}
               secureTextEntry
               autoCapitalize="none"
               autoComplete="current-password"
+              returnKeyType="next"
+              // Keep the keyboard up while focus moves on (spec §5.6).
+              submitBehavior="submit"
+              onSubmitEditing={() => newRef.current?.focus()}
+            />
+            <InlineError
+              message={currentField.error}
+              shakeKey={currentField.shakeKey}
             />
             <Pressable
               accessibilityRole="button"
@@ -221,11 +272,24 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
               accessibilityLabel="Code from the email"
               label="Code from the email"
               placeholder="6-digit code"
+              ref={codeRef}
               value={emailCode}
-              onChangeText={(t) => setEmailCode(normalizeCodeInput(t))}
-              error={errorField === "code"}
+              onChangeText={(t) =>
+                codeField.onChangeText(normalizeCodeInput(t))
+              }
+              onBlur={codeField.onBlur}
+              editable={!busy}
+              error={!!codeField.error || errorField === "code"}
               keyboardType="number-pad"
               autoComplete="one-time-code"
+              returnKeyType="next"
+              // Keep the keyboard up while focus moves on (spec §5.6).
+              submitBehavior="submit"
+              onSubmitEditing={() => newRef.current?.focus()}
+            />
+            <InlineError
+              message={codeField.error}
+              shakeKey={codeField.shakeKey}
             />
             <Pressable
               accessibilityRole="button"
@@ -240,19 +304,39 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
           </View>
         ) : null}
 
-        <TextInput
-          accessibilityLabel="New password"
-          label="New password"
-          value={newPassword}
-          onChangeText={setNewPassword}
-          error={errorField === "new"}
-          secureTextEntry
-          autoCapitalize="none"
-          autoComplete="new-password"
-        />
-        <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          {passwordMessage("too_short")}
-        </ThemedText>
+        {/* No form gap between a field and its checklist. */}
+        <View>
+          <TextInput
+            accessibilityLabel="New password"
+            label="New password"
+            ref={newRef}
+            value={newPassword}
+            onChangeText={newField.onChangeText}
+            onFocus={newField.onFocus}
+            onBlur={newField.onBlur}
+            editable={!busy}
+            error={!!newField.error || errorField === "new"}
+            secureTextEntry
+            autoCapitalize="none"
+            autoComplete="new-password"
+            // The last field: Go saves through the button's own checks. With
+            // no Save button (forgot mode) Return just closes the keyboard.
+            returnKeyType={mode === "forgot" ? "done" : "go"}
+            onSubmitEditing={mode === "forgot" ? undefined : () => void save()}
+          />
+          <FieldRules
+            rules={newChecklist}
+            visible={rulesVisible({
+              focused: newField.focused,
+              checked: newField.checked,
+              rules: newChecklist,
+            })}
+            checked={newField.checked}
+            // The server's too-short refusal lands as this field's error too.
+            hideUnmet={newField.error !== null || errorField === "new"}
+          />
+        </View>
+        <InlineError message={newField.error} shakeKey={newField.shakeKey} />
 
         {factorNeeded && mode !== "forgot" ? (
           <SecondFactorField
@@ -262,7 +346,9 @@ export default function ChangePasswordScreen({ route, navigation }: Props) {
             emailCode={twoStepEmail}
           />
         ) : null}
-        {error ? <InlineError message={error} /> : null}
+        {/* Always mounted: InlineError shakes on a shakeKey change, which a
+            message view mounted by the same reject would never see. */}
+        <InlineError message={error} shakeKey={shakeKey} />
 
         {mode === "forgot" ? (
           <View style={styles.group}>

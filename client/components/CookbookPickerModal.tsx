@@ -287,6 +287,7 @@ export function CookbookPickerModal({
         {showNewInput ? (
           <View style={[styles.newInputRow, { borderTopColor: theme.border }]}>
             <FocusTextInput
+              label="Cookbook name"
               style={[
                 styles.newInput,
                 {
@@ -297,12 +298,11 @@ export function CookbookPickerModal({
               ]}
               value={newName}
               onChangeText={setNewName}
-              placeholder="Cookbook name (optional)"
+              placeholder="Optional, e.g. Weeknight dinners"
               placeholderTextColor={theme.textSecondary}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={handleCreateAndAdd}
-              accessibilityLabel="New cookbook name"
             />
             <Pressable
               onPress={handleCreateAndAdd}

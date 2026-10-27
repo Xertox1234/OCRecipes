@@ -10,8 +10,12 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
 import { InlineError } from "@/components/InlineError";
+import { FieldRules } from "@/components/FieldRules";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
+import { confirmRules, passwordRules, rulesVisible } from "@/lib/field-rules";
 import { Spacing } from "@/constants/theme";
 import { ApiError } from "@/lib/api-error";
 import { RESET_CODE_LENGTH } from "@shared/constants/password-reset";
@@ -20,7 +24,9 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
   type ResetFormField,
   normalizeResetCode,
-  validateResetForm,
+  resetCodeError,
+  resetPasswordError,
+  resetConfirmError,
   getResetErrorMessage,
   resendSecondsRemaining,
   resetPasswordRequest,
@@ -47,19 +53,32 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
   const haptics = useHaptics();
   const email = route.params.email;
 
-  const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  // Each field is checked on leaving it with text or on Reset password
+  // (form-fields spec §5.1). The confirm check reads the password's latest
+  // value, so it re-checks when the password changes.
+  const code = useFieldValidation(resetCodeError);
+  const password = useFieldValidation(resetPasswordError);
+  const confirm = useFieldValidation((value) =>
+    resetConfirmError(value, password.value),
+  );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: codeRef } = code;
+  const { ref: passwordRef } = password;
+  const { ref: confirmRef } = confirm;
   const [showPassword, setShowPassword] = useState(false);
+  // Server/flow errors only; each field shows its own validation message.
   const [error, setError] = useState("");
-  // Bumped on each validation reject (not server errors) to shake the error.
-  const [shakeKey, setShakeKey] = useState(0);
   const [errorField, setErrorField] = useState<ResetFormField | null>(null);
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   // The code was just sent by ForgotPassword, so the cooldown starts now.
   const [lastSentAt, setLastSentAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
+
+  // The live checklist under each new-password field (spec §5.2).
+  const passwordChecklist = passwordRules(password.value);
+  const confirmChecklist = confirmRules(password.value, confirm.value);
 
   const secondsLeft = resendSecondsRemaining(lastSentAt, now);
   useEffect(() => {
@@ -72,11 +91,8 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
     if (busy) return;
     setError("");
     setErrorField(null);
-    const invalid = validateResetForm({ code, password, confirmPassword });
-    if (invalid) {
-      setError(invalid.message);
-      setErrorField(invalid.field);
-      setShakeKey((k) => k + 1);
+    if (!focusFirstInvalid([code, password, confirm])) {
+      // Each invalid field's InlineError shakes via its own shakeKey.
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -85,7 +101,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
     // this component (scripts/check-react-compiler-bailouts.js), so `busy` is
     // reset on each path instead.
     try {
-      await resetPasswordRequest(email, code, password);
+      await resetPasswordRequest(email, code.value, password.value);
       setBusy(false);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.reset({
@@ -149,9 +165,12 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
         <View style={styles.form}>
           <TextInput
             leftIcon="hash"
-            placeholder="6-digit code"
-            value={code}
-            onChangeText={(v) => setCode(normalizeResetCode(v))}
+            label="6-digit code"
+            placeholder="123456"
+            ref={codeRef}
+            value={code.value}
+            onChangeText={(v) => code.onChangeText(normalizeResetCode(v))}
+            onBlur={code.onBlur}
             keyboardType="number-pad"
             textContentType="oneTimeCode"
             autoComplete="one-time-code"
@@ -159,54 +178,93 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
             // normalizeResetCode strips the separator.
             maxLength={RESET_CODE_LENGTH + 2}
             editable={!busy}
-            error={errorField === "code"}
-            errorMessage={errorField === "code" ? error : undefined}
+            // Messages are announced by the InlineErrors below — never also
+            // as a field's errorMessage, or VoiceOver reads them twice.
+            error={!!code.error || errorField === "code"}
+            returnKeyType="next"
+            // Keep the keyboard up while focus moves on (spec §5.6).
+            submitBehavior="submit"
+            onSubmitEditing={() => passwordRef.current?.focus()}
             testID="input-reset-code"
-            accessibilityLabel="6-digit code"
             accessibilityHint="Enter the code from the email"
           />
-          <TextInput
-            leftIcon="lock"
-            rightIcon={showPassword ? "eye-off" : "eye"}
-            rightIconAccessibilityLabel={
-              showPassword ? "Hide password" : "Show password"
-            }
-            onRightIconPress={() => setShowPassword(!showPassword)}
-            placeholder="New password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            textContentType="newPassword"
-            autoComplete="new-password"
-            passwordRules={RESET_PASSWORD_RULES}
-            editable={!busy}
-            error={errorField === "password"}
-            errorMessage={errorField === "password" ? error : undefined}
-            testID="input-reset-password"
-            accessibilityLabel="New password"
-            accessibilityHint={`At least ${PASSWORD_MIN} characters`}
-          />
-          <TextInput
-            leftIcon="lock"
-            placeholder="Confirm new password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            textContentType="newPassword"
-            autoComplete="new-password"
-            passwordRules={RESET_PASSWORD_RULES}
-            returnKeyType="go"
-            onSubmitEditing={onSubmit}
-            editable={!busy}
-            error={errorField === "confirm"}
-            errorMessage={errorField === "confirm" ? error : undefined}
-            testID="input-reset-confirm"
-            accessibilityLabel="Confirm new password"
-            accessibilityHint="Re-enter the new password"
-          />
-          <InlineError message={error} shakeKey={shakeKey} />
+          <InlineError message={code.error} shakeKey={code.shakeKey} />
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="lock"
+              rightIcon={showPassword ? "eye-off" : "eye"}
+              rightIconAccessibilityLabel={
+                showPassword ? "Hide password" : "Show password"
+              }
+              onRightIconPress={() => setShowPassword(!showPassword)}
+              label="New password"
+              ref={passwordRef}
+              value={password.value}
+              onChangeText={password.onChangeText}
+              onFocus={password.onFocus}
+              onBlur={password.onBlur}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              textContentType="newPassword"
+              autoComplete="new-password"
+              passwordRules={RESET_PASSWORD_RULES}
+              editable={!busy}
+              error={!!password.error}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => confirmRef.current?.focus()}
+              testID="input-reset-password"
+              accessibilityHint={`At least ${PASSWORD_MIN} characters`}
+            />
+            <FieldRules
+              rules={passwordChecklist}
+              visible={rulesVisible({
+                focused: password.focused,
+                checked: password.checked,
+                rules: passwordChecklist,
+              })}
+              checked={password.checked}
+              hideUnmet={password.error !== null}
+            />
+          </View>
+          <InlineError message={password.error} shakeKey={password.shakeKey} />
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="lock"
+              label="Confirm new password"
+              ref={confirmRef}
+              value={confirm.value}
+              onChangeText={confirm.onChangeText}
+              onFocus={confirm.onFocus}
+              onBlur={confirm.onBlur}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              textContentType="newPassword"
+              autoComplete="new-password"
+              passwordRules={RESET_PASSWORD_RULES}
+              returnKeyType="go"
+              onSubmitEditing={onSubmit}
+              editable={!busy}
+              error={!!confirm.error}
+              testID="input-reset-confirm"
+              accessibilityHint="Re-enter the new password"
+            />
+            <FieldRules
+              rules={confirmChecklist}
+              visible={rulesVisible({
+                focused: confirm.focused,
+                checked: confirm.checked,
+                rules: confirmChecklist,
+              })}
+              checked={confirm.checked}
+              hideUnmet={confirm.error !== null}
+            />
+          </View>
+          <InlineError message={confirm.error} shakeKey={confirm.shakeKey} />
+          {/* Server and resend errors; field messages sit under each field. */}
+          <InlineError message={error} />
           <Button
             onPress={onSubmit}
             loading={busy}

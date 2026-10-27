@@ -12,9 +12,10 @@
 // source of `useHeaderHeight`) are globally aliased (vitest.config.mts) —
 // only navigation/route and the screen's own data hook need a local mock.
 import React from "react";
-import { screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import PhotoAnalysisScreen from "../PhotoAnalysisScreen";
 import { FadeInUp } from "react-native-reanimated";
 import { listStaggerMaxIndex } from "@/constants/animations";
@@ -188,5 +189,83 @@ describe("PhotoAnalysisScreen — capped card entrance", () => {
     ].sort((a, b) => a - b);
     expect(delays).toEqual(expected);
     delaySpy.mockRestore();
+  });
+});
+
+describe("PhotoAnalysisScreen — edit field labels", () => {
+  it('floats "Food" and "Quantity" on the edit fields, with example placeholders', () => {
+    const foods = [
+      { name: "Rice", quantity: "1 cup", confidence: 0.9, nutrition: null },
+    ];
+    mockUsePhotoAnalysis.mockReturnValue({
+      isAnalyzing: false,
+      loadingText: "",
+      analysisResult: { foods, overallConfidence: 0.9 },
+      showNutrition: true,
+      foods,
+      selectedFoods: foods,
+      selectedItems: new Set(),
+      prepMethods: {},
+      prepLoading: {},
+      totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      error: null,
+      BeverageSheet: () => null,
+      haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
+    });
+    renderComponent(<PhotoAnalysisScreen />);
+    fireEvent.click(screen.getByLabelText("Edit food item"));
+
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toEqual(expect.arrayContaining(["Food", "Quantity"]));
+    // "Food name" keeps the visible label inside the accessible name.
+    const name = screen.getByLabelText("Food name");
+    const quantity = screen.getByLabelText("Quantity");
+    fireEvent.change(name, { target: { value: "" } });
+    fireEvent.focus(name);
+    expect(name.getAttribute("placeholder")).toBe("e.g. grilled chicken");
+    fireEvent.focus(quantity);
+    expect(quantity.getAttribute("placeholder")).toBe("e.g. 1 cup or 200 g");
+  });
+});
+
+describe("PhotoAnalysisScreen — follow-up Return key", () => {
+  it("Done on the multiline answer submits it", () => {
+    const handleFollowUpAnswer = vi.fn();
+    mockUsePhotoAnalysis.mockReturnValue({
+      isAnalyzing: false,
+      loadingText: "",
+      analysisResult: {
+        foods: [],
+        overallConfidence: 0.5,
+        followUpQuestions: ["How was it cooked?"],
+      },
+      showFollowUp: true,
+      followUpIndex: 0,
+      handleFollowUpAnswer,
+      handleSkipFollowUp: vi.fn(),
+      foods: [],
+      selectedFoods: [],
+      selectedItems: new Set(),
+      prepMethods: {},
+      prepLoading: {},
+      totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      error: null,
+      BeverageSheet: () => null,
+      haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
+    });
+    renderComponent(<PhotoAnalysisScreen />);
+    const input = screen.getByLabelText("Follow-up question about food");
+    fireEvent.change(input, { target: { value: "Grilled" } });
+    const props = reactProps(input);
+    // Without it a multiline field turns Return into a line break.
+    expect(props.submitBehavior).toBe("blurAndSubmit");
+    act(() => {
+      (props.onSubmitEditing as () => void)();
+    });
+    expect(handleFollowUpAnswer).toHaveBeenCalledWith(
+      "How was it cooked?",
+      "Grilled",
+    );
   });
 });

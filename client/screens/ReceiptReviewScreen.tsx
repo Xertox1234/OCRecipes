@@ -47,6 +47,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { parseDecimalInput } from "@/lib/number-input";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -93,6 +94,9 @@ export default function ReceiptReviewScreen() {
   const confirmMutation = useReceiptConfirm();
 
   const [items, setItems] = useState<EditableItem[]>([]);
+  // Text the person is typing in each quantity box, keyed by item id. Absent
+  // = show the committed quantity. Lets "1." and "" survive mid-edit.
+  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [isPartial, setIsPartial] = useState(false);
   const [showMealPlanPrompt, setShowMealPlanPrompt] = useState(false);
   const [showUpdatedToast, setShowUpdatedToast] = useState(false);
@@ -195,14 +199,25 @@ export default function ReceiptReviewScreen() {
   }, []);
 
   const handleUpdateQuantity = useCallback((id: string, qty: string) => {
-    const num = parseFloat(qty);
-    if (!isNaN(num) && num >= 0) {
+    setQtyDrafts((prev) => ({ ...prev, [id]: qty }));
+    const num = parseDecimalInput(qty);
+    if (num !== null && num >= 0) {
       setItems((prev) =>
         prev.map((item) =>
           item.id === id ? { ...item, quantity: num } : item,
         ),
       );
     }
+  }, []);
+
+  // Drop the draft so the box shows the committed quantity again (restores an
+  // emptied or rejected draft; normalises "1." to "1").
+  const handleQuantityBlur = useCallback((id: string) => {
+    setQtyDrafts((prev) => {
+      if (!(id in prev)) return prev;
+      const { [id]: _dropped, ...rest } = prev;
+      return rest;
+    });
   }, []);
 
   const handleConfirm = useCallback(() => {
@@ -269,11 +284,24 @@ export default function ReceiptReviewScreen() {
                     borderColor: withOpacity(theme.text, 0.15),
                   },
                 ]}
-                value={String(item.quantity)}
+                value={qtyDrafts[item.id] ?? String(item.quantity)}
                 onChangeText={(text) => handleUpdateQuantity(item.id, text)}
+                onBlur={() => handleQuantityBlur(item.id)}
                 keyboardType="numeric"
-                accessibilityLabel={`Quantity for ${item.name}`}
+                // No floating label here, so the name carries the unit.
+                accessibilityLabel={`Quantity for ${item.name}, ${item.unit}`}
               />
+              {/* The unit is always visible right after the box (spec §5.4);
+                  the box's name already says it, so it is not read twice. */}
+              <ThemedText
+                type="small"
+                style={{ color: theme.textSecondary }}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                testID={`receipt-qty-unit-${item.name}`}
+              >
+                {item.unit}
+              </ThemedText>
 
               <View
                 style={[
@@ -311,6 +339,8 @@ export default function ReceiptReviewScreen() {
       handleRemoveItem,
       handleUpdateName,
       handleUpdateQuantity,
+      handleQuantityBlur,
+      qtyDrafts,
     ],
   );
 
@@ -609,9 +639,14 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: Spacing.sm,
   },
+  // Rounded at rest-invisible field shape so the focus ring follows a radius;
+  // the inset is cancelled by the negative margin so the text does not move.
   itemName: {
     fontSize: 15,
     fontFamily: FontFamily.medium,
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 4,
+    marginHorizontal: -4,
   },
   originalName: {
     fontSize: 12,

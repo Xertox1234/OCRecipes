@@ -18,11 +18,11 @@
  *    we must never render `error.message` (it is the raw server body) — branch
  *    on `ApiError.code` instead.
  *
- * KEEP IN SYNC (manual): the username/email rules below mirror
- * `registerSchema`. If the server schema changes, update both. They are
+ * KEEP IN SYNC (manual): the email rule below mirrors `registerSchema`. It is
  * intentionally NOT shared from the server module, which pulls in server-only
- * imports. The PASSWORD rule is not mirrored: it is imported from
- * `@shared/constants/password-policy`, the same module the server uses.
+ * imports. The USERNAME and PASSWORD rules are not mirrored: they are imported
+ * from `@shared/constants/username` and `@shared/constants/password-policy`,
+ * the same modules the server uses.
  */
 import { ApiError } from "@/lib/api-error";
 import {
@@ -31,16 +31,16 @@ import {
   newPasswordProblem,
   passwordMessage,
 } from "@shared/constants/password-policy";
+import {
+  USERNAME_MAX,
+  USERNAME_MIN,
+  USERNAME_PATTERN,
+} from "@shared/constants/username";
 
 export type AuthMode = "login" | "register";
 
-// Mirrors registerSchema.username: 3–30 chars, letters/numbers/underscore only.
-const USERNAME_PATTERN = /^[a-zA-Z0-9_]+$/;
 // Pragmatic client mirror of registerSchema.email (server re-validates, zero trust).
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const USERNAME_MIN = 3;
-const USERNAME_MAX = 30;
 
 /** Exported so the reset screen can tell a mismatch (confirm field) apart. */
 export const PASSWORD_MISMATCH_MESSAGE = "Passwords do not match";
@@ -49,8 +49,10 @@ export const BREACHED_PASSWORD_MESSAGE =
   "That password has appeared in a data breach. Choose a different one.";
 
 /**
- * New-password check shared by sign-up and the reset screen: length
- * (counted in characters, no composition rule), then the match.
+ * Sign-up's new-password check inside `validateAuthForm`: length (counted in
+ * characters, no composition rule), then the match with the confirm field.
+ * The password and confirm fields show their own messages through
+ * `useFieldValidation` first, so this only backs them up.
  */
 export function validateNewPassword(
   password: string,
@@ -80,7 +82,10 @@ export function registerPasswordRules(): string {
   return `minlength: ${PASSWORD_MIN}; maxlength: ${PASSWORD_MAX};`;
 }
 
-/** The hint under the sign-up password field. */
+/**
+ * The sign-up password field's `accessibilityHint` (the visible rules are the
+ * live checklist under the field).
+ */
 export function registerPasswordHint(): string {
   return `At least ${PASSWORD_MIN} characters.`;
 }
@@ -102,9 +107,12 @@ export function validateUsername(username: string): string | null {
 
 /**
  * Returns a static, user-facing message for the FIRST failing rule, or null
- * when the input passes client-side checks. Login is intentionally lenient
- * (only "fields present") — the server is the authority and a generic failure
- * avoids a username-enumeration oracle.
+ * when the input passes client-side checks. LoginScreen runs it after the
+ * per-field checks pass, as a second guard over the whole form; in practice
+ * its message (shown in the form-level InlineError) is the sign-up age
+ * confirmation. Login is intentionally lenient (only "fields present") — the
+ * server is the authority and a generic failure avoids a username-enumeration
+ * oracle.
  */
 export function validateAuthForm(input: AuthFormInput): string | null {
   const username = input.username.trim();
@@ -139,21 +147,23 @@ export function validateAuthForm(input: AuthFormInput): string | null {
 }
 
 /**
- * Per-field validation errors. Currently only the email field is attributed,
- * which is all the email `TextInput` needs to set `aria-invalid` on itself
- * (the form-level banner still uses `validateAuthForm`). `email` is `null` when
- * the email field is valid or not applicable to the current mode.
+ * Per-field validation errors. Only the email field is attributed here — the
+ * username and password fields carry their own checks in LoginScreen. `email`
+ * is `null` when the email field is valid or not shown in the current mode.
  */
 export interface AuthFieldErrors {
   email: string | null;
 }
 
 /**
- * Field-attributed validation, used to set `error`/`errorMessage` (and thus
- * `aria-invalid`) on individual inputs. Login stays LENIENT — in login mode the
- * email field is not shown, so this never produces an email error and never
- * introduces a username-enumeration oracle. The email rules MIRROR the
- * email checks in `validateAuthForm` above (KEEP IN SYNC, same `EMAIL_PATTERN`).
+ * The sign-up email field's check: LoginScreen's `useFieldValidation` for the
+ * email field runs it, shows the message in the InlineError under the field
+ * and sets only `error` (colour, `aria-invalid`) on the input — never
+ * `errorMessage`, or VoiceOver would read it twice. Login stays LENIENT — in
+ * login mode the email field is not shown, so this never produces an email
+ * error and never introduces a username-enumeration oracle. The email rules
+ * MIRROR the email checks in `validateAuthForm` above (KEEP IN SYNC, same
+ * `EMAIL_PATTERN`).
  */
 export function validateAuthFormFields(input: AuthFormInput): AuthFieldErrors {
   if (input.mode === "login") {

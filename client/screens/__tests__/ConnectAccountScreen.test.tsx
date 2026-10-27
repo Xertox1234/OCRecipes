@@ -77,12 +77,22 @@ describe("ConnectAccountScreen — shake on validation reject", () => {
     expect(mockLinkWithPassword).not.toHaveBeenCalled();
   });
 
+  it("puts the error in the accessibility tree once, not also in the field's hint", () => {
+    renderScreen();
+    fireEvent.click(screen.getByText("Connect and sign in"));
+    const input = screen.getByLabelText("Password");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    const msg = "Please enter your password.";
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(msg);
+  });
+
   it("a server error buzzes once but does not shake", async () => {
     mockLinkWithPassword.mockRejectedValue(
       new ApiError("x", "UNAUTHORIZED", 401),
     );
     renderScreen();
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
+    fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: "pw" },
     });
     fireEvent.click(screen.getByText("Connect and sign in"));
@@ -113,5 +123,17 @@ describe("ConnectAccountScreen — two-step verification", () => {
         purpose: "link",
       }),
     );
+  });
+});
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ConnectAccountScreen — floating labels", () => {
+  it("floats Password with no repeated placeholder", () => {
+    renderScreen();
+    expect(fieldLabels()).toEqual(["Password"]);
+    fireEvent.focus(screen.getByLabelText("Password"));
+    expect(screen.queryByPlaceholderText("Password")).toBeNull();
   });
 });

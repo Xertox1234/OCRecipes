@@ -26,7 +26,7 @@ env:
 - tapOn: "Recipes"
 - extendedWaitUntil:
     visible:
-      text: "Search recipes..."
+      text: "Search recipes"
     timeout: 5000
 
 # Tap Create button

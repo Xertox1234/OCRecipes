@@ -74,6 +74,21 @@ describe("ForgotPasswordScreen", () => {
     ).toBeGreaterThan(0);
   });
 
+  // Single announcement: the InlineError below the field says it; the field
+  // only turns red, so VoiceOver does not read the message twice.
+  it("puts the error in the accessibility tree once, not also in the field's hint", () => {
+    renderScreen();
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "nope" },
+    });
+    fireEvent.click(screen.getByText("Send code"));
+    const msg = "Please enter a valid email address.";
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    const input = screen.getByLabelText("Email");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(msg);
+  });
+
   // #44: the red border and message used to stay after the email was fixed,
   // until the next tap of Send code.
   it("clears the error as soon as the email is edited", () => {
@@ -173,5 +188,57 @@ describe("ForgotPasswordScreen — shake on validation reject", () => {
       ),
     );
     expect(withSequenceSpy).not.toHaveBeenCalled();
+  });
+});
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ForgotPasswordScreen — floating labels", () => {
+  it("floats Email as the field name, with no repeated placeholder", () => {
+    renderScreen();
+    expect(fieldLabels()).toEqual(["Email"]);
+    fireEvent.focus(screen.getByLabelText("Email"));
+    expect(screen.queryByPlaceholderText("Email")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; an empty field is flagged (and focused) by Send code.
+describe("ForgotPasswordScreen — validation timing", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const MESSAGE = "Please enter a valid email address.";
+
+  it("shows no error while an invalid email is typed, and shows it on leaving", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Email");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "nope" } });
+    expect(screen.queryAllByText(MESSAGE)).toHaveLength(0);
+    expect(input.getAttribute("aria-invalid")).not.toBe("true");
+
+    fireEvent.blur(input);
+    expect(screen.getAllByText(MESSAGE).length).toBeGreaterThan(0);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("leaving the email empty shows nothing", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Email");
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    expect(input.getAttribute("aria-invalid")).not.toBe("true");
+  });
+
+  it("Send code with an empty email flags the field and moves focus to it", () => {
+    renderScreen();
+    fireEvent.click(screen.getByText("Send code"));
+    const input = screen.getByLabelText("Email");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(input);
+    expect(
+      screen.getAllByText("Please enter your email address.").length,
+    ).toBeGreaterThan(0);
+    expect(mockRequestResetCode).not.toHaveBeenCalled();
   });
 });

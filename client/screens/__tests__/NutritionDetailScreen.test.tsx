@@ -2003,3 +2003,23 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     expect(root!.children[1]).toBe(getByTestId("log-action-bar"));
   });
 });
+
+describe("NutritionDetailScreen — manual search label", () => {
+  it('floats "Search products" on the manual search field and names the input with it', () => {
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({}),
+      showManualSearch: true,
+    });
+    const { getAllByTestId, getByLabelText } = renderComponent(
+      <NutritionDetailScreen />,
+    );
+    expect(
+      getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Search products");
+    const input = getByLabelText("Search products");
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe(
+      "e.g. coffee whitener, granola bar...",
+    );
+  });
+});

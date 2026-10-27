@@ -104,3 +104,91 @@ describe("ServingControls — serving chip haptics", () => {
     },
   );
 });
+
+describe("ServingControls — custom grams say why they refuse a value", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function renderCustom(customGramsInput: string) {
+    const setServingSizeGrams = vi.fn();
+    const recalculateNutrition = vi.fn();
+    renderComponent(
+      <ServingControls
+        {...baseProps}
+        showCustomInput
+        customGramsInput={customGramsInput}
+        setServingSizeGrams={setServingSizeGrams}
+        recalculateNutrition={recalculateNutrition}
+      />,
+    );
+    const input = screen.getByLabelText("Custom serving size in grams");
+    fireEvent.blur(input);
+    return { setServingSizeGrams, recalculateNutrition };
+  }
+
+  it.each(["0", "abc", "."])(
+    "refuses %j with a message and an error buzz",
+    (text) => {
+      const { setServingSizeGrams } = renderCustom(text);
+      expect(screen.getByText("Enter an amount above 0 g")).toBeTruthy();
+      expect(setServingSizeGrams).not.toHaveBeenCalled();
+      expect(Haptics.notificationAsync).toHaveBeenCalledExactlyOnceWith(
+        Haptics.NotificationFeedbackType.Error,
+      );
+    },
+  );
+
+  it("puts the message in the accessibility tree once, not also in the field's hint", () => {
+    renderCustom("0");
+    const msg = "Enter an amount above 0 g";
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    const input = screen.getByLabelText("Custom serving size in grams");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(msg);
+  });
+
+  it("accepts a comma decimal", () => {
+    const { setServingSizeGrams, recalculateNutrition } = renderCustom("12,5");
+    expect(setServingSizeGrams).toHaveBeenCalledWith(12.5);
+    expect(recalculateNutrition).toHaveBeenCalledWith(12.5, 1);
+    expect(screen.queryByText("Enter an amount above 0 g")).toBeNull();
+  });
+
+  it("leaves an empty field alone", () => {
+    const { setServingSizeGrams } = renderCustom("");
+    expect(setServingSizeGrams).not.toHaveBeenCalled();
+    expect(screen.queryByText("Enter an amount above 0 g")).toBeNull();
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+  });
+});
+
+// Follow-up from Task 11 review: a refused amount stayed in state while the
+// custom field was hidden, and came back when Custom was tapped again.
+describe("ServingControls — hiding the custom field drops its message", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function Harness() {
+    const [show, setShow] = React.useState(true);
+    return (
+      <ServingControls
+        {...baseProps}
+        showCustomInput={show}
+        setShowCustomInput={setShow}
+        customGramsInput="0"
+      />
+    );
+  }
+
+  it("a preset chip hides the field and its message; reopening starts clean", () => {
+    renderComponent(<Harness />);
+    fireEvent.blur(screen.getByLabelText("Custom serving size in grams"));
+    expect(screen.getByText("Enter an amount above 0 g")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Set serving to 1 cup"));
+    expect(screen.queryByLabelText("Custom serving size in grams")).toBeNull();
+    expect(screen.queryByText("Enter an amount above 0 g")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Enter custom serving size"));
+    expect(screen.getByLabelText("Custom serving size in grams")).toBeTruthy();
+    expect(screen.queryByText("Enter an amount above 0 g")).toBeNull();
+  });
+});

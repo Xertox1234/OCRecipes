@@ -8,6 +8,13 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import {
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
@@ -37,6 +44,11 @@ import { safeGoBack } from "@/navigation/safeGoBack";
 
 const MAX_PINNED = 3;
 
+const SEARCH_LABEL = "Search conversations";
+const SEARCH_ICON_SIZE = 16;
+// The search bar's text starts past its left padding, the icon and the gap.
+const SEARCH_LABEL_LEFT = Spacing.sm + SEARCH_ICON_SIZE + Spacing.xs;
+
 type ChatSegment = "coach" | "recipe";
 
 function formatRelativeDate(dateStr: string): string {
@@ -60,6 +72,7 @@ export default function AllConversationsScreen() {
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const [search, setSearch] = useState("");
+  const searchFocus = useFieldFocus();
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   useEffect(() => {
@@ -315,7 +328,11 @@ export default function AllConversationsScreen() {
         })}
       </View>
 
-      <View
+      <FocusField
+        focus={searchFocus}
+        label={SEARCH_LABEL}
+        hasValue={search.length > 0}
+        labelLeft={SEARCH_LABEL_LEFT}
         style={[
           styles.searchBar,
           { backgroundColor: theme.backgroundSecondary },
@@ -323,20 +340,28 @@ export default function AllConversationsScreen() {
       >
         <Feather
           name="search"
-          size={16}
+          size={SEARCH_ICON_SIZE}
           color={theme.textSecondary}
           accessible={false}
         />
         <FocusTextInput
+          focusRing={false}
+          onFocus={searchFocus.onFocus}
+          onBlur={searchFocus.onBlur}
           style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Search conversations…"
+          // The label rests where the placeholder would; it shows once floated.
+          placeholder={resolvePlaceholder(
+            SEARCH_LABEL,
+            "e.g. meal prep",
+            shouldFloatLabel(searchFocus.focused, search),
+          )}
           placeholderTextColor={theme.textSecondary}
           value={search}
           onChangeText={setSearch}
           returnKeyType="search"
-          accessibilityLabel="Search conversations"
+          accessibilityLabel={SEARCH_LABEL}
         />
-      </View>
+      </FocusField>
 
       {isLoading ? (
         <ActivityIndicator style={styles.loading} color={theme.link} />
@@ -423,10 +448,14 @@ const styles = StyleSheet.create({
     margin: Spacing.md,
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
     gap: Spacing.xs,
   },
-  searchInput: { flex: 1, fontSize: 14 },
+  // Labelled field: the value sits under the floated label's row.
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    ...LABELLED_INPUT_TEXT,
+  },
   sectionLabel: {
     fontFamily: FontFamily.semiBold,
     letterSpacing: 0.5,

@@ -3,6 +3,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import ResetPasswordScreen from "../ResetPasswordScreen";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -209,5 +210,171 @@ describe("ResetPasswordScreen — shake on validation reject", () => {
       Haptics.NotificationFeedbackType.Error,
     );
     expect(withSequenceSpy).not.toHaveBeenCalled();
+  });
+});
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ResetPasswordScreen — floating labels", () => {
+  it("labels the three fields and names them for screen readers", () => {
+    renderScreen();
+    expect(fieldLabels()).toEqual([
+      "6-digit code",
+      "New password",
+      "Confirm new password",
+    ]);
+    // The visible label is the accessible name (label-in-name).
+    expect(screen.getByLabelText("Confirm new password")).toBeTruthy();
+    expect(screen.getByLabelText("New password")).toBeTruthy();
+    fireEvent.focus(screen.getByLabelText("New password"));
+    expect(screen.queryByPlaceholderText("New password")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; empty fields are flagged by Reset password, focus on the first.
+describe("ResetPasswordScreen — validation timing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("shows no error while a short password is typed, and shows it on leaving", () => {
+    renderScreen();
+    const input = screen.getByLabelText("New password");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abc" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
+    fireEvent.blur(input);
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("clears the shown error on the keystroke that makes it valid", () => {
+    renderScreen();
+    const input = screen.getByLabelText("New password");
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.blur(input);
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("Reset password with empty fields flags them all and focuses the code", () => {
+    renderScreen();
+    fireEvent.click(screen.getByText("Reset password"));
+    const code = screen.getByLabelText("6-digit code");
+    expect(code.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      screen.getByLabelText("New password").getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(document.activeElement).toBe(code);
+    expect(mockReset).not.toHaveBeenCalled();
+  });
+
+  it("focuses the confirm field when only it is wrong", () => {
+    renderScreen();
+    fill("123456", "newpass99", "newpass98");
+    fireEvent.click(screen.getByText("Reset password"));
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Confirm new password"),
+    );
+  });
+});
+
+// A checklist line on show: mounted AND not hidden from screen readers (a
+// closed checklist keeps its lines mounted under a zero height).
+function shownRule(label: string): HTMLElement | null {
+  const el = screen.queryByLabelText(label);
+  return el && !el.closest('[aria-hidden="true"]') ? el : null;
+}
+
+// Form-fields spec §5.2: the new password and its confirm tick as you type.
+describe("ResetPasswordScreen — rule checklist", () => {
+  it("shows the length rule on focus and ticks it at the minimum", () => {
+    renderScreen();
+    const input = screen.getByLabelText("New password");
+    expect(shownRule("At least 8 characters")).toBeNull();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abcdefg" } });
+    expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.getByLabelText("At least 8 characters, done")).toBeTruthy();
+  });
+
+  it("ticks Matches on the confirm field", () => {
+    renderScreen();
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "abcdefgh" },
+    });
+    const confirm = screen.getByLabelText("Confirm new password");
+    fireEvent.focus(confirm);
+    expect(screen.getByLabelText("Matches")).toBeTruthy();
+    fireEvent.change(confirm, { target: { value: "abcdefgh" } });
+    expect(screen.getByLabelText("Matches, done")).toBeTruthy();
+  });
+
+  // Form-fields spec §5.8: each message is announced by its InlineError
+  // alone — the field's hint must not repeat it, or VoiceOver reads it twice.
+  it("a field error renders once in the a11y tree", () => {
+    renderScreen();
+    fill("123");
+    fireEvent.click(screen.getByText("Reset password"));
+    const codeInput = screen.getByLabelText("6-digit code");
+    expect(codeInput.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      screen.getAllByText("Enter the 6-digit code from the email"),
+    ).toHaveLength(1);
+    expect(codeInput.getAttribute("aria-hint") ?? "").not.toContain(
+      "Enter the 6-digit code from the email",
+    );
+  });
+
+  it("a wrong-code server error renders once in the a11y tree", async () => {
+    mockReset.mockRejectedValue(new ApiError("x", "INVALID_RESET_CODE", 400));
+    renderScreen();
+    fill("000000");
+    fireEvent.click(screen.getByText("Reset password"));
+    const message =
+      "That code is incorrect or expired. After 5 wrong tries, request a new code.";
+    await screen.findByText(message);
+    const codeInput = screen.getByLabelText("6-digit code");
+    expect(codeInput.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(codeInput.getAttribute("aria-hint") ?? "").not.toContain(message);
+  });
+
+  it("a password error is not repeated in the field's hint", () => {
+    renderScreen();
+    fill("123456", "short", "short");
+    fireEvent.click(screen.getByText("Reset password"));
+    const pw = screen.getByLabelText("New password");
+    expect(pw.getAttribute("aria-invalid")).toBe("true");
+    expect(pw.getAttribute("aria-hint") ?? "").not.toContain(
+      "Use at least 8 characters.",
+    );
+  });
+});
+
+// Spec §5.6: code → new password → confirm on Next; confirm's Go submits.
+describe("ResetPasswordScreen — Return keys", () => {
+  it("Next moves code → new password → confirm", () => {
+    renderScreen();
+    const code = screen.getByLabelText("6-digit code");
+    const pw = screen.getByLabelText("New password");
+    const confirm = screen.getByLabelText("Confirm new password");
+    expect(reactProps(code).returnKeyType).toBe("next");
+    expect(reactProps(pw).returnKeyType).toBe("next");
+    expect(reactProps(confirm).returnKeyType).toBe("go");
+    act(() => {
+      (reactProps(code).onSubmitEditing as () => void)();
+    });
+    expect(document.activeElement).toBe(pw);
+    act(() => {
+      (reactProps(pw).onSubmitEditing as () => void)();
+    });
+    expect(document.activeElement).toBe(confirm);
   });
 });

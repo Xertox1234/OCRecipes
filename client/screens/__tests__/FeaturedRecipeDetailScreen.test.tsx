@@ -300,6 +300,43 @@ describe("FeaturedRecipeDetailScreen — happy path is unaffected", () => {
     expect(screen.queryByText("Recipe not found")).toBeNull();
     expect(screen.queryByText("Couldn't load this recipe")).toBeNull();
   });
+
+  it("forwards every normalized field to RecipeDetailContent", async () => {
+    mockApiRequest.mockResolvedValue({
+      json: async () => ({
+        id: 42,
+        title: "Pancakes",
+        description: "Fluffy",
+        difficulty: "Easy",
+        servings: 4,
+        dietTags: ["vegetarian"],
+        instructions: ["Mix", "Fry"],
+        ingredients: [],
+        imageUrl: "https://cdn.example/p.jpg",
+        caloriesPerServing: "350",
+        allergens: ["egg"],
+      }),
+    });
+
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await screen.findByText("Pancakes");
+
+    expect(mockDetailProps.current).toMatchObject({
+      recipeId: 42,
+      recipeType: "mealPlan",
+      title: "Pancakes",
+      description: "Fluffy",
+      difficulty: "Easy",
+      servings: 4,
+      dietTags: ["vegetarian"],
+      instructions: ["Mix", "Fry"],
+      imageUrl: "https://cdn.example/p.jpg",
+      nutrition: expect.objectContaining({ calories: 350 }),
+      allergens: ["egg"],
+      isCanonical: false,
+      cuisineOrigin: null,
+    });
+  });
 });
 
 // Opening a generated recipe (always a community recipe) is reading it: its

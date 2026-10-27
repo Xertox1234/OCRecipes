@@ -271,6 +271,9 @@ export function useCoachStream({
           xhr.setRequestHeader("X-Timezone", getDeviceTimezone());
 
           let lastProcessedIndex = 0;
+          // A chunk can end mid-line; carry the partial tail to the next
+          // chunk instead of dropping the event it belongs to.
+          let lineBuffer = "";
           // Once a terminal outcome is chosen, every later event is ignored.
           // RN dispatches readystatechange at DONE before timeout/error (and
           // on abort), so without this one stream can report twice.
@@ -308,7 +311,10 @@ export function useCoachStream({
               lastProcessedIndex = xhr.responseText.length;
               if (newText) armInactivity();
 
-              for (const line of newText.split("\n")) {
+              lineBuffer += newText;
+              const lines = lineBuffer.split("\n");
+              lineBuffer = lines.pop() ?? "";
+              for (const line of lines) {
                 if (!line.startsWith("data: ")) continue;
                 try {
                   const raw = JSON.parse(line.slice(6));

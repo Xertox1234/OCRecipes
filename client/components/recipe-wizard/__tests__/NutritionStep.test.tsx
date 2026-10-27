@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
+import { reactProps } from "../../../../test/utils/react-props";
 import { renderComponent } from "../../../../test/utils/render-component";
 import NutritionStep from "../NutritionStep";
 import {
   hasAnyNutritionValue,
   sanitizeNumericInput,
 } from "../nutrition-step-utils";
+import { parseDecimalInput } from "@/lib/number-input";
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -26,6 +28,19 @@ describe("sanitizeNumericInput", () => {
 
   it("returns an empty string when all characters are non-numeric", () => {
     expect(sanitizeNumericInput("abc")).toBe("");
+  });
+
+  // A comma-decimal keypad sends ",": stripping it turned 12,5 into 125.
+  it("treats a comma as the decimal separator", () => {
+    expect(sanitizeNumericInput("12,5")).toBe("12.5");
+    expect(sanitizeNumericInput("12.5")).toBe("12.5");
+    expect(parseDecimalInput(sanitizeNumericInput("12,5"))).toBe(12.5);
+    expect(parseDecimalInput(sanitizeNumericInput("12.5"))).toBe(12.5);
+  });
+
+  it("keeps only the first separator, comma or point", () => {
+    expect(sanitizeNumericInput("1,2.3")).toBe("1.23");
+    expect(sanitizeNumericInput("1.2,3")).toBe("1.23");
   });
 
   it("returns empty input unchanged (skip flow)", () => {
@@ -160,5 +175,25 @@ describe("NutritionStep — render", () => {
       carbs: "40",
       fat: "5",
     });
+  });
+});
+
+describe("NutritionStep — Return key", () => {
+  it("Next moves through the boxes in order; the last says Done", () => {
+    renderComponent(
+      <NutritionStep nutrition={makeNutrition()} setNutrition={vi.fn()} />,
+    );
+    const order = ["calories", "protein", "carbs", "fat"].map((n) =>
+      screen.getByLabelText(`${n} per serving`),
+    );
+    for (let i = 0; i < order.length - 1; i++) {
+      const props = reactProps(order[i]);
+      expect(props.returnKeyType).toBe("next");
+      act(() => {
+        (props.onSubmitEditing as () => void)();
+      });
+      expect(document.activeElement).toBe(order[i + 1]);
+    }
+    expect(reactProps(order[order.length - 1]).returnKeyType).toBe("done");
   });
 });

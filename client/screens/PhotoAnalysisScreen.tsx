@@ -147,6 +147,7 @@ function FoodItemCard({
           {isEditing ? (
             <View style={styles.editFields}>
               <FocusTextInput
+                label="Food"
                 style={[
                   styles.editInput,
                   {
@@ -156,11 +157,12 @@ function FoodItemCard({
                 ]}
                 value={editName}
                 onChangeText={setEditName}
-                placeholder="Food name"
+                placeholder="e.g. grilled chicken"
                 placeholderTextColor={theme.textSecondary}
                 accessibilityLabel="Food name"
               />
               <FocusTextInput
+                label="Quantity"
                 style={[
                   styles.editInput,
                   styles.quantityInput,
@@ -171,9 +173,8 @@ function FoodItemCard({
                 ]}
                 value={editQuantity}
                 onChangeText={setEditQuantity}
-                placeholder="Quantity"
+                placeholder="e.g. 1 cup or 200 g"
                 placeholderTextColor={theme.textSecondary}
-                accessibilityLabel="Quantity"
               />
             </View>
           ) : (
@@ -325,6 +326,8 @@ function FollowUpModal({
         accessibilityLabel="Follow-up question about food"
         multiline
         returnKeyType="done"
+        // Return submits (as QuickLogScreen does) instead of a line break.
+        submitBehavior="blurAndSubmit"
         onSubmitEditing={handleSubmit}
       />
 

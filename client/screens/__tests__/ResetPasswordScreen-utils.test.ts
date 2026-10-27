@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { ApiError } from "@/lib/api-error";
 import {
   normalizeResetCode,
-  validateResetForm,
+  resetCodeError,
+  resetPasswordError,
+  resetConfirmError,
   getResetErrorMessage,
   resendSecondsRemaining,
   INVALID_RESET_CODE_MESSAGE,
@@ -14,44 +16,6 @@ describe("ResetPasswordScreen-utils", () => {
     expect(normalizeResetCode("123-456")).toBe("123456");
     expect(normalizeResetCode(" 1234567 ")).toBe("123456");
   });
-  it("requires a 6-digit code before the password rules", () => {
-    expect(
-      validateResetForm({
-        code: "123",
-        password: "abcdefg1",
-        confirmPassword: "abcdefg1",
-      }),
-    ).toEqual({
-      field: "code",
-      message: "Enter the 6-digit code from the email",
-    });
-    expect(
-      validateResetForm({
-        code: "123456",
-        password: "short1",
-        confirmPassword: "short1",
-      }),
-    ).toEqual({
-      field: "password",
-      message: "Use at least 8 characters.",
-    });
-    expect(
-      validateResetForm({
-        code: "123456",
-        password: "abcdefg1",
-        confirmPassword: "abcdefg1",
-      }),
-    ).toBeNull();
-  });
-  it("accepts 8 characters with no composition rule (8 for everyone)", () => {
-    expect(
-      validateResetForm({
-        code: "123456",
-        password: "abcdefgh",
-        confirmPassword: "abcdefgh",
-      }),
-    ).toBeNull();
-  });
   it("maps the server's password-policy codes to plain sentences", () => {
     expect(
       getResetErrorMessage(new ApiError("x", "PASSWORD_TOO_SHORT", 400)),
@@ -61,22 +25,6 @@ describe("ResetPasswordScreen-utils", () => {
     ).toBe(
       "That password has appeared in a data breach. Choose a different one.",
     );
-  });
-  it("attributes a mismatch to the confirm field, but a weak password wins", () => {
-    expect(
-      validateResetForm({
-        code: "123456",
-        password: "abcdefg1",
-        confirmPassword: "abcdefg2",
-      }),
-    ).toEqual({ field: "confirm", message: "Passwords do not match" });
-    expect(
-      validateResetForm({
-        code: "123456",
-        password: "short1",
-        confirmPassword: "other",
-      })?.field,
-    ).toBe("password");
   });
   it("maps INVALID_RESET_CODE to the uniform message", () => {
     expect(
@@ -99,5 +47,32 @@ describe("ResetPasswordScreen-utils", () => {
     expect(resendSecondsRemaining(1_000, 31_500)).toBe(30);
     expect(resendSecondsRemaining(1_000, 61_000)).toBe(0);
     expect(resendSecondsRemaining(1_000, 999_999)).toBe(0);
+  });
+});
+
+// Each field's own message, for the per-field validation timing (§5.1).
+describe("reset field messages", () => {
+  it("names each empty field", () => {
+    expect(resetCodeError("")).toBe("Enter the 6-digit code from the email");
+    expect(resetPasswordError("")).toBe("Enter a new password.");
+    expect(resetConfirmError("", "")).toBeNull();
+  });
+  it("needs all 6 digits of the code", () => {
+    expect(resetCodeError("123")).toBe("Enter the 6-digit code from the email");
+    expect(resetCodeError("123456")).toBeNull();
+  });
+  it("accepts 8 characters with no composition rule (8 for everyone)", () => {
+    expect(resetPasswordError("abcdefgh")).toBeNull();
+    expect(resetPasswordError("short1")).toBe("Use at least 8 characters.");
+  });
+  it("flags a mismatch on the confirm field", () => {
+    expect(resetConfirmError("short2", "short1")).toBe(
+      "Passwords do not match",
+    );
+  });
+  it("asks for the confirmation when it is empty", () => {
+    expect(resetConfirmError("", "abcdefgh")).toBe(
+      "Re-enter the new password.",
+    );
   });
 });

@@ -127,3 +127,109 @@ describe("ChooseUsernameScreen — shake on validation reject", () => {
     expect(withSequenceSpy).not.toHaveBeenCalled();
   });
 });
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("ChooseUsernameScreen — floating labels", () => {
+  it("floats Username with no repeated placeholder", () => {
+    renderScreen();
+    expect(fieldLabels()).toEqual(["Username"]);
+    fireEvent.focus(screen.getByLabelText("Username"));
+    expect(screen.queryByPlaceholderText("Username")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; an empty field is flagged (and focused) by Continue. The age
+// checkbox keeps gating Continue — it's a legal confirmation, not a field.
+describe("ChooseUsernameScreen — validation timing", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("shows no error while a bad username is typed, and shows it on leaving", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Username");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "me@x.com" } });
+    expect(screen.queryByText(/can only contain letters/)).toBeNull();
+    fireEvent.blur(input);
+    expect(screen.getByText(/can only contain letters/)).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("Continue with an empty username flags and focuses the field", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Username");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(input);
+    expect(mockComplete).not.toHaveBeenCalled();
+  });
+
+  it("Continue stays disabled until the age box is ticked", () => {
+    renderScreen();
+    const cont = screen.getByRole("button", { name: "Continue" });
+    expect(cont.getAttribute("aria-disabled")).toBe("true");
+  });
+});
+
+// A checklist line on show: mounted AND not hidden from screen readers (a
+// closed checklist keeps its lines mounted under a zero height).
+function shownRule(label: string): HTMLElement | null {
+  const el = screen.queryByLabelText(label);
+  return el && !el.closest('[aria-hidden="true"]') ? el : null;
+}
+
+// Form-fields spec §5.2: the username rules tick as you type.
+describe("ChooseUsernameScreen — rule checklist", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("shows the rules on focus and ticks each as it is met", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Username");
+    expect(shownRule("3–30 characters")).toBeNull();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "ab" } });
+    expect(screen.getByLabelText("3–30 characters")).toBeTruthy();
+    expect(screen.getByLabelText("Letters, numbers or _, done")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "ab-c" } });
+    expect(screen.getByLabelText("3–30 characters, done")).toBeTruthy();
+    expect(screen.getByLabelText("Letters, numbers or _")).toBeTruthy();
+  });
+});
+
+// Follow-up from review (spec §5.8): the same text went to both the field's
+// errorMessage (its hint) and the InlineError, so VoiceOver read it twice.
+describe("ChooseUsernameScreen — one announcement per error", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("a username error is announced once, by the alert only", () => {
+    renderScreen();
+    const input = screen.getByLabelText("Username");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getAllByText(/Username must be between/)).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toMatch(
+      /Username must be between/,
+    );
+  });
+
+  it("a server error is announced once, by the alert only", async () => {
+    mockComplete.mockRejectedValue(new ApiError("raw", "USERNAME_TAKEN", 409));
+    renderScreen();
+    fireEvent.click(screen.getByRole("checkbox", { name: /13 years of age/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const message = "That username is taken — try another.";
+    await screen.findByText(message);
+    const input = screen.getByLabelText("Username");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(message);
+  });
+});

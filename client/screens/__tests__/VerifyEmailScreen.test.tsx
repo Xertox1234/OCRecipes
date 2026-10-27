@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import VerifyEmailScreen from "../VerifyEmailScreen";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -368,11 +369,15 @@ describe("VerifyEmailScreen — onResend validation", () => {
   it("shows an inline error and does not resend for an invalid email", () => {
     renderScreen(undefined);
 
-    // No email param → input starts empty, which is an invalid shape.
+    // An empty field gets its own "enter your email" copy (validation
+    // timing test below); a typed bad shape gets this one.
+    fireEvent.change(screen.getByTestId("input-resend-email"), {
+      target: { value: "nope" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
 
-    // InlineError renders role="alert"; TextInput's errorMessage is a11y-only
-    // (aria-hint), so this is the sole visible occurrence of the copy.
+    // InlineError renders role="alert" — the one place the copy appears (the
+    // field takes only `error`, so its hint never repeats it).
     expect(screen.getByRole("alert").textContent).toContain(
       "Please enter a valid email address.",
     );
@@ -497,5 +502,96 @@ describe("VerifyEmailScreen — shake on validation reject", () => {
     expect(await screen.findByText(/Couldn't resend/)).toBeTruthy();
     expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
     expect(withSequenceSpy).not.toHaveBeenCalled();
+  });
+});
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("VerifyEmailScreen — floating labels", () => {
+  it("floats Email on the pending-state field, keeping Email address as its name", () => {
+    renderScreen(undefined);
+    expect(fieldLabels()).toEqual(["Email"]);
+    expect(screen.getByLabelText("Email address")).toBeTruthy();
+    fireEvent.focus(screen.getByLabelText("Email address"));
+    expect(screen.queryByPlaceholderText("Email")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; an empty field is flagged (and focused) by the resend button.
+describe("VerifyEmailScreen — validation timing", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const MESSAGE = "Please enter a valid email address.";
+
+  it("shows no error while an invalid email is typed, and shows it on leaving", () => {
+    renderScreen(undefined);
+    const input = screen.getByLabelText("Email address");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "nope" } });
+    expect(screen.queryAllByText(MESSAGE)).toHaveLength(0);
+    fireEvent.blur(input);
+    expect(screen.getAllByText(MESSAGE).length).toBeGreaterThan(0);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("Resend email with an empty email flags the field and moves focus to it", () => {
+    renderScreen(undefined);
+    fireEvent.click(screen.getByText("Resend email"));
+    const input = screen.getByLabelText("Email address");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(input);
+    expect(
+      screen.getAllByText("Please enter your email address.").length,
+    ).toBeGreaterThan(0);
+    expect(mockResendVerificationRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("VerifyEmailScreen — one announcement, locked while sending", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // Form-fields spec §5.8: the InlineError announces the message; the
+  // field's hint must not carry it too, or VoiceOver reads it twice.
+  it("an invalid email is announced once, by the alert only", () => {
+    renderScreen(undefined);
+    const input = screen.getByTestId("input-resend-email");
+    fireEvent.change(input, { target: { value: "nope" } });
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Please enter a valid email address.",
+    );
+  });
+
+  it("a failed resend is announced once, by the alert only", async () => {
+    mockResendVerificationRequest.mockRejectedValue(new Error("network"));
+    renderScreen(undefined);
+    const input = screen.getByTestId("input-resend-email");
+    fireEvent.change(input, { target: { value: "valid@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+
+    await screen.findByText(
+      "Couldn't resend right now. Please try again shortly.",
+    );
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(input.getAttribute("aria-hint") ?? "").not.toContain(
+      "Couldn't resend",
+    );
+  });
+
+  // Form-fields spec §5.7: nothing can be edited while the request runs.
+  it("the email field cannot be edited while the resend is pending", () => {
+    mockResendVerificationRequest.mockReturnValue(new Promise(() => {}));
+    renderScreen(undefined);
+    const input = screen.getByTestId("input-resend-email");
+    expect(reactProps(input).editable).not.toBe(false);
+    fireEvent.change(input, { target: { value: "valid@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+    expect(reactProps(screen.getByTestId("input-resend-email")).editable).toBe(
+      false,
+    );
   });
 });

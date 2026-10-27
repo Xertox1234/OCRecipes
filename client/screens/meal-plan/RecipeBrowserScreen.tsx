@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -16,6 +10,13 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import {
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -57,10 +58,8 @@ import {
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
 import { useRecipeSearch } from "@/hooks/useRecipeSearch";
-import {
-  useCreateSuggestionListing,
-  useMakeSuggestion,
-} from "@/hooks/useInspiredSuggestions";
+import { useCreateSuggestionListing } from "@/hooks/useInspiredSuggestions";
+import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import {
   SearchFilterSheet,
   type SearchFilters,
@@ -87,7 +86,6 @@ import {
   createListingBodySchema,
   type Suggestion,
 } from "@shared/schemas/inspired-recipes";
-import { ApiError } from "@/lib/api-error";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
@@ -101,6 +99,11 @@ import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnounce
 const RECIPE_HEADER_EXPANDED = 60;
 const RECIPE_HEADER_COLLAPSED = 0;
 const RECIPE_COLLAPSE_THRESHOLD = 100;
+
+const SEARCH_LABEL = "Search recipes";
+const SEARCH_ICON_SIZE = 16;
+// The search bar's text starts past its left padding, the icon and the gap.
+const SEARCH_LABEL_LEFT = Spacing.md + SEARCH_ICON_SIZE + Spacing.sm;
 
 type RecipeBrowserRouteProp = RouteProp<
   MealPlanStackParamList,
@@ -380,6 +383,7 @@ export default function RecipeBrowserScreen() {
   const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
 
   const [searchText, setSearchText] = useState(searchQuery || "");
+  const searchFocus = useFieldFocus();
   const [addingId, setAddingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<RecipeFilters>(DEFAULT_FILTERS);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -513,9 +517,7 @@ export default function RecipeBrowserScreen() {
     mutate: requestIdeas,
     reset: resetIdeas,
   } = useCreateSuggestionListing();
-  const { mutateAsync: makeSuggestion } = useMakeSuggestion();
-  const [makingId, setMakingId] = useState<number | null>(null);
-  const makingRef = useRef<number | null>(null);
+  const { make: makeSuggestion, makingId } = useMakeSuggestionFlow();
 
   const ideas: Suggestion[] = useMemo(() => ideasData ?? [], [ideasData]);
 
@@ -622,39 +624,10 @@ export default function RecipeBrowserScreen() {
     mealType,
   ]);
 
+  // A 410 means this idea list expired; clear it so the CTA can re-ask.
   const handleMakeIdea = useCallback(
-    (suggestion: Suggestion) => {
-      // One make at a time — a second card's tap is ignored while one runs.
-      // A ref, not state: two taps in the same frame must not both pass.
-      if (makingRef.current !== null) return;
-      makingRef.current = suggestion.id;
-      setMakingId(suggestion.id);
-      makeSuggestion(suggestion.id)
-        .then(({ recipeId }) => {
-          navigation.navigate("FeaturedRecipeDetail", {
-            recipeId,
-            recipeType: "community",
-          });
-        })
-        .catch((error: unknown) => {
-          const status = error instanceof ApiError ? error.status : undefined;
-          if (status === 429) {
-            toast.error("You've reached today's recipe limit.");
-          } else if (status === 410) {
-            toast.error("These ideas expired — search again.");
-            resetIdeas();
-          } else {
-            toast.error("Couldn't make this recipe. Try again.");
-          }
-        })
-        .finally(() => {
-          if (makingRef.current === suggestion.id) makingRef.current = null;
-          setMakingId((current) =>
-            current === suggestion.id ? null : current,
-          );
-        });
-    },
-    [makeSuggestion, navigation, toast, resetIdeas],
+    (suggestion: Suggestion) => makeSuggestion(suggestion.id, resetIdeas),
+    [makeSuggestion, resetIdeas],
   );
 
   const handleRecipePress = useCallback(
@@ -795,8 +768,12 @@ export default function RecipeBrowserScreen() {
         ]}
       >
         {/* Search bar always visible */}
-        <View
+        <FocusField
+          focus={searchFocus}
           testID="recipe-search-bar"
+          label={SEARCH_LABEL}
+          hasValue={searchText.length > 0}
+          labelLeft={SEARCH_LABEL_LEFT}
           style={[
             styles.searchBar,
             {
@@ -805,10 +782,22 @@ export default function RecipeBrowserScreen() {
             },
           ]}
         >
-          <Feather name="search" size={16} color={theme.textSecondary} />
+          <Feather
+            name="search"
+            size={SEARCH_ICON_SIZE}
+            color={theme.textSecondary}
+          />
           <FocusTextInput
+            focusRing={false}
+            onFocus={searchFocus.onFocus}
+            onBlur={searchFocus.onBlur}
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search recipes..."
+            // The label rests where the placeholder would; it shows once floated.
+            placeholder={resolvePlaceholder(
+              SEARCH_LABEL,
+              "e.g. pasta or high protein",
+              shouldFloatLabel(searchFocus.focused, searchText),
+            )}
             placeholderTextColor={theme.textSecondary}
             value={searchText}
             onChangeText={handleSearchChange}
@@ -816,7 +805,7 @@ export default function RecipeBrowserScreen() {
             autoCorrect={false}
             returnKeyType="search"
             onSubmitEditing={handleSubmitSearch}
-            accessibilityLabel="Search recipes"
+            accessibilityLabel={SEARCH_LABEL}
           />
           {searchText.length > 0 && (
             <Pressable
@@ -834,7 +823,7 @@ export default function RecipeBrowserScreen() {
               <Feather name="x" size={16} color={theme.textSecondary} />
             </Pressable>
           )}
-        </View>
+        </FocusField>
       </View>
       <Animated.View
         // When the header collapses (opacity interpolates to 0), the invisible
@@ -1253,22 +1242,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
   },
+  // Labelled: FocusField makes it 56 tall, which also leaves room for the
+  // Clear search button's 44pt box (below), so the bar keeps its height when
+  // that button appears on the first keystroke. No vertical padding — the
+  // input's own padding puts the value under the floated label.
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    // Room for the Clear search button's 44pt box (below) without the bar
-    // changing height when that button appears on the first keystroke.
-    minHeight: 44,
     borderRadius: BorderRadius.card,
     gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
-  // 44pt touch target for a 16pt icon. A hitSlop can't do it here: RN clips
-  // hitSlop to the parent's bounds, and the bar is only ~36pt of content +
-  // padding. The negative margins let the box fill the bar's padding instead
-  // of growing it (bar stays at its 44pt minHeight).
+  // 44pt touch target for a 16pt icon — a real box, not a hitSlop, which RN
+  // clips to the parent's bounds. It fits inside the labelled bar's 56pt
+  // height (searchBar above), so the bar keeps its height when it appears.
+  // The negative right margin lets the box sit in the bar's right padding;
+  // the negative vertical margin keeps it out of the bar's height sum.
   clearSearchButton: {
     width: 44,
     height: 44,
@@ -1282,6 +1272,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FontFamily.regular,
     padding: 0,
+    ...LABELLED_INPUT_TEXT,
   },
   filterBar: {
     flexDirection: "row",

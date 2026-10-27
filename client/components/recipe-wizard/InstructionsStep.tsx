@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -46,9 +48,14 @@ interface InstructionRowViewProps {
   canUp: boolean;
   canDown: boolean;
   showDelete: boolean;
+  /** Focus on mount: the row that Return just added. */
+  autoFocus: boolean;
+  /** Called once that row has taken focus, so a later remount never refocuses. */
+  onAutoFocused: () => void;
   onUpdate: (key: string, text: string) => void;
   onRemove: (key: string) => void;
   onMove: (key: string, direction: "up" | "down") => void;
+  onSubmit: () => void;
 }
 
 const InstructionRowView = React.memo(function InstructionRowView({
@@ -57,95 +64,116 @@ const InstructionRowView = React.memo(function InstructionRowView({
   canUp,
   canDown,
   showDelete,
+  autoFocus,
+  onAutoFocused,
   onUpdate,
   onRemove,
   onMove,
+  onSubmit,
 }: InstructionRowViewProps) {
   const { theme } = useTheme();
   const isFirst = !canUp;
   const isLast = !canDown;
   const disabledColor = withOpacity(theme.textSecondary, 0.3);
+  const rowFocus = useFieldFocus({
+    onFocus: autoFocus ? onAutoFocused : undefined,
+  });
 
   return (
+    // The outer view only carries the add/remove animation; the field is the
+    // FocusField inside it, so the ring follows the whole rounded row.
     <Animated.View
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
-      style={[
-        styles.row,
-        {
-          backgroundColor: theme.backgroundSecondary,
-          borderColor: withOpacity(theme.border, 0.5),
-        },
-      ]}
+      style={styles.rowOuter}
     >
-      {/* Step number badge */}
-      <View
-        style={[styles.badge, { backgroundColor: theme.accentSolid }]}
-        accessibilityLabel={`Step ${index + 1}`}
+      <FocusField
+        focus={rowFocus}
+        style={[
+          styles.row,
+          {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: withOpacity(theme.border, 0.5),
+          },
+        ]}
       >
-        <Text style={[styles.badgeText, { color: theme.buttonText }]}>
-          {index + 1}
-        </Text>
-      </View>
-
-      {/* Step text input */}
-      <FocusTextInput
-        style={[styles.rowInput, { color: theme.text }]}
-        value={item.text}
-        onChangeText={(text) => onUpdate(item.key, text)}
-        placeholder="Describe this step…"
-        placeholderTextColor={theme.textSecondary}
-        multiline
-        textAlignVertical="top"
-        returnKeyType="default"
-        accessibilityLabel={`Step ${index + 1} instruction`}
-        accessibilityHint="Describe what to do in this step"
-      />
-
-      {/* Reorder and delete controls — 44x44 tap targets (WCAG 2.5.5) */}
-      <View style={styles.controls}>
-        <Pressable
-          onPress={() => onMove(item.key, "up")}
-          disabled={isFirst}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Move step up"
-          accessibilityState={{ disabled: isFirst }}
-          hitSlop={12}
+        {/* Step number badge */}
+        <View
+          style={[styles.badge, { backgroundColor: theme.accentSolid }]}
+          accessibilityLabel={`Step ${index + 1}`}
         >
-          <Feather
-            name="chevron-up"
-            size={20}
-            color={isFirst ? disabledColor : theme.textSecondary}
-          />
-        </Pressable>
-        <Pressable
-          onPress={() => onMove(item.key, "down")}
-          disabled={isLast}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Move step down"
-          accessibilityState={{ disabled: isLast }}
-          hitSlop={12}
-        >
-          <Feather
-            name="chevron-down"
-            size={20}
-            color={isLast ? disabledColor : theme.textSecondary}
-          />
-        </Pressable>
-        {showDelete && (
+          <Text style={[styles.badgeText, { color: theme.buttonText }]}>
+            {index + 1}
+          </Text>
+        </View>
+
+        {/* Step text input */}
+        <FocusTextInput
+          focusRing={false}
+          onFocus={rowFocus.onFocus}
+          onBlur={rowFocus.onBlur}
+          style={[styles.rowInput, { color: theme.text }]}
+          value={item.text}
+          onChangeText={(text) => onUpdate(item.key, text)}
+          placeholder="Describe this step…"
+          placeholderTextColor={theme.textSecondary}
+          multiline
+          textAlignVertical="top"
+          // Return adds the next step instead of a line break; the text
+          // still wraps onto more lines as it grows.
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={onSubmit}
+          autoFocus={autoFocus}
+          accessibilityLabel={`Step ${index + 1} instruction`}
+          accessibilityHint="Describe what to do in this step. Press return to add another."
+        />
+
+        {/* Reorder and delete controls — 44x44 tap targets (WCAG 2.5.5) */}
+        <View style={styles.controls}>
           <Pressable
-            onPress={() => onRemove(item.key)}
+            onPress={() => onMove(item.key, "up")}
+            disabled={isFirst}
             style={styles.controlButton}
             accessibilityRole="button"
-            accessibilityLabel="Remove step"
+            accessibilityLabel="Move step up"
+            accessibilityState={{ disabled: isFirst }}
             hitSlop={12}
           >
-            <Feather name="x" size={20} color={theme.error} />
+            <Feather
+              name="chevron-up"
+              size={20}
+              color={isFirst ? disabledColor : theme.textSecondary}
+            />
           </Pressable>
-        )}
-      </View>
+          <Pressable
+            onPress={() => onMove(item.key, "down")}
+            disabled={isLast}
+            style={styles.controlButton}
+            accessibilityRole="button"
+            accessibilityLabel="Move step down"
+            accessibilityState={{ disabled: isLast }}
+            hitSlop={12}
+          >
+            <Feather
+              name="chevron-down"
+              size={20}
+              color={isLast ? disabledColor : theme.textSecondary}
+            />
+          </Pressable>
+          {showDelete && (
+            <Pressable
+              onPress={() => onRemove(item.key)}
+              style={styles.controlButton}
+              accessibilityRole="button"
+              accessibilityLabel="Remove step"
+              hitSlop={12}
+            >
+              <Feather name="x" size={20} color={theme.error} />
+            </Pressable>
+          )}
+        </View>
+      </FocusField>
     </Animated.View>
   );
 });
@@ -164,6 +192,16 @@ export default function InstructionsStep({
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     addStep();
   }, [addStep, haptics]);
+
+  // Set by Return: the row that Return adds mounts focused, so typing
+  // carries straight on into the next step. Cleared once it has focus — the
+  // list unmounts far-off rows, and a remount must not pop the keyboard.
+  const [focusAddedRow, setFocusAddedRow] = useState(false);
+  const handleSubmitStep = useCallback(() => {
+    setFocusAddedRow(true);
+    handleAdd();
+  }, [handleAdd]);
+  const handleAutoFocused = useCallback(() => setFocusAddedRow(false), []);
 
   const handleRemove = useCallback(
     (key: string) => {
@@ -202,13 +240,25 @@ export default function InstructionsStep({
           canUp={canUp}
           canDown={canDown}
           showDelete={showDelete}
+          autoFocus={focusAddedRow && index === stepCount - 1}
+          onAutoFocused={handleAutoFocused}
           onUpdate={updateStep}
           onRemove={handleRemove}
           onMove={handleMove}
+          onSubmit={handleSubmitStep}
         />
       );
     },
-    [stepCount, showDelete, updateStep, handleRemove, handleMove],
+    [
+      stepCount,
+      showDelete,
+      focusAddedRow,
+      updateStep,
+      handleRemove,
+      handleMove,
+      handleSubmitStep,
+      handleAutoFocused,
+    ],
   );
 
   const ListFooterComponent = useMemo(
@@ -248,6 +298,7 @@ export default function InstructionsStep({
 
 const styles = StyleSheet.create({
   listContent: { paddingBottom: Spacing.xl },
+  rowOuter: { marginBottom: Spacing.sm },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -255,7 +306,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    marginBottom: Spacing.sm,
     minHeight: 64,
     gap: Spacing.sm,
   },
