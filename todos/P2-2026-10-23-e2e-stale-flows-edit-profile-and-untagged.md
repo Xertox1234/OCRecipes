@@ -1,6 +1,6 @@
 ---
 title: "E2E: fix edit-profile's stale tile assertions (nightly red since 10-20) and the five stale untagged flows"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-23
 updated: 2026-10-23
