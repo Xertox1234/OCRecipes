@@ -97,7 +97,7 @@ env:
 jobs:
   e2e-ios:
     name: Maestro regression (iOS simulator)
-    runs-on: macos-15
+    runs-on: macos-26
     # 60min was insufficient once Maestro flows finally started executing
     # (dispatch 8, run 33287752221): ~24min in, still mid-retry, cut off by
     # this timeout before printing a real Flows-Passed/Failed summary for
@@ -188,11 +188,18 @@ jobs:
       # isRepeatedDay, vision-camera's kCVPixelFormatType_96VersatileBayerPacked12,
       # a swift-frontend ICE in NitroImage's codegen script) -- each one a
       # real, permanent repo patch bought to accommodate a runner choice, not
-      # an actual product need. macos-15 ships Xcode 26.3 alongside 16.x,
-      # matching what the rest of this repo already targets -- select that
-      # instead of continuing to patch around 16.2's gap.
-      - name: Select Xcode 26.3
-        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+      # an actual product need. macos-15 then carried this job on Xcode 26.3
+      # until Expo SDK 57 (#1549): its expo-modules-core fails 26.3's Swift
+      # region-isolation check ("sending 'emitter' risks causing data races",
+      # EventEmitter.swift) -- every nightly from 2026-10-25 died at BUILD
+      # FAILED before a single flow ran. Xcode 26.5 builds the same code
+      # cleanly, and macos-15 tops out at 26.3, hence macos-26. Pin 26.6
+      # explicitly (not the image default, which drifts as GitHub rolls the
+      # image): it is the toolchain Expo's own `sdk-57` EAS Build image uses,
+      # so this job compiles what the shipped build compiles. Re-check the
+      # pin against the EAS image on every SDK bump.
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
       # ios/ is not committed (Expo CNG) — generate it from app.json +
       # plugins/ BEFORE the Pods cache restore below. Restoring first would
@@ -305,24 +312,23 @@ jobs:
           curl -fsSL "https://get.maestro.mobile.dev" | MAESTRO_VERSION=2.9.0 bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
-      # Boot an iOS simulator for Maestro to drive. macos-15 ships Xcode with
-      # iPhone simulators preinstalled -- "iPhone 15" (used under the prior
-      # macos-14/Xcode 16.2 pin) doesn't exist in Xcode 26.x's default
-      # simulator lineup, which starts at "iPhone 16" (confirmed empirically:
-      # run 33283020295 failed here with "Invalid device: iPhone 15" once
-      # every earlier layer was already cleared by the runner-image switch).
-      # Export the resolved UDID so the failure-diagnostic step below can
-      # target the exact same device by id (a name-based -destination lookup
-      # is ambiguous across the multiple "iPhone 16" runtimes the image ships
+      # Boot an iOS simulator for Maestro to drive. The device name must exist
+      # on the runner image: "iPhone 15" broke under the macos-14 -> macos-15
+      # switch (run 33283020295, "Invalid device: iPhone 15"), and "iPhone 16"
+      # is absent from macos-26, whose iOS 26.2/26.4/26.5 runtimes all ship
+      # "iPhone 17" (actions/runner-images macos-26-arm64 readme). Export the
+      # resolved UDID so the failure-diagnostic step below can target the
+      # exact same device by id (a name-based -destination lookup is
+      # ambiguous across the multiple "iPhone 17" runtimes the image ships
       # and can itself fail to resolve).
       - name: Boot iOS simulator
         run: |
-          xcrun simctl boot "iPhone 16" || true
-          xcrun simctl bootstatus "iPhone 16" -b
+          xcrun simctl boot "iPhone 17" || true
+          xcrun simctl bootstatus "iPhone 17" -b
           UDID="$(xcrun simctl list devices booted -j | node -e '
             const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
             for (const devices of Object.values(data.devices)) {
-              const match = devices.find((d) => d.name === "iPhone 16" && d.state === "Booted");
+              const match = devices.find((d) => d.name === "iPhone 17" && d.state === "Booted");
               if (match) { console.log(match.udid); process.exit(0); }
             }
             process.exit(1);
