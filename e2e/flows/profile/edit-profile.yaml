@@ -22,8 +22,10 @@ env:
       PASSWORD: ${PASSWORD}
 
 # Navigate to Profile tab
-- tapOn:
-    id: "tab-profile"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-profile"
 - extendedWaitUntil:
     visible:
       text: "YOUR LIBRARY"

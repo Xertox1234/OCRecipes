@@ -1,0 +1,53 @@
+appId: com.ocrecipes.app
+
+# Switch to a bottom tab and confirm the switch happened. Use it instead of a
+# bare `tapOn: { id: "tab-…" }`.
+#
+#   - runFlow:
+#       file: ../../helpers/tap-tab.yaml
+#       env:
+#         TAB: "tab-profile"
+#
+# Why: on the iOS macos-26 runner a tab tap is sometimes lost. Maestro finds
+# the button, taps it and reports success, but the app never switches. Run
+# 40583018319 (Login, Meal plan home): 15-17s after the tap, the failure
+# hierarchy still shows tab-home selected:true and the tapped tab
+# selected:false. Waiting longer cannot fix a tap that never arrived, and
+# Maestro does not re-tap on its own (the logged tapOn has
+# retryIfNoChange:false). Run 40548172630 (Onboarding) failed the same way.
+#
+# The tab buttons expose `selected` on both platforms (iOS dumps above;
+# Android run 40583018319 shows tab-profile flipping to true after its tap),
+# so "the switch happened" is checked exactly: tap, wait up to 5s for
+# selected:true, re-tap at most twice, then fail naming the tab. Re-tapping
+# a tab that did switch late is harmless here: it is freshly entered, so
+# React Navigation's tap-the-focused-tab behaviour has nothing to pop.
+---
+- tapOn:
+    id: ${TAB}
+- repeat:
+    times: 2
+    while:
+      notVisible:
+        id: ${TAB}
+        selected: true
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: ${TAB}
+            selected: true
+          timeout: 5000
+          optional: true
+      - runFlow:
+          when:
+            notVisible:
+              id: ${TAB}
+              selected: true
+          commands:
+            - tapOn:
+                id: ${TAB}
+- extendedWaitUntil:
+    visible:
+      id: ${TAB}
+      selected: true
+    timeout: 5000
