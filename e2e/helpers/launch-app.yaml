@@ -74,7 +74,10 @@ appId: com.ocrecipes.app
 #    in run 40518026548). The gate below therefore also accepts that screen,
 #    and a bounded loop relaunches (stopApp + openLink, the same cold start
 #    as (4)) up to 3 times. A load that still fails after that fails the
-#    final gate loudly. Android's dev launcher has the same error screen
+#    final gate loudly. The iOS job also keeps Metro's manifest warm with a
+#    5s request loop (e2e-regression.yml, "Keep Metro manifest warm"),
+#    which took first-launch timeouts from 7/10 to 0/10; the loop is the
+#    backstop for the rest. Android's dev launcher has the same error screen
 #    (ErrorScreen.kt) but has not been seen to show it on CI; if it does,
 #    the loop still relaunches there, and its stopApp is iOS-gated because
 #    the bundle id is iOS-only (see 3).
