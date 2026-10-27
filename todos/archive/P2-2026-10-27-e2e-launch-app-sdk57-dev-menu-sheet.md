@@ -36,9 +36,9 @@ helper is now a dead branch too.
 
 ## Acceptance Criteria
 
-- [x] The helper detects (`Runtime version.*`) and closes (`Close`) the SDK 57 dev menu sheet; labels read from the Android hierarchy dump of run 40518026548 (iOS labels not re-dumped: no Metro/dev session available locally).
+- [x] The helper detects (`Runtime version.*`) and closes (`Close`) the SDK 57 dev menu sheet; labels read from the Android hierarchy dump of run 40518026548 (iOS labels not re-dumped: no Metro/dev session available locally; the iOS dump of the same run carries the same two labels as accessibilityText, checked at merge).
 - [x] The readiness regex no longer depends on "Connected to:" alone.
-- [ ] A `workflow_dispatch` run shows no flow failing attempt 1 on the dev menu sheet (Android; iOS once its load timeout is fixed).
+- [x] A `workflow_dispatch` run shows no flow failing attempt 1 on the dev menu sheet (Android; iOS once its load timeout is fixed). Run 40548172630 on cf2b02e: Android 10/10 on attempt 1; iOS had no dev-menu failures (its remaining failures were the load timeout, fixed separately in launch-app.yaml header (5)).
 
 ## Implementation Notes
 
@@ -60,3 +60,4 @@ helper is now a dead branch too.
 ### 2026-10-27 (executor)
 
 - Replaced "Connected to:" with "Runtime version.\*" in the readiness regex and sheet gate of `e2e/helpers/launch-app.yaml`. Third criterion (workflow_dispatch) needs a post-merge run.
+- 2026-10-27: AC3 verified by run 40548172630 (Android green on attempt 1, no iOS dev-menu failures).
