@@ -1,6 +1,6 @@
 ---
 title: "Android: the three pageSheet sheets draw their header under the status bar"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-27
 updated: 2026-10-28
@@ -24,8 +24,8 @@ The other 8 `<Modal>`s in `client/` are not `pageSheet` and were not checked her
 ## Acceptance Criteria
 
 - [x] On an Android phone, each sheet's title and close button sit below the status bar, not under the clock or icons.
-- [ ] iOS is unchanged: no extra gap above the sheet header (iOS sim screenshot).
-- [ ] With a toast showing over the sheet on Android, the toast still sits a small gap below the status bar.
+- [x] iOS is unchanged: no extra gap above the sheet header (iOS sim screenshot).
+- [x] With a toast showing over the sheet on Android, the toast still sits a small gap below the status bar.
 
 ## Implementation Notes
 
@@ -48,3 +48,4 @@ The other 8 `<Modal>`s in `client/` are not `pageSheet` and were not checked her
 ### 2026-10-28
 
 - Fixed with `pageSheetHeaderPaddingTop(insets.top)` (`client/components/page-sheet-utils.ts`) in all three headers. Phone (Samsung A37, Android 16): the cookbook sheet title moved from y=80 to y=181 px, exactly the 101 px status bar. iOS returns `Spacing.lg`, the same value the headers had before (unit test); no sim screenshot taken.
+- iOS sim (iPhone 17 Pro, main aed1481): the Save to Cookbook sheet's title and ✕ sit the usual small gap below the card's top edge, with no status-bar-sized band. Owner, on the phone after the OTA: a "Recipe ready" toast over the reopened recipe generation sheet sits a small gap below the status bar. All criteria met; archived.

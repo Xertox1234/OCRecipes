@@ -1,6 +1,6 @@
 ---
 title: "Android: tab bar labels sit under the system navigation buttons"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-27
 updated: 2026-10-28
@@ -22,8 +22,8 @@ Seen on a Samsung Galaxy A37, Android 16, 3-button navigation, 2026-10-27 (durin
 ## Acceptance Criteria
 
 - [x] On an Android phone with 3-button navigation, tab icons and labels are fully above the system buttons.
-- [ ] With gesture navigation (thin handle), the bar doesn't gain a large empty gap.
-- [ ] iOS tab bar unchanged (sim screenshot).
+- [x] With gesture navigation (thin handle), the bar doesn't gain a large empty gap.
+- [x] iOS tab bar unchanged (sim screenshot).
 - [x] Screens that pad their content by `TAB_BAR_HEIGHT` (grep it) still clear the bar on Android — the last list item isn't hidden behind it.
 
 ## Implementation Notes
@@ -46,3 +46,4 @@ Seen on a Samsung Galaxy A37, Android 16, 3-button navigation, 2026-10-27 (durin
 
 - Fixed with `tabBarHeight(insets.bottom)` in `client/constants/theme.ts` (adds the bottom inset on Android only), used by the tab bar, `ScanFAB` and `SpeedDial` — the only users of the raw `TAB_BAR_HEIGHT`. Screens pad by `useSafeTabBarHeight()` (the measured height), so they follow the taller bar without changes.
 - Phone (Samsung A37, Android 16, 3-button nav, bar from y=2205 px): labels moved from y=2217 to y=2129 px, fully above the buttons; the scan button and its speed-dial menu sit above the bar. Gesture navigation and an iOS sim screenshot were not checked (iOS value is unchanged by construction).
+- iOS sim (iPhone 17 Pro, main aed1481): labels sit above the home indicator and the scan button clears the bar. Owner, on the phone after the OTA, with gesture navigation: labels sit just above the handle with no large empty band. All criteria met; archived.
