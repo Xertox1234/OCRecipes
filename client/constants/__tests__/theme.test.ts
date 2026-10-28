@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { AbsoluteFill, withOpacity } from "../theme";
+import {
+  AbsoluteFill,
+  TAB_BAR_HEIGHT,
+  tabBarHeight,
+  withOpacity,
+} from "../theme";
 
 describe("withOpacity", () => {
   it("appends correct alpha for full opacity", () => {
@@ -39,5 +44,18 @@ describe("AbsoluteFill", () => {
       bottom: 0,
       left: 0,
     });
+  });
+});
+
+// Android is edge-to-edge, and React Navigation puts the bottom inset INSIDE
+// the bar's fixed height as padding — the bar must grow by it or the labels
+// sit under the 3-button navigation bar. iOS's 88 already includes it.
+describe("tabBarHeight", () => {
+  it("adds the bottom inset on Android", () => {
+    expect(tabBarHeight(48, "android")).toBe(TAB_BAR_HEIGHT + 48);
+  });
+
+  it("keeps the fixed height on iOS", () => {
+    expect(tabBarHeight(34, "ios")).toBe(TAB_BAR_HEIGHT);
   });
 });
