@@ -61,8 +61,11 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { logger } from "@/lib/logger";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
+import { isScanIntent, isScanIntentLocked } from "@/screens/photo-intent-utils";
 import {
   resolveSmartConfirmAction,
+  resolveMenuLocalOCRText,
+  getRouteForPickedIntent,
   evaluateBarcodeDetection,
   buildProductSummary,
   buildNutritionDetailParams,
@@ -118,7 +121,7 @@ export default function ScanScreen() {
   const haptics = useHaptics();
   const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const { isPremium, remainingScans } = usePremiumCamera();
-  const { refreshScanCount, features } = usePremiumContext();
+  const { refreshScanCount, features, canGenerateRecipe } = usePremiumContext();
   const queryClient = useQueryClient();
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -129,6 +132,12 @@ export default function ScanScreen() {
   // front-label uses FrontLabelConfirm AI flow — OCR frame processor not needed there
   const isFrontLabelMode = route.params?.mode === "front-label";
   const verifyBarcode = route.params?.verifyBarcode;
+  // Photo intent picked on PhotoIntent before capture. Untrusted at runtime
+  // (CoachChat casts model params to this screen's type): anything that is not
+  // a known intent is ignored and the photo is auto-classified as before.
+  // `mode` wins when both are present (its branch runs first).
+  const rawIntent: unknown = route.params?.intent;
+  const pickedIntent = isScanIntent(rawIntent) ? rawIntent : undefined;
   const toast = useToast();
 
   const [scanPhase, rawDispatch] = useReducer(scanPhaseReducer, {
@@ -638,6 +647,55 @@ export default function ScanScreen() {
           return;
         }
 
+        // Picked on PhotoIntent: skip classification and go to that flow. The
+        // premium lock is re-checked here because the param can arrive without
+        // passing PhotoIntentScreen's own lock.
+        if (pickedIntent) {
+          if (
+            isScanIntentLocked(
+              pickedIntent,
+              features,
+              !!features.recipeGeneration && !!canGenerateRecipe,
+            )
+          ) {
+            trackTempUri(photo.uri);
+            resetScan();
+            setShowUpgradeModal(true);
+            return;
+          }
+          const localOCRText =
+            pickedIntent === "menu"
+              ? await resolveMenuLocalOCRText(
+                  "restaurant_menu",
+                  photo.uri,
+                  recognizeTextFromPhoto,
+                )
+              : undefined;
+          const picked = getRouteForPickedIntent(
+            pickedIntent,
+            photo.uri,
+            localOCRText,
+          );
+          switch (picked.screen) {
+            case "PhotoAnalysis":
+              navigation.navigate("PhotoAnalysis", picked.params);
+              break;
+            case "LabelAnalysis":
+              navigation.navigate("LabelAnalysis", picked.params);
+              break;
+            case "MenuScanResult":
+              navigation.navigate("MenuScanResult", picked.params);
+              break;
+            case "CookSessionCapture":
+              navigation.navigate("CookSessionCapture", picked.params);
+              break;
+            default:
+              // getRouteForPickedIntent only yields the four arms above.
+              break;
+          }
+          return;
+        }
+
         trackTempUri(photo.uri);
         dispatch({ type: "SMART_PHOTO_INITIATED", imageUri: photo.uri });
         try {
@@ -707,6 +765,10 @@ export default function ScanScreen() {
     isLabelMode,
     isFrontLabelMode,
     verifyBarcode,
+    pickedIntent,
+    features,
+    canGenerateRecipe,
+    resetScan,
     navigation,
     haptics,
     trackTempUri,

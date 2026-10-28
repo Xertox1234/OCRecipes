@@ -1,6 +1,6 @@
 ---
 title: "Home 'Scan Menu' drops the picked option: every PhotoIntent choice opens plain Scan"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-28
 updated: 2026-10-28

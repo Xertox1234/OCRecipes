@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   getRouteForContentType,
+  getRouteForPickedIntent,
   getConfirmationMessage,
   getContentTypeLabel,
   getPremiumGate,
@@ -787,5 +788,34 @@ describe("scan-screen-utils", () => {
         expect(plan.runStepOcr && !plan.capture).toBe(false);
       },
     );
+  });
+});
+
+describe("getRouteForPickedIntent", () => {
+  it("sends photo intents to PhotoAnalysis with the intent", () => {
+    for (const intent of ["log", "identify", "recipe", "calories"] as const) {
+      expect(getRouteForPickedIntent(intent, "file://p")).toEqual({
+        screen: "PhotoAnalysis",
+        params: { imageUri: "file://p", intent },
+      });
+    }
+  });
+
+  it("sends menu to MenuScanResult carrying the OCR head start", () => {
+    expect(getRouteForPickedIntent("menu", "file://p", "SOUP 5")).toEqual({
+      screen: "MenuScanResult",
+      params: { imageUri: "file://p", localOCRText: "SOUP 5" },
+    });
+  });
+
+  it("sends label and cook to their screens", () => {
+    expect(getRouteForPickedIntent("label", "file://p")).toEqual({
+      screen: "LabelAnalysis",
+      params: { imageUri: "file://p" },
+    });
+    expect(getRouteForPickedIntent("cook", "file://p")).toEqual({
+      screen: "CookSessionCapture",
+      params: { initialPhotoUri: "file://p" },
+    });
   });
 });

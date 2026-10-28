@@ -20,7 +20,10 @@ import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { PhotoIntent } from "@shared/constants/preparation";
-import { isIntentOptionLocked } from "./photo-intent-utils";
+import {
+  isIntentOptionLocked,
+  getPhotoIntentDestination,
+} from "./photo-intent-utils";
 
 type PhotoIntentScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -122,22 +125,25 @@ export default function PhotoIntentScreen() {
       setShowUpgrade(true);
       return;
     }
-    // If no image was provided, user must capture one first via Scan screen
-    if (!imageUri) {
-      navigation.navigate("Scan");
-      return;
-    }
-    if (option.intent === "cook") {
-      navigation.navigate("CookSessionCapture", { initialPhotoUri: imageUri });
-    } else if (option.intent === "label") {
-      navigation.navigate("LabelAnalysis", { imageUri });
-    } else if (option.intent === "menu") {
-      navigation.navigate("MenuScanResult", { imageUri });
-    } else {
-      navigation.navigate("PhotoAnalysis", {
-        imageUri,
-        intent: option.intent,
-      });
+    // No photo yet: the user captures one via Scan, which carries the choice
+    // through capture (see getPhotoIntentDestination).
+    const dest = getPhotoIntentDestination(option.intent, imageUri);
+    switch (dest.screen) {
+      case "Scan":
+        navigation.navigate("Scan", dest.params);
+        break;
+      case "CookSessionCapture":
+        navigation.navigate("CookSessionCapture", dest.params);
+        break;
+      case "LabelAnalysis":
+        navigation.navigate("LabelAnalysis", dest.params);
+        break;
+      case "MenuScanResult":
+        navigation.navigate("MenuScanResult", dest.params);
+        break;
+      case "PhotoAnalysis":
+        navigation.navigate("PhotoAnalysis", dest.params);
+        break;
     }
   };
 

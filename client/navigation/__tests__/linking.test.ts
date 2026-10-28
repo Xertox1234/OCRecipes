@@ -105,6 +105,17 @@ describe("linking config", () => {
     ).toBeUndefined();
   });
 
+  // The picked photo intent decides which screen a captured photo goes to, so a
+  // link must not choose it.
+  it("drops a link-supplied intent on Scan", () => {
+    const state = getStateFromPath("scan?intent=menu", linking.config);
+    const route = state?.routes[0];
+    expect(route?.name).toBe("Scan");
+    expect(
+      (route?.params as Record<string, unknown> | undefined)?.intent,
+    ).toBeUndefined();
+  });
+
   // A screen that auto-sends route.params.initialMessage (RecipeChatScreen,
   // ChatScreen) must never receive it from a link: a tapped URL would post
   // link-chosen text to the AI as the user's own message, with no tap.
