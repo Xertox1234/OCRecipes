@@ -1,0 +1,41 @@
+appId: com.ocrecipes.app
+
+# Open the scan FAB's menu and confirm it opened. Use it instead of a bare
+# `tapOn: "Open scan menu"`. ACTION is the menu action the flow taps next.
+#
+#   - runFlow:
+#       file: ../../helpers/open-scan-menu.yaml
+#       env:
+#         ACTION: "Photo Food Log"
+#
+# Why: on the iOS macos-26 runner a FAB tap is sometimes lost, the same way
+# tab taps were (see tap-tab.yaml). Run 40614765446 (Scan - Photo analysis,
+# attempt 1): `tapOn "Open scan menu"` COMPLETED in 2.6s, and 10.5s later the
+# step-027 hierarchy still shows Home with the FAB labelled "Open scan menu".
+# Maestro does not re-tap on its own.
+#
+# "Opened" is checked with ACTION itself: the menu's action labels are not on
+# Home (none of the 10 Home dumps in that run contain them), and the FAB's
+# own "Close scan menu" label is not a safe signal on iOS, where the menu's
+# accessibilityViewIsModal can hide the FAB from the tree. Each re-tap is
+# guarded by `when notVisible`, because tapping the FAB on an open menu
+# closes it.
+---
+- tapOn: "Open scan menu"
+- repeat:
+    times: 2
+    while:
+      notVisible: ${ACTION}
+    commands:
+      - extendedWaitUntil:
+          visible: ${ACTION}
+          timeout: 5000
+          optional: true
+      - runFlow:
+          when:
+            notVisible: ${ACTION}
+          commands:
+            - tapOn: "Open scan menu"
+- extendedWaitUntil:
+    visible: ${ACTION}
+    timeout: 5000

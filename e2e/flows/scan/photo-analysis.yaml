@@ -17,14 +17,13 @@ env:
       PASSWORD: ${PASSWORD}
 
 # Scan is not a tab — the FAB's a11y label is "Open scan menu" (icon-only
-# button, ScanFAB.tsx) and it opens the SpeedDial action menu, not a screen
-- tapOn: "Open scan menu"
-
+# button, ScanFAB.tsx) and it opens the SpeedDial action menu, not a screen.
 # The menu must offer the photo-log action (a11y label on the mini-FAB) —
 # this is the flow's mandatory subject
-- extendedWaitUntil:
-    visible: "Photo Food Log"
-    timeout: 10000
+- runFlow:
+    file: ../../helpers/open-scan-menu.yaml
+    env:
+      ACTION: "Photo Food Log"
 - tapOn: "Photo Food Log"
 
 # Camera permission may appear
