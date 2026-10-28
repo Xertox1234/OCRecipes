@@ -3,7 +3,7 @@ title: "Android: the three pageSheet sheets draw their header under the status b
 status: backlog
 priority: medium
 created: 2026-10-27
-updated: 2026-10-27
+updated: 2026-10-28
 assignee:
 labels: [deferred, mobile, android]
 github_issue:
@@ -23,7 +23,7 @@ The other 8 `<Modal>`s in `client/` are not `pageSheet` and were not checked her
 
 ## Acceptance Criteria
 
-- [ ] On an Android phone, each sheet's title and close button sit below the status bar, not under the clock or icons.
+- [x] On an Android phone, each sheet's title and close button sit below the status bar, not under the clock or icons.
 - [ ] iOS is unchanged: no extra gap above the sheet header (iOS sim screenshot).
 - [ ] With a toast showing over the sheet on Android, the toast still sits a small gap below the status bar.
 
@@ -44,3 +44,7 @@ The other 8 `<Modal>`s in `client/` are not `pageSheet` and were not checked her
 ### 2026-10-27
 
 - Filed from the Android modal-toast check (screenshot of the cookbook sheet on the phone).
+
+### 2026-10-28
+
+- Fixed with `pageSheetHeaderPaddingTop(insets.top)` (`client/components/page-sheet-utils.ts`) in all three headers. Phone (Samsung A37, Android 16): the cookbook sheet title moved from y=80 to y=181 px, exactly the 101 px status bar. iOS returns `Spacing.lg`, the same value the headers had before (unit test); no sim screenshot taken.
