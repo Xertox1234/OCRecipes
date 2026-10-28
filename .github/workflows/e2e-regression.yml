@@ -518,10 +518,20 @@ jobs:
       # first launches (run 40583018319). Why an idle Metro answers so slowly
       # on this runner is not known. See e2e/helpers/launch-app.yaml header
       # (5) for the relaunch loop that covers the launches that still time out.
+      # Each round also logs to metro-probe.log (uploaded with logs-ios): epoch
+      # seconds, manifest time/status, /status time/status, load average. In
+      # run 40604313571 the simulator's request to Metro connected in ~7ms
+      # and then got no answer for 10s, repeatedly, for about 3 minutes.
+      # Every manifest request runs `expo-updates runtimeversion:resolve` in a
+      # new Node process (@expo/cli ExpoGoManifestHandlerMiddleware), while
+      # /status does not, so a slow manifest next to a fast /status points at
+      # that per-request work, and both slow points at Metro itself.
       - name: Keep Metro manifest warm
         run: |
           nohup bash -c 'while true; do
-            curl -s -o /dev/null --max-time 30 -H "expo-platform: ios" -H "accept: application/expo+json,application/json" http://localhost:8081/ || true
+            m=$(curl -s -o /dev/null -w "%{time_total} %{http_code}" --max-time 30 -H "expo-platform: ios" -H "accept: application/expo+json,application/json" http://localhost:8081/ || true)
+            s=$(curl -s -o /dev/null -w "%{time_total} %{http_code}" --max-time 30 http://localhost:8081/status || true)
+            echo "$(date +%s) manifest ${m:-none} status ${s:-none} load $(sysctl -n vm.loadavg)" >> "$GITHUB_WORKSPACE/metro-probe.log"
             sleep 5
           done' >/dev/null 2>&1 &
 
@@ -554,6 +564,7 @@ jobs:
           path: |
             server.log
             metro.log
+            metro-probe.log
             e2e/maestro-output/
           if-no-files-found: warn
 
