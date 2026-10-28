@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
+import { File as ExpoFile } from "expo-file-system";
 import { cleanupImage, compressImage } from "@/lib/image-compression";
 import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import type {
@@ -70,11 +71,11 @@ export function useAddCookPhoto() {
       });
 
       const formData = new FormData();
-      formData.append("photo", {
-        uri: compressed.uri,
-        type: "image/jpeg",
-        name: "ingredient.jpg",
-      } as unknown as Blob);
+      // A file object with bytes(), not RN's `{ uri, type, name }`: the global
+      // fetch is `expo/fetch` since SDK 57, and it rejects that shape
+      // ("Unsupported FormDataPart implementation"). Name and MIME type come
+      // from the file's extension.
+      formData.append("photo", new ExpoFile(compressed.uri));
 
       try {
         const token = await tokenStorage.get();
