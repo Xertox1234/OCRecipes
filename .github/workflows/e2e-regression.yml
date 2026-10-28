@@ -531,8 +531,7 @@ jobs:
       # responsive and the per-request process is what waits for CPU against
       # the simulator. Do not renice Metro to fix that: run 40686366318 tried
       # `renice -n -10` and was worse at every load level (load 150-250: p90
-      # 12.8s vs 5.0s), the load median doubled (281 vs 142), and stopApp
-      # itself timed out in two flows.
+      # 12.8s vs 5.0s) and the load median doubled (281 vs 142).
       - name: Keep Metro manifest warm
         run: |
           nohup bash -c 'while true; do
