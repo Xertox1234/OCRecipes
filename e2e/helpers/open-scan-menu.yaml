@@ -15,11 +15,11 @@ appId: com.ocrecipes.app
 # Maestro does not re-tap on its own.
 #
 # "Opened" is checked with ACTION itself: the menu's action labels are not on
-# Home (none of the 10 Home dumps in that run contain them), and the FAB's
-# own "Close scan menu" label is not a safe signal on iOS, where the menu's
-# accessibilityViewIsModal can hide the FAB from the tree. Each re-tap is
-# guarded by `when notVisible`, because tapping the FAB on an open menu
-# closes it.
+# Home (none of the 10 Home dumps in that run contain them). Once the menu
+# is open the FAB is relabelled "Close scan menu" (ScanFAB.tsx), so a re-tap
+# can never close it; but a menu that opens between the `when` check and the
+# re-tap leaves no "Open scan menu" to tap, so the re-tap is optional and the
+# final gate decides.
 ---
 - tapOn: "Open scan menu"
 - repeat:
@@ -35,7 +35,9 @@ appId: com.ocrecipes.app
           when:
             notVisible: ${ACTION}
           commands:
-            - tapOn: "Open scan menu"
+            - tapOn:
+                text: "Open scan menu"
+                optional: true
 - extendedWaitUntil:
     visible: ${ACTION}
     timeout: 5000
