@@ -264,3 +264,19 @@ nothing unreviewed landed. Unknown: whether either hook ran at all in the resume
 reboot (missing stamp root) or the hand-back delivery path is the trigger. First check if reopened: dispatch a
 reviewer, then `ls` the stamp dir; then pipe a `merge_pull_request` payload for an open, unreviewed PR into the
 guard by hand and read its decision.
+
+### HIT IN REAL USE 2026-10-28 — a hand-back with no closing text wrote no review record (#1592)
+
+A `code-reviewer` dispatched in the background against `6993a2fd789ef004bf29ad364d8272dfa3527bfe` delivered a
+well-formed report (full REVIEWED-SHA, all 9 changed files, last line `No findings.`) in ONE `SubagentHandback`
+and then stopped with NO final text message. `review-stamp-writer.sh` wrote nothing: the stamp dir
+`/tmp/ocrecipes-review-stamps-07d4e12e42b1/6993a2fd…/` did not exist after the task-completion notification,
+and `merge-review-guard.sh` correctly DENIED the merge. A re-dispatch told to end with the plain text line
+`Review complete and handed back; no blocking issues.` after the hand-back stamped `code-reviewer.json`, and
+the merge went through (`9bbd3d7c`).
+
+Not measured: why the no-wrapper shape fails. Reading the writer, an empty `last_assistant_message` should
+fall to the transcript's last text (none, so empty), then the `NHB == 1` branch should substitute the
+hand-back. A replay of that transcript through the writer with `REVIEW_STAMP_ROOT` in the scratchpad was
+denied by auto mode, so whether the hook ran, saw a non-empty `last_assistant_message`, or read a transcript
+flushed before the hand-back is open. Workaround: every reviewer dispatch asks for that closing text line.
