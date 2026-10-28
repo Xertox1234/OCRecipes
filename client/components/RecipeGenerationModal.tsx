@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { pageSheetHeaderPaddingTop } from "./page-sheet-utils";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -139,7 +140,7 @@ export function RecipeGenerationModal({
             styles.header,
             {
               borderBottomColor: theme.border,
-              paddingTop: Spacing.lg,
+              paddingTop: pageSheetHeaderPaddingTop(insets.top),
             },
           ]}
         >

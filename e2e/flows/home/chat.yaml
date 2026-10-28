@@ -20,8 +20,10 @@ env:
 # Coach tab. The CI account is always free tier, which lands on the chat
 # list: header "NutriCoach" (a text-free spinner shows until the premium
 # status resolves, hence the margin).
-- tapOn:
-    id: "tab-coach"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-coach"
 - extendedWaitUntil:
     visible: "NutriCoach"
     timeout: 15000

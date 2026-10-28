@@ -6,6 +6,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
@@ -20,7 +21,7 @@ import {
   FontFamily,
   Shadows,
   FAB_SIZE,
-  TAB_BAR_HEIGHT,
+  tabBarHeight,
   withOpacity,
 } from "@/constants/theme";
 import {
@@ -41,6 +42,7 @@ interface SpeedDialProps {
 
 export function SpeedDial({ actions, onClose }: SpeedDialProps) {
   const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { reducedMotion } = useAccessibility();
 
   const backdropEntering = reducedMotion ? undefined : FadeIn.duration(200);
@@ -117,7 +119,10 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
       <View
         style={[
           styles.actionsContainer,
-          { bottom: TAB_BAR_HEIGHT + Spacing.lg + FAB_SIZE + Spacing.md },
+          {
+            bottom:
+              tabBarHeight(insets.bottom) + Spacing.lg + FAB_SIZE + Spacing.md,
+          },
         ]}
       >
         {actions.map((action, index) => {

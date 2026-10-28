@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo } from "react";
 import { Pressable, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
@@ -22,7 +23,7 @@ import {
   FAB_SIZE,
   Shadows,
   Spacing,
-  TAB_BAR_HEIGHT,
+  tabBarHeight,
 } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
@@ -42,6 +43,7 @@ interface ScanFABProps {
 
 export function ScanFAB({ menuOpen, onOpen, onClose }: ScanFABProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -138,7 +140,7 @@ export function ScanFAB({ menuOpen, onOpen, onClose }: ScanFABProps) {
           animatedStyle,
           {
             backgroundColor: theme.accentSolid,
-            bottom: TAB_BAR_HEIGHT + Spacing.lg,
+            bottom: tabBarHeight(insets.bottom) + Spacing.lg,
           },
         ]}
       >

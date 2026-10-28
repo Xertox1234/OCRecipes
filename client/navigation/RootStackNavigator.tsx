@@ -102,6 +102,13 @@ export type RootStackParamList = {
   Scan:
     | {
         mode?: "label" | "front-label";
+        /**
+         * Photo intent picked on PhotoIntent before a photo existed; the
+         * captured photo routes there instead of being auto-classified.
+         * Untrusted at runtime (CoachChat casts model params) — ScanScreen
+         * validates it with isScanIntent. Dropped from deep links.
+         */
+        intent?: PhotoIntent | "cook";
         verifyBarcode?: string;
         returnAfterLog?: boolean;
       }

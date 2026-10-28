@@ -23,6 +23,20 @@ vi.mock("@/lib/token-storage", () => ({
   tokenStorage: mockTokenStorage,
 }));
 
+// `expo/fetch` (the global fetch since Expo SDK 57) only serializes FormData
+// parts that are strings, Blobs, or objects with `bytes()` — a React Native
+// `{ uri, type, name }` object throws "Unsupported FormDataPart implementation"
+// on device. jsdom's FormData stringifies anything, so assert the part type.
+const { MockExpoFile } = vi.hoisted(() => ({
+  MockExpoFile: class {
+    constructor(public uri: string) {}
+    type = "image/jpeg";
+    bytes = async () => new Uint8Array();
+  },
+}));
+
+vi.mock("expo-file-system", () => ({ File: MockExpoFile }));
+
 const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch;
 
@@ -99,5 +113,29 @@ describe("useMenuScan", () => {
     });
 
     expect(result.current.error?.message).toBe("413: Image too large");
+  });
+
+  it("appends the photo as a file object expo/fetch can send", async () => {
+    const append = vi.spyOn(FormData.prototype, "append");
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ menuItems: [] }),
+    });
+
+    const { result } = renderHook(() => useMenuScan(), { wrapper });
+    await act(async () => {
+      result.current.mutate("file:///photos/menu.jpg");
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const photoParts = append.mock.calls.filter(([name]) => name === "photo");
+    expect(photoParts).toHaveLength(1);
+    expect(photoParts[0][1]).toBeInstanceOf(MockExpoFile);
+    expect((photoParts[0][1] as unknown as { uri: string }).uri).toBe(
+      "file:///photos/menu.jpg",
+    );
+    append.mockRestore();
   });
 });

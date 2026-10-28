@@ -19,13 +19,16 @@ appId: com.ocrecipes.app
 #                        previous flow's login/registration submit; while it is
 #                        up the app hierarchy is entirely absent, so it MUST be
 #                        part of this gate or the gate itself times out
-#      Connected to:   — dev menu sheet left open (see 3)
+#      Runtime version.* — dev menu sheet left open (see 2). SDK 57 sheet shows
+#                        "Runtime version: 4.0.0", Reload / Go home tiles and a
+#                        "Close" X (labels from run 40518026548's hierarchy
+#                        dump). The pre-SDK-57 "Connected to:" text is gone.
 #    The gate is NOT optional: if none of these appears in 240s the app is
 #    genuinely broken and the flow should fail loudly right here.
 #
 # 2. The welcome banner sits ON TOP of the auto-opened dev menu on the first
 #    cold connect after install. Tapping "Continue" dismisses only the banner
-#    — the dev menu sheet ("Connected to: http://localhost:8081", Reload,
+#    — the dev menu sheet ("Runtime version: …", Reload,
 #    Go home, …) stays covering the app. That two-layer state, confirmed in
 #    the run-33292071278 hierarchy dumps, is why earlier single-overlay fixes
 #    kept half-working. The gated block closes the menu; its inner tap is
@@ -57,13 +60,49 @@ appId: com.ocrecipes.app
 #    the same URL is fine. stopApp needs the iOS bundle id, so it runs under
 #    a platform condition (see 3). Android is unchanged: its nightly passed
 #    on SDK 54 and the Android dev client was not checked on SDK 55.
+#
+# 5. iOS dev-client load timeout. The dev launcher fetches Metro's manifest
+#    with a hard-coded 10s timeout (EXDevLauncherDefaultRequestTimeout in
+#    expo-dev-launcher's EXDevLauncherController.m, same value in SDK 56 and
+#    57). On the macos-26 runner (3 CPUs, load average 150-290 with the iOS
+#    26 simulator up) a manifest request took 1.1s median but over 10s in
+#    8 of 118 samples, max 22.7s (diagnostic run 40559576171). A launch that
+#    lands in such a spike stops on "There was a problem loading the
+#    project." / "Failed to load app from http://localhost:8081 with error:
+#    The request timed out." and never retries by itself, so the 240s gate
+#    used to wait out the full budget on a dead screen (8 of 18 iOS launches
+#    in run 40518026548). The gate below therefore also accepts that screen,
+#    and a bounded loop relaunches (stopApp + openLink, the same cold start
+#    as (4)) up to 3 times. A load that still fails after that fails the
+#    final gate loudly. The iOS job also keeps Metro's manifest warm with a
+#    5s request loop (e2e-regression.yml, "Keep Metro manifest warm"),
+#    which took first-launch timeouts from 7/10 to 0/10; the loop is the
+#    backstop for the rest. Android's dev launcher has the same error screen
+#    (ErrorScreen.kt) but has not been seen to show it on CI; if it does,
+#    the loop still relaunches there, and its stopApp is iOS-gated because
+#    the bundle id is iOS-only (see 3).
+#
+# 6. openLink itself can time out. In run 40614765446 (View item detail,
+#    attempt 1) the first openLink FAILED after 15.8s: "Simulator device
+#    failed to open exp+ocrecipes://... Operation timed out"
+#    (NSPOSIXErrorDomain 60). The link never reached the app, which sat on
+#    the dev launcher's home ("Searching for development servers..."), and
+#    the failed command ended the flow before any gate ran. Each launch
+#    (stopApp + openLink) is therefore wrapped in `retry`, so a failed
+#    openLink is re-run from a fresh cold start, at most twice. The gate
+#    does not look for the launcher home instead: that screen sits under
+#    every load in the tree (run 40604313571's error-screen dump contains
+#    "DEVELOPMENT SERVERS"), so it would match during a normal load.
 ---
-- runFlow:
-    when:
-      platform: iOS
+- retry:
+    maxRetries: 2
     commands:
-      - stopApp: com.williamtower.ocrecipes
-- openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            - stopApp: com.williamtower.ocrecipes
+      - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
 
 # Readiness gate — see header (1). Also matches two stranded states a
 # previous attempt's kill can leave behind: the Sign-Out confirmation sheet
@@ -82,8 +121,30 @@ appId: com.ocrecipes.app
 # that, not a property to rely on (see
 # todos/archive/P3-2026-09-03-launch-app-comment-claims-auth-login-runs-first.md)).
 - extendedWaitUntil:
-    visible: "(Continue|Sign In|Hello.*|Not Now|Connected to:|Are you sure you want to sign out.*|Get Started|Go back)"
+    visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back|There was a problem loading the project.*)"
     timeout: 240000
+
+# Dev-client load-timeout recovery — see header (5).
+- repeat:
+    times: 3
+    while:
+      visible: "There was a problem loading the project.*"
+    commands:
+      - retry:
+          maxRetries: 2
+          commands:
+            - runFlow:
+                when:
+                  platform: iOS
+                commands:
+                  - stopApp: com.williamtower.ocrecipes
+            - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - extendedWaitUntil:
+          visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back|There was a problem loading the project.*)"
+          timeout: 240000
+- extendedWaitUntil:
+    visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back)"
+    timeout: 10000
 
 # Finish an interrupted logout: the in-app confirmation sheet (issue #908 —
 # see ensure-logged-out.yaml for why this is no longer a native alert) may
@@ -113,12 +174,12 @@ appId: com.ocrecipes.app
 # close it. The inner tap stays optional: the `when:` gate only guards entry,
 # it does not soften a failing command inside.
 - extendedWaitUntil:
-    visible: "Connected to:"
+    visible: "Runtime version.*"
     timeout: 3000
     optional: true
 - runFlow:
     when:
-      visible: "Connected to:"
+      visible: "Runtime version.*"
     commands:
       - tapOn:
           text: "Close"

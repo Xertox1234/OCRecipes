@@ -137,6 +137,19 @@ export const Colors = {
 /** Height of the bottom tab bar (must match MainTabNavigator screenOptions) */
 export const TAB_BAR_HEIGHT = Platform.select({ ios: 88, android: 72 }) ?? 88;
 
+/**
+ * Laid-out height of the bottom tab bar. React Navigation pads the bar by the
+ * bottom safe-area inset INSIDE the height it is given; on Android (edge-to-edge)
+ * that inset is the system navigation bar, so the bar grows by it or its labels
+ * sit under the navigation buttons. iOS's fixed height already allows for it.
+ */
+export function tabBarHeight(
+  insetBottom: number,
+  os: typeof Platform.OS = Platform.OS,
+): number {
+  return TAB_BAR_HEIGHT + (os === "android" ? insetBottom : 0);
+}
+
 /** Size of the floating action button */
 export const FAB_SIZE = 56;
 

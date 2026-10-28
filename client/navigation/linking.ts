@@ -256,10 +256,11 @@ export const linking: LinkingOptions<RootStackParamList> = {
       // Query params land in route.params unfiltered unless `parse` handles
       // them. ScanScreen forwards verifyBarcode into FrontLabelConfirm and the
       // verification submit, so a link must not choose the barcode a user's
-      // label photo is credited to: drop it. `mode` stays linkable.
+      // label photo is credited to: drop it. `mode` stays linkable. `intent`
+      // (the PhotoIntent choice that routes the captured photo) is in-app only.
       Scan: {
         path: "scan",
-        parse: { verifyBarcode: () => undefined },
+        parse: { verifyBarcode: () => undefined, intent: () => undefined },
       },
       // ocrecipes://login opens the sign-in screen — pure navigation, no auth
       // side effect. Signed-out stack only: while signed in it goes unhandled.

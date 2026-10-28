@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Platform, StyleSheet, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -36,7 +37,7 @@ import { openRecipeCreate } from "@/navigation/openRecipeCreate";
 import { navigationRef } from "@/navigation/navigationRef";
 import {
   FontFamily,
-  TAB_BAR_HEIGHT,
+  tabBarHeight,
   MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
 import { tabIconPopConfig } from "@/constants/animations";
@@ -218,6 +219,7 @@ function RecipeDraftToastBridge(): null {
 
 export default function MainTabNavigator() {
   const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { reducedMotion } = useAccessibility();
   const { hasPending } = usePendingReminders();
   const hasUnreadCoachReply = useHasUnreadCoachReply();
@@ -262,7 +264,7 @@ export default function MainTabNavigator() {
               }),
               borderTopWidth: 0,
               elevation: 0,
-              height: TAB_BAR_HEIGHT,
+              height: tabBarHeight(insets.bottom),
               // Shadow for elevated appearance (Figma design)
               shadowColor: "#000", // hardcoded — shadow color is always black
               shadowOffset: { width: 0, height: -2 },

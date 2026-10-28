@@ -14,7 +14,6 @@ import {
   pantryMealPlanRateLimit,
   crudRateLimit,
 } from "./_rate-limiters";
-import { numericStringField, nullableNumericStringField } from "./_schemas";
 import {
   checkAiConfigured,
   checkPremiumFeature,
@@ -35,117 +34,53 @@ import { inferMealTypes } from "../services/meal-type-inference";
 import { validateRecipeQuality } from "../lib/recipe-validation";
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
-// Zod schemas for meal plan endpoints
-const createMealPlanRecipeSchema = z.object({
-  title: z.string().min(3).max(200),
-  description: z.string().max(2000).optional().nullable(),
-  cuisine: z.string().max(100).optional().nullable(),
-  difficulty: z.string().max(50).optional().nullable(),
-  servings: z.number().int().min(1).max(50).optional(),
-  prepTimeMinutes: z.number().int().min(0).max(1440).optional().nullable(),
-  cookTimeMinutes: z.number().int().min(0).max(1440).optional().nullable(),
-  imageUrl: z
-    .string()
-    .url()
-    .max(2000)
-    .refine(
-      (url) => /^https?:\/\//.test(url),
-      "Only http:// or https:// URLs allowed",
-    )
-    .optional()
-    .nullable(),
-  instructions: z.array(z.string()).max(100).optional(),
-  dietTags: z.array(z.string().max(50)).max(20).optional(),
-  caloriesPerServing: nullableNumericStringField,
-  proteinPerServing: nullableNumericStringField,
-  carbsPerServing: nullableNumericStringField,
-  fatPerServing: nullableNumericStringField,
-  sourceType: z
-    .enum(["user_created", "quick_entry", "ai_suggestion", "photo_import"])
-    .optional()
-    .default("user_created"),
-  ingredients: z
-    .array(
-      z.object({
-        name: z.string().min(1).max(200),
-        quantity: nullableNumericStringField,
-        unit: z.string().max(50).optional().nullable(),
-        category: z.string().max(50).optional(),
-      }),
-    )
-    .optional(),
-  sourceCommunityRecipeId: z.number().int().positive().optional().nullable(),
-});
+import {
+  addMealPlanItemSchema,
+  createMealPlanRecipeSchema,
+  validateMealPlanDateRange,
+} from "./_meal-plan-schemas";
 
-const addMealPlanItemSchema = z.object({
-  recipeId: z.number().int().positive().optional().nullable(),
-  scannedItemId: z.number().int().positive().optional().nullable(),
-  plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
-  servings: numericStringField,
-});
+export { validateMealPlanDateRange };
 
-/** YYYY-MM-DD format guard for meal-plan date-range query params. */
-const MEAL_PLAN_DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
-/** Maximum span (inclusive of both endpoints) allowed for a meal-plan query. */
-const MEAL_PLAN_MAX_RANGE_DAYS = 90;
+/** Meal types inferred from the normalized title + ingredient names. */
+function inferRecipeMealTypes(
+  title: string,
+  ingredients:
+    | { name: string; quantity?: string | null; unit?: string | null }[]
+    | undefined,
+) {
+  // normalizeRecipeFields feeds inferMealTypes clean title/ingredient input;
+  // persistence normalization happens in storage.
+  const normalized = normalizeRecipeFields({ title, ingredients });
+  return inferMealTypes(
+    normalized.title ?? title,
+    normalized.ingredients?.map((i) => i.name),
+  );
+}
 
-/**
- * Validate a meal-plan date range (GET /api/meal-plan `start`/`end` params).
- *
- * Exported so the validator is unit-tested against the real implementation
- * instead of a tautological re-implementation in the test body. The route
- * handler maps a failure to `sendError(res, 400, error, code)` — `code` is
- * `undefined` for the missing/format case (no machine code, preserving the
- * original response shape) and `ErrorCode.VALIDATION_ERROR` for the calendar,
- * ordering, and range-length cases.
- */
-export function validateMealPlanDateRange(
-  start: string | undefined,
-  end: string | undefined,
-):
-  | { valid: true; start: string; end: string }
-  | { valid: false; error: string; code?: ErrorCode } {
-  if (
-    !start ||
-    !end ||
-    !MEAL_PLAN_DATE_FORMAT.test(start) ||
-    !MEAL_PLAN_DATE_FORMAT.test(end)
-  ) {
-    return {
-      valid: false,
-      error: "start and end query parameters required (YYYY-MM-DD)",
-    };
-  }
-
-  if (!isValidCalendarDate(start) || !isValidCalendarDate(end)) {
-    return {
-      valid: false,
-      error: "Invalid calendar date",
-      code: ErrorCode.VALIDATION_ERROR,
-    };
-  }
-
-  if (start > end) {
-    return {
-      valid: false,
-      error: "start must be on or before end",
-      code: ErrorCode.VALIDATION_ERROR,
-    };
-  }
-
-  const startMs = new Date(start + "T00:00:00Z").getTime();
-  const endMs = new Date(end + "T00:00:00Z").getTime();
-  const diffDays = (endMs - startMs) / (1000 * 60 * 60 * 24);
-  if (diffDays > MEAL_PLAN_MAX_RANGE_DAYS) {
-    return {
-      valid: false,
-      error: "Date range must not exceed 90 days",
-      code: ErrorCode.VALIDATION_ERROR,
-    };
-  }
-
-  return { valid: true, start, end };
+/** Auto-generate a hero image for a recipe saved without one (non-blocking). */
+function fireRecipeImageGen(
+  recipe: {
+    id: number;
+    title: string;
+    cuisine: string | null;
+    mealTypes: string[] | null;
+  },
+  userId: string,
+): void {
+  fireAndForget(
+    "recipe-image-gen",
+    (async () => {
+      const imageUrl = await generateRecipeImage({
+        title: recipe.title,
+        cuisine: recipe.cuisine,
+        mealTypes: recipe.mealTypes,
+      });
+      if (imageUrl) {
+        await storage.updateMealPlanRecipe(recipe.id, userId, { imageUrl });
+      }
+    })(),
+  );
 }
 
 export function register(app: Express): void {
@@ -229,21 +164,7 @@ export function register(app: Express): void {
           return;
         }
 
-        // normalizeRecipeFields is still called here — not redundant — to
-        // feed inferMealTypes with clean title/ingredient-name input.
-        // Persistence normalization now happens inside
-        // storage.createMealPlanRecipe (see Task 4), so raw recipeData /
-        // ingredients are passed to it directly below.
-        const normalizedForMealTypes = normalizeRecipeFields({
-          title: recipeData.title,
-          ingredients,
-        });
-
-        // Infer meal types from title + ingredients (moved from storage layer to maintain layering)
-        const mealTypes = inferMealTypes(
-          normalizedForMealTypes.title ?? recipeData.title,
-          normalizedForMealTypes.ingredients?.map((i) => i.name),
-        );
+        const mealTypes = inferRecipeMealTypes(recipeData.title, ingredients);
         const recipe = await storage.createMealPlanRecipe(
           {
             ...recipeData,
@@ -269,23 +190,7 @@ export function register(app: Express): void {
         }
 
         // Auto-generate image if none provided (async, non-blocking)
-        if (!recipe.imageUrl) {
-          fireAndForget(
-            "recipe-image-gen",
-            (async () => {
-              const imageUrl = await generateRecipeImage({
-                title: recipe.title,
-                cuisine: recipe.cuisine,
-                mealTypes: recipe.mealTypes,
-              });
-              if (imageUrl) {
-                await storage.updateMealPlanRecipe(recipe.id, req.userId, {
-                  imageUrl,
-                });
-              }
-            })(),
-          );
-        }
+        if (!recipe.imageUrl) fireRecipeImageGen(recipe, req.userId);
 
         res.status(201).json(recipe);
       } catch (error) {
@@ -410,23 +315,87 @@ export function register(app: Express): void {
           return;
         }
 
-        if (!parsed.data.recipeId && !parsed.data.scannedItemId) {
+        const { recipe: inlineRecipe, ...itemData } = parsed.data;
+        const sources = [
+          itemData.recipeId,
+          itemData.scannedItemId,
+          inlineRecipe,
+        ].filter(Boolean).length;
+        if (sources !== 1) {
           sendError(
             res,
             400,
-            "Either recipeId or scannedItemId is required",
+            "Provide exactly one of recipeId, scannedItemId or recipe",
             ErrorCode.VALIDATION_ERROR,
           );
           return;
         }
 
-        if (parsed.data.recipeId && parsed.data.scannedItemId) {
-          sendError(
-            res,
-            400,
-            "Provide either recipeId or scannedItemId, not both",
-            ErrorCode.VALIDATION_ERROR,
-          );
+        if (inlineRecipe) {
+          const { ingredients, sourceType, ...recipeData } = inlineRecipe;
+          const quality = validateRecipeQuality({
+            title: recipeData.title,
+            instructions: recipeData.instructions,
+            ingredients: ingredients ?? null,
+          });
+          if (!quality.valid) {
+            sendError(res, 400, quality.reason!, ErrorCode.VALIDATION_ERROR);
+            return;
+          }
+          const normalized = normalizeRecipeFields({
+            title: recipeData.title,
+            description: recipeData.description,
+            difficulty: recipeData.difficulty,
+            instructions: recipeData.instructions,
+          });
+          const mealTypes = inferRecipeMealTypes(recipeData.title, ingredients);
+          // Recipe + plan item in ONE transaction (a failed item insert leaves
+          // no orphan recipe). Both rows are owned by req.userId only.
+          const [created] = await storage.createMealPlanFromSuggestions([
+            {
+              recipe: {
+                ...recipeData,
+                title: normalized.title ?? recipeData.title,
+                description: normalized.description,
+                difficulty: normalized.difficulty,
+                instructions:
+                  normalized.instructions ?? recipeData.instructions,
+                userId: req.userId,
+                sourceType,
+                mealTypes,
+              },
+              ingredients: (ingredients ?? []).map((ing, idx) => ({
+                name: ing.name,
+                quantity: ing.quantity ?? null,
+                unit: ing.unit ?? null,
+                category: ing.category,
+                displayOrder: idx,
+              })),
+              planItem: {
+                userId: req.userId,
+                plannedDate: itemData.plannedDate,
+                mealType: itemData.mealType,
+                servings: itemData.servings,
+              },
+            },
+          ]);
+          if (!recipeData.imageUrl) {
+            fireRecipeImageGen(
+              {
+                id: created.recipeId,
+                title: recipeData.title,
+                cuisine: recipeData.cuisine ?? null,
+                mealTypes,
+              },
+              req.userId,
+            );
+          }
+          res.status(201).json({
+            id: created.mealPlanItemId,
+            recipeId: created.recipeId,
+            plannedDate: itemData.plannedDate,
+            mealType: itemData.mealType,
+          });
           return;
         }
 
@@ -453,7 +422,7 @@ export function register(app: Express): void {
         }
 
         const mealPlanItem = await storage.addMealPlanItem({
-          ...parsed.data,
+          ...itemData,
           userId: req.userId,
         });
 

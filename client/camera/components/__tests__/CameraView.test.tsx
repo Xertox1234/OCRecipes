@@ -129,6 +129,27 @@ describe("CameraView — no-device guard", () => {
     expect(first).toEqual(["ean-13", "qr-code"]);
     expect(last).toBe(first);
   });
+
+  it("never hands the barcode scanner an empty format list (label modes pass barcodeTypes=[])", () => {
+    // The hook builds the native ML Kit scanner during render even when the
+    // output is left out of `outputs`, and on Android an empty format list
+    // throws "Target barcodeFormats cannot be empty!" — a Render Error that
+    // takes down the whole scan screen in label / front-label mode.
+    mockDevice();
+    vi.mocked(useBarcodeScannerOutput).mockClear();
+
+    render(<CameraView barcodeTypes={[]} />);
+
+    const calls = vi.mocked(useBarcodeScannerOutput).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const [options] of calls) {
+      expect(options.barcodeFormats.length).toBeGreaterThan(0);
+    }
+    // The placeholder scanner is never attached: only the photo output runs.
+    expect((lastCameraProps() as { outputs?: unknown[] }).outputs).toHaveLength(
+      1,
+    );
+  });
 });
 
 describe("CameraView — failure reporting (latched once per mount)", () => {

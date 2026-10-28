@@ -52,37 +52,39 @@ export function useMealPlanRecipeDetail(recipeId: number) {
   });
 }
 
+export type CreateMealPlanRecipeInput = {
+  title: string;
+  description?: string | null;
+  cuisine?: string | null;
+  difficulty?: string | null;
+  servings?: number;
+  prepTimeMinutes?: number | null;
+  cookTimeMinutes?: number | null;
+  instructions?: string[] | null;
+  dietTags?: string[];
+  sourceType?:
+    | "user_created"
+    | "quick_entry"
+    | "ai_suggestion"
+    | "photo_import";
+  caloriesPerServing?: string | number | null;
+  proteinPerServing?: string | number | null;
+  carbsPerServing?: string | number | null;
+  fatPerServing?: string | number | null;
+  ingredients?: {
+    name: string;
+    quantity?: string | number | null;
+    unit?: string | null;
+    category?: string;
+  }[];
+  sourceCommunityRecipeId?: number;
+};
+
 export function useCreateMealPlanRecipe() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (recipe: {
-      title: string;
-      description?: string | null;
-      cuisine?: string | null;
-      difficulty?: string | null;
-      servings?: number;
-      prepTimeMinutes?: number | null;
-      cookTimeMinutes?: number | null;
-      instructions?: string[] | null;
-      dietTags?: string[];
-      sourceType?:
-        | "user_created"
-        | "quick_entry"
-        | "ai_suggestion"
-        | "photo_import";
-      caloriesPerServing?: string | number | null;
-      proteinPerServing?: string | number | null;
-      carbsPerServing?: string | number | null;
-      fatPerServing?: string | number | null;
-      ingredients?: {
-        name: string;
-        quantity?: string | number | null;
-        unit?: string | null;
-        category?: string;
-      }[];
-      sourceCommunityRecipeId?: number;
-    }) => {
+    mutationFn: async (recipe: CreateMealPlanRecipeInput) => {
       const res = await apiRequest("POST", "/api/meal-plan/recipes", recipe);
       return res.json() as Promise<MealPlanRecipe>;
     },
