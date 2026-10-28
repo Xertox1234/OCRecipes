@@ -1,6 +1,6 @@
 ---
 title: 'E2E iOS: the scan FAB tap is sometimes lost ("Photo Food Log" not found on attempt 1)'
-status: backlog
+status: done
 priority: low
 created: 2026-10-28
 updated: 2026-10-28
@@ -22,8 +22,8 @@ The lost-tap problem fixed for bottom tabs (`e2e/helpers/tap-tab.yaml`) also hit
 
 ## Acceptance Criteria
 
-- [ ] Every "Open scan menu" tap in `e2e/flows` checks that the menu opened ("Photo Food Log" or another menu-only element visible) and re-taps a bounded number of times if not, then fails loudly.
-- [ ] Two consecutive `workflow_dispatch` runs show no scan-menu step failing attempt 1 on iOS, counted from each flow's `commands.json`, with how many re-taps happened.
+- [x] Every "Open scan menu" tap in `e2e/flows` checks that the menu opened ("Photo Food Log" or another menu-only element visible) and re-taps a bounded number of times if not, then fails loudly.
+- [x] Two consecutive `workflow_dispatch` runs show no scan-menu step failing attempt 1 on iOS, counted from each flow's `commands.json`, with how many re-taps happened.
 
 ## Implementation Notes
 
@@ -41,3 +41,13 @@ The lost-tap problem fixed for bottom tabs (`e2e/helpers/tap-tab.yaml`) also hit
 ### 2026-10-28
 
 - Filed from the tab-tap fix's validation run 40614765446.
+
+### 2026-10-28 (done)
+
+- Fix: `e2e/helpers/open-scan-menu.yaml` (env `ACTION` = the menu action the flow taps next). It taps, waits up to 5s for ACTION, re-taps at most twice (each re-tap guarded by `when notVisible` and `optional`, since an opened menu relabels the FAB "Close scan menu"), then a final 5s gate. Both scan flows use it. The menu's action labels are absent from all 10 Home dumps in run 40614765446, so ACTION is a menu-only signal.
+- Validation on head 9ff98ff (helper unchanged since cd25e3a), tallied from commands.json including retry attempts:
+  - Run 40678946874 (cd25e3a): iOS 2 opens, 1 re-tap (Scan Barcode: first tap COMPLETED, menu still closed 9s later, opened after the re-tap); Android 2 opens, 0 re-taps.
+  - Run 40690138910: iOS job red because the simulator driver dropped out ("Device became unreachable", 8 flows at 13:44) plus launch failures; the helper ran once (0 re-taps, 0 failures); Android 2/0/0.
+  - Run 40707057598: green; iOS 2 opens, 0 re-taps; Android 2/0/0.
+  - Total: 11 menu opens, 1 re-tap, 0 helper failures. Runs 2 and 3 had no scan-menu attempt-1 failure.
+- Codified: `docs/solutions/logic-errors/maestro-tap-reports-success-but-the-app-never-saw-it-2026-10-28.md`.

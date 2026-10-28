@@ -1,6 +1,6 @@
 ---
 title: 'E2E iOS: launch-app sometimes ends on the dev launcher''s "Searching for development servers" home'
-status: backlog
+status: done
 priority: low
 created: 2026-10-28
 updated: 2026-10-28
@@ -27,8 +27,8 @@ The original "the gate does not list the launcher home" reading was wrong: the l
 ## Acceptance Criteria
 
 - [x] The cause is identified from attempt-1 artifacts (`commands.json` timings, dumps, `xctest_runner_*.log`, Metro log around the `openLink`).
-- [ ] (B done, A open) launch-app recovers from the launcher home (for example, the gate accepts "Searching for development servers.\*" and the bounded relaunch loop covers it), or the cause is fixed directly.
-- [ ] Two consecutive `workflow_dispatch` runs show no iOS flow failing attempt 1 in launch-app, counted from `commands.json`.
+- [x] (B fixed; A left to the per-flow retry by owner ruling) launch-app recovers from the launcher home (for example, the gate accepts "Searching for development servers.\*" and the bounded relaunch loop covers it), or the cause is fixed directly.
+- [x] (Waived by owner ruling 2026-10-28) Two consecutive `workflow_dispatch` runs show no iOS flow failing attempt 1 in launch-app, counted from `commands.json`.
 
 ## Implementation Notes
 
@@ -53,3 +53,8 @@ The original "the gate does not list the launcher home" reading was wrong: the l
 - **A, cause measured.** The keep-warm loop now logs manifest and `/status` timings plus the load average to `metro-probe.log` (logs-ios), which reaches into `.github/workflows/**` beyond this todo's original scope. Run 40679705881: manifest p90 7.6s, 9 of 131 over 10s (max 33s at load 314); `/status` never over 0.38s. Metro answers promptly. What waits is the work per manifest request: `@expo/cli`'s ExpoGoManifestHandlerMiddleware runs `expo-updates runtimeversion:resolve` in a new Node process every time (0.3s CPU locally), and on the 3-CPU runner it queues behind the simulator.
 - **A, renice tried and dropped.** Run 40686366318 reniced Metro to -10. It was slower at the same load (load 150-250: p90 12.8s vs 5.0s), and the load median doubled (281 vs 142). Its two stopApp failures were "Device became unreachable while processing deviceInfo" (the simulator driver dropping out), which also hit 8 flows at once in run 40690138910 without any renice, so they are not evidence against the renice.
 - **A, still open (owner decision).** Removing the per-request spawn means patching the nested `@expo/cli` (patch-package or a CI-only edit) during the SDK 58 upgrade, for a flake the per-flow retry already absorbs. Without it, AC 3 cannot be met.
+
+### 2026-10-28 (closed by owner ruling)
+
+- #1597 merged (ce40706): openLink `retry` (B) and the `metro-probe.log` instrumentation (A).
+- Owner ruling: leave A alone. Do not patch `@expo/cli` to stop the per-request `runtimeversion:resolve` spawn; the per-flow retry absorbs the remaining iOS attempt-1 manifest timeouts. AC 3 is waived on that ruling, not met. If attempt-1 launch failures grow beyond what the retry absorbs, raise the patch again with fresh `metro-probe.log` numbers.
