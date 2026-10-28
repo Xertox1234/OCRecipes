@@ -27,8 +27,9 @@ A longer wait cannot fix a tap that never arrived.
 
 ## Root Cause
 
-Maestro does not re-tap on its own here: on CI's Maestro 2.9.0 every logged
-`tapOn` carries `retryIfNoChange: false`. (The 2026-08-30 doc
+Maestro does not re-tap on its own here: on CI's Maestro 2.9.0 all 952
+`tapOn` commands logged across 4 runs (iOS and Android, runs 40548172630,
+40583018319, 40604313571, 40614765446) carry `retryIfNoChange: false`. (The 2026-08-30 doc
 `maestro-auto-retap-untoggles-toggle-controls` describes a re-tapping
 default. Don't rely on either behaviour — read the logged command.)
 
