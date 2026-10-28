@@ -98,6 +98,34 @@ export function getRouteForContentType(
 }
 
 /**
+ * Route for a photo whose destination the user already picked on PhotoIntent
+ * (carried through Scan as the `intent` param) — no classification needed.
+ * Mirrors PhotoIntentScreen's with-photo routing.
+ */
+export function getRouteForPickedIntent(
+  intent: PhotoIntent | "cook",
+  imageUri: string,
+  localOCRText?: string,
+): ClassificationRoute {
+  switch (intent) {
+    case "cook":
+      return {
+        screen: "CookSessionCapture",
+        params: { initialPhotoUri: imageUri },
+      };
+    case "label":
+      return { screen: "LabelAnalysis", params: { imageUri } };
+    case "menu":
+      return { screen: "MenuScanResult", params: { imageUri, localOCRText } };
+    case "log":
+    case "identify":
+    case "recipe":
+    case "calories":
+      return { screen: "PhotoAnalysis", params: { imageUri, intent } };
+  }
+}
+
+/**
  * Compute on-device OCR text for the smart-scan menu path so MenuScanResult can
  * render an instant local skeleton while the AI analysis loads (the OCR race-swap
  * that MenuScanResultScreen performs from `localOCRText`). OCR is gated to
