@@ -17,7 +17,7 @@ Opening the scan screen on an Android phone logged `[CameraView] Camera error Er
 
 ## Background
 
-Seen on a Samsung Galaxy A37, Android 16, dev build, 2026-10-27. `dumpsys media.camera` showed `com.ocrecipes.app` holding camera 0 (state active) at the same moment, and the scan screen kept working. CameraX throws `OperationCanceledException` when a camera-control call (torch, focus, zoom) is issued before or while the session is not active; it is a start-up race, not a failure. `client/camera/components/CameraView.tsx` `onError` logs every first error at `logger.error` level (~line 202). It appeared on every scan-screen open observed that evening (4 of 4, default and label mode), so in production it would be a Sentry event per Android scan.
+Seen on a Samsung Galaxy A37, Android 16, dev build, 2026-10-27. `dumpsys media.camera` showed `com.ocrecipes.app` holding camera 0 (state active) at the same moment, and the scan screen kept working. CameraX throws `OperationCanceledException` when a camera-control call (torch, focus, zoom) is issued before or while the session is not active; it is a start-up race, not a failure. `client/camera/components/CameraView.tsx` `onError` logs every first error at `logger.error` level (~line 202). It appeared on every scan-screen open observed that evening (4 of 4, default and label mode), so in production it would be a Sentry event per Android scan. The noise has a cost: on 2026-10-27 the red overlay covered the "Could not analyze this photo" toast of a real upload failure (the expo/fetch FormData bug), so the tester saw only the camera error.
 
 ## Acceptance Criteria
 
