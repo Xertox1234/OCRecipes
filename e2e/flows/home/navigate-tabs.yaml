@@ -37,8 +37,10 @@ env:
 # Navigate to Plan tab. The action row's buttons expose a11y labels, not
 # their visible text ("Browse Recipes", not "Recipes"), and tab switches can
 # briefly re-flash the splash overlay — wait with margin.
-- tapOn:
-    id: "tab-plan"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-plan"
 - extendedWaitUntil:
     visible: "Browse Recipes"
     timeout: 15000
@@ -46,22 +48,28 @@ env:
 # Navigate to Coach tab. The CI account is always free tier, which lands on
 # the chat list — its header is "NutriCoach" (a text-free spinner shows
 # until the premium status resolves, hence the margin).
-- tapOn:
-    id: "tab-coach"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-coach"
 - extendedWaitUntil:
     visible: "NutriCoach"
     timeout: 15000
 
 # Navigate to Profile tab
-- tapOn:
-    id: "tab-profile"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-profile"
 - extendedWaitUntil:
     visible: "Profile photo. Tap to change"
     timeout: 10000
 
 # Navigate back to Home
-- tapOn:
-    id: "tab-home"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-home"
 - extendedWaitUntil:
     visible: "Hello.*"
     timeout: 5000

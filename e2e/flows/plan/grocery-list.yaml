@@ -22,8 +22,10 @@ env:
 # full-string text selector cannot match — the navigator sets
 # tabBarButtonTestID for exactly this reason ("E2E flows tap tabs by these
 # testIDs"), and every other regression-tagged flow that touches a tab uses it.
-- tapOn:
-    id: "tab-plan"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-plan"
 
 # Wait on "Browse Recipes" with margin, as meal-plan-home.yaml does: a tab
 # switch can briefly re-flash the splash overlay, and the previous 5000ms gate

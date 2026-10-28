@@ -19,8 +19,10 @@ env:
 # The tab tap uses the tabBarButtonTestID handle; the library row's a11y
 # label is "Scan History: N items", so the selector needs the regex suffix
 # (Maestro text matching is full-string).
-- tapOn:
-    id: "tab-profile"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-profile"
 # Tab switches can briefly re-flash the splash overlay and the library grid
 # loads its counts async — wait for the row before touching it
 - extendedWaitUntil:
