@@ -14,6 +14,7 @@ import {
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { pageSheetHeaderPaddingTop } from "./page-sheet-utils";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -184,7 +185,15 @@ export function GroceryListPickerModal({
         ]}
       >
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: theme.border }]}>
+        <View
+          style={[
+            styles.header,
+            {
+              borderBottomColor: theme.border,
+              paddingTop: pageSheetHeaderPaddingTop(insets.top),
+            },
+          ]}
+        >
           <View style={styles.headerTextGroup}>
             <ThemedText style={styles.headerTitle}>
               Add to Grocery List
