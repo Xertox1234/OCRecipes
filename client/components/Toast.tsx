@@ -41,8 +41,9 @@ interface ToastProps {
   action?: ToastAction;
   /** Overrides the safe-area top inset the toast clears. The default reads the
    *  root SafeAreaProvider, which is right in the root window but double-counts
-   *  inside an RN `Modal` sheet (laid out below the status bar) — the sheet's
-   *  `ModalToastHost` passes 0. */
+   *  inside an iOS `pageSheet` Modal (laid out below the status bar) — there
+   *  the sheet's `ModalToastHost` passes 0. Android's Modal window is
+   *  edge-to-edge, so it keeps the default. */
   topInset?: number;
   /** `Date.now()` when the toast was shown. The dismiss window counts from
    *  here rather than from mount, so a remount (the toast moving between the

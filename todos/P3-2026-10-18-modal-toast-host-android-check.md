@@ -3,7 +3,7 @@ title: "Verify the modal toast host on Android (toast over an open RN Modal shee
 status: backlog
 priority: low
 created: 2026-10-18
-updated: 2026-10-18
+updated: 2026-10-27
 assignee:
 labels: [deferred, mobile, android, verification, toast]
 github_issue:
@@ -54,3 +54,9 @@ On iOS the root toast host lives in a `FullWindowOverlay`, which sits below an R
 ### 2026-10-18
 
 - Initial creation, deferred from PR #1503 and triaged with the owner.
+
+### 2026-10-27
+
+- First Android run on a Samsung Galaxy A37 (Android 16), adb over Wi-Fi. Trigger: the Coach "Coach replied" toast (send from the full chat screen with the server frozen, open the sheet, unfreeze). Only `ChatScreen` sends announce their reply; the Coach tab's inline chat does not.
+- CookbookPickerModal: the toast shows over the sheet and "Open" closes the sheet and opens the chat. Its top sat UNDER the status bar (text at y=72-131 px, status bar 101 px): the Android Modal window is edge-to-edge, so `topInset={0}` was wrong there. Fixed: `ModalToastHost` passes `0` on iOS only; on the phone the toast text now sits at y=173-231, the same place as the root toast.
+- The sheets' own headers are under the status bar too, filed as `todos/P2-2026-10-27-android-sheet-header-under-status-bar.md`.

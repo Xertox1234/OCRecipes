@@ -185,12 +185,13 @@ export function useToast(): ToastContextType {
  * while this is mounted, so only one `Toast` (one live region) exists. Place it
  * as the LAST child of the modal's root view so it stacks above the content.
  *
- * The toast clears NO top inset here: a `pageSheet` (iPhone and iPad) and a
- * default Android `Modal` are laid out below the status bar, so the root
- * safe-area top would push the toast ~60 px down into the sheet's header row
- * (seen in the #1503 sim check). A `fullScreen`/`overFullScreen` or
- * `statusBarTranslucent` Modal does sit under the status bar and would need
- * the inset back.
+ * Outside Android the toast clears NO top inset: an iOS `pageSheet` (iPhone
+ * and iPad) is laid out below the status bar, so the root safe-area top would
+ * push the toast ~60 px down into the sheet's header row (seen in the #1503
+ * sim check). Android ignores `pageSheet` and opens a full-screen window that
+ * is always edge-to-edge, so it starts under the status bar and the toast
+ * keeps its normal safe-area top (seen on an Android 16 phone, 2026-10-27).
+ * A `fullScreen`/`overFullScreen` Modal on iOS would need the inset back too.
  */
 export function ModalToastHost() {
   // Outside a provider (isolated component tests) there is no toast to show.
@@ -215,7 +216,7 @@ export function ModalToastHost() {
           onDismiss={dismiss}
           action={toast.action}
           createdAt={toast.createdAt}
-          topInset={0}
+          topInset={Platform.OS === "android" ? undefined : 0}
         />
       </View>
     </GestureHandlerRootView>

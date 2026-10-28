@@ -3,6 +3,7 @@
 // Toast (live region, announcements); this one mocks Toast to read its props.
 import React from "react";
 import { act } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { ToastProvider, useToast, ModalToastHost } from "../ToastContext";
 
@@ -23,8 +24,13 @@ function Capture() {
 }
 
 describe("toast top inset by host", () => {
+  const originalOS = RN.Platform.OS;
+
   beforeEach(() => {
     toastProps.length = 0;
+  });
+  afterEach(() => {
+    RN.Platform.OS = originalOS;
   });
 
   it("root host: Toast keeps its own safe-area top (no topInset override)", () => {
@@ -38,7 +44,8 @@ describe("toast top inset by host", () => {
     expect(toastProps[toastProps.length - 1]).not.toHaveProperty("topInset");
   });
 
-  it("modal host: Toast gets topInset 0 — an RN Modal sheet is laid out below the status bar", () => {
+  it("modal host on iOS: Toast gets topInset 0 — a pageSheet is laid out below the status bar", () => {
+    RN.Platform.OS = "ios";
     renderComponent(
       <ToastProvider>
         <Capture />
@@ -48,5 +55,18 @@ describe("toast top inset by host", () => {
     act(() => api.info("Recipe ready"));
     expect(toastProps.length).toBeGreaterThan(0);
     expect(toastProps[toastProps.length - 1]).toMatchObject({ topInset: 0 });
+  });
+
+  it("modal host on Android: Toast keeps its safe-area top — the Modal window is edge-to-edge, under the status bar", () => {
+    RN.Platform.OS = "android";
+    renderComponent(
+      <ToastProvider>
+        <Capture />
+        <ModalToastHost />
+      </ToastProvider>,
+    );
+    act(() => api.info("Recipe ready"));
+    expect(toastProps.length).toBeGreaterThan(0);
+    expect(toastProps[toastProps.length - 1].topInset).toBeUndefined();
   });
 });
