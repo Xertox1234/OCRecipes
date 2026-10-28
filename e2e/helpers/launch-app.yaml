@@ -81,13 +81,28 @@ appId: com.ocrecipes.app
 #    (ErrorScreen.kt) but has not been seen to show it on CI; if it does,
 #    the loop still relaunches there, and its stopApp is iOS-gated because
 #    the bundle id is iOS-only (see 3).
+#
+# 6. openLink itself can time out. In run 40614765446 (View item detail,
+#    attempt 1) the first openLink FAILED after 15.8s: "Simulator device
+#    failed to open exp+ocrecipes://... Operation timed out"
+#    (NSPOSIXErrorDomain 60). The link never reached the app, which sat on
+#    the dev launcher's home ("Searching for development servers..."), and
+#    the failed command ended the flow before any gate ran. Each launch
+#    (stopApp + openLink) is therefore wrapped in `retry`, so a failed
+#    openLink is re-run from a fresh cold start, at most twice. The gate
+#    does not look for the launcher home instead: that screen sits under
+#    every load in the tree (run 40604313571's error-screen dump contains
+#    "DEVELOPMENT SERVERS"), so it would match during a normal load.
 ---
-- runFlow:
-    when:
-      platform: iOS
+- retry:
+    maxRetries: 2
     commands:
-      - stopApp: com.williamtower.ocrecipes
-- openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            - stopApp: com.williamtower.ocrecipes
+      - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
 
 # Readiness gate — see header (1). Also matches two stranded states a
 # previous attempt's kill can leave behind: the Sign-Out confirmation sheet
@@ -115,12 +130,15 @@ appId: com.ocrecipes.app
     while:
       visible: "There was a problem loading the project.*"
     commands:
-      - runFlow:
-          when:
-            platform: iOS
+      - retry:
+          maxRetries: 2
           commands:
-            - stopApp: com.williamtower.ocrecipes
-      - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+            - runFlow:
+                when:
+                  platform: iOS
+                commands:
+                  - stopApp: com.williamtower.ocrecipes
+            - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
       - extendedWaitUntil:
           visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back|There was a problem loading the project.*)"
           timeout: 240000
