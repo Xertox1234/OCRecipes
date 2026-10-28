@@ -53,6 +53,11 @@ function mapQualityPrioritization(
   return "speed";
 }
 
+/** Format for the scanner the barcode hook builds but CameraView never attaches.
+ *  react-native-vision-camera-barcode-scanner 5.2.3 has no skip option and
+ *  throws on an empty list; drop this if a later version handles either. */
+const UNATTACHED_SCANNER_TYPES: ExpoBarcodeType[] = ["qr"];
+
 function mapBarcodeTypes(
   expoTypes: ExpoBarcodeType[],
 ): VisionCameraBarcodeType[] {
@@ -138,9 +143,18 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     // barcode-scanner output — key this on content, not identity, or every
     // ScanScreen re-render (i.e. every barcode frame processed) tears down and
     // rebuilds the native output.
+    //
+    // The hook builds the native ML Kit scanner during render even when the
+    // output is left out of `outputs` below, and an empty format list throws
+    // ("Target barcodeFormats cannot be empty!") — a Render Error for the whole
+    // scan screen in label / front-label mode. Hand it a placeholder format
+    // then; that scanner is never attached, so it never scans or calls back.
     const barcodeTypesKey = barcodeTypes.join(",");
     const barcodeFormats = useMemo(
-      () => mapBarcodeTypes(barcodeTypes),
+      () =>
+        mapBarcodeTypes(
+          barcodeTypes.length > 0 ? barcodeTypes : UNATTACHED_SCANNER_TYPES,
+        ),
       // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on barcodeTypesKey (content), not the barcodeTypes array reference
       [barcodeTypesKey],
     );
