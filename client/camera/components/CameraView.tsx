@@ -53,7 +53,9 @@ function mapQualityPrioritization(
   return "speed";
 }
 
-/** Format for the scanner the barcode hook builds but CameraView never attaches. */
+/** Format for the scanner the barcode hook builds but CameraView never attaches.
+ *  react-native-vision-camera-barcode-scanner 5.2.3 has no skip option and
+ *  throws on an empty list; drop this if a later version handles either. */
 const UNATTACHED_SCANNER_TYPES: ExpoBarcodeType[] = ["qr"];
 
 function mapBarcodeTypes(
