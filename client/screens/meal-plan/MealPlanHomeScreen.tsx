@@ -192,8 +192,8 @@ export default function MealPlanHomeScreen() {
   // docs/solutions for the root-cause writeup. Each child below only owns
   // its content; this screen owns the modal JSX, and useMealPlanSheets owns
   // the sheet state, refs and present/dismiss effect it wires onto them.
-  // The Android back handler (useSheetBackHandler(activeSheetRef, isOpen)) is
-  // also called inside that hook; onSheetChange/onSheetAnimate below are its
+  // The Android back handler (useSheetBackHandler) is also called inside
+  // that hook; onSheetChange/onSheetAnimate below are its
   // outputs, wired onto every <BottomSheetModal>.
   const {
     addItemMenuSheetRef,

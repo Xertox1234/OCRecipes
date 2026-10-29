@@ -259,4 +259,32 @@ describe("check-bottomsheet-backhandler.js", () => {
       expect(status).toBe(0);
     });
   });
+
+  describe("wrapper hooks that call useSheetBackHandler", () => {
+    it("exits 0 when the host calls useMealPlanSheets instead", () => {
+      const file = writeTsx(`
+        import { BottomSheetModal } from "@gorhom/bottom-sheet";
+
+        function Screen() {
+          const { quickAddSheetRef } = useMealPlanSheets({ navigation });
+          return <BottomSheetModal ref={quickAddSheetRef} />;
+        }
+      `);
+      const { status } = runCheck(file);
+      expect(status).toBe(0);
+    });
+
+    it("useMealPlanSheets really calls useSheetBackHandler", () => {
+      const hookSource = fs.readFileSync(
+        path.resolve(
+          __dirname,
+          "..",
+          "..",
+          "client/hooks/useMealPlanSheets.tsx",
+        ),
+        "utf8",
+      );
+      expect(hookSource).toMatch(/=\s*useSheetBackHandler\(/);
+    });
+  });
 });
