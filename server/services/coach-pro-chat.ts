@@ -14,45 +14,44 @@
  * Extracted from server/routes/chat.ts to keep route handlers thin.
  */
 
-import { createHash, randomUUID } from "crypto";
-import { civilDateString, civilDateToInstant } from "../lib/civil-date";
+import { randomUUID } from "crypto";
+import { civilDateToInstant } from "../lib/civil-date";
 import { storage } from "../storage";
 import {
   generateCoachResponse,
   generateCoachProResponse,
   getSystemPromptTemplateVersion,
   SAFETY_OVERRIDE_SENTINEL,
-  type CoachContext,
 } from "./nutrition-coach";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
-import { parseBlocksFromContent, getBlocksSystemPrompt } from "./coach-blocks";
+import { parseBlocksFromContent } from "./coach-blocks";
 import { extractNotebookEntries } from "./notebook-extraction";
-import {
-  sanitizeContextField,
-  containsDangerousDietaryAdvice,
-} from "../lib/ai-safety";
+import { containsDangerousDietaryAdvice } from "../lib/ai-safety";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { createServiceLogger } from "../lib/logger";
 import { consumeWarmUp } from "./coach-warm-up";
 import {
-  truncateNotebookToBudget,
-  sortNotebookEntriesByPriority,
-  formatNotebookLine,
-  DEFAULT_NOTEBOOK_MAX_CHARS,
-} from "./notebook-budget";
+  assembleCoachContext,
+  buildMealPatternSummary,
+  type CoachChatUser,
+} from "./coach-context-builder";
+import {
+  getDayBucketInTz,
+  hashCoachCacheContext,
+  hashCoachCacheKey,
+  hashNotebookDedupeKey,
+} from "./coach-cache-keys";
 import {
   truncateHistoryToBudget,
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
-import type { ChatMessage, DailyLog, UserProfile } from "@shared/schema";
+import type { ChatMessage } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
-import type { MeasurementUnit } from "@shared/lib/units";
 import type { FinderAction } from "@shared/schemas/recipe-finder";
 import {
   classifyTurn,
   decideCoachFinderEntry,
   getLatestFinderBlock,
-  isRecipeFinderEnabled,
   isRecipeOfferEnabled,
   type FinderFeatures,
 } from "./recipe-finder";
@@ -67,114 +66,13 @@ import { OFFER_TEXT, finderFallbackText } from "./recipe-finder/fallback-text";
 
 const log = createServiceLogger("coach-pro-chat");
 
-/**
- * Derive a short meal-pattern summary from 7 days of daily logs.
- *
- * Exported for unit testing — all inputs are pure values, no storage calls.
- *
- * Detection logic (based on `loggedAt` hour in the USER's timezone — the
- * server runs UTC, so server-local hours would misclassify every window for
- * most users):
- *  - Breakfast window: 05:00–10:59
- *  - Lunch window:     11:00–14:59
- *  - Dinner window:    15:00–20:59
- *  - Late-night:       21:00–04:59 (hour >= 21 || hour < 5)
- *
- * A meal is considered "skipped" on a given day when there are zero log entries
- * in its window AND at least one entry exists on that day (i.e. the user was
- * actively logging, they just didn't eat in that window). Days with zero total
- * entries are excluded — we can't distinguish "skipped" from "didn't log".
- *
- * Returns `null` when the dataset has fewer than 3 active-logging days (not
- * enough signal). The caller is responsible for pre-filtering logs to the
- * desired time window (e.g. last 7 days) before passing them in.
- */
-export function buildMealPatternSummary(
-  logs: Pick<DailyLog, "loggedAt">[],
-  tz: string = "UTC",
-  windowDays: number = 7,
-): string | null {
-  if (logs.length === 0) return null;
-
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  });
-
-  // Group log hours by calendar day (YYYY-MM-DD in the user's timezone)
-  const byDay = new Map<string, number[]>();
-  for (const log of logs) {
-    const parts = fmt.formatToParts(new Date(log.loggedAt));
-    const part = (type: Intl.DateTimeFormatPartTypes): string =>
-      parts.find((p) => p.type === type)?.value ?? "";
-    const key = `${part("year")}-${part("month")}-${part("day")}`;
-    const hour = Number(part("hour"));
-    const existing = byDay.get(key);
-    if (existing) {
-      existing.push(hour);
-    } else {
-      byDay.set(key, [hour]);
-    }
-  }
-
-  // Only consider days with at least one log entry
-  const activeDays = Array.from(byDay.values());
-  if (activeDays.length < 3) return null;
-
-  const totalDays = activeDays.length;
-
-  const inBreakfast = (h: number) => h >= 5 && h < 11;
-  const inLunch = (h: number) => h >= 11 && h < 15;
-  const inDinner = (h: number) => h >= 15 && h < 21;
-  const isLateNight = (h: number) => h >= 21 || h < 5;
-
-  let skippedBreakfast = 0;
-  let skippedLunch = 0;
-  let skippedDinner = 0;
-  let lateNightDays = 0;
-
-  for (const hours of activeDays) {
-    if (!hours.some(inBreakfast)) skippedBreakfast++;
-    if (!hours.some(inLunch)) skippedLunch++;
-    if (!hours.some(inDinner)) skippedDinner++;
-    if (hours.some(isLateNight)) lateNightDays++;
-  }
-
-  const patterns: string[] = [];
-
-  // Positive signal first: a near-complete logging streak is free praise
-  // material — the summary previously only ever surfaced negatives.
-  // Clamp the numerator: the caller's rolling [now-7d, now) instant window
-  // spans parts of EIGHT calendar dates in the user's tz (unless "now" is
-  // exactly midnight), so an unclamped count would render "8/7 days".
-  if (totalDays >= windowDays - 2) {
-    patterns.push(
-      `logged food on ${Math.min(totalDays, windowDays)}/${windowDays} days`,
-    );
-  }
-
-  // Only surface patterns that are notable (skipped on majority of days)
-  const majorityThreshold = Math.ceil(totalDays / 2);
-  if (skippedBreakfast >= majorityThreshold) {
-    patterns.push(`breakfast skipped ${skippedBreakfast}/${totalDays} days`);
-  }
-  if (skippedLunch >= majorityThreshold) {
-    patterns.push(`lunch skipped ${skippedLunch}/${totalDays} days`);
-  }
-  if (skippedDinner >= majorityThreshold) {
-    patterns.push(`dinner skipped ${skippedDinner}/${totalDays} days`);
-  }
-  if (lateNightDays >= majorityThreshold) {
-    patterns.push(`late-night eating on ${lateNightDays}/${totalDays} days`);
-  }
-
-  if (patterns.length === 0) return null;
-  return patterns.join("; ");
-}
+// Re-exported so existing importers (tests) keep their import path.
+export {
+  hashCoachCacheContext,
+  hashCoachCacheKey,
+  hashNotebookDedupeKey,
+  buildMealPatternSummary,
+};
 
 /** SSE event yielded by the coach chat service. */
 export type CoachChatEvent =
@@ -210,17 +108,7 @@ export interface CoachChatParams {
   warmUpId?: string;
   isCoachPro: boolean;
   turnKey?: string;
-  user: {
-    dailyCalorieGoal: number | null;
-    dailyProteinGoal: number | null;
-    dailyCarbsGoal: number | null;
-    dailyFatGoal: number | null;
-    /** Drizzle decimal column — arrives as a string, kg. */
-    weight: string | null;
-    /** Drizzle decimal column — arrives as a string, kg. */
-    goalWeight: string | null;
-    measurementUnit: MeasurementUnit;
-  };
+  user: CoachChatUser;
   /** Called each iteration to check if the client disconnected. */
   isAborted: () => boolean;
   /**
@@ -242,213 +130,6 @@ export interface CoachChatParams {
     userMessageId: number;
     features: FinderFeatures;
   };
-}
-
-/**
- * Day bucket string — e.g. `"2026-04-18"` — in the given IANA timezone.
- * Used to expire cached coach answers whose prompt includes today's numeric
- * context (goals, intake).
- *
- * Both parameters are required. The previous UTC/now defaults had no remaining
- * callers, and a plausible UTC default on a timezone-dependent value is the
- * trap `hashCoachCacheKey` documents below — this bucket must agree with the
- * user's civil date, which is also what the system prompt now states.
- */
-function getDayBucketInTz(d: Date, tz: string): string {
-  // Delegates rather than re-implementing: this was a verbatim third copy of
-  // the same `en-CA` formatter, and civil-date logic living in several places
-  // is how the bases drift apart in the first place.
-  return civilDateString(d, tz);
-}
-
-/**
- * Build the SHA-256 cache key used for coach-response caching. The key includes:
- *  - prompt template version — automatically derived from the static system
- *    prompt hash so cache entries stale out when the prompt prose changes,
- *    eliminating the need for a manual version bump (H5 — 2026-04-18)
- *  - userId  — different users must not share answers
- *  - isCoachPro — Pro and non-Pro prompts diverge (tools, notebook); a cached
- *    non-Pro answer must never be replayed to a Pro user (H4 — 2026-04-18)
- *  - dayBucket — keeps universal first-turn answers from crossing the USER's
- *    civil day (not the server's — see getDayBucketInTz)
- *  - contextHash — captures goals, intake, dietary profile, and
- *    hour bucket so same-day context changes invalidate cached answers
- *  - intent — the deterministic intent classification; different intents pick
- *    different prompt bundles, so cached answers must not cross intents
- *
- * The `intent` parameter defaults to `"personalized_advice"` purely as a
- * backward-compat fallback for callers that predate intent-aware caching — it
- * is NOT a meaningful routing decision. Real callers (`handleCoachChat`) always
- * pass the classified intent explicitly.
- */
-export function hashCoachCacheKey(
-  userId: string,
-  content: string,
-  isCoachPro: boolean,
-  // Required, not defaulted: `getDayBucketInTz()` with no arguments answers in
-  // UTC, which is a different day from the user's for part of every day. A
-  // plausible default on a timezone-dependent parameter is exactly what let the
-  // planned_date bases diverge unnoticed (PRs #889/#890) — the cache key and the
-  // prompt's date must agree, so the caller states the bucket.
-  dayBucket: string,
-  contextHash = "no-context",
-  intent: CoachIntent = "personalized_advice",
-): string {
-  return createHash("sha256")
-    .update(
-      [
-        getSystemPromptTemplateVersion(),
-        userId,
-        isCoachPro ? "pro" : "free",
-        dayBucket,
-        contextHash,
-        intent,
-        content.trim().toLowerCase(),
-      ].join("\u001f"),
-    )
-    .digest("hex")
-    .slice(0, 32);
-}
-
-/** Parse a Drizzle decimal string into a finite positive kg value, else undefined. */
-function parseDecimalKg(value: string | null): number | undefined {
-  if (value == null) return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
-}
-
-/**
- * Assemble CoachContext.aboutUser from the profile row and users-table fields
- * (M40: user-authored strings sanitized here, at the context boundary).
- * Returns undefined when nothing carries signal so the prompt renders no
- * ABOUT THIS USER section: null fields, empty cuisine list, and the
- * householdSize column default of 1 are all "unset".
- */
-function buildAboutUser(
-  profile: UserProfile | undefined,
-  user: CoachChatParams["user"],
-): CoachContext["aboutUser"] {
-  const aboutUser: NonNullable<CoachContext["aboutUser"]> = {};
-  if (profile?.primaryGoal) {
-    aboutUser.primaryGoal = sanitizeContextField(profile.primaryGoal, 100);
-  }
-  if (profile?.activityLevel) {
-    aboutUser.activityLevel = sanitizeContextField(profile.activityLevel, 100);
-  }
-  if (profile?.cookingSkillLevel) {
-    aboutUser.cookingSkillLevel = sanitizeContextField(
-      profile.cookingSkillLevel,
-      100,
-    );
-  }
-  if (profile?.cookingTimeAvailable) {
-    aboutUser.cookingTimeAvailable = sanitizeContextField(
-      profile.cookingTimeAvailable,
-      100,
-    );
-  }
-  const cuisines = (profile?.cuisinePreferences ?? [])
-    .filter(Boolean)
-    .map((c) => sanitizeContextField(c, 100));
-  if (cuisines.length > 0) {
-    aboutUser.cuisinePreferences = cuisines;
-  }
-  if (profile?.householdSize != null && profile.householdSize > 1) {
-    aboutUser.householdSize = profile.householdSize;
-  }
-  const weightKg = parseDecimalKg(user.weight);
-  const goalWeightKg = parseDecimalKg(user.goalWeight);
-  if (weightKg !== undefined) aboutUser.weightKg = weightKg;
-  if (goalWeightKg !== undefined) aboutUser.goalWeightKg = goalWeightKg;
-  if (weightKg !== undefined || goalWeightKg !== undefined) {
-    aboutUser.measurementUnit = user.measurementUnit;
-  }
-  return Object.keys(aboutUser).length > 0 ? aboutUser : undefined;
-}
-
-export function hashCoachCacheContext(
-  context: CoachContext,
-  now: Date = new Date(),
-  tz: string = "UTC",
-): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        goals: context.goals,
-        todayIntake: context.todayIntake,
-        dietaryProfile: context.dietaryProfile,
-        // Binding rule (ai-prompting): every context field the prompt renders
-        // must be in this hash, or same-day profile edits serve stale answers.
-        // (dueCommitmentsSummary is Pro-only and the cache is free-only, but
-        // it's included so the invariant stays mechanical, not reasoned-about.)
-        aboutUser: context.aboutUser ?? null,
-        dueCommitmentsSummary: context.dueCommitmentsSummary ?? null,
-        frequentFoodsSummary: context.frequentFoodsSummary ?? null,
-        // User-local hour, matching the tz-aware day bucket — the prompt's
-        // "Current time" line is rendered in the user's tz, so the cache
-        // must bucket on the same clock. h23 avoids "24" at midnight.
-        hour: Number(
-          new Intl.DateTimeFormat("en-US", {
-            timeZone: tz,
-            hour: "2-digit",
-            hourCycle: "h23",
-          }).format(now),
-        ),
-      }),
-    )
-    .digest("hex")
-    .slice(0, 16);
-}
-
-/**
- * Build a dedup fingerprint for a notebook write. The same conversation
- * turn (same last user + last assistant pair) must always produce the same
- * key so the unique index makes repeat writes idempotent.
- *
- * For `coaching_strategy` entries the key is bucketed by ISO week instead
- * of conversation turn so the TOCTOU between `shouldUpdateStrategy`'s count
- * read and the insert cannot produce duplicate strategy rows for the same
- * user in the same week.
- */
-export function hashNotebookDedupeKey(params: {
-  userId: string;
-  conversationId: number;
-  entryType: string;
-  entryContent: string;
-  lastUserMessage: string;
-  lastAssistantMessage: string;
-}): string {
-  if (params.entryType === "coaching_strategy") {
-    const weekBucket = getIsoWeekBucket(new Date());
-    return createHash("sha256")
-      .update(["coaching_strategy", params.userId, weekBucket].join("\u001f"))
-      .digest("hex");
-  }
-  return createHash("sha256")
-    .update(
-      [
-        params.userId,
-        String(params.conversationId),
-        params.entryType,
-        params.entryContent,
-        params.lastUserMessage,
-        params.lastAssistantMessage,
-      ].join("\u001f"),
-    )
-    .digest("hex");
-}
-
-/** Returns an ISO year+week bucket string like `"2026-W16"`. */
-function getIsoWeekBucket(d: Date): string {
-  // Copy to UTC and shift to the nearest Thursday (ISO week anchor).
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(
-    ((date.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7,
-  );
-  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
 /**
@@ -490,35 +171,6 @@ export const _testInternals = {
 export async function tryArchiveNotebook(userId: string): Promise<void> {
   if (!shouldRunArchive(`open:${userId}`, Date.now())) return;
   await storage.archiveOldEntries(userId, 30);
-}
-
-/**
- * Tier-specific capability flags for a single coach chat turn.
- *
- * Built once from `isCoachPro` before the generator runs, then consumed in
- * place of scattered `if (isCoachPro)` checks so the tier contract is explicit
- * and a future third tier (e.g. a "Basic" tier with a subset of Pro features)
- * can be added by changing only the config construction.
- *
- * Each flag is `true` when the capability is enabled for the current tier:
- *  - `fetchMealPatterns` — fetch 7 days of daily logs and inject a meal-pattern
- *    summary into the coach context.
- *  - `fetchNotebook` — fetch active notebook entries, inject them (plus the
- *    blocks system prompt) into the coach context.
- *  - `useCache` — allow serving/storing a cached coach answer for this turn.
- *    Note this is enabled for the *non-Pro* tier: Pro responses inject
- *    per-user notebook context and tool results that must not be cached
- *    (H4 — 2026-04-18).
- *  - `parseBlocks` — parse structured `CoachBlock`s out of the response text.
- *  - `extractNotebook` — run fire-and-forget notebook extraction + archival
- *    from the completed turn.
- */
-interface CoachTierConfig {
-  fetchMealPatterns: boolean;
-  fetchNotebook: boolean;
-  useCache: boolean;
-  parseBlocks: boolean;
-  extractNotebook: boolean;
 }
 
 /**
@@ -658,6 +310,94 @@ async function* deliverOfferToolCall(a: {
 }
 
 /**
+ * Notebook extraction + archival for a completed Coach Pro turn. Run
+ * fire-and-forget by `handleCoachChat`.
+ */
+async function extractAndStoreNotebook(a: {
+  messageHistory: { role: "user" | "assistant" | "system"; content: string }[];
+  content: string;
+  textContent: string;
+  userId: string;
+  conversationId: number;
+  /** Turn-start instant. */
+  today: Date;
+  tz: string;
+}): Promise<void> {
+  const {
+    messageHistory,
+    content,
+    textContent,
+    userId,
+    conversationId,
+    today,
+    tz,
+  } = a;
+  const allMessages = [
+    ...messageHistory,
+    { role: "user" as const, content },
+    { role: "assistant" as const, content: textContent },
+  ];
+  const entries = await extractNotebookEntries(
+    allMessages,
+    userId,
+    conversationId,
+    // `today` (declared above) is the turn-start instant, captured
+    // before the coach's own response streams — passing it here
+    // anchors the extraction prompt's "Current date" line to when the
+    // user SPOKE, not a later `new Date()` computed after the SSE
+    // stream drains. NOTE: this is not guaranteed to be the identical
+    // instant the coach's own system prompt rendered its date from —
+    // that is a separate, independently-defaulted `new Date()` in
+    // nutrition-coach.ts's `buildSystemPrompt` — just the closer and
+    // more correct of the two available anchors.
+    { now: today, tz },
+  );
+  if (entries.length > 0) {
+    // Build a per-entry dedup fingerprint so SSE retries that replay
+    // the same conversation turn do not create duplicate rows. The
+    // unique index on `dedupeKey` combined with `onConflictDoNothing`
+    // at the storage layer is what actually enforces this.
+    await storage.createNotebookEntries(
+      entries.map((e) => ({
+        userId,
+        type: e.type,
+        content: e.content,
+        status: "active",
+        // `civilDateToInstant`, not `new Date(dateStr)`: a bare parse
+        // anchors at UTC midnight, which is BEFORE local midnight for
+        // every UTC-negative user, so `getDueCommitmentsAllUsers` /
+        // `getCommitmentsWithDueFollowUp` (coach-notebook.ts) — both
+        // plain `lte(followUpDate, now)` instant comparisons — fire the
+        // push reminder hours early. Anchoring correctly at write time
+        // fixes both reads — neither needs its own timezone-aware
+        // comparison. `server/routes/notebook.ts`'s POST/PATCH handlers
+        // (the manual add/edit-entry screen) write the same column on
+        // the same basis; a cross-surface test pins that they agree.
+        // Rows written before either fix keep their UTC-midnight anchor.
+        followUpDate: e.followUpDate
+          ? civilDateToInstant(e.followUpDate, tz)
+          : null,
+        sourceConversationId: conversationId,
+        dedupeKey: hashNotebookDedupeKey({
+          userId,
+          conversationId,
+          entryType: e.type,
+          entryContent: e.content,
+          lastUserMessage: content,
+          lastAssistantMessage: textContent,
+        }),
+      })),
+    );
+  }
+  // Archive notebook entries older than 30 days to bound growth.
+  // Time-gated to once per day per user so we do not hammer the DB
+  // on every assistant turn.
+  if (shouldRunArchive(userId, Date.now())) {
+    await storage.archiveOldEntries(userId, 30);
+  }
+}
+
+/**
  * Orchestrates the coach chat response — yields SSE events for the route
  * handler to write, handles persistence and side-effects internally.
  */
@@ -677,17 +417,6 @@ export async function* handleCoachChat(
     isAborted,
     abortSignal,
   } = params;
-
-  // Resolve the tier capability flags once from `isCoachPro`, then consume the
-  // config in place of scattered `if (isCoachPro)` checks below. Note `useCache`
-  // is intentionally inverted: caching is a non-Pro capability (H4 — 2026-04-18).
-  const tierConfig: CoachTierConfig = {
-    fetchMealPatterns: isCoachPro,
-    fetchNotebook: isCoachPro,
-    useCache: !isCoachPro,
-    parseBlocks: isCoachPro,
-    extractNotebook: isCoachPro,
-  };
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
@@ -766,133 +495,42 @@ export async function* handleCoachChat(
     storage.getUserProfile(userId),
     storage.getDailySummary(userId, today, tz),
     storage.getChatMessages(conversationId, 20, userId),
-    tierConfig.fetchMealPatterns
+    isCoachPro
       ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
       : Promise.resolve(
           [] as Awaited<ReturnType<typeof storage.getDailyLogsInRange>>,
         ),
-    tierConfig.fetchNotebook
+    isCoachPro
       ? storage.getActiveNotebookEntries(userId)
       : Promise.resolve(
           [] as Awaited<ReturnType<typeof storage.getActiveNotebookEntries>>,
         ),
-    tierConfig.fetchNotebook
+    isCoachPro
       ? storage.getCommitmentsWithDueFollowUp(userId)
       : Promise.resolve(
           [] as Awaited<
             ReturnType<typeof storage.getCommitmentsWithDueFollowUp>
           >,
         ),
-    tierConfig.fetchMealPatterns
+    isCoachPro
       ? storage.getMostEatenFoods(userId, thirtyDaysAgo, today)
       : Promise.resolve(
           [] as Awaited<ReturnType<typeof storage.getMostEatenFoods>>,
         ),
   ]);
 
-  const context: CoachContext = {
-    goals: user.dailyCalorieGoal
-      ? {
-          calories: user.dailyCalorieGoal,
-          protein: user.dailyProteinGoal || 0,
-          carbs: user.dailyCarbsGoal || 0,
-          fat: user.dailyFatGoal || 0,
-        }
-      : null,
-    todayIntake: {
-      calories: Number(dailySummary.totalCalories),
-      protein: Number(dailySummary.totalProtein),
-      carbs: Number(dailySummary.totalCarbs),
-      fat: Number(dailySummary.totalFat),
-    },
-    dietaryProfile: {
-      dietType: profile?.dietType || null,
-      // Sanitize at the context boundary (M40 — 2026-04-18) so both the prompt
-      // builder and any future consumers see clean values. Severity is
-      // enum-validated (jsonb defense-in-depth) — bogus values are dropped.
-      allergies: (profile?.allergies || [])
-        .filter((a) => a?.name)
-        .map((a) => ({
-          name: sanitizeContextField(a.name, 100),
-          ...(a.severity === "mild" ||
-          a.severity === "moderate" ||
-          a.severity === "severe"
-            ? { severity: a.severity }
-            : {}),
-        })),
-      dislikes: ((profile?.foodDislikes as string[]) || []).map((d) =>
-        sanitizeContextField(d, 100),
-      ),
-    },
+  const context = assembleCoachContext({
+    isCoachPro,
+    user,
+    tz,
     screenContext,
-  };
-
-  // Both tiers: profile personalization signal (omitted when nothing is set).
-  const aboutUser = buildAboutUser(profile, user);
-  if (aboutUser) {
-    context.aboutUser = aboutUser;
-  }
-
-  // ── Coach Pro: meal pattern summary ────────────────
-  if (tierConfig.fetchMealPatterns && recentLogsForPatterns.length > 0) {
-    const mealPatternSummary = buildMealPatternSummary(
-      recentLogsForPatterns,
-      tz,
-    );
-    if (mealPatternSummary) {
-      context.mealPatternSummary = mealPatternSummary;
-    }
-  }
-
-  // ── Coach Pro: frequent foods (30-day aggregate) ────
-  if (tierConfig.fetchMealPatterns && frequentFoods.length > 0) {
-    context.frequentFoodsSummary = frequentFoods
-      .map((f) => `${sanitizeContextField(f.name, 100)} (${f.timesLogged}×)`)
-      .join(", ");
-  }
-
-  // ── Coach Pro: due-commitment follow-ups ────────────
-  if (tierConfig.fetchNotebook && dueCommitments.length > 0) {
-    // At most 3 — the prompt asks the model to check in on ONE; more rows
-    // only cost tokens. Same sanitize + fence treatment as notebook entries.
-    const dueLines = dueCommitments.slice(0, 3).map((e) =>
-      formatNotebookLine({
-        type: e.type,
-        content: sanitizeContextField(e.content, 500),
-        updatedAt: e.updatedAt,
-      }),
-    );
-    context.dueCommitmentsSummary = dueLines.join("\n");
-  }
-
-  // ── Coach Pro: inject notebook context ──────────────
-  if (tierConfig.fetchNotebook) {
-    // Always provide blocks formatting instructions for Pro responses
-    context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled());
-
-    // notebookEntries fetched in parallel above (audit 2026-05-10, H4)
-    if (notebookEntries.length > 0) {
-      // Include updatedAt so the budget formatter can attach recency labels
-      // (recent/this week/this month/older), helping the model weight newer
-      // entries more prominently in its reasoning.
-      const sanitized = notebookEntries.map((e) => ({
-        type: e.type,
-        content: sanitizeContextField(e.content, 500),
-        updatedAt: e.updatedAt,
-      }));
-      // Durable personalization first so the truncation budget can't evict a
-      // months-old preference in favor of a burst of recent insights.
-      const joined = truncateNotebookToBudget(
-        sortNotebookEntriesByPriority(sanitized),
-        DEFAULT_NOTEBOOK_MAX_CHARS,
-      );
-      if (joined.length > 0) {
-        context.notebookSummary = joined;
-      }
-      // If truncation produces empty string, omit notebook section entirely
-    }
-    // When no entries exist, notebookSummary stays unset — no confusing preamble
-  }
+    profile,
+    dailySummary,
+    recentLogsForPatterns,
+    notebookEntries,
+    dueCommitments,
+    frequentFoods,
+  });
 
   let messageHistory: {
     role: "user" | "assistant" | "system";
@@ -931,8 +569,7 @@ export async function* handleCoachChat(
   // reference tool-call results — caching them would serve stale context to
   // the same user (and the cache key is too coarse to distinguish Pro vs
   // non-Pro prompts across users). See H4 — 2026-04-18.
-  const isCacheable =
-    !screenContext && history.length <= 1 && tierConfig.useCache;
+  const isCacheable = !screenContext && history.length <= 1 && !isCoachPro;
   const questionHash = isCacheable
     ? hashCoachCacheKey(
         userId,
@@ -1034,7 +671,7 @@ export async function* handleCoachChat(
   // Parse blocks from response for Coach Pro
   let blocks: CoachBlock[] = [];
   let textContent = fullResponse;
-  if (tierConfig.parseBlocks && fullResponse) {
+  if (isCoachPro && fullResponse) {
     const parsedBlocks = parseBlocksFromContent(fullResponse);
     textContent = parsedBlocks.text;
     blocks = parsedBlocks.blocks;
@@ -1096,74 +733,18 @@ export async function* handleCoachChat(
   }
 
   // Fire-and-forget notebook extraction + archival for Coach Pro
-  if (tierConfig.extractNotebook && fullResponse && !isAborted()) {
+  if (isCoachPro && fullResponse && !isAborted()) {
     fireAndForget(
       "coach-notebook-extraction",
-      (async () => {
-        const allMessages = [
-          ...messageHistory,
-          { role: "user" as const, content },
-          { role: "assistant" as const, content: textContent },
-        ];
-        const entries = await extractNotebookEntries(
-          allMessages,
-          userId,
-          conversationId,
-          // `today` (declared above) is the turn-start instant, captured
-          // before the coach's own response streams — passing it here
-          // anchors the extraction prompt's "Current date" line to when the
-          // user SPOKE, not a later `new Date()` computed after the SSE
-          // stream drains. NOTE: this is not guaranteed to be the identical
-          // instant the coach's own system prompt rendered its date from —
-          // that is a separate, independently-defaulted `new Date()` in
-          // nutrition-coach.ts's `buildSystemPrompt` — just the closer and
-          // more correct of the two available anchors.
-          { now: today, tz },
-        );
-        if (entries.length > 0) {
-          // Build a per-entry dedup fingerprint so SSE retries that replay
-          // the same conversation turn do not create duplicate rows. The
-          // unique index on `dedupeKey` combined with `onConflictDoNothing`
-          // at the storage layer is what actually enforces this.
-          await storage.createNotebookEntries(
-            entries.map((e) => ({
-              userId,
-              type: e.type,
-              content: e.content,
-              status: "active",
-              // `civilDateToInstant`, not `new Date(dateStr)`: a bare parse
-              // anchors at UTC midnight, which is BEFORE local midnight for
-              // every UTC-negative user, so `getDueCommitmentsAllUsers` /
-              // `getCommitmentsWithDueFollowUp` (coach-notebook.ts) — both
-              // plain `lte(followUpDate, now)` instant comparisons — fire the
-              // push reminder hours early. Anchoring correctly at write time
-              // fixes both reads — neither needs its own timezone-aware
-              // comparison. `server/routes/notebook.ts`'s POST/PATCH handlers
-              // (the manual add/edit-entry screen) write the same column on
-              // the same basis; a cross-surface test pins that they agree.
-              // Rows written before either fix keep their UTC-midnight anchor.
-              followUpDate: e.followUpDate
-                ? civilDateToInstant(e.followUpDate, tz)
-                : null,
-              sourceConversationId: conversationId,
-              dedupeKey: hashNotebookDedupeKey({
-                userId,
-                conversationId,
-                entryType: e.type,
-                entryContent: e.content,
-                lastUserMessage: content,
-                lastAssistantMessage: textContent,
-              }),
-            })),
-          );
-        }
-        // Archive notebook entries older than 30 days to bound growth.
-        // Time-gated to once per day per user so we do not hammer the DB
-        // on every assistant turn.
-        if (shouldRunArchive(userId, Date.now())) {
-          await storage.archiveOldEntries(userId, 30);
-        }
-      })(),
+      extractAndStoreNotebook({
+        messageHistory,
+        content,
+        textContent,
+        userId,
+        conversationId,
+        today,
+        tz,
+      }),
     );
   }
 }

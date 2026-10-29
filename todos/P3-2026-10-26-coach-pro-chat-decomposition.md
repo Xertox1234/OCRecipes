@@ -1,6 +1,6 @@
 ---
 title: "Shrink coach-pro-chat's handleCoachChat and settle its tier-config layer"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-26
 updated: 2026-10-26

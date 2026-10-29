@@ -524,6 +524,17 @@ export function getSystemPromptTemplateVersion(): string {
   return _systemPromptTemplateVersion;
 }
 
+/** Sanitize all persisted roles before they enter a coach prompt. */
+function prepareCoachMessages(
+  messages: { role: "user" | "assistant" | "system"; content: string }[],
+) {
+  const clean = (m: (typeof messages)[number]) =>
+    m.role === "user"
+      ? sanitizeUserInput(m.content)
+      : sanitizeContextField(m.content);
+  return messages.map((m) => ({ role: m.role, content: clean(m) }));
+}
+
 export async function* generateCoachResponse(
   messages: { role: "user" | "assistant" | "system"; content: string }[],
   context: CoachContext,
@@ -548,13 +559,7 @@ export async function* generateCoachResponse(
   });
 
   // Sanitize all persisted roles before including conversation history.
-  const sanitizedMessages = messages.map((m) => ({
-    role: m.role,
-    content:
-      m.role === "user"
-        ? sanitizeUserInput(m.content)
-        : sanitizeContextField(m.content),
-  }));
+  const sanitizedMessages = prepareCoachMessages(messages);
 
   let stream;
   try {
@@ -674,13 +679,7 @@ export async function* generateCoachProResponse(
     : [...TOOL_DEFINITIONS];
   const tools = offerTool ? [...baseTools, OFFER_RECIPE_TOOL] : baseTools;
 
-  const sanitizedMessages = messages.map((m) => ({
-    role: m.role,
-    content:
-      m.role === "user"
-        ? sanitizeUserInput(m.content)
-        : sanitizeContextField(m.content),
-  }));
+  const sanitizedMessages = prepareCoachMessages(messages);
 
   // Build the conversation with system prompt
   const conversation: {
