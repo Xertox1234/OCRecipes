@@ -1,6 +1,6 @@
 ---
 title: "Move RecipeBrowserScreen's recipe card and filter bar into components"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-26
 updated: 2026-10-26
