@@ -1,6 +1,6 @@
 ---
 title: "Give the two XHR streaming clients one shared SSE transport"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-26
 updated: 2026-10-26
@@ -23,12 +23,12 @@ Deferred from the 2026-10-25 `/audit maintainability` run (user triage: the larg
 
 ## Acceptance Criteria
 
-- [ ] `client/lib/sse-xhr.ts` exports `streamSse({ url, body, headers, timeoutMs, inactivityMs?, onEvent, signal })` owning the line buffer, final flush, error/timeout/abort mapping
-- [ ] Both hooks use it; each keeps only its own event reducer (and the coach typewriter drain)
-- [ ] Notebook hooks move to `client/hooks/useNotebook.ts`; importers (NotebookScreen, NotebookEntryScreen, CoachProScreen) updated
-- [ ] `streamSse` has its own unit tests incl. a split-chunk case and the RN abort→readystatechange ordering the existing MockXHR models
-- [ ] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
-- [ ] No file in scope ends above 600 lines unless it started there and shrank
+- [x] `client/lib/sse-xhr.ts` exports `streamSse({ url, body, headers, timeoutMs, inactivityMs?, onEvent, signal })` owning the line buffer, final flush, error/timeout/abort mapping
+- [x] Both hooks use it; each keeps only its own event reducer (and the coach typewriter drain)
+- [x] Notebook hooks move to `client/hooks/useNotebook.ts`; importers (NotebookScreen, NotebookEntryScreen, CoachProScreen) updated
+- [x] `streamSse` has its own unit tests incl. a split-chunk case and the RN abort→readystatechange ordering the existing MockXHR models
+- [x] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
+- [x] No file in scope ends above 600 lines unless it started there and shrank
 
 ## Implementation Notes
 
@@ -54,3 +54,8 @@ Keep the `settled` single-terminal-outcome guard and the epoch guards semantics.
 ### 2026-10-26
 
 - Initial creation from the 2026-10-25 maintainability audit
+
+### 2026-10-29
+
+- Implemented: `client/lib/sse-xhr.ts` `streamSse` (callback API: `onEvent`/`onClose`; single-terminal-outcome guard lives in the transport); both hooks use it; notebook hooks moved to `client/hooks/useNotebook.ts`.
+- `useChat` did NOT gain the inactivity timer (no behaviour change). `useCoachStream` left the React Compiler bailout baseline.
