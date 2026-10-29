@@ -56,6 +56,13 @@ function mapQualityPrioritization(
 /** Format for the scanner the barcode hook builds but CameraView never attaches.
  *  react-native-vision-camera-barcode-scanner 5.2.3 has no skip option and
  *  throws on an empty list; drop this if a later version handles either. */
+// CameraX start-up race: a control call (torch/focus/zoom) issued while the
+// session is not yet active. Matched on class name or message text.
+function isBenignCameraCancel(error: unknown): boolean {
+  const text = error instanceof Error ? `${error.name} ${error.message}` : "";
+  return /OperationCanceledException|Camera is not active/i.test(text);
+}
+
 const UNATTACHED_SCANNER_TYPES: ExpoBarcodeType[] = ["qr"];
 
 function mapBarcodeTypes(
@@ -109,6 +116,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     // not a high-frequency gesture callback where re-arming matters.
     const captureFailureReportedRef = useRef(false);
     const cameraErrorReportedRef = useRef(false);
+    const cameraCancelWarnedRef = useRef(false);
     const scannerErrorReportedRef = useRef(false);
     const interruptionStartedReportedRef = useRef(false);
     const interruptionEndedReportedRef = useRef(false);
@@ -215,6 +223,17 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
               device.hasTorch ? (enableTorch ? "on" : "off") : undefined
             }
             onError={(error) => {
+              // CameraX throws OperationCanceledException ("Camera is not
+              // active") when a control call races session start — benign,
+              // the camera runs. Warn only, and leave the error latch for a
+              // real failure.
+              if (isBenignCameraCancel(error)) {
+                if (!cameraCancelWarnedRef.current) {
+                  cameraCancelWarnedRef.current = true;
+                  logger.warn("[CameraView] Camera control cancelled", error);
+                }
+                return;
+              }
               if (cameraErrorReportedRef.current) return;
               cameraErrorReportedRef.current = true;
               logger.error("[CameraView] Camera error", error);
