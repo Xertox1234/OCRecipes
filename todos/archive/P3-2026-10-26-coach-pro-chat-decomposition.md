@@ -1,6 +1,6 @@
 ---
 title: "Shrink coach-pro-chat's handleCoachChat and settle its tier-config layer"
-status: in-progress
+status: done
 priority: low
 created: 2026-10-26
 updated: 2026-10-26
@@ -23,12 +23,12 @@ Deferred from the 2026-10-25 `/audit maintainability` run (user triage: the larg
 
 ## Acceptance Criteria
 
-- [ ] One tier mechanism: either delete `CoachTierConfig` and use `isCoachPro`, or route every remaining check through it
-- [ ] `buildCoachContext()`, `extractAndStoreNotebook()` extracted; hash/cache-key helpers move to `server/services/coach-cache-keys.ts` (re-export what tests import)
-- [ ] `prepareCoachMessages()` shared by both generators in `nutrition-coach.ts`
-- [ ] coach-pro-chat.ts under ~800 lines
-- [ ] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
-- [ ] No file in scope ends above 600 lines unless it started there and shrank
+- [x] One tier mechanism: either delete `CoachTierConfig` and use `isCoachPro`, or route every remaining check through it
+- [x] `buildCoachContext()`, `extractAndStoreNotebook()` extracted; hash/cache-key helpers move to `server/services/coach-cache-keys.ts` (re-export what tests import)
+- [x] `prepareCoachMessages()` shared by both generators in `nutrition-coach.ts`
+- [x] coach-pro-chat.ts under ~800 lines
+- [x] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
+- [x] No file in scope ends above 600 lines unless it started there and shrank
 
 ## Implementation Notes
 
@@ -53,3 +53,7 @@ Prompt text and sanitization order must not change — `ai-reviewer` reviews. Ca
 ### 2026-10-26
 
 - Initial creation from the 2026-10-25 maintainability audit
+
+### 2026-10-29
+
+- Done. `CoachTierConfig` deleted (direct `isCoachPro`); hashers moved to `coach-cache-keys.ts` (digests pinned by `__tests__/coach-cache-keys.test.ts`); pure context assembly moved to `coach-context-builder.ts` as `assembleCoachContext` (name differs from the AC's `buildCoachContext`, which already exists in that module; out-of-contract file, needed for the <~800-line AC); `extractAndStoreNotebook` extracted in place; `prepareCoachMessages` shared in `nutrition-coach.ts`. coach-pro-chat.ts 1169 -> 750 lines.
