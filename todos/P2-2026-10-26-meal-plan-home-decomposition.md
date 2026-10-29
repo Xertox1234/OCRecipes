@@ -1,6 +1,6 @@
 ---
 title: "Move MealPlanHomeScreen's row components and sheet wiring out of the screen"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-26
 updated: 2026-10-26
