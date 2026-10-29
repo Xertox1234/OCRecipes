@@ -26,7 +26,7 @@ import {
   useCreateNotebookEntry,
   useUpdateNotebookEntry,
   type NotebookEntry,
-} from "@/hooks/useChat";
+} from "@/hooks/useNotebook";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";

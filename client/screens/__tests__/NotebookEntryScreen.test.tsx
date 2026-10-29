@@ -35,7 +35,7 @@ const {
   mockCancelReminder: vi.fn(),
 }));
 
-vi.mock("@/hooks/useChat", () => ({
+vi.mock("@/hooks/useNotebook", () => ({
   useNotebookEntries: () => mockUseNotebookEntries(),
   useCreateNotebookEntry: () => ({
     mutateAsync: mockCreateMutateAsync,
