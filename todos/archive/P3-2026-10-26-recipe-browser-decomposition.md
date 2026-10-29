@@ -1,9 +1,9 @@
 ---
 title: "Move RecipeBrowserScreen's recipe card and filter bar into components"
-status: in-progress
+status: done
 priority: low
 created: 2026-10-26
-updated: 2026-10-26
+updated: 2026-10-29
 assignee:
 labels: [deferred, maintainability, client]
 github_issue:
@@ -51,3 +51,7 @@ RecipeBrowserScreen has many test files mocking hooks wholesale — run them all
 ### 2026-10-26
 
 - Initial creation from the 2026-10-25 maintainability audit
+
+### 2026-10-29
+
+- Extracted UnifiedRecipeCard and RecipeFilterBar into client/components/meal-plan/; RecipeBrowserScreen.tsx 1423 -> 903 lines.
