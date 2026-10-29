@@ -70,10 +70,10 @@ export function useAddCookPhoto() {
         targetSizeKB: 4500,
       });
 
-      const formData = new FormData();
-      formData.append("photo", createUploadFilePart(compressed.uri));
-
       try {
+        const formData = new FormData();
+        formData.append("photo", createUploadFilePart(compressed.uri));
+
         const token = await tokenStorage.get();
         const response = await fetch(
           `${getApiUrl()}/api/cooking/sessions/${sessionId}/photos`,

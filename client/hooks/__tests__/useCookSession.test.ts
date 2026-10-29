@@ -80,4 +80,32 @@ describe("useAddCookPhoto", () => {
     );
     append.mockRestore();
   });
+
+  it("cleans up the compressed photo when the upload part cannot be built", async () => {
+    const append = vi
+      .spyOn(FormData.prototype, "append")
+      .mockImplementationOnce(() => {
+        throw new Error(
+          "Cannot upload file://compressed.jpg: unknown image type",
+        );
+      });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useAddCookPhoto(), { wrapper });
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          sessionId: "s1",
+          photoUri: "file://orange.jpg",
+        }),
+      ).rejects.toThrow("unknown image type");
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockCleanupImage).toHaveBeenCalledWith("file://compressed.jpg");
+    append.mockRestore();
+  });
 });
