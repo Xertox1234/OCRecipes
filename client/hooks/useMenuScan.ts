@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
-import { File as ExpoFile } from "expo-file-system";
+import { createUploadFilePart } from "@/lib/upload-file-part";
 
 export interface MenuAnalysisItem {
   name: string;
@@ -35,9 +35,7 @@ export function useMenuScan() {
     mutationFn: async (photoUri: string) => {
       const token = await tokenStorage.get();
       const formData = new FormData();
-      // A file object with bytes(), not RN's `{ uri, type, name }`: the global
-      // fetch is `expo/fetch` since SDK 57, and it rejects that shape.
-      formData.append("photo", new ExpoFile(photoUri));
+      formData.append("photo", createUploadFilePart(photoUri));
 
       const response = await fetch(`${getApiUrl()}/api/menu/scan`, {
         method: "POST",

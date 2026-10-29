@@ -1,9 +1,9 @@
 ---
 title: "Uploads: fail loudly when an ExpoFile part has no MIME type (menu scan skips compression)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-27
-updated: 2026-10-27
+updated: 2026-10-29
 assignee:
 labels: [deferred, client, uploads]
 github_issue:
@@ -40,3 +40,7 @@ Review WARNING on the expo/fetch upload fix (2026-10-27). Safe today: Cook & Tra
 ### 2026-10-27
 
 - Filed from the one review pass on the expo/fetch upload fix.
+
+### 2026-10-29
+
+- Done: shared `createUploadFilePart` helper (client/lib/upload-file-part.ts) throws on null MIME type; used by all three hooks; shared test mock added.
