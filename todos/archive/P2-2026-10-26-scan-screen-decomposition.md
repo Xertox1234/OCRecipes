@@ -1,6 +1,6 @@
 ---
 title: "Split ScanScreen's confirm overlay, permission gate and capture routing"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-26
 updated: 2026-10-26
@@ -52,3 +52,7 @@ Camera is device-only: the simulator has no camera. Keep `isActive={isFocused}`.
 ### 2026-10-26
 
 - Initial creation from the 2026-10-25 maintainability audit
+
+### 2026-10-29
+
+- Done: extracted ScanConfirmOverlay and CameraPermissionGate (client/components/scan/); getCapturePlan(phase, mode) now returns frontLabel | label | smart | step with one capture function per route. ScanScreen.tsx 1471 -> 1149 lines (the todo estimated ~1150 before; the file had grown). Owner device pass still needed for front-label / label / verify-barcode capture.
