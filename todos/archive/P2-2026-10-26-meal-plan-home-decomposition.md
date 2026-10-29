@@ -1,6 +1,6 @@
 ---
 title: "Move MealPlanHomeScreen's row components and sheet wiring out of the screen"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-26
 updated: 2026-10-26
@@ -23,11 +23,11 @@ Deferred from the 2026-10-25 `/audit maintainability` run (user triage: the larg
 
 ## Acceptance Criteria
 
-- [ ] Rows move to `client/components/meal-plan/MealSlotSection.tsx` and `DateStrip.tsx` (screen re-exports for the existing tests, or tests import the new path)
-- [ ] `useMealPlanSheets()` owns the sheet state machine, refs, effect, back handler and the gorhom-ordering comments, with its own tests
-- [ ] Screen under ~1100 lines
-- [ ] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
-- [ ] No file in scope ends above 600 lines unless it started there and shrank
+- [x] Rows move to `client/components/meal-plan/MealSlotSection.tsx` and `DateStrip.tsx` (screen re-exports for the existing tests, or tests import the new path)
+- [x] `useMealPlanSheets()` owns the sheet state machine, refs, effect, back handler and the gorhom-ordering comments, with its own tests
+- [x] Screen under ~1100 lines
+- [x] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
+- [x] No file in scope ends above 600 lines unless it started there and shrank
 
 ## Implementation Notes
 
@@ -52,3 +52,9 @@ Keep React Compiler coverage: run `node scripts/check-react-compiler-bailouts.js
 ### 2026-10-26
 
 - Initial creation from the 2026-10-25 maintainability audit
+
+### 2026-10-29
+
+- Done: rows moved to `client/components/meal-plan/{DateStrip,MealSlotSection}.tsx`; sheet state machine, refs, effect, back handler, handoff handlers and sheet-content elements moved to `client/hooks/useMealPlanSheets.tsx` (+ tests). Screen 1906 -> ~1050 lines.
+- Hook is `.tsx` (returns JSX; the `createElement` form made React Compiler bail on the `ref` prop). The hook builds `sheetRefs` inside the effect with the 4 stable refs as deps rather than an eslint-disable (the suppression made the compiler skip the whole hook).
+- Owner device check still needed: Android back handler / sheet ordering.
