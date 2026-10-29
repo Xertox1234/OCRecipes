@@ -20,7 +20,6 @@ import { storage } from "../storage";
 import {
   generateCoachResponse,
   generateCoachProResponse,
-  getSystemPromptTemplateVersion,
   SAFETY_OVERRIDE_SENTINEL,
 } from "./nutrition-coach";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
