@@ -20,6 +20,7 @@ import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SheetHeader } from "@/components/sheet/SheetChrome";
 import { InlineError } from "@/components/InlineError";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -277,29 +278,7 @@ function SimpleEntrySheetContentInner(
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
     <View style={styles.content} accessibilityViewIsModal>
       {/* Header */}
-      <View style={styles.header}>
-        <View
-          style={[
-            styles.dragIndicator,
-            { backgroundColor: withOpacity(theme.text, 0.2) },
-          ]}
-        />
-        <View style={styles.headerRow}>
-          <ThemedText style={styles.headerTitle}>
-            Quick add to {label}
-          </ThemedText>
-          <Pressable
-            onPress={onDismiss}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <ThemedText style={[styles.doneText, { color: theme.link }]}>
-              Done
-            </ThemedText>
-          </Pressable>
-        </View>
-      </View>
+      <SheetHeader title={`Quick add to ${label}`} onDone={onDismiss} />
 
       {/* Dish name input */}
       <View style={styles.inputContainer}>
@@ -459,32 +438,6 @@ export const SimpleEntrySheetContent = React.memo(
 const styles = StyleSheet.create({
   content: {
     paddingBottom: Spacing.lg,
-  },
-  header: {
-    alignItems: "center",
-    paddingTop: Spacing.sm,
-  },
-  dragIndicator: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: Spacing.md,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontFamily: FontFamily.semiBold,
-  },
-  doneText: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
   },
   inputContainer: {
     paddingHorizontal: Spacing.lg,

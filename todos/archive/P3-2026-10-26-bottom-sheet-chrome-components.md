@@ -1,9 +1,9 @@
 ---
 title: "Share bottom-sheet header, drag handle and option row across the meal-plan sheets"
-status: backlog
+status: done
 priority: low
 created: 2026-10-26
-updated: 2026-10-26
+updated: 2026-10-29
 assignee:
 labels: [deferred, maintainability, client]
 github_issue:
@@ -23,11 +23,11 @@ Deferred from the 2026-10-25 `/audit maintainability` run (user triage: the larg
 
 ## Acceptance Criteria
 
-- [ ] `client/components/sheet/SheetChrome.tsx` exports `SheetDragHandle`, `SheetHeader({ title, onDone })`, `SheetOptionRow({ icon, title, description, onPress, accessibilityLabel })`
-- [ ] The four meal-plan sheets use it; each keeps its own `accessibilityViewIsModal` root and bottom-sheet wiring
-- [ ] Accessibility labels/roles identical before and after (snapshot the a11y props in tests)
-- [ ] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
-- [ ] No file in scope ends above 600 lines unless it started there and shrank
+- [x] `client/components/sheet/SheetChrome.tsx` exports `SheetDragHandle`, `SheetHeader({ title, onDone })`, `SheetOptionRow({ icon, title, description, onPress, accessibilityLabel })`
+- [x] The four meal-plan sheets use it; each keeps its own `accessibilityViewIsModal` root and bottom-sheet wiring
+- [x] Accessibility labels/roles identical before and after (snapshot the a11y props in tests)
+- [x] Behaviour unchanged: existing tests for the touched files pass without edits to their assertions (new tests may be added)
+- [x] No file in scope ends above 600 lines unless it started there and shrank
 
 ## Implementation Notes
 
@@ -52,3 +52,7 @@ Theme tokens only (`useTheme()`), no raw hex. 44pt touch targets. Do it as one b
 ### 2026-10-26
 
 - Initial creation from the 2026-10-25 maintainability audit
+
+### 2026-10-29
+
+- Implemented: `SheetChrome.tsx` (`SheetDragHandle`, `SheetHeader`, `SheetOptionRow` with an optional `trailingIcon` for the premium lock) used by the four meal-plan sheets. Menu sheets use `SheetDragHandle` + `SheetOptionRow` and keep their own title line (their root already pads horizontally). QuickAddSheet 590 -> 545, SimpleEntrySheet 555 -> 508.

@@ -21,6 +21,7 @@ import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SheetHeader } from "@/components/sheet/SheetChrome";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -399,27 +400,7 @@ function QuickAddSheetContentInner(
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
     <View style={styles.rootContent} accessibilityViewIsModal>
       {/* Header */}
-      <View style={styles.header}>
-        <View
-          style={[
-            styles.dragIndicator,
-            { backgroundColor: withOpacity(theme.text, 0.2) },
-          ]}
-        />
-        <View style={styles.headerRow}>
-          <ThemedText style={styles.headerTitle}>Add to {label}</ThemedText>
-          <Pressable
-            onPress={onDismiss}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <ThemedText style={[styles.doneText, { color: theme.link }]}>
-              Done
-            </ThemedText>
-          </Pressable>
-        </View>
-      </View>
+      <SheetHeader title={`Add to ${label}`} onDone={onDismiss} />
 
       {/* Search */}
       <View style={styles.searchContainer}>
@@ -485,32 +466,6 @@ const styles = StyleSheet.create({
   // previously filled directly.
   rootContent: {
     flex: 1,
-  },
-  header: {
-    alignItems: "center",
-    paddingTop: Spacing.sm,
-  },
-  dragIndicator: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: Spacing.md,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontFamily: FontFamily.semiBold,
-  },
-  doneText: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
   },
   searchContainer: {
     paddingHorizontal: Spacing.lg,
