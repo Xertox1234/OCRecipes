@@ -160,6 +160,7 @@ describe("CameraView — failure reporting (latched once per mount)", () => {
       {} as unknown as ReturnType<typeof usePhotoOutput>,
     );
     vi.mocked(logger.error).mockClear();
+    vi.mocked(logger.warn).mockClear();
   });
 
   it("reports a takePicture rejection via logger.error, latched once, and still resolves null so the caller's Alert.alert('Capture failed', ...) still fires", async () => {
@@ -188,6 +189,32 @@ describe("CameraView — failure reporting (latched once per mount)", () => {
     onError?.(new Error("session error 2"));
 
     expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs a CameraX 'Camera is not active' cancel at warn, not error, and keeps the error latch for a real failure", () => {
+    render(<CameraView barcodeTypes={[]} />);
+
+    const { onError } = lastCameraProps();
+    onError?.(
+      new Error(
+        "androidx.camera.core.CameraControl$OperationCanceledException: Camera is not active.",
+      ),
+    );
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+
+    onError?.(new Error("session error"));
+    expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies by OperationCanceledException name too", () => {
+    render(<CameraView barcodeTypes={[]} />);
+
+    const { onError } = lastCameraProps();
+    onError?.(new Error("OperationCanceledException: cancelled"));
+
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
   it("reports a barcode-scanner onError once, latched across repeated errors", () => {
