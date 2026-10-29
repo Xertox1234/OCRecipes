@@ -3,10 +3,11 @@
 // to unit-test and to import from the mock path.
 import type {
   ProductSubscriptionAndroid,
-  ProductSubscriptionAndroidOfferDetails,
   ProductSubscriptionIOS,
   Purchase,
+  SubscriptionOffer,
   SubscriptionPeriodIOS,
+  SubscriptionPeriodUnit as StorePeriodUnit,
 } from "expo-iap";
 import type {
   FreeTrialOffer,
@@ -33,15 +34,26 @@ export function parseIsoPeriod(iso: string): SubscriptionPeriod | null {
 }
 
 function iosUnit(
-  unit: SubscriptionPeriodIOS | null | undefined,
+  unit: SubscriptionPeriodIOS | StorePeriodUnit | null | undefined,
 ): SubscriptionPeriodUnit | null {
-  return unit && unit !== "empty" ? unit : null;
+  return unit && unit !== "empty" && unit !== "unknown" ? unit : null;
+}
+
+/** The product's introductory free-trial offer, if the store lists one. */
+export function freeTrialOfferIOS(
+  product: ProductSubscriptionIOS,
+): SubscriptionOffer | null {
+  return (
+    product.subscriptionOffers?.find(
+      (offer) =>
+        offer.type === "introductory" && offer.paymentMode === "free-trial",
+    ) ?? null
+  );
 }
 
 /**
- * Reads subscriptionInfoIOS although expo-iap marks it deprecated in favour of
- * subscriptionOffers: the version is pinned (3.4.8) and the base billing period
- * is not part of subscriptionOffers.
+ * The base billing period comes from the flat subscriptionPeriod*IOS fields;
+ * subscriptionOffers holds only the intro and promotional offers.
  *
  * @param eligibleForIntroOffer from isEligibleForIntroOfferIOS: StoreKit lists
  *   the intro offer on the product whether or not this user already used it.
@@ -50,36 +62,22 @@ export function toIAPProductIOS(
   product: ProductSubscriptionIOS,
   eligibleForIntroOffer: boolean,
 ): IAPProduct {
-  const info = product.subscriptionInfoIOS;
   let period: SubscriptionPeriod | null = null;
-  const infoUnit = iosUnit(info?.subscriptionPeriod.unit);
-  if (info && infoUnit && info.subscriptionPeriod.value > 0) {
-    period = { count: info.subscriptionPeriod.value, unit: infoUnit };
-  } else {
-    const flatUnit = iosUnit(product.subscriptionPeriodUnitIOS);
-    const flatCount = Number(product.subscriptionPeriodNumberIOS);
-    if (flatUnit && flatCount > 0) {
-      period = { count: flatCount, unit: flatUnit };
-    }
+  const unit = iosUnit(product.subscriptionPeriodUnitIOS);
+  const count = Number(product.subscriptionPeriodNumberIOS);
+  if (unit && count > 0) {
+    period = { count, unit };
   }
 
   let introOffer: FreeTrialOffer | null = null;
-  const offer = info?.introductoryOffer;
-  const offerUnit = iosUnit(offer?.period.unit);
-  if (
-    eligibleForIntroOffer &&
-    offer &&
-    offer.paymentMode === "free-trial" &&
-    offerUnit &&
-    offer.period.value > 0 &&
-    offer.periodCount > 0
-  ) {
+  const offer = eligibleForIntroOffer ? freeTrialOfferIOS(product) : null;
+  const offerUnit = iosUnit(offer?.period?.unit);
+  const offerValue = offer?.period?.value ?? 0;
+  const offerCount = offer?.periodCount ?? offer?.numberOfPeriodsIOS ?? 0;
+  if (offerUnit && offerValue > 0 && offerCount > 0) {
     introOffer = {
       kind: "free-trial",
-      length: {
-        count: offer.period.value * offer.periodCount,
-        unit: offerUnit,
-      },
+      length: { count: offerValue * offerCount, unit: offerUnit },
     };
   }
 
@@ -97,28 +95,36 @@ function isFreePhase(micros: string): boolean {
 }
 
 /**
+ * OpenIAP gives a base plan (no offerId) its basePlanId as its id, and sets
+ * basePlanIdAndroid on every offer.
+ */
+function isBasePlanOffer(offer: SubscriptionOffer): boolean {
+  return offer.id === offer.basePlanIdAndroid;
+}
+
+function phasesOf(offer: SubscriptionOffer) {
+  return offer.pricingPhasesAndroid?.pricingPhaseList ?? [];
+}
+
+/**
  * Google Play lists only the offers this user is eligible for, so a listed
- * free-then-recurring offer means the user can start a free trial. Reads the
- * deprecated subscriptionOfferDetailsAndroid on purpose: it is the field
- * expo-iap's own hook uses to sort a product into `subscriptions`.
+ * free-then-recurring offer means the user can start a free trial.
  */
 export function toIAPProductAndroid(
   product: ProductSubscriptionAndroid,
 ): IAPProduct | null {
-  const offers: ProductSubscriptionAndroidOfferDetails[] =
-    product.subscriptionOfferDetailsAndroid;
+  const offers = product.subscriptionOffers;
   if (offers.length === 0) return null;
 
   // Exactly two phases — free, then the recurring price — so "Free for N days,
   // then <price>" is the whole story. A free phase followed by a paid intro
   // phase would hide that middle charge; such an offer is not chosen.
   const trialOffer = offers.find((offer) => {
-    const phases = offer.pricingPhases.pricingPhaseList;
+    const phases = phasesOf(offer);
     return phases.length === 2 && isFreePhase(phases[0].priceAmountMicros);
   });
-  const chosen =
-    trialOffer ?? offers.find((offer) => !offer.offerId) ?? offers[0];
-  const phases = chosen.pricingPhases.pricingPhaseList;
+  const chosen = trialOffer ?? offers.find(isBasePlanOffer) ?? offers[0];
+  const phases = phasesOf(chosen);
   const recurring = phases[phases.length - 1];
   if (!recurring) return null;
 
@@ -133,7 +139,7 @@ export function toIAPProductAndroid(
     displayPrice: recurring.formattedPrice,
     period: parseIsoPeriod(recurring.billingPeriod),
     introOffer,
-    androidOfferToken: chosen.offerToken,
+    androidOfferToken: chosen.offerTokenAndroid ?? null,
   };
 }
 
