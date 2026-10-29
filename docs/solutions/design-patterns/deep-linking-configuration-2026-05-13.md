@@ -4,9 +4,9 @@ track: knowledge
 category: design-patterns
 module: client
 tags: [react-native, navigation, deep-linking, validation, notifications, expo-notifications]
-applies_to: [client/navigation/linking.ts, client/navigation/__tests__/**, client/screens/ChatScreen.tsx]
+applies_to: [client/navigation/linking.ts, client/navigation/__tests__/**, client/screens/ChatScreen.tsx, client/screens/ScanScreen.tsx]
 created: '2026-05-13'
-last_updated: '2026-10-02'
+last_updated: '2026-10-28'
 ---
 
 # Deep linking configuration with parseIntOrZero boundary validation
@@ -45,6 +45,8 @@ A deep-link target's not-found view also needs its **own exit**. `linking.ts` de
 - `navigate("ChatList")` — in v7 `StackRouter` only reuses the CURRENT route unless `pop: true`; otherwise it pushes, leaving the dead-end screen behind the list.
 
 Use `navigation.popTo("ChatList")`: it pops back to an existing `ChatList`, or replaces the current screen with one when none exists. `NotebookEntryScreen` gets away with `goBack` because it is a root `fullScreenModal`. Do not escape via `setParams({ conversationId: undefined })`: the key stays present, so the malformed-id check stays true.
+
+A **premium or access check made on a picker screen must be re-run on the screen the pick opens**. The param that carries the pick can reach the destination without passing through the picker. It can come from a deep link, or from another in-app caller that casts its params instead of building them (`CoachChat.tsx` calls `navigation.navigate("Scan", params as RootStackParamList["Scan"])`). `PhotoIntentScreen` locks the premium options, but `ScanScreen` validates `route.params.intent` with `isScanIntent` and checks `isScanIntentLocked` again before routing a photo. If the option is locked, it resets the scan and opens the upgrade modal. A param that exists only for in-app flows should also be dropped from the link config: the `Scan` entry in `linking.ts` parses `intent` to `undefined`. Dropping it at the link does not replace the destination check, because the cast caller never goes through `linking.ts` (#1599).
 
 ```typescript
 // client/navigation/linking.ts
