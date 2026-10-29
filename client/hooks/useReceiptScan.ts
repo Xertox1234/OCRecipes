@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
-import { File as ExpoFile } from "expo-file-system";
+import { createUploadFilePart } from "@/lib/upload-file-part";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { ApiError } from "@/lib/api-error";
 import {
@@ -58,9 +58,7 @@ export function useReceiptScan() {
             targetSizeKB: 4500,
           });
           compressedUris.push(compressed.uri);
-          // A file object with bytes(), not RN's `{ uri, type, name }`: the
-          // global fetch is `expo/fetch` since SDK 57, and it rejects that shape.
-          formData.append("photos", new ExpoFile(compressed.uri));
+          formData.append("photos", createUploadFilePart(compressed.uri));
         }
 
         const token = await tokenStorage.get();

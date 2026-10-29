@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 
 import { useMenuScan } from "../useMenuScan";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { File as MockExpoFile } from "../../../test/mocks/expo-file-system";
 
 const { mockGetApiUrl, mockTokenStorage, mockFetch } = vi.hoisted(() => ({
   mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
@@ -27,15 +28,10 @@ vi.mock("@/lib/token-storage", () => ({
 // parts that are strings, Blobs, or objects with `bytes()` — a React Native
 // `{ uri, type, name }` object throws "Unsupported FormDataPart implementation"
 // on device. jsdom's FormData stringifies anything, so assert the part type.
-const { MockExpoFile } = vi.hoisted(() => ({
-  MockExpoFile: class {
-    constructor(public uri: string) {}
-    type = "image/jpeg";
-    bytes = async () => new Uint8Array();
-  },
-}));
-
-vi.mock("expo-file-system", () => ({ File: MockExpoFile }));
+vi.mock(
+  "expo-file-system",
+  () => import("../../../test/mocks/expo-file-system"),
+);
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch;
