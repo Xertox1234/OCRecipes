@@ -8,7 +8,7 @@ vi.mock("expo-file-system", () => ({
   File: class {
     type = fileType.value;
     constructor(public uri: string) {}
-    bytes = async () => new Uint8Array();
+    bytes = () => Promise.resolve(new Uint8Array());
   },
 }));
 

@@ -6,5 +6,5 @@
 export class File {
   type: string | null = "image/jpeg";
   constructor(public uri: string) {}
-  bytes = async () => new Uint8Array();
+  bytes = () => Promise.resolve(new Uint8Array());
 }
