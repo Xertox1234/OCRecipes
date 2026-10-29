@@ -1,6 +1,6 @@
 ---
 title: "Give the two XHR streaming clients one shared SSE transport"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-26
 updated: 2026-10-26

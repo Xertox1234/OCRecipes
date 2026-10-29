@@ -68,6 +68,9 @@ vi.mock("@/hooks/useChat", () => ({
     isError: false,
     refetch: mockRefetchConversations,
   }),
+}));
+
+vi.mock("@/hooks/useNotebook", () => ({
   useNotebookEntries: () => ({ data: [], isLoading: false }),
 }));
 

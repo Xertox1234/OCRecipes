@@ -12,6 +12,7 @@ import {
 } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
+import { streamSse, type SseOutcome } from "@/lib/sse-xhr";
 import {
   clearCoachReplyUnread,
   noteCoachReplyFinished,
@@ -31,6 +32,19 @@ import {
 // `{ error: "Response timeout" }` never arrives. Same 150s ceiling as
 // useCoachStream's XHR_TIMEOUT_MS; this hook has no inactivity watchdog.
 export const CHAT_XHR_TIMEOUT_MS = SSE_TIMEOUT_MS + 30_000;
+
+/** The SSE event fields `sendMessage` reads (everything is optional). */
+interface ChatSseEvent {
+  status?: unknown;
+  finder?: unknown;
+  recipe?: StreamingRecipe;
+  allergenWarning?: string;
+  imageUrl?: string;
+  imageUnavailable?: boolean;
+  content?: string;
+  done?: boolean;
+  error?: unknown;
+}
 
 export interface ChatConversation {
   id: number;
@@ -366,9 +380,9 @@ export function useSendMessage(
     }),
     [],
   );
-  // The in-flight XHR, exposed so a caller (e.g. a screen's unmount cleanup)
-  // can abort it from outside sendMessage.
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  // The in-flight request's controller, so a caller (e.g. a screen's unmount
+  // cleanup) can abort it from outside sendMessage.
+  const abortRef = useRef<AbortController | null>(null);
   // Bumped by every sendMessage call, by abortStream, and on unmount.
   // sendMessage's token read is async; its continuation — and its `finally`
   // teardown — only touch this hook's shared, single-slot UI state when the
@@ -380,8 +394,8 @@ export function useSendMessage(
   const abortStream = useCallback(() => {
     if (!isStreamingRef.current) return; // nothing in flight — no-op
     sendEpochRef.current += 1;
-    xhrRef.current?.abort();
-    xhrRef.current = null;
+    abortRef.current?.abort();
+    abortRef.current = null;
     isStreamingRef.current = false;
     setIsStreaming(false);
     setStreamingContent("");
@@ -434,11 +448,11 @@ export function useSendMessage(
       setRequestError(null);
 
       let receivedDone = false;
-      // Captured separately from xhrRef so the `finally` below (outside this
-      // `try` block's own scope) can tell whether xhrRef still points at
-      // THIS request's XHR before nulling it — defense in depth alongside
-      // the isStreamingRef guard above.
-      let ownXhr: XMLHttpRequest | null = null;
+      // Captured separately from abortRef so the `finally` below (outside
+      // this `try` block's own scope) can tell whether abortRef still points
+      // at THIS request's controller before nulling it — defense in depth
+      // alongside the isStreamingRef guard above.
+      let ownController: AbortController | null = null;
 
       try {
         const baseUrl = getApiUrl();
@@ -470,192 +484,155 @@ export function useSendMessage(
           ...(options?.finderAction && { finderAction: options.finderAction }),
         });
 
-        // XHR is used instead of fetch because React Native's fetch polyfill
-        // returns response.body = null for text/event-stream responses on iOS/Android.
-        // XMLHttpRequest.onprogress fires incrementally and is the established
-        // pattern for SSE in React Native.
         let pendingFlush = false;
         let sseErrorReceived = false;
-        let sseBuffer = "";
 
-        const processLine = (line: string) => {
-          if (!line.startsWith("data: ")) return;
-          try {
-            const data = JSON.parse(line.slice(6));
+        const handleEvent = (data: ChatSseEvent) => {
+          // A server error ends the reply: later events are ignored.
+          if (sseErrorReceived) return;
 
-            if (typeof data.status === "string") {
-              setStreamingStatus(data.status);
+          if (typeof data.status === "string") {
+            setStreamingStatus(data.status);
+          }
+          if (data.finder) {
+            // An old or malformed block is dropped, never rendered.
+            const parsed = finderBlockSchema.safeParse(data.finder);
+            if (parsed.success) {
+              streamingFinderRef.current = parsed.data;
+              setStreamingFinder(parsed.data);
             }
-            if (data.finder) {
-              // An old or malformed block is dropped, never rendered.
-              const parsed = finderBlockSchema.safeParse(data.finder);
-              if (parsed.success) {
-                streamingFinderRef.current = parsed.data;
-                setStreamingFinder(parsed.data);
-              }
+          }
+          if (data.recipe) {
+            streamingRecipeRef.current = data.recipe;
+            setStreamingRecipe(data.recipe);
+            if (data.allergenWarning) {
+              setAllergenWarning(data.allergenWarning);
             }
-            if (data.recipe) {
-              streamingRecipeRef.current = data.recipe;
-              setStreamingRecipe(data.recipe);
-              if (data.allergenWarning) {
-                setAllergenWarning(data.allergenWarning);
-              }
+          }
+          if (data.imageUrl) {
+            const prev = streamingRecipeRef.current;
+            streamingRecipeRef.current = prev
+              ? { ...prev, imageUrl: data.imageUrl }
+              : null;
+            setStreamingRecipe(streamingRecipeRef.current);
+          }
+          if (data.imageUnavailable) {
+            const prev = streamingRecipeRef.current;
+            streamingRecipeRef.current = prev
+              ? { ...prev, imageUrl: null }
+              : null;
+            setStreamingRecipe(streamingRecipeRef.current);
+          }
+          if (data.content) {
+            streamingContentRef.current += data.content;
+            if (!pendingFlush) {
+              pendingFlush = true;
+              setTimeout(() => {
+                // Per stream: after an abort and a new send, this timer
+                // belongs to the old stream and must not publish into the
+                // new one.
+                if (epoch === sendEpochRef.current && isStreamingRef.current) {
+                  setStreamingContent(streamingContentRef.current);
+                }
+                pendingFlush = false;
+              }, 16);
             }
-            if (data.imageUrl) {
-              const prev = streamingRecipeRef.current;
-              streamingRecipeRef.current = prev
-                ? { ...prev, imageUrl: data.imageUrl }
-                : null;
-              setStreamingRecipe(streamingRecipeRef.current);
+          }
+          if (data.done) {
+            receivedDone = true;
+            // End-of-stream flush: `done` can arrive before the 16 ms timer
+            // above fires (e.g. a {finder, content} offer event) — publish
+            // the pending content now so the live footer shows it. The
+            // pending-bubble bridge does not depend on that render: when
+            // the whole body lands in onload, this flush and the `finally`
+            // clear share one batch, so the bridge reads getStreamSnapshot.
+            if (isStreamingRef.current) {
+              setStreamingContent(streamingContentRef.current);
             }
-            if (data.imageUnavailable) {
-              const prev = streamingRecipeRef.current;
-              streamingRecipeRef.current = prev
-                ? { ...prev, imageUrl: null }
-                : null;
-              setStreamingRecipe(streamingRecipeRef.current);
-            }
-            if (data.content) {
-              streamingContentRef.current += data.content;
-              if (!pendingFlush) {
-                pendingFlush = true;
-                setTimeout(() => {
-                  // Per stream: after an abort and a new send, this timer
-                  // belongs to the old stream and must not publish into the
-                  // new one.
-                  if (
-                    epoch === sendEpochRef.current &&
-                    isStreamingRef.current
-                  ) {
-                    setStreamingContent(streamingContentRef.current);
+            void queryClient.invalidateQueries({
+              queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+            });
+            void queryClient.invalidateQueries({
+              queryKey: ["/api/chat/conversations"],
+            });
+            // Here, not in `finally`: an aborted, errored or cut-off stream
+            // is not a reply the user is waiting on. Placed after the
+            // refresh so the conversation is already marked stale by the
+            // time anyone acts on the toast.
+            //
+            // Only the session that sent the message may record or announce
+            // its reply. The stream is deliberately not aborted on leave
+            // (#1183) or on sign-out, so it can finish after logout has
+            // cleared the query cache, or after another account signed in.
+            // The token this send went out with identifies its session: it
+            // is written only at login/register and every teardown nulls it
+            // before the cache is cleared, so a late `done` sees a different
+            // token (or none) and stays quiet instead of re-creating a mark
+            // for a conversation the current user may not own.
+            if (notifyWhenAway) {
+              void tokenStorage.get().then(
+                (current) => {
+                  if (current === token) {
+                    noteCoachReplyFinished(queryClient, effectiveId);
                   }
-                  pendingFlush = false;
-                }, 16);
-              }
-            }
-            if (data.done) {
-              receivedDone = true;
-              // End-of-stream flush: `done` can arrive before the 16 ms timer
-              // above fires (e.g. a {finder, content} offer event) — publish
-              // the pending content now so the live footer shows it. The
-              // pending-bubble bridge does not depend on that render: when
-              // the whole body lands in onload, this flush and the `finally`
-              // clear share one batch, so the bridge reads getStreamSnapshot.
-              if (isStreamingRef.current) {
-                setStreamingContent(streamingContentRef.current);
-              }
-              void queryClient.invalidateQueries({
-                queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
-              });
-              void queryClient.invalidateQueries({
-                queryKey: ["/api/chat/conversations"],
-              });
-              // Here, not in `finally`: an aborted, errored or cut-off stream
-              // is not a reply the user is waiting on. Placed after the
-              // refresh so the conversation is already marked stale by the
-              // time anyone acts on the toast.
-              //
-              // Only the session that sent the message may record or announce
-              // its reply. The stream is deliberately not aborted on leave
-              // (#1183) or on sign-out, so it can finish after logout has
-              // cleared the query cache, or after another account signed in.
-              // The token this send went out with identifies its session: it
-              // is written only at login/register and every teardown nulls it
-              // before the cache is cleared, so a late `done` sees a different
-              // token (or none) and stays quiet instead of re-creating a mark
-              // for a conversation the current user may not own.
-              if (notifyWhenAway) {
-                void tokenStorage.get().then(
-                  (current) => {
-                    if (current === token) {
-                      noteCoachReplyFinished(queryClient, effectiveId);
-                    }
-                  },
-                  () => {
-                    // Unreadable token: the session can't be told apart, so
-                    // stay quiet rather than risk a mark for someone else.
-                  },
-                );
-              }
-            }
-            // Server-sent application error — surface via requestError instead
-            // of throwing, so callers that don't await sendMessage still see it.
-            if (data.error) {
-              setRequestError(
-                typeof data.error === "string"
-                  ? data.error
-                  : "Something went wrong. Please try again.",
+                },
+                () => {
+                  // Unreadable token: the session can't be told apart, so
+                  // stay quiet rather than risk a mark for someone else.
+                },
               );
-              sseErrorReceived = true;
             }
-          } catch {
-            // Incomplete or invalid JSON chunk — skip silently
           }
-        };
-
-        const processChunk = (chunk: string) => {
-          sseBuffer += chunk;
-          const lines = sseBuffer.split("\n");
-          sseBuffer = lines.pop() ?? "";
-          for (const line of lines) {
-            if (sseErrorReceived) break;
-            processLine(line);
-          }
-        };
-
-        let aborted = false;
-
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          ownXhr = xhr;
-          xhrRef.current = xhr;
-          xhr.open("POST", url.href, true);
-          xhr.timeout = CHAT_XHR_TIMEOUT_MS;
-          Object.entries(headers).forEach(([k, v]) =>
-            xhr.setRequestHeader(k, v),
-          );
-
-          let processedLength = 0;
-
-          xhr.onprogress = () => {
-            const chunk = xhr.responseText.slice(processedLength);
-            processedLength = xhr.responseText.length;
-            processChunk(chunk);
-          };
-
-          xhr.onload = () => {
-            // Flush any data not yet delivered via onprogress
-            const remaining = xhr.responseText.slice(processedLength);
-            if (remaining) processChunk(remaining);
-
-            if (xhr.status < 200 || xhr.status >= 300) {
-              let errorMsg = "Something went wrong. Please try again.";
-              try {
-                const parsed = JSON.parse(xhr.responseText);
-                if (typeof parsed.error === "string") errorMsg = parsed.error;
-              } catch {
-                // ignore parse errors
-              }
-              setRequestError(errorMsg);
-            }
-            resolve();
-          };
-
-          xhr.onerror = () =>
-            reject(
-              new Error(
-                "Network error. Please check your connection and try again.",
-              ),
+          // Server-sent application error — surface via requestError instead
+          // of throwing, so callers that don't await sendMessage still see it.
+          if (data.error) {
+            setRequestError(
+              typeof data.error === "string"
+                ? data.error
+                : "Something went wrong. Please try again.",
             );
-          xhr.ontimeout = () =>
-            reject(new Error("Request timed out. Please try again."));
-          xhr.onabort = () => {
-            aborted = true;
-            resolve();
-          };
+            sseErrorReceived = true;
+          }
+        };
 
-          xhr.send(requestBody);
+        const controller = new AbortController();
+        ownController = controller;
+        abortRef.current = controller;
+
+        const outcome = await new Promise<SseOutcome>((resolve) => {
+          streamSse({
+            url: url.href,
+            body: requestBody,
+            headers,
+            timeoutMs: CHAT_XHR_TIMEOUT_MS,
+            signal: controller.signal,
+            onEvent: (data) => handleEvent(data as ChatSseEvent),
+            onClose: resolve,
+          });
         });
+
+        if (outcome.kind === "network") {
+          throw new Error(
+            "Network error. Please check your connection and try again.",
+          );
+        }
+        if (outcome.kind === "timeout" || outcome.kind === "inactivity") {
+          throw new Error("Request timed out. Please try again.");
+        }
+        const aborted = outcome.kind === "aborted";
+        if (
+          (outcome.kind === "load" || outcome.kind === "http-error") &&
+          (outcome.status < 200 || outcome.status >= 300)
+        ) {
+          let errorMsg = "Something went wrong. Please try again.";
+          try {
+            const parsed = JSON.parse(outcome.responseText);
+            if (typeof parsed.error === "string") errorMsg = parsed.error;
+          } catch {
+            // ignore parse errors
+          }
+          setRequestError(errorMsg);
+        }
 
         // Stream ended — check if it completed normally
         if (aborted) {
@@ -707,12 +684,12 @@ export function useSendMessage(
         // epoch synchronously) — resetting unconditionally here would
         // tear down whichever request is current now.
         if (epoch === sendEpochRef.current) {
-          // Only clear the ref if it still points at this request's XHR —
-          // a guard against a future caller that bypasses the
+          // Only clear the ref if it still points at this request's
+          // controller — a guard against a future caller that bypasses the
           // isStreamingRef check above and starts a second request;
           // without this, the second request's cleanup could null out the
           // first request's still-live reference (or vice versa).
-          if (xhrRef.current === ownXhr) xhrRef.current = null;
+          if (abortRef.current === ownController) abortRef.current = null;
           isStreamingRef.current = false;
           setIsStreaming(false);
           setStreamingContent("");
@@ -826,114 +803,5 @@ export function useSaveRecipeFromChat() {
         queryKey: ["/api/saved-items/count"],
       });
     },
-  });
-}
-
-// ---- NOTEBOOK ----
-
-export interface NotebookEntry {
-  id: number;
-  userId: string;
-  type: string;
-  content: string;
-  status: string;
-  followUpDate: string | null;
-  sourceConversationId: number | null;
-  dedupeKey: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export function useNotebookEntries(opts?: {
-  type?: string;
-  status?: string;
-  page?: number;
-}) {
-  const params = new URLSearchParams();
-  if (opts?.type) params.set("type", opts.type);
-  if (opts?.status) params.set("status", opts.status);
-  if (opts?.page) params.set("page", String(opts.page));
-  const query = params.toString();
-  return useQuery<NotebookEntry[]>({
-    queryKey: ["/api/coach/notebook", opts],
-    queryFn: async () => {
-      const res = await apiRequest(
-        "GET",
-        `/api/coach/notebook${query ? `?${query}` : ""}`,
-      );
-      return res.json();
-    },
-  });
-}
-
-export function useCreateNotebookEntry() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (data: {
-      type: string;
-      content: string;
-      followUpDate?: string | null;
-    }) => {
-      // X-Timezone is required here, not decorative: the server anchors
-      // `followUpDate` (a calendar day) at local midnight in THIS zone, the
-      // same basis the chat-extraction writer uses. `apiRequest` does not
-      // add the header automatically, so omitting it silently anchors at
-      // UTC midnight and the reminder fires early for UTC-negative users.
-      const res = await apiRequest("POST", "/api/coach/notebook", data, {
-        headers: { "X-Timezone": getDeviceTimezone() },
-      });
-      return (await res.json()) as NotebookEntry;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
-    },
-    // Its one call site (NotebookEntryScreen) already toasts on failure.
-    meta: { silentError: true },
-  });
-}
-
-export function useUpdateNotebookEntry() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      id,
-      ...updates
-    }: {
-      id: number;
-      content?: string;
-      type?: string;
-      followUpDate?: string | null;
-      status?: string;
-    }) => {
-      const res = await apiRequest(
-        "PATCH",
-        `/api/coach/notebook/${id}`,
-        updates,
-        // Same reason as useCreateNotebookEntry: the server anchors an edited
-        // `followUpDate` in this zone.
-        { headers: { "X-Timezone": getDeviceTimezone() } },
-      );
-      return (await res.json()) as NotebookEntry;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
-    },
-    // Every call site (NotebookEntryScreen x3, NotebookScreen) already
-    // toasts on failure.
-    meta: { silentError: true },
-  });
-}
-
-export function useDeleteNotebookEntry() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/coach/notebook/${id}`);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
-    },
-    // Its one call site (NotebookScreen) already toasts on failure.
-    meta: { silentError: true },
   });
 }

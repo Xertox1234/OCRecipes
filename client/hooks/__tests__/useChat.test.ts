@@ -3,8 +3,6 @@ import { renderHook, act } from "@testing-library/react";
 
 import {
   useSendMessage,
-  useCreateNotebookEntry,
-  useUpdateNotebookEntry,
   useChatConversations,
   useChatMessages,
   useMarkPendingRecipeTurn,
@@ -13,6 +11,7 @@ import {
   RECIPE_TURN_POLL_CAP_MS,
   useSaveRecipeFromChat,
 } from "../useChat";
+import { useCreateNotebookEntry, useUpdateNotebookEntry } from "../useNotebook";
 import {
   getUnreadCoachReplyIds,
   markCoachReplyUnread,

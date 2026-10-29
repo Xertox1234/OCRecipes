@@ -4,7 +4,7 @@ import express from "express";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
-import { useCreateNotebookEntry, useUpdateNotebookEntry } from "../useChat";
+import { useCreateNotebookEntry, useUpdateNotebookEntry } from "../useNotebook";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import { register } from "../../../server/routes/notebook";
 import { storage } from "../../../server/storage";

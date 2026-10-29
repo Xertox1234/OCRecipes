@@ -19,7 +19,7 @@ import {
   useUpdateNotebookEntry,
   useDeleteNotebookEntry,
   type NotebookEntry,
-} from "@/hooks/useChat";
+} from "@/hooks/useNotebook";
 import { ThemedText } from "@/components/ThemedText";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
