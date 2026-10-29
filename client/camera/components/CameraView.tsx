@@ -53,9 +53,6 @@ function mapQualityPrioritization(
   return "speed";
 }
 
-/** Format for the scanner the barcode hook builds but CameraView never attaches.
- *  react-native-vision-camera-barcode-scanner 5.2.3 has no skip option and
- *  throws on an empty list; drop this if a later version handles either. */
 // CameraX start-up race: a control call (torch/focus/zoom) issued while the
 // session is not yet active. Matched on class name or message text.
 function isBenignCameraCancel(error: unknown): boolean {
@@ -63,6 +60,9 @@ function isBenignCameraCancel(error: unknown): boolean {
   return /OperationCanceledException|Camera is not active/i.test(text);
 }
 
+/** Format for the scanner the barcode hook builds but CameraView never attaches.
+ *  react-native-vision-camera-barcode-scanner 5.2.3 has no skip option and
+ *  throws on an empty list; drop this if a later version handles either. */
 const UNATTACHED_SCANNER_TYPES: ExpoBarcodeType[] = ["qr"];
 
 function mapBarcodeTypes(
