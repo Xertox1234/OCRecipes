@@ -1,6 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { StyleSheet, View, Pressable, Alert, Linking } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { StyleSheet, View, Alert, Linking } from "react-native";
 import { ImpactFeedbackStyle, NotificationFeedbackType } from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import * as Clipboard from "expo-clipboard";
@@ -12,16 +11,15 @@ import {
 
 import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import {
+  SheetDragHandle,
+  SheetOptionRow,
+} from "@/components/sheet/SheetChrome";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+import { Spacing, FontFamily } from "@/constants/theme";
 import {
   MEAL_LABELS,
   type MealType,
@@ -286,12 +284,7 @@ function ImportRecipeSheetContentInner({
           (verified in @gorhom/bottom-sheet source), so setting it on the
           modal is a silent no-op. iOS-only prop; traps VoiceOver focus. */}
       <View style={styles.content} accessibilityViewIsModal>
-        <View
-          style={[
-            styles.dragIndicator,
-            { backgroundColor: withOpacity(theme.text, 0.2) },
-          ]}
-        />
+        <SheetDragHandle />
         <ThemedText style={styles.title}>
           {mealType ? `Import Recipe to ${label}` : "Import a Recipe"}
         </ThemedText>
@@ -299,35 +292,17 @@ function ImportRecipeSheetContentInner({
           {rows.map((row) => {
             const isLocked = row.premium && !canImportPhoto;
             return (
-              <Pressable
+              <SheetOptionRow
                 key={row.key}
+                icon={row.icon}
+                title={row.title}
+                description={row.desc}
                 onPress={row.onPress}
-                style={[
-                  styles.optionRow,
-                  { backgroundColor: withOpacity(theme.text, 0.04) },
-                ]}
-                accessibilityRole="button"
                 accessibilityLabel={
                   isLocked ? `${row.title}, premium feature` : row.title
                 }
-              >
-                <Feather name={row.icon} size={20} color={theme.link} />
-                <View style={styles.optionText}>
-                  <ThemedText style={styles.optionTitle}>
-                    {row.title}
-                  </ThemedText>
-                  <ThemedText
-                    style={[styles.optionDesc, { color: theme.textSecondary }]}
-                  >
-                    {row.desc}
-                  </ThemedText>
-                </View>
-                <Feather
-                  name={isLocked ? "lock" : "chevron-right"}
-                  size={16}
-                  color={theme.textSecondary}
-                />
-              </Pressable>
+                trailingIcon={isLocked ? "lock" : "chevron-right"}
+              />
             );
           })}
         </View>
@@ -359,12 +334,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.lg,
   },
-  dragIndicator: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: Spacing.md,
-  },
   title: {
     fontSize: 17,
     fontFamily: FontFamily.semiBold,
@@ -374,24 +343,6 @@ const styles = StyleSheet.create({
   options: {
     width: "100%",
     gap: Spacing.sm,
-  },
-  optionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
-    gap: Spacing.md,
-  },
-  optionText: {
-    flex: 1,
-  },
-  optionTitle: {
-    fontSize: 15,
-    fontFamily: FontFamily.semiBold,
-  },
-  optionDesc: {
-    fontSize: 13,
-    marginTop: 2,
   },
   errorText: {
     fontSize: 13,
