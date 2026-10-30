@@ -4,6 +4,7 @@ import {
   type Allergy,
 } from "@shared/schema";
 import { db } from "../db";
+import type { RecipeDismissReason } from "@shared/constants/recipe-dismiss-reasons";
 import { eq, and, desc, gte, notInArray, isNotNull, sql } from "drizzle-orm";
 
 /**
@@ -90,6 +91,7 @@ export async function getRecentDismissedRecipeIds(
 export async function dismissRecipe(
   userId: string,
   recipeId: number,
+  reason?: RecipeDismissReason,
 ): Promise<void> {
   await db
     .insert(recipeDismissals)
@@ -97,8 +99,15 @@ export async function dismissRecipe(
       userId,
       recipeIdentifier: String(recipeId),
       source: "community",
+      reason: reason ?? null,
     })
-    .onConflictDoNothing();
+    // A dismissal only hides a recipe for 90 days, so it can come back and be
+    // hidden again: keep the newest reason and restart the window rather than
+    // leaving the old row (and its old date) untouched.
+    .onConflictDoUpdate({
+      target: [recipeDismissals.userId, recipeDismissals.recipeIdentifier],
+      set: { reason: reason ?? null, dismissedAt: sql`CURRENT_TIMESTAMP` },
+    });
 }
 
 // ============================================================================

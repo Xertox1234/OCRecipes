@@ -272,11 +272,14 @@ vi.mock("@/components/home/GenerateRecipeDrawer", () => ({
 }));
 
 describe("HomeScreen — iOS a11y-leaf fix", () => {
-  it("passes accessible={false} to the import-recipe sheet (prevents the iOS a11y-leaf collapse; jsdom cannot verify the native effect)", () => {
+  it("passes accessible={false} to every sheet on the screen (prevents the iOS a11y-leaf collapse; jsdom cannot verify the native effect)", () => {
     renderComponent(<HomeScreen />);
-    expect(
-      screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
-    ).toBe("false");
+    // The import-recipe sheet and the "Why hide this recipe?" sheet.
+    const sheets = screen.getAllByTestId("bottom-sheet-modal");
+    expect(sheets).toHaveLength(2);
+    for (const sheet of sheets) {
+      expect(sheet.getAttribute("data-accessible")).toBe("false");
+    }
   });
 });
 

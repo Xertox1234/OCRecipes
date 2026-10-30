@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   StyleSheet,
@@ -12,10 +12,7 @@ import { CarouselSkeleton } from "./CarouselSkeleton";
 import { CarouselError } from "./CarouselError";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import {
-  useCarouselRecipes,
-  useDismissCarouselRecipe,
-} from "@/hooks/useCarouselRecipes";
+import { useCarouselRecipes } from "@/hooks/useCarouselRecipes";
 import {
   useFavouriteRecipeIds,
   useToggleFavouriteRecipe,
@@ -26,15 +23,28 @@ import type { HomeScreenNavigationProp } from "@/types/navigation";
 
 const SNAP_INTERVAL = CARD_WIDTH + Spacing.md;
 
-export const RecipeCarousel = React.memo(function RecipeCarousel() {
+interface RecipeCarouselProps {
+  /** X on a card: the screen asks why (see `useDismissReasonSheet`) and
+   * hides the card only once a reason is picked. */
+  onDismissRequest: (card: CarouselCardType) => void;
+}
+
+export const RecipeCarousel = React.memo(function RecipeCarousel({
+  onDismissRequest,
+}: RecipeCarouselProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { data, isLoading, isError, refetch } = useCarouselRecipes();
-  const { mutate: dismissRecipe } = useDismissCarouselRecipe();
   const { data: favouriteData } = useFavouriteRecipeIds();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
   const cards = data?.cards ?? [];
+  // One card open at a time: opening another closes the first.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const handleToggleExpand = useCallback((card: CarouselCardType) => {
+    setExpandedId((current) => (current === card.id ? null : card.id));
+  }, []);
 
   const favouriteIdSet = useMemo(() => {
     const set = new Set<string>();
@@ -54,13 +64,6 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
     [navigation],
   );
 
-  const handleDismiss = useCallback(
-    (card: CarouselCardType) => {
-      dismissRecipe({ recipeId: card.id });
-    },
-    [dismissRecipe],
-  );
-
   const handleFavourite = useCallback(
     (recipeId: number) => {
       toggleFavourite({ recipeId, recipeType: "community" });
@@ -74,11 +77,20 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
         card={item}
         isFavourited={favouriteIdSet.has(`community:${item.id}`)}
         onPress={handlePress}
-        onDismiss={handleDismiss}
+        onDismiss={onDismissRequest}
         onFavourite={handleFavourite}
+        expanded={expandedId === item.id}
+        onToggleExpand={handleToggleExpand}
       />
     ),
-    [handlePress, handleDismiss, handleFavourite, favouriteIdSet],
+    [
+      handlePress,
+      onDismissRequest,
+      handleFavourite,
+      handleToggleExpand,
+      favouriteIdSet,
+      expandedId,
+    ],
   );
 
   const keyExtractor = useCallback(
@@ -138,6 +150,9 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
         decelerationRate="fast"
         contentContainerStyle={styles.listContent}
         getItemLayout={getItemLayout}
+        // Rows only re-render when data or extraData changes — without this a
+        // tap opens the card in state but it keeps its old shape on screen.
+        extraData={expandedId}
         windowSize={5}
         // Clipping detaches off-screen cards from the native tree, so VoiceOver
         // (and TalkBack) can't move past the second card. Explicit false:

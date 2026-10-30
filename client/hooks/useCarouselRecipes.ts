@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import type { CarouselResponse } from "@shared/types/carousel";
+import type { RecipeDismissReason } from "@shared/constants/recipe-dismiss-reasons";
 
 const CAROUSEL_KEY = ["/api/carousel"];
 
@@ -39,7 +40,10 @@ export function useDismissCarouselRecipe() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (params: { recipeId: number }) => {
+    mutationFn: async (params: {
+      recipeId: number;
+      reason?: RecipeDismissReason;
+    }) => {
       await apiRequest("POST", "/api/carousel/dismiss", params);
     },
     onMutate: async ({ recipeId }) => {
