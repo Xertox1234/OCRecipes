@@ -7,7 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 import type { User } from "@shared/types/auth";
 
-import { useAuth } from "../useAuth";
+import { useAuth, AUTH_ME_TIMEOUT_MS } from "../useAuth";
 import { unregisterPushToken } from "@/lib/push-token-registration";
 
 // Create mock storage and functions that survive vi.mock hoisting
@@ -145,6 +145,51 @@ describe("useAuth", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    // R47: a failed privacy wipe must leave an off-device signal, not just
+    // ok=false (which only gates the owner-marker advance).
+    describe("reports a failed durable-state wipe (R47)", () => {
+      it("reports a wipe step that returned false", async () => {
+        const { logger } = await import("@/lib/logger");
+        const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+        try {
+          mockTokenStorage.get.mockResolvedValue(null);
+          mockClearOfflineQueue.mockResolvedValueOnce(false);
+
+          const { result } = renderHook(() => useAuth());
+          await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+          expect(errorSpy).toHaveBeenCalledWith(
+            "Durable local state wipe incomplete",
+            expect.anything(),
+          );
+        } finally {
+          errorSpy.mockRestore();
+        }
+      });
+
+      it("reports a throwing query-cache clear", async () => {
+        const { logger } = await import("@/lib/logger");
+        const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+        try {
+          mockTokenStorage.get.mockResolvedValue(null);
+          const boom = new Error("clear failed");
+          mockQueryClient.clear.mockImplementationOnce(() => {
+            throw boom;
+          });
+
+          const { result } = renderHook(() => useAuth());
+          await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+          expect(errorSpy).toHaveBeenCalledWith(
+            "Durable local state wipe: query cache clear failed",
+            boom,
+          );
+        } finally {
+          errorSpy.mockRestore();
+        }
+      });
+    });
+
     it("sweeps the durable offline queue + persisted query cache on the cold-start no-token path (extends the sweep to the 5th teardown path, consistent with logout/expireSession/deleteAccount/dead-token)", async () => {
       // The `if (!token)` cold-start branch is the one teardown-shaped path that
       // did not run the durable sweep. A force-quit can interrupt a session
@@ -228,9 +273,11 @@ describe("useAuth", () => {
       expect(result.current.user).toEqual(fakeUser);
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:3000/api/auth/me",
-        {
+        expect.objectContaining({
           headers: { Authorization: "Bearer valid-token" },
-        },
+          // R16: the check is bounded by a deadline signal.
+          signal: expect.any(AbortSignal),
+        }),
       );
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(fakeUser),
@@ -384,6 +431,36 @@ describe("useAuth", () => {
 
       expect(result.current.isAuthenticated).toBe(true);
       expect(result.current.user).toEqual(fakeUser);
+    });
+
+    it("falls back to the cached user when /me hangs (R16: bounded, not an endless spinner)", async () => {
+      vi.useFakeTimers();
+      try {
+        mockTokenStorage.get.mockResolvedValue("valid-token");
+        // A hung connection: settles only if its signal aborts.
+        mockFetch.mockImplementation(
+          (_url: unknown, init?: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => {
+                const err = new Error("Aborted");
+                err.name = "AbortError";
+                reject(err);
+              });
+            }),
+        );
+        mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
+
+        const { result } = renderHook(() => useAuth());
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(AUTH_ME_TIMEOUT_MS);
+        });
+
+        expect(result.current.isLoading).toBe(false);
+        expect(result.current.isAuthenticated).toBe(true);
+        expect(result.current.user).toEqual(fakeUser);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("sets unauthenticated on network error with no cache", async () => {

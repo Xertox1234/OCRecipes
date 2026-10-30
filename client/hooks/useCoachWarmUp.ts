@@ -1,5 +1,21 @@
 import { useRef, useCallback, useMemo } from "react";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { logger } from "@/lib/logger";
+
+/**
+ * Warm-up is a best-effort prefetch: offline (a network TypeError) and 4xx
+ * (rate limit, gating) misses are expected and stay quiet. A server error or
+ * an unexpected failure (bad JSON, contract break) is reported, so a systematic
+ * break is visible off-device instead of silently swallowed (R48).
+ */
+function reportWarmUpFailure(err: unknown): void {
+  if (err instanceof TypeError) return;
+  if (err instanceof ApiError && err.status !== undefined && err.status < 500) {
+    return;
+  }
+  logger.error("Coach warm-up failed", err);
+}
 
 export function useCoachWarmUp(conversationId: number | null) {
   const warmUpIdRef = useRef<string | null>(null);
@@ -26,8 +42,9 @@ export function useCoachWarmUp(conversationId: number | null) {
             });
             const data = await res.json();
             warmUpIdRef.current = data.warmUpId;
-          } catch {
+          } catch (err) {
             warmUpIdRef.current = null;
+            reportWarmUpFailure(err);
           } finally {
             pendingRef.current = false;
           }
@@ -62,8 +79,9 @@ export function useCoachWarmUp(conversationId: number | null) {
             });
             const data = await res.json();
             warmUpIdRef.current = data.warmUpId;
-          } catch {
+          } catch (err) {
             warmUpIdRef.current = null;
+            reportWarmUpFailure(err);
           } finally {
             pendingRef.current = false;
           }

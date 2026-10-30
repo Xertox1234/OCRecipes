@@ -27,6 +27,7 @@ import { formatLogSuccess } from "@/lib/log-success";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { useToast } from "@/context/ToastContext";
+import { logger } from "@/lib/logger";
 
 type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -267,8 +268,9 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
             return updated;
           });
         }
-      } catch {
-        // Keep previous nutrition on error
+      } catch (err) {
+        // Keep previous nutrition on error, but report it (R48).
+        logger.error("Prep-method lookup failed", err);
       } finally {
         setPrepLoading((prev) => ({ ...prev, [index]: false }));
       }
@@ -298,8 +300,9 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
       } else {
         setShowFollowUp(false);
       }
-    } catch {
-      // Continue without refinement
+    } catch (err) {
+      // Continue without refinement, but report it (R48).
+      logger.error("Photo follow-up refinement failed", err);
       setShowFollowUp(false);
     }
   };

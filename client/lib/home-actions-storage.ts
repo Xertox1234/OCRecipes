@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDurableOwner } from "@/lib/durable-owner";
+import { logger } from "@/lib/logger";
 
 const SECTIONS_KEY = "@ocrecipes_home_sections";
 const RECENT_KEY = "@ocrecipes_recent_actions";
@@ -48,6 +49,10 @@ let usageCountsCache: Record<string, number> | null = null;
 let sweepEpoch = 0;
 let sweepInFlight: Promise<void> | null = null;
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * @param userId the active user's id (stringified), or null when unauthenticated.
  * The per-user history caches are committed only when the persisted durable-owner
@@ -80,9 +85,14 @@ export function initHomeActionsCache(userId: string | null): Promise<void> {
     ]);
 
     // Section state is a retained device-display pref (never swept) — always commit.
+    // Shape-validate every blob after parse (R24): valid JSON of the wrong shape
+    // (corruption, or a schema change across releases) must read as "nothing
+    // stored", not crash the next `.filter` / spread and break Home until the
+    // key is rewritten.
     try {
-      sectionCache = sectionsRaw
-        ? { ...DEFAULT_SECTIONS, ...JSON.parse(sectionsRaw) }
+      const parsed: unknown = sectionsRaw ? JSON.parse(sectionsRaw) : null;
+      sectionCache = isPlainObject(parsed)
+        ? { ...DEFAULT_SECTIONS, ...parsed }
         : { ...DEFAULT_SECTIONS };
     } catch {
       sectionCache = { ...DEFAULT_SECTIONS };
@@ -97,13 +107,25 @@ export function initHomeActionsCache(userId: string | null): Promise<void> {
     if (sweepEpoch === startEpoch) {
       if (ownsHistory) {
         try {
-          recentCache = recentRaw ? JSON.parse(recentRaw) : [];
+          const parsed: unknown = recentRaw ? JSON.parse(recentRaw) : [];
+          recentCache = Array.isArray(parsed)
+            ? parsed.filter((id): id is string => typeof id === "string")
+            : [];
         } catch {
           recentCache = [];
         }
 
         try {
-          usageCountsCache = usageCountsRaw ? JSON.parse(usageCountsRaw) : {};
+          const parsed: unknown = usageCountsRaw
+            ? JSON.parse(usageCountsRaw)
+            : {};
+          usageCountsCache = isPlainObject(parsed)
+            ? Object.fromEntries(
+                Object.entries(parsed).filter(
+                  (e): e is [string, number] => typeof e[1] === "number",
+                ),
+              )
+            : {};
         } catch {
           usageCountsCache = {};
         }
@@ -127,7 +149,11 @@ export async function setSectionExpanded(
   const state = getSectionState();
   state[key] = expanded;
   sectionCache = { ...state };
-  await AsyncStorage.setItem(SECTIONS_KEY, JSON.stringify(sectionCache));
+  // Fire-and-forget at the call site (`void setSectionExpanded(...)`): never
+  // reject (R24). The in-memory state already holds; only persistence failed.
+  await AsyncStorage.setItem(SECTIONS_KEY, JSON.stringify(sectionCache)).catch(
+    (err: unknown) => logger.error("Failed to persist home section state", err),
+  );
 }
 
 export function getRecentActions(): string[] {

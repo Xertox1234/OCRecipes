@@ -143,18 +143,29 @@ vi.mock("@/hooks/useHaptics", () => ({
   }),
 }));
 
+const { mockChatMessagesArgs, mockSendMessageArgs } = vi.hoisted(() => ({
+  mockChatMessagesArgs: vi.fn(),
+  mockSendMessageArgs: vi.fn(),
+}));
+
 vi.mock("@/hooks/useChat", () => ({
   useCreateConversation: () => ({
     mutateAsync: mockCreateConversationMutateAsync,
     isPending: false,
   }),
-  useChatMessages: () => ({ data: mockChatMessagesData.value }),
-  useSendMessage: () => ({
-    sendMessage: mockSendMessage,
-    abortStream: mockAbortStream,
-    getStreamSnapshot: () => mockStreamSnapshot.value,
-    ...mockSendMessageState.value,
-  }),
+  useChatMessages: (...args: unknown[]) => {
+    mockChatMessagesArgs(...args);
+    return { data: mockChatMessagesData.value };
+  },
+  useSendMessage: (...args: unknown[]) => {
+    mockSendMessageArgs(...args);
+    return {
+      sendMessage: mockSendMessage,
+      abortStream: mockAbortStream,
+      getStreamSnapshot: () => mockStreamSnapshot.value,
+      ...mockSendMessageState.value,
+    };
+  },
   useSaveRecipeFromChat: () => ({
     mutateAsync: mockSaveRecipeMutateAsync,
     isPending: false,
@@ -220,6 +231,43 @@ describe("RecipeChatScreen — safe back navigation", () => {
       index: 0,
       routes: [{ name: "Main" }],
     });
+  });
+});
+
+// R21: linking.ts coerces a malformed `recipe-chat/:conversationId` to 0, and
+// a negative id passes through. Neither may silently open a fresh chat as if
+// the link had no id, nor reach the API as a conversation id.
+describe("RecipeChatScreen — malformed conversationId deep link (R21)", () => {
+  it.each([0, -5])(
+    "conversationId %i says the chat wasn't found and never fetches it",
+    (badId) => {
+      mockRouteParams.value = { conversationId: badId };
+
+      renderComponent(<RecipeChatScreen />);
+
+      expect(mockToastInfo).toHaveBeenCalledWith(
+        "That chat couldn't be found. Starting a new one.",
+      );
+      for (const call of mockChatMessagesArgs.mock.calls) {
+        expect(call[0]).toBeNull();
+      }
+      for (const call of mockSendMessageArgs.mock.calls) {
+        expect(call[0]).toBeNull();
+      }
+    },
+  );
+
+  it("a valid conversationId opens it without the not-found toast", () => {
+    mockRouteParams.value = { conversationId: 12 };
+
+    renderComponent(<RecipeChatScreen />);
+
+    expect(mockToastInfo).not.toHaveBeenCalled();
+    expect(mockChatMessagesArgs).toHaveBeenCalledWith(
+      12,
+      undefined,
+      expect.anything(),
+    );
   });
 });
 

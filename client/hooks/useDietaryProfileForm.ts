@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 
 import { useToast } from "@/context/ToastContext";
+import { logger } from "@/lib/logger";
 import { useHaptics } from "@/hooks/useHaptics";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
@@ -158,8 +159,10 @@ export function useDietaryProfileForm() {
       // The toast survives the goBack and fires its own Success haptic.
       toast.success("Dietary profile saved");
       navigation.goBack();
-    } catch {
-      // Error is displayed to user via setSaveError below
+    } catch (err) {
+      // Error is displayed to user via setSaveError below. This plain
+      // apiRequest bypasses MutationCache.onError, so report it (R48).
+      logger.error("Dietary profile save failed", err);
       setSaveError("Failed to save profile. Please try again.");
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {

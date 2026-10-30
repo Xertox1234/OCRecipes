@@ -228,12 +228,28 @@ export default function RecipeChatScreen() {
   const isRemixMode = !!remixSourceRecipeId;
   const remixSourceRecipeTitle = route.params?.remixSourceRecipeTitle;
 
+  // linking.ts coerces a malformed `recipe-chat/:conversationId` to 0, and a
+  // negative id passes through. Malformed = present but not a positive integer
+  // (R21) — never fetched, never sent; the screen starts a new chat and says
+  // so, instead of silently looking like a link with no id. Mirrors ChatScreen.
+  const routeConversationId = route.params?.conversationId;
+  const isMalformedRouteId =
+    routeConversationId != null && !(routeConversationId > 0);
   const [conversationId, setConversationId] = useState<number | null>(
-    route.params?.conversationId ?? null,
+    isMalformedRouteId ? null : (routeConversationId ?? null),
   );
   const [inputText, setInputText] = useState("");
   const [inputFocused, setInputFocused] = useState(false);
-  const [hasStarted, setHasStarted] = useState(!!route.params?.conversationId);
+  const [hasStarted, setHasStarted] = useState(
+    !isMalformedRouteId && !!routeConversationId,
+  );
+  useEffect(() => {
+    if (isMalformedRouteId) {
+      toast.info("That chat couldn't be found. Starting a new one.");
+    }
+    // Once, for the id the screen opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
     null,
   );
