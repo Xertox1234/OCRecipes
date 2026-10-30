@@ -147,6 +147,9 @@ const SuggestedPrompts = React.memo(function SuggestedPrompts({
       onSelect(prompt.text);
     } else {
       setAnswered(prompt);
+      // No chat message carries this answer, so tell screen readers directly
+      // (no live region here, so on both platforms).
+      AccessibilityInfo.announceForAccessibility(prompt.answer);
     }
   };
 
