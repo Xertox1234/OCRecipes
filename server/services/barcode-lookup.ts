@@ -5,6 +5,7 @@ import { valuesMatch } from "../lib/verification-consensus";
 import {
   type BarcodePer100g,
   barcodeVariants,
+  boundOffPer100g,
   offEnergyKcal,
   offMacrosCorroborateEnergy,
   ZERO_CAL_MAX_MACRO_KCAL_100G,
@@ -516,7 +517,7 @@ export async function lookupBarcode(
   // Validate nutriments at the boundary: drop non-numeric/garbage values rather
   // than writing them to the monetized cache (under-report is the safe direction).
   const nm = offNutrimentsSchema.parse(offProduct?.nutriments ?? {});
-  const offPer100g: BarcodePer100g = {
+  const offPer100gRaw: BarcodePer100g = {
     calories: offEnergyKcal(nm["energy-kcal_100g"], nm.energy_100g),
     protein: nm.proteins_100g,
     carbs: nm.carbohydrates_100g,
@@ -542,6 +543,19 @@ export async function lookupBarcode(
           : roundToOneDecimal(nm.caffeine_100g * 1000) // OFF default caffeine unit is g → mg
         : undefined,
   };
+  // Plausibility-bound the per-100g values (R34): offNumericField accepts any
+  // finite number, so a typo'd OFF entry (kJ in the kcal field, protein 450 g)
+  // would otherwise be shown to the user and frozen into the first-write-wins
+  // barcodeNutrition cache. Dropped fields fall through to the secondary
+  // source as "missing" — under-report is the safe direction.
+  const { per100g: offPer100g, dropped: offDroppedFields } =
+    boundOffPer100g(offPer100gRaw);
+  if (offDroppedFields.length > 0) {
+    log.warn(
+      { barcode: code, dropped: offDroppedFields },
+      "implausible OFF per-100g values dropped",
+    );
+  }
 
   // OFF's own per-serving energy, used only as a self-consistency signal below.
   const offPerServingCal = offEnergyKcal(
@@ -876,23 +890,27 @@ export async function lookupBarcode(
   // understates calories by ~15x relative to what its own label claims. No
   // "~"/"(estimated)" cosmetic wrapper here (unlike `servingInfo.displayLabel`
   // below) — this value may be parsed as a number by other consumers.
-  storage
-    .insertBarcodeNutritionIfAbsent({
-      barcode: code,
-      productName: resolvedProductName || null,
-      brandName: resolvedBrandName || null,
-      servingSize: wasCorrected
-        ? `${finalGrams}g`
-        : rawServing || `${finalGrams}g`,
-      calories: perServing.calories?.toFixed(2) ?? null,
-      protein: perServing.protein?.toFixed(2) ?? null,
-      carbs: perServing.carbs?.toFixed(2) ?? null,
-      fat: perServing.fat?.toFixed(2) ?? null,
-      source,
-    })
-    .catch((err) => {
-      log.error({ err: toError(err) }, "failed to insert barcodeNutrition");
-    });
+  // Skipped when OFF carried implausible values: the row is first-write-wins,
+  // so persisting it would freeze a known-bad entry past any later OFF fix.
+  if (offDroppedFields.length === 0) {
+    storage
+      .insertBarcodeNutritionIfAbsent({
+        barcode: code,
+        productName: resolvedProductName || null,
+        brandName: resolvedBrandName || null,
+        servingSize: wasCorrected
+          ? `${finalGrams}g`
+          : rawServing || `${finalGrams}g`,
+        calories: perServing.calories?.toFixed(2) ?? null,
+        protein: perServing.protein?.toFixed(2) ?? null,
+        carbs: perServing.carbs?.toFixed(2) ?? null,
+        fat: perServing.fat?.toFixed(2) ?? null,
+        source,
+      })
+      .catch((err) => {
+        log.error({ err: toError(err) }, "failed to insert barcodeNutrition");
+      });
+  }
 
   return {
     productName: resolvedProductName || "Unknown Product",
