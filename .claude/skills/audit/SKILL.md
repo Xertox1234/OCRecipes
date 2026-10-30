@@ -301,7 +301,7 @@ For **each** finding the user wants fixed:
 
    Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
-   - **WARNING finding**: judgment call. **Fix inline** when the change is clearly in scope and small (a few lines, same files already touched, no new architectural decision) — then re-run steps 4–7. Otherwise **record it in the manifest's Deferred Items table** as a surfaced WARNING and continue — do NOT auto-create a todo. The user reviews the manifest at close (Phase 5) and decides which deferred items become todos. WARNING is not a mandatory blocker.
+   - **WARNING finding**: judgment call. **Fix inline** when the change is small and in scope (a few lines, in files the diff already touches, with no new architectural decision) — then re-run steps 4–7 once as the confirmation pass; that pass never reopens review, so its own non-CRITICAL findings go to the Deferred Items table (rule: `docs/AI_WORKFLOW.md` → **One review pass plus at most one confirmation pass per PR**). Otherwise **record it in the manifest's Deferred Items table** as a surfaced WARNING and continue — do NOT auto-create a todo. The user reviews the manifest at close (Phase 5) and decides which deferred items become todos. WARNING is not a mandatory blocker.
    - **SUGGESTION**: proceed — note in manifest Verification column if worth tracking for codification.
 
 8. Update manifest:

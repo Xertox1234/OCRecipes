@@ -112,7 +112,7 @@ Medium/Low auto-file flow (run immediately after identifying the item, for eithe
 
 Pattern codification (`docs/solutions/`, `docs/rules/`) is exempt from this bar — it writes docs, not todos.
 
-**Exception — guard/hook findings:** findings against `.claude/hooks/**` go to `docs/harness-residuals.md`, never a todo (guard hardening frozen, user ruling 2026-09-22). One review pass per PR — see `docs/AI_WORKFLOW.md` → Review Policy.
+**Exception — guard/hook findings:** findings against `.claude/hooks/**` go to `docs/harness-residuals.md`, never a todo (guard hardening frozen, user ruling 2026-09-22). One review pass per PR, plus at most one confirmation pass when CRITICALs or small in-scope WARNINGs were fixed on the branch — see `docs/AI_WORKFLOW.md` → Review Policy.
 
 Backlog todos are picked up later via the `/todo` skill, which works on them locally with full session context.
 

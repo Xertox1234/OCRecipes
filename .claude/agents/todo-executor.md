@@ -328,22 +328,22 @@ Otherwise:
 
 ## Step 7 — Address Feedback
 
-Process the code review findings. The project convention (see `CLAUDE.md` and `docs/AI_WORKFLOW.md`) is that **only CRITICAL blocks**; WARNING surfaces a real issue but is judgment-based, and SUGGESTION is informational.
+Process the code review findings. The project convention (see `CLAUDE.md` and `docs/AI_WORKFLOW.md` → Review Policy, **One review pass plus at most one confirmation pass per PR**) is that **only CRITICAL blocks**; WARNING surfaces a real issue but is judgment-based, and SUGGESTION is informational.
 
 **The no-filing rule below is global, not scoped to code review.** Whatever the source — a review WARNING, an advisor YELLOW, or anything else out of this todo's scope that you notice mid-run — the executor never creates a todo file for it. Every such side problem goes into the Step 11 report under `DEFERRED_WARNINGS`; the user decides what, if anything, becomes a todo.
 
 1. **CRITICAL** — mandatory. Fix every CRITICAL finding before continuing.
 2. **WARNING** — surface and address with judgment:
-   - Fix it **inline** if the change is clearly inside this todo's scope and small (a few lines, same files you already touched, no new architectural decisions).
+   - Fix it **inline** if the change is small and inside this todo's scope (a few lines, in files the diff already touches, with no new architectural decision).
    - Otherwise **do NOT create a follow-up todo.** Auto-filing follow-up todos is what buries the backlog — never do it. Record the WARNING verbatim (one line: description + file path) and return it in your Step 11 report under `DEFERRED_WARNINGS`. The orchestrator surfaces it in the Phase 5 summary; the user decides whether it becomes a todo. A surfaced WARNING is not a failure.
    - Also consider whether the WARNING reveals a reusable rule worth codifying — flag it for Step 9.
 3. **SUGGESTION** — informational only. Apply only if it lands in scope and is trivial; otherwise ignore.
 4. There is no tier below SUGGESTION — findings not marked CRITICAL, WARNING, or SUGGESTION can be ignored.
 5. After fixing, re-run Step 5a (scoped fast check) to confirm the fix didn't break anything.
-6. **Commit the fixes before re-reviewing**, for the same reason the commit gate commits the implementation: round 2 must bind its record to a commit that contains the fixes, not to the pre-fix SHA. Subject: `wip: address review round <n> findings`.
-7. If fixes were non-trivial, run Step 6 again (second review round) against the NEW `$BASE...HEAD` — overlapped with a second Step 5b (full suite) pass, per Step 5b.
+6. **Commit the fixes**, for the same reason the commit gate commits the implementation: round 2 must bind its record to a commit that contains the fixes, not to the pre-fix SHA. Subject: `wip: address review round 1 findings`.
+7. If you fixed anything, run Step 5b (full suite) again against the fix commit. Do **not** run Step 6 again: round 2 is the Step 10 step 7 confirmation pass, which reviews the whole PR diff, fixes included, at the final head.
 
-**Cap at 2 review rounds.** Only unresolved **CRITICAL** issues after 2 rounds count as failure (enter the Failure Path). Remaining WARNINGs at the round-2 boundary go into the `DEFERRED_WARNINGS` report field — never into a todo — and are not a blocker.
+**Cap at 2 review rounds:** round 1 is Step 6, round 2 is the Step 10 step 7 confirmation pass. The confirmation pass never reopens review. Its WARNINGs and SUGGESTIONs go into `DEFERRED_WARNINGS` and are not fixed on the branch. A CRITICAL it finds is unresolved: enter the Failure Path, with no third review. Remaining WARNINGs never go into a todo and are not a blocker.
 
 ---
 
@@ -694,7 +694,9 @@ Todo: `todos/<filename>.md` (archived in this commit)
    Step 11 report, same as any other review WARNING (Step 7 governs whether/how each was
    addressed).
 
-   d. **On `$MATCH` empty, re-dispatch once, then stop.** Report the outcome honestly either way —
+   d. **On `$MATCH` empty, re-dispatch once, then stop** — unless the reviewer reported a
+   CRITICAL. That is a real finding, not a missed record: enter the Failure Path without
+   re-dispatching (Step 7's 2-round cap). Report the outcome honestly either way —
    never fabricate a record, and never work around a miss by re-running the check against an
    older SHA.
 
