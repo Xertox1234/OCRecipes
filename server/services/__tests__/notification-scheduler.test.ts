@@ -70,6 +70,49 @@ describe("sendDueCommitmentReminders", () => {
     expect(storage.updateNotebookEntryStatus).not.toHaveBeenCalled();
   });
 
+  it("pages through every due commitment, not just the oldest page (R30)", async () => {
+    // A full first page of permanently-undeliverable rows must not starve
+    // newer users' reminders on later pages.
+    const fullPage = Array.from({ length: 500 }, (_, i) =>
+      createMockCoachNotebookEntry({
+        id: i + 1,
+        userId: "stuck",
+        type: "commitment",
+        followUpDate: new Date(2020, 0, 1),
+      }),
+    );
+    const fresh = createMockCoachNotebookEntry({
+      id: 9999,
+      userId: "fresh-user",
+      type: "commitment",
+      followUpDate: new Date(2026, 0, 1),
+    });
+    vi.mocked(storage.getDueCommitmentsAllUsers)
+      .mockResolvedValueOnce(fullPage)
+      .mockResolvedValueOnce([fresh]);
+    vi.mocked(notify).mockImplementation(async (userId) => ({
+      pushDelivered: userId !== "stuck",
+    }));
+
+    await sendDueCommitmentReminders();
+
+    expect(storage.getDueCommitmentsAllUsers).toHaveBeenCalledTimes(2);
+    expect(storage.getDueCommitmentsAllUsers).toHaveBeenLastCalledWith(500, {
+      followUpDate: fullPage[499].followUpDate,
+      id: 500,
+    });
+    expect(notify).toHaveBeenCalledWith(
+      "fresh-user",
+      "commitment",
+      expect.anything(),
+    );
+    expect(storage.updateNotebookEntryStatus).toHaveBeenCalledWith(
+      9999,
+      "fresh-user",
+      "completed",
+    );
+  });
+
   it("sends a push and marks entry completed on confirmed delivery", async () => {
     const entry = createMockCoachNotebookEntry({
       id: 1,

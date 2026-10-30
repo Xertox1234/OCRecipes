@@ -58,21 +58,45 @@ async function runBounded<T>(
   await Promise.all(items.map((item) => limit(() => task(item))));
 }
 
-/** Fire the reminder batch for all due commitments. Exported for testing. */
+const DUE_COMMITMENT_PAGE_SIZE = 500;
+
+/**
+ * Fire the reminder batch for all due commitments, page by page. Paging (not
+ * one capped fetch) matters: undelivered entries stay "active", so a single
+ * oldest-first page could fill up with permanently-undeliverable rows and
+ * starve every newer user's reminder. Exported for testing.
+ */
 export async function sendDueCommitmentReminders(): Promise<void> {
-  let entries;
-  try {
-    entries = await storage.getDueCommitmentsAllUsers();
-  } catch (err) {
-    logger.error(
-      { err },
-      "notification-scheduler: failed to fetch due commitments",
-    );
-    return;
+  let after: { followUpDate: Date; id: number } | undefined;
+  while (true) {
+    let entries;
+    try {
+      entries = await storage.getDueCommitmentsAllUsers(
+        DUE_COMMITMENT_PAGE_SIZE,
+        after,
+      );
+    } catch (err) {
+      logger.error(
+        { err },
+        "notification-scheduler: failed to fetch due commitments",
+      );
+      return;
+    }
+    if (entries.length === 0) return;
+
+    await sendCommitmentReminderPage(entries);
+
+    const last = entries[entries.length - 1];
+    if (entries.length < DUE_COMMITMENT_PAGE_SIZE || !last.followUpDate) {
+      return;
+    }
+    after = { followUpDate: last.followUpDate, id: last.id };
   }
+}
 
-  if (entries.length === 0) return;
-
+async function sendCommitmentReminderPage(
+  entries: Awaited<ReturnType<typeof storage.getDueCommitmentsAllUsers>>,
+): Promise<void> {
   logger.info(
     { count: entries.length },
     "notification-scheduler: sending commitment reminders",
