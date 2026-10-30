@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { renderHook, act } from "@testing-library/react";
-import { useFeatureTip, claimTipSlot, releaseTipSlot } from "../useFeatureTip";
+import {
+  useFeatureTip,
+  useMarkFeatureUsed,
+  claimTipSlot,
+  releaseTipSlot,
+} from "../useFeatureTip";
+import { markFeatureUsed } from "@/lib/feature-tips-storage";
 
 const storage = vi.hoisted(() => ({
   ready: true,
@@ -20,6 +26,7 @@ vi.mock("@/lib/feature-tips-storage", () => ({
   markTipSeen: vi.fn(async (id: string) => {
     storage.seen.add(id);
   }),
+  markFeatureUsed: vi.fn(async () => {}),
 }));
 
 const opts = { feature: "scan" as const, eligible: true };
@@ -98,5 +105,12 @@ describe("useFeatureTip", () => {
     const { unmount } = renderHook(() => useFeatureTip("home-scan", opts));
     unmount();
     expect(claimTipSlot("quicklog-camera")).toBe(true);
+  });
+});
+
+describe("useMarkFeatureUsed", () => {
+  it("marks the feature used when the screen opens", () => {
+    renderHook(() => useMarkFeatureUsed("import"));
+    expect(markFeatureUsed).toHaveBeenCalledWith("import");
   });
 });

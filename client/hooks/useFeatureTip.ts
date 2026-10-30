@@ -4,6 +4,7 @@ import {
   hasSeenTip,
   hasUsedFeature,
   isFeatureTipsReady,
+  markFeatureUsed,
   markTipSeen,
   onFeatureTipsReady,
   type TaughtFeature,
@@ -67,4 +68,11 @@ export function useFeatureTip(
   }, [id]);
 
   return { visible, dismiss };
+}
+
+/** Call on a screen that IS the feature, so its tips stop showing for good. */
+export function useMarkFeatureUsed(feature: TaughtFeature): void {
+  useEffect(() => {
+    void markFeatureUsed(feature);
+  }, [feature]);
 }

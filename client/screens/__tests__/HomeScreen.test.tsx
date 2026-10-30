@@ -41,6 +41,7 @@ const {
   isBarVisibleHolder,
   authHolder,
   premiumHolder,
+  tipHolder,
   measureHolder,
   scrollViewProps,
   collapsedBarProps,
@@ -53,7 +54,13 @@ const {
   // Quick Log lock cells: the raw tier (what HomeScreen used to compare) and
   // the server-resolved features (what the gate must read) vary separately.
   authHolder: { user: null as { subscriptionTier: string } | null },
-  premiumHolder: { textFoodParsing: false, isPremiumResolved: true },
+  premiumHolder: {
+    textFoodParsing: false,
+    isPremiumResolved: true,
+    receiptScanner: false,
+    menuScanner: false,
+  },
+  tipHolder: { visible: new Set<string>() },
   // What the reanimated mock's measure() reports. null = "not laid out", which
   // makes the glide bail before scrollTo; the keyboard-inset block sets a row.
   measureHolder: { value: null as { pageY: number } | null },
@@ -156,7 +163,11 @@ vi.mock("@/context/AuthContext", () => ({
 
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
-    features: { textFoodParsing: premiumHolder.textFoodParsing },
+    features: {
+      textFoodParsing: premiumHolder.textFoodParsing,
+      receiptScanner: premiumHolder.receiptScanner,
+      menuScanner: premiumHolder.menuScanner,
+    },
     isPremiumResolved: premiumHolder.isPremiumResolved,
   }),
 }));
@@ -219,25 +230,24 @@ vi.mock("@/components/home/DailySummaryHeader", () => ({
   DailySummaryHeader: () => null,
 }));
 vi.mock("@/components/home/RecipeCarousel", () => ({
-  RecipeCarousel: () => null,
+  RecipeCarousel: () =>
+    React.createElement("div", { "data-testid": "for-you-carousel" }),
 }));
 vi.mock("@/components/home/CuratedRecipeCarousel", () => ({
   CuratedRecipeCarousel: () => null,
-}));
-vi.mock("@/components/home/RecentActionsRow", () => ({
-  RecentActionsRow: () => null,
 }));
 // Renders one real button (not `() => null`) that invokes onActionPress with
 // the real "import-recipe" HomeAction — the only UI path in this heavily
 // stubbed screen that can trigger the import sheet for the background-trap
 // tests below. action-config itself is NOT mocked, so this is the real action.
-vi.mock("@/components/home/DiscoveryCarousel", async () => {
+// (This button lived on the Discover carousel until Discover was removed.)
+vi.mock("@/components/home/RecentActionsRow", async () => {
   const { HOME_ACTIONS } = await vi.importActual<
     typeof import("@/components/home/action-config")
   >("@/components/home/action-config");
   const importAction = HOME_ACTIONS.find((a) => a.id === "import-recipe");
   return {
-    DiscoveryCarousel: ({
+    RecentActionsRow: ({
       onActionPress,
     }: {
       onActionPress: (action: unknown) => void;
@@ -252,6 +262,12 @@ vi.mock("@/components/home/DiscoveryCarousel", async () => {
       ),
   };
 });
+vi.mock("@/hooks/useFeatureTip", () => ({
+  useFeatureTip: (id: string) => ({
+    visible: tipHolder.visible.has(id),
+    dismiss: vi.fn(),
+  }),
+}));
 // Renders its children so the inline drawers (Quick Log's lock and open
 // state) are reachable; every child is itself a thin double.
 vi.mock("@/components/home/CollapsibleSection", () => ({
@@ -682,5 +698,52 @@ describe("HomeScreen — keyboard inset for inline drawers", () => {
     unmount();
 
     expect(keyboardListeners).toHaveLength(0);
+  });
+});
+
+describe("HomeScreen — feature teaching replaces Discover", () => {
+  beforeEach(() => {
+    tipHolder.visible = new Set();
+    premiumHolder.receiptScanner = false;
+    premiumHolder.menuScanner = false;
+    premiumHolder.isPremiumResolved = true;
+  });
+
+  it("does not render Discover cards", () => {
+    renderComponent(<HomeScreen />);
+    expect(screen.queryByText(/Try this/i)).toBeNull();
+    expect(screen.queryByLabelText("Feature discovery cards")).toBeNull();
+  });
+
+  it("renders For You before the recent actions row", () => {
+    renderComponent(<HomeScreen />);
+    const forYou = screen.getByTestId("for-you-carousel");
+    const recent = screen.getByTestId("open-import-sheet");
+    expect(
+      forYou.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows the free scan tip to a free user", () => {
+    tipHolder.visible = new Set(["home-scan"]);
+    renderComponent(<HomeScreen />);
+    expect(
+      screen.getByText("Scan a barcode or nutrition label."),
+    ).toBeDefined();
+  });
+
+  it("shows the full scan tip to a Pro user", () => {
+    tipHolder.visible = new Set(["home-scan"]);
+    premiumHolder.receiptScanner = true;
+    premiumHolder.menuScanner = true;
+    renderComponent(<HomeScreen />);
+    expect(
+      screen.getByText("Scan a barcode, label, receipt or menu."),
+    ).toBeDefined();
+  });
+
+  it("shows no scan tip when the tip hook says no", () => {
+    renderComponent(<HomeScreen />);
+    expect(screen.queryByLabelText("Dismiss tip")).toBeNull();
   });
 });

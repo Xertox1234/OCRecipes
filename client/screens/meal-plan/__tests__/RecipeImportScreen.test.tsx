@@ -6,6 +6,11 @@ import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import RecipeImportScreen from "../RecipeImportScreen";
 
+vi.mock("@/hooks/useFeatureTip", () => ({
+  useMarkFeatureUsed: (feature: string) => mockMarkFeatureUsed(feature),
+}));
+const mockMarkFeatureUsed = vi.hoisted(() => vi.fn());
+
 const { mockReplace, mockParse } = vi.hoisted(() => ({
   mockReplace: vi.fn(),
   mockParse: vi.fn(),
@@ -59,5 +64,12 @@ describe("RecipeImportScreen — empty link", () => {
       expect(mockParse).toHaveBeenCalledWith("https://example.com/soup"),
     );
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+  });
+});
+
+describe("RecipeImportScreen — teaching tips", () => {
+  it("marks recipe import as used when the screen opens", () => {
+    renderComponent(<RecipeImportScreen />);
+    expect(mockMarkFeatureUsed).toHaveBeenCalledWith("import");
   });
 });

@@ -4,6 +4,11 @@ import { screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import ReceiptCaptureScreen from "../ReceiptCaptureScreen";
 
+vi.mock("@/hooks/useFeatureTip", () => ({
+  useMarkFeatureUsed: (feature: string) => mockMarkFeatureUsed(feature),
+}));
+const mockMarkFeatureUsed = vi.hoisted(() => vi.fn());
+
 const { mockReplace, mockGoBack, mockDeleteAsync, mockLaunchImageLibrary } =
   vi.hoisted(() => ({
     mockReplace: vi.fn(),
@@ -154,5 +159,12 @@ describe("ReceiptCaptureScreen — captured photo file cleanup", () => {
         idempotent: true,
       });
     });
+  });
+});
+
+describe("ReceiptCaptureScreen — teaching tips", () => {
+  it("marks receipt scanning as used when the screen opens", () => {
+    renderComponent(<ReceiptCaptureScreen />);
+    expect(mockMarkFeatureUsed).toHaveBeenCalledWith("receiptScan");
   });
 });

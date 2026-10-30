@@ -14,6 +14,11 @@ import { parseFrontLabelFromOCR } from "@/lib/front-label-ocr-parser";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 
+vi.mock("@/hooks/useFeatureTip", () => ({
+  useMarkFeatureUsed: (feature: string) => mockMarkFeatureUsed(feature),
+}));
+const mockMarkFeatureUsed = vi.hoisted(() => vi.fn());
+
 const {
   mockGoBack,
   mockCanGoBack,
@@ -1977,5 +1982,12 @@ describe("ScanScreen — shutter and smart-confirm re-entrancy guards (React Com
         "/api/nutrition/barcode/0778918011332",
       );
     });
+  });
+});
+
+describe("ScanScreen — teaching tips", () => {
+  it("marks the camera as used when the screen opens", () => {
+    renderComponent(<ScanScreen />);
+    expect(mockMarkFeatureUsed).toHaveBeenCalledWith("scan");
   });
 });
