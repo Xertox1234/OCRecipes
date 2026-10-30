@@ -16,7 +16,7 @@ import Expo, {
   type ExpoPushMessage,
   type ExpoPushTicket,
 } from "expo-server-sdk";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { storage } from "../storage";
 
 let expo: Expo | null = null;
@@ -109,7 +109,16 @@ export async function sendPushToUser(
     if (ticket.details?.error === "DeviceNotRegistered") {
       const staleToken = validTokens[i];
       if (staleToken) {
-        await storage.deletePushToken(userId, staleToken.token).catch(() => {});
+        // Best-effort, but never silent: a systematic failure here leaves
+        // dead tokens that are retried on every send.
+        await storage
+          .deletePushToken(userId, staleToken.token)
+          .catch((err: unknown) => {
+            logger.warn(
+              { err: toError(err), userId },
+              "push-notifications: stale token delete failed",
+            );
+          });
       }
     } else {
       logger.warn({ ticket, userId }, "push-notifications: delivery error");

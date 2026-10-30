@@ -1072,7 +1072,13 @@ export function register(app: Express): void {
           // Best-effort rollback; the request already fails 404, so a cleanup
           // failure must not turn it into a 500. Stays awaited: the rollback
           // should complete before the failure response is finalized.
-          await deleteImage(avatarUrl, "avatar").catch(() => {}); // roll back the just-uploaded object
+          // A failed rollback orphans the just-uploaded object — log it.
+          await deleteImage(avatarUrl, "avatar").catch((err: unknown) => {
+            logger.warn(
+              { err: toError(err), avatarUrl },
+              "avatar rollback delete failed",
+            );
+          });
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 

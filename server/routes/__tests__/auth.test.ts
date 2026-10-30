@@ -159,6 +159,26 @@ vi.mock("../../lib/image-store", () => ({
   deleteImage: mockDeleteImage,
 }));
 
+// auth.ts logs through createServiceLogger("auth"), a pino child that a spy
+// on the root logger cannot see — hand it a spyable logger instead.
+const { mockAuthLog } = vi.hoisted(() => {
+  const log: Record<string, unknown> = {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+  };
+  log.child = () => log;
+  return { mockAuthLog: log as Record<string, ReturnType<typeof vi.fn>> };
+});
+
+vi.mock("../../lib/logger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/logger")>()),
+  createServiceLogger: () => mockAuthLog,
+}));
+
 function createApp() {
   const app = express();
   app.use(express.json());
@@ -2217,6 +2237,33 @@ describe("Auth Routes", () => {
       expect(mockDeleteImage).toHaveBeenCalledWith(
         "/api/avatars/1-rollback.jpg",
         "avatar",
+      );
+    });
+
+    it("still answers 404 but logs (never swallows) a failed avatar rollback", async () => {
+      vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      vi.mocked(storage.updateUser).mockResolvedValue(undefined);
+      mockSaveAvatar.mockResolvedValueOnce("/api/avatars/1-orphan.jpg");
+      const r2Error = new Error("R2 503");
+      mockDeleteImage.mockRejectedValueOnce(r2Error);
+
+      const res = await request(app)
+        .post("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token")
+        .attach("avatar", jpegBuffer, {
+          filename: "photo.jpg",
+          contentType: "image/jpeg",
+        });
+
+      expect(res.status).toBe(404);
+      // An orphaned R2 object must leave a trace.
+      expect(mockAuthLog.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          err: r2Error,
+          avatarUrl: "/api/avatars/1-orphan.jpg",
+        }),
+        "avatar rollback delete failed",
       );
     });
 

@@ -11,7 +11,11 @@ import {
   needsFollowUp,
   getFollowUpQuestions,
 } from "../../services/photo-analysis";
-import { batchNutritionLookup } from "../../services/nutrition-lookup";
+import {
+  batchNutritionLookup,
+  writeNutritionCache,
+} from "../../services/nutrition-lookup";
+import { logger } from "../../lib/logger";
 import { register } from "../photos";
 import {
   createMockScannedItem,
@@ -68,9 +72,19 @@ vi.mock("../../services/photo-analysis", () => ({
   getFollowUpQuestions: vi.fn(),
 }));
 
-vi.mock("../../services/nutrition-lookup", () => ({
-  batchNutritionLookup: vi.fn(),
-}));
+vi.mock("../../services/nutrition-lookup", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../services/nutrition-lookup")
+  >("../../services/nutrition-lookup");
+  return {
+    batchNutritionLookup: vi.fn(),
+    // Pure mappers stay real so label cache seeding runs as in production;
+    // only the DB write is mocked.
+    mapLabelToNutritionData: actual.mapLabelToNutritionData,
+    countNonNullNutritionFields: actual.countNonNullNutritionFields,
+    writeNutritionCache: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 vi.mock("../../middleware/auth");
 
@@ -654,6 +668,57 @@ describe("Photos Routes", () => {
   });
 
   describe("POST /api/photos/confirm-label", () => {
+    it("logs (never swallows) a failed label cache seed and still saves the scan", async () => {
+      const sessionId = storage.createLabelSession(
+        "1",
+        {
+          servingSize: "1 cup",
+          servingsPerContainer: 2,
+          calories: 100,
+          totalFat: 2,
+          saturatedFat: 0,
+          transFat: 0,
+          cholesterol: 0,
+          sodium: 50,
+          totalCarbs: 10,
+          dietaryFiber: 1,
+          totalSugars: 3,
+          addedSugars: 0,
+          protein: 5,
+          vitaminD: 0,
+          calcium: 0,
+          iron: 0,
+          potassium: 0,
+          confidence: 0.9,
+          productName: "Seeded Snack",
+        },
+        "1234567890",
+      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem({ id: 9, userId: "1", sourceType: "label" }),
+      );
+      const dbError = new Error("relation nutrition_cache does not exist");
+      vi.mocked(writeNutritionCache).mockRejectedValueOnce(dbError);
+      const warnSpy = vi.spyOn(logger, "warn");
+
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId, servingsConsumed: 1 });
+
+      expect(res.status).toBe(201);
+      expect(writeNutritionCache).toHaveBeenCalledWith(
+        "1234567890",
+        expect.any(Object),
+        { allowOverwrite: false },
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: dbError }),
+        "label cache seeding failed",
+      );
+      warnSpy.mockRestore();
+    });
+
     it("returns 404 for a missing label session", async () => {
       const res = await request(app)
         .post("/api/photos/confirm-label")

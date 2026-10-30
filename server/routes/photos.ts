@@ -5,6 +5,7 @@ import { storage, MAX_IMAGE_SIZE_BYTES } from "../storage";
 import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
   photoIntentSchema,
@@ -726,8 +727,10 @@ export function register(app: Express): void {
                 allowOverwrite: false,
               });
             }
-          } catch {
-            // Cache seeding is best-effort
+          } catch (error) {
+            // Cache seeding is best-effort — the scan is already saved — but
+            // a systematic DB/schema fault here must still be visible.
+            logger.warn({ err: toError(error) }, "label cache seeding failed");
           }
         }
 
