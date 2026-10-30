@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
+import { logger } from "../../lib/logger";
 import { register, MAX_PHOTOS_PER_SESSION } from "../cooking";
 import {
   cookingSessionStore,
@@ -511,6 +512,49 @@ describe("Cooking Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.allergenWarnings).toBeDefined();
+      expect(res.body.allergenCheckFailed).toBe(false);
+    });
+
+    it("flags allergenCheckFailed and logs when the allergen check throws (not 'no allergens')", async () => {
+      const sessionId = "allergen-fail-session";
+      cookingSessionStore._internals.store.set(sessionId, {
+        id: sessionId,
+        userId: "1",
+        ingredients: [],
+        photos: [],
+        createdAt: Date.now(),
+      });
+      vi.mocked(analyzeIngredientPhoto).mockResolvedValue([
+        {
+          id: "detected-3",
+          name: "peanut butter",
+          quantity: 30,
+          unit: "g",
+          confidence: 0.95,
+          category: "other",
+          photoId: "",
+          userEdited: false,
+        },
+      ]);
+      const dbError = new Error("connection terminated");
+      vi.mocked(storage.getUserProfile).mockRejectedValue(dbError);
+      const warnSpy = vi.spyOn(logger, "warn");
+
+      const res = await request(app)
+        .post(`/api/cooking/sessions/${sessionId}/photos`)
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      // The session still works, but the empty list must not read as
+      // "no allergens found".
+      expect(res.status).toBe(200);
+      expect(res.body.allergenWarnings).toEqual([]);
+      expect(res.body.allergenCheckFailed).toBe(true);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: dbError }),
+        expect.stringContaining("allergen"),
+      );
+      warnSpy.mockRestore();
     });
   });
 

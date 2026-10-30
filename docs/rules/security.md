@@ -18,3 +18,4 @@
 - Never auto-link a Google/Apple sign-in into an existing account that has a password — a verified email proves the inbox, not who chose the password; require the password (`link_required`). Only password-less accounts may auto-link.
 - Sign-out clears state registered OUTSIDE the app too: unregister the device push token (the server reassigns a token to one user on register) and cancel OS-scheduled notifications — both outlive the session. Every `tokenVersion` bump also deletes the account's push tokens in its transaction: a phone whose session died server-side cannot send its own DELETE.
 - A per-recipient send cap an unauthenticated caller can spend is never the cap recovery mail (reset codes, 2FA notices) spends — bucket a send by who can trigger it, not by its topic.
+- `logger.error` ships to Sentry: never allowlist a PII key in `PINO_CONTEXT_ALLOWLIST` (`error-reporter.ts`) or build an Error message from user data.

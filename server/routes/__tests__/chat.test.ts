@@ -5,6 +5,7 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
+import { logger } from "../../lib/logger";
 import { sendError } from "../../lib/api-errors";
 import { requireAuth } from "../../middleware/auth";
 import {
@@ -629,6 +630,32 @@ describe("Chat Routes", () => {
       expect(res.status).toBe(200);
       expect(res.text).toContain("Partial");
       expect(res.text).toContain("Failed to generate response");
+    });
+
+    it("logs a non-disconnect stream failure at error level with the real Error (reaches Sentry via pinoIntegration)", async () => {
+      // The SSE path answers 200 + {error} and never calls handleRouteError
+      // or next(err), so Sentry's 5xx capture cannot see it. The only path
+      // to Sentry is the error-level log with the Error under `err` that
+      // error-reporter.ts's pinoIntegration turns into an event.
+      mockStreamingSetup();
+      const errorSpy = vi.spyOn(logger, "error");
+      const boom = new Error("tool execution crashed");
+      async function* errorStream() {
+        yield { type: "content" as const, content: "Partial" };
+        throw boom;
+      }
+      vi.mocked(generateCoachProResponse).mockReturnValue(errorStream());
+
+      await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Hello" });
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        { err: boom },
+        "chat streaming error",
+      );
+      errorSpy.mockRestore();
     });
 
     it("sends error SSE event instead of done when response exceeds byte limit", async () => {

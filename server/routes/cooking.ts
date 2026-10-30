@@ -4,6 +4,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { logger, toError } from "../lib/logger";
 import {
   crudRateLimit,
   createRateLimiter,
@@ -259,6 +260,9 @@ export function register(app: Express): void {
 
         // Auto-detect allergens in the session's ingredients
         let allergenWarnings: AllergenMatch[] = [];
+        // Distinguishes "checked, none found" from "couldn't check" — an
+        // empty list alone reads as safe to an allergic user.
+        let allergenCheckFailed = false;
         try {
           const profile = await storage.getUserProfile(req.userId);
           const userAllergies = parseUserAllergies(profile?.allergies);
@@ -266,8 +270,14 @@ export function register(app: Express): void {
             const ingredientNames = session.ingredients.map((i) => i.name);
             allergenWarnings = detectAllergens(ingredientNames, userAllergies);
           }
-        } catch {
-          // Non-critical — session still works without warnings
+        } catch (error) {
+          // Non-critical — the session still works without warnings, but
+          // the response says the check failed rather than "no allergens".
+          allergenCheckFailed = true;
+          logger.warn(
+            { err: toError(error), sessionId: session.id },
+            "cooking photo: allergen check failed",
+          );
         }
 
         res.json({
@@ -277,6 +287,7 @@ export function register(app: Express): void {
           createdAt: session.createdAt,
           newDetections: newIngredients.length,
           allergenWarnings,
+          allergenCheckFailed,
         });
       } catch (error) {
         handleRouteError(res, error, "add cooking photo");

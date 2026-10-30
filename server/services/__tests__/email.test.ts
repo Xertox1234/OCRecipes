@@ -294,6 +294,34 @@ describe("email service", () => {
         statusCode: 403,
       });
     });
+
+    it("also attaches a real Error under `err` so the failure becomes a Sentry exception (pinoIntegration)", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      mockSend.mockResolvedValue({
+        data: null,
+        error: {
+          message: "API key is invalid",
+          name: "validation_error",
+          statusCode: 403,
+        },
+      });
+
+      const { sendVerificationEmail, sendSignInCode } = await import(
+        "../email"
+      );
+      await sendVerificationEmail("victim@example.com", "tok", "alice");
+      await sendSignInCode("victim@example.com", "123456");
+
+      expect(mockLoggerError).toHaveBeenCalledTimes(2);
+      for (const [logObj] of mockLoggerError.mock.calls) {
+        expect(logObj.err).toBeInstanceOf(Error);
+        expect(logObj.err.name).toBe("ResendError");
+        // name + statusCode fingerprint the event; the recipient never rides
+        // on the Error that leaves the box.
+        expect(logObj.err.message).toBe("resend validation_error (403)");
+        expect(logObj.err.message).not.toContain("victim@example.com");
+      }
+    });
   });
 
   describe("account-security bucket", () => {

@@ -100,6 +100,24 @@ async function sendWithRetry(
   return lastError;
 }
 
+/**
+ * A real Error for a Resend failure, logged under `err` beside the raw
+ * `resendError` fields. The raw object stays the log's source of truth (it
+ * is not a JS Error; `toError` would flatten it to "[object Object]"), but
+ * error-reporter.ts's pinoIntegration turns a logger.error into a Sentry
+ * EXCEPTION only when `err` holds an Error — otherwise it is a bare message
+ * with no stack or provider fields (and scrubEvent drops `resendError` from
+ * the event). name + statusCode fingerprint the event; Resend's free-text
+ * message stays in the log only, so nothing recipient-derived leaves the box.
+ */
+function resendFailure(error: ErrorResponse): Error {
+  const failure = new Error(
+    `resend ${error.name} (${String(error.statusCode)})`,
+  );
+  failure.name = "ResendError";
+  return failure;
+}
+
 const APP_URL = process.env.EMAIL_VERIFY_BASE_URL ?? "https://ocrecipes.com";
 const EMAIL_FROM =
   process.env.EMAIL_FROM ?? "OCRecipes <noreply@ocrecipes.com>";
@@ -211,7 +229,11 @@ export async function sendVerificationEmail(
   // Log the Resend ErrorResponse fields directly ({name, message, statusCode}).
   // It is NOT a JS Error, so `toError(error)` would flatten it to the useless
   // string "[object Object]" and eat the real reason.
-  if (error) logger.error({ resendError: error }, "verification email failed");
+  if (error)
+    logger.error(
+      { resendError: error, err: resendFailure(error) },
+      "verification email failed",
+    );
 }
 
 /**
@@ -240,7 +262,10 @@ export async function sendFinishSignupNotice(to: string): Promise<void> {
 <p>If this wasn't you, you can ignore this email — nothing changes.</p>`,
   });
   if (error)
-    logger.error({ resendError: error }, "finish-signup notice failed");
+    logger.error(
+      { resendError: error, err: resendFailure(error) },
+      "finish-signup notice failed",
+    );
 }
 
 export async function sendSignupAttemptNotice(
@@ -262,7 +287,10 @@ export async function sendSignupAttemptNotice(
 <p>If this was you, simply <a href="${APP_URL}">log in</a> instead. Forgot your password? Use "Forgot password?" on the sign-in screen. If it wasn't you, no action is needed — no account was created.</p>`,
   });
   if (error)
-    logger.error({ resendError: error }, "signup-attempt notice failed");
+    logger.error(
+      { resendError: error, err: resendFailure(error) },
+      "signup-attempt notice failed",
+    );
 }
 
 export async function sendPasswordResetCode(
@@ -286,7 +314,11 @@ export async function sendPasswordResetCode(
 <p>If you didn't ask to reset your password, you can ignore this email — your password hasn't changed.</p>`,
   });
   // Log only the Resend error — the payload (which holds the code) never.
-  if (error) logger.error({ resendError: error }, "reset code email failed");
+  if (error)
+    logger.error(
+      { resendError: error, err: resendFailure(error) },
+      "reset code email failed",
+    );
 }
 
 /**
@@ -317,7 +349,10 @@ export async function sendPasswordChangeCode(
   });
   // Log only the Resend error — the payload (which holds the code) never.
   if (error)
-    logger.error({ resendError: error }, "change-password code email failed");
+    logger.error(
+      { resendError: error, err: resendFailure(error) },
+      "change-password code email failed",
+    );
 }
 
 /**
@@ -344,7 +379,11 @@ export async function sendSignInCode(to: string, code: string): Promise<void> {
 <p>Didn't try to sign in? Someone may know your password — change your password in the app, and don't share this code.</p>`,
   });
   // Log only the Resend error — the payload (which holds the code) never.
-  if (error) logger.error({ resendError: error }, "two-step code email failed");
+  if (error)
+    logger.error(
+      { resendError: error, err: resendFailure(error) },
+      "two-step code email failed",
+    );
 }
 
 const PROVIDER_LABELS = { google: "Google", apple: "Apple" } as const;
@@ -377,7 +416,10 @@ export async function sendPasswordChangedNotice(
 ${connectedSignInsParagraph(connected)}<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
   });
   if (error)
-    logger.error({ resendError: error }, "password-changed notice failed");
+    logger.error(
+      { resendError: error, err: resendFailure(error) },
+      "password-changed notice failed",
+    );
 }
 
 function isLabelledProvider(p: string): p is keyof typeof PROVIDER_LABELS {
@@ -440,7 +482,10 @@ export async function sendTwoFactorNotice(
 <p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
   });
   if (error)
-    logger.error({ resendError: error, kind }, "two-step notice failed");
+    logger.error(
+      { resendError: error, err: resendFailure(error), kind },
+      "two-step notice failed",
+    );
 }
 
 const EMAIL_CHANGE_NOTICES = {
@@ -488,7 +533,10 @@ export async function sendEmailChangeNotice(
 <p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
   });
   if (error)
-    logger.error({ resendError: error, kind }, "email-change notice failed");
+    logger.error(
+      { resendError: error, err: resendFailure(error), kind },
+      "email-change notice failed",
+    );
 }
 
 /** Test-only internals — never import from production code. */

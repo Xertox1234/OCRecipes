@@ -21,3 +21,4 @@ export const httpIntegration = vi.fn(() => ({ name: "Http" }));
 export const onUncaughtExceptionIntegration = vi.fn(() => ({
   name: "OnUncaughtException",
 }));
+export const pinoIntegration = vi.fn(() => ({ name: "Pino" }));

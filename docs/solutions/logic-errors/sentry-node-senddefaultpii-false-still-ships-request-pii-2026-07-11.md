@@ -8,7 +8,7 @@ applies_to: [server/lib/error-reporter.ts, server/lib/error-reporter-boot.ts, se
 symptoms: ["Sentry events contain request bodies with passwords or health data despite sendDefaultPii: false", "bearer JWTs / x-api-key / cookie headers visible on Sentry error events", "verify-email token or API-key query strings appear in Sentry event URLs and breadcrumbs", "handled 500s from handleRouteError never appear in Sentry at all"]
 severity: critical
 created: '2026-07-11'
-last_updated: '2026-07-12'
+last_updated: '2026-10-30'
 ---
 
 # @sentry/node: sendDefaultPii: false still ships request bodies, headers, cookies, and query strings
@@ -186,3 +186,4 @@ production-only) implements the real controls:
 - [DSN-gated Sentry reporter pattern for Expo / React Native](../conventions/sentry-dsn-gated-reporter-pattern-2026-05-31.md) — the client twin; its `sendDefaultPii` comment describes react-native SDK behavior, not @sentry/node v10
 - [Process-level uncaughtException and unhandledRejection handlers](../conventions/process-level-error-handlers-2026-05-13.md) — the exit-ownership contract the integration options preserve
 - [PII stripping in API response serialization](../design-patterns/pii-stripping-api-response-serialization-2026-05-13.md) — same allowlist-over-blocklist instinct at a different boundary
+- [pinoIntegration ships the whole log line and Drizzle params](pino-integration-ships-whole-log-line-and-drizzle-params-to-sentry-2026-10-30.md) — the log-side half of the scrub, added when `logger.error` started routing to Sentry

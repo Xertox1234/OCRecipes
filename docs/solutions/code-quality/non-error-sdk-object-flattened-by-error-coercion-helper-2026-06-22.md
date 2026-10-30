@@ -8,6 +8,7 @@ tags: [architecture, logging, error-handling, observability, resend, sdk, toErro
 symptoms: ['Logs show err/message: "[object Object]" instead of a real error string', A third-party SDK call "fails" in the logs but gives no actionable reason, The failing log entry's stack runs through `toError` / `new Error(String(value))`]
 applies_to: [server/services/**/*.ts, server/lib/logger.ts]
 created: '2026-06-22'
+last_updated: '2026-10-30'
 ---
 
 # Error-coercion logging helper flattens non-Error SDK objects to [object Object]
@@ -64,6 +65,12 @@ if (error) logger.error({ resendError: error }, "verification email failed");
 // → { resendError: { name: "validation_error", message: "...domain is not verified", statusCode: 403 } }
 ```
 
+**Update 2026-10-30:** since `pinoIntegration` routes `logger.error` to Sentry,
+keep the raw `resendError` fields AND add `err: resendFailure(error)` (an `Error`
+named `ResendError`, message `resend <name> (<statusCode>)` only). Without an
+`err` Error, Sentry gets a stackless message — see
+[server log level is the Sentry routing decision](../conventions/server-log-level-is-the-sentry-routing-decision-2026-10-30.md).
+
 Scope the change to the call sites that handle the non-Error shape. Do **not**
 "fix" the shared `toError` to dig out `.message` for the email feature's
 benefit — it is used by dozens of catch blocks, so widening it for one caller is
@@ -92,3 +99,4 @@ which the structured log keeps).
 ## See Also
 
 - [SDKs with no AbortSignal need a Promise.race timeout + app-side 429-aware retry](../design-patterns/no-timeout-sdk-needs-promise-race-and-app-side-retry-2026-06-20.md) — same Resend send path; SDK-shape handling
+- [Server log level is the Sentry routing decision](../conventions/server-log-level-is-the-sentry-routing-decision-2026-10-30.md) — the `err: resendFailure(error)` companion key
