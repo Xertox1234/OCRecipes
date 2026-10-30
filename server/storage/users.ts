@@ -855,6 +855,35 @@ function isRevokedForReceipt(
   return !purchasedAt || purchasedAt.getTime() <= existing.updatedAt.getTime();
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * The renewal write shared by a same-user re-claim and a store renewal
+ * notification: set the tier and extend expiry MONOTONICALLY. GREATEST keeps
+ * expiry from moving BACKWARD on a stale / out-of-order receipt (Apple emits
+ * the renewal txn ~24h before the period ends, so both validate during the
+ * overlap), and it ignores a NULL incoming, so it never wipes an existing date.
+ */
+async function applyRenewalInTx(
+  tx: Tx,
+  userId: string,
+  tier: SubscriptionTier,
+  expiresAt: Date | null,
+): Promise<User> {
+  const [user] = await tx
+    .update(users)
+    .set({
+      subscriptionTier: tier,
+      subscriptionExpiresAt: sql`GREATEST(${users.subscriptionExpiresAt}, ${expiresAt})`,
+    })
+    .where(eq(users.id, userId))
+    .returning();
+  if (!user) {
+    throw new Error(`User ${userId} not found during subscription renewal`);
+  }
+  return user;
+}
+
 /**
  * Claim a subscription for a user, keyed by the validated receipt's STABLE id
  * (`data.transactionId` = Apple `originalTransactionId` / Google purchaseToken,
@@ -915,10 +944,7 @@ export async function claimTransactionAndUpgrade(
     }
 
     // Same user re-claiming — a renewal. Refresh the stored receipt and extend
-    // the user's expiry. GREATEST keeps expiry MONOTONIC so a stale / out-of-
-    // order receipt (Apple emits the renewal txn ~24h before the period ends,
-    // so both validate during the overlap) can never move expiry BACKWARD.
-    // GREATEST ignores a NULL incoming, so it never wipes an existing date.
+    // the user's expiry (monotonic; see applyRenewalInTx).
     const [txn] = await tx
       .update(transactions)
       .set({
@@ -928,19 +954,7 @@ export async function claimTransactionAndUpgrade(
       })
       .where(eq(transactions.transactionId, data.transactionId))
       .returning();
-    const [user] = await tx
-      .update(users)
-      .set({
-        subscriptionTier: tier,
-        subscriptionExpiresAt: sql`GREATEST(${users.subscriptionExpiresAt}, ${expiresAt})`,
-      })
-      .where(eq(users.id, data.userId))
-      .returning();
-    if (!user) {
-      throw new Error(
-        `User ${data.userId} not found during subscription renewal`,
-      );
-    }
+    const user = await applyRenewalInTx(tx, data.userId, tier, expiresAt);
     return { status: "renewed", transaction: txn, user };
   });
 }
@@ -985,19 +999,7 @@ export async function extendSubscriptionByTransactionId( // idor-safe
       .update(transactions)
       .set({ status: "completed", updatedAt: new Date() })
       .where(eq(transactions.transactionId, transactionId));
-    const [user] = await tx
-      .update(users)
-      .set({
-        subscriptionTier: "premium",
-        subscriptionExpiresAt: sql`GREATEST(${users.subscriptionExpiresAt}, ${expiresAt})`,
-      })
-      .where(eq(users.id, txn.userId))
-      .returning({ id: users.id });
-    if (!user) {
-      throw new Error(
-        `User ${txn.userId} not found during subscription renewal`,
-      );
-    }
+    await applyRenewalInTx(tx, txn.userId, "premium", expiresAt);
     return { status: "extended", userId: txn.userId };
   });
 }

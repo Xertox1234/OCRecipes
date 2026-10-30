@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -25,9 +25,9 @@ import type {
 import { getProviderToken } from "@/lib/social-sign-in";
 import {
   registerPushToken,
-  subscribePushTokenRotation,
   unregisterPushToken,
 } from "@/lib/push-token-registration";
+import { usePushTokenRotation } from "./usePushTokenRotation";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
 import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
@@ -335,20 +335,7 @@ export function useAuth() {
   }, [checkAuth]);
 
   // While signed in, re-send a push token the platform rotates at runtime.
-  // The ref lets logout() stop listening BEFORE it unregisters the token, so a
-  // late rotation cannot re-add this device to the signed-out account.
-  const stopPushRotationRef = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    if (!state.isAuthenticated) return;
-    const stop = subscribePushTokenRotation();
-    stopPushRotationRef.current = stop;
-    return () => {
-      stop();
-      if (stopPushRotationRef.current === stop) {
-        stopPushRotationRef.current = null;
-      }
-    };
-  }, [state.isAuthenticated]);
+  const stopPushRotation = usePushTokenRotation(state.isAuthenticated);
 
   // Shared by every path that ends with a session token (password login and
   // each Google/Apple path).
@@ -528,8 +515,7 @@ export function useAuth() {
     // Unregister this device's push token first: the logout POST revokes the
     // session token the DELETE needs (unregisterPushToken never throws). Stop
     // the rotation listener before that so it cannot re-register the token.
-    stopPushRotationRef.current?.();
-    stopPushRotationRef.current = null;
+    stopPushRotation();
     await unregisterPushToken();
     try {
       await apiRequest("POST", "/api/auth/logout", {});
@@ -550,7 +536,7 @@ export function useAuth() {
     } catch {}
     await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
-  }, []);
+  }, [stopPushRotation]);
 
   /**
    * Local-only session teardown for an expired/revoked token (a token-bearing
