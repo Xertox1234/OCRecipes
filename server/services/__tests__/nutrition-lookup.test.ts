@@ -1053,7 +1053,7 @@ describe("lookupBarcode — Open Food Facts outage vs genuine miss (R08)", () =>
 
     await lookupBarcode("4444444444447");
     const offCall = mockFetch.mock.calls.find(([url]) =>
-      String(url).includes("openfoodfacts.org"),
+      new URL(String(url)).hostname.endsWith(".openfoodfacts.org"),
     );
     expect(offCall).toBeDefined();
     const headers = new Headers(
@@ -1090,8 +1090,8 @@ describe("lookupNutritionOutcome — source error vs genuine miss (R09)", () => 
   });
 
   const usdaCalls = () =>
-    mockFetch.mock.calls.filter(([url]) =>
-      String(url).includes("api.nal.usda.gov"),
+    mockFetch.mock.calls.filter(
+      ([url]) => new URL(String(url)).hostname === "api.nal.usda.gov",
     ).length;
 
   it("reports 'not-found' when every source genuinely has no match", async () => {
