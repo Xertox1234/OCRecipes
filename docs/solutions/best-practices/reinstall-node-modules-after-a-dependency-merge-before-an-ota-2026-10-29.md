@@ -30,7 +30,7 @@ On 2026-10-29, after #1561 (expo-iap 3.4.8 → 6.3.0), the main checkout still h
 
 ## Exceptions
 
-- Worktrees made by `scripts/oc-worktree.sh` get their own install, so they don't go stale this way.
+- A worktree made by `scripts/oc-worktree.sh` gets its own install, but from **its branch's** lockfile. Merging `main` into an old branch there brings in code that imports packages the install doesn't have, and the merge commit's lint-staged run fails with `import/no-unresolved` (seen 2026-10-30 refreshing #1542, 77 commits behind). Run `npm ci` in that worktree after the merge and commit again. Its `node_modules` is its own folder, not shared, so this is safe.
 - A merge that changes only JS in this repo needs no reinstall. Pulling `main` before an OTA is still required (see the pull-main-before-OTA rule in memory).
 
 ## Related Files
