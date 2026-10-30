@@ -206,6 +206,50 @@ describe("usePhotoAnalysis — logging the selected foods", () => {
     return hook;
   }
 
+  // R48: these direct-call catch blocks bypass MutationCache.onError, so a
+  // systematic 5xx / contract break was invisible off-device.
+  it("reports a failed prep-method lookup (keeps the previous nutrition)", async () => {
+    const { logger } = await import("@/lib/logger");
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    try {
+      const { lookupNutritionByPrep } = await import("@/lib/photo-upload");
+      const boom = new Error("500: upstream");
+      vi.mocked(lookupNutritionByPrep).mockRejectedValue(boom);
+      const { result } = await renderAnalyzed();
+
+      await act(async () => {
+        await result.current.handlePrepMethodChange(0, "Fried");
+      });
+
+      expect(errorSpy).toHaveBeenCalledWith("Prep-method lookup failed", boom);
+      expect(result.current.foods[0].nutrition?.calories).toBe(240);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("reports a failed follow-up refinement (continues without it)", async () => {
+    const { logger } = await import("@/lib/logger");
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    try {
+      const { submitFollowUp } = await import("@/lib/photo-upload");
+      const boom = new Error("500: upstream");
+      vi.mocked(submitFollowUp).mockRejectedValue(boom);
+      const { result } = await renderAnalyzed();
+
+      await act(async () => {
+        await result.current.handleFollowUpAnswer("How much?", "Two");
+      });
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        "Photo follow-up refinement failed",
+        boom,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("confirms the log with a calorie toast and leaves the haptic to it", async () => {
     vi.mocked(calculateTotals).mockReturnValue({
       calories: 479.6,
