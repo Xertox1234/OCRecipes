@@ -5,6 +5,7 @@ import {
   QueryFunction,
   onlineManager,
   focusManager,
+  type Mutation,
 } from "@tanstack/react-query";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -551,6 +552,42 @@ const QUERY_CACHE_RESTORE_TIMEOUT_MS = 5000;
  *  and onError. Safe to call more than once. */
 export function markQueryCacheRestored(): void {
   resolveQueryCacheRestored();
+}
+
+/**
+ * Persist a paused mutation only if it can actually RESUME after a restart
+ * (N4). A dehydrated mutation keeps its key and variables but not its
+ * `mutationFn`; on restore it gets one only from `setMutationDefaults` for its
+ * `mutationKey`. Without one, resuming it rejects "No mutationFn found" — a
+ * spurious global error toast for a write that silently never happened. To
+ * make a mutation durable across restarts, give it a `mutationKey` and register
+ * `queryClient.setMutationDefaults(key, { mutationFn })`; it is then persisted
+ * and resumed automatically.
+ */
+export function shouldDehydrateResumableMutation(mutation: {
+  state: Pick<Mutation["state"], "isPaused">;
+  options: Pick<Mutation["options"], "mutationKey">;
+}): boolean {
+  if (!mutation.state.isPaused) return false;
+  const key = mutation.options.mutationKey;
+  if (!key) return false;
+  return queryClient.getMutationDefaults(key).mutationFn !== undefined;
+}
+
+/**
+ * The persister's `onSuccess`: release the durable-sweep restore gate, then
+ * resume the paused mutations the restore brought back (N4). Without this they
+ * only resume on a later offline→online TRANSITION — a cold start while online
+ * never produces one, so they would sit paused until the next connectivity
+ * blip. Offline, resumePausedMutations leaves them paused (they resume on
+ * reconnect via the onlineManager subscription).
+ */
+export function handleQueryCacheRestored(): void {
+  markQueryCacheRestored();
+  queryClient.resumePausedMutations().catch(() => {
+    // Best-effort, like the reconnect resume: each mutation's own error
+    // handling (and the MutationCache net) surfaces failures.
+  });
 }
 
 /** Resolves once the persisted query cache has finished restoring (or the safety

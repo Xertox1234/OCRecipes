@@ -23,6 +23,8 @@ import {
   queryClient,
   asyncStoragePersister,
   markQueryCacheRestored,
+  handleQueryCacheRestored,
+  shouldDehydrateResumableMutation,
 } from "@/lib/query-client";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
@@ -163,6 +165,9 @@ export default function App() {
               shouldDehydrateQuery: (query) =>
                 defaultShouldDehydrateQuery(query) &&
                 PERSISTED_QUERY_KEYS.has(query.queryKey[0]),
+              // Only paused mutations that can resume after a restart (a
+              // default mutationFn is registered for their key) — see N4.
+              shouldDehydrateMutation: shouldDehydrateResumableMutation,
             },
           }}
           // Release the durable-sweep restore gate once the persisted cache has
@@ -171,7 +176,8 @@ export default function App() {
           // prior user's data after the clear (cross-user leak on a shared device).
           // onError covers a corrupt/oversized blob so a failed restore can't wedge
           // teardown. (These are provider props, NOT persistOptions fields.)
-          onSuccess={markQueryCacheRestored}
+          // onSuccess also resumes the restored paused mutations (N4).
+          onSuccess={handleQueryCacheRestored}
           onError={markQueryCacheRestored}
         >
           <AuthProvider>

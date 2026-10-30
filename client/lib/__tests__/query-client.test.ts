@@ -501,3 +501,52 @@ describe("request deadlines and cancellation (R16 / N3)", () => {
     await settled;
   });
 });
+
+// N4: the persister dehydrates paused mutations by default, but a restored
+// mutation only has a mutationFn if one was registered via setMutationDefaults
+// for its key — otherwise resuming it rejects "No mutationFn found" (a
+// spurious global error toast). So persist only RESUMABLE paused mutations, and
+// resume them once the restore settles.
+describe("persisted paused mutations (N4)", () => {
+  it("persists a paused mutation only when its key has a default mutationFn", async () => {
+    const { queryClient: client, shouldDehydrateResumableMutation } =
+      await import("../query-client");
+    client.setMutationDefaults(["n4-resumable"], {
+      mutationFn: async () => "ok",
+    });
+    const build = (key: string[] | undefined, isPaused: boolean) => {
+      const m = client.getMutationCache().build(client, { mutationKey: key });
+      m.state.isPaused = isPaused;
+      return m;
+    };
+
+    expect(
+      shouldDehydrateResumableMutation(build(["n4-resumable"], true)),
+    ).toBe(true);
+    // Paused, but nothing could resume it after a restart.
+    expect(shouldDehydrateResumableMutation(build(["n4-orphan"], true))).toBe(
+      false,
+    );
+    expect(shouldDehydrateResumableMutation(build(undefined, true))).toBe(
+      false,
+    );
+    // Not paused (already settled / in flight) — never persisted.
+    expect(
+      shouldDehydrateResumableMutation(build(["n4-resumable"], false)),
+    ).toBe(false);
+  });
+
+  it("releases the restore gate and resumes paused mutations once the cache is restored", async () => {
+    const mod = await import("../query-client");
+    const resume = vi
+      .spyOn(mod.queryClient, "resumePausedMutations")
+      .mockResolvedValue(undefined);
+    try {
+      mod.handleQueryCacheRestored();
+      expect(resume).toHaveBeenCalledOnce();
+      await expect(mod.whenQueryCacheRestored()).resolves.toBeUndefined();
+    } finally {
+      resume.mockRestore();
+    }
+  });
+});
