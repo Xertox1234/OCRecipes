@@ -17,12 +17,13 @@ if (!process.env.DATABASE_URL) {
 // backfill-email-verified.ts) can raise the cap, or pass 0 to disable it, with
 // DB_STATEMENT_TIMEOUT_MS.
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
-const statementTimeoutOverride = Number(process.env.DB_STATEMENT_TIMEOUT_MS);
+// Plain digits only: Number("") is 0, so a blank variable (an empty Railway
+// value) would otherwise switch the cap off.
+const statementTimeoutOverride = process.env.DB_STATEMENT_TIMEOUT_MS;
 const statementTimeoutMs =
-  process.env.DB_STATEMENT_TIMEOUT_MS !== undefined &&
-  Number.isInteger(statementTimeoutOverride) &&
-  statementTimeoutOverride >= 0
-    ? statementTimeoutOverride
+  statementTimeoutOverride !== undefined &&
+  /^\d+$/.test(statementTimeoutOverride)
+    ? Number(statementTimeoutOverride)
     : DEFAULT_STATEMENT_TIMEOUT_MS;
 
 export const pool = new Pool({

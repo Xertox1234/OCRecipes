@@ -55,8 +55,13 @@ describe("database pool", () => {
     expect((await loadDb()).statement_timeout).toBe(600_000);
   });
 
-  it("ignores a malformed override", async () => {
-    process.env.DB_STATEMENT_TIMEOUT_MS = "abc";
-    expect((await loadDb()).statement_timeout).toBe(30_000);
-  });
+  // A blank value (an empty Railway variable) parses as 0 with Number() and
+  // would silently turn the cap off.
+  it.each(["abc", "", " ", "-5", "1.5", "1e3"])(
+    "ignores the malformed override %j",
+    async (value) => {
+      process.env.DB_STATEMENT_TIMEOUT_MS = value;
+      expect((await loadDb()).statement_timeout).toBe(30_000);
+    },
+  );
 });
