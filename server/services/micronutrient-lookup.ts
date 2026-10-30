@@ -69,11 +69,9 @@ async function lookupMicronutrients(
   try {
     const url = `${USDA_BASE_URL}/foods/search?api_key=${USDA_API_KEY}&query=${encodeURIComponent(foodName)}&pageSize=1&dataType=Survey (FNDDS)`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+    // AbortSignal.timeout leaves no timer behind on a failed fetch (the old
+    // setTimeout was cleared only on success) and also bounds the body read.
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
 
     if (!response.ok) return [];
 
