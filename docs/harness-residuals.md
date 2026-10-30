@@ -280,3 +280,34 @@ fall to the transcript's last text (none, so empty), then the `NHB == 1` branch 
 hand-back. A replay of that transcript through the writer with `REVIEW_STAMP_ROOT` in the scratchpad was
 denied by auto mode, so whether the hook ran, saw a non-empty `last_assistant_message`, or read a transcript
 flushed before the hand-back is open. Workaround: every reviewer dispatch asks for that closing text line.
+
+### HIT IN REAL USE 2026-10-29 — three background reviewers in a desktop session wrote no review record (#1614)
+
+The 2026-10-28 shape again, now with the replay that entry could not run. In a Claude desktop (Code tab)
+session, `code-reviewer`, `mobile-reviewer` and `server-reviewer` were dispatched in parallel (the app runs
+every subagent in the background) against `ad7babedb4fc2c4c99277b4092ab6779cbd867b4`, with the AI_WORKFLOW
+prompt verbatim and the 19 files from `gh pr diff 1614 --name-only`. Each delivered one well-formed
+`SubagentHandback` (full REVIEWED-SHA, all 19 files, last line `No findings.`) and stopped with no closing
+text. No record was written: `/tmp/ocrecipes-review-stamps-07d4e12e42b1/ad7babed…/` did not exist, and
+`merge-review-guard.sh` correctly DENIED the merge.
+
+Measured by replaying the server reviewer's real transcript (it ends `TOOL: SubagentHandback`, no text)
+through `review-stamp-writer.sh` with `REVIEW_STAMP_ROOT` in the scratchpad, run under bash:
+
+| `last_assistant_message` in the payload                 | records | verdict |
+| ------------------------------------------------------- | ------- | ------- |
+| `""`                                                    | 1       | clean   |
+| key absent                                              | 1       | clean   |
+| `Review complete and handed back; no blocking issues.`  | 1       | clean   |
+| control: same transcript, `agent_type: general-purpose` | 0       | —       |
+
+So the writer's logic handles the no-closing-text hand-back; the 2026-10-28 "why" is not in its parsing.
+What remains is outside the script: the `SubagentStop` hook did not run for these background subagents, or
+ran before the transcript held the hand-back. Not measured which. Note the 10-28 workaround (ask for a
+closing text line) was not in this dispatch, so it is untested here.
+
+Landed by owner instruction ("Write the records"): the writer was run by hand on each of the three real
+transcripts into the real stamp dir; all three came out `verdict: clean`, digest `87e21253048aae4f`, and the
+gate then allowed the merge (`471a2e9`). First check if reopened: dispatch one background reviewer in a
+desktop session with a hook that only logs (`date >> <scratchpad>/subagentstop.log`) on the same matcher, and
+see whether it fires at all.
