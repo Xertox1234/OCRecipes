@@ -572,17 +572,22 @@ describe("handleGoogleNotification renewals", () => {
     expect(invalidateCache).toHaveBeenCalledWith("user-gr");
   });
 
-  it("throws on a transient Play API failure so Pub/Sub redelivers", async () => {
-    vi.mocked(validateReceipt).mockResolvedValue({
-      valid: false,
-      errorCode: "STORE_API_ERROR",
-    });
+  it.each(["STORE_API_ERROR", "PLATFORM_NOT_CONFIGURED", "NOT_IMPLEMENTED"])(
+    "throws on %s (transient or fixable config) so Pub/Sub redelivers",
+    async (errorCode) => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: false,
+        errorCode,
+      });
 
-    await expect(
-      handleGoogleNotification({ message: { data: rtdnMessage(2, "tok-t") } }),
-    ).rejects.toThrow();
-    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
-  });
+      await expect(
+        handleGoogleNotification({
+          message: { data: rtdnMessage(2, "tok-t") },
+        }),
+      ).rejects.toThrow();
+      expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    },
+  );
 
   it("acks (does not throw) a permanent invalid-token answer from Play, so Pub/Sub does not redeliver", async () => {
     vi.mocked(validateReceipt).mockResolvedValue({

@@ -188,6 +188,17 @@ const GOOGLE_RENEW_TYPES = new Set([
   2, // SUBSCRIPTION_RENEWED
 ]);
 
+/**
+ * validateReceipt error codes that must NOT ack a renewal RTDN: a Play outage
+ * (STORE_API_ERROR), or a deploy missing Google config / still on the
+ * production receipt stub — retrying succeeds once it is fixed.
+ */
+const GOOGLE_RENEWAL_RETRY_CODES = new Set([
+  "STORE_API_ERROR",
+  "PLATFORM_NOT_CONFIGURED",
+  "NOT_IMPLEMENTED",
+]);
+
 interface PubSubPushBody {
   message?: { data?: string; messageId?: string };
   subscription?: string;
@@ -273,11 +284,14 @@ export async function handleGoogleNotification(
     // same path the receipt flow uses) and extend from that.
     const live = await validateReceipt(sub.purchaseToken, "android");
     if (!live.valid) {
-      if (live.errorCode === "STORE_API_ERROR") {
-        // Transient (5xx/429/401/403/network/token fetch): throw so the route
-        // answers 5xx and Pub/Sub redelivers. A permanent answer (e.g.
-        // PURCHASE_TOKEN_INVALID for a Play 400/404/410) is logged and acked.
-        throw new Error("google rtdn renewal: Play API unavailable");
+      if (live.errorCode && GOOGLE_RENEWAL_RETRY_CODES.has(live.errorCode)) {
+        // Transient (5xx/429/401/403/network/token fetch) or a fixable server
+        // misconfiguration: throw so the route answers 5xx and Pub/Sub
+        // redelivers. A permanent answer (e.g. PURCHASE_TOKEN_INVALID for a
+        // Play 400/404/410) is logged and acked.
+        throw new Error(
+          `google rtdn renewal: Play state unavailable (${live.errorCode})`,
+        );
       }
       log.warn(
         { type: sub.notificationType, errorCode: live.errorCode },
