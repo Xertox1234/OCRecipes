@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -24,6 +24,7 @@ import type {
 import { getProviderToken } from "@/lib/social-sign-in";
 import {
   registerPushToken,
+  subscribePushTokenRotation,
   unregisterPushToken,
 } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
@@ -260,6 +261,9 @@ export function useAuth() {
             isLoading: false,
             isAuthenticated: true,
           });
+          // A persisted session never passes through sign-in, so refresh the
+          // server's push token here too (never prompts; fire-and-forget).
+          registerPushToken({ prompt: false }).catch(() => {});
         } else if (response.status !== 401) {
           // Non-401 failures (5xx during a deploy, 429, 408, ...) are not
           // session death: the server never rejects a dead token with anything
@@ -328,6 +332,22 @@ export function useAuth() {
     );
     return () => subscription.remove();
   }, [checkAuth]);
+
+  // While signed in, re-send a push token the platform rotates at runtime.
+  // The ref lets logout() stop listening BEFORE it unregisters the token, so a
+  // late rotation cannot re-add this device to the signed-out account.
+  const stopPushRotationRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!state.isAuthenticated) return;
+    const stop = subscribePushTokenRotation();
+    stopPushRotationRef.current = stop;
+    return () => {
+      stop();
+      if (stopPushRotationRef.current === stop) {
+        stopPushRotationRef.current = null;
+      }
+    };
+  }, [state.isAuthenticated]);
 
   // Shared by every path that ends with a session token (password login and
   // each Google/Apple path).
@@ -505,7 +525,10 @@ export function useAuth() {
     // the global interceptor fires the session-expiry toast. Accepted by design
     // — the user is logging out anyway, so "session expired" then Login is benign.
     // Unregister this device's push token first: the logout POST revokes the
-    // session token the DELETE needs (unregisterPushToken never throws).
+    // session token the DELETE needs (unregisterPushToken never throws). Stop
+    // the rotation listener before that so it cannot re-register the token.
+    stopPushRotationRef.current?.();
+    stopPushRotationRef.current = null;
     await unregisterPushToken();
     try {
       await apiRequest("POST", "/api/auth/logout", {});

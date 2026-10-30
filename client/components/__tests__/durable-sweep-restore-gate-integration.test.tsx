@@ -55,6 +55,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
+  subscribePushTokenRotation: vi.fn(() => () => {}),
 }));
 
 function Probe() {

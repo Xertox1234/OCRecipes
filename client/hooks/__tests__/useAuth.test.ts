@@ -8,7 +8,11 @@ import { AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 import type { User } from "@shared/types/auth";
 
 import { useAuth } from "../useAuth";
-import { unregisterPushToken } from "@/lib/push-token-registration";
+import {
+  registerPushToken,
+  subscribePushTokenRotation,
+  unregisterPushToken,
+} from "@/lib/push-token-registration";
 
 // Create mock storage and functions that survive vi.mock hoisting
 const {
@@ -92,9 +96,13 @@ vi.mock("@/lib/query-client", () => ({
   whenQueryCacheRestored: () => mockWhenQueryCacheRestored(),
 }));
 
+const { mockUnsubscribeRotation } = vi.hoisted(() => ({
+  mockUnsubscribeRotation: vi.fn(),
+}));
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
   unregisterPushToken: vi.fn().mockResolvedValue(undefined),
+  subscribePushTokenRotation: vi.fn(() => mockUnsubscribeRotation),
 }));
 
 vi.mock("@/lib/offline-queue", () => ({
@@ -466,6 +474,76 @@ describe("useAuth", () => {
       // Offline + no usable cache → unauthenticated, but recoverable.
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
+    });
+  });
+
+  describe("push token upkeep (R20)", () => {
+    const signedInViaMe = () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+    };
+
+    it("re-registers the push token without prompting when /me restores a session", async () => {
+      signedInViaMe();
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      expect(vi.mocked(registerPushToken)).toHaveBeenCalledWith({
+        prompt: false,
+      });
+    });
+
+    it("does not register on a cold start with no token, or a dead token", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      const first = renderHook(() => useAuth());
+      await waitFor(() => expect(first.result.current.isLoading).toBe(false));
+      first.unmount();
+
+      mockTokenStorage.get.mockResolvedValue("expired-token");
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+      const second = renderHook(() => useAuth());
+      await waitFor(() => expect(second.result.current.isLoading).toBe(false));
+
+      expect(vi.mocked(registerPushToken)).not.toHaveBeenCalled();
+      expect(vi.mocked(subscribePushTokenRotation)).not.toHaveBeenCalled();
+    });
+
+    it("listens for token rotation while signed in and stops before logout unregisters", async () => {
+      signedInViaMe();
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      await waitFor(() =>
+        expect(vi.mocked(subscribePushTokenRotation)).toHaveBeenCalledTimes(1),
+      );
+      expect(mockUnsubscribeRotation).not.toHaveBeenCalled();
+
+      mockApiRequest.mockResolvedValue({});
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(mockUnsubscribeRotation).toHaveBeenCalled();
+      expect(mockUnsubscribeRotation.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(unregisterPushToken).mock.invocationCallOrder[0],
+      );
+    });
+
+    it("stops listening on unmount", async () => {
+      signedInViaMe();
+
+      const { result, unmount } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      await waitFor(() =>
+        expect(vi.mocked(subscribePushTokenRotation)).toHaveBeenCalled(),
+      );
+      unmount();
+
+      expect(mockUnsubscribeRotation).toHaveBeenCalled();
     });
   });
 

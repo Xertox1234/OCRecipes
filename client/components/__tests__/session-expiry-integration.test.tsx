@@ -40,6 +40,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
+  subscribePushTokenRotation: vi.fn(() => () => {}),
 }));
 // Stable toast object so the bridge's effect doesn't re-subscribe each render.
 const toastApi = { error: mockToastError, success: vi.fn(), info: vi.fn() };
