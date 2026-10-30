@@ -243,7 +243,18 @@ describe("Recipe Import", () => {
     });
 
     it("allows public IPv6", () => {
-      expect(isBlockedIPv6("2001:db8::1")).toBe(false);
+      expect(isBlockedIPv6("2606:4700:4700::1111")).toBe(false);
+    });
+
+    it.each([
+      "::ffff:0:7f00:1", // IPv4-translated (SIIT)
+      "64:ff9b:1::a9fe:a9fe", // local-use NAT64
+      "2001:0:4136:e378:8000:63bf:80ff:fffe", // Teredo
+      "2001:db8::1", // documentation
+      "100::1", // discard-only
+      "fec0::1", // deprecated site-local
+    ])("blocks the special-purpose IPv6 address %s", (ip) => {
+      expect(isBlockedIPv6(ip)).toBe(true);
     });
   });
 
@@ -260,7 +271,7 @@ describe("Recipe Import", () => {
 
     it("delegates IPv6 to isBlockedIPv6", () => {
       expect(isBlockedIP("::1")).toBe(true);
-      expect(isBlockedIP("2001:db8::1")).toBe(false);
+      expect(isBlockedIP("2606:4700:4700::1111")).toBe(false);
     });
 
     it("delegates IPv4 to isBlockedIPv4", () => {
@@ -344,6 +355,18 @@ describe("Recipe Import", () => {
     it("allows literal public IPs", async () => {
       const result = await resolveAndValidateHost("93.184.216.34");
       expect(result).toBe(true);
+    });
+
+    // URL.hostname keeps the brackets on an IPv6 literal, and that is what
+    // the import path passes in.
+    it("allows a bracketed public IPv6 literal from URL.hostname", async () => {
+      const host = new URL("http://[2606:4700:4700::1111]/").hostname;
+      expect(await resolveAndValidateHost(host)).toBe(true);
+    });
+
+    it("blocks a bracketed internal IPv6 literal from URL.hostname", async () => {
+      const host = new URL("http://[::ffff:127.0.0.1]/").hostname;
+      expect(await resolveAndValidateHost(host)).toBe(false);
     });
   });
 

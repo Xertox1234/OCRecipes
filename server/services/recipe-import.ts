@@ -262,8 +262,14 @@ for (const [prefix, bits] of [
 }
 for (const [prefix, bits] of [
   ["::", 96], // unspecified, loopback, IPv4-compatible
+  ["::ffff:0:0:0", 96], // IPv4-translated (SIIT) — not ::ffff:0:0/96, which is every mapped IPv4
   ["64:ff9b::", 96], // NAT64
+  ["64:ff9b:1::", 48], // local-use NAT64
+  ["100::", 64], // discard-only
+  ["2001::", 32], // Teredo
+  ["2001:db8::", 32], // documentation
   ["2002::", 16], // 6to4
+  ["fec0::", 10], // deprecated site-local
   ["fc00::", 7], // unique local
   ["fe80::", 10], // link-local
   ["ff00::", 8], // multicast
@@ -350,9 +356,11 @@ export function isBlockedUrl(url: string): boolean {
 export async function resolveAndValidateHost(
   hostname: string,
 ): Promise<boolean> {
-  // Skip resolution for literal IPs — already checked by isBlockedUrl
+  // Skip resolution for literal IPs. URL.hostname keeps the brackets on an
+  // IPv6 literal ("[::1]"), so strip them before the range check.
   if (hostname.includes(":") || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
-    return !isBlockedIP(hostname);
+    const literal = hostname.startsWith("[") ? hostname.slice(1, -1) : hostname;
+    return !isBlockedIP(literal);
   }
 
   try {
