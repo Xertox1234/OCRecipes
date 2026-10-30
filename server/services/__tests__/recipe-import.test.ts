@@ -293,6 +293,41 @@ describe("Recipe Import", () => {
     it("blocks invalid URLs", () => {
       expect(isBlockedUrl("not a url")).toBe(true);
     });
+
+    // WHATWG URL rewrites [::ffff:127.0.0.1] to the hex form [::ffff:7f00:1],
+    // which a dotted-quad regex never sees — audit 2026-10-29 H-sec-1.
+    it.each([
+      "http://[::ffff:127.0.0.1]/",
+      "http://[::ffff:7f00:1]/",
+      "http://[::ffff:169.254.169.254]/",
+      "http://[::ffff:a9fe:a9fe]/",
+      "http://[::ffff:10.0.0.1]/",
+      "http://[::]/",
+      "http://[::127.0.0.1]/",
+      "http://[64:ff9b::7f00:1]/",
+      "http://[2002:7f00:1::]/",
+      "http://[ff02::1]/",
+    ])("blocks the internal IPv6 literal %s", (url) => {
+      expect(isBlockedUrl(url)).toBe(true);
+    });
+
+    it.each([
+      "http://198.18.0.1/",
+      "http://224.0.0.1/",
+      "http://240.0.0.1/",
+      "http://255.255.255.255/",
+      "http://192.0.0.8/",
+    ])("blocks the reserved IPv4 literal %s", (url) => {
+      expect(isBlockedUrl(url)).toBe(true);
+    });
+
+    it.each([
+      "http://[::ffff:8.8.8.8]/",
+      "http://[2606:4700:4700::1111]/",
+      "http://93.184.216.34/",
+    ])("still allows the public literal %s", (url) => {
+      expect(isBlockedUrl(url)).toBe(false);
+    });
   });
 
   describe("resolveAndValidateHost", () => {

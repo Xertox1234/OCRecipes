@@ -1,6 +1,7 @@
 import { z } from "zod";
 import * as cheerio from "cheerio";
 import dns from "node:dns";
+import net from "node:net";
 import type {
   ParsedIngredient,
   ImportedRecipeData,
@@ -235,63 +236,59 @@ const BLOCKED_HOSTS = new Set([
 ]);
 
 /**
- * Check whether an IPv4 address string falls within blocked private/reserved ranges.
+ * Private, reserved and special-purpose ranges a URL import must never reach.
  *
- * Blocked ranges:
- *   - 0.0.0.0/8        (current network)
- *   - 10.0.0.0/8       (private)
- *   - 100.64.0.0/10    (CGNAT / carrier-grade NAT)
- *   - 127.0.0.0/8      (loopback)
- *   - 169.254.0.0/16   (link-local)
- *   - 172.16.0.0/12    (private)
- *   - 192.168.0.0/16   (private)
+ * `net.BlockList` matches an IPv4-mapped IPv6 address (`::ffff:7f00:1`, the
+ * form WHATWG URL normalizes `[::ffff:127.0.0.1]` to) against the IPv4 rules,
+ * so the IPv4 ranges below also cover every mapped spelling. The IPv6 ranges
+ * that embed an IPv4 address in another way (IPv4-compatible `::/96`, NAT64,
+ * 6to4) are blocked outright rather than decoded.
  */
-export function isBlockedIPv4(ip: string): boolean {
-  const parts = ip.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
-    return true; // malformed = blocked
-  }
-  const [a, b] = parts;
-  if (a === 0) return true; // 0.0.0.0/8
-  if (a === 10) return true; // 10.0.0.0/8
-  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10
-  if (a === 127) return true; // 127.0.0.0/8
-  if (a === 169 && b === 254) return true; // 169.254.0.0/16
-  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-  if (a === 192 && b === 168) return true; // 192.168.0.0/16
-  return false;
+const BLOCKED_ADDRESSES = new net.BlockList();
+for (const [prefix, bits] of [
+  ["0.0.0.0", 8], // current network
+  ["10.0.0.0", 8], // private
+  ["100.64.0.0", 10], // CGNAT / carrier-grade NAT
+  ["127.0.0.0", 8], // loopback
+  ["169.254.0.0", 16], // link-local (incl. cloud metadata)
+  ["172.16.0.0", 12], // private
+  ["192.0.0.0", 24], // IETF protocol assignments
+  ["192.168.0.0", 16], // private
+  ["198.18.0.0", 15], // benchmarking
+  ["224.0.0.0", 4], // multicast
+  ["240.0.0.0", 4], // reserved, incl. 255.255.255.255 broadcast
+] as const) {
+  BLOCKED_ADDRESSES.addSubnet(prefix, bits, "ipv4");
+}
+for (const [prefix, bits] of [
+  ["::", 96], // unspecified, loopback, IPv4-compatible
+  ["64:ff9b::", 96], // NAT64
+  ["2002::", 16], // 6to4
+  ["fc00::", 7], // unique local
+  ["fe80::", 10], // link-local
+  ["ff00::", 8], // multicast
+] as const) {
+  BLOCKED_ADDRESSES.addSubnet(prefix, bits, "ipv6");
 }
 
 /**
- * Check whether an IPv6 address string falls within blocked ranges.
- *
- * Blocked:
- *   - ::1               (loopback)
- *   - ::ffff:x.x.x.x   (IPv4-mapped — delegates to isBlockedIPv4)
- *   - fc00::/7          (unique local addresses, i.e. fc00:: and fd00::)
- *   - fe80::/10         (link-local)
+ * Check whether an IPv4 address string falls within a blocked range
+ * (see `BLOCKED_ADDRESSES`). A malformed address is blocked.
+ */
+export function isBlockedIPv4(ip: string): boolean {
+  if (!net.isIPv4(ip)) return true;
+  return BLOCKED_ADDRESSES.check(ip, "ipv4");
+}
+
+/**
+ * Check whether an IPv6 address string falls within a blocked range
+ * (see `BLOCKED_ADDRESSES`), including an IPv4-mapped address whose embedded
+ * IPv4 address is blocked. A malformed address is blocked.
  */
 export function isBlockedIPv6(ip: string): boolean {
   const normalized = ip.toLowerCase().trim();
-
-  // Loopback
-  if (normalized === "::1") return true;
-
-  // IPv4-mapped IPv6: "::ffff:127.0.0.1"
-  const v4MappedMatch = normalized.match(
-    /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/,
-  );
-  if (v4MappedMatch) {
-    return isBlockedIPv4(v4MappedMatch[1]);
-  }
-
-  // fc00::/7 covers fc00:: through fdff::
-  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
-
-  // fe80::/10 (link-local)
-  if (normalized.startsWith("fe80")) return true;
-
-  return false;
+  if (!net.isIPv6(normalized)) return true;
+  return BLOCKED_ADDRESSES.check(normalized, "ipv6");
 }
 
 /**
