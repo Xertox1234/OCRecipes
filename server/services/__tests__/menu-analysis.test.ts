@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { analyzeMenuPhoto, MenuAnalysisResult } from "../menu-analysis";
 
 import { aiChat } from "../../lib/ai-client";
@@ -254,7 +255,14 @@ describe("Menu Analysis", () => {
         ],
       } as any);
 
-      await expect(analyzeMenuPhoto("img", "user-1")).rejects.toThrow();
+      // A model-output defect must surface as a plain (5xx) Error, never a
+      // ZodError — handleRouteError maps ZodError to a 400 client error.
+      const err = await analyzeMenuPhoto("img", "user-1").catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(ZodError);
+      expect(err.message).toBe(
+        "Menu analysis returned invalid data. Please try again.",
+      );
     });
 
     it("handles items without recommendation (defaults to 'okay' sorting)", async () => {
