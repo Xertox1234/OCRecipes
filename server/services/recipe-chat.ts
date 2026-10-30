@@ -128,7 +128,13 @@ export function buildRecipeContext(
   messages: ChatMessage[],
   maxMessages = 10,
 ): { role: "user" | "assistant" | "system"; content: string }[] {
-  const recent = messages.slice(-maxMessages);
+  // Only user/assistant turns are replayed. A remix conversation stores its
+  // source recipe — another user's public recipe — as a "system" row; the
+  // remix system prompt already carries a sanitized copy, and replaying the
+  // raw row would give that third-party text system authority.
+  const recent = messages
+    .filter((msg) => msg.role === "user" || msg.role === "assistant")
+    .slice(-maxMessages);
   let foundLatestRecipe = false;
 
   // Process in reverse to find the most recent recipe first
