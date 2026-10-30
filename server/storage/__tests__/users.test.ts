@@ -1010,6 +1010,62 @@ describe("users storage", () => {
     });
   });
 
+  describe("claimTransactionAndUpgrade after a refund/revoke", () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const claim = (purchasedAt?: Date | null) =>
+      claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_revoked_1",
+          userId: testUser.id,
+          receipt: "receipt_replayed",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+        purchasedAt,
+      );
+
+    beforeEach(async () => {
+      await claim(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
+      await revokeSubscriptionByTransactionId("orig_revoked_1");
+    });
+
+    async function expectStillRevoked() {
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+      expect(user!.subscriptionExpiresAt).toBeNull();
+      const txn = await getTransaction("orig_revoked_1");
+      expect(txn!.status).toBe("revoked");
+    }
+
+    it("refuses to re-grant from a receipt with no purchase date (fails closed)", async () => {
+      const result = await claim(undefined);
+
+      expect(result.status).toBe("revoked");
+      await expectStillRevoked();
+    });
+
+    it("refuses a replayed receipt purchased before the revocation", async () => {
+      const result = await claim(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+      expect(result.status).toBe("revoked");
+      await expectStillRevoked();
+    });
+
+    it("grants a purchase made after the revocation (re-subscription keeps the same original id)", async () => {
+      const result = await claim(new Date(Date.now() + 60 * 1000));
+
+      expect(result.status).toBe("renewed");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(future.getTime());
+      const txn = await getTransaction("orig_revoked_1");
+      expect(txn!.status).toBe("completed");
+    });
+  });
+
   describe("revokeSubscriptionByTransactionId", () => {
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 

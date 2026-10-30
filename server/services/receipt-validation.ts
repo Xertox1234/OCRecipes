@@ -18,6 +18,12 @@ export interface ReceiptValidationResult {
   valid: boolean;
   productId?: string;
   expiresAt?: Date;
+  /**
+   * When this transaction was purchased (Apple `purchaseDate`; unset for
+   * Google, whose state is re-read live). Lets a claim tell a re-subscription
+   * after a refund/revoke from a replay of the pre-refund receipt.
+   */
+  purchasedAt?: Date;
   originalTransactionId?: string;
   errorCode?: string;
 }
@@ -191,6 +197,11 @@ async function validateAppleReceipt(
     return { valid: false, errorCode: "TRANSACTION_REVOKED" };
   }
 
+  const purchasedAt =
+    payload.purchaseDate !== undefined
+      ? new Date(payload.purchaseDate)
+      : undefined;
+
   if (payload.expiresDate) {
     const expiresAt = new Date(payload.expiresDate);
     if (expiresAt.getTime() < Date.now()) {
@@ -200,6 +211,7 @@ async function validateAppleReceipt(
       valid: true,
       productId: payload.productId,
       expiresAt,
+      purchasedAt,
       originalTransactionId: payload.originalTransactionId,
     };
   }
@@ -208,6 +220,7 @@ async function validateAppleReceipt(
   return {
     valid: true,
     productId: payload.productId,
+    purchasedAt,
     originalTransactionId: payload.originalTransactionId,
   };
 }

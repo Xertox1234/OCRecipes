@@ -181,6 +181,44 @@ describe("Receipt Validation", () => {
       expect(result.expiresAt).toBeDefined();
     });
 
+    it("carries the transaction's purchaseDate as purchasedAt", async () => {
+      const purchaseDate = Date.now() - 60_000;
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        productId: "premium_monthly",
+        expiresDate: FUTURE_EXPIRY,
+        purchaseDate,
+        originalTransactionId: "txn-123",
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("signed-jws-receipt", "ios");
+      expect(result.valid).toBe(true);
+      expect(result.purchasedAt?.getTime()).toBe(purchaseDate);
+    });
+
+    it("leaves purchasedAt undefined when the payload has no purchaseDate", async () => {
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        productId: "premium_monthly",
+        expiresDate: FUTURE_EXPIRY,
+        originalTransactionId: "txn-123",
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("signed-jws-receipt", "ios");
+      expect(result.valid).toBe(true);
+      expect(result.purchasedAt).toBeUndefined();
+    });
+
     it("rejects expired receipt", async () => {
       mockVerifyAndDecodeTransaction.mockResolvedValue({
         productId: "premium_monthly",

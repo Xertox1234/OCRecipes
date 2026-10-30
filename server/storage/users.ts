@@ -836,7 +836,24 @@ export async function createTransaction(
 export type ClaimResult =
   | { status: "created"; transaction: Transaction; user: User }
   | { status: "renewed"; transaction: Transaction; user: User }
-  | { status: "conflict"; existingUserId: string };
+  | { status: "conflict"; existingUserId: string }
+  | { status: "revoked" };
+
+/**
+ * True when a refunded/revoked transaction row must NOT be re-activated by the
+ * incoming receipt. A client-supplied receipt is a static snapshot, so one
+ * captured before the refund carries no revocationDate and still validates.
+ * Only a purchase made AFTER the revocation (an Apple re-subscription reuses
+ * the same originalTransactionId) may bring the row back; with no purchase
+ * date to compare we fail closed.
+ */
+function isRevokedForReceipt(
+  existing: Transaction,
+  purchasedAt: Date | null | undefined,
+): boolean {
+  if (existing.status !== "revoked") return false;
+  return !purchasedAt || purchasedAt.getTime() <= existing.updatedAt.getTime();
+}
 
 /**
  * Claim a subscription for a user, keyed by the validated receipt's STABLE id
@@ -847,6 +864,8 @@ export type ClaimResult =
  *  - same user re-claims the id  → `renewed` (a renewal carries the same id with
  *                                  a later expiry; refresh receipt + tier/expiry)
  *  - a different user claims it   → `conflict` (no writes; the caller rejects)
+ *  - same user, row was refunded/revoked and the receipt was purchased before
+ *    that (`purchasedAt`)          → `revoked` (no writes; fail closed)
  *
  * Atomic: the transaction write and the user upgrade succeed or roll back
  * together. `onConflictDoNothing()` (no target — the only non-PK unique is
@@ -856,6 +875,7 @@ export async function claimTransactionAndUpgrade(
   data: InsertTransaction,
   tier: SubscriptionTier,
   expiresAt: Date | null,
+  purchasedAt?: Date | null,
 ): Promise<ClaimResult> {
   return db.transaction(async (tx) => {
     const [inserted] = await tx
@@ -887,6 +907,11 @@ export async function claimTransactionAndUpgrade(
     // Different account (or a vanished row) — never grant entitlement.
     if (!existing || existing.userId !== data.userId) {
       return { status: "conflict", existingUserId: existing?.userId ?? "" };
+    }
+
+    // A replayed pre-refund receipt must never flip a revoked row back.
+    if (isRevokedForReceipt(existing, purchasedAt)) {
+      return { status: "revoked" };
     }
 
     // Same user re-claiming — a renewal. Refresh the stored receipt and extend
