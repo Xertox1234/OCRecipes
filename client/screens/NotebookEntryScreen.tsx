@@ -62,6 +62,11 @@ const TYPE_LABELS: Record<string, string> = {
   conversation_summary: "Summary",
 };
 
+// The status change or entry is already saved when this shows; the
+// reminder step may have partly run, so the copy stays tentative.
+const REMINDER_NOT_UPDATED =
+  "Entry saved, but its reminder may not have updated.";
+
 export default function NotebookEntryScreen() {
   const { theme } = useTheme();
   const toast = useToast();
@@ -193,7 +198,7 @@ export default function NotebookEntryScreen() {
           await cancelCommitmentReminder(savedEntry.id);
         }
       } catch {
-        toast.error("Entry saved, but the reminder couldn't be updated.");
+        toast.error(REMINDER_NOT_UPDATED);
       }
     }
     goBack();
@@ -230,7 +235,11 @@ export default function NotebookEntryScreen() {
               toast.error("Couldn't update the entry. Please try again.");
               return;
             }
-            await cancelCommitmentReminder(entryId);
+            try {
+              await cancelCommitmentReminder(entryId);
+            } catch {
+              toast.error(REMINDER_NOT_UPDATED);
+            }
             goBack();
           })();
         },
@@ -255,7 +264,11 @@ export default function NotebookEntryScreen() {
               toast.error("Couldn't archive the entry. Please try again.");
               return;
             }
-            await cancelCommitmentReminder(entryId);
+            try {
+              await cancelCommitmentReminder(entryId);
+            } catch {
+              toast.error(REMINDER_NOT_UPDATED);
+            }
             goBack();
           })();
         },
