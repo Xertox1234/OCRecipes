@@ -64,7 +64,7 @@ vi.mock("../../lib/openai", () => ({
 vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 
 // Mock only analyzeIngredientPhoto; let calculateSessionNutrition,
-// calculateSessionMacros, and IngredientAnalysisError pass through to real
+// and IngredientAnalysisError pass through to real
 // implementations (nutrition functions use the mocked batchNutritionLookup
 // and cooking-adjustment modules).
 vi.mock("../../services/cooking-session", async () => {
@@ -885,6 +885,57 @@ describe("Cooking Routes", () => {
       );
       // Session should be cleared
       expect(cookingSessionStore._internals.store.has(sessionId)).toBe(false);
+    });
+
+    // The summary applies each ingredient's preparation method; the log used
+    // the raw totals, so the stored meal differed from the one the user saw
+    // (audit 2026-10-29 M-data-4).
+    it("logs the same totals the nutrition summary showed", async () => {
+      const sessionId = "log-cooked-session";
+      cookingSessionStore._internals.store.set(sessionId, {
+        id: sessionId,
+        userId: "1",
+        ingredients: [{ ...mockIngredient, preparationMethod: "grilled" }],
+        photos: [],
+        createdAt: Date.now(),
+      });
+      vi.mocked(batchNutritionLookup).mockResolvedValue(
+        new Map<string, NutritionData | null>([
+          [
+            "chicken breast",
+            createMockNutritionData({
+              calories: 165,
+              protein: 31,
+              carbs: 0,
+              fat: 3.6,
+            }),
+          ],
+        ]),
+      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem({ id: 43, userId: "1" }),
+      );
+
+      const summary = await request(app)
+        .post(`/api/cooking/sessions/${sessionId}/nutrition`)
+        .set("Authorization", "Bearer token")
+        .send({});
+      expect(summary.status).toBe(200);
+
+      await request(app)
+        .post(`/api/cooking/sessions/${sessionId}/log`)
+        .set("Authorization", "Bearer token")
+        .send({ mealType: "dinner" });
+
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          calories: String(summary.body.total.calories),
+          protein: String(summary.body.total.protein),
+          carbs: String(summary.body.total.carbs),
+          fat: String(summary.body.total.fat),
+        }),
+        expect.anything(),
+      );
     });
 
     it("returns 400 when session has no ingredients", async () => {

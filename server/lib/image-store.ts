@@ -69,6 +69,14 @@ function client(cfg: R2Config): S3Client {
         accessKeyId: cfg.accessKeyId,
         secretAccessKey: cfg.secretAccessKey,
       },
+      // The SDK's default handler has no timeouts, so a stalled R2 would hang
+      // every avatar/cover/recipe-image request and account-deletion cleanup.
+      // requestTimeout only logs a warning unless throwOnRequestTimeout is set.
+      requestHandler: {
+        connectionTimeout: 5_000,
+        requestTimeout: 30_000,
+        throwOnRequestTimeout: true,
+      },
     });
   }
   return cachedClient;

@@ -11,7 +11,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
 
 // ============================================================================
 // COOKBOOKS
@@ -42,6 +42,7 @@ export async function getUserCookbooks(
     AND (
       (cr.recipe_type = 'mealPlan' AND EXISTS (
         SELECT 1 FROM ${mealPlanRecipes} WHERE meal_plan_recipes.id = cr.recipe_id
+          AND meal_plan_recipes.deleted_at IS NULL
       ))
       OR
       (cr.recipe_type = 'community' AND EXISTS (
@@ -125,6 +126,7 @@ export async function addRecipeToCookbook(
             SELECT 1 FROM ${mealPlanRecipes}
             WHERE ${mealPlanRecipes.id} = ${recipeId}
               AND ${mealPlanRecipes.userId} = ${userId}
+              AND ${mealPlanRecipes.deletedAt} IS NULL
           )`
         : sql`AND EXISTS (
             SELECT 1 FROM ${communityRecipes}
@@ -243,7 +245,14 @@ export async function getResolvedCookbookRecipes(
       ? db
           .select()
           .from(mealPlanRecipes)
-          .where(inArray(mealPlanRecipes.id, mealPlanIds))
+          // A soft-deleted recipe resolves as missing, so its junction row
+          // is cleaned up as an orphan below.
+          .where(
+            and(
+              inArray(mealPlanRecipes.id, mealPlanIds),
+              isNull(mealPlanRecipes.deletedAt),
+            ),
+          )
       : [],
     communityIds.length
       ? db

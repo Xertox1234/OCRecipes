@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Separate from ToastContext.test.tsx on purpose: that file needs the REAL
 // Toast (live region, announcements); this one mocks Toast to read its props.
-import React from "react";
+import React, { useEffect } from "react";
 import { act } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
@@ -19,7 +19,11 @@ vi.mock("@/components/Toast", () => ({
 type Api = ReturnType<typeof useToast>;
 let api: Api;
 function Capture() {
-  api = useToast();
+  const current = useToast();
+  // Assigned in an effect (not during render) to satisfy react-hooks/globals.
+  useEffect(() => {
+    api = current;
+  });
   return null;
 }
 

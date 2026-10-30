@@ -179,8 +179,6 @@ const PINO_CONTEXT_ALLOWLIST = new Set([
   "kind",
 ]);
 
-const DRIZZLE_PARAMS_MARKER = "\nparams:";
-
 /**
  * PII scrubber for outbound events — the load-bearing control on this
  * external trust boundary (see the module doc: `sendDefaultPii: false`
@@ -216,20 +214,14 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
       }
     }
   }
-  // Drizzle's DrizzleQueryError message is "Failed query: <sql>\nparams:
-  // <bound values>" — the SQL uses $n placeholders, but the params are user
-  // data (emails, barcodes). pinoIntegration ships every logged Error's
-  // message, so the params tail is replaced here. Other driver/provider
-  // messages are not rewritten: pg puts row values in `detail`, not
-  // `message`, and extraErrorDataIntegration (which would ship `detail`)
-  // is not enabled.
+  // A failed Drizzle query's message ends with "\nparams: <every bound
+  // value>" — password hashes, coach health text, ids. Keep the query, drop
+  // the values, for handled route errors and background failures alike.
   for (const exception of event.exception?.values ?? []) {
     if (typeof exception.value !== "string") continue;
-    const paramsStart = exception.value.indexOf(DRIZZLE_PARAMS_MARKER);
+    const paramsStart = exception.value.indexOf("\nparams:");
     if (paramsStart !== -1) {
-      exception.value =
-        exception.value.slice(0, paramsStart + DRIZZLE_PARAMS_MARKER.length) +
-        " [scrubbed]";
+      exception.value = exception.value.slice(0, paramsStart);
     }
   }
   const pinoContext = event.contexts?.pino;
@@ -303,9 +295,10 @@ export function initErrorReporter(): void {
         exitEvenIfOtherHandlersAreRegistered: false,
       }),
       // Every logger.error becomes a handled Sentry event. Handled failures
-      // never reach Sentry otherwise: fireAndForget's .catch, the cron/
-      // interval catches, and the SSE chat-stream catch all log and swallow,
-      // and onUnhandledRejection only sees UNhandled rejections. Error level
+      // never reach Sentry otherwise: the cron/interval catches and the SSE
+      // chat-stream catch log and swallow, and onUnhandledRejection only sees
+      // UNhandled rejections. (fireAndForget also calls reportError with the
+      // same Error it logs, so that capture is deduped, not doubled.) Error level
       // only (warn stays log-only); `log` levels are inert because
       // enableLogs is never set. Events still pass through beforeSend (rate
       // cap + scrub — scrubEvent allowlists the attached pino context). An

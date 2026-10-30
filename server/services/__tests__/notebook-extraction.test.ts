@@ -45,6 +45,26 @@ describe("Notebook Extraction", () => {
     vi.clearAllMocks();
   });
 
+  // With no timeout the OpenAI SDK default (600 s) applied
+  // (audit 2026-10-29 M-rel-2).
+  it("passes an explicit timeout to the AI call", async () => {
+    mockCreate.mockResolvedValue(
+      mockCompletion(JSON.stringify({ entries: [] })),
+    );
+
+    await extractNotebookEntries(
+      [{ role: "user" as const, content: "hi" }],
+      "user-1",
+      1,
+      { now: new Date("2026-10-29T12:00:00Z"), tz: "UTC" },
+    );
+
+    const options = mockCreate.mock.calls[0]?.[2] as
+      | { timeout?: number }
+      | undefined;
+    expect(options?.timeout).toBeLessThanOrEqual(60_000);
+  });
+
   it("extracts entries from a conversation", async () => {
     mockCreate.mockResolvedValue(
       mockCompletion(

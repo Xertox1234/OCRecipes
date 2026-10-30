@@ -15,6 +15,7 @@ import { InlineError } from "@/components/InlineError";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
+import { toLocalDateString } from "@shared/lib/date";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -60,6 +61,11 @@ const TYPE_LABELS: Record<string, string> = {
   emotional_context: "Emotional",
   conversation_summary: "Summary",
 };
+
+// The status change or entry is already saved when this shows; the
+// reminder step may have partly run, so the copy stays tentative.
+const REMINDER_NOT_UPDATED =
+  "Entry saved, but its reminder may not have updated.";
 
 export default function NotebookEntryScreen() {
   const { theme } = useTheme();
@@ -111,7 +117,7 @@ export default function NotebookEntryScreen() {
   const [contentFocused, setContentFocused] = useState(false);
   const [followUpDate, setFollowUpDate] = useState<string | null>(
     entry?.followUpDate
-      ? new Date(entry.followUpDate).toISOString().slice(0, 10)
+      ? toLocalDateString(new Date(entry.followUpDate))
       : null,
   );
 
@@ -121,7 +127,7 @@ export default function NotebookEntryScreen() {
       setContent(entry.content);
       setFollowUpDate(
         entry.followUpDate
-          ? new Date(entry.followUpDate).toISOString().slice(0, 10)
+          ? toLocalDateString(new Date(entry.followUpDate))
           : null,
       );
     }
@@ -144,7 +150,7 @@ export default function NotebookEntryScreen() {
       type !== entry?.type ||
       followUpDate !==
         (entry?.followUpDate
-          ? new Date(entry.followUpDate).toISOString().slice(0, 10)
+          ? toLocalDateString(new Date(entry.followUpDate))
           : null);
 
   // Disabled only while saving, or when an edit changed nothing. An empty
@@ -179,14 +185,20 @@ export default function NotebookEntryScreen() {
       return;
     }
     if (savedEntry && savedEntry.type === "commitment") {
-      if (savedEntry.followUpDate) {
-        await scheduleCommitmentReminder(
-          savedEntry.id,
-          savedEntry.content,
-          new Date(savedEntry.followUpDate).toISOString().slice(0, 10),
-        );
-      } else {
-        await cancelCommitmentReminder(savedEntry.id);
+      // The entry is already saved: a reminder failure must not keep the
+      // user on the form, where Save again would create a duplicate.
+      try {
+        if (savedEntry.followUpDate) {
+          await scheduleCommitmentReminder(
+            savedEntry.id,
+            savedEntry.content,
+            toLocalDateString(new Date(savedEntry.followUpDate)),
+          );
+        } else {
+          await cancelCommitmentReminder(savedEntry.id);
+        }
+      } catch {
+        toast.error(REMINDER_NOT_UPDATED);
       }
     }
     goBack();
@@ -223,7 +235,11 @@ export default function NotebookEntryScreen() {
               toast.error("Couldn't update the entry. Please try again.");
               return;
             }
-            await cancelCommitmentReminder(entryId);
+            try {
+              await cancelCommitmentReminder(entryId);
+            } catch {
+              toast.error(REMINDER_NOT_UPDATED);
+            }
             goBack();
           })();
         },
@@ -248,7 +264,11 @@ export default function NotebookEntryScreen() {
               toast.error("Couldn't archive the entry. Please try again.");
               return;
             }
-            await cancelCommitmentReminder(entryId);
+            try {
+              await cancelCommitmentReminder(entryId);
+            } catch {
+              toast.error(REMINDER_NOT_UPDATED);
+            }
             goBack();
           })();
         },

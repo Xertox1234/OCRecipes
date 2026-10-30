@@ -15,7 +15,8 @@ import {
   getTestTx,
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import type * as schema from "@shared/schema";
+import { eq } from "drizzle-orm";
+import * as schema from "@shared/schema";
 
 // Mock the db import so the storage functions use our test transaction
 vi.mock("../../db", () => ({
@@ -32,6 +33,7 @@ const {
   updatePantryItem,
   deletePantryItem,
   getExpiringPantryItems,
+  addGroceryItemToPantryAtomically,
 } = await import("../pantry");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -259,6 +261,68 @@ describe("pantry storage", () => {
 
       const expiring = await getExpiringPantryItems(testUser.id, 7);
       expect(expiring).toHaveLength(0);
+    });
+  });
+
+  describe("addGroceryItemToPantryAtomically", () => {
+    async function makeGroceryItem() {
+      const [list] = await tx
+        .insert(schema.groceryLists)
+        .values({
+          userId: testUser.id,
+          title: "Week",
+          dateRangeStart: "2026-10-26",
+          dateRangeEnd: "2026-11-01",
+        })
+        .returning();
+      const [item] = await tx
+        .insert(schema.groceryListItems)
+        .values({ groceryListId: list.id, name: "Rice" })
+        .returning();
+      return { listId: list.id, itemId: item.id };
+    }
+
+    const pantryFields = () => ({
+      userId: testUser.id,
+      name: "Rice",
+      quantity: null,
+      unit: null,
+      category: "other",
+      expiresAt: null,
+    });
+
+    it("creates the pantry item and flags the grocery item", async () => {
+      const { listId, itemId } = await makeGroceryItem();
+
+      const created = await addGroceryItemToPantryAtomically(
+        pantryFields(),
+        itemId,
+        listId,
+      );
+
+      expect(created?.name).toBe("Rice");
+      const [item] = await tx
+        .select()
+        .from(schema.groceryListItems)
+        .where(eq(schema.groceryListItems.id, itemId));
+      expect(item.addedToPantry).toBe(true);
+    });
+
+    // A double tap or a retried request must not add the item twice
+    // (audit 2026-10-29 M-data-7).
+    it("adds an item already added to the pantry only once", async () => {
+      const { listId, itemId } = await makeGroceryItem();
+
+      await addGroceryItemToPantryAtomically(pantryFields(), itemId, listId);
+      const second = await addGroceryItemToPantryAtomically(
+        pantryFields(),
+        itemId,
+        listId,
+      );
+
+      expect(second).toBeUndefined();
+      const pantry = await getPantryItems(testUser.id);
+      expect(pantry.filter((p) => p.name === "Rice")).toHaveLength(1);
     });
   });
 });

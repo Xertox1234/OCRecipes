@@ -337,6 +337,40 @@ describe("useAuth", () => {
       expect(mockNotifySessionExpired).not.toHaveBeenCalled();
     });
 
+    // A 429 or a 5xx during a deploy is not session death. It used to clear
+    // the token AND the offline queue, signing the user out and dropping
+    // queued food logs (pre-launch audit 2026-10-29).
+    it.each([403, 404, 408, 429, 500, 502, 503, 504])(
+      "keeps the session and the offline queue on a %i from /me",
+      async (status) => {
+        mockTokenStorage.get.mockResolvedValue("valid-token");
+        mockFetch.mockResolvedValue({ ok: false, status });
+        mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
+        // The common resume: this device's stores already belong to this user.
+        mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
+
+        const { result } = renderHook(() => useAuth());
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        expect(result.current.isAuthenticated).toBe(true);
+        expect(result.current.user).toEqual(fakeUser);
+        expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+        expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+        expect(mockNotifySessionExpired).not.toHaveBeenCalled();
+      },
+    );
+
+    it("keeps the token on a 503 from /me even with no cached profile", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({ ok: false, status: 503 });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+      expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+    });
+
     it("falls back to cached user on network error", async () => {
       mockTokenStorage.get.mockResolvedValue("valid-token");
       mockFetch.mockRejectedValue(new Error("Network error"));

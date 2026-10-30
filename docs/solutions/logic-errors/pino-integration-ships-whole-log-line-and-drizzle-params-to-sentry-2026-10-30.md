@@ -57,11 +57,12 @@ In `server/lib/error-reporter.ts` → `scrubEvent` (the `beforeSend` hook):
   deleted. `requestId` alone correlates the event back to the full pino line.
   `userId` is dropped on purpose, matching `sendDefaultPii: false`. A
   denylist would silently leak the next ad-hoc field someone logs.
-- **Cut the Drizzle params tail.** For each `event.exception.values[]` whose
-  `value` contains `"\nparams:"`, keep everything up to and including the
-  marker and replace the rest with `" [scrubbed]"`. The placeholder SQL stays
-  (useful, not sensitive). Non-Drizzle messages and values without a message
-  are left untouched; tests pin both.
+- **Cut the Drizzle params tail.** `scrubEvent` cuts every
+  `event.exception.values[].value` at `"\nparams:"` (keeps the placeholder
+  SQL, drops the values). That scrub and its test are owned by
+  [DrizzleQueryError messages carry bound parameters](drizzle-query-error-message-carries-bound-params-to-sentry-2026-10-29.md)
+  (#1621); pinoIntegration only widened which errors reach it — every
+  logged DB failure, not just reported ones.
 - **Do not put user data in an Error message you build yourself.** The
   `resendFailure` Error in `server/services/email.ts` uses only
   `resend <name> (<statusCode>)`; Resend's free-text message stays in the
@@ -85,11 +86,13 @@ rewritten.
 
 ## Related Files
 
-- `server/lib/error-reporter.ts` — `PINO_CONTEXT_ALLOWLIST`, `DRIZZLE_PARAMS_MARKER`, `scrubEvent`
-- `server/lib/__tests__/error-reporter.test.ts` — allowlist and Drizzle-message scrub tests
+- `server/lib/error-reporter.ts` — `PINO_CONTEXT_ALLOWLIST`, `scrubEvent`
+- `server/lib/__tests__/error-reporter.test.ts` — allowlist scrub test
 - `server/services/email.ts` — `resendFailure` (PII-free Error message)
 
 ## See Also
+
+- [DrizzleQueryError messages carry bound parameters](drizzle-query-error-message-carries-bound-params-to-sentry-2026-10-29.md) — owner of the `\nparams:` scrub
 
 - [Handled logger.error never reaches Sentry without pinoIntegration](handled-logger-error-never-reaches-sentry-without-pino-integration-2026-10-30.md) — the integration that opened this path
 - [@sentry/node sendDefaultPii: false still ships request PII](sentry-node-senddefaultpii-false-still-ships-request-pii-2026-07-11.md) — the request-side half of the same scrub

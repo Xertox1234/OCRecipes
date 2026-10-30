@@ -3,7 +3,7 @@ title: "Adopt the React Compiler lint rules from eslint-plugin-react-hooks 7, on
 status: backlog
 priority: low
 created: 2026-10-23
-updated: 2026-10-23
+updated: 2026-10-29
 assignee:
 labels: [deferred, react-native]
 github_issue:
@@ -43,3 +43,13 @@ already runs: a site these rules flag is often one the compiler skips.
 - Files in scope: `eslint.config.js`,
   `eslint-plugin-ocrecipes/__tests__/rules.test.ts`, and the client files each
   rule flags (`npx eslint client` lists them once the rule is enabled).
+
+## Progress
+
+- 2026-10-29: `react-hooks/globals` enabled (2 test-file call sites fixed:
+  `Capture` helpers now assign `api` in an effect). Remaining rules stay off
+  with reasons in `eslint.config.js`. Re-counted `preserve-manual-memoization`
+  at 11 sites (CoachChat, QuickAddSheet, RecipeIngredientsList x2, ChatScreen,
+  CookSessionCaptureScreen, GroceryListScreen, MealPlanHomeScreen x4); fixes
+  alter hook deps and need per-site judgement. Todo stays open for those and
+  `set-state-in-effect` / `immutability` / `refs`.

@@ -56,6 +56,10 @@ failures was visible only to someone already reading the log stream
   levels stay inert. Events still pass `beforeSend` (rate cap + `scrubEvent`).
   An Error logged by `handleRouteError` AND passed to `reportError` is
   captured once — the SDK marks a captured Error and skips repeats.
+  Corollary: a site that both logs and calls `reportError` must hand BOTH the
+  same object. `fireAndForget` (which also calls `reportError`, from #1621)
+  computes `const error = toError(err)` once; wrapping a non-Error rejection
+  twice would yield two different Errors and two Sentry events.
 - Call sites that already followed the convention (`logger.error` with
   `err: toError(err)`) needed no change: `fireAndForget`, the cron catches,
   the `"chat streaming error"` and `"failed to settle aborted coach turn"`
