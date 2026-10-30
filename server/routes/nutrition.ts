@@ -11,6 +11,7 @@ import { insertScannedItemSchema } from "@shared/schema";
 import { logger, toError } from "../lib/logger";
 import { lookupNutrition } from "../services/nutrition-lookup";
 import {
+  BarcodeUpstreamError,
   lookupBarcode,
   type BarcodeLookupResult,
 } from "../services/barcode-lookup";
@@ -301,6 +302,17 @@ export function register(app: Express): void {
         );
         res.json(body);
       } catch (error) {
+        if (error instanceof BarcodeUpstreamError) {
+          // OFF outage/rate limit with no fallback hit — retryable, and the
+          // client falls back to direct OFF on 5xx (never on 404).
+          sendError(
+            res,
+            503,
+            "Product lookup temporarily unavailable",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
         handleRouteError(res, error, "look up barcode");
       }
     },
@@ -483,6 +495,17 @@ export function register(app: Express): void {
         }
         res.json({ ...body, labelCompared: compared });
       } catch (error) {
+        if (error instanceof BarcodeUpstreamError) {
+          // OFF outage/rate limit with no fallback hit — retryable, and the
+          // client falls back to direct OFF on 5xx (never on 404).
+          sendError(
+            res,
+            503,
+            "Product lookup temporarily unavailable",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
         handleRouteError(res, error, "look up barcode");
       }
     },

@@ -8,7 +8,7 @@ import {
   _resetCNFCacheForTesting,
   fuzzyMatchCNF,
 } from "../nutrition-lookup";
-import { lookupBarcode } from "../barcode-lookup";
+import { BarcodeUpstreamError, lookupBarcode } from "../barcode-lookup";
 
 // `mockInsertValues` is hoisted so tests can assert on the args passed to
 // `db.insert(...).values(...)` — see the USDA-real-serving-size test below,
@@ -838,9 +838,11 @@ describe("lookupBarcode", () => {
       "food/?lang=fr": emptyCNFFR,
     });
 
-    const result = await lookupBarcode("0000000000001");
-    // All OFF variants fail, no USDA data either → null
-    expect(result).toBeNull();
+    // All OFF variants fail, no USDA data either → an upstream error, not a
+    // definitive "not found" (R08: an outage must stay distinguishable).
+    await expect(lookupBarcode("0000000000001")).rejects.toBeInstanceOf(
+      BarcodeUpstreamError,
+    );
   });
 
   it("parses a valid OFF product correctly (regression: schema must not drop real data)", async () => {
@@ -952,6 +954,93 @@ describe("lookupBarcode", () => {
     expect(result!.per100g.fat).toBeUndefined();
     expect(result!.per100g.sugar).toBeUndefined();
     expect(result!.per100g.sodium).toBeUndefined();
+  });
+});
+
+describe("lookupBarcode — Open Food Facts outage vs genuine miss (R08)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockInsertValues.mockClear();
+    _resetCNFCacheForTesting();
+  });
+
+  const usdaUpcHit = () =>
+    Promise.resolve({
+      ok: true,
+      json: async () => ({
+        foods: [
+          {
+            description: "COFFEE WHITENER",
+            brandOwner: "Nestle",
+            gtinUpc: "006073114236",
+            foodNutrients: [
+              { nutrientName: "Energy", nutrientId: 1008, value: 500 },
+              { nutrientName: "Protein", nutrientId: 1003, value: 1 },
+            ],
+          },
+        ],
+      }),
+    });
+
+  it("throws BarcodeUpstreamError (not null/'not found') when OFF is rate-limited and no other source answers", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: false,
+          status: 429,
+          json: async () => {
+            throw new SyntaxError("Unexpected token < in JSON");
+          },
+        }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+    });
+
+    await expect(lookupBarcode("4444444444444")).rejects.toBeInstanceOf(
+      BarcodeUpstreamError,
+    );
+  });
+
+  it("throws BarcodeUpstreamError when every OFF request fails at the network layer", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () => Promise.reject(new TypeError("fetch failed")),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+    });
+
+    await expect(lookupBarcode("4444444444445")).rejects.toBeInstanceOf(
+      BarcodeUpstreamError,
+    );
+  });
+
+  it("still returns null for a genuine OFF miss (status 0 or 404)", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: false,
+          status: 404,
+          json: async () => ({ status: 0 }),
+        }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+    });
+
+    await expect(lookupBarcode("4444444444446")).resolves.toBeNull();
+  });
+
+  it("returns the USDA-by-UPC result during an OFF outage but does not persist the degraded row", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: false, status: 503, json: async () => ({}) }),
+      "fdc/v1/foods/search": usdaUpcHit,
+    });
+
+    const result = await lookupBarcode("6073114236");
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("usda");
+    // First-write-wins: persisting the USDA-only row now would lock out the
+    // richer OFF row (allergens, NOVA) once OFF recovers.
+    expect(mockInsertValues).not.toHaveBeenCalled();
   });
 });
 

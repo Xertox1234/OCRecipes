@@ -4,7 +4,10 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { lookupNutrition } from "../../services/nutrition-lookup";
-import { lookupBarcode } from "../../services/barcode-lookup";
+import {
+  BarcodeUpstreamError,
+  lookupBarcode,
+} from "../../services/barcode-lookup";
 import type { BarcodeLookupResult } from "../../services/barcode-lookup";
 import { register } from "../nutrition";
 import {
@@ -318,6 +321,37 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe("NOT_FOUND");
+    });
+
+    it("returns a retryable 503 (not 404) when the upstream lookup failed (R08)", async () => {
+      vi.mocked(lookupBarcode).mockRejectedValue(new BarcodeUpstreamError());
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/9999999999")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
+    });
+
+    it("POST also returns 503 when the upstream lookup failed (R08)", async () => {
+      vi.mocked(lookupBarcode).mockRejectedValue(new BarcodeUpstreamError());
+
+      const res = await request(app)
+        .post("/api/nutrition/barcode/9999999999")
+        .set("Authorization", "Bearer token")
+        .send({
+          labelNutrition: {
+            calories: 150,
+            totalSugars: 39,
+            totalFat: 0,
+            saturatedFat: null,
+            servingSize: "355 mL",
+          },
+        });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
     });
   });
 
