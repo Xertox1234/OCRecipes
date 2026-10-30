@@ -34,10 +34,13 @@ import {
 } from "@/camera";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { useMarkFeatureUsed } from "@/hooks/useFeatureTip";
 
 const MAX_PHOTOS = 3;
 
 export default function ReceiptCaptureScreen() {
+  // Opening this screen counts as using the feature, so its tips stop.
+  useMarkFeatureUsed("receiptScan");
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();

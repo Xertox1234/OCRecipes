@@ -50,6 +50,8 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { PantryItem } from "@shared/schema";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
+import { FeatureTip } from "@/components/FeatureTip";
+import { useFeatureTip } from "@/hooks/useFeatureTip";
 
 function getExpirationBadge(expiresAt: string | Date | null) {
   if (!expiresAt) return null;
@@ -144,6 +146,11 @@ export default function PantryScreen() {
   const haptics = useHaptics();
   const toast = useToast();
   const { features } = usePremiumContext();
+  // Pro only: free users don't have the Scan Receipt button.
+  const receiptTip = useFeatureTip("pantry-receipt", {
+    feature: "receiptScan",
+    eligible: features.receiptScanner,
+  });
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
   const navigation =
@@ -438,6 +445,13 @@ export default function PantryScreen() {
                 </PressableScale>
               )}
             </View>
+            <FeatureTip
+              text="Add a whole shop from the receipt."
+              visible={receiptTip.visible}
+              onDismiss={receiptTip.dismiss}
+              pointer="up"
+              style={styles.receiptTip}
+            />
             <ThemedText
               style={[styles.itemCountText, { color: theme.textSecondary }]}
             >
@@ -516,6 +530,10 @@ export default function PantryScreen() {
 }
 
 const styles = StyleSheet.create({
+  receiptTip: {
+    alignSelf: "flex-end",
+    marginBottom: Spacing.sm,
+  },
   container: {
     flex: 1,
   },

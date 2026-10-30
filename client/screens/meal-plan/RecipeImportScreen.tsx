@@ -33,12 +33,15 @@ import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator
 import type { RecipeImportScreenNavigationProp } from "@/types/navigation";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 import { urlImportErrorCopy } from "./recipe-import-utils";
+import { useMarkFeatureUsed } from "@/hooks/useFeatureTip";
 
 type ImportState = "idle" | "loading" | "error";
 
 type RecipeImportRouteProp = RouteProp<MealPlanStackParamList, "RecipeImport">;
 
 export default function RecipeImportScreen() {
+  // Opening this screen counts as using the feature, so its tips stop.
+  useMarkFeatureUsed("import");
   const navigation = useNavigation<RecipeImportScreenNavigationProp>();
   const route = useRoute<RecipeImportRouteProp>();
   const headerHeight = useHeaderHeight();

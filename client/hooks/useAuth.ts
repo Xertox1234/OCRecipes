@@ -30,6 +30,7 @@ import {
 } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
+import { clearFeatureTipsState } from "@/lib/feature-tips-storage";
 import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
 import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
@@ -96,6 +97,8 @@ async function clearDurableLocalState(): Promise<boolean> {
     // throws; it serializes against its own startup init and is non-throwing.
     // (Section-expansion state stays — a device-display pref; theme is its own module.)
     if (!(await clearHomeActionsState())) ok = false;
+    // Which teaching tips were seen / features used: same shared-device bleed.
+    if (!(await clearFeatureTipsState())) ok = false;
     // Recent recipe searches: same global, non-namespaced key with the same
     // cross-user bleed risk on a shared device; clear them on every session-ending
     // path. Non-throwing; a failed wipe feeds `ok` so the durable-owner marker is

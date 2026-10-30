@@ -16,6 +16,7 @@
 // native-icon-nulling branch and draw the system back arrow ALONGSIDE the
 // custom close "X".
 import React from "react";
+import { screen } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import PantryScreen from "../PantryScreen";
 
@@ -58,9 +59,32 @@ vi.mock("@/hooks/usePantry", () => ({
   useDeletePantryItem: () => ({ mutate: vi.fn() }),
 }));
 
+// The shared SectionList mock drops ListHeaderComponent, where the Scan
+// Receipt button and its tip live; render it here.
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const SectionList = ({
+    ListHeaderComponent,
+  }: {
+    ListHeaderComponent?: React.ReactNode;
+  }) => React.createElement("div", null, ListHeaderComponent ?? null);
+  // Absent from the shared mock; a bare module mock must name it.
+  const RefreshControl = () => null;
+  return { ...actual, SectionList, RefreshControl };
+});
+
+const plan = vi.hoisted(() => ({ receiptScanner: false }));
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
-    features: { pantryTracking: true, receiptScanner: false },
+    features: { pantryTracking: true, receiptScanner: plan.receiptScanner },
+  }),
+}));
+vi.mock("@/hooks/useFeatureTip", () => ({
+  // Visible exactly when the screen says it is eligible (seen/used rules are
+  // tested in useFeatureTip.test.ts).
+  useFeatureTip: (_id: string, opts: { eligible: boolean }) => ({
+    visible: opts.eligible,
+    dismiss: vi.fn(),
   }),
 }));
 
@@ -142,5 +166,24 @@ describe("PantryScreen -- RootStack modal route (custom close-X headerLeft)", ()
     expect(options.headerBackVisible).toBe(false);
     expect(options.headerLeft).toBeTypeOf("function");
     expect(options.headerLeft!()).toBeNull();
+  });
+});
+
+describe("PantryScreen -- receipt tip", () => {
+  afterEach(() => {
+    plan.receiptScanner = false;
+  });
+
+  it("shows the receipt tip to Pro users", () => {
+    plan.receiptScanner = true;
+    renderOn("Pantry", false);
+    expect(
+      screen.getByText("Add a whole shop from the receipt."),
+    ).toBeDefined();
+  });
+
+  it("does not show the receipt tip to free users", () => {
+    renderOn("Pantry", false);
+    expect(screen.queryByText("Add a whole shop from the receipt.")).toBeNull();
   });
 });

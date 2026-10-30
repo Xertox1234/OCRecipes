@@ -4,6 +4,20 @@ import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { AddItemMenuSheetContent } from "../AddItemMenuSheet";
 
+const plan = vi.hoisted(() => ({ urlImport: false }));
+vi.mock("@/hooks/usePremiumFeatures", () => ({
+  usePremiumFeature: (key: string) =>
+    key === "urlImport" ? plan.urlImport : false,
+}));
+vi.mock("@/hooks/useFeatureTip", () => ({
+  // Visible exactly when the screen says it is eligible (seen/used rules are
+  // tested in useFeatureTip.test.ts).
+  useFeatureTip: (_id: string, opts: { eligible: boolean }) => ({
+    visible: opts.eligible,
+    dismiss: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
     impact: vi.fn(),
@@ -91,5 +105,32 @@ describe("AddItemMenuSheet", () => {
     expect(
       screen.getByText("Add to Breakfast").closest('[aria-modal="true"]'),
     ).not.toBeNull();
+  });
+});
+
+describe("AddItemMenuSheet — import tip", () => {
+  const props = {
+    mealType: "breakfast" as const,
+    onChooseRecipe: vi.fn(),
+    onSimpleEntry: vi.fn(),
+    onImportRecipe: vi.fn(),
+  };
+  afterEach(() => {
+    plan.urlImport = false;
+  });
+
+  it("shows the import tip to Pro users", () => {
+    plan.urlImport = true;
+    renderComponent(<AddItemMenuSheetContent {...props} />);
+    expect(
+      screen.getByText("Paste a link or snap a cookbook page."),
+    ).toBeDefined();
+  });
+
+  it("does not show the import tip to free users", () => {
+    renderComponent(<AddItemMenuSheetContent {...props} />);
+    expect(
+      screen.queryByText("Paste a link or snap a cookbook page."),
+    ).toBeNull();
   });
 });

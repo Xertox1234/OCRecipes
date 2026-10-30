@@ -9,6 +9,8 @@ import { useTheme } from "@/hooks/useTheme";
 import { PressableScale } from "@/components/PressableScale";
 import { ThemedText } from "@/components/ThemedText";
 import { toSecondPerson } from "./notebook-text-utils";
+import { withFeatureChip } from "./coach-feature-chip";
+import { hasUsedFeature } from "@/lib/feature-tips-storage";
 import type { CoachContextData } from "@/hooks/useCoachContext";
 
 interface Props {
@@ -34,7 +36,15 @@ const CoachDashboard = React.memo(function CoachDashboard({
     opacity: expandedHeight.value,
   }));
 
-  const { todayIntake, notebook, dueCommitments, suggestions, goals } = context;
+  const {
+    todayIntake,
+    notebook,
+    dueCommitments,
+    suggestions: serverSuggestions,
+    goals,
+  } = context;
+  // Plus one chip for a feature they haven't used yet (import, receipt scan).
+  const suggestions = withFeatureChip(serverSuggestions, hasUsedFeature);
 
   // Memoize notebook insight filter/slice to avoid recomputation on parent re-renders
   const topInsights = useMemo(

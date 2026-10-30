@@ -44,6 +44,8 @@ import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
+import { FeatureTip } from "@/components/FeatureTip";
+import { useFeatureTip } from "@/hooks/useFeatureTip";
 import { runAfterTransition } from "@/lib/run-after-transition";
 import {
   AbsoluteFill,
@@ -111,6 +113,11 @@ export default function QuickLogScreen() {
       AccessibilityInfo.announceForAccessibility("Food items logged");
       setShowCheckmark(true);
     },
+  });
+  // Once they start typing a food, point at the camera: "Snap it instead."
+  const cameraTip = useFeatureTip("quicklog-camera", {
+    feature: "scan",
+    eligible: session.inputText.trim().length > 0,
   });
 
   React.useEffect(() => {
@@ -236,6 +243,13 @@ export default function QuickLogScreen() {
               />
             </FocusField>
           </View>
+          <FeatureTip
+            text="Snap it instead."
+            visible={cameraTip.visible}
+            onDismiss={cameraTip.dismiss}
+            pointer="down"
+            pointerAlign="start"
+          />
           <View style={styles.actionRow}>
             <Pressable
               onPress={handleCameraPress}
