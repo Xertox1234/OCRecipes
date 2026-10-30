@@ -91,9 +91,18 @@ async function attemptDrain(item: QueuedMutation): Promise<DrainOutcome> {
       return "pending";
     }
 
-    const init: RequestInit = {};
+    // X-Queued-At: when the user actually made this write. The server stamps
+    // a replayed food log with it (bounded) instead of the replay time, so a
+    // meal logged offline at 11:50pm and synced next morning stays on the day
+    // it was eaten (R28). Harmless to endpoints that don't read it.
+    const init: RequestInit = {
+      headers: { "X-Queued-At": new Date(current.savedAt).toISOString() },
+    };
     if (current.method === "POST") {
-      init.headers = { "X-Idempotency-Key": current.id };
+      init.headers = {
+        ...(init.headers as Record<string, string>),
+        "X-Idempotency-Key": current.id,
+      };
     }
 
     try {

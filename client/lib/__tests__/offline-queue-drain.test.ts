@@ -332,6 +332,37 @@ describe("offline-queue-drain", () => {
     expect(dequeue).not.toHaveBeenCalled();
   });
 
+  it("sends the enqueue time as X-Queued-At so a late replay keeps the log's day (R28)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { drainQueue } = await importDrain();
+
+    const savedAt = Date.UTC(2026, 9, 29, 23, 50);
+    vi.setSystemTime(savedAt + 9 * 60 * 60 * 1000); // replayed next morning
+    vi.mocked(loadQueue).mockReturnValue([
+      {
+        id: "late",
+        endpoint: "/api/scanned-items",
+        method: "POST",
+        body: {},
+        attempts: 0,
+        savedAt,
+      },
+    ]);
+    vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+    vi.mocked(apiRequest).mockResolvedValue(new Response());
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    await drainQueue();
+
+    const initArg = vi.mocked(apiRequest).mock.calls[0][3];
+    expect((initArg?.headers as Record<string, string>)["X-Queued-At"]).toBe(
+      "2026-10-29T23:50:00.000Z",
+    );
+  });
+
   it("increments attempts BEFORE making the apiRequest call", async () => {
     const { loadQueue, incrementAttempts, dequeue } = await import(
       "@/lib/offline-queue"

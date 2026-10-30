@@ -797,6 +797,53 @@ describe("Nutrition Routes", () => {
       );
     });
 
+    describe("X-Queued-At (R28: an offline-queued log keeps its time)", () => {
+      const NOW = new Date("2026-10-30T09:00:00.000Z");
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(NOW);
+        vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+          mockScannedItem,
+        );
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      const post = (queuedAt?: string) => {
+        const req = request(app)
+          .post("/api/scanned-items")
+          .set("Authorization", "Bearer token");
+        if (queuedAt !== undefined) req.set("X-Queued-At", queuedAt);
+        return req.send({ productName: "Late Snack", calories: 200 });
+      };
+
+      it("stamps the log with a recent queued-at time (replayed the next morning)", async () => {
+        const res = await post("2026-10-29T23:50:00.000Z");
+        expect(res.status).toBe(201);
+        expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+          expect.objectContaining({ productName: "Late Snack" }),
+          { occurredAt: new Date("2026-10-29T23:50:00.000Z") },
+        );
+      });
+
+      it.each([
+        ["in the future", "2026-10-30T10:00:00.000Z"],
+        ["older than the replay window", "2026-10-27T09:00:00.000Z"],
+        ["not a date", "yesterday-ish"],
+        ["absent", undefined],
+      ])(
+        "ignores a queued-at %s and stamps server time",
+        async (_label, queuedAt) => {
+          const res = await post(queuedAt);
+          expect(res.status).toBe(201);
+          expect(
+            vi.mocked(storage.createScannedItemWithLog).mock.calls[0],
+          ).toHaveLength(1);
+        },
+      );
+    });
+
     it("returns 400 when Zod validation fails", async () => {
       const res = await request(app)
         .post("/api/scanned-items")

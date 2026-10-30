@@ -391,12 +391,20 @@ export async function createScannedItemWithLog(
   item: InsertScannedItem,
   logOverrides?: Partial<
     Pick<InsertDailyLog, "mealType" | "source" | "servings">
-  >,
+  > & {
+    /**
+     * When the food was actually logged, if not "now" — an offline-queued log
+     * replayed later (R28). Stamps both scannedAt and loggedAt so the entry
+     * lands on the day it was eaten. Callers must bound it (see the route).
+     */
+    occurredAt?: Date;
+  },
 ): Promise<ScannedItem> {
+  const occurredAt = logOverrides?.occurredAt;
   return db.transaction(async (tx) => {
     const [scannedItem] = await tx
       .insert(scannedItems)
-      .values(item)
+      .values(occurredAt ? { ...item, scannedAt: occurredAt } : item)
       .returning();
 
     await tx.insert(dailyLogs).values({
@@ -405,6 +413,7 @@ export async function createScannedItemWithLog(
       servings: logOverrides?.servings ?? "1",
       mealType: logOverrides?.mealType ?? null,
       source: logOverrides?.source ?? "scan",
+      ...(occurredAt && { loggedAt: occurredAt }),
     });
 
     return scannedItem;
