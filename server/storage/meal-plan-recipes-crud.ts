@@ -12,7 +12,7 @@ import {
   savedItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, isNull } from "drizzle-orm";
 import {
   addToIndex,
   removeFromIndex,
@@ -38,7 +38,13 @@ export async function getMealPlanRecipe(
   const [recipe] = await db
     .select()
     .from(mealPlanRecipes)
-    .where(and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)));
+    .where(
+      and(
+        eq(mealPlanRecipes.id, id),
+        eq(mealPlanRecipes.userId, userId),
+        isNull(mealPlanRecipes.deletedAt),
+      ),
+    );
   return recipe || undefined;
 }
 
@@ -65,18 +71,22 @@ export async function getUserMealPlanRecipes(
   limit = 50,
   offset = 0,
 ): Promise<{ items: MealPlanRecipe[]; total: number }> {
+  const live = and(
+    eq(mealPlanRecipes.userId, userId),
+    isNull(mealPlanRecipes.deletedAt),
+  );
   const [items, countResult] = await Promise.all([
     db
       .select()
       .from(mealPlanRecipes)
-      .where(eq(mealPlanRecipes.userId, userId))
+      .where(live)
       .orderBy(desc(mealPlanRecipes.createdAt))
       .limit(limit)
       .offset(offset),
     db
       .select({ count: sql<number>`count(*)` })
       .from(mealPlanRecipes)
-      .where(eq(mealPlanRecipes.userId, userId)),
+      .where(live),
   ]);
   return { items, total: Number(countResult[0]?.count ?? 0) };
 }
@@ -319,14 +329,19 @@ export async function updateMealPlanRecipe(
 
   // Capture the current imageUrl when it's being replaced so the old stored
   // object can be cleaned up — post-R2 these are durable, billed objects.
+  // A deleted recipe is not editable — and the UPDATE must not match it, or
+  // the addToIndex below would put it back into search.
+  const liveOwned = and(
+    eq(mealPlanRecipes.id, id),
+    eq(mealPlanRecipes.userId, userId),
+    isNull(mealPlanRecipes.deletedAt),
+  );
   let previousImageUrl: string | null = null;
   if (normalizedUpdates.imageUrl !== undefined) {
     const [existing] = await db
       .select({ imageUrl: mealPlanRecipes.imageUrl })
       .from(mealPlanRecipes)
-      .where(
-        and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)),
-      );
+      .where(liveOwned);
     previousImageUrl = existing?.imageUrl ?? null;
   }
 
@@ -338,7 +353,7 @@ export async function updateMealPlanRecipe(
       dietConflicts,
       updatedAt: new Date(),
     })
-    .where(and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)))
+    .where(liveOwned)
     .returning();
   if (recipe) {
     addToIndex(mealPlanToSearchable(recipe, ingredientNames));
@@ -356,25 +371,41 @@ export async function updateMealPlanRecipe(
   return recipe || undefined;
 }
 
+/**
+ * Soft-deletes a personal recipe: stamps `deleted_at` instead of removing the
+ * row. `daily_logs.recipe_id` references this table ON DELETE CASCADE and
+ * `getDailySummary` joins the recipe's per-serving values, so a hard delete
+ * erased the calories of every day the user logged it. The row stays for that
+ * history; every user-facing read filters `deleted_at IS NULL`.
+ *
+ * Returns false when no live recipe with this id belongs to `userId` (missing,
+ * another user's, or already deleted).
+ */
 export async function deleteMealPlanRecipe(
   id: number,
   userId: string,
 ): Promise<boolean> {
   const deletedRow = await db.transaction(async (tx) => {
     const result = await tx
-      .delete(mealPlanRecipes)
+      .update(mealPlanRecipes)
+      .set({ deletedAt: new Date() })
       .where(
-        and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)),
+        and(
+          eq(mealPlanRecipes.id, id),
+          eq(mealPlanRecipes.userId, userId),
+          isNull(mealPlanRecipes.deletedAt),
+        ),
       )
-      .returning({
-        id: mealPlanRecipes.id,
-        imageUrl: mealPlanRecipes.imageUrl,
-      });
+      .returning({ id: mealPlanRecipes.id });
     if (result.length === 0) return null;
 
-    // Clean up junction rows that referenced this recipe — one query at a
-    // time: a transaction has one connection, and pg@9 removes the queue
-    // that today lets Promise.all'd queries share it.
+    // Clear what used to go with the row: the hard delete cascaded the
+    // recipe's meal-plan items, and removed its junction rows below. A
+    // daily log confirmed from one of those items keeps its recipe_id
+    // (meal_plan_item_id is ON DELETE SET NULL), so the history survives.
+    // One query at a time: a transaction has one connection, and pg@9
+    // removes the queue that today lets Promise.all'd queries share it.
+    await tx.delete(mealPlanItems).where(eq(mealPlanItems.recipeId, id));
     await tx
       .delete(cookbookRecipes)
       .where(
@@ -401,21 +432,10 @@ export async function deleteMealPlanRecipe(
 
   // Update search index AFTER transaction commits — if the tx rolls back,
   // we don't want the index to forget a recipe that still exists in the DB.
-  if (deletedRow) {
-    removeFromIndex(`personal:${id}`);
-    // Delete the stored image object AFTER the tx commits (rollback safety)
-    // and fire-and-forget — an object-store failure must not break the
-    // deletion. imageUrl is client-suppliable, so it may be another user's
-    // image: delete it only if no row references it any more. The "recipe"
-    // kind keeps the delete inside recipe-images/.
-    if (deletedRow.imageUrl) {
-      fireAndForget(
-        "meal-plan-recipe-image-cleanup",
-        deleteImagesIfUnreferenced([
-          { url: deletedRow.imageUrl, kind: "recipe" },
-        ]),
-      );
-    }
-  }
+  // The stored image is deliberately kept: the soft-deleted row still
+  // references it (so deleteImagesIfUnreferenced would find it referenced
+  // anyway), and it goes when the row is finally purged — by account
+  // deletion today.
+  if (deletedRow) removeFromIndex(`personal:${id}`);
   return deletedRow !== null;
 }

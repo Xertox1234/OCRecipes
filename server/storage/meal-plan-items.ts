@@ -60,6 +60,7 @@ export async function getMealPlanItems(
             and(
               inArray(mealPlanRecipes.id, recipeIds),
               eq(mealPlanRecipes.userId, userId),
+              isNull(mealPlanRecipes.deletedAt),
             ),
           )
       : Promise.resolve([]),
@@ -110,7 +111,12 @@ export async function getMealPlanItemById(
       ? db
           .select()
           .from(mealPlanRecipes)
-          .where(eq(mealPlanRecipes.id, item.recipeId))
+          .where(
+            and(
+              eq(mealPlanRecipes.id, item.recipeId),
+              isNull(mealPlanRecipes.deletedAt),
+            ),
+          )
           .then(([r]) => r || null)
       : Promise.resolve(null),
     item.scannedItemId
