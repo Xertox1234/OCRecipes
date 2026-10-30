@@ -5,9 +5,10 @@ category: logic-errors
 module: server
 severity: high
 tags: [architecture, expo-push, notifications, indexing, filter, chunking]
-symptoms: [Wrong token deleted when push delivery returns an error ticket, Push ticket array indices don't align with raw token array indices, Stale push tokens accumulate because deletion targets the wrong record]
+symptoms: [Wrong token deleted when push delivery returns an error ticket, Push ticket array indices don't align with raw token array indices, Stale push tokens accumulate because deletion targets the wrong record, A failed push chunk makes every later ticket prune the wrong token, DeviceNotRegistered tokens never pruned because push receipts are never fetched]
 applies_to: [server/services/push-notifications.ts]
 created: '2026-04-29'
+last_updated: '2026-10-30'
 ---
 
 # Expo push ticket-to-token index misalignment
@@ -63,6 +64,23 @@ for (let i = 0; i < tickets.length; i++) {
 ## Prevention
 
 When using Expo push chunking, maintain a `validTokens` array parallel to `messages`. Never use the original unfiltered token array to map back from ticket indices. The same rule applies to any pipeline that filters before sending: keep a single array that drives both submission and post-processing.
+
+## Recurrence (2026-10-30): a chunk that throws shifts every later index
+
+Reliability audit R12. The `validTokens` fix still paired tickets by a **global** index. `sendPushNotificationsAsync` runs once per chunk, inside a try/catch with a timeout. When one chunk threw, its tickets were missing from the flat `tickets` array, so every later ticket mapped to a token from the failed chunk. The fix is to pair each ticket with `chunk[j].to`, the message it answers, at the point the chunk returns. Then no index crosses a chunk boundary:
+
+```typescript
+chunkTickets.forEach((ticket, j) => {
+  const to = chunk[j]?.to;
+  if (typeof to === "string") results.push({ ticket, token: to });
+});
+```
+
+General rule: pair a response with its request inside the unit that can fail independently (the chunk), never by position across units.
+
+## An "ok" ticket is not a delivery
+
+A ticket only says Expo accepted the message. Most `DeviceNotRegistered` errors come from APNs/FCM in the **receipt**, which Expo produces later (check after about 15 minutes; kept for 24h). If receipts are never fetched, stale tokens never get pruned. `push-notifications.ts` now queues each `ok` ticket id → `{ userId, token, sentAt }` in an in-memory `Map` capped at 10k. `checkPushReceipts()` runs every 15 min via `startPushReceiptJob()`, started and cleared in `server/index.ts`. It fetches receipts for tickets at least 15 min old, deletes `DeviceNotRegistered` tokens, logs other receipt errors, keeps a ticket if its receipt fetch failed or the receipt is not ready yet, and drops tickets older than 24h. Pending tickets are lost on restart. That is deliberate: pruning is best-effort, and it avoids a schema change.
 
 ## Related Files
 
