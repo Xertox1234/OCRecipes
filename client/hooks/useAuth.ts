@@ -210,15 +210,20 @@ export function useAuth() {
             isLoading: false,
             isAuthenticated: true,
           });
+        } else if (response.status !== 401) {
+          // Only a 401 means the token is dead. A 429 or a 5xx (a deploy, a
+          // rate limiter, a proxy hiccup) is a transient failure: tearing the
+          // session down here signed the user out and wiped their offline
+          // queue. Treat it like a network error — the catch below keeps the
+          // token and restores the cached profile.
+          throw new Error(`/api/auth/me failed with ${response.status}`);
         } else {
-          // Token invalid/expired (e.g. detected on foreground resume). Route a
-          // 401 through the shared session-expiry signal so the
+          // Token invalid/expired (e.g. detected on foreground resume). Route
+          // the 401 through the shared session-expiry signal so the
           // SessionExpiryBridge shows the "session expired" toast instead of a
           // silent drop. The bridge's isAuthenticated gate keeps a cold-launch
-          // expired token silent. Non-401 failures are not session death.
-          if (response.status === 401) {
-            notifySessionExpired();
-          }
+          // expired token silent.
+          notifySessionExpired();
           await tokenStorage.clear();
           await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
           // Dead-token detection is a session teardown (an expired/revoked token
