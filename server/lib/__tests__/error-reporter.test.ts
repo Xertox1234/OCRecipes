@@ -31,6 +31,7 @@ const sentryMocks = vi.hoisted(() => ({
   onUncaughtExceptionIntegration: vi.fn(() => ({
     name: "OnUncaughtException",
   })),
+  pinoIntegration: vi.fn(() => ({ name: "Pino" })),
 }));
 
 vi.mock("@sentry/node", () => sentryMocks);
@@ -123,9 +124,53 @@ describe("error-reporter", () => {
         name: "OnUncaughtException",
       });
     });
+
+    it("turns logger.error into Sentry events via pinoIntegration (handled background/cron/stream failures)", async () => {
+      // fireAndForget, cron catches, and the SSE stream catch all log with
+      // logger.error and never throw — without this integration none of them
+      // reach Sentry (onUnhandledRejection only sees UNhandled rejections).
+      await importActiveReporter();
+      expect(sentryMocks.pinoIntegration).toHaveBeenCalledWith({
+        error: { levels: ["error"] },
+      });
+      const options = sentryMocks.init.mock.calls[0][0];
+      expect(options.integrations).toContainEqual({ name: "Pino" });
+      // Error tracking only — never ship the log stream to Sentry Logs.
+      expect(options.enableLogs).toBeUndefined();
+    });
   });
 
   describe("scrubEvent", () => {
+    it("reduces the pino log context to an allowlist (arbitrary log fields may carry PII)", async () => {
+      const { scrubEvent } = await importReporter();
+      const event = {
+        type: undefined,
+        contexts: {
+          pino: {
+            msg: "background operation failed",
+            operation: "recipe-image",
+            requestId: "req-1",
+            service: "ai-client",
+            kind: "enabled",
+            userId: "user-42",
+            to: "victim@example.com",
+            resendError: { message: "x", name: "y", statusCode: 422 },
+            barcode: "0123",
+          },
+          os: { name: "linux" },
+        },
+      };
+      const scrubbed = scrubEvent(event as unknown as ErrorEvent);
+      expect(scrubbed.contexts?.pino).toEqual({
+        msg: "background operation failed",
+        operation: "recipe-image",
+        requestId: "req-1",
+        service: "ai-client",
+        kind: "enabled",
+      });
+      expect(scrubbed.contexts?.os).toEqual({ name: "linux" });
+    });
+
     it("removes credential-bearing headers by snippet match, keeps benign headers", async () => {
       const { scrubEvent } = await importReporter();
       const event = {
