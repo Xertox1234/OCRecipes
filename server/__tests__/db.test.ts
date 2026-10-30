@@ -47,6 +47,14 @@ describe("database pool", () => {
     expect(config.options).toBe("-c timezone=UTC");
   });
 
+  // A client leaked mid-transaction would otherwise hold its row/advisory
+  // locks forever; the server ends a session left idle in a transaction.
+  it("ends a session left idle inside a transaction", async () => {
+    const config = await loadDb();
+
+    expect(config.idle_in_transaction_session_timeout).toBe(60_000);
+  });
+
   it("lets a one-off script raise or disable the statement cap", async () => {
     process.env.DB_STATEMENT_TIMEOUT_MS = "0";
     expect((await loadDb()).statement_timeout).toBe(0);

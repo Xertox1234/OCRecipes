@@ -24,6 +24,23 @@ const log = createServiceLogger("barcode-lookup");
 // Timeout for outbound API requests (10 seconds)
 const FETCH_TIMEOUT_MS = 10_000;
 
+// OFF asks every API client to identify itself ("AppName/Version
+// (ContactEmail or URL)"); anonymous clients are rate-limited/blocked first.
+const OFF_USER_AGENT = "OCRecipes/1.0 (https://ocrecipes.com)";
+
+/**
+ * Open Food Facts could not be asked (429, 5xx, network/timeout, non-JSON
+ * body) AND no other source identified the barcode. Distinct from `null`
+ * ("no source has this barcode") so the route answers a retryable 503
+ * instead of a definitive 404 "Product not found" during an OFF outage.
+ */
+export class BarcodeUpstreamError extends Error {
+  constructor(message = "Barcode lookup upstream unavailable") {
+    super(message);
+    this.name = "BarcodeUpstreamError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Barcode lookup with cross-validation
 // ---------------------------------------------------------------------------
@@ -419,14 +436,32 @@ export async function lookupBarcode(
   // Open Food Facts returns deeply nested, loosely-typed product objects.
   // Using `any` here is pragmatic — a full interface would be brittle and unmaintainable.
   let offProduct: Record<string, any> | null = null;
+  // True when at least one OFF request failed (vs. answered "no product") —
+  // the barcode may live under the variant we could not ask about.
+  let offErrored = false;
   const codesToTry = barcodeVariants(code);
 
   for (const variant of codesToTry) {
     try {
       const res = await fetch(
         `https://world.openfoodfacts.org/api/v0/product/${variant}.json`,
-        { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+        {
+          headers: { "User-Agent": OFF_USER_AGENT },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
       );
+      // 404 is OFF's genuine "unknown product"; anything else non-OK (429
+      // rate limit, 5xx) means OFF could not answer, not that it said no.
+      if (!res.ok) {
+        if (res.status !== 404) {
+          offErrored = true;
+          log.warn(
+            { variant, status: res.status },
+            "Open Food Facts non-OK response",
+          );
+        }
+        continue;
+      }
       const json = await res.json();
       if (json.status === 1 && json.product) {
         offProduct = json.product;
@@ -437,9 +472,13 @@ export async function lookupBarcode(
         break;
       }
     } catch (err) {
+      offErrored = true;
       log.warn({ err: toError(err), variant }, "Open Food Facts fetch error");
     }
   }
+  // OFF is the primary source (allergens, NOVA, serving data). When it could
+  // not be asked, any result below comes from weaker sources only.
+  const offDegraded = offErrored && !offProduct;
 
   const productName: string = offProduct?.product_name || "";
   const brandName: string | undefined = offProduct?.brands || undefined;
@@ -836,8 +875,10 @@ export async function lookupBarcode(
     ));
   }
 
-  // If no data from any source, give up
+  // If no data from any source, give up — but an OFF outage is not a
+  // "not found": signal it so the caller can answer a retryable error.
   if (per100g.calories === undefined && !resolvedProductName) {
+    if (offDegraded) throw new BarcodeUpstreamError();
     return null;
   }
 
@@ -890,9 +931,10 @@ export async function lookupBarcode(
   // understates calories by ~15x relative to what its own label claims. No
   // "~"/"(estimated)" cosmetic wrapper here (unlike `servingInfo.displayLabel`
   // below) — this value may be parsed as a number by other consumers.
-  // Skipped when OFF carried implausible values: the row is first-write-wins,
-  // so persisting it would freeze a known-bad entry past any later OFF fix.
-  if (offDroppedFields.length === 0) {
+  // Skipped when OFF carried implausible values or OFF was degraded: the row is
+  // first-write-wins, so persisting it would freeze a known-bad or fallback-only
+  // entry past any later OFF fix.
+  if (offDroppedFields.length === 0 && !offDegraded) {
     storage
       .insertBarcodeNutritionIfAbsent({
         barcode: code,

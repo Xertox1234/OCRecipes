@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { storage } from "../../storage";
 
-import { sendPushToUser } from "../push-notifications";
+import {
+  sendPushToUser,
+  checkPushReceipts,
+  _resetPushReceiptsForTesting,
+  PUSH_RECEIPT_DELAY_MS,
+} from "../push-notifications";
 
 // vi.mock is hoisted above const declarations. Use vi.hoisted() so these
 // mock functions are defined before the mock factories execute.
@@ -9,12 +14,16 @@ const expoMock = vi.hoisted(() => ({
   send: vi.fn(),
   chunk: vi.fn((msgs: unknown[]) => [msgs]),
   isToken: vi.fn().mockReturnValue(true),
+  getReceipts: vi.fn(),
+  chunkReceiptIds: vi.fn((ids: string[]) => [ids]),
 }));
 
 vi.mock("expo-server-sdk", () => ({
   default: class MockExpo {
     sendPushNotificationsAsync = expoMock.send;
     chunkPushNotifications = expoMock.chunk;
+    getPushNotificationReceiptsAsync = expoMock.getReceipts;
+    chunkPushNotificationReceiptIds = expoMock.chunkReceiptIds;
     static isExpoPushToken = expoMock.isToken;
   },
 }));
@@ -46,6 +55,99 @@ beforeEach(() => {
   vi.clearAllMocks();
   expoMock.isToken.mockReturnValue(true);
   expoMock.chunk.mockImplementation((msgs: unknown[]) => [msgs]);
+  expoMock.chunkReceiptIds.mockImplementation((ids: string[]) => [ids]);
+  vi.mocked(storage.deletePushToken).mockResolvedValue(undefined);
+  _resetPushReceiptsForTesting();
+});
+
+describe("sendPushToUser — ticket/token alignment (R12)", () => {
+  it("prunes the token the error ticket belongs to when an earlier chunk threw", async () => {
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(VALID_TOKEN),
+      mockToken(VALID_TOKEN_2),
+    ]);
+    // One message per chunk; the first chunk's send fails outright.
+    expoMock.chunk.mockImplementation((msgs: unknown[]) =>
+      msgs.map((m) => [m]),
+    );
+    expoMock.send
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce([
+        { status: "error", details: { error: "DeviceNotRegistered" } },
+      ]);
+
+    await sendPushToUser("1", "t", "b");
+
+    expect(storage.deletePushToken).toHaveBeenCalledTimes(1);
+    expect(storage.deletePushToken).toHaveBeenCalledWith("1", VALID_TOKEN_2);
+  });
+});
+
+describe("checkPushReceipts (R12)", () => {
+  async function sendOk(ticketId: string, token = VALID_TOKEN) {
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(token),
+    ]);
+    expoMock.send.mockResolvedValueOnce([{ status: "ok", id: ticketId }]);
+    await sendPushToUser("1", "t", "b");
+  }
+
+  it("does not ask for receipts before Expo has produced them", async () => {
+    const t0 = Date.now();
+    await sendOk("ticket-1");
+
+    await checkPushReceipts(t0 + 1_000);
+    expect(expoMock.getReceipts).not.toHaveBeenCalled();
+  });
+
+  it("prunes a token whose receipt reports DeviceNotRegistered", async () => {
+    const t0 = Date.now();
+    await sendOk("ticket-1");
+    expoMock.getReceipts.mockResolvedValue({
+      "ticket-1": {
+        status: "error",
+        message: "not registered",
+        details: { error: "DeviceNotRegistered" },
+      },
+    });
+
+    await checkPushReceipts(t0 + PUSH_RECEIPT_DELAY_MS + 1_000);
+
+    expect(expoMock.getReceipts).toHaveBeenCalledWith(["ticket-1"]);
+    expect(storage.deletePushToken).toHaveBeenCalledWith("1", VALID_TOKEN);
+  });
+
+  it("forgets a ticket once its receipt is read (ok receipts are not re-fetched)", async () => {
+    const t0 = Date.now();
+    await sendOk("ticket-1");
+    expoMock.getReceipts.mockResolvedValue({ "ticket-1": { status: "ok" } });
+
+    await checkPushReceipts(t0 + PUSH_RECEIPT_DELAY_MS + 1_000);
+    await checkPushReceipts(t0 + PUSH_RECEIPT_DELAY_MS + 2_000);
+
+    expect(expoMock.getReceipts).toHaveBeenCalledTimes(1);
+    expect(storage.deletePushToken).not.toHaveBeenCalled();
+  });
+
+  it("keeps tickets for the next run when the receipt request fails", async () => {
+    const t0 = Date.now();
+    await sendOk("ticket-1");
+    expoMock.getReceipts
+      .mockRejectedValueOnce(new Error("expo down"))
+      .mockResolvedValueOnce({
+        "ticket-1": {
+          status: "error",
+          message: "not registered",
+          details: { error: "DeviceNotRegistered" },
+        },
+      });
+
+    await checkPushReceipts(t0 + PUSH_RECEIPT_DELAY_MS + 1_000);
+    await checkPushReceipts(t0 + PUSH_RECEIPT_DELAY_MS + 2_000);
+
+    expect(expoMock.getReceipts).toHaveBeenCalledTimes(2);
+    expect(storage.deletePushToken).toHaveBeenCalledWith("1", VALID_TOKEN);
+  });
 });
 
 describe("sendPushToUser", () => {

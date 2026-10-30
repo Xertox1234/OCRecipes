@@ -8,7 +8,11 @@
 import OpenAI from "openai";
 import { GoogleAuth } from "google-auth-library";
 import type { AiChatClient } from "./ai-client";
-import { VertexAuthError } from "./ai-failure";
+import {
+  AI_ROUTE_MAX_RETRIES,
+  AI_ROUTE_TIMEOUT_MS,
+  VertexAuthError,
+} from "./ai-failure";
 
 export const VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 
@@ -41,6 +45,8 @@ export function createVertexClient(
   // AiChatClient takes the adapted Record body — same cast as ai-client.ts.
   return new OpenAI({
     baseURL: vertexBaseUrl(project),
+    timeout: AI_ROUTE_TIMEOUT_MS,
+    maxRetries: AI_ROUTE_MAX_RETRIES,
     apiKey: async () => {
       let token: string | null | undefined;
       try {

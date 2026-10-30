@@ -5,7 +5,10 @@ import { getStandardizedFoodName } from "./cultural-food-map";
 import { createServiceLogger, toError } from "../lib/logger";
 import { lookupCNF } from "./cnf-lookup";
 import { lookupUSDA } from "./usda-lookup";
-import type { NutritionData } from "./nutrition-source-utils";
+import type {
+  NutritionData,
+  NutritionLookupOutcome,
+} from "./nutrition-source-utils";
 import { FETCH_TIMEOUT_MS } from "./nutrition-source-utils";
 import { cachedFetch } from "./dev-api-cache";
 
@@ -13,7 +16,10 @@ const log = createServiceLogger("nutrition-lookup");
 
 // The source adapters live in their own modules; re-exported here so every
 // consumer (and every vi.mock of this module) keeps one import path.
-export type { NutritionData } from "./nutrition-source-utils";
+export type {
+  NutritionData,
+  NutritionLookupOutcome,
+} from "./nutrition-source-utils";
 export {
   fuzzyMatchCNF,
   lookupCNF,
@@ -200,11 +206,12 @@ async function writeNutritionCache(
  * 0 g-protein match; the caller treats it the same as "not found" (todo
  * P2-2026-09-27).
  */
-async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
+async function lookupAPINinjas(query: string): Promise<NutritionLookupOutcome> {
   const apiKey = process.env.API_NINJAS_KEY;
   if (!apiKey) {
+    // Optional source, deliberately not configured — a miss, not an outage.
     log.warn("API_NINJAS_KEY not configured — skipping API Ninjas lookup");
-    return null;
+    return { status: "not-found" };
   }
 
   try {
@@ -219,15 +226,20 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
 
     if (!response.ok) {
       log.error({ status: response.status }, "API Ninjas error");
-      return null;
+      return { status: "unavailable" };
     }
 
     const json = await response.json();
     const parsed = apiNinjasResponseSchema.safeParse(json);
 
-    if (!parsed.success || parsed.data.length === 0) {
-      return null;
+    if (!parsed.success) {
+      log.warn(
+        { issues: parsed.error.issues.slice(0, 3) },
+        "API Ninjas response failed schema validation",
+      );
+      return { status: "unavailable" };
     }
+    if (parsed.data.length === 0) return { status: "not-found" };
 
     const item = parsed.data[0];
     if (item.calories === null || item.protein_g === null) {
@@ -235,10 +247,10 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
         { query },
         "API Ninjas: calories or protein premium-gated — refusing result",
       );
-      return null;
+      return { status: "not-found" };
     }
 
-    return {
+    const data: NutritionData = {
       name: item.name,
       calories: item.calories,
       protein: item.protein_g,
@@ -250,9 +262,10 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
       servingSize: `${item.serving_size_g}g`,
       source: "api-ninjas" as const,
     };
+    return { status: "found", data };
   } catch (error) {
     log.error({ err: toError(error) }, "API Ninjas lookup error");
-    return null;
+    return { status: "unavailable" };
   }
 }
 
@@ -276,24 +289,36 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
  */
 async function fetchNutritionFromSources(
   query: string,
-): Promise<NutritionData | null> {
+): Promise<NutritionLookupOutcome> {
   const standardizedQuery = getStandardizedFoodName(query);
   const queries =
     standardizedQuery !== query ? [query, standardizedQuery] : [query];
+  // Any source that could not answer makes an overall miss untrustworthy:
+  // the food may well exist in the source we failed to ask.
+  let anyUnavailable = false;
 
   for (const q of queries) {
     // Primary: Canadian Nutrient File (bilingual, supports French product names)
     const cnfResult = await lookupCNF(q);
-    if (cnfResult && cnfResult.calories > 0) return cnfResult;
+    if (cnfResult && cnfResult.calories > 0) {
+      return { status: "found", data: cnfResult };
+    }
 
     // Secondary: USDA FoodData Central (reliable government data)
-    const usdaResult = await lookupUSDA(q);
-    if (usdaResult) return usdaResult;
+    const usda = await lookupUSDA(q);
+    if (usda.status === "found") return usda;
+    if (usda.status === "unavailable") anyUnavailable = true;
   }
 
   // Last-resort fallback: API Ninjas, with the query as typed — it parses
   // natural language, and the standardized names are vaguer search terms.
-  return lookupAPINinjas(query);
+  const ninjas = await lookupAPINinjas(query);
+  if (ninjas.status === "found") return ninjas;
+  if (ninjas.status === "unavailable" || anyUnavailable) {
+    log.warn({ query }, "nutrition lookup degraded — a source was unavailable");
+    return { status: "unavailable" };
+  }
+  return { status: "not-found" };
 }
 
 /**
@@ -305,16 +330,29 @@ async function fetchNutritionFromSources(
 export async function lookupNutrition(
   query: string,
 ): Promise<NutritionData | null> {
+  const outcome = await lookupNutritionOutcome(query);
+  return outcome.status === "found" ? outcome.data : null;
+}
+
+/**
+ * `lookupNutrition` with the miss/outage distinction kept: `unavailable`
+ * when no source matched AND at least one source could not be asked, so a
+ * user-facing caller can answer a retryable error instead of "not found".
+ * Only `found` results are ever cached.
+ */
+export async function lookupNutritionOutcome(
+  query: string,
+): Promise<NutritionLookupOutcome> {
   // Check cache first (using original query for cache hits on cultural names)
   const cached = await getCachedNutrition([query]);
   const cachedResult = cached.get(query);
-  if (cachedResult) return cachedResult;
+  if (cachedResult) return { status: "found", data: cachedResult };
 
-  const result = await fetchNutritionFromSources(query);
-  if (result && result.calories > 0) {
-    await writeNutritionCache(query, result, { allowOverwrite: true });
+  const outcome = await fetchNutritionFromSources(query);
+  if (outcome.status === "found" && outcome.data.calories > 0) {
+    await writeNutritionCache(query, outcome.data, { allowOverwrite: true });
   }
-  return result;
+  return outcome;
 }
 
 /**
@@ -346,7 +384,8 @@ export async function batchNutritionLookup(
   // call would have done).
   const lookupPromises = uncached.map((item) =>
     limit(async () => {
-      const data = await fetchNutritionFromSources(item);
+      const outcome = await fetchNutritionFromSources(item);
+      const data = outcome.status === "found" ? outcome.data : null;
       if (data && data.calories > 0) {
         await writeNutritionCache(item, data, { allowOverwrite: true });
       }

@@ -1,14 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
 import {
   lookupNutrition,
+  lookupNutritionOutcome,
   batchNutritionLookup,
   _resetCNFCacheForTesting,
   fuzzyMatchCNF,
 } from "../nutrition-lookup";
-import { lookupBarcode } from "../barcode-lookup";
+import { _resetUsdaBreakerForTesting } from "../usda-lookup";
+import { BarcodeUpstreamError, lookupBarcode } from "../barcode-lookup";
 
 // `mockInsertValues` is hoisted so tests can assert on the args passed to
 // `db.insert(...).values(...)` — see the USDA-real-serving-size test below,
@@ -838,9 +840,11 @@ describe("lookupBarcode", () => {
       "food/?lang=fr": emptyCNFFR,
     });
 
-    const result = await lookupBarcode("0000000000001");
-    // All OFF variants fail, no USDA data either → null
-    expect(result).toBeNull();
+    // All OFF variants fail, no USDA data either → an upstream error, not a
+    // definitive "not found" (R08: an outage must stay distinguishable).
+    await expect(lookupBarcode("0000000000001")).rejects.toBeInstanceOf(
+      BarcodeUpstreamError,
+    );
   });
 
   it("parses a valid OFF product correctly (regression: schema must not drop real data)", async () => {
@@ -952,6 +956,214 @@ describe("lookupBarcode", () => {
     expect(result!.per100g.fat).toBeUndefined();
     expect(result!.per100g.sugar).toBeUndefined();
     expect(result!.per100g.sodium).toBeUndefined();
+  });
+});
+
+describe("lookupBarcode — Open Food Facts outage vs genuine miss (R08)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockInsertValues.mockClear();
+    _resetCNFCacheForTesting();
+  });
+
+  const usdaUpcHit = () =>
+    Promise.resolve({
+      ok: true,
+      json: async () => ({
+        foods: [
+          {
+            description: "COFFEE WHITENER",
+            brandOwner: "Nestle",
+            gtinUpc: "006073114236",
+            foodNutrients: [
+              { nutrientName: "Energy", nutrientId: 1008, value: 500 },
+              { nutrientName: "Protein", nutrientId: 1003, value: 1 },
+            ],
+          },
+        ],
+      }),
+    });
+
+  it("throws BarcodeUpstreamError (not null/'not found') when OFF is rate-limited and no other source answers", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: false,
+          status: 429,
+          json: async () => {
+            throw new SyntaxError("Unexpected token < in JSON");
+          },
+        }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+    });
+
+    await expect(lookupBarcode("4444444444444")).rejects.toBeInstanceOf(
+      BarcodeUpstreamError,
+    );
+  });
+
+  it("throws BarcodeUpstreamError when every OFF request fails at the network layer", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () => Promise.reject(new TypeError("fetch failed")),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+    });
+
+    await expect(lookupBarcode("4444444444445")).rejects.toBeInstanceOf(
+      BarcodeUpstreamError,
+    );
+  });
+
+  it("still returns null for a genuine OFF miss (status 0 or 404)", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: false,
+          status: 404,
+          json: async () => ({ status: 0 }),
+        }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+    });
+
+    await expect(lookupBarcode("4444444444446")).resolves.toBeNull();
+  });
+
+  it("returns the USDA-by-UPC result during an OFF outage but does not persist the degraded row", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: false, status: 503, json: async () => ({}) }),
+      "fdc/v1/foods/search": usdaUpcHit,
+    });
+
+    const result = await lookupBarcode("6073114236");
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("usda");
+    // First-write-wins: persisting the USDA-only row now would lock out the
+    // richer OFF row (allergens, NOVA) once OFF recovers.
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("sends an identifying User-Agent to Open Food Facts (N1)", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+    });
+
+    await lookupBarcode("4444444444447");
+    const offCall = mockFetch.mock.calls.find(([url]) =>
+      new URL(String(url)).hostname.endsWith(".openfoodfacts.org"),
+    );
+    expect(offCall).toBeDefined();
+    const headers = new Headers(
+      (offCall![1] as RequestInit | undefined)?.headers,
+    );
+    expect(headers.get("User-Agent")).toMatch(/^OCRecipes\//);
+  });
+});
+
+describe("lookupNutritionOutcome — source error vs genuine miss (R09)", () => {
+  const usdaHit = {
+    foods: [
+      {
+        description: "Lentils, raw",
+        dataType: "Foundation",
+        foodNutrients: [
+          { nutrientName: "Energy", nutrientId: 1008, value: 352 },
+          { nutrientName: "Protein", nutrientId: 1003, value: 24.6 },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+    _resetUsdaBreakerForTesting();
+    vi.stubEnv("API_NINJAS_KEY", "");
+  });
+
+  afterEach(() => {
+    _resetUsdaBreakerForTesting();
+    vi.unstubAllEnvs();
+  });
+
+  const usdaCalls = () =>
+    mockFetch.mock.calls.filter(
+      ([url]) => new URL(String(url)).hostname === "api.nal.usda.gov",
+    ).length;
+
+  it("reports 'not-found' when every source genuinely has no match", async () => {
+    setupFetchMock({
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "api.nal.usda.gov": () =>
+        Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+    });
+
+    await expect(lookupNutritionOutcome("lentils")).resolves.toEqual({
+      status: "not-found",
+    });
+  });
+
+  it("reports 'unavailable' (not a miss) when USDA is rate-limited, and stops calling USDA while the breaker is open", async () => {
+    setupFetchMock({
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "api.nal.usda.gov": () =>
+        Promise.resolve({
+          ok: false,
+          status: 429,
+          headers: new Headers(),
+          json: async () => ({}),
+        }),
+    });
+
+    await expect(lookupNutritionOutcome("lentils")).resolves.toEqual({
+      status: "unavailable",
+    });
+    const callsAfterFirst = usdaCalls();
+    // A 429 blocks the key; retrying it only burns quota.
+    expect(callsAfterFirst).toBe(1);
+
+    await expect(lookupNutritionOutcome("chickpeas")).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(usdaCalls()).toBe(callsAfterFirst);
+    // The legacy null-returning API is unchanged for existing callers.
+    await expect(lookupNutrition("beans")).resolves.toBeNull();
+  });
+
+  it("retries a transient USDA 5xx once and returns the data", async () => {
+    let usdaAttempts = 0;
+    setupFetchMock({
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "api.nal.usda.gov": () => {
+        usdaAttempts++;
+        return usdaAttempts === 1
+          ? Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
+          : Promise.resolve({ ok: true, json: async () => usdaHit });
+      },
+    });
+
+    const outcome = await lookupNutritionOutcome("lentils");
+    expect(outcome.status).toBe("found");
+    expect(usdaAttempts).toBe(2);
+  });
+
+  it("reports 'unavailable' when USDA keeps failing with 5xx", async () => {
+    setupFetchMock({
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "api.nal.usda.gov": () =>
+        Promise.resolve({ ok: false, status: 502, json: async () => ({}) }),
+    });
+
+    await expect(lookupNutritionOutcome("lentils")).resolves.toEqual({
+      status: "unavailable",
+    });
   });
 });
 

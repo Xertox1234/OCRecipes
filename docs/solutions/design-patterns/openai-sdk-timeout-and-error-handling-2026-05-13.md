@@ -6,7 +6,7 @@ module: server
 tags: [api, openai, timeout, ai, error-handling]
 applies_to: [server/services/**/*.ts, server/lib/openai.ts]
 created: '2026-05-13'
-last_updated: '2026-10-18'
+last_updated: '2026-10-30'
 ---
 
 # OpenAI SDK timeout and tiered error handling
@@ -124,4 +124,5 @@ if (!parsed.success) {
 
 - [Always guard JSON.parse on LLM output](../conventions/always-guard-json-parse-llm-output-2026-05-13.md)
 - [Fetch timeout with AbortSignal for every external API call](../conventions/fetch-timeout-abort-signal-external-apis-2026-05-13.md)
+- [Constructed network clients need explicit transport bounds](../conventions/constructed-network-clients-need-explicit-transport-bounds-2026-10-30.md) — client-level `timeout`/`maxRetries` on the OpenRouter and Vertex clients (`AI_ROUTE_TIMEOUT_MS`)
 - [SSE AbortController — cancel OpenAI stream on client disconnect](sse-abort-controller-cancel-openai-stream-2026-05-13.md)

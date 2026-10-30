@@ -246,3 +246,49 @@ describe("validateEnv OPENROUTER_API_KEY", () => {
     expect(validateEnv().OPENROUTER_API_KEY).toBeUndefined();
   });
 });
+
+describe("validateEnv feature flags (R13)", () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE, NODE_ENV: "development" };
+    delete process.env.RECIPE_FINDER_ENABLED;
+    delete process.env.RECIPE_OFFER_ENABLED;
+    delete process.env.RETENTION_CLEANUP_ENABLED;
+    delete process.env.RECIPE_FINDER_SPOONACULAR_DAILY_CAP;
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it.each([
+    "RECIPE_FINDER_ENABLED",
+    "RECIPE_OFFER_ENABLED",
+    "RETENTION_CLEANUP_ENABLED",
+  ])(
+    "rejects a typo'd %s at startup instead of silently disabling it",
+    async (name) => {
+      process.env[name] = "True";
+      const { validateEnv } = await load();
+      expect(() => validateEnv()).toThrow(new RegExp(name));
+    },
+  );
+
+  it("accepts true/false/unset flags", async () => {
+    process.env.RECIPE_FINDER_ENABLED = "true";
+    process.env.RECIPE_OFFER_ENABLED = "false";
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
+  });
+
+  it("rejects a non-integer Spoonacular daily cap", async () => {
+    process.env.RECIPE_FINDER_SPOONACULAR_DAILY_CAP = "ten";
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).toThrow(/RECIPE_FINDER_SPOONACULAR_DAILY_CAP/);
+  });
+
+  it("accepts a non-negative integer cap (0 disables online search)", async () => {
+    process.env.RECIPE_FINDER_SPOONACULAR_DAILY_CAP = "0";
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
+  });
+});

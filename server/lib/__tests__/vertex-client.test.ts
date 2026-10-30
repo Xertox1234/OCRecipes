@@ -6,7 +6,11 @@ import {
   vertexBaseUrl,
   VERTEX_SCOPE,
 } from "../vertex-client";
-import { VertexAuthError } from "../ai-failure";
+import {
+  AI_ROUTE_MAX_RETRIES,
+  AI_ROUTE_TIMEOUT_MS,
+  VertexAuthError,
+} from "../ai-failure";
 
 const getAccessToken = vi.fn();
 const GoogleAuthCtor = vi.fn();
@@ -55,6 +59,16 @@ describe("createVertexClient", () => {
     expect(createVertexClient({ ...FULL, [name]: undefined })).toBeNull();
     expect(createVertexClient({ ...FULL, [name]: "  " })).toBeNull();
     expect(OpenAICtor).not.toHaveBeenCalled();
+  });
+
+  it("bounds every request with an explicit timeout and retry budget (R07)", () => {
+    expect(createVertexClient(FULL)).not.toBeNull();
+    expect(OpenAICtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeout: AI_ROUTE_TIMEOUT_MS,
+        maxRetries: AI_ROUTE_MAX_RETRIES,
+      }),
+    );
   });
 
   it("never reads the Play IAP service account", () => {

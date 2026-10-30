@@ -18,6 +18,8 @@ import type { AiFeature, AiFeatureConfig } from "./ai-models";
 import { getAiCallContext, withAiCallContext } from "./ai-call-context";
 import type { AiCallContext } from "./ai-call-context";
 import {
+  AI_ROUTE_MAX_RETRIES,
+  AI_ROUTE_TIMEOUT_MS,
   CircuitBreaker,
   classifyAiFailure,
   countsTowardBreaker,
@@ -573,18 +575,25 @@ export function createAiChat(deps: AiChatDeps): AiChat {
   return run as AiChat;
 }
 
-function defaultDeps(): AiChatDeps {
-  const key = process.env.OPENROUTER_API_KEY?.trim() || undefined;
+export function createOpenRouterClient(
+  env: Record<string, string | undefined> = process.env,
+): AiChatClient | null {
+  const key = env.OPENROUTER_API_KEY?.trim() || undefined;
+  if (!key) return null;
   // `as unknown` is required (TS2352): the SDK's overloaded create() takes typed
   // params, AiChatClient takes the adapted Record body.
+  return new OpenAI({
+    apiKey: key,
+    baseURL: OPENROUTER_BASE_URL,
+    defaultHeaders: { "X-Title": "OCRecipes" },
+    timeout: AI_ROUTE_TIMEOUT_MS,
+    maxRetries: AI_ROUTE_MAX_RETRIES,
+  }) as unknown as AiChatClient;
+}
+
+function defaultDeps(): AiChatDeps {
   return {
-    openrouter: key
-      ? (new OpenAI({
-          apiKey: key,
-          baseURL: OPENROUTER_BASE_URL,
-          defaultHeaders: { "X-Title": "OCRecipes" },
-        }) as unknown as AiChatClient)
-      : null,
+    openrouter: createOpenRouterClient(),
     vertex: createVertexClient(),
     fallback: openai as unknown as AiChatClient,
     breaker: new CircuitBreaker(),

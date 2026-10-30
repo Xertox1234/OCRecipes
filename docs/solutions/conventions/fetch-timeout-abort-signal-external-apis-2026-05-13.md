@@ -6,6 +6,7 @@ module: server
 tags: [api, fetch, timeout, abort-signal, external-api]
 applies_to: [server/services/**/*.ts]
 created: '2026-05-13'
+last_updated: '2026-10-30'
 ---
 
 # Fetch timeout with AbortSignal for every external API call
@@ -38,6 +39,28 @@ const response = await fetch("https://api.example.com/data", {
 
 Define the timeout as a named constant at module level.
 
+## Pitfall: the deadline must cover the body read
+
+`fetch()` resolves as soon as the response **headers** arrive. If you clear a manual `AbortController` timer in a `finally` that wraps only the `fetch` call, the body read (`res.text()`, or the project's `readBodyWithLimit`) runs with no deadline. A peer that sends headers and then trickles the body holds the request open for undici's per-chunk `bodyTimeout` (300s), and that limit resets with every chunk. Reliability audit 2026-10-30 R06 (`importRecipeFromUrl`).
+
+```typescript
+// Bad: timer cleared before the body is read
+try { res = await safeFetch(url, controller.signal); } finally { clearTimeout(timeout); }
+const html = await readBodyWithLimit(res); // unbounded
+
+// Good: one outer try/finally spans fetch AND body read
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+try {
+  const res = await safeFetch(url, controller.signal);
+  html = await readBodyWithLimit(res);
+} finally {
+  clearTimeout(timeout);
+}
+```
+
+`AbortSignal.timeout(ms)` avoids the problem because it is never cleared and the same signal governs the body stream. The bug only occurs with the manual controller-plus-timer pattern.
+
 ## Recommended timeouts
 
 - Payment / auth APIs (Google OAuth, Apple receipt): `10_000` (10s)
@@ -54,6 +77,8 @@ Internal service calls where you control both endpoints and have other timeout m
 - `server/services/recipe-import.ts` — `safeFetch` already uses `AbortSignal.timeout()`
 
 ## See Also
+
+- [Constructed network clients need explicit transport bounds](./constructed-network-clients-need-explicit-transport-bounds-2026-10-30.md) — OpenAI SDK, S3Client, pg Pool
 
 - [OpenAI SDK timeout and error handling](../design-patterns/openai-sdk-timeout-and-error-handling-2026-05-13.md)
 - [SSE AbortController — cancel OpenAI stream on client disconnect](../design-patterns/sse-abort-controller-cancel-openai-stream-2026-05-13.md)

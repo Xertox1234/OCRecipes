@@ -9,8 +9,9 @@ import { isUniqueViolation } from "../lib/db-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { insertScannedItemSchema } from "@shared/schema";
 import { logger, toError } from "../lib/logger";
-import { lookupNutrition } from "../services/nutrition-lookup";
+import { lookupNutritionOutcome } from "../services/nutrition-lookup";
 import {
+  BarcodeUpstreamError,
   lookupBarcode,
   type BarcodeLookupResult,
 } from "../services/barcode-lookup";
@@ -85,6 +86,22 @@ const scannedItemInputSchema = insertScannedItemSchema.extend({
   sugar: numericStringField,
   sodium: numericStringField,
 });
+
+// Shared catch for the GET and POST barcode routes. An OFF outage/rate limit
+// with no fallback hit is retryable (503), and the client falls back to
+// direct OFF on 5xx (never on 404); everything else goes to handleRouteError.
+function handleBarcodeRouteError(res: Response, error: unknown): void {
+  if (error instanceof BarcodeUpstreamError) {
+    sendError(
+      res,
+      503,
+      "Product lookup temporarily unavailable",
+      ErrorCode.NUTRITION_LOOKUP_FAILED,
+    );
+    return;
+  }
+  handleRouteError(res, error, "look up barcode");
+}
 
 // Builds the client response body for one BarcodeLookupResult: allergen +
 // universal flags, ODbL strip, verification fields. Used by GET and POST so
@@ -259,12 +276,23 @@ export function register(app: Express): void {
       }
 
       try {
-        const result = await lookupNutrition(name);
-        if (!result) {
+        const outcome = await lookupNutritionOutcome(name);
+        if (outcome.status === "unavailable") {
+          // A source could not be asked (rate limit, bad key, 5xx) — retryable,
+          // not a definitive "this food has no nutrition data".
+          sendError(
+            res,
+            503,
+            "Nutrition lookup temporarily unavailable",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
+        if (outcome.status === "not-found") {
           sendError(res, 404, "Nutrition data not found", ErrorCode.NOT_FOUND);
           return;
         }
-        res.json(result);
+        res.json(outcome.data);
       } catch (error) {
         handleRouteError(res, error, "look up nutrition");
       }
@@ -319,7 +347,7 @@ export function register(app: Express): void {
         );
         res.json(body);
       } catch (error) {
-        handleRouteError(res, error, "look up barcode");
+        handleBarcodeRouteError(res, error);
       }
     },
   );
@@ -501,7 +529,7 @@ export function register(app: Express): void {
         }
         res.json({ ...body, labelCompared: compared });
       } catch (error) {
-        handleRouteError(res, error, "look up barcode");
+        handleBarcodeRouteError(res, error);
       }
     },
   );
