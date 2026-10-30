@@ -16,6 +16,13 @@ describe("db pool timeouts (R11)", () => {
     expect(rows[0].statement_timeout).not.toBe("0");
   });
 
+  it("sessions abort a transaction left idle (N2: leaked client holding locks)", async () => {
+    const { rows } = await pool.query<{
+      idle_in_transaction_session_timeout: string;
+    }>("SHOW idle_in_transaction_session_timeout");
+    expect(rows[0].idle_in_transaction_session_timeout).not.toBe("0");
+  });
+
   it("keeps the UTC session timezone pin", async () => {
     const { rows } = await pool.query<{ TimeZone: string }>("SHOW timezone");
     expect(rows[0].TimeZone).toBe("UTC");

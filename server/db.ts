@@ -24,6 +24,10 @@ export const pool = new Pool({
   // on pg_advisory_xact_lock. Generous enough for the one-off backfill scripts.
   connectionTimeoutMillis: 10_000,
   statement_timeout: 60_000,
+  // A client leaked mid-transaction (a missed release, an await that never
+  // settles inside db.transaction) would hold its row/advisory locks forever;
+  // the server ends such a session after 60s idle-in-transaction.
+  idle_in_transaction_session_timeout: 60_000,
 });
 
 pool.on("error", (err) => {
