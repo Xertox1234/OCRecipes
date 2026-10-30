@@ -185,6 +185,28 @@ describe("quantity parsing and rounding (R36)", () => {
     expect(parseQuantityForSum("2 large")).toBe(2);
   });
 
+  it("reads a leading fraction or mixed number when followed by text", () => {
+    expect(parseQuantityForSum("1/2 cup")).toBe(0.5);
+    expect(parseQuantityForSum("3/4 lb")).toBe(0.75);
+    expect(parseQuantityForSum("1 1/2 cups")).toBe(1.5);
+    expect(parseQuantityForSum("1½ cups")).toBe(1.5);
+    expect(parseQuantityForSum("1.5 tbsp")).toBe(1.5);
+  });
+
+  it("treats a hyphenated mixed number as one quantity, not a range", () => {
+    expect(parseQuantityForSum("1-1/2")).toBe(1.5);
+    expect(parseQuantityForSum("1-1/2 cups")).toBe(1.5);
+  });
+
+  it("takes the upper end of a range followed by text", () => {
+    expect(parseQuantityForSum("2-3 cloves")).toBe(3);
+    expect(parseQuantityForSum("1/2 to 1 cup")).toBe(1);
+  });
+
+  it("rejects negative quantities", () => {
+    expect(parseQuantityForSum("-1")).toBeNull();
+  });
+
   it("aggregates legacy fraction and range quantities correctly", () => {
     const items = generateGroceryItems([
       makeIngredient({ name: "milk", quantity: "1/2", unit: "cup" }),

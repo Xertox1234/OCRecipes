@@ -252,19 +252,32 @@ export function roundQuantity(n: number): number {
 }
 
 const RANGE_RE = /^(.+?)\s*(?:-|–|—|\bto\b)\s*(.+)$/i;
+/** "1-1/2" is a hyphenated mixed number (1½), not the range 1 to ½. */
+const HYPHEN_MIXED_RE = /^(\d+)-(\d+\/\d+)(?=\s|$)/;
+const FRACTION_GLYPHS = "½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞";
+/** Leading numeric token: mixed number, digit+glyph, fraction, decimal, or glyph. */
+const LEADING_QTY_RE = new RegExp(
+  `^(\\d+\\s+\\d+\\/\\d+|\\d+\\s*[${FRACTION_GLYPHS}]|\\d+\\/\\d+|\\d+(?:\\.\\d+)?|[${FRACTION_GLYPHS}])(?![\\d/.])`,
+);
 
-function parseSingleQuantity(raw: string): number | null {
-  const normalized = normalizeQuantityToDecimal(raw);
-  if (normalized !== null) return Number(normalized);
-  return null;
+/** Parse a quantity that may carry trailing text ("1/2 cup" → 0.5). */
+function parseLeadingQuantity(raw: string): number | null {
+  const trimmed = raw.trim();
+  const whole = normalizeQuantityToDecimal(trimmed);
+  if (whole !== null) return Number(whole);
+  const token = trimmed.match(LEADING_QTY_RE);
+  if (!token) return null;
+  const normalized = normalizeQuantityToDecimal(token[1]);
+  return normalized !== null ? Number(normalized) : null;
 }
 
 /**
  * Parse an ingredient quantity string to a number for summing. Handles
- * integers, decimals, fractions ("1/2"), mixed numbers ("1 1/2") and unicode
- * glyphs via normalizeQuantityToDecimal; a range ("1-2", "2 to 3") takes its
- * upper end so the grocery list never under-buys. Free-form text keeps its
- * leading number ("2 large" → 2). Returns null when nothing numeric is found.
+ * integers, decimals, fractions ("1/2"), mixed numbers ("1 1/2", "1-1/2") and
+ * unicode glyphs via normalizeQuantityToDecimal; a range ("1-2", "2 to 3")
+ * takes its upper end so the grocery list never under-buys. Trailing text after
+ * the leading quantity is ignored ("1/2 cup" → 0.5, "2-3 cloves" → 3).
+ * Negative or non-numeric input returns null.
  * (Bare parseFloat read "1/2" as 1 and "1-2" as 1.)
  */
 export function parseQuantityForSum(
@@ -274,18 +287,18 @@ export function parseQuantityForSum(
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  const single = parseSingleQuantity(trimmed);
-  if (single !== null) return single;
+  const text = trimmed.replace(HYPHEN_MIXED_RE, "$1 $2");
+  const single = parseLeadingQuantity(text);
 
-  const range = trimmed.match(RANGE_RE);
+  const range = text.match(RANGE_RE);
   if (range) {
-    const lo = parseSingleQuantity(range[1]);
-    const hi = parseSingleQuantity(range[2]);
+    const lo = parseLeadingQuantity(range[1]);
+    const hi = parseLeadingQuantity(range[2]);
     if (lo !== null && hi !== null) return Math.max(lo, hi);
   }
 
-  const leading = parseFloat(trimmed);
-  return Number.isFinite(leading) ? leading : null;
+  // A leading "-" never matches LEADING_QTY_RE, so negatives yield null.
+  return single;
 }
 
 /**
