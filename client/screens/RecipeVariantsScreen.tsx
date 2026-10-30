@@ -129,8 +129,8 @@ export default function RecipeVariantsScreen() {
         data={isError ? [] : (data?.variants ?? [])}
         keyExtractor={(v) => String(v.id)}
         renderItem={renderItem}
-        ListEmptyComponent={empty}
-        ListFooterComponent={footer}
+        ListEmptyComponent={empty ?? undefined}
+        ListFooterComponent={footer ?? undefined}
       />
     </View>
   );

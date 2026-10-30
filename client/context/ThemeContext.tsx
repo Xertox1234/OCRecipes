@@ -64,8 +64,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Resolve the actual color scheme
   const colorScheme = useMemo(() => {
     if (preference === "system") {
-      // RN 0.83+ reports "unspecified" (not null) when the system has no
-      // preference, so anything but "dark" resolves to light.
+      // No system preference arrives as null (RN 0.88; 0.83-0.86 sent
+      // "unspecified"), so anything but "dark" resolves to light.
       return systemColorScheme === "dark" ? "dark" : "light";
     }
     return preference;

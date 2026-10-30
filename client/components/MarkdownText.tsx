@@ -30,9 +30,10 @@ function InlineText({
   return (
     <Text style={style}>
       {segments.map((seg, i) => {
-        const segStyle: TextStyle = {};
-        if (seg.bold) segStyle.fontFamily = FontFamily.bold;
-        if (seg.italic) segStyle.fontStyle = "italic";
+        const segStyle: TextStyle = {
+          ...(seg.bold ? { fontFamily: FontFamily.bold } : {}),
+          ...(seg.italic ? { fontStyle: "italic" as const } : {}),
+        };
 
         return Object.keys(segStyle).length > 0 ? (
           <Text key={i} style={segStyle}>

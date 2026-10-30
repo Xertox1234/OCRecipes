@@ -1143,8 +1143,8 @@ export default function CoachChat({
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         extraData={listExtraData}
-        ListFooterComponent={streamingFooter}
-        ListEmptyComponent={historyErrorEmpty}
+        ListFooterComponent={streamingFooter ?? undefined}
+        ListEmptyComponent={historyErrorEmpty ?? undefined}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"

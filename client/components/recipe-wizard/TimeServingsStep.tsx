@@ -5,7 +5,7 @@ import {
   Pressable,
   StyleSheet,
   ScrollView,
-  type TextInput as RNTextInput,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
@@ -41,7 +41,7 @@ export default function TimeServingsStep({
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { servings, prepTime, cookTime } = timeServings;
-  const cookRef = useRef<RNTextInput>(null);
+  const cookRef = useRef<TextInputInstance>(null);
 
   const handleServingsChange = useCallback(
     (delta: number) => {
