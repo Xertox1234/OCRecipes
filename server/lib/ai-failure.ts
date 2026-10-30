@@ -2,6 +2,16 @@ import OpenAI from "openai";
 
 export type AiFailureKind = "transport" | "balance" | "request" | "config";
 
+/**
+ * Transport bounds for the routed (OpenRouter / Vertex) SDK clients. The SDK
+ * default is a 10-minute timeout with 2 retries, so a stalled upstream would
+ * block a caller that passes no per-call timeout for ~30 minutes before the
+ * fallback chain ever ran. Matches the direct-OpenAI client's 45s default;
+ * one retry because aiChat already falls back to another route on failure.
+ */
+export const AI_ROUTE_TIMEOUT_MS = 45_000;
+export const AI_ROUTE_MAX_RETRIES = 1;
+
 /** An OpenRouter SSE event carrying a top-level `error` / finish_reason "error" (HTTP 200). */
 export class InStreamError extends Error {
   constructor(readonly payload: unknown) {
