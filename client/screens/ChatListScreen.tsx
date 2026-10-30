@@ -380,7 +380,7 @@ export default function ChatListScreen() {
           />
         }
         ListEmptyComponent={
-          isLoading ? null : (
+          isLoading ? undefined : (
             <EmptyState
               variant="firstTime"
               icon={isRecipeMode ? "book-open" : "message-circle"}

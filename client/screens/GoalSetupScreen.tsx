@@ -3,7 +3,8 @@ import {
   StyleSheet,
   View,
   ScrollView,
-  type TextInput as RNTextInput,
+  type ScrollViewInstance,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -187,7 +188,7 @@ function NumberInput({
   unit,
   placeholder,
 }: {
-  inputRef: React.RefObject<RNTextInput | null>;
+  inputRef: React.RefObject<TextInputInstance | null>;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -259,17 +260,17 @@ export default function GoalSetupScreen() {
   const [manualCarbs, setManualCarbs] = useState("");
   const [manualFat, setManualFat] = useState("");
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollViewInstance>(null);
   // Calculate/Save move focus to the first field they flag (form-fields
   // spec §5.1). Separate refs, not one object read in render: React Compiler
   // treats an object holding refs as a ref and would skip this screen.
-  const ageRef = useRef<RNTextInput>(null);
-  const weightRef = useRef<RNTextInput>(null);
-  const heightRef = useRef<RNTextInput>(null);
-  const caloriesRef = useRef<RNTextInput>(null);
-  const proteinRef = useRef<RNTextInput>(null);
-  const carbsRef = useRef<RNTextInput>(null);
-  const fatRef = useRef<RNTextInput>(null);
+  const ageRef = useRef<TextInputInstance>(null);
+  const weightRef = useRef<TextInputInstance>(null);
+  const heightRef = useRef<TextInputInstance>(null);
+  const caloriesRef = useRef<TextInputInstance>(null);
+  const proteinRef = useRef<TextInputInstance>(null);
+  const carbsRef = useRef<TextInputInstance>(null);
+  const fatRef = useRef<TextInputInstance>(null);
   /** Event handlers only — focuses the field's input. */
   const focusField = (field: GoalField) => {
     const refs = {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen } from "@testing-library/react";
-import type { ScrollView } from "react-native";
+import type { ScrollViewInstance } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { ScreenScrollView } from "../ScreenScrollView";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
@@ -29,7 +29,7 @@ describe("ScreenScrollView", () => {
   });
 
   it("forwards a ref to the underlying ScrollView", () => {
-    const ref = React.createRef<ScrollView>();
+    const ref = React.createRef<ScrollViewInstance>();
 
     renderComponent(
       <ScreenScrollView ref={ref}>

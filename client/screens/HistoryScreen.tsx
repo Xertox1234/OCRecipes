@@ -534,7 +534,7 @@ export default function HistoryScreen() {
             <HistoryEmptyState onScan={handleScanPress} />
           )
         }
-        ListFooterComponent={isFetchingNextPage ? <LoadingFooter /> : null}
+        ListFooterComponent={isFetchingNextPage ? <LoadingFooter /> : undefined}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}

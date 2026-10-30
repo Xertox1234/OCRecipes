@@ -11,7 +11,7 @@ import {
   Pressable,
   SectionList,
   RefreshControl,
-  type TextInput,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
@@ -206,7 +206,7 @@ export default function PantryScreen() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");
-  const addItemInputRef = useRef<TextInput>(null);
+  const addItemInputRef = useRef<TextInputInstance>(null);
 
   const {
     data: pantryItems,

@@ -8,7 +8,7 @@ import {
   SectionList,
   RefreshControl,
   Share,
-  type TextInput,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -219,7 +219,7 @@ export default function GroceryListScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { features } = usePremiumContext();
-  const addItemRef = useRef<TextInput>(null);
+  const addItemRef = useRef<TextInputInstance>(null);
 
   const {
     data: list,

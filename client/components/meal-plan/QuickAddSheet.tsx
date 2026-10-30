@@ -6,8 +6,12 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet, View, Pressable } from "react-native";
-import type { TextInput } from "react-native-gesture-handler";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  type TextInputInstance,
+} from "react-native";
 import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import { FocusField } from "@/components/FocusField";
@@ -88,7 +92,7 @@ function QuickAddSheetContentInner(
   const searchBoxFocus = useFieldFocus();
   const haptics = useHaptics();
   const toast = useToast();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
 

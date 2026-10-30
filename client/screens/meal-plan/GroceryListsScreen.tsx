@@ -501,7 +501,7 @@ export default function GroceryListsScreen() {
                 </PressableScale>
               </View>
             </View>
-          ) : null
+          ) : undefined
         }
       />
 

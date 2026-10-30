@@ -13,7 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   AccessibilityInfo,
-  type TextInput,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import {
@@ -343,7 +343,7 @@ export default function ChatScreen() {
 
   const [inputText, setInputText] = useState("");
   const flatListRef = useRef<FlatList>(null);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const composerFocus = useFieldFocus();
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
@@ -672,7 +672,7 @@ export default function ChatScreen() {
           data={displayMessages}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          ListFooterComponent={streamingFooter}
+          ListFooterComponent={streamingFooter ?? undefined}
           contentContainerStyle={[
             styles.messagesContent,
             { paddingTop: headerInset },

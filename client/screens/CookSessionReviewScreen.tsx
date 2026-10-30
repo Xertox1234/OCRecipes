@@ -298,7 +298,7 @@ export default function CookSessionReviewScreen() {
                 </ThemedText>
               </Pressable>
             </View>
-          ) : null
+          ) : undefined
         }
       />
 
