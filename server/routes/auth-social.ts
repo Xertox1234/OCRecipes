@@ -212,7 +212,13 @@ export async function reauthenticate(
       proof.idToken,
       proof.nonce,
     );
-  } catch {
+  } catch (err) {
+    // Still one generic false, but a JWKS/provider outage must be visible
+    // apart from a bad token. Never log the token itself.
+    logger.warn(
+      { err: toError(err), provider: proof.provider },
+      "reauth provider token verification failed",
+    );
     return false;
   }
   const nonceOk = await storage.consumeNonce(proof.nonce, "reauth", userId);
