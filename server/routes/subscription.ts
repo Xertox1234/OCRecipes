@@ -93,7 +93,7 @@ async function applyValidatedReceipt(
     res.json({
       success: false,
       error: "This subscription was refunded or revoked.",
-      code: "TRANSACTION_REVOKED",
+      code: ErrorCode.TRANSACTION_REVOKED,
     });
     return;
   }

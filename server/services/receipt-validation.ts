@@ -10,6 +10,7 @@ import {
 } from "@apple/app-store-server-library";
 import type { JWSTransactionDecodedPayload } from "@apple/app-store-server-library";
 import type { Platform } from "@shared/schemas/subscription";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { createServiceLogger, toError } from "../lib/logger";
 import { reportError } from "../lib/error-reporter";
 
@@ -195,7 +196,7 @@ async function validateAppleReceipt(
   }
 
   if (payload.revocationDate) {
-    return { valid: false, errorCode: "TRANSACTION_REVOKED" };
+    return { valid: false, errorCode: ErrorCode.TRANSACTION_REVOKED };
   }
 
   const purchasedAt =
