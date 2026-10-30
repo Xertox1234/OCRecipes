@@ -171,6 +171,37 @@ describe("error-reporter", () => {
       expect(scrubbed.contexts?.os).toEqual({ name: "linux" });
     });
 
+    it("strips bound query params from Drizzle-shaped exception messages (params may carry emails/barcodes)", async () => {
+      const { scrubEvent } = await importReporter();
+      const event = {
+        type: undefined,
+        exception: {
+          values: [
+            {
+              type: "DrizzleQueryError",
+              value:
+                'Failed query: select "id" from "users" where "email" = $1\nparams: victim@example.com',
+            },
+            {
+              type: "error",
+              value: "duplicate key value violates unique constraint",
+            },
+            { type: "Error" },
+          ],
+        },
+      };
+      const scrubbed = scrubEvent(event as unknown as ErrorEvent);
+      const values = scrubbed.exception?.values ?? [];
+      expect(values[0].value).toBe(
+        'Failed query: select "id" from "users" where "email" = $1\nparams: [scrubbed]',
+      );
+      expect(JSON.stringify(scrubbed)).not.toContain("victim@example.com");
+      expect(values[1].value).toBe(
+        "duplicate key value violates unique constraint",
+      );
+      expect(values[2].value).toBeUndefined();
+    });
+
     it("removes credential-bearing headers by snippet match, keeps benign headers", async () => {
       const { scrubEvent } = await importReporter();
       const event = {

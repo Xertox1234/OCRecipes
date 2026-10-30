@@ -179,6 +179,8 @@ const PINO_CONTEXT_ALLOWLIST = new Set([
   "kind",
 ]);
 
+const DRIZZLE_PARAMS_MARKER = "\nparams:";
+
 /**
  * PII scrubber for outbound events — the load-bearing control on this
  * external trust boundary (see the module doc: `sendDefaultPii: false`
@@ -212,6 +214,22 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
       if (queryStart !== -1) {
         request.url = request.url.slice(0, queryStart);
       }
+    }
+  }
+  // Drizzle's DrizzleQueryError message is "Failed query: <sql>\nparams:
+  // <bound values>" — the SQL uses $n placeholders, but the params are user
+  // data (emails, barcodes). pinoIntegration ships every logged Error's
+  // message, so the params tail is replaced here. Other driver/provider
+  // messages are not rewritten: pg puts row values in `detail`, not
+  // `message`, and extraErrorDataIntegration (which would ship `detail`)
+  // is not enabled.
+  for (const exception of event.exception?.values ?? []) {
+    if (typeof exception.value !== "string") continue;
+    const paramsStart = exception.value.indexOf(DRIZZLE_PARAMS_MARKER);
+    if (paramsStart !== -1) {
+      exception.value =
+        exception.value.slice(0, paramsStart + DRIZZLE_PARAMS_MARKER.length) +
+        " [scrubbed]";
     }
   }
   const pinoContext = event.contexts?.pino;
