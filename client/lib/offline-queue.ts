@@ -4,6 +4,8 @@ import { randomUuidV4 } from "@/lib/uuid";
 
 const STORAGE_KEY = "@ocrecipes_offline_queue";
 const TTL_MS = 24 * 60 * 60 * 1000;
+/** How long a queued write may wait to sync before it is given up on. */
+export const QUEUE_TTL_MS = TTL_MS;
 const MAX_DEPTH = 50;
 
 export interface QueuedMutation {

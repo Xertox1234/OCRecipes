@@ -14,6 +14,7 @@ import {
 } from "@expo-google-fonts/poppins";
 
 import {
+  focusManager,
   onlineManager,
   defaultShouldDehydrateQuery,
 } from "@tanstack/react-query";
@@ -84,6 +85,14 @@ onlineManager.subscribe((isOnline) => {
   if (isOnline) {
     void drainQueue();
   }
+});
+
+// Also drain on app foreground (focusManager is wired to AppState in
+// query-client.ts). A drain halted by a transient 5xx/429 leaves its items
+// queued (R15); without this trigger they would wait for the next connectivity
+// blip or cold start even though the server has long since recovered.
+focusManager.subscribe((isFocused) => {
+  if (isFocused && onlineManager.isOnline()) void drainQueue();
 });
 
 function AppContent() {
