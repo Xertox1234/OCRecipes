@@ -496,6 +496,106 @@ describe("Recipe Import", () => {
       expect(result).toEqual({ success: false, error: "PARSE_ERROR" });
     });
 
+    describe("lenient optional fields (R26)", () => {
+      function mockPage(recipe: unknown) {
+        const html = `<html><head><script type="application/ld+json">${JSON.stringify(recipe)}</script></head><body></body></html>`;
+        const encoded = new TextEncoder().encode(html);
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoded);
+            controller.close();
+          },
+        });
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            "content-length": String(encoded.byteLength),
+          }),
+          body: stream,
+        });
+      }
+
+      it("accepts ImageObject image, numeric yield/nutrition and HowToSection instructions", async () => {
+        mockPage({
+          "@type": "Recipe",
+          name: "Real-World Recipe",
+          image: {
+            "@type": "ImageObject",
+            url: "https://example.com/hero.jpg",
+          },
+          recipeYield: 6,
+          recipeIngredient: ["1 cup rice"],
+          recipeInstructions: [
+            {
+              "@type": "HowToSection",
+              name: "Prep",
+              itemListElement: [
+                { "@type": "HowToStep", text: "Rinse rice" },
+                { "@type": "HowToStep", text: "Soak rice" },
+              ],
+            },
+            { "@type": "HowToStep", text: "Cook rice" },
+          ],
+          nutrition: { calories: 420, proteinContent: "9 g" },
+        });
+
+        const result = await importRecipeFromUrl("https://example.com/real");
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.imageUrl).toBe("https://example.com/hero.jpg");
+          expect(result.data.servings).toBe(6);
+          expect(result.data.instructions).toEqual([
+            "Rinse rice",
+            "Soak rice",
+            "Cook rice",
+          ]);
+          expect(result.data.caloriesPerServing).toBe("420");
+          expect(result.data.proteinPerServing).toBe("9");
+        }
+      });
+
+      it("accepts an array of ImageObjects and drops non-http images", async () => {
+        mockPage({
+          "@type": "Recipe",
+          name: "Images",
+          image: [
+            { "@type": "ImageObject", url: "javascript:alert(1)" },
+            { "@type": "ImageObject", url: "https://example.com/a.jpg" },
+          ],
+        });
+        const result = await importRecipeFromUrl("https://example.com/imgs");
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.imageUrl).toBe("https://example.com/a.jpg");
+        }
+      });
+
+      it("drops an unusable optional field instead of failing the whole import", async () => {
+        mockPage({
+          "@type": "Recipe",
+          name: "Odd Fields",
+          image: 12345,
+          recipeYield: { "@type": "QuantitativeValue", value: 4 },
+          recipeCuisine: { name: "Thai" },
+          keywords: 7,
+          prepTime: 15,
+          recipeIngredient: ["2 eggs", { text: "bad" }],
+          nutrition: "lots",
+        });
+        const result = await importRecipeFromUrl("https://example.com/odd");
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.title).toBe("Odd Fields");
+          expect(result.data.imageUrl).toBeNull();
+          expect(result.data.servings).toBe(4);
+          expect(result.data.prepTimeMinutes).toBeNull();
+          expect(result.data.ingredients).toHaveLength(1);
+          expect(result.data.caloriesPerServing).toBeNull();
+        }
+      });
+    });
+
     it("parses full recipe with nutrition, keywords, and all optional fields", async () => {
       const recipeJson = JSON.stringify({
         "@type": "Recipe",
