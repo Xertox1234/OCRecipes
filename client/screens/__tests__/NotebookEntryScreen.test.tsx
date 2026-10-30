@@ -283,7 +283,9 @@ describe("NotebookEntryScreen — safe back navigation", () => {
 describe("NotebookEntryScreen — follow-up date east of UTC", () => {
   const originalTz = process.env.TZ;
   afterEach(() => {
-    process.env.TZ = originalTz;
+    // Assigning undefined would store the string "undefined".
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
   });
 
   it("keeps the local follow-up day when saving and scheduling the reminder", async () => {
@@ -310,6 +312,37 @@ describe("NotebookEntryScreen — follow-up date east of UTC", () => {
       expect.objectContaining({ followUpDate: "2026-10-30" }),
     );
     expect(mockScheduleReminder).toHaveBeenCalledWith(42, "Walk", "2026-10-30");
+  });
+});
+
+// The entry is already saved when the reminder is scheduled — a reminder
+// failure must not keep the user on the form, where a second Save would
+// create a duplicate entry (audit 2026-10-29 L-crel-9).
+describe("NotebookEntryScreen — reminder failure after a successful save", () => {
+  it("still leaves the screen and says the reminder wasn't set", async () => {
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    mockCreateMutateAsync.mockResolvedValue(
+      makeEntry({
+        id: 7,
+        type: "commitment",
+        content: "Stretch",
+        followUpDate: "2026-11-02T00:00:00.000Z",
+      }),
+    );
+    mockScheduleReminder.mockRejectedValue(new Error("notifications denied"));
+
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.change(screen.getByDisplayValue(""), {
+      target: { value: "Stretch" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await vi.waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockToast.error).toHaveBeenCalledWith(
+      expect.stringMatching(/reminder/i),
+    );
   });
 });
 

@@ -180,14 +180,20 @@ export default function NotebookEntryScreen() {
       return;
     }
     if (savedEntry && savedEntry.type === "commitment") {
-      if (savedEntry.followUpDate) {
-        await scheduleCommitmentReminder(
-          savedEntry.id,
-          savedEntry.content,
-          toLocalDateString(new Date(savedEntry.followUpDate)),
-        );
-      } else {
-        await cancelCommitmentReminder(savedEntry.id);
+      // The entry is already saved: a reminder failure must not keep the
+      // user on the form, where Save again would create a duplicate.
+      try {
+        if (savedEntry.followUpDate) {
+          await scheduleCommitmentReminder(
+            savedEntry.id,
+            savedEntry.content,
+            toLocalDateString(new Date(savedEntry.followUpDate)),
+          );
+        } else {
+          await cancelCommitmentReminder(savedEntry.id);
+        }
+      } catch {
+        toast.error("Entry saved, but the reminder couldn't be updated.");
       }
     }
     goBack();
