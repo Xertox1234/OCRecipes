@@ -550,7 +550,7 @@ export async function getUserIdPage( // idor-safe
  * value is the stored IANA string or `null` when the column was never written.
  *
  * The value is intentionally NOT validated/normalized here — callers pass it
- * through `parseTimezone` (server/routes/_helpers.ts) to collapse
+ * through `parseTimezone` (server/lib/civil-date.ts) to collapse
  * null/undefined/invalid → `"UTC"`. Validating in storage would require
  * importing from the routes layer, creating a `storage → routes → storage`
  * import cycle (`_helpers` imports the storage barrel).

@@ -23,7 +23,7 @@ import cron from "node-cron";
 import pLimit from "p-limit";
 import { logger } from "../lib/logger";
 import { storage } from "../storage";
-import { parseTimezone } from "../routes/_helpers";
+import { parseTimezone } from "../lib/civil-date";
 import { notify } from "./notifications/notify";
 import type { ReminderMutes } from "@shared/types/reminders";
 
