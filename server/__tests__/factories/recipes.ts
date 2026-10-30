@@ -198,6 +198,7 @@ const recipeDismissalDefaults: RecipeDismissal = {
   // adopts a prefixed format (e.g., `mealPlan:N`).
   recipeIdentifier: "1",
   source: "carousel",
+  reason: null,
   dismissedAt: new Date("2024-01-01"),
 };
 
