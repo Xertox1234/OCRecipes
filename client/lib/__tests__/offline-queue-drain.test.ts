@@ -866,7 +866,7 @@ describe("offline-queue-drain", () => {
       },
     );
 
-    it("a 5xx outlasting the backoff budget leaves the item queued and halts the drain", async () => {
+    it("a 5xx outlasting the backoff budget leaves the item queued; two such items in a row halt the drain (systemic outage)", async () => {
       const { loadQueue, incrementAttempts, dequeue } = await import(
         "@/lib/offline-queue"
       );
@@ -874,7 +874,11 @@ describe("offline-queue-drain", () => {
       const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
       const { ApiError } = await import("@/lib/api-error");
 
-      const items = [mkItem("s1", 1000), mkItem("s2", 1001)];
+      const items = [
+        { ...mkItem("s1", 1000), endpoint: "/api/s1" },
+        { ...mkItem("s2", 1001), endpoint: "/api/s2" },
+        { ...mkItem("s3", 1002), endpoint: "/api/s3" },
+      ];
       vi.mocked(loadQueue).mockReturnValue(items);
       vi.mocked(incrementAttempts).mockImplementation(async (id) => {
         const it = items.find((i) => i.id === id);
@@ -893,13 +897,53 @@ describe("offline-queue-drain", () => {
 
       expect(dequeue).not.toHaveBeenCalled();
       expect(errorListener).not.toHaveBeenCalled();
-      // 4 attempts on s1, then halt — s2 is not tried against a down server.
-      expect(apiRequest).toHaveBeenCalledTimes(4);
-      expect(
-        vi
-          .mocked(apiRequest)
-          .mock.calls.every((c) => c[1] === items[0].endpoint),
-      ).toBe(true);
+      // 4 attempts on s1, 4 on s2, then halt — s3 is not tried against a
+      // server that has now failed two distinct writes in a row.
+      const endpoints = vi.mocked(apiRequest).mock.calls.map((c) => c[1]);
+      expect(endpoints).toEqual([
+        ...Array(4).fill("/api/s1"),
+        ...Array(4).fill("/api/s2"),
+      ]);
+    });
+
+    it("a single poison item (deterministic 5xx) does not block healthy items queued behind it", async () => {
+      const { loadQueue, incrementAttempts, dequeue } = await import(
+        "@/lib/offline-queue"
+      );
+      const { apiRequest } = await import("@/lib/query-client");
+      const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+      const { ApiError } = await import("@/lib/api-error");
+
+      const items = [
+        { ...mkItem("poison", 1000), endpoint: "/api/poison" },
+        { ...mkItem("ok1", 1001), endpoint: "/api/ok1" },
+        { ...mkItem("ok2", 1002), endpoint: "/api/ok2" },
+      ];
+      vi.mocked(loadQueue).mockReturnValue(items);
+      vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+        const it = items.find((i) => i.id === id);
+        if (it) it.attempts++;
+      });
+      vi.mocked(apiRequest).mockImplementation(async (_m, endpoint) => {
+        if (endpoint === "/api/poison") {
+          throw new ApiError("500: Internal Server Error", undefined, 500);
+        }
+        return new Response();
+      });
+      vi.mocked(dequeue).mockResolvedValue(undefined);
+      const errorListener = vi.fn();
+      subscribeToQueueDrainErrors(errorListener);
+
+      const p = drainQueue();
+      await vi.runAllTimersAsync();
+      await p;
+
+      // The poison item stays queued (inside the TTL), no toast…
+      expect(dequeue).not.toHaveBeenCalledWith("poison");
+      expect(errorListener).not.toHaveBeenCalled();
+      // …and the healthy writes behind it still sync.
+      expect(dequeue).toHaveBeenCalledWith("ok1");
+      expect(dequeue).toHaveBeenCalledWith("ok2");
     });
 
     it("a later drain gets a fresh server budget for a left-queued item", async () => {

@@ -53,9 +53,15 @@ const TRANSIENT_4XX = new Set([401, 408, 425, 429]);
 //   the caller invalidates affected queries once after the whole drain (L7).
 // - "pending": left queued (still offline, or aborted by a re-validation gate).
 // - "discarded": permanently evicted (permanent 4xx, or failing past the TTL).
-// - "halt": left queued after a transient server failure; the caller stops the
-//   drain so the remaining items aren't hammered against an unhealthy server.
-type DrainOutcome = "synced" | "pending" | "discarded" | "halt";
+// - "deferred": left queued after a 5xx that outlasted the in-drain backoff.
+//   One deferral alone may be a poison item (a deterministic server bug on that
+//   payload), so the caller moves on to the next item rather than blocking the
+//   queue behind it; two deferrals in a row look like a systemic outage, so the
+//   caller halts.
+// - "halt": left queued after a session- or server-wide transient 4xx
+//   (401/408/425/429); the caller stops the drain so the remaining items aren't
+//   hammered against an unhealthy server.
+type DrainOutcome = "synced" | "pending" | "discarded" | "deferred" | "halt";
 
 async function attemptDrain(item: QueuedMutation): Promise<DrainOutcome> {
   let done = false;
@@ -95,15 +101,11 @@ async function attemptDrain(item: QueuedMutation): Promise<DrainOutcome> {
     // a replayed food log with it (bounded) instead of the replay time, so a
     // meal logged offline at 11:50pm and synced next morning stays on the day
     // it was eaten (R28). Harmless to endpoints that don't read it.
-    const init: RequestInit = {
-      headers: { "X-Queued-At": new Date(current.savedAt).toISOString() },
+    const headers: Record<string, string> = {
+      "X-Queued-At": new Date(current.savedAt).toISOString(),
     };
-    if (current.method === "POST") {
-      init.headers = {
-        ...(init.headers as Record<string, string>),
-        "X-Idempotency-Key": current.id,
-      };
-    }
+    if (current.method === "POST") headers["X-Idempotency-Key"] = current.id;
+    const init: RequestInit = { headers };
 
     try {
       // Pin the token validated by the post-wait re-check above (tokenNow ===
@@ -173,7 +175,7 @@ async function attemptDrain(item: QueuedMutation): Promise<DrainOutcome> {
           emitDrainError();
           return "discarded";
         }
-        return "halt";
+        return "deferred";
       }
       // 5xx with remaining server attempts: loop
     }
@@ -209,12 +211,23 @@ export async function drainQueue(): Promise<void> {
     const owner = await getDurableOwner();
     if (!owner || owner !== (await getActiveUserId())) return;
     const sorted = [...loadQueue()].sort((a, b) => a.savedAt - b.savedAt);
+    // Consecutive 5xx deferrals in this drain. One is tolerated (skip past a
+    // possible poison item so it can't head-of-line block every later write
+    // for the whole TTL); a second in a row means the server itself is
+    // unhealthy, so stop instead of paying the backoff on every item.
+    let consecutiveDeferrals = 0;
     for (const item of sorted) {
       const exists = loadQueue().find((i) => i.id === item.id);
       if (!exists) continue;
       const outcome = await attemptDrain(item);
       if (outcome === "synced") anySynced = true;
       if (outcome === "halt") break;
+      if (outcome === "deferred") {
+        consecutiveDeferrals++;
+        if (consecutiveDeferrals >= 2) break;
+      } else {
+        consecutiveDeferrals = 0;
+      }
     }
   } finally {
     isDraining = false;
