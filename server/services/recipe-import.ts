@@ -266,7 +266,7 @@ for (const [prefix, bits] of [
   ["64:ff9b::", 96], // NAT64
   ["64:ff9b:1::", 48], // local-use NAT64
   ["100::", 64], // discard-only
-  ["2001::", 32], // Teredo
+  ["2001::", 23], // IETF protocol assignments (Teredo, ORCHID, …)
   ["2001:db8::", 32], // documentation
   ["2002::", 16], // 6to4
   ["fec0::", 10], // deprecated site-local

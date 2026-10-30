@@ -250,6 +250,7 @@ describe("Recipe Import", () => {
       "::ffff:0:7f00:1", // IPv4-translated (SIIT)
       "64:ff9b:1::a9fe:a9fe", // local-use NAT64
       "2001:0:4136:e378:8000:63bf:80ff:fffe", // Teredo
+      "2001:10::1", // ORCHID
       "2001:db8::1", // documentation
       "100::1", // discard-only
       "fec0::1", // deprecated site-local
