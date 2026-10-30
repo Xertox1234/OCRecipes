@@ -24,6 +24,7 @@ import pLimit from "p-limit";
 import { logger } from "../lib/logger";
 import { storage } from "../storage";
 import { parseTimezone } from "../routes/_helpers";
+import { civilHourInTz } from "../lib/civil-date";
 import { notify } from "./notifications/notify";
 import type { ReminderMutes } from "@shared/types/reminders";
 
@@ -142,6 +143,22 @@ export async function sendDueCommitmentReminders(): Promise<void> {
 }
 
 /**
+ * Options for the per-user local-time reminders. With `localHour` set, only
+ * users whose wall-clock hour (in their stored IANA tz, NULL/invalid → UTC)
+ * equals `localHour` at `now` are processed — the scheduler runs these hourly
+ * so each user gets the nudge at their own local time, not the server's.
+ * Without `localHour`, every user is processed (manual/test invocation).
+ */
+export interface LocalHourReminderOptions {
+  now?: Date;
+  localHour?: number;
+}
+
+/** Local hour each per-user reminder is delivered at. */
+export const DAILY_CHECKIN_LOCAL_HOUR = 9;
+export const MEAL_LOG_LOCAL_HOUR = 12;
+
+/**
  * Iterate all user IDs in cursor-based pages (500 at a time) and invoke
  * `processPage` with each full page. Keeps the scheduler's heap footprint
  * bounded regardless of user count by never loading all IDs at once.
@@ -165,17 +182,38 @@ async function forEachUserPaged(
   }
 }
 
+function filterByLocalHour(
+  userIds: string[],
+  tzMap: Map<string, string | null>,
+  now: Date,
+  localHour: number | undefined,
+): string[] {
+  if (localHour === undefined) return userIds;
+  return userIds.filter(
+    (id) => civilHourInTz(now, parseTimezone(tzMap.get(id))) === localHour,
+  );
+}
+
 /** Create a daily check-in pending reminder for each unmuted user. */
-export async function sendDailyCheckinReminders(): Promise<void> {
+export async function sendDailyCheckinReminders(
+  opts: LocalHourReminderOptions = {},
+): Promise<void> {
+  const now = opts.now ?? new Date();
   try {
-    await forEachUserPaged(async (userIds) => {
+    await forEachUserPaged(async (pageUserIds) => {
       // Batch-fetch profiles for the whole page to avoid N sequential queries.
       let profileMap: Map<
         string,
         Awaited<ReturnType<typeof storage.getUserProfile>>
       >;
       let tzMap: Map<string, string | null>;
+      let userIds: string[];
       try {
+        // Timezones first so the profile batch only covers users who are
+        // actually due this hour.
+        tzMap = await storage.getUserTimezones(pageUserIds);
+        userIds = filterByLocalHour(pageUserIds, tzMap, now, opts.localHour);
+        if (userIds.length === 0) return;
         profileMap = new Map(
           await Promise.all(
             userIds.map(
@@ -183,7 +221,6 @@ export async function sendDailyCheckinReminders(): Promise<void> {
             ),
           ),
         );
-        tzMap = await storage.getUserTimezones(userIds);
       } catch (err) {
         logger.error(
           { err },
@@ -199,7 +236,7 @@ export async function sendDailyCheckinReminders(): Promise<void> {
 
           // Day-bucket in the user's stored timezone (NULL/invalid → "UTC").
           const tz = parseTimezone(tzMap.get(userId));
-          const summary = await storage.getDailySummary(userId, new Date(), tz);
+          const summary = await storage.getDailySummary(userId, now, tz);
 
           await notify(userId, "daily-checkin", {
             context: { calories: Math.round(summary.totalCalories) },
@@ -221,16 +258,25 @@ export async function sendDailyCheckinReminders(): Promise<void> {
 }
 
 /** Create a meal-log pending reminder for users who have no logs today. */
-export async function sendMealLogReminders(): Promise<void> {
+export async function sendMealLogReminders(
+  opts: LocalHourReminderOptions = {},
+): Promise<void> {
+  const now = opts.now ?? new Date();
   try {
-    await forEachUserPaged(async (userIds) => {
+    await forEachUserPaged(async (pageUserIds) => {
       // Batch-fetch profiles for the whole page to avoid N sequential queries.
       let profileMap: Map<
         string,
         Awaited<ReturnType<typeof storage.getUserProfile>>
       >;
       let tzMap: Map<string, string | null>;
+      let userIds: string[];
       try {
+        // Timezones first so the profile batch only covers users who are
+        // actually due this hour.
+        tzMap = await storage.getUserTimezones(pageUserIds);
+        userIds = filterByLocalHour(pageUserIds, tzMap, now, opts.localHour);
+        if (userIds.length === 0) return;
         profileMap = new Map(
           await Promise.all(
             userIds.map(
@@ -238,7 +284,6 @@ export async function sendMealLogReminders(): Promise<void> {
             ),
           ),
         );
-        tzMap = await storage.getUserTimezones(userIds);
       } catch (err) {
         logger.error(
           { err },
@@ -255,7 +300,7 @@ export async function sendMealLogReminders(): Promise<void> {
           // Day-bucket in the user's stored timezone (NULL/invalid → "UTC").
           const tz = parseTimezone(tzMap.get(userId));
 
-          const logs = await storage.getDailyLogs(userId, new Date(), tz);
+          const logs = await storage.getDailyLogs(userId, now, tz);
           if (logs.length > 0) return;
 
           await notify(userId, "meal-log", {
@@ -278,55 +323,65 @@ export async function sendMealLogReminders(): Promise<void> {
 }
 
 let scheduledTask: ReturnType<typeof cron.schedule> | null = null;
-let mealLogTask: ReturnType<typeof cron.schedule> | null = null;
+let localHourTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Start the daily cron jobs that send reminders.
  * Safe to call multiple times — only one set of job instances is created.
  */
 export function startNotificationScheduler(): void {
-  if (scheduledTask || mealLogTask) return;
+  if (scheduledTask || localHourTask) return;
 
   // Explicit UTC: without `timezone` node-cron matches in the host's local
   // TZ, so firing time would silently depend on the deploy box. `noOverlap`
   // skips a tick while the previous run is still in flight — the handlers
   // RETURN their promise so node-cron can see when a run finishes.
-  // 09:00 UTC daily — commitments + daily check-in
+  // 09:00 UTC daily — commitment pushes
   scheduledTask = cron.schedule(
     "0 9 * * *",
     () =>
-      Promise.all([
-        sendDueCommitmentReminders().catch((err) => {
-          logger.error(
-            { err },
-            "notification-scheduler: unhandled error in commitment cron",
-          );
-        }),
-        sendDailyCheckinReminders().catch((err) => {
+      sendDueCommitmentReminders().catch((err) => {
+        logger.error(
+          { err },
+          "notification-scheduler: unhandled error in commitment cron",
+        );
+      }),
+    { timezone: "UTC", noOverlap: true, name: "commitment-reminders" },
+  );
+
+  // Hourly — per-user local-time reminders. Each run selects only the users
+  // whose local hour is the target (daily check-in at 09:00 local, meal-log
+  // nudge at 12:00 local), so nobody gets "nothing logged today" at 4am.
+  // Re-runs are idempotent via pending_reminders_user_type_day_idx.
+  localHourTask = cron.schedule(
+    "0 * * * *",
+    () => {
+      const now = new Date();
+      return Promise.all([
+        sendDailyCheckinReminders({
+          now,
+          localHour: DAILY_CHECKIN_LOCAL_HOUR,
+        }).catch((err) => {
           logger.error(
             { err },
             "notification-scheduler: unhandled error in daily-checkin cron",
           );
         }),
-      ]),
-    { timezone: "UTC", noOverlap: true, name: "commitment-and-checkin" },
-  );
-
-  // 12:00 UTC daily — meal-log nudge for users who haven't logged anything yet today
-  mealLogTask = cron.schedule(
-    "0 12 * * *",
-    () =>
-      sendMealLogReminders().catch((err) => {
-        logger.error(
-          { err },
-          "notification-scheduler: unhandled error in meal-log cron",
-        );
-      }),
-    { timezone: "UTC", noOverlap: true, name: "meal-log" },
+        sendMealLogReminders({ now, localHour: MEAL_LOG_LOCAL_HOUR }).catch(
+          (err) => {
+            logger.error(
+              { err },
+              "notification-scheduler: unhandled error in meal-log cron",
+            );
+          },
+        ),
+      ]);
+    },
+    { timezone: "UTC", noOverlap: true, name: "local-hour-reminders" },
   );
 
   logger.info(
-    "notification-scheduler: started (09:00 UTC commitments+checkin, 12:00 UTC meal-log)",
+    "notification-scheduler: started (09:00 UTC commitments; hourly local-time check-in 09:00 / meal-log 12:00)",
   );
 }
 
@@ -336,8 +391,8 @@ export function stopNotificationScheduler(): void {
     void scheduledTask.stop();
     scheduledTask = null;
   }
-  if (mealLogTask) {
-    void mealLogTask.stop();
-    mealLogTask = null;
+  if (localHourTask) {
+    void localHourTask.stop();
+    localHourTask = null;
   }
 }
