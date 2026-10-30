@@ -26,30 +26,63 @@ const empty = (): TipState => ({ seen: [], used: [], typedLogs: 0 });
 // hands the second person the first person's seen tips or typed-log count.
 let owner: string | null = null;
 let cache: TipState = empty();
+// Nothing is written until the saved data has loaded: a tip marked during the
+// load is kept in memory and merged in, never written over what was saved.
+let ready = false;
+const readyListeners = new Set<() => void>();
 
-export async function initFeatureTipsCache(
-  userId: string | null,
-): Promise<void> {
-  owner = userId;
-  cache = empty();
-  if (userId === null) return;
-  const raw = await AsyncStorage.getItem(KEY).catch(() => null);
-  if (!raw) return;
+export function isFeatureTipsReady(): boolean {
+  return ready;
+}
+
+export function onFeatureTipsReady(listener: () => void): () => void {
+  readyListeners.add(listener);
+  return () => {
+    readyListeners.delete(listener);
+  };
+}
+
+function parseSaved(raw: string | null, userId: string): TipState {
+  if (!raw) return empty();
   try {
     const parsed = JSON.parse(raw) as Partial<TipState> & { owner?: string };
-    if (parsed.owner !== userId) return;
-    cache = {
+    if (parsed.owner !== userId) return empty();
+    return {
       seen: Array.isArray(parsed.seen) ? parsed.seen : [],
       used: Array.isArray(parsed.used) ? parsed.used : [],
       typedLogs: typeof parsed.typedLogs === "number" ? parsed.typedLogs : 0,
     };
   } catch {
     // Unreadable data starts the person fresh; tips are low-stakes.
+    return empty();
   }
 }
 
+export async function initFeatureTipsCache(
+  userId: string | null,
+): Promise<void> {
+  owner = userId;
+  ready = false;
+  cache = empty();
+  if (userId === null) return;
+  const raw = await AsyncStorage.getItem(KEY).catch(() => null);
+  if (owner !== userId) return; // a newer init or sign-out took over
+  const saved = parseSaved(raw, userId);
+  const pending = cache;
+  cache = {
+    seen: [...new Set([...saved.seen, ...pending.seen])],
+    used: [...new Set([...saved.used, ...pending.used])],
+    typedLogs: saved.typedLogs + pending.typedLogs,
+  };
+  ready = true;
+  const hadPending =
+    pending.seen.length + pending.used.length + pending.typedLogs > 0;
+  if (hadPending) await persist();
+  for (const listener of readyListeners) listener();
+}
+
 async function persist(): Promise<void> {
-  if (owner === null) return;
+  if (!ready || owner === null) return;
   await AsyncStorage.setItem(KEY, JSON.stringify({ owner, ...cache })).catch(
     () => {},
   );
@@ -85,6 +118,7 @@ export async function incrementTypedLogCount(): Promise<number> {
 /** Sign-out cleanup. Never throws; returns whether the disk removal succeeded. */
 export async function clearFeatureTipsState(): Promise<boolean> {
   owner = null;
+  ready = false;
   cache = empty();
   try {
     await AsyncStorage.removeItem(KEY);

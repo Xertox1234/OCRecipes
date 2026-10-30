@@ -6,6 +6,8 @@ import {
   markFeatureUsed,
   incrementTypedLogCount,
   clearFeatureTipsState,
+  isFeatureTipsReady,
+  onFeatureTipsReady,
 } from "../feature-tips-storage";
 
 const store = vi.hoisted(() => new Map<string, string>());
@@ -73,5 +75,39 @@ describe("feature-tips-storage", () => {
     store.set("@ocrecipes_feature_tips", "{not json");
     await initFeatureTipsCache("1");
     expect(hasSeenTip("home-scan")).toBe(false);
+  });
+
+  it("is ready only once saved data has loaded", async () => {
+    await clearFeatureTipsState();
+    expect(isFeatureTipsReady()).toBe(false);
+    const listener = vi.fn();
+    const unsubscribe = onFeatureTipsReady(listener);
+    await initFeatureTipsCache("1");
+    expect(isFeatureTipsReady()).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("does not overwrite saved data while it is still loading", async () => {
+    await clearFeatureTipsState();
+    store.set(
+      "@ocrecipes_feature_tips",
+      JSON.stringify({
+        owner: "1",
+        seen: ["home-scan"],
+        used: ["scan"],
+        typedLogs: 2,
+      }),
+    );
+
+    const loading = initFeatureTipsCache("1");
+    await markTipSeen("pantry-receipt");
+    await loading;
+
+    expect(hasSeenTip("home-scan")).toBe(true);
+    expect(hasUsedFeature("scan")).toBe(true);
+    expect(JSON.parse(store.get("@ocrecipes_feature_tips")!).seen).toContain(
+      "home-scan",
+    );
   });
 });
