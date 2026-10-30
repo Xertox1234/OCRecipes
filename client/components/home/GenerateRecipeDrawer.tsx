@@ -2,6 +2,13 @@
 import React, { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import {
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
@@ -17,6 +24,8 @@ import {
 } from "@/constants/theme";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 
+const PROMPT_LABEL = "Recipe idea";
+
 interface GenerateRecipeDrawerProps {
   onUsed: () => void;
 }
@@ -26,6 +35,7 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
   const haptics = useHaptics();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [text, setText] = useState("");
+  const promptFocus = useFieldFocus();
 
   const generate = (prompt: string) => {
     const p = prompt.trim();
@@ -37,7 +47,10 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
 
   return (
     <View style={styles.container}>
-      <View
+      <FocusField
+        focus={promptFocus}
+        label={PROMPT_LABEL}
+        hasValue={text.length > 0}
         style={[
           styles.inputRow,
           {
@@ -47,14 +60,22 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
         ]}
       >
         <FocusTextInput
+          focusRing={false}
+          onFocus={promptFocus.onFocus}
+          onBlur={promptFocus.onBlur}
           style={[styles.input, { color: theme.text }]}
-          placeholder="Describe a recipe…"
+          // The label rests where the placeholder would; it shows once floated.
+          placeholder={resolvePlaceholder(
+            PROMPT_LABEL,
+            "e.g. a quick weeknight curry",
+            shouldFloatLabel(promptFocus.focused, text),
+          )}
           placeholderTextColor={theme.textSecondary}
           value={text}
           onChangeText={setText}
           onSubmitEditing={() => generate(text)}
           returnKeyType="go"
-          accessibilityLabel="Describe a recipe to generate"
+          accessibilityLabel={PROMPT_LABEL}
         />
         <Pressable
           onPress={() => generate(text)}
@@ -73,7 +94,7 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
             accessible={false}
           />
         </Pressable>
-      </View>
+      </FocusField>
 
       <View style={styles.chipsWrap}>
         {GENERATE_IDEA_CHIPS.map((idea) => (
@@ -114,7 +135,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     gap: Spacing.xs,
   },
-  input: { flex: 1, height: 40, fontSize: 14, fontFamily: FontFamily.regular },
+  // Labelled field: the value sits under the floated label's row.
+  input: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    ...LABELLED_INPUT_TEXT,
+  },
   goButton: {
     width: 36,
     height: 36,

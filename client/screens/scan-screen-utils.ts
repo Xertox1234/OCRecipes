@@ -98,6 +98,34 @@ export function getRouteForContentType(
 }
 
 /**
+ * Route for a photo whose destination the user already picked on PhotoIntent
+ * (carried through Scan as the `intent` param) — no classification needed.
+ * Mirrors PhotoIntentScreen's with-photo routing.
+ */
+export function getRouteForPickedIntent(
+  intent: PhotoIntent | "cook",
+  imageUri: string,
+  localOCRText?: string,
+): ClassificationRoute {
+  switch (intent) {
+    case "cook":
+      return {
+        screen: "CookSessionCapture",
+        params: { initialPhotoUri: imageUri },
+      };
+    case "label":
+      return { screen: "LabelAnalysis", params: { imageUri } };
+    case "menu":
+      return { screen: "MenuScanResult", params: { imageUri, localOCRText } };
+    case "log":
+    case "identify":
+    case "recipe":
+    case "calories":
+      return { screen: "PhotoAnalysis", params: { imageUri, intent } };
+  }
+}
+
+/**
  * Compute on-device OCR text for the smart-scan menu path so MenuScanResult can
  * render an instant local skeleton while the AI analysis loads (the OCR race-swap
  * that MenuScanResultScreen performs from `localOCRText`). OCR is gated to
@@ -291,23 +319,39 @@ export type CapturePlan = {
    */
   runStepOcr: boolean;
   /**
-   * Which of `onShutterPress`'s two capture branches this phase's press takes.
+   * Which capture route this phase's press takes (one small capture function
+   * per route in `ScanScreen`).
    *
-   * `"smart"` — `HUNTING`'s label-mode/smart-classification branch: navigates
-   * to `LabelAnalysis` or uploads for classification, never dispatches
-   * `STEP_PHOTO_CAPTURED`.
+   * `HUNTING` splits by the screen's capture mode (see `CaptureMode`):
+   *
+   * - `"frontLabel"` — front-label mode with a verify barcode: hand the photo
+   *   to `FrontLabelConfirm`.
+   * - `"label"` — label mode: hand the photo to `LabelAnalysis`.
+   * - `"smart"` — everything else in `HUNTING`: picked-intent routing or
+   *   upload for classification; never dispatches `STEP_PHOTO_CAPTURED`.
    *
    * `"step"` — the STEP2/STEP3 branch: haptic + flash, then dispatches
-   * `STEP_PHOTO_CAPTURED` (with OCR text iff `runStepOcr`).
+   *   `STEP_PHOTO_CAPTURED` (with OCR text iff `runStepOcr`).
    *
    * Required (not derived from `runStepOcr`) so a future phase that reuses an
    * existing `{ capture, runStepOcr }` pair must still pick a route
    * explicitly — this is what lets `getCapturePlan`'s exhaustive switch own
-   * routing instead of the hand-written `phase.type === "HUNTING"` check that
-   * used to live in `ScanScreen.onShutterPress`. Meaningless when `capture` is
-   * `false` — that branch returns before reading it.
+   * routing instead of hand-written `phase.type === "HUNTING"` / mode checks
+   * in `ScanScreen.onShutterPress`. Meaningless when `capture` is `false` —
+   * that branch returns before reading it.
    */
-  route: "smart" | "step";
+  route: "frontLabel" | "label" | "smart" | "step";
+};
+
+/**
+ * The route-param flags that pick `HUNTING`'s capture route. All optional:
+ * omitted means the plain smart-scan screen.
+ */
+export type CaptureMode = {
+  isFrontLabelMode?: boolean;
+  isLabelMode?: boolean;
+  /** `verifyBarcode` route param is present. */
+  hasVerifyBarcode?: boolean;
 };
 
 /**
@@ -327,12 +371,26 @@ export type CapturePlan = {
  * capture gate silently ignores. Do not add a fall-through — it would recreate
  * the bug class in a new location.
  */
-export function getCapturePlan(phase: ScanPhase): CapturePlan {
+export function getCapturePlan(
+  phase: ScanPhase,
+  mode: CaptureMode = {},
+): CapturePlan {
   switch (phase.type) {
-    // Smart scan / label mode. Captures, but its recognition goes to
-    // `localOCRText` on another route, not `STEP_PHOTO_CAPTURED`.
+    // Smart scan / label mode / front-label mode. Captures, but its
+    // recognition goes to `localOCRText` / the next screen, not
+    // `STEP_PHOTO_CAPTURED`. Front-label WITHOUT a verify barcode falls through
+    // to "smart" (as before — label mode is a different `mode` value).
     case "HUNTING":
-      return { capture: true, runStepOcr: false, route: "smart" };
+      return {
+        capture: true,
+        runStepOcr: false,
+        route:
+          mode.isFrontLabelMode && mode.hasVerifyBarcode
+            ? "frontLabel"
+            : mode.isLabelMode
+              ? "label"
+              : "smart",
+      };
     // BARCODE_LOCKED is retained alongside LABEL_PROMPTED so a capture taken
     // before the chip's primary button is pressed still completes step 2 rather
     // than being dropped — same rationale as the reducer's branch.

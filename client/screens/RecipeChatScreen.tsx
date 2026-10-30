@@ -17,6 +17,11 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import {
+  FieldCounter,
+  CHAT_MESSAGE_MAX_LENGTH,
+  counterTone,
+} from "@/components/FieldCounter";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -68,8 +73,7 @@ import {
 } from "@/components/recipe-finder/recipe-finder-utils";
 import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
-import { useMakeSuggestion } from "@/hooks/useInspiredSuggestions";
-import { ApiError } from "@/lib/api-error";
+import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import type {
   FinderAction,
   FinderBlock,
@@ -228,6 +232,7 @@ export default function RecipeChatScreen() {
     route.params?.conversationId ?? null,
   );
   const [inputText, setInputText] = useState("");
+  const [inputFocused, setInputFocused] = useState(false);
   const [hasStarted, setHasStarted] = useState(!!route.params?.conversationId);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
     null,
@@ -531,54 +536,19 @@ export default function RecipeChatScreen() {
     [navigation],
   );
 
-  const { mutateAsync: makeSuggestion } = useMakeSuggestion();
-  // The idea card whose recipe is being made; one make at a time.
-  const [makingFinderItemId, setMakingFinderItemId] = useState<number | null>(
-    null,
-  );
-  const makingFinderRef = useRef<number | null>(null);
+  const { make: makeFinderItem, makingId: makingFinderItemId } =
+    useMakeSuggestionFlow();
   // Flows whose idea cards came back expired (410).
   const [expiredFinderFlowIds, setExpiredFinderFlowIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  // "Make this mine" on an idea card: generate the recipe, then open it.
+  // "Make this mine" on an idea card; a 410 retires this list's cards.
   const handleMakeFinderItem = useCallback(
-    (item: FinderItem, flowId: string) => {
-      // One make at a time — a second card's tap is ignored while one runs.
-      // A ref, not state: two taps in the same frame must not both pass.
-      if (makingFinderRef.current !== null) return;
-      makingFinderRef.current = item.id;
-      setMakingFinderItemId(item.id);
-      makeSuggestion(item.id)
-        .then(({ recipeId }) => {
-          navigation.navigate("FeaturedRecipeDetail", {
-            recipeId,
-            recipeType: "community",
-          });
-        })
-        .catch((error: unknown) => {
-          // The toast announces itself for screen readers.
-          const status = error instanceof ApiError ? error.status : undefined;
-          if (status === 429) {
-            toast.error("You've reached today's recipe limit.");
-          } else if (status === 410) {
-            toast.error("These ideas expired — search again.");
-            // Keep this list's idea buttons from being tapped again.
-            setExpiredFinderFlowIds((prev) => new Set(prev).add(flowId));
-          } else {
-            toast.error("Couldn't make this recipe. Try again.");
-          }
-        })
-        .finally(() => {
-          if (makingFinderRef.current === item.id) {
-            makingFinderRef.current = null;
-          }
-          setMakingFinderItemId((current) =>
-            current === item.id ? null : current,
-          );
-        });
-    },
-    [makeSuggestion, navigation, toast],
+    (item: FinderItem, flowId: string) =>
+      makeFinderItem(item.id, () =>
+        setExpiredFinderFlowIds((prev) => new Set(prev).add(flowId)),
+      ),
+    [makeFinderItem],
   );
 
   const openUpgrade = useCallback(() => setShowUpgrade(true), []);
@@ -1066,7 +1036,9 @@ export default function RecipeChatScreen() {
             },
           ]}
           multiline
-          maxLength={2000}
+          maxLength={CHAT_MESSAGE_MAX_LENGTH}
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
           editable={!isStreaming}
           onSubmitEditing={() => handleSend()}
           returnKeyType="send"
@@ -1078,6 +1050,15 @@ export default function RecipeChatScreen() {
           onPress={() => handleSend()}
           canSend={inputText.trim().length > 0}
           busy={isStreaming}
+        />
+        <FieldCounter
+          overlay
+          length={inputText.length}
+          max={CHAT_MESSAGE_MAX_LENGTH}
+          visible={
+            inputFocused &&
+            counterTone(inputText.length, CHAT_MESSAGE_MAX_LENGTH) !== "normal"
+          }
         />
       </View>
       <UpgradeModal

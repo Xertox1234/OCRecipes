@@ -1,4 +1,4 @@
-// Pure logic for TextInput's animated focus border and floating label,
+// Pure logic for TextInput's resting border and floating label,
 // extracted so Vitest can cover it (see client/components/*-utils.ts pattern).
 import { withOpacity } from "@/constants/theme";
 
@@ -11,9 +11,9 @@ export function shouldFloatLabel(
 }
 
 /**
- * Rest-state border color for the focus interpolation. Light mode keeps the
- * subtle theme border; dark mode rests on a fully transparent link tint so the
- * focus transition stays in-hue instead of fading through gray.
+ * Rest-state border color of the boxed TextInput (focus draws FocusField's
+ * ring over it). Light mode keeps the subtle theme border; dark mode rests on
+ * a fully transparent link tint, so no edge shows at rest.
  */
 export function getRestBorderColor(
   isDark: boolean,
@@ -34,73 +34,6 @@ export function resolvePlaceholder(
 ): string | undefined {
   if (!label) return placeholder;
   return floated ? placeholder : undefined;
-}
-
-/**
- * Focus border for a drop-in input that keeps the caller's own look.
- *
- * A style that already draws a border animates THAT border's colour toward the
- * focus colour. A borderless style (a chat composer, an inline numeric field)
- * gets a 1px border resting fully transparent, so focus still answers back
- * without the caller restyling anything — the only cost is 1px of inset.
- */
-export function resolveFocusBorder(
-  flat: { borderWidth?: number; borderColor?: unknown },
-  focusColor: string,
-  fallbackRestColor?: string,
-): { borderWidth: number; restColor: string; focusColor: string } {
-  const bordered = (flat.borderWidth ?? 0) > 0;
-  const own =
-    typeof flat.borderColor === "string" ? flat.borderColor : undefined;
-  return {
-    borderWidth: bordered ? (flat.borderWidth as number) : 1,
-    restColor: bordered
-      ? (own ?? fallbackRestColor ?? withOpacity(focusColor, 0))
-      : withOpacity(focusColor, 0),
-    focusColor,
-  };
-}
-
-type Side = "Top" | "Right" | "Bottom" | "Left";
-const SIDES: Side[] = ["Top", "Right", "Bottom", "Left"];
-
-/** A side's value: specific side, then axis shorthand, then all-sides shorthand. */
-function sideValue(
-  flat: Record<string, unknown>,
-  prop: "padding" | "margin",
-  side: Side,
-): unknown {
-  const axis = side === "Top" || side === "Bottom" ? "Vertical" : "Horizontal";
-  return flat[`${prop}${side}`] ?? flat[`${prop}${axis}`] ?? flat[prop];
-}
-
-/**
- * Style overrides that cancel the 1px border `resolveFocusBorder` adds to a
- * borderless style, so focusing a field never changes its size.
- *
- * Per side: padding of 1 or more gives the pixel back (the border sits inside
- * the box, so padding - 1 + border = the old inset). A side with no padding
- * gets a -1 margin instead, which leaves the layout footprint unchanged and
- * lets the ring draw just outside it. A style that already draws a border
- * grows by nothing, and a non-numeric value (a percentage) is left alone.
- */
-export function compensateSyntheticBorder(
-  flat: object,
-): Record<string, number> {
-  const style = flat as Record<string, unknown>;
-  if (((style.borderWidth as number | undefined) ?? 0) > 0) return {};
-  const out: Record<string, number> = {};
-  for (const side of SIDES) {
-    const padding = sideValue(style, "padding", side) ?? 0;
-    const margin = sideValue(style, "margin", side) ?? 0;
-    if (typeof padding !== "number") continue;
-    if (padding >= 1) {
-      out[`padding${side}`] = padding - 1;
-    } else if (typeof margin === "number") {
-      out[`margin${side}`] = margin - 1;
-    }
-  }
-  return out;
 }
 
 /** The visible label doubles as the input's accessible name unless overridden. */

@@ -4,6 +4,7 @@ track: knowledge
 category: conventions
 module: client
 tags: [accessibility, react-native, modal, voiceover, talkback, focus-trap]
+applies_to: [client/screens/ScanScreen.tsx, client/components/UpgradeModal.tsx]
 created: '2026-06-24'
 ---
 

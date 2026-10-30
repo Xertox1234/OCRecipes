@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { isIntentOptionLocked } from "../photo-intent-utils";
+import {
+  isIntentOptionLocked,
+  isScanIntent,
+  isScanIntentLocked,
+  getPhotoIntentDestination,
+} from "../photo-intent-utils";
 
 /** Convenience: both premium gates on by default, override per-test. */
 const feats = (over?: { cookAndTrack?: boolean; menuScanner?: boolean }) => ({
@@ -75,5 +80,82 @@ describe("isIntentOptionLocked", () => {
         true,
       ),
     ).toBe(false);
+  });
+});
+
+describe("isScanIntent", () => {
+  it("accepts every PhotoIntent and cook", () => {
+    for (const v of [
+      "log",
+      "identify",
+      "recipe",
+      "calories",
+      "menu",
+      "label",
+      "cook",
+    ]) {
+      expect(isScanIntent(v)).toBe(true);
+    }
+  });
+
+  it("rejects unknown values, arrays and non-strings", () => {
+    expect(isScanIntent("admin")).toBe(false);
+    expect(isScanIntent(["menu", "log"])).toBe(false);
+    expect(isScanIntent(undefined)).toBe(false);
+    expect(isScanIntent(3)).toBe(false);
+  });
+});
+
+describe("isScanIntentLocked", () => {
+  it("locks premium intents the user lacks and never locks free ones", () => {
+    const f = feats({ menuScanner: false, cookAndTrack: false });
+    expect(isScanIntentLocked("menu", f, true)).toBe(true);
+    expect(isScanIntentLocked("cook", f, true)).toBe(true);
+    expect(isScanIntentLocked("recipe", f, false)).toBe(true);
+    expect(isScanIntentLocked("recipe", f, true)).toBe(false);
+    expect(isScanIntentLocked("log", f, false)).toBe(false);
+  });
+});
+
+describe("getPhotoIntentDestination", () => {
+  it("keeps the picked intent when there is no photo yet", () => {
+    expect(getPhotoIntentDestination("menu", undefined)).toEqual({
+      screen: "Scan",
+      params: { intent: "menu" },
+    });
+    expect(getPhotoIntentDestination("recipe", undefined)).toEqual({
+      screen: "Scan",
+      params: { intent: "recipe" },
+    });
+    expect(getPhotoIntentDestination("cook", undefined)).toEqual({
+      screen: "Scan",
+      params: { intent: "cook" },
+    });
+  });
+
+  it("reuses label mode for the label intent without a photo", () => {
+    expect(getPhotoIntentDestination("label", undefined)).toEqual({
+      screen: "Scan",
+      params: { mode: "label" },
+    });
+  });
+
+  it("routes with a photo", () => {
+    expect(getPhotoIntentDestination("menu", "file://a")).toEqual({
+      screen: "MenuScanResult",
+      params: { imageUri: "file://a" },
+    });
+    expect(getPhotoIntentDestination("recipe", "file://a")).toEqual({
+      screen: "PhotoAnalysis",
+      params: { imageUri: "file://a", intent: "recipe" },
+    });
+    expect(getPhotoIntentDestination("label", "file://a")).toEqual({
+      screen: "LabelAnalysis",
+      params: { imageUri: "file://a" },
+    });
+    expect(getPhotoIntentDestination("cook", "file://a")).toEqual({
+      screen: "CookSessionCapture",
+      params: { initialPhotoUri: "file://a" },
+    });
   });
 });

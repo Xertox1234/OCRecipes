@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [hooks, safety-guard, typescript-optional, code-review, scan]
+tags: [hooks, safety-guard, typescript-optional, code-review, scan, react-native]
 symptoms: [Hook declares an optional safety parameter (e.g. `isFocused`) but the call site never passes it, Inner guard logic that depends on the parameter never fires — guard is permanently disabled, TypeScript reports no error and the call site looks correct]
 applies_to: [client/screens/ScanScreen.tsx]
 created: '2026-04-28'

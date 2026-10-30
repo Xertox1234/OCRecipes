@@ -114,6 +114,16 @@ describe("rulesDomainsForPath", () => {
     ],
     // Decline pin: a directory name that merely STARTS WITH "lib" (not IS it).
     ["server/library/foo.ts", []],
+    // --- server/index.ts + server/utils/** (2026-10-24: the Express entry and its utils were
+    // never routed, so docs anchored there could not be delivered — same set as server/lib/**) ---
+    ["server/index.ts", ["api", "architecture", "security", "typescript"]],
+    [
+      "server/utils/profile-hash.ts",
+      ["api", "architecture", "security", "typescript"],
+    ],
+    // Decline pins: a sibling file / a directory that merely STARTS WITH "utils".
+    ["server/index-helpers.ts", []],
+    ["server/utilities/foo.ts", []],
     [
       "client/screens/HomeScreen.tsx",
       ["accessibility", "design-system", "react-native"],
@@ -367,6 +377,10 @@ const PARITY_CORPUS = [
   "shared/schemas/nutrition.ts",
   "server/lib/image-store.ts",
   "server/library/foo.ts",
+  "server/index.ts",
+  "server/index-helpers.ts",
+  "server/utils/profile-hash.ts",
+  "server/utilities/foo.ts",
   "eslint-plugin-ocrecipes/index.js",
   "client/lib/eslint-plugin-ocrecipes-helper.ts",
 ];

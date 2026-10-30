@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
+import { createUploadFilePart } from "@/lib/upload-file-part";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { ApiError } from "@/lib/api-error";
 import {
@@ -57,12 +58,7 @@ export function useReceiptScan() {
             targetSizeKB: 4500,
           });
           compressedUris.push(compressed.uri);
-          // React Native FormData accepts object with uri/type/name (differs from web Blob API)
-          formData.append("photos", {
-            uri: compressed.uri,
-            type: "image/jpeg",
-            name: `receipt_${compressedUris.length}.jpg`,
-          } as unknown as Blob);
+          formData.append("photos", createUploadFilePart(compressed.uri));
         }
 
         const token = await tokenStorage.get();

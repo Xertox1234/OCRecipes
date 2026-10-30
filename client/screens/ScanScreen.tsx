@@ -14,10 +14,7 @@ import {
   TouchableOpacity,
   Text,
   Pressable,
-  Linking,
-  Platform,
   useWindowDimensions,
-  ActivityIndicator,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { deleteAsync } from "expo-file-system/legacy";
@@ -31,7 +28,6 @@ import type { RouteProp } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useTheme } from "@/hooks/useTheme";
 import { getConfidenceTier, getConfidenceHapticType } from "@/lib/confidence";
 import { usePremiumCamera } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -61,8 +57,11 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { logger } from "@/lib/logger";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
+import { isScanIntent, isScanIntentLocked } from "@/screens/photo-intent-utils";
 import {
   resolveSmartConfirmAction,
+  resolveMenuLocalOCRText,
+  getRouteForPickedIntent,
   evaluateBarcodeDetection,
   buildProductSummary,
   buildNutritionDetailParams,
@@ -77,19 +76,13 @@ import {
   buildScannedItemPayload,
   buildSuccessToastMessage,
   canLog,
-  getConfirmFlagPresentation,
   getScanOverlayA11y,
   type ConfirmCardState,
 } from "@/screens/ScanScreenConfirmOverlay-utils";
-import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { ScanConfirmOverlay } from "@/components/scan/ScanConfirmOverlay";
+import { CameraPermissionGate } from "@/components/scan/CameraPermissionGate";
 import { useToast } from "@/context/ToastContext";
-import {
-  withOpacity,
-  Spacing,
-  BorderRadius,
-  FontFamily,
-} from "@/constants/theme";
 import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
@@ -114,11 +107,10 @@ export default function ScanScreen() {
   const navigation = useNavigation<ScanScreenNavigationProp>();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const { isPremium, remainingScans } = usePremiumCamera();
-  const { refreshScanCount, features } = usePremiumContext();
+  const { refreshScanCount, features, canGenerateRecipe } = usePremiumContext();
   const queryClient = useQueryClient();
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -129,6 +121,12 @@ export default function ScanScreen() {
   // front-label uses FrontLabelConfirm AI flow — OCR frame processor not needed there
   const isFrontLabelMode = route.params?.mode === "front-label";
   const verifyBarcode = route.params?.verifyBarcode;
+  // Photo intent picked on PhotoIntent before capture. Untrusted at runtime
+  // (CoachChat casts model params to this screen's type): anything that is not
+  // a known intent is ignored and the photo is auto-classified as before.
+  // `mode` wins when both are present (its branch runs first).
+  const rawIntent: unknown = route.params?.intent;
+  const pickedIntent = isScanIntent(rawIntent) ? rawIntent : undefined;
   const toast = useToast();
 
   const [scanPhase, rawDispatch] = useReducer(scanPhaseReducer, {
@@ -383,45 +381,11 @@ export default function ScanScreen() {
     dispatch({ type: "CAMERA_READY" });
   }, [dispatch]);
 
-  // Announce loading state transitions to screen readers (iOS VoiceOver only —
-  // Android TalkBack is handled by accessibilityLiveRegion on the loading view).
-  // The loaded-name branch also folds in the flag badge (when present): the
-  // badge's own `accessibilityLiveRegion` is Android-only, so this imperative
-  // announce is iOS's ONLY signal for the flag. Name and flag arrive together
-  // in the same buildLoadedConfirmCard transition (a single fetch, not
-  // ProductChip's multi-variant lifecycle), so one combined announcement covers
-  // both without needing a separate edge-guarded effect.
-  const confirmIsLoading = confirmCard?.isLoading;
-  const confirmIsError = confirmCard?.isError;
-  const confirmName = confirmCard?.name;
-  const confirmFlagTitle = confirmCard?.topDisplayFlag?.title;
-  const confirmFlagDetail = confirmCard?.topDisplayFlag?.detail;
-  const confirmFlag = confirmCard?.topDisplayFlag;
-  const confirmFlagVisuals = confirmFlag
-    ? getConfirmFlagPresentation(confirmFlag)
-    : undefined;
-  useEffect(() => {
-    if (confirmIsLoading === undefined) return; // confirmCard is null
-    if (Platform.OS !== "ios") return;
-    if (confirmIsLoading) {
-      AccessibilityInfo.announceForAccessibility("Identifying food");
-    } else if (confirmIsError) {
-      AccessibilityInfo.announceForAccessibility("Nutrition data unavailable");
-    } else if (confirmName) {
-      const flagSuffix = confirmFlagTitle
-        ? ` ${confirmFlagDetail ? `${confirmFlagTitle}. ${confirmFlagDetail}` : confirmFlagTitle}`
-        : "";
-      AccessibilityInfo.announceForAccessibility(
-        `${confirmName}.${flagSuffix}`,
-      );
-    }
-  }, [
-    confirmIsLoading,
-    confirmIsError,
-    confirmName,
-    confirmFlagTitle,
-    confirmFlagDetail,
-  ]);
+  const goBackOrMain = useCallback(() => {
+    safeGoBack(navigation, () =>
+      navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
+    );
+  }, [navigation]);
 
   const fetchProductInfo = useCallback(
     async (barcode: string) => {
@@ -550,7 +514,11 @@ export default function ScanScreen() {
 
   const onShutterPress = useCallback(async () => {
     const phase = scanPhaseRef.current;
-    const capturePlan = getCapturePlan(phase);
+    const capturePlan = getCapturePlan(phase, {
+      isFrontLabelMode,
+      isLabelMode,
+      hasVerifyBarcode: !!verifyBarcode,
+    });
     if (!capturePlan.capture) {
       // Was a bare `return`. Silence here is indistinguishable from a broken
       // button for a screen-reader user, which is exactly how this was
@@ -575,107 +543,140 @@ export default function ScanScreen() {
     // The body lives in an inner function so the guard reset below is a
     // catch-and-rethrow rather than a try/finally (React Compiler cannot lower
     // a TryStatement without a catch clause).
-    const runCapture = async () => {
-      if (capturePlan.route === "smart") {
-        const photo = await cameraRef.current?.takePicture();
-        if (!photo) {
-          Alert.alert("Capture failed", "Please try again.");
+    // One small function per capture route (getCapturePlan picks the route; the
+    // mode branches that used to live here are gone).
+    const captureFrontLabel = async (photoUri: string) => {
+      // Front-label mode (the "Add product details" CTA and FrontLabelConfirm's
+      // Retake): hand the photo and the product's barcode to FrontLabelConfirm,
+      // which runs the AI extraction itself because sessionId is null. On-device
+      // OCR only seeds a preview, so its failure is non-fatal.
+      if (!verifyBarcode) return; // narrowing only: the plan routes here iff set
+      let data = EMPTY_FRONT_LABEL;
+      try {
+        const ocrResult = await recognizeTextFromPhoto(photoUri);
+        if (ocrResult.text) data = parseFrontLabelFromOCR(ocrResult.text);
+      } catch (err) {
+        logger.error(
+          "[ScanScreen front-label OCR] recognition failed; navigating without preview",
+          err,
+        );
+      }
+      navigation.navigate("FrontLabelConfirm", {
+        imageUri: photoUri,
+        barcode: verifyBarcode,
+        sessionId: null,
+        data,
+      });
+    };
+
+    // Label mode: skip smart classification, go directly to LabelAnalysis.
+    // On-device snapshot OCR pre-fills an instant preview; the server does the
+    // authoritative analysis, so OCR failure here is non-fatal (preview absent).
+    // With a verifyBarcode (NutritionDetail's "Help verify this product"),
+    // LabelAnalysis submits a verification for that barcode instead of logging.
+    const captureLabel = async (photoUri: string) => {
+      let localOCRText: string | undefined;
+      try {
+        const ocrResult = await recognizeTextFromPhoto(photoUri);
+        if (ocrResult.text) localOCRText = ocrResult.text;
+      } catch (err) {
+        logger.error(
+          "[ScanScreen label OCR] recognition failed; navigating without preview",
+          err,
+        );
+      }
+      navigation.navigate("LabelAnalysis", {
+        imageUri: photoUri,
+        localOCRText,
+        ...(verifyBarcode
+          ? {
+              barcode: verifyBarcode,
+              verificationMode: true,
+              verifyBarcode,
+            }
+          : {}),
+      });
+    };
+
+    const captureSmart = async (photoUri: string) => {
+      // Picked on PhotoIntent: skip classification and go to that flow. The
+      // premium lock is re-checked here because the param can arrive without
+      // passing PhotoIntentScreen's own lock.
+      if (pickedIntent) {
+        if (
+          isScanIntentLocked(
+            pickedIntent,
+            features,
+            !!features.recipeGeneration && !!canGenerateRecipe,
+          )
+        ) {
+          trackTempUri(photoUri);
+          resetScan();
+          setShowUpgradeModal(true);
           return;
         }
-        haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-
-        // Front-label mode (the "Add product details" CTA and FrontLabelConfirm's
-        // Retake): hand the photo and the product's barcode to FrontLabelConfirm,
-        // which runs the AI extraction itself because sessionId is null. On-device
-        // OCR only seeds a preview, so its failure is non-fatal.
-        if (isFrontLabelMode && verifyBarcode) {
-          let data = EMPTY_FRONT_LABEL;
-          try {
-            const ocrResult = await recognizeTextFromPhoto(photo.uri);
-            if (ocrResult.text) data = parseFrontLabelFromOCR(ocrResult.text);
-          } catch (err) {
-            logger.error(
-              "[ScanScreen front-label OCR] recognition failed; navigating without preview",
-              err,
-            );
-          }
-          navigation.navigate("FrontLabelConfirm", {
-            imageUri: photo.uri,
-            barcode: verifyBarcode,
-            sessionId: null,
-            data,
-          });
-          return;
-        }
-
-        // Label mode: skip smart classification, go directly to LabelAnalysis.
-        // On-device snapshot OCR pre-fills an instant preview; the server does the
-        // authoritative analysis, so OCR failure here is non-fatal (preview absent).
-        // With a verifyBarcode (NutritionDetail's "Help verify this product"),
-        // LabelAnalysis submits a verification for that barcode instead of logging.
-        if (isLabelMode) {
-          let localOCRText: string | undefined;
-          try {
-            const ocrResult = await recognizeTextFromPhoto(photo.uri);
-            if (ocrResult.text) localOCRText = ocrResult.text;
-          } catch (err) {
-            logger.error(
-              "[ScanScreen label OCR] recognition failed; navigating without preview",
-              err,
-            );
-          }
-          navigation.navigate("LabelAnalysis", {
-            imageUri: photo.uri,
-            localOCRText,
-            ...(verifyBarcode
-              ? {
-                  barcode: verifyBarcode,
-                  verificationMode: true,
-                  verifyBarcode,
-                }
-              : {}),
-          });
-          return;
-        }
-
-        trackTempUri(photo.uri);
-        dispatch({ type: "SMART_PHOTO_INITIATED", imageUri: photo.uri });
-        try {
-          const result = await uploadPhotoForAnalysis(photo.uri, "auto");
-          dispatch({
-            type: "CLASSIFICATION_SUCCEEDED",
-            classification: result,
-          });
-          haptics.notification(
-            getConfidenceHapticType(
-              getConfidenceTier(result.overallConfidence),
-            ),
-          );
-        } catch (err) {
-          // Stale dispatch is safe — reducer no-ops CLASSIFICATION_FAILED when state !== CLASSIFYING
-          dispatch({
-            type: "CLASSIFICATION_FAILED",
-            error: err instanceof Error ? err.message : "Unknown error",
-          });
+        const localOCRText =
+          pickedIntent === "menu"
+            ? await resolveMenuLocalOCRText(
+                "restaurant_menu",
+                photoUri,
+                recognizeTextFromPhoto,
+              )
+            : undefined;
+        const picked = getRouteForPickedIntent(
+          pickedIntent,
+          photoUri,
+          localOCRText,
+        );
+        switch (picked.screen) {
+          case "PhotoAnalysis":
+            navigation.navigate("PhotoAnalysis", picked.params);
+            break;
+          case "LabelAnalysis":
+            navigation.navigate("LabelAnalysis", picked.params);
+            break;
+          case "MenuScanResult":
+            navigation.navigate("MenuScanResult", picked.params);
+            break;
+          case "CookSessionCapture":
+            navigation.navigate("CookSessionCapture", picked.params);
+            break;
+          default:
+            // getRouteForPickedIntent only yields the four arms above.
+            break;
         }
         return;
       }
 
-      const photo = await cameraRef.current?.takePicture();
-      if (!photo) {
-        Alert.alert("Capture failed", "Please try again.");
-        return;
+      trackTempUri(photoUri);
+      dispatch({ type: "SMART_PHOTO_INITIATED", imageUri: photoUri });
+      try {
+        const result = await uploadPhotoForAnalysis(photoUri, "auto");
+        dispatch({
+          type: "CLASSIFICATION_SUCCEEDED",
+          classification: result,
+        });
+        haptics.notification(
+          getConfidenceHapticType(getConfidenceTier(result.overallConfidence)),
+        );
+      } catch (err) {
+        // Stale dispatch is safe — reducer no-ops CLASSIFICATION_FAILED when state !== CLASSIFYING
+        dispatch({
+          type: "CLASSIFICATION_FAILED",
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
       }
+    };
 
-      // Haptic + flash immediately after capture, before async OCR
-      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    const captureStep = async (photoUri: string) => {
+      // Flash immediately after capture, before async OCR
       setFlashCount((c) => c + 1);
-      trackTempUri(photo.uri);
+      trackTempUri(photoUri);
 
       if (capturePlan.runStepOcr) {
         let ocrText = "";
         try {
-          const ocrResult = await recognizeTextFromPhoto(photo.uri);
+          const ocrResult = await recognizeTextFromPhoto(photoUri);
           if (ocrResult.text != null) ocrText = ocrResult.text;
         } catch (err) {
           // OCR failure is non-fatal: the STEP2 photo is still captured and the
@@ -689,10 +690,33 @@ export default function ScanScreen() {
             err,
           );
         }
-        dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri, ocrText });
+        dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photoUri, ocrText });
       } else {
         // STEP2_CONFIRMED (front-label capture) — no OCR needed
-        dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri });
+        dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photoUri });
+      }
+    };
+
+    const runCapture = async () => {
+      const photo = await cameraRef.current?.takePicture();
+      if (!photo) {
+        Alert.alert("Capture failed", "Please try again.");
+        return;
+      }
+      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+      switch (capturePlan.route) {
+        case "frontLabel":
+          await captureFrontLabel(photo.uri);
+          break;
+        case "label":
+          await captureLabel(photo.uri);
+          break;
+        case "smart":
+          await captureSmart(photo.uri);
+          break;
+        case "step":
+          await captureStep(photo.uri);
+          break;
       }
     };
     try {
@@ -707,6 +731,10 @@ export default function ScanScreen() {
     isLabelMode,
     isFrontLabelMode,
     verifyBarcode,
+    pickedIntent,
+    features,
+    canGenerateRecipe,
+    resetScan,
     navigation,
     haptics,
     trackTempUri,
@@ -715,72 +743,21 @@ export default function ScanScreen() {
   // Permission screens
   if (!permission || permission.status === "undetermined") {
     return (
-      <View
-        style={[
-          styles.permissionContainer,
-          { backgroundColor: theme.backgroundDefault },
-        ]}
-      >
-        <Text style={[styles.permissionTitle, { color: theme.text }]}>
-          Camera Access
-        </Text>
-        <Text style={[styles.permissionBody, { color: theme.textSecondary }]}>
-          OCRecipes needs your camera to scan barcodes and food labels.
-        </Text>
-        <TouchableOpacity
-          style={styles.permissionBtn}
-          onPress={requestPermission}
-          accessibilityLabel="Allow camera access"
-          accessibilityRole="button"
-        >
-          <Text style={styles.permissionBtnText}>Allow Camera</Text>
-        </TouchableOpacity>
-      </View>
+      <CameraPermissionGate
+        status="undetermined"
+        onRequestPermission={requestPermission}
+        onCancel={goBackOrMain}
+      />
     );
   }
 
   if (permission.status === "denied") {
     return (
-      <View
-        style={[
-          styles.permissionContainer,
-          { backgroundColor: theme.backgroundDefault },
-        ]}
-      >
-        <Text style={[styles.permissionTitle, { color: theme.text }]}>
-          Camera Blocked
-        </Text>
-        <Text style={[styles.permissionBody, { color: theme.textSecondary }]}>
-          Enable camera access in Settings to scan products.
-        </Text>
-        <TouchableOpacity
-          style={styles.permissionBtn}
-          onPress={() => Linking.openSettings()}
-          accessibilityLabel="Open Settings to enable camera"
-          accessibilityRole="button"
-        >
-          <Text style={styles.permissionBtnText}>Open Settings</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.permissionCancel}
-          onPress={() =>
-            safeGoBack(navigation, () =>
-              navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
-            )
-          }
-          accessibilityLabel="Cancel and go back"
-          accessibilityRole="button"
-        >
-          <Text
-            style={[
-              styles.permissionCancelText,
-              { color: theme.textSecondary },
-            ]}
-          >
-            Cancel
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <CameraPermissionGate
+        status="denied"
+        onRequestPermission={requestPermission}
+        onCancel={goBackOrMain}
+      />
     );
   }
 
@@ -837,11 +814,7 @@ export default function ScanScreen() {
         <TouchableOpacity
           style={styles.closeBtn}
           hitSlop={4}
-          onPress={() =>
-            safeGoBack(navigation, () =>
-              navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
-            )
-          }
+          onPress={goBackOrMain}
           accessibilityLabel="Close camera"
           accessibilityRole="button"
         >
@@ -1084,175 +1057,11 @@ export default function ScanScreen() {
       />
 
       {confirmCard && (
-        <View
-          style={[
-            styles.confirmOverlay,
-            {
-              backgroundColor: withOpacity(theme.backgroundRoot, 0.95),
-              paddingBottom: insets.bottom + Spacing.lg,
-            },
-          ]}
-          accessibilityViewIsModal
-        >
-          {confirmCard.isLoading ? (
-            <View
-              style={styles.confirmLoadingRow}
-              accessibilityLiveRegion="polite"
-            >
-              <ActivityIndicator color={theme.link} />
-              <ThemedText
-                style={{ color: theme.textSecondary, marginLeft: Spacing.sm }}
-              >
-                Identifying food…
-              </ThemedText>
-            </View>
-          ) : (
-            <View
-              style={[
-                styles.confirmCard,
-                {
-                  backgroundColor: theme.backgroundSecondary,
-                  borderColor: theme.border,
-                },
-              ]}
-            >
-              <View style={styles.confirmInfo}>
-                {confirmCard.isError ? (
-                  <>
-                    <ThemedText
-                      type="body"
-                      style={{
-                        color: theme.textSecondary,
-                        fontFamily: FontFamily.semiBold,
-                      }}
-                      accessibilityLiveRegion="polite"
-                    >
-                      Nutrition data unavailable
-                    </ThemedText>
-                    <ThemedText
-                      style={{ color: theme.textSecondary, fontSize: 12 }}
-                    >
-                      Barcode: {confirmCard.barcode}
-                    </ThemedText>
-                  </>
-                ) : (
-                  <ThemedText
-                    type="body"
-                    style={{
-                      color: theme.text,
-                      fontFamily: FontFamily.semiBold,
-                    }}
-                    numberOfLines={2}
-                    accessibilityLiveRegion="polite"
-                  >
-                    {confirmCard.name}
-                  </ThemedText>
-                )}
-                {!confirmCard.isError && confirmCard.calories !== null && (
-                  <ThemedText style={{ color: theme.link, fontSize: 14 }}>
-                    {confirmCard.calories} cal
-                  </ThemedText>
-                )}
-              </View>
-              {confirmFlag && confirmFlagVisuals ? (
-                <View
-                  style={[
-                    styles.confirmFlagBadge,
-                    {
-                      backgroundColor: withOpacity(
-                        theme[confirmFlagVisuals.colorKey],
-                        0.12,
-                      ),
-                    },
-                  ]}
-                  accessible={true}
-                  accessibilityRole="text"
-                  accessibilityLiveRegion={confirmFlagVisuals.liveRegion}
-                  accessibilityLabel={
-                    confirmFlag.detail
-                      ? `${confirmFlag.title}. ${confirmFlag.detail}`
-                      : confirmFlag.title
-                  }
-                >
-                  <Feather
-                    name={confirmFlagVisuals.icon}
-                    size={16}
-                    color={theme[confirmFlagVisuals.colorKey]}
-                  />
-                  <ThemedText
-                    type="small"
-                    style={{
-                      marginLeft: Spacing.sm,
-                      fontWeight: "700",
-                      color: theme[confirmFlagVisuals.colorKey],
-                    }}
-                  >
-                    {confirmFlag.title}
-                  </ThemedText>
-                </View>
-              ) : null}
-              <View style={styles.confirmButtons}>
-                <Pressable
-                  onPress={handleConfirmDismiss}
-                  disabled={confirmCard.isLogging}
-                  style={({ pressed }) => [
-                    styles.confirmDismissButton,
-                    {
-                      borderColor: theme.border,
-                      opacity: pressed || confirmCard.isLogging ? 0.5 : 1,
-                    },
-                  ]}
-                  accessibilityLabel="Dismiss"
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: confirmCard.isLogging }}
-                >
-                  <ThemedText
-                    style={{ color: theme.textSecondary, fontSize: 14 }}
-                  >
-                    Dismiss
-                  </ThemedText>
-                </Pressable>
-                <Pressable
-                  onPress={handleConfirmLog}
-                  disabled={!canLog(confirmCard)}
-                  style={({ pressed }) => [
-                    styles.confirmLogButton,
-                    {
-                      backgroundColor: confirmCard.isError
-                        ? withOpacity(theme.link, 0.4)
-                        : theme.accentSolid,
-                      opacity: pressed || confirmCard.isLogging ? 0.7 : 1,
-                    },
-                  ]}
-                  accessibilityLabel={
-                    confirmCard.isError
-                      ? "Log It (unavailable — nutrition data missing)"
-                      : "Log It"
-                  }
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    busy: confirmCard.isLogging,
-                    disabled: confirmCard.isError,
-                  }}
-                >
-                  {confirmCard.isLogging ? (
-                    <ActivityIndicator size="small" color={theme.buttonText} />
-                  ) : (
-                    <ThemedText
-                      style={{
-                        color: theme.buttonText,
-                        fontSize: 14,
-                        fontFamily: FontFamily.medium,
-                      }}
-                    >
-                      ✓ Log It
-                    </ThemedText>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          )}
-        </View>
+        <ScanConfirmOverlay
+          confirmCard={confirmCard}
+          onDismiss={handleConfirmDismiss}
+          onLog={handleConfirmLog}
+        />
       )}
 
       <UpgradeModal
@@ -1329,25 +1138,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 6,
   },
-  permissionContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 32,
-    gap: 16,
-  },
-  permissionTitle: { fontSize: 22, fontWeight: "700", textAlign: "center" },
-  permissionBody: { fontSize: 15, textAlign: "center", lineHeight: 22 },
-  permissionBtn: {
-    backgroundColor: "#007AFF", // hardcoded — iOS system blue, intentional
-    borderRadius: 12,
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    marginTop: 8,
-  },
-  permissionBtnText: { color: "#FFF", fontWeight: "700", fontSize: 16 }, // hardcoded — camera overlay
-  permissionCancel: { paddingVertical: 12 },
-  permissionCancelText: { fontSize: 15 },
   scanCountPill: {
     backgroundColor: "rgba(0,0,0,0.4)",
     borderRadius: 999,
@@ -1355,55 +1145,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   scanCountText: { color: "rgba(255,255,255,0.75)", fontSize: 12 },
-  confirmOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-  },
-  confirmLoadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: Spacing.lg,
-  },
-  confirmCard: {
-    borderRadius: BorderRadius.card,
-    borderWidth: 1,
-    padding: Spacing.lg,
-    gap: Spacing.md,
-  },
-  confirmInfo: {
-    gap: 4,
-  },
-  confirmFlagBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: BorderRadius.sm,
-    padding: Spacing.sm,
-    marginBottom: Spacing.sm,
-  },
-  confirmButtons: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  confirmDismissButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: BorderRadius.xs,
-    paddingVertical: Spacing.sm,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  confirmLogButton: {
-    flex: 2,
-    borderRadius: BorderRadius.xs,
-    paddingVertical: Spacing.sm,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
 });

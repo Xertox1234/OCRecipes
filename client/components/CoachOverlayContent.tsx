@@ -318,6 +318,8 @@ export function CoachOverlayContent({
       placeholder="Ask a follow-up..."
       inputAccessibilityLabel="Type a follow-up question"
       multilineInput
+      // Return sends, as on the Coach tab — never a line break (spec §5.6).
+      submitOnReturn
       inputBarAlign="flex-end"
       showInputBar={!!conversationId && !createError}
       inputBarStyle={{

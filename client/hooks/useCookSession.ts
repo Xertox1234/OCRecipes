@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
+import { createUploadFilePart } from "@/lib/upload-file-part";
 import { cleanupImage, compressImage } from "@/lib/image-compression";
 import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import type {
@@ -69,14 +70,10 @@ export function useAddCookPhoto() {
         targetSizeKB: 4500,
       });
 
-      const formData = new FormData();
-      formData.append("photo", {
-        uri: compressed.uri,
-        type: "image/jpeg",
-        name: "ingredient.jpg",
-      } as unknown as Blob);
-
       try {
+        const formData = new FormData();
+        formData.append("photo", createUploadFilePart(compressed.uri));
+
         const token = await tokenStorage.get();
         const response = await fetch(
           `${getApiUrl()}/api/cooking/sessions/${sessionId}/photos`,

@@ -4,9 +4,9 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [architecture, ocr, regex, nutrition-label, parsing, fda-format]
+tags: [architecture, ocr, regex, nutrition-label, parsing, fda-format, typescript]
 symptoms: [Parser captures 'from' as the calorie value on pre-2020 US labels, '`parseFloat(''from'')` returns `NaN`, calorie count silently becomes `null`', First match in `String.match()` wins — wrong line ahead of the real one]
-applies_to: [server/services/ocr/**/*.ts]
+applies_to: [client/lib/nutrition-ocr-parser.ts]
 created: '2026-04-07'
 ---
 

@@ -2262,6 +2262,8 @@ export const recipeDismissals = pgTable(
       .notNull(),
     recipeIdentifier: text("recipe_identifier").notNull(),
     source: text("source").notNull(),
+    // One of RECIPE_DISMISS_REASONS; null = hidden without being asked.
+    reason: text("reason"),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),

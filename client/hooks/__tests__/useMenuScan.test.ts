@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 
 import { useMenuScan } from "../useMenuScan";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { File as MockExpoFile } from "../../../test/mocks/expo-file-system";
 
 const { mockGetApiUrl, mockTokenStorage, mockFetch } = vi.hoisted(() => ({
   mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
@@ -22,6 +23,15 @@ vi.mock("@/lib/query-client", () => ({
 vi.mock("@/lib/token-storage", () => ({
   tokenStorage: mockTokenStorage,
 }));
+
+// `expo/fetch` (the global fetch since Expo SDK 57) only serializes FormData
+// parts that are strings, Blobs, or objects with `bytes()` — a React Native
+// `{ uri, type, name }` object throws "Unsupported FormDataPart implementation"
+// on device. jsdom's FormData stringifies anything, so assert the part type.
+vi.mock(
+  "expo-file-system",
+  () => import("../../../test/mocks/expo-file-system"),
+);
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch;
@@ -99,5 +109,29 @@ describe("useMenuScan", () => {
     });
 
     expect(result.current.error?.message).toBe("413: Image too large");
+  });
+
+  it("appends the photo as a file object expo/fetch can send", async () => {
+    const append = vi.spyOn(FormData.prototype, "append");
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ menuItems: [] }),
+    });
+
+    const { result } = renderHook(() => useMenuScan(), { wrapper });
+    await act(async () => {
+      result.current.mutate("file:///photos/menu.jpg");
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const photoParts = append.mock.calls.filter(([name]) => name === "photo");
+    expect(photoParts).toHaveLength(1);
+    expect(photoParts[0][1]).toBeInstanceOf(MockExpoFile);
+    expect((photoParts[0][1] as unknown as { uri: string }).uri).toBe(
+      "file:///photos/menu.jpg",
+    );
+    append.mockRestore();
   });
 });

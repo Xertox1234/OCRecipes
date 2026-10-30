@@ -34,7 +34,7 @@ export function useTheme() {
 
   // Use context value if available, otherwise fall back to system
   const resolvedColorScheme: "light" | "dark" =
-    themeCtx?.colorScheme ?? systemColorScheme ?? "light";
+    themeCtx?.colorScheme ?? (systemColorScheme === "dark" ? "dark" : "light");
 
   const isDark = resolvedColorScheme === "dark";
   const theme = Colors[resolvedColorScheme];

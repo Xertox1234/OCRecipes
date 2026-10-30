@@ -13,6 +13,7 @@ import {
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { pageSheetHeaderPaddingTop } from "./page-sheet-utils";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -230,7 +231,15 @@ export function CookbookPickerModal({
         ]}
       >
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: theme.border }]}>
+        <View
+          style={[
+            styles.header,
+            {
+              borderBottomColor: theme.border,
+              paddingTop: pageSheetHeaderPaddingTop(insets.top),
+            },
+          ]}
+        >
           <ThemedText style={styles.headerTitle}>Save to Cookbook</ThemedText>
           <Pressable
             onPress={handleClose}
@@ -287,6 +296,7 @@ export function CookbookPickerModal({
         {showNewInput ? (
           <View style={[styles.newInputRow, { borderTopColor: theme.border }]}>
             <FocusTextInput
+              label="Cookbook name"
               style={[
                 styles.newInput,
                 {
@@ -297,12 +307,11 @@ export function CookbookPickerModal({
               ]}
               value={newName}
               onChangeText={setNewName}
-              placeholder="Cookbook name (optional)"
+              placeholder="Optional, e.g. Weeknight dinners"
               placeholderTextColor={theme.textSecondary}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={handleCreateAndAdd}
-              accessibilityLabel="New cookbook name"
             />
             <Pressable
               onPress={handleCreateAndAdd}

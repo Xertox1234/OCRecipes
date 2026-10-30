@@ -98,6 +98,40 @@ describe("useMealPlan", () => {
       expect(invalidateSpy).toHaveBeenCalled();
     });
 
+    it("also invalidates recipe lists when an inline recipe is sent", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      mockApiRequest.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 1 }),
+      });
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useAddMealPlanItem(), { wrapper });
+
+      const item = {
+        recipe: { title: "Overnight oats", instructions: ["Soak"] },
+        plannedDate: "2024-01-01",
+        mealType: "breakfast",
+      };
+      await act(async () => {
+        result.current.mutate(item);
+      });
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/items",
+        item,
+      );
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/meal-plan/recipes"],
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/recipes/browse"],
+      });
+    });
+
     it("throws on non-ok response", async () => {
       const { wrapper } = createQueryWrapper();
 

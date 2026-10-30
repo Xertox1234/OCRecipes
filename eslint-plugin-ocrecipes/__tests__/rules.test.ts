@@ -1051,4 +1051,28 @@ describe("eslint.config.js wiring", () => {
     // whole repo would still pass the assertion above.
     expect(await resolveRule("server/index.ts")).toBeNull();
   });
+
+  // eslint-plugin-react-hooks 7 (SDK 56) adds the React Compiler rules to its
+  // recommended set, which eslint-config-expo spreads in. They stay off until
+  // adopted one by one; the two hooks rules we already enforced stay on, plus
+  // each compiler rule adopted so far (globals).
+  it("keeps react-hooks to the two pre-compiler rules plus the adopted compiler rules", async () => {
+    const config = await new ESLint({}).calculateConfigForFile(
+      "client/screens/ScanScreen.tsx",
+    );
+    const rules = config.rules ?? {};
+    expect(rules["react-hooks/rules-of-hooks"]).toEqual([2]);
+    expect(rules["react-hooks/exhaustive-deps"]).toEqual([1]);
+    expect(rules["react-hooks/globals"]).toEqual([2]);
+    const enabled = Object.entries(rules)
+      .filter(([name]) => name.startsWith("react-hooks/"))
+      .filter(([, value]) => (value as unknown[])[0] !== 0)
+      .map(([name]) => name)
+      .sort();
+    expect(enabled).toEqual([
+      "react-hooks/exhaustive-deps",
+      "react-hooks/globals",
+      "react-hooks/rules-of-hooks",
+    ]);
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   getRouteForContentType,
+  getRouteForPickedIntent,
   getConfirmationMessage,
   getContentTypeLabel,
   getPremiumGate,
@@ -778,6 +779,59 @@ describe("scan-screen-utils", () => {
       ).toBe("step");
     });
 
+    // The capture mode (route params) refines HUNTING's route only — the
+    // in-callback mode branches in `onShutterPress` moved into the plan.
+    describe("capture mode routing", () => {
+      const HUNTING: ScanPhase = { type: "HUNTING" };
+
+      it.each([
+        ["no mode", undefined, "smart"],
+        ["empty mode", {}, "smart"],
+        ["label mode", { isLabelMode: true }, "label"],
+        [
+          "label mode with a verify barcode",
+          { isLabelMode: true, hasVerifyBarcode: true },
+          "label",
+        ],
+        [
+          "front-label mode with a verify barcode",
+          { isFrontLabelMode: true, hasVerifyBarcode: true },
+          "frontLabel",
+        ],
+        // Front-label without a barcode used to fall through every mode branch
+        // to the smart path (label mode is a different `mode` value).
+        [
+          "front-label mode WITHOUT a verify barcode",
+          { isFrontLabelMode: true },
+          "smart",
+        ],
+        ["a verify barcode alone", { hasVerifyBarcode: true }, "smart"],
+      ] as const)("HUNTING with %s routes to %s", (_label, mode, route) => {
+        expect(getCapturePlan(HUNTING, mode).route).toBe(route);
+      });
+
+      it("keeps capture/runStepOcr unchanged by the mode", () => {
+        expect(getCapturePlan(HUNTING, { isLabelMode: true })).toEqual({
+          capture: true,
+          runStepOcr: false,
+          route: "label",
+        });
+      });
+
+      it.each(CASES.filter(([p]) => p.type !== "HUNTING"))(
+        "never changes a non-HUNTING phase's plan (%o)",
+        (phase, expected) => {
+          expect(
+            getCapturePlan(phase, {
+              isFrontLabelMode: true,
+              isLabelMode: true,
+              hasVerifyBarcode: true,
+            }),
+          ).toEqual(expected);
+        },
+      );
+    });
+
     // runStepOcr must never be true where capture is false — there would be no
     // photo to recognise, so that pair can only ever be a slip.
     it.each(CASES.map(([phase]) => [phase] as const))(
@@ -787,5 +841,34 @@ describe("scan-screen-utils", () => {
         expect(plan.runStepOcr && !plan.capture).toBe(false);
       },
     );
+  });
+});
+
+describe("getRouteForPickedIntent", () => {
+  it("sends photo intents to PhotoAnalysis with the intent", () => {
+    for (const intent of ["log", "identify", "recipe", "calories"] as const) {
+      expect(getRouteForPickedIntent(intent, "file://p")).toEqual({
+        screen: "PhotoAnalysis",
+        params: { imageUri: "file://p", intent },
+      });
+    }
+  });
+
+  it("sends menu to MenuScanResult carrying the OCR head start", () => {
+    expect(getRouteForPickedIntent("menu", "file://p", "SOUP 5")).toEqual({
+      screen: "MenuScanResult",
+      params: { imageUri: "file://p", localOCRText: "SOUP 5" },
+    });
+  });
+
+  it("sends label and cook to their screens", () => {
+    expect(getRouteForPickedIntent("label", "file://p")).toEqual({
+      screen: "LabelAnalysis",
+      params: { imageUri: "file://p" },
+    });
+    expect(getRouteForPickedIntent("cook", "file://p")).toEqual({
+      screen: "CookSessionCapture",
+      params: { initialPhotoUri: "file://p" },
+    });
   });
 });

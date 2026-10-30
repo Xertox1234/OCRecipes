@@ -8,6 +8,7 @@ tags: [react-native, sse, fetch, xmlhttprequest, streaming, ios, nsurlsession]
 symptoms: ['`response.body` is `null` for `text/event-stream` responses in React Native', '`isStreaming` stays `true` but `streamingContent` stays empty', SSE works in a browser but silently fails in React Native]
 applies_to: [client/hooks/**/*Stream*.ts, client/lib/sse*.ts]
 created: '2026-05-01'
+last_updated: '2026-10-26'
 ---
 
 # fetch ReadableStream Fails in React Native — Use XHR for SSE
@@ -32,13 +33,24 @@ Use `XMLHttpRequest` with `onprogress` for SSE parsing. XHR's `responseText` acc
 
 ```typescript
 let processedLength = 0;
+// A delivery batch can end mid-line. Keep the partial tail for the next batch;
+// splitting each batch on its own drops every event a batch boundary cuts.
+let lineBuffer = "";
 
 xhr.onprogress = () => {
   const chunk = xhr.responseText.slice(processedLength);
   processedLength = xhr.responseText.length;
-  // parse SSE lines from `chunk` using an sseBuffer for split payloads
+  lineBuffer += chunk;
+  const lines = lineBuffer.split("\n");
+  lineBuffer = lines.pop() ?? "";
+  for (const line of lines) {
+    if (!line.startsWith("data: ")) continue;
+    // JSON.parse(line.slice(6)) …
+  }
 };
 ```
+
+**The buffer is not optional (second manifestation, 2026-10-25).** This snippet used to show the buffer only as a comment. `useCoachStream` followed the snippet and split each batch on `\n` on its own: a `data:` line cut across two batches failed `JSON.parse` (swallowed by an "ignore incomplete JSON" `catch`), and its tail did not start with `data: `, so the event — Coach reply text — was silently dropped. `useChat` had the buffer all along. Pin it with a test that cuts one event mid-JSON across two chunks (`client/hooks/__tests__/useCoachStream.test.ts` → "keeps an event whose line is split across two network chunks"). The server ends every event with `\n\n`, so holding back the tail never loses a terminal event.
 
 Prefer `onprogress` over `onreadystatechange + readyState >= 3` — `onprogress` fires exactly once per delivery batch and is semantically cleaner.
 

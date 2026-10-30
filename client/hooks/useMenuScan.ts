@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
+import { createUploadFilePart } from "@/lib/upload-file-part";
 
 export interface MenuAnalysisItem {
   name: string;
@@ -34,11 +35,7 @@ export function useMenuScan() {
     mutationFn: async (photoUri: string) => {
       const token = await tokenStorage.get();
       const formData = new FormData();
-      formData.append("photo", {
-        uri: photoUri,
-        type: "image/jpeg",
-        name: "menu.jpg",
-      } as unknown as Blob);
+      formData.append("photo", createUploadFilePart(photoUri));
 
       const response = await fetch(`${getApiUrl()}/api/menu/scan`, {
         method: "POST",

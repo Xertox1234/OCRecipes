@@ -17,8 +17,10 @@ env:
       PASSWORD: ${PASSWORD}
 
 # Navigate to Plan tab (tabBarButtonTestID handle from MainTabNavigator.tsx)
-- tapOn:
-    id: "tab-plan"
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-plan"
 
 # Verify meal plan home elements. The action row's buttons expose a11y
 # labels, not their visible text ("Browse Recipes", not "Recipes"), and tab
@@ -76,7 +78,7 @@ env:
 
 # Check add item input
 - assertVisible:
-    text: "Add pantry item..."
+    text: "Add to pantry"
     optional: true
 
 # (No trailing `back` — that command is Android-only and fails the flow on

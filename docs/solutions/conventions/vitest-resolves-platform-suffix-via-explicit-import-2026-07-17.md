@@ -4,13 +4,7 @@ track: knowledge
 category: conventions
 module: client
 tags: [testing, vitest, react-native, platform-extension, camera, vision-camera]
-applies_to:
-  [
-    "client/**/*.ios.test.tsx",
-    "client/**/*.android.test.tsx",
-    "client/**/*.ios.tsx",
-    "client/**/*.android.tsx",
-  ]
+applies_to: [client/**/*.ios.test.tsx, client/**/*.android.test.tsx, client/**/*.ios.tsx, client/**/*.android.tsx]
 created: '2026-07-17'
 ---
 

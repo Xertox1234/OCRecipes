@@ -19,7 +19,10 @@ import { Feather } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 
 import { EmptyState } from "@/components/EmptyState";
-import { RecipeDetailContent } from "@/components/RecipeDetailContent";
+import {
+  RecipeDetailContent,
+  type RecipeDetailData,
+} from "@/components/RecipeDetailContent";
 import { RecipeDetailSkeleton } from "@/components/recipe-detail";
 import { RecipeTriedBar, TRIED_BAR_HEIGHT } from "@/components/RecipeTriedBar";
 import type { IngredientItem } from "@/components/recipe-detail";
@@ -49,7 +52,6 @@ import type {
   MealPlanRecipe,
   RecipeIngredient,
 } from "@shared/schema";
-import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { toTotalTimeMinutes } from "@shared/lib/recipe-time";
 
@@ -69,33 +71,6 @@ type FeaturedRecipeDetailRouteProp = RouteProp<
 type MealPlanRecipeWithIngredients = MealPlanRecipe & {
   ingredients: RecipeIngredient[];
 };
-
-interface NormalizedRecipe {
-  title: string;
-  description?: string | null;
-  difficulty?: string | null;
-  timeDisplay?: string | null;
-  servings?: number | null;
-  dietTags: string[];
-  instructions: string[];
-  ingredients: IngredientItem[];
-  imageUrl?: string | null;
-  nutrition?: ReturnType<typeof parseNutritionData>;
-  allergens?: DerivedRecipeAllergen[] | null;
-  /** Stored jsonb; read defensively downstream (`parseDietConflicts`). */
-  dietConflicts?: unknown;
-  spiceLevel?: unknown;
-  totalTimeMinutes?: number | null;
-  remixedFromId?: number | null;
-  remixedFromTitle?: string | null;
-  // Curated recipe fields
-  isCanonical?: boolean;
-  canonicalImages?: string[] | null;
-  instructionDetails?: (string | null)[] | null;
-  toolsRequired?: { name: string; affiliateUrl?: string }[] | null;
-  chefTips?: string[] | null;
-  cuisineOrigin?: string | null;
-}
 
 export default function FeaturedRecipeDetailScreen() {
   const route = useRoute<FeaturedRecipeDetailRouteProp>();
@@ -166,7 +141,7 @@ export default function FeaturedRecipeDetailScreen() {
   });
 
   // --- Normalize into RecipeDetailContent props ---
-  const normalized = useMemo((): NormalizedRecipe | null => {
+  const normalized = useMemo((): RecipeDetailData | null => {
     if (resolvedRecipeType === "mealPlan" && mealPlanRecipe) {
       return {
         title: mealPlanRecipe.title,
@@ -372,34 +347,14 @@ export default function FeaturedRecipeDetailScreen() {
         </View>
       ) : (
         <RecipeDetailContent
+          {...normalized}
           onScrollOffset={handleScrollOffset}
           recipeId={recipeId}
           recipeType={resolvedRecipeType}
-          title={normalized.title}
-          description={normalized.description}
           imageUrl={imageUri}
-          timeDisplay={normalized.timeDisplay}
-          difficulty={normalized.difficulty}
-          servings={normalized.servings}
-          dietTags={normalized.dietTags}
-          nutrition={normalized.nutrition ?? null}
-          allergens={normalized.allergens}
-          dietConflicts={normalized.dietConflicts}
-          spiceLevel={normalized.spiceLevel}
-          totalTimeMinutes={normalized.totalTimeMinutes}
-          ingredients={normalized.ingredients}
-          instructions={normalized.instructions}
           contentPaddingBottom={
             insets.bottom + Spacing.xl + (showTriedBar ? TRIED_BAR_HEIGHT : 0)
           }
-          remixedFromId={normalized.remixedFromId}
-          remixedFromTitle={normalized.remixedFromTitle}
-          isCanonical={normalized.isCanonical}
-          canonicalImages={normalized.canonicalImages}
-          instructionDetails={normalized.instructionDetails}
-          toolsRequired={normalized.toolsRequired}
-          chefTips={normalized.chefTips}
-          cuisineOrigin={normalized.cuisineOrigin}
         />
       )}
       {showTriedBar && normalized ? (

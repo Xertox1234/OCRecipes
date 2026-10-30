@@ -6,8 +6,32 @@ const ocrecipesPlugin = require("./eslint-plugin-ocrecipes");
 const tseslint = require("typescript-eslint");
 const path = require("path");
 
+// eslint-plugin-react-hooks 7 (from eslint-config-expo 56) puts the React
+// Compiler rules in its recommended set, which expoConfig spreads in. They
+// flagged ~100 existing call sites at the SDK 56 upgrade, so they stay off
+// until adopted one by one; the two pre-compiler hooks rules plus each adopted
+// compiler rule (globals) stay on. Rules left off, and why:
+//   preserve-manual-memoization (11 sites): each fix changes useCallback/useMemo
+//     deps and so re-render behaviour; needs per-site device verification.
+//   set-state-in-effect (50), immutability (27), refs (14): behavioural rewrites
+//     (derive/key/ref changes) that need per-site judgement and a UI check.
+// The plugin is read from expoConfig, which owns that dependency.
+const KEPT_REACT_HOOKS_RULES = new Set([
+  "react-hooks/rules-of-hooks",
+  "react-hooks/exhaustive-deps",
+  "react-hooks/globals",
+]);
+const reactHooksPlugin = expoConfig.find((c) => c.plugins?.["react-hooks"])
+  .plugins["react-hooks"];
+const reactCompilerRulesOff = Object.fromEntries(
+  Object.keys(reactHooksPlugin.configs.recommended.rules)
+    .filter((name) => !KEPT_REACT_HOOKS_RULES.has(name))
+    .map((name) => [name, "off"]),
+);
+
 module.exports = defineConfig([
   expoConfig,
+  { rules: reactCompilerRulesOff },
   eslintPluginPrettierRecommended,
   {
     // Global ignores (this object has no other key). ESLint never reads .gitignore, so the

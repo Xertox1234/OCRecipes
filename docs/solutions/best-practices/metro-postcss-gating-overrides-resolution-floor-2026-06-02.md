@@ -3,7 +3,7 @@ title: 'Expo metro''s postcss path is gated on a postcss.config — an overrides
 track: knowledge
 category: best-practices
 module: shared
-tags: [dependencies, expo, metro, postcss, lightningcss, overrides, build-tooling, web, security]
+tags: [dependencies, expo, metro, postcss, lightningcss, overrides, build-tooling, web, security, architecture]
 applies_to: [package.json, .github/dependabot.yml]
 created: '2026-06-02'
 ---

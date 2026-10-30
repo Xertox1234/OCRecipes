@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
 import type { MealPlanItem } from "@shared/schema";
+import type { CreateMealPlanRecipeInput } from "@/hooks/useMealPlanRecipes";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
 /** Invalidate only meal-plan item queries, not recipes/catalog queries.
@@ -50,6 +51,8 @@ export function useAddMealPlanItem() {
     mutationFn: async (item: {
       recipeId?: number | null;
       scannedItemId?: number | null;
+      /** Create this recipe together with the plan item in one server call. */
+      recipe?: Omit<CreateMealPlanRecipeInput, "sourceCommunityRecipeId">;
       plannedDate: string;
       mealType: string;
       servings?: string | number;
@@ -57,8 +60,17 @@ export function useAddMealPlanItem() {
       const res = await apiRequest("POST", "/api/meal-plan/items", item);
       return res.json() as Promise<MealPlanItem>;
     },
-    onSuccess: () => {
+    onSuccess: (_created, variables) => {
       invalidateMealPlanItems(queryClient);
+      if (variables.recipe) {
+        // An inline recipe was created too — keep the recipe lists fresh.
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/meal-plan/recipes"],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/recipes/browse"],
+        });
+      }
     },
     // Every call site (MealPlanHomeScreen, RecipeBrowserScreen, WizardShell,
     // CoachChat, QuickAddSheet, SimpleEntrySheet) already toasts/alerts on

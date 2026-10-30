@@ -94,8 +94,10 @@ appId: com.ocrecipes.app
     when:
       notVisible: "Sign In"
     commands:
-      - tapOn:
-          id: "tab-profile"
+      - runFlow:
+          file: tap-tab.yaml
+          env:
+            TAB: "tab-profile"
       # Gear button on ProfileCard (a11y label "Settings"); Settings is a
       # ProfileStack screen
       - tapOn: "Settings"

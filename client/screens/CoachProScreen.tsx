@@ -26,11 +26,8 @@ import {
   REFRESH_ON_FOCUS_SETTLE_MS,
   useRefreshOnFocus,
 } from "@/hooks/useRefreshOnFocus";
-import {
-  useChatConversations,
-  useCreateConversation,
-  useNotebookEntries,
-} from "@/hooks/useChat";
+import { useChatConversations, useCreateConversation } from "@/hooks/useChat";
+import { useNotebookEntries } from "@/hooks/useNotebook";
 import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";

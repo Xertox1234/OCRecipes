@@ -3,6 +3,7 @@ title: 'A module-level hard guard reachable from the server boot path must check
 track: knowledge
 category: conventions
 tags: [architecture, env-vars, guard-rails, fail-fast, server-boot, prod-safety]
+applies_to: [server/routes.ts, server/services/dev-api-cache.ts]
 module: server
 created: '2026-07-06'
 ---

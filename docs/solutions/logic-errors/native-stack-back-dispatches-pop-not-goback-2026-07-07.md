@@ -5,6 +5,7 @@ category: logic-errors
 module: client
 severity: high
 tags: [react-navigation, native-stack, hooks, navigation]
+applies_to: [client/hooks/useFromHomeBackRedirect.ts, client/screens/meal-plan/RecipeCreateScreen.tsx]
 symptoms: [beforeRemove listener that checks action.type === "GO_BACK" never fires on a real device/simulator tap, Custom back-button interception works in unit tests but silently does nothing on device, Mocked GO_BACK action in a test passes while the real feature is broken]
 created: '2026-07-07'
 ---

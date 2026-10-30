@@ -168,7 +168,10 @@ Phase 1 sets up both correctly.
    TMP=$(mktemp -d)
    for f in "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md" \
      $(ls -t "$MAIN_CHECKOUT"/docs/audits/*.md | grep -vE 'CHANGELOG|TEMPLATE' | head -2); do
-     awk -v RS= -v ORS='\n\n' 'tolower($0) !~ /auth|jwt|iap|receipt|subscription|session|password|credential|health/' \
+     # Keep the space in `$ 0`: the skill loader replaces a dollar-zero token with this skill's arguments,
+     # which turns the filter into an unset awk variable that passes EVERY paragraph
+     # (docs/solutions/logic-errors/skill-argument-substitution-turns-awk-dollar-zero-into-an-empty-filter-2026-10-26.md).
+     awk -v RS= -v ORS='\n\n' 'tolower($ 0) !~ /auth|jwt|iap|receipt|subscription|session|password|credential|health/' \
        "$f" > "$TMP/$(basename "$f")"
    done
    ask-kimi --max-tokens 32768 --paths "$TMP"/*.md \

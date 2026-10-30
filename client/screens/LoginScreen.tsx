@@ -10,22 +10,37 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { ThemedText } from "@/components/ThemedText";
 import { LegalConsentCaption } from "@/components/LegalConsentCaption";
 import { InlineError } from "@/components/InlineError";
+import { FieldRules } from "@/components/FieldRules";
 import { SocialSignInButtons } from "@/components/SocialSignInButtons";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
+import {
+  confirmRules,
+  passwordRules,
+  rulesVisible,
+  usernameRules,
+} from "@/lib/field-rules";
 import { useAuthContext } from "@/context/AuthContext";
 import { twoStepCodeParams } from "@/lib/second-factor-utils";
 import { Spacing, withOpacity } from "@/constants/theme";
 import {
   validateAuthForm,
   validateAuthFormFields,
+  validateUsername,
   getAuthErrorMessage,
   registerPasswordHint,
   registerPasswordRules,
+  PASSWORD_MISMATCH_MESSAGE,
 } from "./LoginScreen-utils";
+import {
+  newPasswordProblem,
+  passwordMessage,
+} from "@shared/constants/password-policy";
 import {
   useIsFocused,
   useNavigation,
@@ -53,20 +68,62 @@ export default function LoginScreen() {
   const isFocused = useIsFocused();
 
   const [mode, setMode] = useState<Mode>("login");
+  // Each field shows its own message: on leaving it with text, live once
+  // shown, and on the main button for empty fields (form-fields spec §5.1).
+  // Sign-in only checks that fields are filled — the server is the authority
+  // and a format check there would be a username-enumeration hint.
   // Prefilled with the email after a password reset (ResetPasswordScreen).
-  const [username, setUsername] = useState(route.params?.email ?? "");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [email, setEmail] = useState("");
+  const usernameField = useFieldValidation((value) => {
+    if (value.trim() === "") {
+      return mode === "login"
+        ? "Enter your username or email."
+        : "Enter a username.";
+    }
+    return mode === "login" ? null : validateUsername(value.trim());
+  }, route.params?.email ?? "");
+  const emailField = useFieldValidation(
+    (value) =>
+      validateAuthFormFields({
+        mode,
+        username: "",
+        password: "",
+        confirmPassword: "",
+        ageConfirmed: false,
+        email: value,
+      }).email,
+  );
+  const passwordField = useFieldValidation((value) => {
+    if (mode === "login") {
+      return value.trim() === "" ? "Enter your password." : null;
+    }
+    if (value === "") return "Enter a password.";
+    const problem = newPasswordProblem(value);
+    return problem ? passwordMessage(problem) : null;
+  });
+  const confirmField = useFieldValidation((value) => {
+    if (mode === "login" || value === passwordField.value) return null;
+    return value === "" ? "Re-enter your password." : PASSWORD_MISMATCH_MESSAGE;
+  });
+  // Each field's message is announced by the InlineError under it; the field
+  // takes only `error` (colour, invalid mark), never the same text as
+  // `errorMessage`, or VoiceOver reads it twice (spec §5.8).
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: usernameRef } = usernameField;
+  const { ref: emailRef } = emailField;
+  const { ref: passwordRef } = passwordField;
+  const { ref: confirmRef } = confirmField;
+  const username = usernameField.value;
+  const password = passwordField.value;
+  const confirmPassword = confirmField.value;
+  const email = emailField.value;
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Server/flow errors (and the age confirmation); field messages sit under
+  // each field.
   const [error, setError] = useState("");
   // Bumped on each validation reject (not server errors) to shake the error.
   const [shakeKey, setShakeKey] = useState(0);
-  // Field-attributed error for the email input only (sets its aria-invalid).
-  // Set on submit, mirroring `error`'s lifecycle — never validated live as the
-  // user types. Stays null in login mode (no email field shown).
-  const [emailError, setEmailError] = useState<string | null>(null);
   // COPPA 13+ age attestation — gated by checkbox; server enforces ageConfirmed:true
   const [ageConfirmed, setAgeConfirmed] = useState(false);
 
@@ -99,7 +156,16 @@ export default function LoginScreen() {
 
   const handleSubmit = async () => {
     setError("");
-    setEmailError(null);
+
+    const fields =
+      mode === "register"
+        ? [usernameField, emailField, passwordField, confirmField]
+        : [usernameField, passwordField];
+    if (!focusFirstInvalid(fields)) {
+      // Each invalid field's message shakes via its own shakeKey.
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
 
     const formInput = {
       mode,
@@ -109,10 +175,7 @@ export default function LoginScreen() {
       ageConfirmed,
       email,
     };
-    // Attribute the email-specific failure to the email input (aria-invalid),
-    // while the form-level banner still shows the first failing rule overall.
-    setEmailError(validateAuthFormFields(formInput).email);
-
+    // Second guard over the whole form (it also covers the age confirmation).
     const validationError = validateAuthForm(formInput);
     if (validationError) {
       setError(validationError);
@@ -162,7 +225,9 @@ export default function LoginScreen() {
       setError(getAuthErrorMessage(err, mode));
       // A rejected password left in the field is what iOS offers to save when
       // the user leaves. Register keeps it: a taken username isn't a bad password.
-      if (mode === "login") setPassword("");
+      // reset, not setValue: the emptied field must not then show its own
+      // "Enter your password." over the server's message.
+      if (mode === "login") passwordField.reset("");
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsLoading(false);
@@ -172,12 +237,21 @@ export default function LoginScreen() {
   const toggleMode = () => {
     setMode(mode === "login" ? "register" : "login");
     setError("");
-    setEmailError(null);
-    setConfirmPassword("");
+    // The other mode has other rules: start its fields with no error showing.
+    usernameField.reset(username);
+    emailField.reset(email);
+    passwordField.reset(password);
+    confirmField.reset("");
     setAgeConfirmed(false);
   };
 
   const isSubmitDisabled = mode === "register" && !ageConfirmed;
+
+  // Sign-up only: the live checklist under each field with rules (spec §5.2).
+  // Sign-in shows none — its fields have no format to meet.
+  const usernameChecklist = usernameRules(username.trim());
+  const passwordChecklist = passwordRules(password);
+  const confirmChecklist = confirmRules(password, confirmPassword);
 
   return (
     <ThemedView style={styles.container}>
@@ -254,76 +328,142 @@ export default function LoginScreen() {
         <View style={styles.form}>
           {/* Sign-in accepts a username OR the account email; sign-up still
               needs a username (registerSchema rejects an email there). */}
-          <TextInput
-            leftIcon="user"
-            placeholder={mode === "login" ? "Username or email" : "Username"}
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="username"
-            autoComplete="username"
-            testID="input-username"
-            accessibilityLabel={
-              mode === "login" ? "Username or email" : "Username"
-            }
-            accessibilityHint={
-              mode === "login"
-                ? "Enter your username or email address"
-                : "Enter your username"
-            }
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="user"
+              label={mode === "login" ? "Username or email" : "Username"}
+              ref={usernameRef}
+              value={username}
+              onChangeText={usernameField.onChangeText}
+              onFocus={usernameField.onFocus}
+              onBlur={usernameField.onBlur}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="username"
+              autoComplete="username"
+              returnKeyType="next"
+              // Keep the keyboard up while focus moves on (spec §5.6).
+              submitBehavior="submit"
+              onSubmitEditing={() =>
+                (mode === "register" ? emailRef : passwordRef).current?.focus()
+              }
+              editable={!isLoading}
+              testID="input-username"
+              accessibilityHint={
+                mode === "login"
+                  ? "Enter your username or email address"
+                  : "Enter your username"
+              }
+              error={!!usernameField.error}
+            />
+            <FieldRules
+              rules={usernameChecklist}
+              visible={
+                mode === "register" &&
+                rulesVisible({
+                  focused: usernameField.focused,
+                  checked: usernameField.checked,
+                  rules: usernameChecklist,
+                })
+              }
+              checked={usernameField.checked}
+              hideUnmet={usernameField.error !== null}
+            />
+          </View>
+          <InlineError
+            message={usernameField.error}
+            shakeKey={usernameField.shakeKey}
           />
 
           {mode === "register" ? (
             <TextInput
               leftIcon="mail"
-              placeholder="Email"
+              label="Email"
+              placeholder="you@example.com"
+              ref={emailRef}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={emailField.onChangeText}
+              onBlur={emailField.onBlur}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
               textContentType="emailAddress"
               autoComplete="email"
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => passwordRef.current?.focus()}
+              editable={!isLoading}
               testID="input-email"
-              accessibilityLabel="Email"
               accessibilityHint="Enter your email address"
-              error={!!emailError}
-              errorMessage={emailError ?? undefined}
+              error={!!emailField.error}
+            />
+          ) : null}
+          {mode === "register" ? (
+            <InlineError
+              message={emailField.error}
+              shakeKey={emailField.shakeKey}
             />
           ) : null}
 
-          <TextInput
-            leftIcon="lock"
-            rightIcon={showPassword ? "eye-off" : "eye"}
-            rightIconAccessibilityLabel={
-              showPassword ? "Hide password" : "Show password"
-            }
-            onRightIconPress={() => setShowPassword(!showPassword)}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            textContentType={mode === "register" ? "newPassword" : "password"}
-            autoComplete={mode === "register" ? "new-password" : undefined}
-            passwordRules={
-              mode === "register" ? registerPasswordRules() : undefined
-            }
-            testID="input-password"
-            accessibilityLabel="Password"
-            accessibilityHint={
-              mode === "register"
-                ? registerPasswordHint()
-                : "Enter your password"
-            }
+          {/* No form gap between a field and its checklist. */}
+          <View>
+            <TextInput
+              leftIcon="lock"
+              rightIcon={showPassword ? "eye-off" : "eye"}
+              rightIconAccessibilityLabel={
+                showPassword ? "Hide password" : "Show password"
+              }
+              onRightIconPress={() => setShowPassword(!showPassword)}
+              label="Password"
+              ref={passwordRef}
+              value={password}
+              onChangeText={passwordField.onChangeText}
+              onFocus={passwordField.onFocus}
+              onBlur={passwordField.onBlur}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              textContentType={mode === "register" ? "newPassword" : "password"}
+              autoComplete={mode === "register" ? "new-password" : undefined}
+              passwordRules={
+                mode === "register" ? registerPasswordRules() : undefined
+              }
+              // Sign-in ends here: Go submits as Sign In does. Sign-up moves
+              // on to the confirm field.
+              returnKeyType={mode === "register" ? "next" : "go"}
+              submitBehavior={mode === "register" ? "submit" : undefined}
+              onSubmitEditing={
+                mode === "register"
+                  ? () => confirmRef.current?.focus()
+                  : handleSubmit
+              }
+              editable={!isLoading}
+              testID="input-password"
+              accessibilityHint={
+                mode === "register"
+                  ? registerPasswordHint()
+                  : "Enter your password"
+              }
+              error={!!passwordField.error}
+            />
+            <FieldRules
+              rules={passwordChecklist}
+              visible={
+                mode === "register" &&
+                rulesVisible({
+                  focused: passwordField.focused,
+                  checked: passwordField.checked,
+                  rules: passwordChecklist,
+                })
+              }
+              checked={passwordField.checked}
+              hideUnmet={passwordField.error !== null}
+            />
+          </View>
+          <InlineError
+            message={passwordField.error}
+            shakeKey={passwordField.shakeKey}
           />
-
-          {mode === "register" ? (
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              {registerPasswordHint()}
-            </ThemedText>
-          ) : null}
 
           {mode === "login" ? (
             <Pressable
@@ -344,19 +484,43 @@ export default function LoginScreen() {
           ) : null}
 
           {mode === "register" ? (
-            <TextInput
-              leftIcon="lock"
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              textContentType="newPassword"
-              autoComplete="new-password"
-              passwordRules={registerPasswordRules()}
-              testID="input-confirm-password"
-              accessibilityLabel="Confirm password"
-              accessibilityHint="Re-enter your password to confirm"
+            <View>
+              <TextInput
+                leftIcon="lock"
+                label="Confirm password"
+                ref={confirmRef}
+                value={confirmPassword}
+                onChangeText={confirmField.onChangeText}
+                onFocus={confirmField.onFocus}
+                onBlur={confirmField.onBlur}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                textContentType="newPassword"
+                autoComplete="new-password"
+                passwordRules={registerPasswordRules()}
+                returnKeyType="go"
+                onSubmitEditing={handleSubmit}
+                editable={!isLoading}
+                testID="input-confirm-password"
+                accessibilityHint="Re-enter your password to confirm"
+                error={!!confirmField.error}
+              />
+              <FieldRules
+                rules={confirmChecklist}
+                visible={rulesVisible({
+                  focused: confirmField.focused,
+                  checked: confirmField.checked,
+                  rules: confirmChecklist,
+                })}
+                checked={confirmField.checked}
+                hideUnmet={confirmField.error !== null}
+              />
+            </View>
+          ) : null}
+          {mode === "register" ? (
+            <InlineError
+              message={confirmField.error}
+              shakeKey={confirmField.shakeKey}
             />
           ) : null}
 

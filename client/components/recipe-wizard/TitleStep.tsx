@@ -1,6 +1,11 @@
-import React from "react";
-import { Text, StyleSheet, ScrollView } from "react-native";
+import React, { useRef, useState } from "react";
+import {
+  StyleSheet,
+  ScrollView,
+  type TextInput as RNTextInput,
+} from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FieldCounter } from "@/components/FieldCounter";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Spacing,
@@ -24,6 +29,10 @@ export default function TitleStep({
   setDescription,
 }: TitleStepProps) {
   const { theme } = useTheme();
+  const [focusedField, setFocusedField] = useState<
+    "title" | "description" | null
+  >(null);
+  const descriptionRef = useRef<RNTextInput>(null);
 
   return (
     <ScrollView
@@ -32,9 +41,8 @@ export default function TitleStep({
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
-      {/* Recipe Name */}
-      <Text style={[styles.label, { color: theme.link }]}>RECIPE NAME</Text>
       <FocusTextInput
+        label="Recipe title"
         style={[
           styles.input,
           {
@@ -49,18 +57,23 @@ export default function TitleStep({
         placeholderTextColor={theme.textSecondary}
         autoFocus
         returnKeyType="next"
+        // Keep the keyboard up while focus moves on to the description.
+        submitBehavior="submit"
+        onSubmitEditing={() => descriptionRef.current?.focus()}
         maxLength={TITLE_MAX_LENGTH}
-        accessibilityLabel="Recipe name"
+        onFocus={() => setFocusedField("title")}
+        onBlur={() => setFocusedField(null)}
         accessibilityHint="Enter a name for your recipe"
       />
+      <FieldCounter
+        length={title.length}
+        max={TITLE_MAX_LENGTH}
+        visible={focusedField === "title"}
+      />
 
-      {/* Description */}
-      <Text
-        style={[styles.label, { color: theme.link, marginTop: Spacing.lg }]}
-      >
-        DESCRIPTION (optional)
-      </Text>
       <FocusTextInput
+        ref={descriptionRef}
+        label="Description"
         style={[
           styles.textArea,
           {
@@ -71,13 +84,19 @@ export default function TitleStep({
         ]}
         value={description}
         onChangeText={setDescription}
-        placeholder="Briefly describe your recipe…"
+        placeholder="Optional · e.g. a weeknight family favourite"
         placeholderTextColor={theme.textSecondary}
         multiline
         textAlignVertical="top"
         maxLength={DESCRIPTION_MAX_LENGTH}
-        accessibilityLabel="Recipe description"
+        onFocus={() => setFocusedField("description")}
+        onBlur={() => setFocusedField(null)}
         accessibilityHint="Optional description of your recipe"
+      />
+      <FieldCounter
+        length={description.length}
+        max={DESCRIPTION_MAX_LENGTH}
+        visible={focusedField === "description"}
       />
     </ScrollView>
   );
@@ -86,12 +105,6 @@ export default function TitleStep({
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingBottom: Spacing.xl },
-  label: {
-    fontFamily: FontFamily.semiBold,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    marginBottom: Spacing.xs,
-  },
   input: {
     height: 48,
     borderWidth: 1,
@@ -101,11 +114,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   textArea: {
+    marginTop: Spacing.sm,
     borderWidth: 1,
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
     fontFamily: FontFamily.regular,
     fontSize: 15,
     minHeight: 120,

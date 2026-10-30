@@ -5,6 +5,7 @@ category: logic-errors
 module: camera
 severity: high
 tags: [react, hooks, useEffect, memory-leak, cleanup, timers]
+applies_to: [client/camera/hooks/useCamera.ts]
 symptoms: ['Warning: Can''t perform a React state update on an unmounted component', Memory usage grows over time, State updates after navigation away from screen]
 created: '2026-02-01'
 ---

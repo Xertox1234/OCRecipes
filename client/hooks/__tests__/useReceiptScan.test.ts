@@ -2,6 +2,7 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useReceiptScan } from "../useReceiptScan";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { File as MockExpoFile } from "../../../test/mocks/expo-file-system";
 
 const { mockTokenGet, mockCompressImage, mockCleanupImage } = vi.hoisted(
   () => ({
@@ -24,6 +25,15 @@ vi.mock("@/lib/image-compression", () => ({
   compressImage: (...args: unknown[]) => mockCompressImage(...args),
   cleanupImage: (...args: unknown[]) => mockCleanupImage(...args),
 }));
+
+// `expo/fetch` (the global fetch since Expo SDK 57) only serializes FormData
+// parts that are strings, Blobs, or objects with `bytes()` — a React Native
+// `{ uri, type, name }` object throws "Unsupported FormDataPart implementation"
+// on device. jsdom's FormData stringifies anything, so assert the part type.
+vi.mock(
+  "expo-file-system",
+  () => import("../../../test/mocks/expo-file-system"),
+);
 
 describe("useReceiptScan", () => {
   beforeEach(() => {
@@ -64,5 +74,32 @@ describe("useReceiptScan", () => {
     unmount();
 
     expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("appends each compressed photo as a file object expo/fetch can send", async () => {
+    const append = vi.spyOn(FormData.prototype, "append");
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ items: [] }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useReceiptScan(), { wrapper });
+
+    act(() => {
+      result.current.mutate(["file://a.jpg", "file://b.jpg"]);
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const photoParts = append.mock.calls.filter(([name]) => name === "photos");
+    expect(photoParts).toHaveLength(2);
+    for (const [, part] of photoParts) {
+      expect(part).toBeInstanceOf(MockExpoFile);
+      expect((part as unknown as { uri: string }).uri).toBe(
+        "file://compressed.jpg",
+      );
+    }
+    append.mockRestore();
   });
 });

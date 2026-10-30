@@ -5,6 +5,7 @@ category: logic-errors
 module: server
 severity: high
 tags: [security, premium, subscription, revenue, tier-resolution]
+applies_to: [server/routes/_helpers.ts]
 symptoms: [A user whose premium subscription lapsed still has paid features / higher limits, 'GET /api/subscription/status reports free, but a gated route still grants premium', extendedPlanRange / pantryTracking / maxSavedItems / maxFavouriteRecipes don't drop after expiry]
 created: '2026-05-25'
 last_updated: '2026-05-26'

@@ -17,6 +17,13 @@ import {
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import {
+  FieldCounter,
+  CHAT_MESSAGE_MAX_LENGTH,
+  counterTone,
+} from "@/components/FieldCounter";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import {
   useRoute,
   useNavigation,
   useFocusEffect,
@@ -331,6 +338,7 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState("");
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  const composerFocus = useFieldFocus();
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
@@ -668,7 +676,8 @@ export default function ChatScreen() {
           },
         ]}
       >
-        <View
+        <FocusField
+          focus={composerFocus}
           style={[
             styles.inputBar,
             { backgroundColor: theme.backgroundSecondary },
@@ -676,6 +685,9 @@ export default function ChatScreen() {
         >
           <FocusTextInput
             ref={inputRef}
+            focusRing={false}
+            onFocus={composerFocus.onFocus}
+            onBlur={composerFocus.onBlur}
             style={[styles.textInput, { color: theme.text }]}
             placeholder="Ask NutriCoach..."
             placeholderTextColor={theme.textSecondary}
@@ -683,8 +695,11 @@ export default function ChatScreen() {
             onChangeText={setInputText}
             onSubmitEditing={() => handleSend()}
             multiline
-            maxLength={2000}
-            returnKeyType="default"
+            maxLength={CHAT_MESSAGE_MAX_LENGTH}
+            // Return sends, as in the coach composer (CoachChatBase with
+            // submitOnReturn) — never a line break.
+            returnKeyType="send"
+            submitBehavior="blurAndSubmit"
             editable={!isStreaming}
             accessibilityLabel="Message input"
             accessibilityHint="Type your question for NutriCoach"
@@ -695,7 +710,16 @@ export default function ChatScreen() {
             busy={isStreaming}
             style={styles.sendButton}
           />
-        </View>
+        </FocusField>
+        <FieldCounter
+          overlay
+          length={inputText.length}
+          max={CHAT_MESSAGE_MAX_LENGTH}
+          visible={
+            composerFocus.focused &&
+            counterTone(inputText.length, CHAT_MESSAGE_MAX_LENGTH) !== "normal"
+          }
+        />
       </View>
     </KeyboardAvoidingView>
   );

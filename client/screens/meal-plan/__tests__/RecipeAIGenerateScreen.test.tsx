@@ -127,3 +127,49 @@ describe("RecipeAIGenerateScreen — Generate lets go", () => {
     expect(mockOpen).toHaveBeenCalledExactlyOnceWith(queryClient, draft);
   });
 });
+
+describe("RecipeAIGenerateScreen — prompt field label", () => {
+  it('names the prompt "What should we make?" and keeps only an example as the placeholder', () => {
+    renderScreen();
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("What should we make?");
+    const input = screen.getByLabelText("What should we make?");
+    fireEvent.focus(input);
+    const placeholder = input.getAttribute("placeholder") ?? "";
+    expect(placeholder).toMatch(/^e\.g\. /);
+    expect(placeholder).not.toMatch(/what do you want/i);
+  });
+});
+
+// Form-fields spec §5.1: Generate is pressable with a short prompt; pressing
+// it says why and moves focus to the prompt. No message while typing; one on
+// leaving a prompt that has text.
+describe("RecipeAIGenerateScreen — validation timing", () => {
+  const MESSAGE = "Describe the recipe in at least 3 characters.";
+
+  it("Generate is pressable with an empty prompt, and flags + focuses it", () => {
+    renderScreen();
+    const generate = screen.getByLabelText("Generate Recipe");
+    expect(generate.getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(generate);
+
+    expect(screen.getByText(MESSAGE)).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("What should we make?"),
+    );
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it("shows nothing while a short prompt is typed, and the message on leaving", () => {
+    renderScreen();
+    const input = screen.getByLabelText("What should we make?");
+    fireEvent.change(input, { target: { value: "ab" } });
+    expect(screen.queryByText(MESSAGE)).toBeNull();
+    fireEvent.blur(input);
+    expect(screen.getByText(MESSAGE)).toBeTruthy();
+    fireEvent.change(input, { target: { value: "abc" } });
+    expect(screen.queryByText(MESSAGE)).toBeNull();
+  });
+});

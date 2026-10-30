@@ -7,6 +7,9 @@ HOOK="$HOOKS_DIR/review-stamp-writer.sh"
 PASS=0; FAIL=0
 ROOT=$(mktemp -d "/tmp/review-stamp-writer-test-$$-XXXX")
 trap 'rm -rf "$ROOT"' EXIT
+# The writer waits for a late hand-back (cases 78-80). Off for every other case, so the
+# no-handback controls do not each sleep for the production default.
+export REVIEW_STAMP_HANDBACK_WAIT_SECS=0
 
 # An optional $1 names a PRIVATE stamp root under $ROOT. The hook now enforces the
 # roster allow-list, so a fixture can no longer get its own stamp FILENAME by inventing
@@ -1030,6 +1033,59 @@ crit_case 76 '1. **client/a.ts:42** — missing check — add it
 # with a filename (case 56 opens "AI_WORKFLOW.md one-pass wording ..."), so it is not counted.
 crit_case 77 'client/a.ts — CRITICAL — missing check' clean:0
 
+# --- LATE HAND-BACK (2026-10-30) ---------------------------------------------------------
+# SubagentStop can fire BEFORE the reviewer's SubagentHandback entry reaches its transcript.
+# Measured on a real background mobile-reviewer (Claude Code 2.1.312): at hook time the
+# transcript was readable and held 0 hand-backs, `last_assistant_message` was null (the
+# reviewer ended on the hand-back call, no closing text), and the hand-back appeared within
+# 3 s. Every clean review in that session wrote NO record. The writer now polls for the
+# hand-back for up to REVIEW_STAMP_HANDBACK_WAIT_SECS (default 5; this suite exports 0 above
+# its other cases so a no-handback control does not sleep).
+late_payload() {  # $1=transcript path — the real shape: no last_assistant_message key
+  jq -n --arg p "$1" '{hook_event_name:"SubagentStop", agent_id:"a1",
+    agent_type:"code-reviewer", agent_transcript_path:$p}'
+}
+late_transcript() {  # prints a transcript path holding only a pre-report progress line
+  local tp; tp=$(mktemp "$ROOT/transcript-late-XXXX")
+  jq -nc '{type:"assistant", message:{content:[{type:"text", text:"Reading the diff."}]}}' >"$tp"
+  printf '%s\n' "$tp"
+}
+append_handback_after() {  # $1=transcript $2=seconds — the late flush, in the background
+  ( sleep "$2"; jq -nc --arg m "$CLEAN_MSG" '{type:"assistant", message:{content:[
+      {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >>"$1" ) &
+}
+
+# 78. The hand-back lands 1 s after the hook starts: the writer waits and records it.
+LATE_TP=$(late_transcript); append_handback_after "$LATE_TP" 1
+late_payload "$LATE_TP" | REVIEW_STAMP_HANDBACK_WAIT_SECS=4 run_hook 78
+wait
+lf="$ROOT/case-78/$SHA/code-reviewer.json"
+[ -f "$lf" ] && ok "late hand-back is waited for and writes a stamp" \
+             || bad "late hand-back is waited for and writes a stamp"
+[ "$(jq -r .verdict "$lf" 2>/dev/null)" = "clean" ] \
+  && ok "late hand-back records the clean verdict" || bad "late hand-back records the clean verdict"
+[ "$(jq -r .reviewed_files_digest "$lf" 2>/dev/null)" = "cf5a596de517834a" ] \
+  && ok "late hand-back digest equals the sync digest" || bad "late hand-back digest equals the sync digest"
+
+# 79. CONTROL: a hand-back that never arrives writes nothing, and the wait is bounded.
+NEVER_TP=$(late_transcript)
+t0=$(date +%s)
+late_payload "$NEVER_TP" | REVIEW_STAMP_HANDBACK_WAIT_SECS=1 run_hook 79
+t1=$(date +%s)
+[ ! -f "$ROOT/case-79/$SHA/code-reviewer.json" ] \
+  && ok "hand-back that never arrives writes no stamp" || bad "hand-back that never arrives writes no stamp"
+[ $((t1 - t0)) -le 3 ] && ok "wait for a missing hand-back is bounded ($((t1 - t0))s)" \
+                       || bad "wait for a missing hand-back is bounded ($((t1 - t0))s)"
+
+# 80. CONTROL: case 78's exact fixture with the wait OFF writes no stamp — so the wait, not
+# something else in the fixture, is what case 78 measures.
+OFF_TP=$(late_transcript); append_handback_after "$OFF_TP" 1
+late_payload "$OFF_TP" | REVIEW_STAMP_HANDBACK_WAIT_SECS=0 run_hook 80
+wait
+[ ! -f "$ROOT/case-80/$SHA/code-reviewer.json" ] \
+  && ok "late hand-back with the wait off writes no stamp (control)" \
+  || bad "late hand-back with the wait off writes no stamp (control)"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -1044,7 +1100,8 @@ crit_case 77 'client/a.ts — CRITICAL — missing check' clean:0
 # 85 -> 88 (2026-09-22): +3, the advisory verdict (cases 52-54).
 # 88 -> 94 (2026-09-23, finding-line CRITICAL detection): case 8 keeps 2 rows (re-pinned), +6 (cases 55-60).
 # 94 -> 111 (2026-09-23, #1018 review follow-up): +17, finding-line shapes (cases 61-77).
-EXPECTED_TOTAL=111
+# 111 -> 117 (2026-10-30): +6, the late hand-back wait (cases 78-80).
+EXPECTED_TOTAL=117
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

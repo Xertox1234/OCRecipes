@@ -12,6 +12,11 @@ export const Colors = {
     // Links - terracotta accent (WCAG AA: 5.1:1 on #FAF6F0, 5.5:1 on #FFFFFF)
     link: "#B5451C",
     linkPressed: "#8A3415",
+    // Text-field focus look (FocusField): a 2px ring in the link colour plus a
+    // warm fill = withOpacity(link, 0.12) laid over the field's rest fill.
+    // Text over it: 12.45:1 on backgroundSecondary, 14.18:1 on backgroundDefault.
+    focusRing: "#B5451C",
+    focusFill: "#B5451C1f",
     // Solid accent FILL for interactive surfaces (buttons, FAB, chips, badges)
     // that carry white content. Decoupled from `link`: in dark mode `link` must
     // stay light enough to read as TEXT on a dark surface, which makes it too
@@ -78,6 +83,10 @@ export const Colors = {
     // Links - warm coral (WCAG AA: 5.5:1 on #1E1814)
     link: "#E07050",
     linkPressed: "#C4521A",
+    // Focus look — see light mode. Text over the fill: 11.24:1 on
+    // backgroundSecondary, 13.00:1 on backgroundDefault.
+    focusRing: "#E07050",
+    focusFill: "#E070501f",
     // Solid accent FILL (white content) — kept dark for AA with white text:
     // 5.48:1 vs #FFFFFF. Distinct from `link` (#E07050), which is the on-dark
     // TEXT color and only 3.18:1 as a fill under white. Same hex as light mode.
@@ -127,6 +136,19 @@ export const Colors = {
 
 /** Height of the bottom tab bar (must match MainTabNavigator screenOptions) */
 export const TAB_BAR_HEIGHT = Platform.select({ ios: 88, android: 72 }) ?? 88;
+
+/**
+ * Laid-out height of the bottom tab bar. React Navigation pads the bar by the
+ * bottom safe-area inset INSIDE the height it is given; on Android (edge-to-edge)
+ * that inset is the system navigation bar, so the bar grows by it or its labels
+ * sit under the navigation buttons. iOS's fixed height already allows for it.
+ */
+export function tabBarHeight(
+  insetBottom: number,
+  os: typeof Platform.OS = Platform.OS,
+): number {
+  return TAB_BAR_HEIGHT + (os === "android" ? insetBottom : 0);
+}
 
 /** Size of the floating action button */
 export const FAB_SIZE = 56;

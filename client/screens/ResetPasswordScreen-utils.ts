@@ -8,11 +8,13 @@ import {
   RESET_CODE_LENGTH,
   RESET_RESEND_COOLDOWN_SECONDS,
 } from "@shared/constants/password-reset";
-import { passwordMessage } from "@shared/constants/password-policy";
+import {
+  newPasswordProblem,
+  passwordMessage,
+} from "@shared/constants/password-policy";
 import {
   BREACHED_PASSWORD_MESSAGE,
   PASSWORD_MISMATCH_MESSAGE,
-  validateNewPassword,
 } from "./LoginScreen-utils";
 
 /**
@@ -29,28 +31,29 @@ export function normalizeResetCode(raw: string): string {
 
 export type ResetFormField = "code" | "password" | "confirm";
 
-export interface ResetFormError {
-  field: ResetFormField;
-  message: string;
+/** The code field's message, or null when it holds 6 digits. */
+export function resetCodeError(code: string): string | null {
+  return code.length === RESET_CODE_LENGTH
+    ? null
+    : "Enter the 6-digit code from the email";
 }
 
-/** First failing field + its message, or null when the form is valid. */
-export function validateResetForm(input: {
-  code: string;
-  password: string;
-  confirmPassword: string;
-}): ResetFormError | null {
-  if (input.code.length !== RESET_CODE_LENGTH) {
-    return { field: "code", message: "Enter the 6-digit code from the email" };
-  }
-  // 8 for everyone (owner ruling 2026-10-12); the server checks again.
-  const message = validateNewPassword(input.password, input.confirmPassword);
-  if (!message) return null;
-  // validateNewPassword checks length (password field) before the mismatch
-  // (confirm field), so a mismatch message means the password itself passed.
-  const field: ResetFormField =
-    message === PASSWORD_MISMATCH_MESSAGE ? "confirm" : "password";
-  return { field, message };
+/** The new-password field's message, or null when it passes the policy. */
+export function resetPasswordError(password: string): string | null {
+  if (password === "") return "Enter a new password.";
+  const problem = newPasswordProblem(password);
+  return problem ? passwordMessage(problem) : null;
+}
+
+/** The confirm field's message, or null when it matches. */
+export function resetConfirmError(
+  confirmPassword: string,
+  password: string,
+): string | null {
+  if (confirmPassword === password) return null;
+  return confirmPassword === ""
+    ? "Re-enter the new password."
+    : PASSWORD_MISMATCH_MESSAGE;
 }
 
 /** Static copy keyed on ApiError.code/status — never error.message. */

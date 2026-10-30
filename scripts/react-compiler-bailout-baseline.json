@@ -31,7 +31,6 @@
   "client/hooks/useAvatarUpload.ts",
   "client/hooks/useBeverageSheet.ts",
   "client/hooks/useChat.ts",
-  "client/hooks/useCoachStream.ts",
   "client/hooks/useCoachWarmUp.ts",
   "client/hooks/useCollapsibleHeight.ts",
   "client/hooks/useCookSession.ts",

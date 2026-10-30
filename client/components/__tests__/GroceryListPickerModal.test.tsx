@@ -214,3 +214,25 @@ describe("GroceryListPickerModal — create-list date range is device-local", ()
     );
   });
 });
+
+describe("GroceryListPickerModal — new list name label", () => {
+  it('floats "List name" on the new-list field and shows an example once focused', () => {
+    mockUseGroceryLists.mockReturnValue({ data: mockLists, isLoading: false });
+    renderComponent(
+      <GroceryListPickerModal
+        visible={true}
+        onClose={() => {}}
+        itemName="Eggs"
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Create new grocery list"));
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("List name");
+    const input = screen.getByLabelText("List name");
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe(
+      "Optional, e.g. Weekend shop",
+    );
+  });
+});

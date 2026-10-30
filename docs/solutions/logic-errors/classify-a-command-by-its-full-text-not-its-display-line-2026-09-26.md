@@ -7,7 +7,7 @@ tags: [harness, hooks, bash, jq, awk, regex, testing]
 applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh"]
 symptoms: ['A read-only `git merge-tree` / `git merge-base` probe lands in a STATE CHANGES list meant for commits and merges', 'A failed `python3 - <<EOF` heredoc reads as resolved because a DIFFERENT heredoc succeeded later', 'A `git push` on line 2 of a multi-line command is not recognised as a state change']
 created: '2026-09-26'
-last_updated: '2026-09-26'
+last_updated: '2026-10-25'
 severity: medium
 ---
 
@@ -74,6 +74,12 @@ git(\s+-C\s+\S+)?\s+(commit|push|merge|…)(\s|$)
 - **A tool-name class written for one tool family misses the next.** `PreToolUse:[A-Za-z]+
   hook error` matched `Bash`/`Edit` and silently dropped every denied `mcp__github__*` call
   (underscores) — the exact PR-merge path this repo prefers. Match the name as `[^ ]+`.
+- **Counting hook denials across transcripts: dedupe by tool-use id, and match the denial's own
+  prefix** (2026-10-25). A substring search for the PR guard's message found 69 hits since
+  2026-10-12. Some were file reads that printed the guard's source. Matching results that start with
+  `PreToolUse:… hook error: Blocked:` left 42, and keying by `tool_use_id` left **24**, because one
+  result line repeats in the jsonl. The todo had been filed with 28. Report the count with both
+  filters named.
 - **A regex that classifies commands gets checked against a real transcript's counts**, not
   just fixtures. The `merge-tree` false positive only showed up as "233 of 995 is suspiciously
   high"; a hand-written fixture had no reason to contain it.

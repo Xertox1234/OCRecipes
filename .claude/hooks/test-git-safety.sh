@@ -1047,6 +1047,164 @@ assert_deny "registry: even-dollar-run \$\$'…\\' before a redirect into main i
   "$(jsonc "$SESSION" "$R_WT" "echo \$\$'a\\' > $R_MAIN/dd.txt")"
 assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' before a redirect into main is denied" \
   "$(jsonc "$SESSION" "$R_WT" "echo \$\$\$\$'a\\' > $R_MAIN/ee.txt")"
+
+# ---------- 2026-10-24: worktree-contract false alarms ----------
+# From the classification in todos/archive/P3-2026-10-23-classify-worktree-contract-blocks.md
+# (39 real blocks: 27 false alarms, 7 real catches). Each fix keeps its deny controls beside it.
+assert_deny_reason() {  # $1=name $2=payload $3=needle $4=1 (must contain) | 0 (must not)
+  local out reason; out=$(run_hook "$2")
+  reason=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)
+  if ! printf '%s' "$out" | grep -q '"permissionDecision": "deny"'; then
+    echo "FAIL: $1 (expected deny)"; FAIL=$((FAIL+1))
+  elif { [ "$4" = 1 ] && grep -qF -- "$3" <<<"$reason"; } || { [ "$4" = 0 ] && ! grep -qF -- "$3" <<<"$reason"; }; then
+    echo "PASS: $1"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $1 (reason $( [ "$4" = 1 ] && echo lacks || echo has ): $3)"; FAIL=$((FAIL+1))
+  fi
+}
+# Leading cd: exactly one `cd <absolute folder> &&` at the start, and no other cd/pushd/popd
+# word anywhere, sets the folder the git segments are judged from.
+assert_allow "leading cd: cd <worktree> && git rm from a main cwd is allowed" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && git rm -q a.txt")"
+# A cd that FAILS lets anything after `;`, `&`, `||` or a newline run in the ORIGINAL folder
+# (2026-10-24 review of #1552, measured). So those separators are honored only when the folder
+# exists; a missing folder needs a pure `&&` chain. RWT2 is a real, registered folder: under the
+# allowlisted temp prefix, so an honored cd allows and an unhonored one is judged against MAIN.
+RWT2=$(cd "$(mktemp -d)" && pwd -P)
+printf '%s' "$RWT2" > "$REG_DIR/eeee000000000005"
+assert_allow "leading cd: existing folder, python heredoc, then git mv on its own line, is allowed" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $RWT2 && python3 - <<'EOF'
+print(1)
+EOF
+git mv a b")"
+assert_allow "leading cd: existing folder with a later || is honored (the cd cannot fail)" \
+  "$(json "$SESSION" "$MAIN" "cd $RWT2 && false || git commit -m x")"
+assert_deny "leading cd: missing folder, then newline git, is not honored" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $WT_A && python3 - <<'EOF'
+print(1)
+EOF
+git mv a b")"
+assert_deny "leading cd: missing folder, then || git commit, is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd /nonexistent-zz && : || git commit -m x")"
+assert_deny "leading cd: missing folder under a worktree, then || git commit, is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A/nope && : || git commit -m x")"
+assert_deny "leading cd: missing folder, then & git commit, is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd /nonexistent-zz && : & git commit -m x")"
+# A folder that exists but cannot be entered (no search permission) also fails the cd (review of
+# #1553, measured), so "exists" means a folder the cd can enter: -d and -x.
+mkdir "$RWT2/locked" "$RWT2/open"; chmod 000 "$RWT2/locked"
+assert_deny "leading cd: unenterable folder (chmod 000), then ; git commit, is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd $RWT2/locked && : ; git commit -m x")"
+assert_allow "leading cd: enterable subfolder, then ; git commit, is honored (control)" \
+  "$(json "$SESSION" "$MAIN" "cd $RWT2/open && : ; git commit -m x")"
+chmod 700 "$RWT2/locked"; rmdir "$RWT2/locked" "$RWT2/open"
+rm -f "$REG_DIR/eeee000000000005"; rmdir "$RWT2" 2>/dev/null
+assert_allow "leading cd: single-quoted worktree folder is honored" \
+  "$(json "$SESSION" "$MAIN" "cd '$WT_A' && git commit -m x")"
+assert_deny "leading cd: a second cd back into main still denies" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && cd $MAIN && git commit -m x")"
+assert_deny "leading cd: cd <main> && git commit from a worktree cwd now denies (was a false ALLOW)" \
+  "$(json "$SESSION" "$WT_A" "cd $MAIN && git commit -m x")"
+assert_deny "leading cd: joined by ; is not honored (git still runs if the cd fails)" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A ; git commit -m x")"
+assert_deny "leading cd: a later pushd disqualifies it" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && pushd $MAIN && git commit -m x")"
+assert_deny "leading cd: a cd inside a later subshell disqualifies it" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && (cd $MAIN; git commit -m x)")"
+assert_deny "leading cd: a .. segment is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A/.. && git commit -m x")"
+assert_deny "leading cd: a ~ folder is not honored" \
+  "$(json "$SESSION" "$MAIN" "cd ~/x && git commit -m x")"
+assert_deny "leading cd: a \$ in the folder is not honored" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $WT_A/\$X && git commit -m x")"
+assert_deny "leading cd: a cd built from a parameter (\${y}d <main>) disqualifies it" \
+  "$(jsonc "$SESSION" "$MAIN" "cd $WT_A && y=c && \${y}d $MAIN && git commit -m x")"
+assert_deny "leading cd: a dot-sourced script after it disqualifies it" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && . ./x.sh && git commit -m x")"
+assert_allow "leading cd: a dot ARGUMENT (git add .) does not disqualify it" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && git add . && git commit -m x")"
+assert_deny "leading cd: an explicit -C <main> still wins over the honored cd" \
+  "$(json "$SESSION" "$MAIN" "cd $WT_A && git -C $MAIN commit -m x")"
+# stash: list/show with simple arguments are read-only; every other stash form still mutates.
+assert_allow "stash: git stash list in main is allowed" \
+  "$(json "$SESSION" "$MAIN" 'git stash list')"
+assert_allow "stash: git stash show -p stash@{0} in main is allowed" \
+  "$(json "$SESSION" "$MAIN" 'git stash show -p stash@{0}')"
+assert_allow "stash: git stash show -p with a double-quoted ref is allowed" \
+  "$(jsonc "$SESSION" "$MAIN" 'git stash show -p "stash@{0}"')"
+assert_deny "stash: bare git stash still denies" \
+  "$(json "$SESSION" "$MAIN" 'git stash')"
+assert_deny "stash: git stash pop still denies" \
+  "$(json "$SESSION" "$MAIN" 'git stash pop')"
+assert_deny "stash: git stash drop stash@{0} still denies" \
+  "$(json "$SESSION" "$MAIN" 'git stash drop stash@{0}')"
+assert_deny "stash: a command substitution after stash list still denies" \
+  "$(jsonc "$SESSION" "$MAIN" 'git stash list $(git commit -m x)')"
+assert_deny "stash: a substitution inside a quoted stash show arg still denies" \
+  "$(jsonc "$SESSION" "$MAIN" 'git stash show "$(git commit -m x)"')"
+assert_deny "stash: stash list --output <main>/x writes a file and still denies (review of #1552)" \
+  "$(json "$SESSION" "$MAIN" "git stash list --output $MAIN/pwned.txt")"
+assert_allow "stash: git stash show --stat stash@{1} (read-only option) is allowed" \
+  "$(json "$SESSION" "$MAIN" 'git stash show --stat stash@{1}')"
+# zsh (the Bash tool's shell here) brace-expands {-..-}-output to --output (review of #1553,
+# measured), so a brace is allowed only as the @{N} of a stash ref.
+assert_deny "stash: a brace-built --output ({-..-}-output) still denies (review of #1553)" \
+  "$(json "$SESSION" "$MAIN" "git stash list {-..-}-output $MAIN/pwned.txt")"
+assert_deny "stash: a brace list ({a,b}) in a stash argument still denies" \
+  "$(json "$SESSION" "$MAIN" 'git stash show {stash@{0},x}')"
+assert_deny "stash: a commit whose MESSAGE says stash list still denies" \
+  "$(jsonc "$SESSION" "$MAIN" "git commit -m 'stash list'")"
+# Same-command release: the deny message explains the release has not run yet.
+assert_deny_reason "release: same-command --remove gets the run-it-first sentence" \
+  "$(json "$SESSION" "$MAIN" "bash scripts/declare-worktree.sh --remove $WT_A; git pull -q --ff-only")" \
+  "run it as its own command first" 1
+assert_deny_reason "release: a plain violation does not get that sentence" \
+  "$(json "$SESSION" "$MAIN" 'git commit -m x')" \
+  "run it as its own command first" 0
+# cp: a relative destination is resolved against the folder the command runs in, so an
+# absolute SOURCE in main is no longer read as the destination.
+mkdir -p "$R_MAIN/server" "$R_MAIN/.superpowers"
+assert_allow "cp: cp <main>/.env .env from a worktree cwd is allowed" \
+  "$(json "$SESSION" "$R_WT" "cp $R_MAIN/.env .env")"
+assert_allow "cp: cd <worktree> && cp <main>/todos/a.md todos/ from a main cwd is allowed" \
+  "$(json "$SESSION" "$R_MAIN" "cd $R_WT && cp $R_MAIN/todos/a.md todos/")"
+assert_allow "cp: unknown folder (non-leading cd) falls back to the old reading — non-main source allowed" \
+  "$(json "$SESSION" "$R_WT" 'cd sub && cp /tmp/x .')"
+assert_deny "cp: unknown folder (non-leading cd) falls back to the old reading — main source denied" \
+  "$(json "$SESSION" "$R_WT" "cd sub && cp $R_MAIN/a.txt .")"
+assert_deny "cp: a \$ anywhere makes the folder unknown — old reading, main source denied" \
+  "$(jsonc "$SESSION" "$R_MAIN" "cp $R_MAIN/a.txt b.txt; echo \$X")"
+assert_deny "cp: absolute destination in main still denies" \
+  "$(json "$SESSION" "$R_WT" "cp .env $R_MAIN/.env")"
+assert_deny "cp: relative destination resolving into main (main cwd) denies" \
+  "$(json "$SESSION" "$R_MAIN" "cp $R_MAIN/a.txt b.txt")"
+assert_deny "cp: a . destination resolving to the main ROOT denies (generated-corpus find)" \
+  "$(json "$SESSION" "$R_WT" "cd $R_MAIN && cp $R_WT/a.txt .")"
+assert_deny "cp: an absolute destination that IS the main root denies" \
+  "$(json "$SESSION" "$R_WT" "cp a.txt $R_MAIN")"
+assert_deny "cp: missing-folder cd then || cp <main>/a b from main denies (review of #1552)" \
+  "$(json "$SESSION" "$R_MAIN" "cd /nonexistent-zz && : || cp $R_MAIN/a.txt b.txt")"
+assert_deny "cp: relative destination after an honored cd <main> denies" \
+  "$(json "$SESSION" "$R_WT" "cd $R_MAIN && cp $R_WT/a.txt b.txt")"
+assert_deny "cp: a ~ destination keeps today's reading" \
+  "$(json "$SESSION" "$R_WT" "cp $R_MAIN/a.txt ~/b.txt")"
+assert_deny "cp: -t <main dir> (target first) still denies" \
+  "$(json "$SESSION" "$R_WT" "cp -t $R_MAIN/server a.txt")"
+assert_deny "cp: a trailing 2>/dev/null does not make the fd digit the destination" \
+  "$(json "$SESSION" "$R_WT" "cp a.ts $R_MAIN/b.ts 2>/dev/null")"
+assert_deny "mv: an absolute source in main still denies (mv deletes its source)" \
+  "$(json "$SESSION" "$R_WT" "mv $R_MAIN/a.txt b.txt")"
+# .superpowers/: the gitignored skill workspace in main is writable during a contract
+# (owner 2026-10-24), judged by its PHYSICAL path so a symlink inside it cannot escape.
+ln -s "$R_MAIN/server" "$R_MAIN/.superpowers/linked"
+assert_allow "superpowers: append to <main>/.superpowers/sdd/p/progress.md is allowed" \
+  "$(json "$SESSION" "$R_WT" "echo x >> $R_MAIN/.superpowers/sdd/p/progress.md")"
+assert_deny "superpowers: a sibling .superpowers-x folder still denies" \
+  "$(json "$SESSION" "$R_WT" "echo x >> $R_MAIN/.superpowers-x/f")"
+assert_deny "superpowers: a .. escape out of the workspace still denies" \
+  "$(json "$SESSION" "$R_WT" "echo x > $R_MAIN/.superpowers/../server/app.ts")"
+assert_deny "superpowers: a symlink inside the workspace pointing into main still denies" \
+  "$(json "$SESSION" "$R_WT" "echo x > $R_MAIN/.superpowers/linked/app.ts")"
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry
@@ -1623,7 +1781,19 @@ fi
 # -- an axis not varied is an axis where a defect is invisible, which is how it shipped.
 # 270 -> 280 (2026-10-16, bypass after one leading cd): +10 = 3 cd allows, 1 no-bypass
 # control, 5 deny shapes, 1 pinned front-bypass-unlocks-later allow.
-EXPECTED_TOTAL=280
+# 280 -> 324 (2026-10-24, worktree-contract false alarms): +44 = 15 leading-cd (4 allows, 11
+# denies incl. the cd <main> tightening, the parameter-built cd found by the generated corpus
+# and the dot-sourced script), 9 stash (3 allows, 6 denies), 2 release-message, 14 cp/mv
+# (2 allows, the unknown-folder fallback pair, the $-makes-folder-unknown deny, the main-root
+# pair found by the generated cp corpus, 7 more denies incl. the cd <main> tightening),
+# 4 .superpowers (1 allow, 3 denies). RED before the guard change: 12 failed.
+# 324 -> 332 (2026-10-24, #1552 review fixes): +8 = 1 existing-folder heredoc allow (replacing the
+# old fake-folder one, which now denies and stays as a deny row), 1 existing-folder || allow, 4
+# missing-folder separator denies (newline, ||, || under a worktree, &), 1 stash --output deny,
+# 1 stash --stat allow, 1 missing-folder || cp deny. Net +8 because the heredoc row became two.
+# 332 -> 336 (2026-10-24, #1553 review fixes): +4 = 1 unenterable-folder deny + its enterable
+# control, 2 stash brace denies (the measured {-..-}-output and a {a,b} list).
+EXPECTED_TOTAL=336
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

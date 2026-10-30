@@ -6007,6 +6007,778 @@ assert_deny "two path-qualified gh api calls: a mutating second one still denies
 assert_allow "two path-qualified read-only gh api calls allow" \
   "$(json '/usr/bin/env gh api /repos/o/r; /usr/bin/env gh api /repos/o/r2')"
 
+# ---------- 2026-10-23: help-only clauses and quoted python/node heredocs are not invocations ----------
+# todos/archive/P2-2026-10-23-outward-cli-guard-false-alarms-help-and-prose.md. Of 22 real blocks between
+# 2026-10-12 and 2026-10-23, 12 were deliberate actions and 10 were false alarms. Owner ruling
+# 2026-10-23: two shapes stop being blocked, and the 2026-09-22 ruling (heredoc text stays visible)
+# holds for every other heredoc:
+#   * a help-only clause: `railway|eas|gh <subcommand words> --help|-h`, last word, at a command
+#     position. A word after `run`/`exec` makes it a command to run, so it is not the shape.
+#   * the body of a QUOTED heredoc (`<<'EOF'`, `<<"EOF"`) fed to python/python3/node, on a line
+#     holding nothing else (an optional leading `cd <folder> &&`). Python never runs a shell line
+#     written in its source; an unquoted delimiter lets the shell expand `$(...)` first, so it stays.
+# The pre-pass only REMOVES text, and only when the whole command parses: any other heredoc, a
+# start line inside a quote or continued from the line above, or a missing terminator, and the
+# command is checked exactly as before.
+# The cases are read with `IFS= read -r -d ''` from quoted heredocs (one trailing newline stripped) so the real commands stay verbatim.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway restart --help 2>&1 | head -12
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: help: railway restart --help' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway variable delete --help 2>&1 | head -20
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: help: railway variable delete --help' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway --help 2>&1 | grep -iE "restart|redeploy"; railway restart --help 2>&1 | head -12
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: help: two railway help clauses' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+eas update --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: help: eas update --help' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+gh pr merge --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: help: gh pr merge --help' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway up -h
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: help: railway up -h' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /repo && railway redeploy --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: help: after a leading cd &&' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway run --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: help: railway run --help (help right after run)' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway --help; railway up
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: help then a real deploy in the next clause' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway restart --help && railway restart
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: help && the real command' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway up --help
+railway up
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: help on a later line, real command after it' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+eas update --branch production --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a flag before --help is not the help shape' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway up --help --detach
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: --help not last' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway run psql --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: railway run <cmd> --help runs <cmd> with the live env' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway run npx tsx server/scripts/backfill.ts --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: railway run with a script and --help' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+X=1 railway up --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: env-prefixed help is not the shape' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway up --help"x"
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a glued --help is not --help' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+gh pr merge 5 --help
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a positional before --help is not the shape (accepted over-denial)' "$(jsonc "$C")" 'command-position '\''gh pr merge'\'' without a'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo $(railway up --help) && railway up
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: help clause inside a substitution followed by a deploy' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /mem && python3 - <<'EOF'
+s = "bare `gh pr merge` is blocked; use gh pr create (no --repo)"
+open('x','w').write(s)
+EOF
+grep -n x MEMORY.md
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: python heredoc naming gh pr merge in a code span' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<"PY"
+railway up
+PY
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: python heredoc, double-quoted delimiter, bare railway line' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 <<'EOF'
+print('eas update')
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: python3 with no dash' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+node - <<'EOF'
+console.log(`gh pr merge 5`)
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: node heredoc' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<-'EOF'
+	eas update --branch production
+	EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: <<- with a tab-indented terminator' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<'A'
+gh pr merge 1
+A
+python3 - <<'B'
+eas update
+B
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'help/heredoc: two python heredocs in one command' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<EOF
+$(eas update --branch production)
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: unquoted delimiter: the shell expands $(...) in the body' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+bash <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: heredoc fed to bash' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+sh <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: heredoc fed to sh' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<'EOF' | sh
+print(1)
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: python heredoc piped into sh' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<'EOF' > x.sh
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: python heredoc written to a file' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<'EOF'
+print(1)
+EOF
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: code after the terminator is still checked' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<'EOF'
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: missing terminator' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 - <<'EOF'
+print(1)
+EOF 
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: terminator with a trailing space is not a terminator' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo "x
+python3 - <<'EOF'
+" ; eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: heredoc line inside a quoted span' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+sh -s \
+python3 - <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: heredoc line continued from sh -s' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# A quote inside ANOTHER heredoc's body used to desync the quote scanner (recorded in
+# docs/harness-residuals.md 2026-10-23, pinned KNOWN-WRONG until 2026-10-24). The heredoc
+# quote-close pass now ends the body's span at its terminator (owner ruling 2026-10-24); the
+# control below is the same text without the first heredoc.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X'
+'
+X
+echo 'abc
+python3 - <<'EOF'
+' ; eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a quote inside another heredoc body no longer hides a later command' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo 'abc
+python3 - <<'EOF'
+' ; eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'CONTROL: the same text without the first heredoc denies' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# Heredoc quote-close pass (2026-10-24): the shapes its generated corpora varied, each with the
+# direction the pass must take. Payloads are text fed to the guard; nothing here runs them.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X'
+it's
+X
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an apostrophe in a cat body does not hide the next line' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<X
+say "hi
+X
+gh pr merge 1 --squash
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an open double quote in an unquoted-delimiter body ends at the terminator' "$(jsonc "$C")" 'gh pr merge'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<-'X'
+	'
+	X
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: <<- matches a tab-indented terminator' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X'
+ok
+X
+cat <<'Y'
+'
+Y
+eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: the second of two heredocs is closed too' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X'
+'
+X
+echo ok
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'heredoc close: a quote in a cat body followed by a plain command still allows (no new block)' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<'X' > notes.txt
+it's "quoted
+X
+echo done
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'heredoc close: a data heredoc to a file with open quotes still allows' "$(jsonc "$C")"
+# An arithmetic `<<` is a shift, not a heredoc. Read as one, a quoted line that only looked like its
+# terminator was a false close and the real closing quote then opened a span (measured on the
+# draft: these were main-DENY -> draft-ALLOW). The pass declines on `((` / `$[`, and a `<<` after a
+# word-start `#` is comment text.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo $((1<<3))
+echo 'a
+3
+' ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an arithmetic $((1<<3)) is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+(( a<<b ))
+echo "a
+b
+" ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an arithmetic (( a<<b )) is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo hi # a<<b
+echo 'a
+b
+' ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside a comment is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# Only the `<<` inside arithmetic is skipped: an unrelated `$((1))` must not switch the pass off
+# (the draft declined on any `((` and this reopened the desync, found in pre-push review).
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo $((1))
+cat <<'X'
+'
+X
+echo 'abc
+' ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: an unrelated $((1)) does not switch the pass off' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# A `<<` inside `${…}` or an array subscript is not a redirection either (security review of #1555,
+# measured main-DENY -> head-ALLOW, and bash runs the last line). The term line is what the pass
+# would have read as the delimiter.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo ${x:-<<X}
+echo 'abc
+X}
+' ; eas update --branch production #'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside ${x:-…} is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+echo a${x/<<X/y}b
+echo "abc
+X/y}b
+" ; eas update --branch production #"
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside ${x/…/…} is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+a[1<<X]=1
+echo 'abc
+X]=1
+' ; eas update --branch production #'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a << inside an array subscript is not a heredoc (no false close)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# A REAL heredoc whose close would leave a quote open to the end: the shell stops at that syntax
+# error, so nothing after it runs. The pass keeps its result only when every quote closes, so these
+# keep main's reading (deny) rather than flipping to allow.
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat <<3
+echo 'a
+3
+' ; eas update --branch production
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'heredoc close: a close that would leave a quote open is not applied (main reading kept)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cat > x.sh <<'EOF'
+eas update --branch production
+EOF
+bash x.sh
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: cat heredoc to a file stays visible (owner ruling 2026-09-22)' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd $(eas update --branch production) && python3 - <<'EOF'
+print(1)
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: cd with a substitution before the heredoc line' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+X=1 python3 - <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: env-prefixed python heredoc is not the shape' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+# The real corpus, verbatim. 12 deliberate actions still deny on their own reason; 6 false alarms
+# (two help calls, four python heredocs) now allow; 4 stay denied by the 2026-09-22 ruling (text in a
+# `cat` heredoc or a data heredoc is still visible).
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/projects/OCRecipes && SHA=a1263911af9eefb5b11e2750d6f0a55f05dc7d62 && [ "$(gh pr view 1531 --json headRefOid --jq .headRefOid)" = "$SHA" ] && echo "head unchanged" && gh pr ready 1531 && gh pr merge 1531 --squash --delete-branch --match-head-commit "$SHA"; echo "exit=$?"
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #1 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''gh pr merge'\'' without a'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/projects/OCRecipes && gh pr merge 1501 --squash --delete-branch --match-head-commit d762e008e4f7f8d769b16218c140e74016e178c9 2>&1 | tail -5
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #2 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''gh pr merge'\'' without a'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/projects/OCRecipes && railway run --service Postgres --environment production -- sh -c 'psql "$DATABASE_PUBLIC_URL" -c "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = '\''user_profiles'\'';"' 2>&1 | tail -10
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #3 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/projects/OCRecipes && npm run update:production -- --message "oats count as a gluten risk; allergen idea-card fixes" 2>&1 | tail -25
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #4 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''npm run update:preview'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/projects/OCRecipes && git log --oneline -1 && git status --porcelain && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message "oats count as a gluten risk; allergen idea-card fixes" 2>&1 | tail -25
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #5 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''npm run update:preview'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/projects/OCRecipes && DRY_RUN=1 railway run npx tsx server/scripts/backfill-recipe-allergens.ts 2>&1 | tail -20
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #6 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway run --service Postgres --environment production -- sh -c 'psql "$DATABASE_PUBLIC_URL" -v ON_ERROR_STOP=1 -f /Users/williamtower/projects/OCRecipes/.worktrees/link-limiter/migrations/0021_social_link_guesses.sql' 2>&1 | tail -5
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #7 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+M=/Users/williamtower/.claude/projects/-Users-williamtower-projects-OCRecipes/memory; cat >> $M/project_auth_audit_2026_10_10.md <<'EOF'
+
+**L5 "Open decision" BUILT 2026-10-11 — change password while signed in:** server #1386 (94759757, migration 0022 `password_change_codes` applied on prod by owner, to_regclass confirmed; Railway deploy 565a487a OK, both routes 401 unauthenticated), app #1389 (34715a7f) + follow-up #1390 (f2e2c0bd, stale authenticator code on mode switch). Routes `POST /api/auth/change-password/code` + `/change-password`; proof = current password / Google-Apple reauth / emailed code (own table, own 5/24h cap, own "signed-in" mail bucket); emailed code + password need the authenticator code on 2FA accounts. **OPEN: owner runs the prod OTA from the main checkout (pulled to f2e2c0bd), then confirm `POST /api/auth/change-password` in Railway http logs from a device.** Follow-up todos (P3): VoiceOver announcement collision (ReplacementCodeCard+InlineError), replacement recovery code lost on TOKEN_REVOKED race.
+EOF
+python3 - <<'PYEOF'
+p="/Users/williamtower/.claude/projects/-Users-williamtower-projects-OCRecipes/memory/MEMORY.md"; s=open(p).read()
+a="all 7 P3s CLOSED (#1378–#1384, migration 0021 on prod)**]"
+assert s.count(a)==1
+s=s.replace(a,"all 7 P3s CLOSED (#1378–#1384, migration 0021 on prod); L5 change-password-while-signed-in BUILT #1386/#1389/#1390 (migration 0022 on prod) — prod OTA PENDING (owner)**]")
+open(p,"w").write(s)
+PYEOF
+grep -n "change-password-while-signed-in" $M/MEMORY.md | cut -c1-80; bash /Users/williamtower/projects/OCRecipes/.claude/hooks/ledger-note.sh VERIFIED "Change-password feature DONE in code: #1386 94759757, #1389 34715a7f, #1390 f2e2c0bd all merged; main checkout at f2e2c0bd; worktrees removed; dev server+Metro stopped; memory updated. ONLY OPEN: owner runs prod OTA, then confirm POST /api/auth/change-password in Railway http logs" "git log -3; worktree list"
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #8 heredoc text outside the python shape stays denied' "$(jsonc "$C")" 'command-position '\''railway up/deploy/rede'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+gh pr create --repo Xertox1234/OCRecipes --base main --head fix/change-password-policy-first-and-code-announce --title "fix(auth): a rejected new password never spends a recovery code; card + error speak as one" --body-file /private/tmp/claude-501/-Users-williamtower-projects-OCRecipes/979392e1-57f7-4527-907a-173a4fd4b823/scratchpad/pr-body-announce.md
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #9 deliberate action still denies' "$(jsonc "$C")" ''\''gh pr create/comment'\'' with --repo/-R wr'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+/usr/bin/git stash push -u -m "pre-merge #1391: signout_confirm.png" -- signout_confirm.png && gh pr merge 1391 --squash --delete-branch --match-head-commit b3fe499494241324246c3476445a511a1a996186 2>&1 | tail -5
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #10 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''gh pr merge'\'' without a'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd ~/.claude/projects/-Users-williamtower-projects-OCRecipes/memory && python3 - <<'EOF'
+p='project_auth_review_decisions_2026_09_26.md'
+s=open(p).read()
+line='- **2026-10-11 auth-audit rulings'
+i=s.index(line)
+s=s[:i]+'- **2026-10-11 change-password order REVISED (owner, #1391):** the new-password policy/breach check runs FIRST — before the proof and the second factor — so a refused password never spends a recovery code or an emailed-code attempt (supersedes change-password spec §4.1 "proof → factor → policy"; matches /mfa/disable). New routes that spend a one-time credential follow the same rule: every refusal that needs no credential runs before the spend.\n'+s[i:]
+open(p,'w').write(s)
+p='project_auth_audit_2026_10_10.md'
+s=open(p).read()
+old='Follow-up todos (P3): VoiceOver announcement collision (ReplacementCodeCard + InlineError); replacement'
+assert old in s
+s=s.replace(old,'Follow-up todos (P3): VoiceOver announcement collision — DONE #1391 (9d115053; `client/lib/announce-together.ts` joins same-tick announcements, card first; client half needs an OTA); replacement')
+open(p,'w').write(s)
+p='project_pr_preflight_guard_worktree_head.md'
+s=open(p).read()
+s+='''
+## Update 2026-10-11: the `cd` trick STOPPED working — back to the detach workaround
+
+PR #1391: the Bash tool now reports "Shell cwd was reset to <main checkout>" after every call, so a `cd <worktree>` in one call no longer moves the guard's HEAD; both `mcp__github__create_pull_request` and `gh pr create` were denied ("HEAD f2e2c0b (found: b3fe499)"). What worked: main checkout quiet → `git checkout --detach <stamped sha>` there → `gh pr create` (no `--repo`; the outward-CLI guard blocks `--repo`) in a SEPARATE call → `git checkout main`. Merge via `mcp__github__merge_pull_request` with `expectedHeadSha` (bare `gh pr merge` is blocked by guard-outward-cli).
+'''
+s=s.replace('description: "PR-preflight guard resolves HEAD in the session\'s primary working directory; since 2026-10-02 that dir FOLLOWS a prior `cd` (env update shows it), so `cd <worktree>` in one Bash call, then `gh pr create` in the next, passes — no main-checkout detach needed"','description: "PR-preflight guard resolves HEAD in the session\'s primary dir (main checkout); as of 2026-10-11 the cwd resets every call, so for a worktree branch detach the main checkout at the stamped sha, gh pr create (no --repo), restore main"')
+open(p,'w').write(s)
+EOF
+grep -n "pr-preflight-guard-worktree-head\|PR-preflight stamp" MEMORY.md | cut -c1-120
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'corpus #11 false alarm now allows' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd ~/.claude/projects/-Users-williamtower-projects-OCRecipes/memory && python3 - <<'EOF'
+p='project_auth_simplify_rulings_2026_10_12.md'
+s=open(p).read()
+s=s.rstrip()+'''
+
+**Progress (2026-10-12):** PR1 #1399 MERGED 8f28370 (deployed). PR2 #1400 MERGED 0fa7737 (deployed; migration 0023 applied on prod by owner, to_regclass NULL). PR3 #1403 (one-iPhone setup copy + #1400 leftovers) reviewed clean, awaiting CI + owner merge. Still to do: prod OTA from a main checkout ON main (peer sessions switch it — check the branch first; an OTA bundles whatever is checked out), then owner verifies two-step setup on device (confirm the Passwords → Codes → OCRecipes path; if another authenticator app grabs otpauth://, the "Add to Passwords" label is off — one-line copy fix). PR-guard gotcha: it keys on the MAIN checkout's HEAD; when a peer holds it, hand the owner the `! gh pr create` command.
+'''
+open(p,'w').write(s+'\n')
+EOF
+echo ok
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'corpus #12 false alarm now allows' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+R="Rate-limited after requireAuth (reauthLimiter / mfaEmailSendLimiter, createRateLimiter factory in _rate-limiters.ts); CodeQL can't trace the factory. Same FP class as #213/#215/#263. Owner approved 2026-10-12." && gh api -X PATCH repos/Xertox1234/OCRecipes/code-scanning/alerts/265 -f state=dismissed -f dismissed_reason="false positive" -f dismissed_comment="$R" --jq '"#\(.number) \(.state)"' && gh api -X PATCH repos/Xertox1234/OCRecipes/code-scanning/alerts/266 -f state=dismissed -f dismissed_reason="false positive" -f dismissed_comment="$R" --jq '"#\(.number) \(.state)"' && gh api -X PATCH repos/Xertox1234/OCRecipes/code-scanning/alerts/267 -f state=dismissed -f dismissed_reason="false positive" -f dismissed_comment="Input is a 6-digit one-time code (10 min, 5 guesses), not a password: HMAC-SHA256 keyed with a server secret, same as hashResetCode/hashChangeCode. A slow password hash adds nothing. Owner approved 2026-10-12." --jq '"#\(.number) \(.state)"'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #13 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''gh api'\'' with a method '
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+gh pr merge 1412 --squash --delete-branch --match-head-commit 6144d893c29465c70968aa7c1905038b20c7d34d 2>&1 | tail -5; gh pr view 1412 --json state,mergeCommit --jq '"\(.state) \(.mergeCommit.oid[0:8])"'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #14 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''gh pr merge'\'' without a'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway variable delete --help 2>&1 | head -20
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'corpus #15 false alarm now allows' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/projects/OCRecipes-wt-inspired && python3 - <<'EOF'
+p='.claude/hooks/test-pr-preflight-guard.sh'
+s=open(p).read()
+end='[ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }'
+new=r'''# --- The stamp is checked against the PR's OWN branch, not the cwd's HEAD (2026-10-13) ---
+# Work happens in linked worktrees while the session's cwd is the main checkout, so the gate
+# read the wrong commit and denied every worktree PR. When the call names a head branch
+# (MCP tool_input.head, or `gh pr create --head <b>` / `--head=<b>` / `-H <b>`), the gate
+# resolves THAT branch's commit (local ref first, then origin/<b>). With no head named, or an
+# unresolvable one, it keeps using HEAD.
+PRB="pr-guard-test-$$"
+PRB_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+if [ -n "$PRB_SHA" ] && git update-ref "refs/heads/$PRB" "$PRB_SHA" 2>/dev/null; then
+  trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}"; git update-ref -d "refs/heads/'"$PRB"'" 2>/dev/null' EXIT
+  run_mcp_head() { printf '{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"x","body":"y","head":%s,"base":"main"}}' "$(jq -Rn --arg h "$1" '$h')" | bash "$HOOK"; }
+
+  echo "$PRB_SHA" > "$STAMP_FILE"
+  OUT=$(run_mcp_head "$PRB")
+  assert_empty "MCP: stamp for the named head branch allows (cwd HEAD differs)" "" "$OUT"
+  OUT=$(run_mcp_head "Xertox1234:$PRB")
+  assert_empty "MCP: owner:branch head form resolves too" "" "$OUT"
+  OUT=$(run_hook "gh pr create --head $PRB --base main --title x --body y")
+  assert_empty "gh --head <b>: stamp for that branch allows" "" "$OUT"
+  OUT=$(run_hook "gh pr create --head=$PRB --title x --body y")
+  assert_empty "gh --head=<b>: stamp for that branch allows" "" "$OUT"
+  OUT=$(run_hook "gh pr create -H $PRB --title x --body y")
+  assert_empty "gh -H <b>: stamp for that branch allows" "" "$OUT"
+
+  echo "$HEAD" > "$STAMP_FILE"
+  OUT=$(run_mcp_head "$PRB")
+  assert_contains "MCP: a stamp for cwd HEAD does NOT cover a different named branch" '"permissionDecision": "deny"' "$OUT"
+  OUT=$(run_hook "gh pr create --head $PRB --title x --body y")
+  assert_contains "gh --head: a stamp for cwd HEAD does NOT cover a different named branch" '"permissionDecision": "deny"' "$OUT"
+
+  OUT=$(run_mcp_head "no-such-branch-$$")
+  assert_empty "MCP: unresolvable head falls back to cwd HEAD (stamp == HEAD allows)" "" "$OUT"
+  rm -f "$STAMP_FILE"
+  OUT=$(run_mcp_head "$PRB")
+  assert_contains "MCP: named branch with no stamp still denies" '"permissionDecision": "deny"' "$OUT"
+  git update-ref -d "refs/heads/$PRB" 2>/dev/null
+else
+  echo "FAIL: could not create the temp branch ref for the head-branch tests"; FAIL=1
+fi
+
+'''
+s=s.replace(end,new+end)
+open(p,'w').write(s)
+EOF
+env -u GIT_DIR -u GIT_WORK_TREE bash .claude/hooks/test-pr-preflight-guard.sh 2>&1 | grep -E "FAIL|ALL PASS" | head -12
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'corpus #16 false alarm now allows' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/.claude/projects/-Users-williamtower-projects-OCRecipes/memory && python3 - <<'EOF'
+p='project_pr_preflight_guard_worktree_head.md'
+s=open(p).read()
+s=s.replace('description: "PR-preflight guard resolves HEAD in the session\'s primary dir (main checkout); as of 2026-10-11 the Bash cwd resets every call, so for a worktree branch: detach the main checkout at the stamped sha, gh pr create (no --repo), restore main"',
+ 'description: "FIXED 2026-10-13 (#1436): the PR guard now checks the NAMED head branch (MCP head / gh --head), so worktree PRs open normally via mcp__github__create_pull_request with head=<branch>. Older notes below (detach workaround) are history."')
+s=s.replace('---\n\n`.claude/hooks/pr-preflight-guard.sh`','---\n\n## FIXED 2026-10-13 (#1436) — read this first\n\nOwner reopened the frozen harness for it. The guard resolves the commit of the branch NAMED in the PR call (MCP `tool_input.head`, `owner:branch` ok; `gh pr create --head/-H/--head=`), quoted spans ignored, exactly one --head required; no/ambiguous head → cwd HEAD (old behaviour). So: push the worktree branch (pre-push stamps it), then `mcp__github__create_pull_request` with `head: <branch>` — no detach, no owner hand-off. First real use: #1437. If it still denies with `found: <other sha>`, a PEER push overwrote the shared stamp → re-run `npm run preflight:fast` in your worktree (section below). Known residual (docs/harness-residuals.md): an unquoted `--head X` in a different shell segment picks X.\n\n`.claude/hooks/pr-preflight-guard.sh`',1)
+open(p,'w').write(s)
+p='MEMORY.md'
+s=open(p).read()
+s=s.replace("- [Recipe search index](project_recipe_search_index_lifecycle.md) — built at boot. [Preflight/guard mechanics](project_preflight_and_worktree_guard_mechanics.md) — pass-stamp gates PR creation.",
+ "- [Recipe search index](project_recipe_search_index_lifecycle.md) — built at boot. [Preflight/guard mechanics](project_preflight_and_worktree_guard_mechanics.md) — pass-stamp gates PR creation. ✅ [**PR guard checks the NAMED head branch since #1436 (2026-10-13)**](project_pr_preflight_guard_worktree_head.md) — open worktree PRs yourself via MCP `head:`; peer-overwritten stamp → re-run preflight:fast.")
+s=s.replace("**Inspired recipes BUILT 2026-10-13 (2 stacked branches pushed, reviewed) — PRs + prod migrations 0026/0027 pending owner.**",
+ "**Inspired recipes SHIPPED 2026-10-13 (#1429, #1433, codify #1434; 0026+0027 on prod) — only the OTA is left (owner).**")
+open(p,'w').write(s)
+EOF
+grep -c "#1436" MEMORY.md project_pr_preflight_guard_worktree_head.md; grep -c "SHIPPED 2026-10-13" MEMORY.md
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'corpus #17 false alarm now allows' "$(jsonc "$C")"
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+npm run update:production -- --message "verify-email screen fixes + auth polish (#1458), coach reminders fix (#1456)" 2>&1 | tail -30
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #18 deliberate action still denies' "$(jsonc "$C")" 'command-position '\''npm run update:preview'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+cd /Users/williamtower/projects/OCRecipes; S=/private/tmp/claude-501/-Users-williamtower-projects-OCRecipes/a4c5bae8-821c-4dc2-ab36-d9ee812b35c0/scratchpad; cat > $S/probe-outward.sh <<'EOF'
+#!/usr/bin/env bash
+# usage: probe-outward.sh  (reads cases from stdin, one command per line)
+H=.claude/hooks/guard-outward-cli.sh
+while IFS= read -r c; do
+  [ -z "$c" ] && continue
+  out=$(jq -n --arg c "$c" '{tool_name:"Bash",tool_input:{command:$c}}' | env -u ALLOW_OUTWARD_CLI bash "$H")
+  if grep -q '"deny"' <<<"$out"; then v=DENY; else v=ALLOW; fi
+  printf '%-6s | %s\n' "$v" "$c"
+done
+EOF
+chmod +x $S/probe-outward.sh
+$S/probe-outward.sh <<'EOF'
+npm run update:production -- --message x
+ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd /repo && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+git log -1 && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+ ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+ALLOW_OUTWARD_CLI=1  npm run update:production -- --message x
+FOO=1 ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+export ALLOW_OUTWARD_CLI=1; npm run update:production -- --message x
+ALLOW_OUTWARD_CLI=true npm run update:production -- --message x
+ALLOW_OUTWARD_CLI=1 git status && npm run update:production -- --message x
+ALLOW_OUTWARD_CLI=1 true; eas update --branch production
+git status && npm run update:production -- --message x
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #19 heredoc text outside the python shape stays denied' "$(jsonc "$C")" 'command-position '\''eas update/publish/sub'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+S=/private/tmp/claude-501/-Users-williamtower-projects-OCRecipes/a4c5bae8-821c-4dc2-ab36-d9ee812b35c0/scratchpad; W=/Volumes/U34Bolt/OCRecipes/worktrees/harness-bypass-after-leading-cd
+cat >> $S/outward-cases.txt <<'EOF'
+cd /repo; ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd '/a b' && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd "/a b" && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd $(pwd) && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd "$(pwd)" && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd "$WT" && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd `pwd` && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd /repo || ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd "/x && ALLOW_OUTWARD_CLI=1 y" && npm run update:production -- --message x
+cd /repo && npm run update:production -- --message x
+cd /repo && git log && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd	/repo	&&	ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd /repo&&ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd /repo & ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd /repo | ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd /re\po && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd /repo >/tmp/x && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd -P /repo && ALLOW_OUTWARD_CLI=1 npm run update:production -- --message x
+cd /repo && ALLOW_OUTWARD_CLI=1npm run update:production -- --message x
+EOF
+cat >> $S/gitsafety-cases.txt <<'EOF'
+cd /Users/x/projects/OCRecipes; SKIP_WORKTREE_CONTRACT=1 git commit -m x
+cd "/Users/x/projects/OCRecipes" && SKIP_WORKTREE_CONTRACT=1 git commit -m x
+cd $(pwd) && SKIP_WORKTREE_CONTRACT=1 git commit -m x
+cd "$WT" && SKIP_WORKTREE_CONTRACT=1 git commit -m x
+cd /Users/x/projects/OCRecipes || SKIP_WORKTREE_CONTRACT=1 git commit -m x
+cd "/x && SKIP_WORKTREE_CONTRACT=1 y" && git commit -m x
+cd /Users/x/projects/OCRecipes && git commit -m x
+cd /Users/x/projects/OCRecipes & SKIP_WORKTREE_CONTRACT=1 git commit -m x
+EOF
+B=$S/base-hooks; rm -rf $B; mkdir -p $B; (cd $W && /usr/bin/git archive origin/main .claude/hooks | tar -x -C $B)
+cd $W
+paste -d'|' <(bash $S/probe-outward.sh $B/.claude/hooks/guard-outward-cli.sh < $S/outward-cases.txt | cut -c1-6) <(bash $S/probe-outward.sh .claude/hooks/guard-outward-cli.sh < $S/outward-cases.txt) | awk -F'|' '{flag=($1!=$2 && $1!~$2)?"":""; b=$1; gsub(/ /,"",b); h=$2; gsub(/ /,"",h); print (b==h?"  same  ":"**FLIP**"), b"->"h, "|"$3}'
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #20 heredoc text outside the python shape stays denied' "$(jsonc "$C")" 'command-position '\''npm run update:preview'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+D=$(ls -d /private/tmp/claude-501/-Users-williamtower-projects-OCRecipes/91175d91-e32a-4f31-808d-74e746d1e5e2/scratchpad/probe-*|head -1); cat > $D/q.sh <<'EOF'
+H=.claude/hooks/nudge-dependency-add.sh; echo "bash=$BASH_VERSION"
+t(){ r=$(jq -n --arg c "$1" '{"tool_name":"Bash","tool_input":{"command":$c}}' | bash $H 2>/dev/null | grep -c DEPENDENCY); printf '%s\t%s\n' "$r" "$1"; }
+while IFS= read -r c; do t "$c"; done <<'L'
+npm --prefix client install
+npm --prefix client install -g lodash
+npm -g install lodash
+npm --global install lodash
+npm --prefix client ci
+npm --prefix client run build
+npx -y expo install --fix
+npx -y expo install expo-haptics
+npx -p x expo install expo-haptics
+npm --omit dev install lodash
+npm --tag next install lodash
+npm --prefix install lodash
+npm -w client install
+npm --prefix client --no-audit install lodash
+sudo npm install -g eas-cli
+sudo time npm install lodash
+npm install
+npm install --prefix client
+npm install --prefix client lodash
+echo "npm install lodash"
+time npm run build
+npm --prefix=client install lodash
+npm --loglevel -d install lodash
+npm --otp 123456 install lodash
+npm --location global install lodash
+npm install lodash -g
+npx expo install --fix expo-haptics
+npx -y expo install --fix
+L
+EOF
+bash $D/q.sh
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'corpus #21 heredoc text outside the python shape stays denied' "$(jsonc "$C")" 'a launcher (npx/npm exec/bunx/bun x|run/'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+railway --help 2>&1 | grep -iE "restart|redeploy"; railway restart --help 2>&1 | head -12
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_allow 'corpus #22 false alarm now allows' "$(jsonc "$C")"
+# 2026-10-23 review of #1545: a python3/node REDEFINED earlier in the command runs the heredoc
+# body as shell, so the pre-pass must decline. `()` alone missed the spaced definition and
+# `hash -p`; these all denied before #1545 and allowed after it (measured).
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 ( ) { sh; }
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a spaced function definition makes python3 a shell' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+python3 () { sh; }
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a function definition with a space before the parens' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+hash -p /bin/sh python3
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: hash -p points python3 at a shell' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+enable -n python3
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: enable before the heredoc declines' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+eval "python3 ( ) { sh; }"
+python3 <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a definition inside eval declines' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+IFS= read -r -d '' C <<'OUTWARD_CORPUS_END'
+node ( ) { sh; }
+node <<'EOF'
+eas update --branch production
+EOF
+OUTWARD_CORPUS_END
+C=${C%$'\n'}
+assert_deny 'help/heredoc: a spaced node function definition' "$(jsonc "$C")" 'command-position '\''eas update/publish/submit'\'' publishes'
+
 # 975 -> 977 (2026-09-17, closer-class sweep): +2 structural rows. #991 fixed ONE hand-written
 # `([[:space:]]|$)` closer; the sibling todo's criterion is that leaving the others is this
 # file's most repeated mistake, so the two remaining code-line instances (both `grep -oE`
@@ -6052,7 +6824,17 @@ assert_allow "two path-qualified read-only gh api calls allow" \
 # 1224 -> 1240 (2026-10-16, bypass after one leading cd): +16 = 12 in the jq block (4 cd
 # allows, 1 no-bypass control, 6 deny shapes, 1 pinned front-bypass-unlocks-later allow) and
 # 4 in the no-jq block (2 allow, 2 deny).
-EXPECTED_TOTAL=1240
+# 1240 -> 1302 (2026-10-23, help-only clauses and quoted python/node heredocs): +62 = 38 shape rows
+# (14 allow, 24 deny), the KNOWN-WRONG desync allow and its deny control, and the 22 real blocks
+# verbatim (12 deliberate deny, 6 false alarms now allow, 4 heredoc texts deny).
+# 1302 -> 1308 (2026-10-23, #1545 review): +6 deny rows, a python3/node redefined before its heredoc.
+# 1308 -> 1319 (2026-10-24, heredoc quote-close): the KNOWN-WRONG desync row flips to a deny in
+# place, +11 = 4 deny shapes (apostrophe, unquoted-delimiter double quote, <<- tab terminator, second
+# heredoc), 2 no-new-block allows (cat body + plain command, data heredoc to a file), 3 phantom
+# `<<` denies (two arithmetic, one comment), 1 unrelated-arithmetic deny, 1 unclosed-result deny.
+# 1319 -> 1322 (2026-10-25, #1555 security review): +3 phantom `<<` denies (${x:-…}, ${x/…/…}, array
+# subscript).
+EXPECTED_TOTAL=1322
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

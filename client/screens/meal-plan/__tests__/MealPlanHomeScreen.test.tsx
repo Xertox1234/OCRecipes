@@ -38,10 +38,11 @@ import { act, cleanup, screen, fireEvent } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import * as RN from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
-import MealPlanHomeScreen, {
+import MealPlanHomeScreen from "../MealPlanHomeScreen";
+import {
   MealSlotItem,
   MealSlotSection,
-} from "../MealPlanHomeScreen";
+} from "@/components/meal-plan/MealSlotSection";
 import { TIER_FEATURES } from "@shared/types/premium";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 // Mocked below (vi.mock("@/hooks/useMealPlan", ...)) — imported by name so

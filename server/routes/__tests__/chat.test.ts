@@ -649,6 +649,114 @@ describe("Chat Routes", () => {
       expect(res.text).not.toContain('"done":true');
     });
 
+    it("recipe path: sends error SSE event, saves nothing, and omits done when the response exceeds the byte limit", async () => {
+      mockStreamingSetup();
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation({ type: "recipe" }),
+      );
+      vi.mocked(generateRecipeChatResponse).mockImplementation(
+        async function* () {
+          yield { content: "x".repeat(60 * 1024) };
+        },
+      );
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Make me a pasta recipe" });
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("Response too large");
+      expect(res.text).not.toContain('"done":true');
+      expect(
+        vi
+          .mocked(storage.createChatMessage)
+          .mock.calls.filter((c) => c[2] === "assistant"),
+      ).toHaveLength(0);
+    });
+
+    it("recipe path: SSE timeout writes Response timeout, ends the stream, and saves nothing", async () => {
+      mockStreamingSetup();
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation({ type: "recipe" }),
+      );
+      let release!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      vi.mocked(generateRecipeChatResponse).mockImplementation(
+        async function* () {
+          yield { content: "Starting " };
+          await gate;
+          yield { content: "late" };
+        },
+      );
+
+      vi.useFakeTimers({ toFake: ["setTimeout"] });
+      try {
+        const pending = request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send({ content: "Make me a pasta recipe" })
+          .then((r) => r);
+        await vi.waitFor(() =>
+          expect(generateRecipeChatResponse).toHaveBeenCalled(),
+        );
+        vi.advanceTimersByTime(120_000);
+        release();
+        const res = await pending;
+
+        expect(res.status).toBe(200);
+        expect(res.text).toContain("Response timeout");
+        expect(res.text).not.toContain('"done":true');
+        expect(res.text).not.toContain("late");
+        expect(
+          vi
+            .mocked(storage.createChatMessage)
+            .mock.calls.filter((c) => c[2] === "assistant"),
+        ).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("returns 429 with the recipe generation message on a recipe conversation at the daily limit", async () => {
+      mockStreamingSetup();
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation({ type: "recipe" }),
+      );
+      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+        null,
+      );
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Make me a pasta recipe" });
+
+      expect(res.status).toBe(429);
+      expect(res.body.error).toBe("Daily recipe generation limit reached");
+      expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+    });
+
+    it("returns 429 with the recipe generation message on a remix conversation at the daily limit", async () => {
+      mockStreamingSetup();
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation({ type: "remix" }),
+      );
+      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+        null,
+      );
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Remix with tofu" });
+
+      expect(res.status).toBe(429);
+      expect(res.body.error).toBe("Daily recipe generation limit reached");
+    });
+
     it("succeeds with null goals when user has no calorie goal", async () => {
       mockStreamingSetup();
       vi.mocked(storage.getUser).mockResolvedValue(

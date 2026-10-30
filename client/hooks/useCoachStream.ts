@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
+import { streamSse } from "@/lib/sse-xhr";
 import { randomUuidV4 } from "@/lib/uuid";
 import {
   stripCoachBlocksFence,
@@ -136,16 +137,9 @@ export function useCoachStream({
   // is still current, so an abort/unmount during the read can't leave an
   // orphaned request that races the next stream.
   const streamEpochRef = useRef(0);
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  // Aborting it stops the in-flight request and its inactivity watchdog.
+  const abortRef = useRef<AbortController | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearInactivity = useCallback(() => {
-    if (inactivityTimerRef.current !== null) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
-  }, []);
 
   const stopDrain = useCallback(() => {
     if (drainIntervalRef.current !== null) {
@@ -193,9 +187,8 @@ export function useCoachStream({
 
   const abortStream = useCallback(() => {
     streamEpochRef.current += 1;
-    xhrRef.current?.abort();
-    xhrRef.current = null;
-    clearInactivity();
+    abortRef.current?.abort();
+    abortRef.current = null;
     stopDrain();
     bufferRef.current = "";
     isDoneRef.current = false;
@@ -207,17 +200,16 @@ export function useCoachStream({
     setIsStreaming(false);
     setStatusText("");
     setStreamingContent("");
-  }, [clearInactivity, stopDrain]);
+  }, [stopDrain]);
 
   // Abort XHR and drain interval on unmount
   useEffect(() => {
     return () => {
       streamEpochRef.current += 1;
-      xhrRef.current?.abort();
-      clearInactivity();
+      abortRef.current?.abort();
       stopDrain();
     };
-  }, [clearInactivity, stopDrain]);
+  }, [stopDrain]);
 
   const startStream = useCallback(
     (
@@ -230,7 +222,7 @@ export function useCoachStream({
       },
     ) => {
       // Refuse an overlapping stream: most internal state here (buffer,
-      // accumulated text, xhrRef, timers) is a single shared slot, not
+      // accumulated text, abortRef, timers) is a single shared slot, not
       // per-request, so a second concurrent startStream would corrupt or
       // orphan the first — see
       // todos/archive/P3-2026-09-24-chat-stream-hooks-xhrref-last-write-wins.md.
@@ -239,7 +231,6 @@ export function useCoachStream({
       const epoch = ++streamEpochRef.current;
 
       // Reset all state for a fresh stream
-      clearInactivity();
       bufferRef.current = "";
       isDoneRef.current = false;
       accumulatedRef.current = "";
@@ -258,142 +249,30 @@ export function useCoachStream({
         .get()
         .then((token) => {
           if (epoch !== streamEpochRef.current) return;
-          const xhr = new XMLHttpRequest();
-          xhrRef.current = xhr;
-          const url = `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`;
-          xhr.open("POST", url, true);
-          xhr.setRequestHeader("Content-Type", "application/json");
-          if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-          // Required, not decorative: the server anchors notebook follow-up
-          // dates and the coach's "today" in this zone, and falls back to UTC
-          // without it. This raw XHR bypasses `apiRequest`, which adds no
-          // header either — every caller passes it explicitly.
-          xhr.setRequestHeader("X-Timezone", getDeviceTimezone());
-
-          let lastProcessedIndex = 0;
-          // Once a terminal outcome is chosen, every later event is ignored.
-          // RN dispatches readystatechange at DONE before timeout/error (and
-          // on abort), so without this one stream can report twice.
-          let settled = false;
+          const controller = new AbortController();
+          abortRef.current = controller;
+          // A very late outcome on an already-superseded (aborted/unmounted)
+          // stream must not tear down or report an error against whatever
+          // stream is current now — same epoch guard as the token-read
+          // continuation above. The transport delivers at most one outcome.
           const fail = (msg: string, code?: string) => {
-            if (settled) return;
-            // A very late event on an already-superseded (aborted/unmounted)
-            // stream must not tear down or report an error against whatever
-            // stream is current now — same epoch guard as the token-read
-            // continuation above.
             if (epoch !== streamEpochRef.current) return;
-            settled = true;
-            clearInactivity();
             stopDrain();
             isStreamingRef.current = false;
             setIsStreaming(false);
             setStatusText("");
             onErrorRef.current?.(msg, code);
           };
-          // Reset on every event, status included: a stalled socket never
-          // closes or errors on its own, so without this the stream hangs.
-          const armInactivity = () => {
-            clearInactivity();
-            inactivityTimerRef.current = setTimeout(() => {
-              // Settle before aborting: abort() re-dispatches readystatechange.
-              fail("Response timeout");
-              xhr.abort();
-            }, STREAM_INACTIVITY_MS);
+
+          // Required, not decorative: the server anchors notebook follow-up
+          // dates and the coach's "today" in this zone, and falls back to UTC
+          // without it. This raw XHR bypasses `apiRequest`, which adds no
+          // header either — every caller passes it explicitly.
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+            "X-Timezone": getDeviceTimezone(),
           };
-
-          xhr.onreadystatechange = () => {
-            if (settled) return;
-            if (xhr.readyState >= 3 && xhr.responseText) {
-              const newText = xhr.responseText.slice(lastProcessedIndex);
-              lastProcessedIndex = xhr.responseText.length;
-              if (newText) armInactivity();
-
-              for (const line of newText.split("\n")) {
-                if (!line.startsWith("data: ")) continue;
-                try {
-                  const raw = JSON.parse(line.slice(6));
-                  if (
-                    typeof raw !== "object" ||
-                    raw === null ||
-                    Array.isArray(raw)
-                  )
-                    continue;
-                  const data = raw as Record<string, unknown>;
-                  if (data.error) {
-                    fail(String(data.error));
-                    return;
-                  }
-                  if (
-                    typeof data.status === "string" &&
-                    !firstCharDrainedRef.current
-                  ) {
-                    setStatusText(data.status);
-                  }
-                  if (typeof data.content === "string") {
-                    accumulatedRef.current += data.content;
-                    // Incremental: tracks scan offsets in fenceStateRef so
-                    // this doesn't re-scan the full accumulated text from
-                    // position 0 on every event (see coach-chat-utils.ts).
-                    const stripped = stripCoachBlocksFenceIncremental(
-                      accumulatedRef.current,
-                      fenceStateRef.current,
-                    );
-                    const newChars = stripped.slice(displayedLengthRef.current);
-                    displayedLengthRef.current = stripped.length;
-                    bufferRef.current += newChars;
-                  }
-                  // Handle safety override: clear buffered content and replace with safe message
-                  if (typeof data.safety_override === "string") {
-                    accumulatedRef.current = "";
-                    displayedLengthRef.current = 0;
-                    fenceStateRef.current = createFenceScanState();
-                    firstCharDrainedRef.current = false;
-                    fullTextRef.current = data.safety_override;
-                    setStreamingContent("");
-                    bufferRef.current = data.safety_override;
-                  }
-                  if (data.blocks && Array.isArray(data.blocks)) {
-                    blocksRef.current = filterValidBlocks(data.blocks);
-                  }
-                  if (data.done) {
-                    // The drain now owns finishing (onDone). Nothing after
-                    // `done` — a late error or close — may override it.
-                    settled = true;
-                    clearInactivity();
-                    isDoneRef.current = true;
-                    if (accumulatedRef.current) {
-                      fullTextRef.current = stripCoachBlocksFence(
-                        accumulatedRef.current,
-                      );
-                    }
-                  }
-                } catch {
-                  // Ignore incomplete JSON chunks
-                }
-              }
-            }
-
-            if (xhr.readyState === 4 && xhr.status >= 400) {
-              fail(
-                `${xhr.status}: ${xhr.responseText}`,
-                parseErrorCode(xhr.responseText),
-              );
-            }
-          };
-
-          xhr.onerror = () => fail("Network error");
-          // RN dispatches `timeout`, not `error`, when xhr.timeout elapses.
-          xhr.ontimeout = () => fail("Response timeout");
-          // `load` fires only on a clean close (never after timeout, error or
-          // abort, unlike readyState 4). A clean 2xx close before `done` means
-          // the server or a proxy cut the stream: the reply was never
-          // finished or saved, so report it rather than finalize a partial.
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              fail("Response interrupted");
-            }
-          };
-          xhr.timeout = XHR_TIMEOUT_MS;
+          if (token) headers["Authorization"] = `Bearer ${token}`;
 
           startDrain();
 
@@ -405,8 +284,93 @@ export function useCoachStream({
           if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
           if (extras?.screenContext) body.screenContext = extras.screenContext;
           if (extras?.finderAction) body.finderAction = extras.finderAction;
-          armInactivity();
-          xhr.send(JSON.stringify(body));
+
+          streamSse({
+            url: `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`,
+            body: JSON.stringify(body),
+            headers,
+            timeoutMs: XHR_TIMEOUT_MS,
+            inactivityMs: STREAM_INACTIVITY_MS,
+            signal: controller.signal,
+            onEvent: (data) => {
+              if (data.error) {
+                fail(String(data.error));
+                return "stop";
+              }
+              if (
+                typeof data.status === "string" &&
+                !firstCharDrainedRef.current
+              ) {
+                setStatusText(data.status);
+              }
+              if (typeof data.content === "string") {
+                accumulatedRef.current += data.content;
+                // Incremental: tracks scan offsets in fenceStateRef so
+                // this doesn't re-scan the full accumulated text from
+                // position 0 on every event (see coach-chat-utils.ts).
+                const stripped = stripCoachBlocksFenceIncremental(
+                  accumulatedRef.current,
+                  fenceStateRef.current,
+                );
+                const newChars = stripped.slice(displayedLengthRef.current);
+                displayedLengthRef.current = stripped.length;
+                bufferRef.current += newChars;
+              }
+              // Handle safety override: clear buffered content and replace with safe message
+              if (typeof data.safety_override === "string") {
+                accumulatedRef.current = "";
+                displayedLengthRef.current = 0;
+                fenceStateRef.current = createFenceScanState();
+                firstCharDrainedRef.current = false;
+                fullTextRef.current = data.safety_override;
+                setStreamingContent("");
+                bufferRef.current = data.safety_override;
+              }
+              if (data.blocks && Array.isArray(data.blocks)) {
+                blocksRef.current = filterValidBlocks(data.blocks);
+              }
+              if (data.done) {
+                isDoneRef.current = true;
+                if (accumulatedRef.current) {
+                  fullTextRef.current = stripCoachBlocksFence(
+                    accumulatedRef.current,
+                  );
+                }
+                // The drain now owns finishing (onDone). Nothing after
+                // `done` — a late error or close — may override it.
+                return "stop";
+              }
+            },
+            onClose: (outcome) => {
+              switch (outcome.kind) {
+                case "http-error":
+                  fail(
+                    `${outcome.status}: ${outcome.responseText}`,
+                    parseErrorCode(outcome.responseText),
+                  );
+                  break;
+                case "network":
+                  fail("Network error");
+                  break;
+                case "timeout":
+                case "inactivity":
+                  fail("Response timeout");
+                  break;
+                case "load":
+                  // `load` fires only on a clean close. A clean 2xx close
+                  // before `done` means the server or a proxy cut the
+                  // stream: the reply was never finished or saved, so
+                  // report it rather than finalize a partial.
+                  if (outcome.status >= 200 && outcome.status < 300) {
+                    fail("Response interrupted");
+                  }
+                  break;
+                case "aborted":
+                  // Intentional (abortStream / unmount) — already torn down.
+                  break;
+              }
+            },
+          });
         })
         .catch((err: unknown) => {
           // A stale stream's failure must not tear down the current one.
@@ -420,7 +384,7 @@ export function useCoachStream({
           );
         });
     },
-    [clearInactivity, startDrain, stopDrain],
+    [startDrain, stopDrain],
   );
 
   return {

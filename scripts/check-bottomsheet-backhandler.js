@@ -124,7 +124,11 @@ function jsxTagPattern(name) {
   return new RegExp(`(^|[^\\w.])<${name.replace(/\$/g, "\\$")}(?=[\\s/>])`);
 }
 
-const HOOK_CALL_PATTERN = /useSheetBackHandler\(/;
+// useSheetBackHandler itself, plus wrapper hooks that call it on the host's
+// behalf. Each wrapper's real call is pinned by a test in
+// scripts/__tests__/check-bottomsheet-backhandler.test.ts — add one there
+// when adding a name here.
+const HOOK_CALL_PATTERN = /\b(useSheetBackHandler|useMealPlanSheets)\(/;
 
 function checkFile(filePath) {
   const content = fs.readFileSync(filePath, "utf8");

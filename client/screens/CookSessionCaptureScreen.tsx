@@ -115,7 +115,8 @@ export default function CookSessionCaptureScreen() {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         setIngredientCount(result.ingredients.length);
         setPhotos((prev) => [...prev, photoUri]);
-      } catch {
+      } catch (error) {
+        logger.error("[CookSessionCapture] photo analysis failed", error);
         toast.error("Could not analyze this photo. Please try again.");
       } finally {
         setIsAnalyzing(false);

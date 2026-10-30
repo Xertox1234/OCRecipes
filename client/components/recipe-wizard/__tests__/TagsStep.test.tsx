@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
+import { reactProps } from "../../../../test/utils/react-props";
 import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import TagsStep from "../TagsStep";
@@ -16,6 +17,14 @@ const { mockImpact, mockNotification, mockSelection } = vi.hoisted(() => ({
   mockImpact: vi.fn(),
   mockNotification: vi.fn(),
   mockSelection: vi.fn(),
+}));
+
+const { mockDismiss } = vi.hoisted(() => ({ mockDismiss: vi.fn() }));
+
+// The shared react-native mock has no Keyboard (see HomeScreen.test.tsx).
+vi.mock("react-native", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  Keyboard: { dismiss: mockDismiss },
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -170,5 +179,38 @@ describe("TagsStep — render", () => {
       cuisine: "Thai",
       dietTags: [],
     });
+  });
+});
+
+describe("TagsStep — cuisine field label", () => {
+  it('floats "Cuisine" on the field, inside the input\'s accessible name', () => {
+    renderComponent(<TagsStep tags={makeTags()} setTags={vi.fn()} />);
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Cuisine");
+    const input = screen.getByLabelText("Cuisine type");
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe(
+      "e.g., Italian, Mexican, Thai",
+    );
+  });
+
+  it("drops the CUISINE caps caption the floating label replaces", () => {
+    renderComponent(<TagsStep tags={makeTags()} setTags={vi.fn()} />);
+    expect(screen.queryByText("CUISINE")).toBeNull();
+    // Other sections keep their captions.
+    expect(screen.getByText("DIET TAGS")).toBeDefined();
+  });
+});
+
+describe("TagsStep — Return key", () => {
+  it("Done on the cuisine closes the keyboard", () => {
+    renderComponent(<TagsStep tags={makeTags()} setTags={vi.fn()} />);
+    const props = reactProps(screen.getByLabelText("Cuisine type"));
+    expect(props.returnKeyType).toBe("done");
+    act(() => {
+      (props.onSubmitEditing as () => void)();
+    });
+    expect(mockDismiss).toHaveBeenCalledTimes(1);
   });
 });

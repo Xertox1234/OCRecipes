@@ -3,7 +3,8 @@ title: Fence a prod-dangerous operation at its call site with a fail-closed targ
 track: knowledge
 category: conventions
 module: server
-tags: [scripts, prod-safety, fail-closed, defense-in-depth, database-url, security, seed]
+tags: [scripts, prod-safety, fail-closed, defense-in-depth, database-url, security, seed, harness]
+applies_to: [server/scripts/seed-recipes.ts, server/scripts/seed-recipes-utils.ts]
 created: '2026-06-25'
 ---
 

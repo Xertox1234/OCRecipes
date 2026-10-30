@@ -93,7 +93,8 @@ export function SecondFactorField({
     <View style={styles.container}>
       <TextInput
         leftIcon="shield"
-        placeholder="6-digit code"
+        label="6-digit code"
+        placeholder="123456"
         value={code}
         onChangeText={onCode}
         keyboardType="number-pad"
@@ -104,7 +105,6 @@ export function SecondFactorField({
         autoFocus={autoFocus}
         editable={!busy}
         error={Boolean(error)}
-        accessibilityLabel="6-digit code"
         accessibilityHint="Enter the code from the email we sent you"
         testID="input-second-factor-code"
       />

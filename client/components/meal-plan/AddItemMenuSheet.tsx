@@ -1,17 +1,14 @@
 import React, { useCallback, useEffect, useRef } from "react";
-import { StyleSheet, View, Pressable } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { StyleSheet, View } from "react-native";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
-import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
 import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+  SheetDragHandle,
+  SheetOptionRow,
+} from "@/components/sheet/SheetChrome";
+import { useHaptics } from "@/hooks/useHaptics";
+import { Spacing, FontFamily } from "@/constants/theme";
 import {
   MEAL_LABELS,
   type MealType,
@@ -32,7 +29,6 @@ function AddItemMenuSheetContentInner({
   onSimpleEntry,
   onImportRecipe,
 }: AddItemMenuSheetContentProps) {
-  const { theme } = useTheme();
   const haptics = useHaptics();
   // Guards against a near-simultaneous double-tap on two different rows: each
   // handler synchronously clears the parent's menu state and defers opening
@@ -85,74 +81,30 @@ function AddItemMenuSheetContentInner({
     // it's presented. See docs/solutions/conventions/
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
     <View style={styles.content} accessibilityViewIsModal>
-      <View
-        style={[
-          styles.dragIndicator,
-          { backgroundColor: withOpacity(theme.text, 0.2) },
-        ]}
-      />
+      <SheetDragHandle />
       <ThemedText style={styles.title}>Add to {label}</ThemedText>
       <View style={styles.options}>
-        <Pressable
+        <SheetOptionRow
+          icon="book-open"
+          title="Choose Recipe"
+          description="Search your recipes or create new"
           onPress={handleChooseRecipe}
-          style={[
-            styles.optionRow,
-            { backgroundColor: withOpacity(theme.text, 0.04) },
-          ]}
-          accessibilityRole="button"
           accessibilityLabel="Choose recipe"
-        >
-          <Feather name="book-open" size={20} color={theme.link} />
-          <View style={styles.optionText}>
-            <ThemedText style={styles.optionTitle}>Choose Recipe</ThemedText>
-            <ThemedText
-              style={[styles.optionDesc, { color: theme.textSecondary }]}
-            >
-              Search your recipes or create new
-            </ThemedText>
-          </View>
-          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
-        </Pressable>
-        <Pressable
+        />
+        <SheetOptionRow
+          icon="edit-3"
+          title="Simple Entry"
+          description="Type a dish name, AI estimates nutrition"
           onPress={handleSimpleEntry}
-          style={[
-            styles.optionRow,
-            { backgroundColor: withOpacity(theme.text, 0.04) },
-          ]}
-          accessibilityRole="button"
           accessibilityLabel="Simple entry"
-        >
-          <Feather name="edit-3" size={20} color={theme.link} />
-          <View style={styles.optionText}>
-            <ThemedText style={styles.optionTitle}>Simple Entry</ThemedText>
-            <ThemedText
-              style={[styles.optionDesc, { color: theme.textSecondary }]}
-            >
-              Type a dish name, AI estimates nutrition
-            </ThemedText>
-          </View>
-          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
-        </Pressable>
-        <Pressable
+        />
+        <SheetOptionRow
+          icon="download"
+          title="Import Recipe"
+          description="From URL, photo, or clipboard"
           onPress={handleImportRecipe}
-          style={[
-            styles.optionRow,
-            { backgroundColor: withOpacity(theme.text, 0.04) },
-          ]}
-          accessibilityRole="button"
           accessibilityLabel="Import recipe"
-        >
-          <Feather name="download" size={20} color={theme.link} />
-          <View style={styles.optionText}>
-            <ThemedText style={styles.optionTitle}>Import Recipe</ThemedText>
-            <ThemedText
-              style={[styles.optionDesc, { color: theme.textSecondary }]}
-            >
-              From URL, photo, or clipboard
-            </ThemedText>
-          </View>
-          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
-        </Pressable>
+        />
       </View>
     </View>
   );
@@ -167,12 +119,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.lg,
   },
-  dragIndicator: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: Spacing.md,
-  },
   title: {
     fontSize: 17,
     fontFamily: FontFamily.semiBold,
@@ -182,23 +128,5 @@ const styles = StyleSheet.create({
   options: {
     width: "100%",
     gap: Spacing.sm,
-  },
-  optionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
-    gap: Spacing.md,
-  },
-  optionText: {
-    flex: 1,
-  },
-  optionTitle: {
-    fontSize: 15,
-    fontFamily: FontFamily.semiBold,
-  },
-  optionDesc: {
-    fontSize: 13,
-    marginTop: 2,
   },
 });

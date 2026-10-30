@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -12,13 +6,18 @@ import {
   SectionList,
   Pressable,
   ActivityIndicator,
-  ScrollView,
-  type GestureResponderEvent,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import {
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 import Animated from "react-native-reanimated";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
@@ -28,21 +27,15 @@ import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 
 import { ThemedText } from "@/components/ThemedText";
-import { PressableScale } from "@/components/PressableScale";
-import { Chip } from "@/components/Chip";
-import { RecipeAttributeRow } from "@/components/RecipeAttributeRow";
-import { toRecipeAttributeA11ySuffix } from "@/components/recipe-attribute-row-utils";
 import {
   SkeletonBox,
   SkeletonLoadingRegion,
   SkeletonProvider,
 } from "@/components/SkeletonLoader";
-import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import { useToast } from "@/context/ToastContext";
 import {
   Spacing,
@@ -57,14 +50,14 @@ import {
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
 import { useRecipeSearch } from "@/hooks/useRecipeSearch";
-import {
-  useCreateSuggestionListing,
-  useMakeSuggestion,
-} from "@/hooks/useInspiredSuggestions";
+import { useCreateSuggestionListing } from "@/hooks/useInspiredSuggestions";
+import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import {
   SearchFilterSheet,
   type SearchFilters,
 } from "@/components/meal-plan/SearchFilterSheet";
+import { UnifiedRecipeCard } from "@/components/meal-plan/UnifiedRecipeCard";
+import { RecipeFilterBar } from "@/components/meal-plan/RecipeFilterBar";
 import { OnlineSearchCta } from "@/components/meal-plan/OnlineSearchCta";
 import { SuggestionCard } from "@/components/inspired/SuggestionCard";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -87,8 +80,6 @@ import {
   createListingBodySchema,
   type Suggestion,
 } from "@shared/schemas/inspired-recipes";
-import { ApiError } from "@/lib/api-error";
-import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
 import {
@@ -102,6 +93,11 @@ const RECIPE_HEADER_EXPANDED = 60;
 const RECIPE_HEADER_COLLAPSED = 0;
 const RECIPE_COLLAPSE_THRESHOLD = 100;
 
+const SEARCH_LABEL = "Search recipes";
+const SEARCH_ICON_SIZE = 16;
+// The search bar's text starts past its left padding, the icon and the gap.
+const SEARCH_LABEL_LEFT = Spacing.md + SEARCH_ICON_SIZE + Spacing.sm;
+
 type RecipeBrowserRouteProp = RouteProp<
   MealPlanStackParamList,
   "RecipeBrowser"
@@ -111,242 +107,6 @@ type RecipeBrowserRouteProp = RouteProp<
 
 const ItemSeparator = React.memo(function ItemSeparator() {
   return <View style={{ height: Spacing.sm }} />;
-});
-
-const CUISINE_PRESETS = [
-  "Italian",
-  "Mexican",
-  "Asian",
-  "Mediterranean",
-  "American",
-  "Indian",
-];
-const DIET_PRESETS = ["Vegetarian", "Vegan", "Gluten Free", "Keto", "Paleo"];
-
-// ── Unified Recipe Card ─────────────────────────────────────────────
-
-const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
-  item,
-  isFavourited,
-  onPress,
-  onFavourite,
-  adding,
-  browseOnly,
-}: {
-  item: SearchableRecipe;
-  isFavourited: boolean;
-  onPress: (item: SearchableRecipe) => void;
-  onFavourite: (recipeId: number, recipeType: "mealPlan" | "community") => void;
-  adding: boolean;
-  browseOnly: boolean;
-}) {
-  const { theme } = useTheme();
-  const haptics = useHaptics();
-  const { trigger: triggerHeartPop, animatedStyle: heartPopStyle } =
-    useSuccessPop(1.4);
-
-  const triggerFavourite = useCallback(() => {
-    // The pop fires its own Success haptic — one buzz per favourite.
-    if (isFavourited) {
-      haptics.impact();
-    } else {
-      triggerHeartPop();
-    }
-    const numericId = parseInt(item.id.split(":")[1], 10);
-    const recipeType = item.source === "community" ? "community" : "mealPlan";
-    onFavourite(numericId, recipeType);
-  }, [
-    haptics,
-    isFavourited,
-    triggerHeartPop,
-    onFavourite,
-    item.id,
-    item.source,
-  ]);
-
-  const handleFavourite = useCallback(
-    (e: GestureResponderEvent) => {
-      e.stopPropagation();
-      triggerFavourite();
-    },
-    [triggerFavourite],
-  );
-
-  // The card Pressable is accessible by default, which collapses its whole
-  // subtree into a single VoiceOver/TalkBack focus stop — the nested
-  // favourite Pressable below is never independently reachable. Expose it as
-  // an accessibilityAction on the card instead (same pattern as
-  // BatchSummaryScreen's BatchItemRow) so the primary "open recipe" label
-  // stays the single focus stop while the favourite toggle is still
-  // independently activatable via the screen reader's actions/rotor.
-  const accessibilityActions = useMemo(
-    () => [
-      {
-        name: "toggleFavourite",
-        label: isFavourited ? "Remove from favourites" : "Add to favourites",
-      },
-    ],
-    [isFavourited],
-  );
-
-  const handleAccessibilityAction = useCallback(
-    (event: { nativeEvent: { actionName: string } }) => {
-      if (event.nativeEvent.actionName === "toggleFavourite") {
-        triggerFavourite();
-      }
-    },
-    [triggerFavourite],
-  );
-
-  const isCommunity = item.source === "community";
-
-  // Time display
-  const timeText = item.totalTimeMinutes
-    ? `${item.totalTimeMinutes} min`
-    : null;
-
-  // Calories
-  const caloriesText = item.caloriesPerServing
-    ? `${Math.round(item.caloriesPerServing)} cal`
-    : null;
-
-  // Button icon: community always browses, personal depends on mode
-  const iconName = isCommunity || browseOnly ? "chevron-right" : "plus";
-
-  const imageUri = resolveImageUrl(item.imageUrl);
-
-  // Source badge label
-  const sourceBadgeLabel = isCommunity ? "Community" : "My Recipe";
-  const sourceBadgeColor = isCommunity
-    ? theme.link
-    : (theme.success ?? theme.link);
-
-  // The card Pressable is accessible={true}, which collapses its whole subtree
-  // into a single focus stop — the nested RecipeAttributeRow's own labels are
-  // never reached by VoiceOver/TalkBack (see the toast-action-button
-  // precedent). Fold the checked attributes and the recipe's derived allergens
-  // into the card's own label so the safety-critical allergen info still
-  // reaches screen-reader users; the visible chips (RecipeAttributeRow below)
-  // remain for sighted users.
-  const attributeFacts = {
-    dietTags: item.dietTags,
-    allergens: item.allergens,
-    dietConflicts: item.dietConflicts,
-    spiceLevel: item.spiceLevel,
-    totalTimeMinutes: item.totalTimeMinutes,
-  };
-  const attributeA11ySuffix = toRecipeAttributeA11ySuffix(attributeFacts);
-  const baseA11yLabel =
-    isCommunity || browseOnly
-      ? `View ${item.title}`
-      : `Add ${item.title} to meal plan`;
-
-  return (
-    <Pressable
-      onPress={() => onPress(item)}
-      disabled={adding}
-      style={({ pressed }) => [
-        styles.recipeCard,
-        { backgroundColor: withOpacity(theme.text, 0.04) },
-        pressed && { opacity: 0.7 },
-      ]}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: adding }}
-      accessibilityLabel={`${baseA11yLabel}${attributeA11ySuffix}`}
-      accessibilityActions={accessibilityActions}
-      onAccessibilityAction={handleAccessibilityAction}
-    >
-      <FallbackImage
-        source={{ uri: imageUri ?? undefined }}
-        style={styles.recipeCardThumbnail}
-        fallbackStyle={{ backgroundColor: withOpacity(theme.text, 0.08) }}
-        fallbackIcon="image"
-        fallbackIconSize={20}
-        accessible={false}
-      />
-      <View style={styles.recipeCardContent}>
-        <ThemedText style={styles.recipeCardTitle} numberOfLines={2}>
-          {item.title}
-        </ThemedText>
-        <RecipeAttributeRow facts={attributeFacts} />
-        <View style={styles.recipeCardMeta}>
-          {timeText && (
-            <>
-              <Feather name="clock" size={12} color={theme.textSecondary} />
-              <ThemedText
-                style={[
-                  styles.recipeCardMetaText,
-                  { color: theme.textSecondary },
-                ]}
-              >
-                {timeText}
-              </ThemedText>
-            </>
-          )}
-          {caloriesText && (
-            <ThemedText
-              style={[
-                styles.recipeCardMetaText,
-                {
-                  color: theme.textSecondary,
-                  marginLeft: timeText ? Spacing.sm : 0,
-                },
-              ]}
-            >
-              {caloriesText}
-            </ThemedText>
-          )}
-          <View
-            style={[
-              styles.sourceBadge,
-              {
-                backgroundColor: withOpacity(sourceBadgeColor, 0.12),
-                marginLeft: timeText || caloriesText ? Spacing.sm : 0,
-              },
-            ]}
-          >
-            <ThemedText
-              style={[styles.sourceBadgeText, { color: sourceBadgeColor }]}
-            >
-              {sourceBadgeLabel}
-            </ThemedText>
-          </View>
-        </View>
-      </View>
-      <Pressable
-        onPress={handleFavourite}
-        accessibilityRole="button"
-        accessibilityLabel={
-          isFavourited ? "Remove from favourites" : "Add to favourites"
-        }
-        style={({ pressed }) => [
-          {
-            width: 44,
-            height: 44,
-            justifyContent: "center",
-            alignItems: "center",
-            marginRight: Spacing.sm,
-          },
-          pressed && { opacity: 0.7 },
-        ]}
-      >
-        <Animated.View style={heartPopStyle}>
-          <Ionicons
-            name={isFavourited ? "heart" : "heart-outline"}
-            size={20}
-            color={isFavourited ? theme.error : theme.textSecondary}
-          />
-        </Animated.View>
-      </Pressable>
-      <View style={[styles.addButton, { backgroundColor: theme.accentSolid }]}>
-        {adding ? (
-          <ActivityIndicator size="small" color={theme.buttonText} />
-        ) : (
-          <Feather name={iconName} size={18} color={theme.buttonText} />
-        )}
-      </View>
-    </Pressable>
-  );
 });
 
 // ── Main Screen ──────────────────────────────────────────────────────
@@ -380,6 +140,7 @@ export default function RecipeBrowserScreen() {
   const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
 
   const [searchText, setSearchText] = useState(searchQuery || "");
+  const searchFocus = useFieldFocus();
   const [addingId, setAddingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<RecipeFilters>(DEFAULT_FILTERS);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -513,9 +274,7 @@ export default function RecipeBrowserScreen() {
     mutate: requestIdeas,
     reset: resetIdeas,
   } = useCreateSuggestionListing();
-  const { mutateAsync: makeSuggestion } = useMakeSuggestion();
-  const [makingId, setMakingId] = useState<number | null>(null);
-  const makingRef = useRef<number | null>(null);
+  const { make: makeSuggestion, makingId } = useMakeSuggestionFlow();
 
   const ideas: Suggestion[] = useMemo(() => ideasData ?? [], [ideasData]);
 
@@ -622,39 +381,10 @@ export default function RecipeBrowserScreen() {
     mealType,
   ]);
 
+  // A 410 means this idea list expired; clear it so the CTA can re-ask.
   const handleMakeIdea = useCallback(
-    (suggestion: Suggestion) => {
-      // One make at a time — a second card's tap is ignored while one runs.
-      // A ref, not state: two taps in the same frame must not both pass.
-      if (makingRef.current !== null) return;
-      makingRef.current = suggestion.id;
-      setMakingId(suggestion.id);
-      makeSuggestion(suggestion.id)
-        .then(({ recipeId }) => {
-          navigation.navigate("FeaturedRecipeDetail", {
-            recipeId,
-            recipeType: "community",
-          });
-        })
-        .catch((error: unknown) => {
-          const status = error instanceof ApiError ? error.status : undefined;
-          if (status === 429) {
-            toast.error("You've reached today's recipe limit.");
-          } else if (status === 410) {
-            toast.error("These ideas expired — search again.");
-            resetIdeas();
-          } else {
-            toast.error("Couldn't make this recipe. Try again.");
-          }
-        })
-        .finally(() => {
-          if (makingRef.current === suggestion.id) makingRef.current = null;
-          setMakingId((current) =>
-            current === suggestion.id ? null : current,
-          );
-        });
-    },
-    [makeSuggestion, navigation, toast, resetIdeas],
+    (suggestion: Suggestion) => makeSuggestion(suggestion.id, resetIdeas),
+    [makeSuggestion, resetIdeas],
   );
 
   const handleRecipePress = useCallback(
@@ -714,19 +444,36 @@ export default function RecipeBrowserScreen() {
     setFilters((prev) => ({ ...prev, advanced: next }));
   }, []);
 
-  const handleToggleCuisine = useCallback((cuisine: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      activeCuisine: prev.activeCuisine === cuisine ? undefined : cuisine,
-    }));
+  const handleOpenAdvancedFilters = useCallback(() => {
+    filterSheetRef.current?.present();
+    setIsFilterSheetOpen(true);
   }, []);
 
-  const handleToggleDiet = useCallback((diet: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      activeDiet: prev.activeDiet === diet ? undefined : diet,
-    }));
-  }, []);
+  const handleAddRecipe = useCallback(() => {
+    // Root-qualified: this screen is also registered in the Profile
+    // and Coach stacks, where a bare "RecipeEntryHub" resolves
+    // nowhere. "Main" is visible from all three; `pop: true`
+    // returns to the existing Main instead of pushing a second one
+    // (see AllConversationsNavigationProp in types/navigation.ts).
+    // Adding a recipe from Profile or the Coach therefore switches
+    // to Plan (`returnToTab` makes the hub's Back return to the tab
+    // it came from, QA sweep #10);
+    // `initial: false` keeps Plan home underneath when the Plan
+    // stack wasn't mounted yet (otherwise Add Recipe would be its
+    // only screen, with no way back to Plan home).
+    navigation.navigate(
+      "Main",
+      {
+        screen: "MealPlanTab",
+        params: {
+          screen: "RecipeEntryHub",
+          params: { returnToTab: getSourceTab(navigation) },
+          initial: false,
+        },
+      },
+      { pop: true },
+    );
+  }, [navigation]);
 
   const handleClearFilters = useCallback(() => {
     haptics.selection();
@@ -795,8 +542,12 @@ export default function RecipeBrowserScreen() {
         ]}
       >
         {/* Search bar always visible */}
-        <View
+        <FocusField
+          focus={searchFocus}
           testID="recipe-search-bar"
+          label={SEARCH_LABEL}
+          hasValue={searchText.length > 0}
+          labelLeft={SEARCH_LABEL_LEFT}
           style={[
             styles.searchBar,
             {
@@ -805,10 +556,22 @@ export default function RecipeBrowserScreen() {
             },
           ]}
         >
-          <Feather name="search" size={16} color={theme.textSecondary} />
+          <Feather
+            name="search"
+            size={SEARCH_ICON_SIZE}
+            color={theme.textSecondary}
+          />
           <FocusTextInput
+            focusRing={false}
+            onFocus={searchFocus.onFocus}
+            onBlur={searchFocus.onBlur}
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search recipes..."
+            // The label rests where the placeholder would; it shows once floated.
+            placeholder={resolvePlaceholder(
+              SEARCH_LABEL,
+              "e.g. pasta or high protein",
+              shouldFloatLabel(searchFocus.focused, searchText),
+            )}
             placeholderTextColor={theme.textSecondary}
             value={searchText}
             onChangeText={handleSearchChange}
@@ -816,7 +579,7 @@ export default function RecipeBrowserScreen() {
             autoCorrect={false}
             returnKeyType="search"
             onSubmitEditing={handleSubmitSearch}
-            accessibilityLabel="Search recipes"
+            accessibilityLabel={SEARCH_LABEL}
           />
           {searchText.length > 0 && (
             <Pressable
@@ -834,7 +597,7 @@ export default function RecipeBrowserScreen() {
               <Feather name="x" size={16} color={theme.textSecondary} />
             </Pressable>
           )}
-        </View>
+        </FocusField>
       </View>
       <Animated.View
         // When the header collapses (opacity interpolates to 0), the invisible
@@ -850,201 +613,13 @@ export default function RecipeBrowserScreen() {
         {/* Filter chips, with Add pinned at the end of the row. The button
             used to sit alone on a row of its own above them (visual QA
             sweep #8). */}
-        <View style={styles.filterBar}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filterScroll}
-            contentContainerStyle={styles.filterRow}
-          >
-            <Chip
-              label="Curated"
-              variant="filter"
-              selected={filters.curatedOnly}
-              onPress={() => {
-                setFilters((prev) => ({
-                  ...prev,
-                  curatedOnly: !prev.curatedOnly,
-                }));
-              }}
-              accessibilityLabel="Filter curated recipes only"
-            />
-            <Chip
-              label="Safe for me"
-              variant="filter"
-              selected={filters.safeForMe}
-              onPress={() => {
-                setFilters((prev) => ({
-                  ...prev,
-                  safeForMe: !prev.safeForMe,
-                }));
-              }}
-              accessibilityLabel="Filter recipes safe for my allergies"
-            />
-            <View
-              style={[
-                styles.filterDivider,
-                { backgroundColor: withOpacity(theme.text, 0.15) },
-              ]}
-            />
-            {CUISINE_PRESETS.map((c) => (
-              <Chip
-                key={c}
-                label={c}
-                variant="filter"
-                selected={filters.activeCuisine === c}
-                onPress={() => handleToggleCuisine(c)}
-                accessibilityLabel={`Filter by ${c}`}
-              />
-            ))}
-            <View
-              style={[
-                styles.filterDivider,
-                { backgroundColor: withOpacity(theme.text, 0.15) },
-              ]}
-            />
-            {DIET_PRESETS.map((d) => (
-              <Chip
-                key={d}
-                label={d}
-                variant="filter"
-                selected={filters.activeDiet === d}
-                onPress={() => handleToggleDiet(d)}
-                accessibilityLabel={`Filter by ${d}`}
-              />
-            ))}
-            <View
-              style={[
-                styles.filterDivider,
-                { backgroundColor: withOpacity(theme.text, 0.15) },
-              ]}
-            />
-            {["Easy", "Medium", "Hard"].map((d) => (
-              <Chip
-                key={`diff-${d}`}
-                label={d}
-                variant="filter"
-                selected={filters.activeDifficulty === d.toLowerCase()}
-                onPress={() => {
-                  setFilters((prev) => ({
-                    ...prev,
-                    activeDifficulty:
-                      prev.activeDifficulty === d.toLowerCase()
-                        ? undefined
-                        : d.toLowerCase(),
-                  }));
-                }}
-                accessibilityLabel={`Filter by ${d} difficulty`}
-              />
-            ))}
-            <View
-              style={[
-                styles.filterDivider,
-                { backgroundColor: withOpacity(theme.text, 0.15) },
-              ]}
-            />
-            <Chip
-              label="From my pantry"
-              variant="filter"
-              selected={filters.pantryMode}
-              onPress={() => {
-                setFilters((prev) => ({
-                  ...prev,
-                  pantryMode: !prev.pantryMode,
-                }));
-              }}
-              accessibilityLabel="Filter recipes by pantry items"
-            />
-            <Chip
-              label="Quick meals"
-              variant="filter"
-              selected={filters.advanced.maxPrepTime === 30}
-              onPress={() => {
-                setFilters((prev) => ({
-                  ...prev,
-                  advanced: {
-                    ...prev.advanced,
-                    maxPrepTime:
-                      prev.advanced.maxPrepTime === 30 ? undefined : 30,
-                  },
-                }));
-              }}
-              accessibilityLabel="Filter quick meals under 30 minutes"
-            />
-            <PressableScale
-              scaleTo={0.95}
-              onPress={() => {
-                filterSheetRef.current?.present();
-                setIsFilterSheetOpen(true);
-              }}
-              style={[
-                styles.filterIconButton,
-                { borderColor: withOpacity(theme.text, 0.15) },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`Advanced filters${activeFilterCount > 0 ? `, ${activeFilterCount} active` : ""}`}
-            >
-              <Feather name="sliders" size={16} color={theme.link} />
-              {activeFilterCount > 0 && (
-                <View
-                  style={[
-                    styles.filterBadge,
-                    { backgroundColor: theme.accentSolid },
-                  ]}
-                >
-                  <ThemedText
-                    style={[
-                      styles.filterBadgeText,
-                      { color: theme.buttonText },
-                    ]}
-                  >
-                    {activeFilterCount}
-                  </ThemedText>
-                </View>
-              )}
-            </PressableScale>
-          </ScrollView>
-          <PressableScale
-            onPress={() =>
-              // Root-qualified: this screen is also registered in the Profile
-              // and Coach stacks, where a bare "RecipeEntryHub" resolves
-              // nowhere. "Main" is visible from all three; `pop: true`
-              // returns to the existing Main instead of pushing a second one
-              // (see AllConversationsNavigationProp in types/navigation.ts).
-              // Adding a recipe from Profile or the Coach therefore switches
-              // to Plan (`returnToTab` makes the hub's Back return to the tab
-              // it came from, QA sweep #10);
-              // `initial: false` keeps Plan home underneath when the Plan
-              // stack wasn't mounted yet (otherwise Add Recipe would be its
-              // only screen, with no way back to Plan home).
-              navigation.navigate(
-                "Main",
-                {
-                  screen: "MealPlanTab",
-                  params: {
-                    screen: "RecipeEntryHub",
-                    params: { returnToTab: getSourceTab(navigation) },
-                    initial: false,
-                  },
-                },
-                { pop: true },
-              )
-            }
-            style={[
-              styles.headerAction,
-              { borderColor: withOpacity(theme.text, 0.15) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Add recipe"
-          >
-            <Feather name="plus" size={14} color={theme.link} />
-            <ThemedText
-              style={[styles.headerActionText, { color: theme.link }]}
-            >
-              Add
-            </ThemedText>
-          </PressableScale>
-        </View>
+        <RecipeFilterBar
+          filters={filters}
+          onChange={setFilters}
+          activeFilterCount={activeFilterCount}
+          onOpenAdvancedFilters={handleOpenAdvancedFilters}
+          onAddRecipe={handleAddRecipe}
+        />
       </Animated.View>
 
       {/* AI meal plan summary banner */}
@@ -1253,22 +828,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
   },
+  // Labelled: FocusField makes it 56 tall, which also leaves room for the
+  // Clear search button's 44pt box (below), so the bar keeps its height when
+  // that button appears on the first keystroke. No vertical padding — the
+  // input's own padding puts the value under the floated label.
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    // Room for the Clear search button's 44pt box (below) without the bar
-    // changing height when that button appears on the first keystroke.
-    minHeight: 44,
     borderRadius: BorderRadius.card,
     gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
-  // 44pt touch target for a 16pt icon. A hitSlop can't do it here: RN clips
-  // hitSlop to the parent's bounds, and the bar is only ~36pt of content +
-  // padding. The negative margins let the box fill the bar's padding instead
-  // of growing it (bar stays at its 44pt minHeight).
+  // 44pt touch target for a 16pt icon — a real box, not a hitSlop, which RN
+  // clips to the parent's bounds. It fits inside the labelled bar's 56pt
+  // height (searchBar above), so the bar keeps its height when it appears.
+  // The negative right margin lets the box sit in the bar's right padding;
+  // the negative vertical margin keeps it out of the bar's height sum.
   clearSearchButton: {
     width: 44,
     height: 44,
@@ -1282,112 +858,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FontFamily.regular,
     padding: 0,
-  },
-  filterBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
-  filterScroll: {
-    flex: 1,
-  },
-  headerAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.chip,
-    borderWidth: 1,
-    minHeight: 44,
-  },
-  headerActionText: {
-    fontSize: 12,
-    fontFamily: FontFamily.medium,
-  },
-  filterRow: {
-    gap: Spacing.xs,
-    paddingBottom: Spacing.xs,
-    alignItems: "center",
-  },
-  filterDivider: {
-    width: 1,
-    height: 20,
-    marginHorizontal: Spacing.xs,
-  },
-  filterIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterBadge: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterBadgeText: {
-    fontSize: 10,
-    fontFamily: FontFamily.semiBold,
-  },
-  recipeCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
-  },
-  recipeCardThumbnail: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.sm,
-    marginRight: Spacing.md,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  recipeCardContent: {
-    flex: 1,
-    marginRight: Spacing.md,
-  },
-  recipeCardTitle: {
-    fontSize: 15,
-    fontFamily: FontFamily.medium,
-    marginBottom: 2,
-  },
-  recipeCardMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 2,
-    flexWrap: "wrap",
-  },
-  recipeCardMetaText: {
-    fontSize: 12,
-    fontFamily: FontFamily.regular,
-  },
-  sourceBadge: {
-    paddingHorizontal: Spacing.xs,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.chip,
-    alignSelf: "flex-start",
-  },
-  sourceBadgeText: {
-    fontSize: 10,
-    fontFamily: FontFamily.medium,
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
+    ...LABELLED_INPUT_TEXT,
   },
   loadingContainer: {
     paddingHorizontal: Spacing.lg,

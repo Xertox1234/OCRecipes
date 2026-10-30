@@ -6,7 +6,7 @@ module: client
 severity: medium
 tags: [react-native, react-navigation, modal, dismiss, navigation, race-condition]
 symptoms: [Modal dismiss animation half-plays before the next screen pushes, Second navigation is ignored or pushes onto a stale stack, Replacement screen appears with wrong presentation mode]
-applies_to: [client/screens/**/*Modal*.tsx]
+applies_to: [client/screens/QuickLogScreen.tsx]
 created: '2026-03-21'
 ---
 

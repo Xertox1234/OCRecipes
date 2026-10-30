@@ -7,11 +7,21 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { reactProps } from "../../../test/utils/react-props";
 import LoginScreen from "../LoginScreen";
 import * as Haptics from "expo-haptics";
 import { ApiError } from "@/lib/api-error";
+import { FocusField } from "@/components/FocusField";
+import { shouldFloatLabel } from "@/components/text-input-utils";
+
+// Spy on FocusField so the floating-label tests can read each field's state.
+vi.mock("@/components/FocusField", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/FocusField")>();
+  return { FocusField: vi.fn(actual.FocusField) };
+});
 
 const { withSequenceSpy } = vi.hoisted(() => ({
   withSequenceSpy: vi.fn((...vals: number[]) => vals[vals.length - 1]),
@@ -235,7 +245,8 @@ describe("LoginScreen — email field", () => {
     mockRegister.mockResolvedValue({ status: "verification_pending" });
     renderComponent(<LoginScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
-    expect(screen.getByText("At least 8 characters.")).toBeTruthy();
+    fireEvent.focus(screen.getByLabelText("Password"));
+    expect(screen.getByText("At least 8 characters")).toBeTruthy();
     expect(screen.queryByTestId("switch-two-step")).toBeNull();
     expect(screen.queryByText(/two-step/i)).toBeNull();
 
@@ -298,8 +309,8 @@ describe("LoginScreen — email field", () => {
 
   // AC: the email input is marked invalid ONLY when the email field itself is
   // the failure — not when a different field (e.g. mismatched passwords) fails.
-  // The TextInput surfaces its error via the merged accessibility hint
-  // (aria-hint in the jsdom shim), so we assert on that.
+  // The field carries aria-invalid; its message is the InlineError's alone
+  // (the hint stays plain), so we assert on both.
   it("marks the email input invalid only when the email itself is invalid", async () => {
     renderComponent(<LoginScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
@@ -333,7 +344,8 @@ describe("LoginScreen — email field", () => {
       "Enter your email address",
     );
 
-    // A bad email DOES mark the email input invalid (aria-invalid + merged hint).
+    // A bad email DOES mark the email input invalid. Its message is read by
+    // the InlineError, not merged into the hint (spec §5.8: once, not twice).
     fireEvent.change(screen.getByLabelText("Confirm password"), {
       target: { value: "recipe-passphrase-1" },
     });
@@ -347,8 +359,11 @@ describe("LoginScreen — email field", () => {
       ),
     );
     expect(screen.getByLabelText("Email").getAttribute("aria-hint")).toBe(
-      "Enter your email address. Please enter a valid email address",
+      "Enter your email address",
     );
+    expect(
+      screen.getAllByText("Please enter a valid email address"),
+    ).toHaveLength(1);
     expect(mockRegister).not.toHaveBeenCalled();
   });
 
@@ -431,12 +446,16 @@ describe("LoginScreen — shake on validation reject", () => {
 
   it("the same validation reject twice shakes twice", () => {
     renderComponent(<LoginScreen />);
+    // One invalid field, so one message shakes per press.
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
     const signIn = screen.getByRole("button", { name: "Sign In" });
 
     fireEvent.click(signIn);
     fireEvent.click(signIn);
 
-    expect(screen.getByText("Please fill in all fields")).toBeTruthy();
+    expect(screen.getByText("Enter your password.")).toBeTruthy();
     expect(withSequenceSpy).toHaveBeenCalledTimes(2);
     expect(Haptics.notificationAsync).toHaveBeenCalledTimes(2);
     expect(mockLogin).not.toHaveBeenCalled();
@@ -541,5 +560,316 @@ describe("LoginScreen — status bar over the hero photo", () => {
     renderComponent(<LoginScreen />);
 
     expect(screen.queryByTestId("status-bar")).toBeNull();
+  });
+});
+
+const fieldLabels = () =>
+  screen.getAllByTestId("focus-field-label").map((n) => n.textContent);
+
+describe("LoginScreen — floating labels", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRoute.params = undefined;
+  });
+
+  it("labels sign-in and sign-up fields verbatim", () => {
+    renderComponent(<LoginScreen />);
+    expect(fieldLabels()).toEqual(["Username or email", "Password"]);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    expect(fieldLabels()).toEqual([
+      "Username",
+      "Email",
+      "Password",
+      "Confirm password",
+    ]);
+  });
+
+  it("drops placeholders that repeat their label", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.focus(screen.getByLabelText("Password"));
+    expect(screen.queryByPlaceholderText("Password")).toBeNull();
+  });
+
+  // Review Focus 5: focusing Password with Username empty must leave the
+  // Username label resting and float Password.
+  it("floats only the focused field when the other is empty", () => {
+    renderComponent(<LoginScreen />);
+    const username = screen.getByLabelText("Username or email");
+    const password = screen.getByLabelText("Password");
+    const floatedOf = (label: string) => {
+      const props = vi
+        .mocked(FocusField)
+        .mock.calls.map(([p]) => p)
+        .filter((p) => p.label === label)
+        .at(-1)!;
+      return shouldFloatLabel(props.focus.focused, props.hasValue ? "x" : "");
+    };
+    fireEvent.focus(username);
+    expect(floatedOf("Username or email")).toBe(true);
+    fireEvent.blur(username);
+    fireEvent.focus(password);
+    expect(floatedOf("Username or email")).toBe(false);
+    expect(floatedOf("Password")).toBe(true);
+  });
+});
+
+// Form-fields spec §5.1: no error while typing; check on leaving a field
+// with text; empty fields are flagged by the main button, focus on the
+// first. Sign-up's age checkbox keeps gating Create Account.
+describe("LoginScreen — validation timing", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("Sign In with empty fields names each field and focuses the first", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+    const username = screen.getByLabelText("Username or email");
+    expect(screen.getByText("Enter your username or email.")).toBeTruthy();
+    expect(screen.getByText("Enter your password.")).toBeTruthy();
+    // No form-level copy repeating the field messages.
+    expect(screen.queryByText("Please fill in all fields")).toBeNull();
+    expect(username.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+    expect(document.activeElement).toBe(username);
+    expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  it("sign-up: a bad username shows nothing while typed, and its message on leaving", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    const input = screen.getByLabelText("Username");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "me@x.com" } });
+    expect(screen.queryByText(/letters, numbers, and underscores/i)).toBeNull();
+    fireEvent.blur(input);
+    expect(screen.getByText(/letters, numbers, and underscores/i)).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("sign-up: a short password clears on the keystroke that makes it valid", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    const input = screen.getByLabelText("Password");
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.blur(input);
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
+  });
+
+  it("sign-up: Create Account stays disabled until the age box is ticked", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    expect(
+      screen
+        .getByRole("button", { name: "Create Account" })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
+  });
+
+  it("a cleared wrong password does not show its own error over the server message", async () => {
+    mockLogin.mockRejectedValue(new Error("401: invalid_credentials"));
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "wrongpass" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+    await screen.findByText(
+      "Incorrect username or password. Please try again.",
+    );
+    expect(screen.queryByText("Enter your password.")).toBeNull();
+  });
+});
+
+// A checklist line on show: mounted AND not hidden from screen readers (a
+// closed checklist keeps its lines mounted under a zero height).
+function shownRule(label: string): HTMLElement | null {
+  const el = screen.queryByLabelText(label);
+  return el && !el.closest('[aria-hidden="true"]') ? el : null;
+}
+
+// Form-fields spec §5.2: sign-up fields with rules show a checklist that
+// ticks as you type; the field's own error (§5.1) carries the unmet news.
+describe("LoginScreen — rule checklist", () => {
+  const signUp = () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+  };
+
+  it("shows the password rule on focus and ticks it at the minimum", () => {
+    signUp();
+    const input = screen.getByLabelText("Password");
+    expect(shownRule("At least 8 characters")).toBeNull();
+    fireEvent.focus(input);
+    expect(screen.getByLabelText("At least 8 characters")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.getByLabelText("At least 8 characters, done")).toBeTruthy();
+  });
+
+  it("shows the username rules on focus in sign-up only", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.focus(screen.getByLabelText("Username or email"));
+    expect(shownRule("3–30 characters")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    const input = screen.getByLabelText("Username");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "chef_1" } });
+    expect(screen.getByLabelText("3–30 characters, done")).toBeTruthy();
+    expect(screen.getByLabelText("Letters, numbers or _, done")).toBeTruthy();
+  });
+
+  it("ticks Matches on the confirm field when it equals the password", () => {
+    signUp();
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "abcdefgh" },
+    });
+    const confirm = screen.getByLabelText("Confirm password");
+    fireEvent.focus(confirm);
+    fireEvent.change(confirm, { target: { value: "abcdefg" } });
+    expect(screen.getByLabelText("Matches")).toBeTruthy();
+    fireEvent.change(confirm, { target: { value: "abcdefgh" } });
+    expect(screen.getByLabelText("Matches, done")).toBeTruthy();
+  });
+
+  it("drops the unmet line while the field's own error says it", () => {
+    signUp();
+    const input = screen.getByLabelText("Password");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abc" } });
+    fireEvent.blur(input);
+    expect(screen.getByText("Use at least 8 characters.")).toBeTruthy();
+    expect(shownRule("At least 8 characters")).toBeNull();
+    fireEvent.focus(input);
+    expect(shownRule("At least 8 characters")).toBeNull();
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    expect(screen.queryByText("Use at least 8 characters.")).toBeNull();
+    expect(screen.getByLabelText("At least 8 characters, done")).toBeTruthy();
+  });
+
+  it("hides the checklist after leaving with every rule met", () => {
+    signUp();
+    const input = screen.getByLabelText("Password");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "abcdefgh" } });
+    fireEvent.blur(input);
+    expect(shownRule("At least 8 characters")).toBeNull();
+  });
+});
+
+// Form-fields spec §5.7: nothing can be edited while the request runs.
+describe("LoginScreen — fields lock while signing in", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("the fields cannot be edited while sign-in is pending, and unlock after", async () => {
+    let fail: (e: Error) => void = () => {};
+    mockLogin.mockReturnValue(
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+    );
+    renderComponent(<LoginScreen />);
+    const username = screen.getByLabelText("Username or email");
+    const password = screen.getByLabelText("Password");
+    expect(reactProps(username).editable).not.toBe(false);
+    fireEvent.change(username, { target: { value: "demo" } });
+    fireEvent.change(password, { target: { value: "wrongpass" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    expect(
+      reactProps(screen.getByLabelText("Username or email")).editable,
+    ).toBe(false);
+    expect(reactProps(screen.getByLabelText("Password")).editable).toBe(false);
+
+    fail(new Error("401: invalid_credentials"));
+    await screen.findByText(
+      "Incorrect username or password. Please try again.",
+    );
+    expect(reactProps(screen.getByLabelText("Password")).editable).toBe(true);
+  });
+});
+
+// Fix round 1 (spec §5.8): a field message is announced by its InlineError
+// only — the field's hint must not repeat it, or VoiceOver reads it twice.
+describe("LoginScreen — one announcement per field error", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("an empty password's message appears once in the a11y tree", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "demo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    const password = screen.getByLabelText("Password");
+    expect(password.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByText("Enter your password.")).toHaveLength(1);
+    expect(password.getAttribute("aria-hint") ?? "").not.toContain(
+      "Enter your password.",
+    );
+  });
+});
+
+// Spec §5.6: Next moves to the next visible field; the last field's Return
+// submits through the same handler as the main button.
+describe("LoginScreen — Return keys", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const submit = (el: HTMLElement) =>
+    act(() => {
+      (reactProps(el).onSubmitEditing as () => void)();
+    });
+
+  it("sign-in: Next on the username focuses the password; Go on the password signs in", async () => {
+    mockLogin.mockReturnValue(new Promise(() => {}));
+    renderComponent(<LoginScreen />);
+    const username = screen.getByLabelText("Username or email");
+    const password = screen.getByLabelText("Password");
+    expect(reactProps(username).returnKeyType).toBe("next");
+    expect(reactProps(password).returnKeyType).toBe("go");
+
+    fireEvent.change(username, { target: { value: "demo" } });
+    submit(username);
+    expect(document.activeElement).toBe(password);
+    expect(mockLogin).not.toHaveBeenCalled();
+
+    fireEvent.change(password, { target: { value: "demo-password" } });
+    submit(password);
+    expect(mockLogin).toHaveBeenCalledWith("demo", "demo-password");
+  });
+
+  it("sign-in: Go on an empty password runs the main button's checks", () => {
+    renderComponent(<LoginScreen />);
+    submit(screen.getByLabelText("Password"));
+    expect(screen.getByText("Enter your username or email.")).toBeTruthy();
+    expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  it("sign-up: username → email → password → confirm, and Go on confirm submits", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    const username = screen.getByLabelText("Username");
+    const email = screen.getByLabelText("Email");
+    const password = screen.getByLabelText("Password");
+    const confirm = screen.getByLabelText("Confirm password");
+    for (const el of [username, email, password]) {
+      expect(reactProps(el).returnKeyType).toBe("next");
+    }
+    expect(reactProps(confirm).returnKeyType).toBe("go");
+
+    submit(username);
+    expect(document.activeElement).toBe(email);
+    submit(email);
+    expect(document.activeElement).toBe(password);
+    submit(password);
+    expect(document.activeElement).toBe(confirm);
+
+    // Empty form: Go runs the same checks as Create Account.
+    submit(confirm);
+    expect(screen.getByText("Enter a username.")).toBeTruthy();
+    expect(mockRegister).not.toHaveBeenCalled();
   });
 });

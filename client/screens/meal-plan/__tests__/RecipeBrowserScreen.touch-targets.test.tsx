@@ -119,6 +119,26 @@ vi.mock("react-native", async (importOriginal) => {
   return { ...actual, Pressable: CapturingPressable, View: CapturingView };
 });
 
+// The search bar is a FocusField, whose root is an Animated.View — capture
+// those by testID the same way.
+vi.mock("react-native-reanimated", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  const Animated = actual.default as Record<string, React.ElementType>;
+  const CapturingAnimatedView = React.forwardRef<
+    unknown,
+    Record<string, unknown>
+  >((props, ref) => {
+    const testID = props.testID as string | undefined;
+    if (testID) capturedPressProps[`view:${testID}`] = props;
+    return React.createElement(Animated.View, { ...props, ref });
+  });
+  CapturingAnimatedView.displayName = "Animated.View";
+  return {
+    ...actual,
+    default: { ...Animated, View: CapturingAnimatedView },
+  };
+});
+
 vi.mock("@gorhom/bottom-sheet", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@gorhom/bottom-sheet")>();
   return { ...actual };

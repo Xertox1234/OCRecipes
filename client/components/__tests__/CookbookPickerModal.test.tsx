@@ -123,9 +123,14 @@ describe("CookbookPickerModal — empty state actions", () => {
 
     expect(screen.queryByText("New Cookbook")).toBeNull();
     expect(screen.queryByText("Save to Favourites")).toBeNull();
+    const input = screen.getByLabelText("Cookbook name");
     expect(
-      screen.getByPlaceholderText("Cookbook name (optional)"),
-    ).toBeTruthy();
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Cookbook name");
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe(
+      "Optional, e.g. Weeknight dinners",
+    );
   });
 
   it("shows an error alert when saving to favourites fails for a non-limit reason", () => {

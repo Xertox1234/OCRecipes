@@ -3,7 +3,7 @@ title: A write-time formatter's glob and its CI read-time check's glob can silen
 track: knowledge
 category: conventions
 module: shared
-tags: [prettier, lint-staged, ci, glob-coverage, tooling]
+tags: [prettier, lint-staged, ci, glob-coverage, tooling, architecture]
 applies_to: [package.json, .github/workflows/**/*.yml, .prettierignore]
 created: '2026-08-05'
 ---

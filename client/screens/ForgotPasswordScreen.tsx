@@ -12,6 +12,8 @@ import { TextInput } from "@/components/TextInput";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { focusFirstInvalid } from "@/lib/field-validation";
 import { Spacing } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
@@ -33,7 +35,20 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const [email, setEmail] = useState(route.params?.email ?? "");
+  // Checked on leaving the field or on Send code (form-fields spec §5.1).
+  const email = useFieldValidation(
+    (value) =>
+      value.trim() === ""
+        ? "Please enter your email address."
+        : isValidResetEmail(value)
+          ? null
+          : "Please enter a valid email address.",
+    route.params?.email ?? "",
+  );
+  // Destructured, never read as `field.ref` in render: React Compiler treats an
+  // object read through `.ref` as a ref and skips the whole component.
+  const { ref: emailRef } = email;
+  // Server/flow errors only; field errors come from `email.error`.
   const [error, setError] = useState("");
   // Bumped on each validation reject (not server errors) to shake the error.
   const [shakeKey, setShakeKey] = useState(0);
@@ -42,8 +57,7 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
   const onSend = async () => {
     if (busy) return;
     setError("");
-    if (!isValidResetEmail(email)) {
-      setError("Please enter a valid email address.");
+    if (!focusFirstInvalid([email])) {
       setShakeKey((k) => k + 1);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
@@ -53,7 +67,7 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
     // this component (scripts/check-react-compiler-bailouts.js), so `busy` is
     // reset on each path instead.
     try {
-      await requestResetCode(email);
+      await requestResetCode(email.value);
       setBusy(false);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       AccessibilityInfo.announceForAccessibility(
@@ -61,7 +75,7 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
       );
       // replace, not navigate: Back from the code screen returns to Login, not
       // to a screen that would send another code.
-      navigation.replace("ResetPassword", { email: email.trim() });
+      navigation.replace("ResetPassword", { email: email.value.trim() });
     } catch (err) {
       setBusy(false);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
@@ -94,13 +108,16 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
         <View style={styles.form}>
           <TextInput
             leftIcon="mail"
-            placeholder="Email"
-            value={email}
+            label="Email"
+            placeholder="you@example.com"
+            ref={emailRef}
+            value={email.value}
             onChangeText={(text) => {
-              setEmail(text);
-              // Editing is the fix — drop the stale red border and message.
+              email.onChangeText(text);
+              // Editing is the fix — drop a stale server message.
               setError("");
             }}
+            onBlur={email.onBlur}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -110,12 +127,12 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
             onSubmitEditing={onSend}
             editable={!busy}
             testID="input-forgot-email"
-            accessibilityLabel="Email"
             accessibilityHint="Enter the email address on your account"
-            error={!!error}
-            errorMessage={error || undefined}
+            // The InlineError below announces the message; repeating it as
+            // this field's errorMessage made VoiceOver read it twice.
+            error={!!(email.error ?? error)}
           />
-          <InlineError message={error} shakeKey={shakeKey} />
+          <InlineError message={email.error ?? error} shakeKey={shakeKey} />
           <Button
             onPress={onSend}
             loading={busy}

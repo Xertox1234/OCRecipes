@@ -5,23 +5,22 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  ActivityIndicator,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
-import Animated from "react-native-reanimated";
+import { StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
-import { useFocusBorder } from "@/components/useFocusBorder";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import {
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SheetHeader } from "@/components/sheet/SheetChrome";
 import { InlineError } from "@/components/InlineError";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -51,6 +50,11 @@ import {
 
 export const SIMPLE_ENTRY_SNAP_POINTS = ["45%"];
 
+const DISH_LABEL = "Dish name";
+const DISH_ICON_SIZE = 16;
+// The input box's text starts past its left padding, the icon and the gap.
+const DISH_LABEL_LEFT = Spacing.md + DISH_ICON_SIZE + Spacing.sm;
+
 interface SimpleEntrySheetContentProps {
   mealType: MealType | null;
   plannedDate: string;
@@ -67,10 +71,7 @@ function SimpleEntrySheetContentInner(
 ) {
   const { theme } = useTheme();
   // One focus ring for the whole box, not one nested around the inner input.
-  const inputBoxFocus = useFocusBorder([
-    styles.inputBox,
-    { backgroundColor: withOpacity(theme.text, 0.05) },
-  ]);
+  const inputBoxFocus = useFieldFocus();
   const haptics = useHaptics();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -277,41 +278,38 @@ function SimpleEntrySheetContentInner(
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
     <View style={styles.content} accessibilityViewIsModal>
       {/* Header */}
-      <View style={styles.header}>
-        <View
-          style={[
-            styles.dragIndicator,
-            { backgroundColor: withOpacity(theme.text, 0.2) },
-          ]}
-        />
-        <View style={styles.headerRow}>
-          <ThemedText style={styles.headerTitle}>
-            Quick add to {label}
-          </ThemedText>
-          <Pressable
-            onPress={onDismiss}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <ThemedText style={[styles.doneText, { color: theme.link }]}>
-              Done
-            </ThemedText>
-          </Pressable>
-        </View>
-      </View>
+      <SheetHeader title={`Quick add to ${label}`} onDone={onDismiss} />
 
       {/* Dish name input */}
       <View style={styles.inputContainer}>
-        <Animated.View style={inputBoxFocus.focusStyle as StyleProp<ViewStyle>}>
-          <Feather name="edit-3" size={16} color={theme.textSecondary} />
+        <FocusField
+          focus={inputBoxFocus}
+          label={DISH_LABEL}
+          // Listening floats the label too, so "Listening..." can show.
+          hasValue={dishName.length > 0 || isListening}
+          labelLeft={DISH_LABEL_LEFT}
+          style={[
+            styles.inputBox,
+            { backgroundColor: withOpacity(theme.text, 0.05) },
+          ]}
+        >
+          <Feather
+            name="edit-3"
+            size={DISH_ICON_SIZE}
+            color={theme.textSecondary}
+          />
           <FocusBottomSheetTextInput
             ref={inputRef}
             focusRing={false}
             onFocus={inputBoxFocus.onFocus}
             onBlur={inputBoxFocus.onBlur}
             style={[styles.input, { color: theme.text }]}
-            placeholder={isListening ? "Listening..." : "e.g. chicken stir fry"}
+            // The label rests where the placeholder would; it shows once floated.
+            placeholder={resolvePlaceholder(
+              DISH_LABEL,
+              isListening ? "Listening..." : "e.g. chicken stir fry",
+              shouldFloatLabel(inputBoxFocus.focused || isListening, dishName),
+            )}
             placeholderTextColor={theme.textSecondary}
             value={dishName}
             onChangeText={(text) => {
@@ -319,7 +317,7 @@ function SimpleEntrySheetContentInner(
               if (error) setError(null);
             }}
             returnKeyType="done"
-            accessibilityLabel="Dish name"
+            accessibilityLabel={DISH_LABEL}
             aria-invalid={!!error}
           />
           {hasVoiceLogging && (
@@ -330,7 +328,7 @@ function SimpleEntrySheetContentInner(
               disabled={isAdding}
             />
           )}
-        </Animated.View>
+        </FocusField>
       </View>
 
       {/* Error text */}
@@ -441,32 +439,6 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: Spacing.lg,
   },
-  header: {
-    alignItems: "center",
-    paddingTop: Spacing.sm,
-  },
-  dragIndicator: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: Spacing.md,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontFamily: FontFamily.semiBold,
-  },
-  doneText: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
-  },
   inputContainer: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.sm,
@@ -478,11 +450,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     gap: Spacing.sm,
   },
+  // Labelled field: the value sits under the floated label's row.
   input: {
     flex: 1,
     fontSize: 15,
     fontFamily: FontFamily.regular,
-    paddingVertical: Spacing.sm,
+    ...LABELLED_INPUT_TEXT,
   },
   errorBox: {
     marginHorizontal: Spacing.lg,

@@ -71,8 +71,7 @@ describe("ocrecipes_post_install.rb", () => {
   // Each of these only fails at build time (or only in a Release archive), so
   // pin that the hook still carries all of them.
   it.each([
-    ["pod deployment-target sweep", "IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'"],
-    ["fmt consteval patch (Xcode 26)", "FMT_USE_CONSTEVAL 0"],
+    ["pod deployment-target sweep", "IPHONEOS_DEPLOYMENT_TARGET'] = '16.4'"],
     [
       "MLKit simulator EXCLUDED_ARCHS strip",
       "EXCLUDED_ARCHS[sdk=iphonesimulator*]",
@@ -84,5 +83,11 @@ describe("ocrecipes_post_install.rb", () => {
     ],
   ])("keeps the %s", (_name, needle) => {
     expect(rb).toContain(needle);
+  });
+
+  // fmt 12 (RN 0.83+) ships the `#ifdef FMT_USE_CONSTEVAL` guard itself, so
+  // the old base.h rewrite no longer has an anchor and must not come back.
+  it("no longer rewrites fmt's base.h", () => {
+    expect(rb).not.toContain("fmt_base_h");
   });
 });

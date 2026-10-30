@@ -1,20 +1,9 @@
 import React from "react";
-import {
-  AccessibilityInfo,
-  Platform,
-  Pressable,
-  StyleSheet,
-} from "react-native";
+import { Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  cancelAnimation,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
-import { useAccessibility } from "@/hooks/useAccessibility";
-import { volumeToScale } from "@/lib/volume-scale";
+import { useMicPulse } from "@/hooks/useMicPulse";
 
 interface VoiceLogButtonProps {
   isListening: boolean;
@@ -30,40 +19,7 @@ export const VoiceLogButton = React.memo(function VoiceLogButton({
   disabled,
 }: VoiceLogButtonProps) {
   const { theme } = useTheme();
-  const { reducedMotion } = useAccessibility();
-  const scale = useSharedValue(1);
-
-  const isFirstRender = React.useRef(true);
-
-  React.useEffect(() => {
-    if (reducedMotion) {
-      cancelAnimation(scale);
-      scale.value = 1;
-      return;
-    }
-    if (isListening) {
-      scale.value = withTiming(volumeToScale(volume, 0.2), { duration: 100 });
-    } else {
-      cancelAnimation(scale);
-      scale.value = withTiming(1, { duration: 200 });
-    }
-  }, [isListening, volume, scale, reducedMotion]);
-
-  React.useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    if (Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(
-        isListening ? "Listening started" : "Listening stopped",
-      );
-    }
-  }, [isListening]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const animatedStyle = useMicPulse(isListening, volume, 0.2);
 
   return (
     <Animated.View style={animatedStyle} accessibilityLiveRegion="polite">

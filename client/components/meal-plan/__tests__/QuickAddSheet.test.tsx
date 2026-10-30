@@ -173,3 +173,29 @@ describe("QuickAddSheet", () => {
     });
   });
 });
+
+describe("QuickAddSheet — search field label", () => {
+  it('floats "Search recipes" on the search box and shows an example once focused', () => {
+    renderComponent(
+      <QuickAddSheetContent
+        {...{
+          mealType: "breakfast" as const,
+          plannedDate: "2025-06-01",
+          onDismiss: vi.fn(),
+          onNavigateCreate: vi.fn(),
+          onOpenImportSheet: vi.fn(),
+          onOpenCommunityRecipe: vi.fn(),
+        }}
+      />,
+    );
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Search recipes");
+    const input = screen.getByLabelText("Search recipes");
+    expect(input.getAttribute("placeholder")).toBeNull();
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toBe(
+      "e.g. pasta or high protein",
+    );
+  });
+});

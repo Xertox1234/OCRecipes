@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [react, hooks, useCallback, useMemo, component-identity, bottom-sheet]
+tags: [react, hooks, useCallback, useMemo, component-identity, bottom-sheet, react-native]
 symptoms: [BottomSheetModal dismisses itself immediately after presenting, Hook-returned component loses internal state between renders, Modal animation flickers because the component instance is replaced each render]
 applies_to: [client/components/ConfirmationModal.tsx, client/hooks/use*Modal.ts]
 created: '2026-03-25'

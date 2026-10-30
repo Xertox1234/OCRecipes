@@ -35,7 +35,7 @@ const {
   mockCancelReminder: vi.fn(),
 }));
 
-vi.mock("@/hooks/useChat", () => ({
+vi.mock("@/hooks/useNotebook", () => ({
   useNotebookEntries: () => mockUseNotebookEntries(),
   useCreateNotebookEntry: () => ({
     mutateAsync: mockCreateMutateAsync,
@@ -296,5 +296,64 @@ describe("NotebookEntryScreen — one selection tick per type pick", () => {
       ).toBe(1);
     }
     expect(Haptics.impactAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("NotebookEntryScreen — note field label", () => {
+  it('floats "Note" on the content field and shows an example once focused', () => {
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    renderComponent(<NotebookEntryScreen />);
+    expect(
+      screen.getAllByTestId("focus-field-label").map((l) => l.textContent),
+    ).toContain("Note");
+    const input = screen.getByLabelText("Note");
+    fireEvent.focus(input);
+    expect(input.getAttribute("placeholder")).toMatch(/^e\.g\. /);
+  });
+
+  it("drops the CONTENT caps caption the floating label replaces", () => {
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    renderComponent(<NotebookEntryScreen />);
+    expect(screen.queryByText("CONTENT")).toBeNull();
+    expect(screen.getByText("TYPE")).toBeDefined();
+  });
+});
+
+// Spec §5.1: Save is pressable with an empty note; pressing it names the
+// field, moves focus there and buzzes — and never saves.
+describe("NotebookEntryScreen — empty note", () => {
+  const ERROR = "Write something to save.";
+
+  it("Save with no note flags and focuses it, buzzes, and never creates", () => {
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    renderComponent(<NotebookEntryScreen />);
+
+    const save = screen.getByRole("button", { name: "Save entry" });
+    expect(save.getAttribute("aria-disabled")).not.toBe("true");
+    fireEvent.click(save);
+
+    expect(screen.getByText(ERROR)).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText("Note"));
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(mockCreateMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("an edited entry emptied out says so on Save instead of saving", () => {
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([makeEntry({ id: 42, content: "Old thought" })]);
+    renderComponent(<NotebookEntryScreen />);
+
+    fireEvent.change(screen.getByDisplayValue("Old thought"), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save entry" }));
+
+    expect(screen.getByText(ERROR)).toBeTruthy();
+    expect(mockUpdateMutateAsync).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,13 @@ import {
   AccessibilityInfo,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import {
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -29,6 +36,10 @@ import {
   useQuickLogSession,
   EMPTY_PARSE_MESSAGE,
 } from "@/hooks/useQuickLogSession";
+import {
+  foundItemsMessage,
+  useParsedItemsAnnouncement,
+} from "@/hooks/useParsedItemsAnnouncement";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -42,6 +53,8 @@ import {
   withOpacity,
 } from "@/constants/theme";
 
+const INPUT_LABEL = "What did you eat?";
+
 const QUICK_LOG_TIPS = [
   { text: "Did you have a beverage with your meal?", icon: "coffee" as const },
   { text: "Snap a pic to log it!", icon: "camera" as const },
@@ -52,11 +65,6 @@ const QUICK_LOG_TIPS = [
 
 function randomTip() {
   return QUICK_LOG_TIPS[Math.floor(Math.random() * QUICK_LOG_TIPS.length)];
-}
-
-/** Shown/announced when a parse finds food (see the success-announce effect). */
-function foundItemsMessage(count: number) {
-  return `Found ${count} item${count === 1 ? "" : "s"}. Log All to save.`;
 }
 
 const EXAMPLE_ITEMS = [
@@ -90,6 +98,7 @@ export default function QuickLogScreen() {
   const [tip] = useState(randomTip);
   const [showCheckmark, setShowCheckmark] = useState(false);
 
+  const inputFocus = useFieldFocus();
   const session = useQuickLogSession({
     // This full-screen surface is "open" while mounted and unlocked —
     // without this the hook's frequent-items query stays disabled and
@@ -131,45 +140,10 @@ export default function QuickLogScreen() {
     if (session.capWarning) toast.info(session.capWarning);
   }, [session.capWarning, toast]);
 
-  // A successful parse announces its item count — every parse, not just the
-  // first: a later parse can replace the results without `parsedItems`
-  // passing back through empty, and a discriminator keyed on
-  // `parsedItems.length > 0` alone misses that case
-  // (docs/solutions/logic-errors/imperative-announce-must-be-content-keyed-
-  // not-variant-keyed-2026-06-24.md, "Second manifestation"). iOS has no
-  // live region here, so it always gets the imperative announce. Android's
-  // note below (accessibilityLiveRegion="polite") re-reads automatically
-  // whenever the count changes the rendered text; only a same-count replace
-  // leaves that text identical, so it needs the explicit announce too —
-  // never both, on either platform (docs/rules/accessibility.md →
-  // Announcements).
-  //
-  // `lastRenderedCountRef` must be written on EVERY run of this effect, not
-  // only when the generation changes: removeItem changes `parsedItems.length`
-  // — and so the live region's own rendered text — without bumping
-  // `parseGeneration`. A version gated behind the generation check went
-  // stale across exactly that change, producing a false negative (a
-  // same-count replace after a removeItem stayed silent) and a false
-  // positive (the next parse double-announced when its count happened to
-  // match the pre-removal count) — caught by review with a constructed
-  // probe.
-  const announcedGenerationRef = React.useRef(0);
-  const lastRenderedCountRef = React.useRef(0);
-  React.useEffect(() => {
-    const count = session.parsedItems.length;
-    const prevRenderedCount = lastRenderedCountRef.current;
-    lastRenderedCountRef.current = count;
-
-    const generation = session.parseGeneration;
-    if (generation === 0 || generation === announcedGenerationRef.current) {
-      return;
-    }
-    announcedGenerationRef.current = generation;
-    if (count === 0) return;
-    if (Platform.OS === "ios" || count === prevRenderedCount) {
-      AccessibilityInfo.announceForAccessibility(foundItemsMessage(count));
-    }
-  }, [session.parseGeneration, session.parsedItems.length]);
+  useParsedItemsAnnouncement(
+    session.parseGeneration,
+    session.parsedItems.length,
+  );
 
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -217,31 +191,50 @@ export default function QuickLogScreen() {
             Type or speak what you ate
           </ThemedText>
           <View style={styles.inputRow}>
-            <FocusTextInput
+            <FocusField
+              focus={inputFocus}
+              label={INPUT_LABEL}
+              // The input pads its own text; the label lines up with it.
+              labelLeft={Spacing.md}
+              // Listening floats the label too, so "Listening..." shows even
+              // while the field is unfocused and empty.
+              hasValue={session.inputText.length > 0 || session.isListening}
               style={[
-                styles.textInput,
+                styles.inputBox,
                 {
                   backgroundColor: theme.backgroundSecondary,
-                  color: theme.text,
                   borderColor: theme.border,
                 },
               ]}
-              placeholder={
-                session.isListening
-                  ? "Listening..."
-                  : "e.g., 2 eggs and toast with butter"
-              }
-              placeholderTextColor={theme.textSecondary}
-              value={session.inputText}
-              onChangeText={session.setInputText}
-              onSubmitEditing={session.handleTextSubmit}
-              returnKeyType="done"
-              // Multiline defaults to "newline" (the key would never submit); blur
-              // too, so the keyboard leaves the results visible, as in the drawer.
-              submitBehavior="blurAndSubmit"
-              multiline
-              accessibilityLabel="Food description"
-            />
+            >
+              <FocusTextInput
+                focusRing={false}
+                onFocus={inputFocus.onFocus}
+                onBlur={inputFocus.onBlur}
+                style={[styles.textInput, { color: theme.text }]}
+                // The label rests where the placeholder would; it shows once floated.
+                placeholder={resolvePlaceholder(
+                  INPUT_LABEL,
+                  session.isListening
+                    ? "Listening..."
+                    : "e.g., 2 eggs and toast with butter",
+                  shouldFloatLabel(
+                    inputFocus.focused || session.isListening,
+                    session.inputText,
+                  ),
+                )}
+                placeholderTextColor={theme.textSecondary}
+                value={session.inputText}
+                onChangeText={session.setInputText}
+                onSubmitEditing={session.handleTextSubmit}
+                returnKeyType="done"
+                // Multiline defaults to "newline" (the key would never submit); blur
+                // too, so the keyboard leaves the results visible, as in the drawer.
+                submitBehavior="blurAndSubmit"
+                multiline
+                accessibilityLabel={INPUT_LABEL}
+              />
+            </FocusField>
           </View>
           <View style={styles.actionRow}>
             <Pressable
@@ -428,14 +421,18 @@ const styles = StyleSheet.create({
   inputCard: { margin: Spacing.lg, marginTop: 80, marginBottom: Spacing.sm },
   hint: { marginBottom: Spacing.md },
   inputRow: { marginBottom: Spacing.md },
-  textInput: {
+  inputBox: {
     minHeight: 60,
     borderRadius: BorderRadius.xs,
+    borderWidth: 1,
+  },
+  // Labelled field: the value sits under the floated label's row.
+  textInput: {
+    flexGrow: 1,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    ...LABELLED_INPUT_TEXT,
     fontSize: 16,
     fontFamily: FontFamily.regular,
-    borderWidth: 1,
     textAlignVertical: "top",
   },
   actionRow: {

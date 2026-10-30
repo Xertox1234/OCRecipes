@@ -6,22 +6,22 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
-import Animated from "react-native-reanimated";
+import { StyleSheet, View, Pressable } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
 import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
-import { useFocusBorder } from "@/components/useFocusBorder";
+import { FocusField } from "@/components/FocusField";
+import { useFieldFocus } from "@/components/useFieldFocus";
+import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
+import {
+  resolvePlaceholder,
+  shouldFloatLabel,
+} from "@/components/text-input-utils";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SheetHeader } from "@/components/sheet/SheetChrome";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -45,6 +45,11 @@ import {
 } from "@/components/meal-plan/quick-add-utils";
 
 export const QUICK_ADD_SNAP_POINTS = ["70%"];
+
+const SEARCH_LABEL = "Search recipes";
+const SEARCH_ICON_SIZE = 16;
+// The search box's text starts past its left padding, the icon and the gap.
+const SEARCH_LABEL_LEFT = Spacing.md + SEARCH_ICON_SIZE + Spacing.sm;
 
 interface QuickAddSheetContentProps {
   mealType: MealType | null;
@@ -80,10 +85,7 @@ function QuickAddSheetContentInner(
 ) {
   const { theme } = useTheme();
   // One focus ring for the whole box, not one nested around the inner input.
-  const searchBoxFocus = useFocusBorder([
-    styles.searchBox,
-    { backgroundColor: withOpacity(theme.text, 0.05) },
-  ]);
+  const searchBoxFocus = useFieldFocus();
   const haptics = useHaptics();
   const toast = useToast();
   const inputRef = useRef<TextInput>(null);
@@ -398,47 +400,43 @@ function QuickAddSheetContentInner(
     // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
     <View style={styles.rootContent} accessibilityViewIsModal>
       {/* Header */}
-      <View style={styles.header}>
-        <View
-          style={[
-            styles.dragIndicator,
-            { backgroundColor: withOpacity(theme.text, 0.2) },
-          ]}
-        />
-        <View style={styles.headerRow}>
-          <ThemedText style={styles.headerTitle}>Add to {label}</ThemedText>
-          <Pressable
-            onPress={onDismiss}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <ThemedText style={[styles.doneText, { color: theme.link }]}>
-              Done
-            </ThemedText>
-          </Pressable>
-        </View>
-      </View>
+      <SheetHeader title={`Add to ${label}`} onDone={onDismiss} />
 
       {/* Search */}
       <View style={styles.searchContainer}>
-        <Animated.View
-          style={searchBoxFocus.focusStyle as StyleProp<ViewStyle>}
+        <FocusField
+          focus={searchBoxFocus}
+          label={SEARCH_LABEL}
+          hasValue={searchQuery.length > 0}
+          labelLeft={SEARCH_LABEL_LEFT}
+          style={[
+            styles.searchBox,
+            { backgroundColor: withOpacity(theme.text, 0.05) },
+          ]}
         >
-          <Feather name="search" size={16} color={theme.textSecondary} />
+          <Feather
+            name="search"
+            size={SEARCH_ICON_SIZE}
+            color={theme.textSecondary}
+          />
           <FocusBottomSheetTextInput
             ref={inputRef}
             focusRing={false}
             onFocus={searchBoxFocus.onFocus}
             onBlur={searchBoxFocus.onBlur}
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search recipes..."
+            // The label rests where the placeholder would; it shows once floated.
+            placeholder={resolvePlaceholder(
+              SEARCH_LABEL,
+              "e.g. pasta or high protein",
+              shouldFloatLabel(searchBoxFocus.focused, searchQuery),
+            )}
             placeholderTextColor={theme.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            accessibilityLabel="Search recipes"
+            accessibilityLabel={SEARCH_LABEL}
           />
-        </Animated.View>
+        </FocusField>
       </View>
 
       {/* Results */}
@@ -469,32 +467,6 @@ const styles = StyleSheet.create({
   rootContent: {
     flex: 1,
   },
-  header: {
-    alignItems: "center",
-    paddingTop: Spacing.sm,
-  },
-  dragIndicator: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: Spacing.md,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontFamily: FontFamily.semiBold,
-  },
-  doneText: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
-  },
   searchContainer: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
@@ -506,11 +478,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     gap: Spacing.sm,
   },
+  // Labelled field: the value sits under the floated label's row.
   searchInput: {
     flex: 1,
     fontSize: 15,
     fontFamily: FontFamily.regular,
-    paddingVertical: Spacing.sm,
+    ...LABELLED_INPUT_TEXT,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,

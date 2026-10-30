@@ -14,7 +14,8 @@ import {
   createTestUser,
   getTestTx,
 } from "../../../test/db-test-utils";
-import { communityRecipes } from "@shared/schema";
+import { communityRecipes, recipeDismissals } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 
@@ -24,7 +25,9 @@ vi.mock("../../db", () => ({
   },
 }));
 
-const { getRecentCommunityRecipes } = await import("../carousel");
+const { getRecentCommunityRecipes, dismissRecipe } = await import(
+  "../carousel"
+);
 
 let tx: NodePgDatabase<typeof schema>;
 let testUserId: string;
@@ -247,5 +250,58 @@ describe("getRecentCommunityRecipes", () => {
     const ids = rows.map((r) => r.id);
     expect(ids).toContain(keep.id);
     expect(ids).not.toContain(drop.id);
+  });
+});
+
+describe("dismissRecipe", () => {
+  async function dismissalRows() {
+    return tx
+      .select({
+        recipeIdentifier: recipeDismissals.recipeIdentifier,
+        reason: recipeDismissals.reason,
+        dismissedAt: recipeDismissals.dismissedAt,
+      })
+      .from(recipeDismissals)
+      .where(eq(recipeDismissals.userId, testUserId));
+  }
+
+  it("stores the reason with the dismissal", async () => {
+    const recipe = await createCommunityRecipe({ title: "Hidden" });
+
+    await dismissRecipe(testUserId, recipe.id, "diet_mismatch");
+
+    expect(await dismissalRows()).toMatchObject([
+      { recipeIdentifier: String(recipe.id), reason: "diet_mismatch" },
+    ]);
+  });
+
+  it("stores no reason when none is given", async () => {
+    const recipe = await createCommunityRecipe({ title: "Hidden" });
+
+    await dismissRecipe(testUserId, recipe.id);
+
+    expect(await dismissalRows()).toMatchObject([{ reason: null }]);
+  });
+
+  // A dismissal drops out of the carousel's 90-day window, so the recipe can
+  // come back and be hidden again. The second hide must keep its new reason
+  // and restart the window, not leave the old row untouched.
+  it("updates the reason and date when the recipe is hidden again", async () => {
+    const recipe = await createCommunityRecipe({ title: "Hidden" });
+    const longAgo = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000);
+    await tx.insert(recipeDismissals).values({
+      userId: testUserId,
+      recipeIdentifier: String(recipe.id),
+      source: "community",
+      reason: "not_interested",
+      dismissedAt: longAgo,
+    });
+
+    await dismissRecipe(testUserId, recipe.id, "cuisine_disliked");
+
+    const rows = await dismissalRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].reason).toBe("cuisine_disliked");
+    expect(rows[0].dismissedAt.getTime()).toBeGreaterThan(longAgo.getTime());
   });
 });

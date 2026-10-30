@@ -5,7 +5,7 @@
 - Touch targets must be ≥ 44pt — add `hitSlop` for small controls (e.g. `hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}`)
 - Always add `insets.bottom + Spacing.X` to the last-item padding in scrollable lists — bare `Spacing.X` clips content behind the home indicator on notched devices
 - `KeyboardAvoidingView` behavior: `"padding"` on iOS, `"height"` on Android — never `undefined`
-- Always spread `FLATLIST_DEFAULTS` from `@/constants/performance` on every `FlatList`
+- Always spread `FLATLIST_DEFAULTS` from `@/constants/performance` on every `FlatList` — except horizontal carousels and short capped lists, which pass `removeClippedSubviews={false}` instead (clipped cells are unreachable by screen readers; see `docs/rules/performance.md`)
 - Camera: always set `isActive={isFocused}` on `CameraView` — stops the camera when navigating away. Mic: always call `stopListening()` in session reset/cleanup — leaving it open mutates state after the component is gone
 - `Alert.prompt` is iOS-only — guard with `Platform.OS === "ios"` and provide a `TextInput` fallback for Android
 - Never gate `Linking.openURL(httpUrl)` behind `Linking.canOpenURL` — it returns false on iOS for HTTP(S) without `LSApplicationQueriesSchemes` entries. Call `openURL` directly and `try/catch` the failure

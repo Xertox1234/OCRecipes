@@ -1,19 +1,17 @@
 import React, { useCallback, useMemo } from "react";
-import {
-  AccessibilityInfo,
-  StyleSheet,
-  View,
-  Pressable,
-  Dimensions,
-} from "react-native";
+import { StyleSheet, View, Pressable, Dimensions } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import Animated, { FadeOut } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+} from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { RecipeAttributeRow } from "@/components/RecipeAttributeRow";
 import { toRecipeAttributeA11ySuffix } from "@/components/recipe-attribute-row-utils";
 import { FallbackImage } from "@/components/FallbackImage";
-import { CuratedBadge } from "@/components/CuratedBadge";
+import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -32,7 +30,8 @@ import type { CarouselRecipeCard as CarouselCardType } from "@shared/types/carou
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 export const CARD_WIDTH = Math.round(SCREEN_WIDTH * 0.85);
 const IMAGE_HEIGHT = 140;
-const BUTTON_SIZE = 44;
+// Visible circle; hitSlop below brings the touch target to 44.
+const BUTTON_SIZE = 36;
 
 interface CarouselRecipeCardProps {
   card: CarouselCardType;
@@ -42,6 +41,12 @@ interface CarouselRecipeCardProps {
   onFavourite?: (recipeId: number) => void;
   /** When false, hides the favourite/dismiss action row (static preset rows). Default true. */
   showActions?: boolean;
+  /** Whether the details (chips, reason, View recipe) are showing. Only used
+   * with `onToggleExpand`. */
+  expanded?: boolean;
+  /** When given, a tap expands or collapses the card and only the
+   * "View recipe" button opens the recipe. Omit for a one-tap card. */
+  onToggleExpand?: (card: CarouselCardType) => void;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -53,9 +58,11 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
   onDismiss,
   onFavourite,
   showActions = true,
+  expanded = false,
+  onToggleExpand,
 }: CarouselRecipeCardProps) {
   const { theme } = useTheme();
-  const { reducedMotion } = useAccessibility();
+  const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const haptics = useHaptics();
   const { trigger: triggerHeartPop, animatedStyle: heartPopStyle } =
     useSuccessPop(1.4);
@@ -66,11 +73,25 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
     onPressOut: handlePressOut,
   } = usePressScale(0.97);
 
-  const handlePress = useCallback(() => onPress(card), [onPress, card]);
+  // A screen reader already hears every detail in the card's label, so for
+  // its user the card keeps opening the recipe in one activation.
+  const expandable = onToggleExpand !== undefined && !screenReaderEnabled;
+  const showDetails = !expandable || expanded;
+
+  const handlePress = useCallback(() => {
+    if (expandable) {
+      onToggleExpand(card);
+    } else {
+      onPress(card);
+    }
+  }, [expandable, onToggleExpand, onPress, card]);
+
+  const handleViewRecipe = useCallback(() => onPress(card), [onPress, card]);
 
   const handleDismiss = useCallback(() => {
     haptics.impact();
-    AccessibilityInfo.announceForAccessibility("Recipe dismissed");
+    // Nothing is hidden yet — the screen asks why first, and the reason
+    // sheet announces once the recipe is actually hidden.
     onDismiss?.(card);
   }, [onDismiss, card, haptics]);
 
@@ -154,6 +175,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
     >
       <Animated.View
         exiting={reducedMotion ? undefined : FadeOut.duration(300)}
+        layout={reducedMotion ? undefined : LinearTransition.duration(200)}
         style={[
           styles.card,
           {
@@ -230,10 +252,41 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
             </View>
           ) : null}
 
-          {/* Curated badge */}
-          {card.isCanonical ? (
-            <View style={styles.curatedBadge}>
-              <CuratedBadge compact />
+          {/* Favourite + dismiss, on the photo */}
+          {showActions ? (
+            <View style={styles.actions}>
+              <Pressable
+                onPress={handleFavourite}
+                style={styles.actionButton}
+                hitSlop={4}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isFavourited ? "Remove from favourites" : "Add to favourites"
+                }
+              >
+                <Animated.View style={heartPopStyle}>
+                  <Ionicons
+                    name={isFavourited ? "heart" : "heart-outline"}
+                    size={18}
+                    color="#FFFFFF" // hardcoded — always white on dark overlay
+                    accessible={false}
+                  />
+                </Animated.View>
+              </Pressable>
+              <Pressable
+                onPress={handleDismiss}
+                style={styles.actionButton}
+                hitSlop={4}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss recipe"
+              >
+                <Feather
+                  name="x"
+                  size={18}
+                  color="#FFFFFF" // hardcoded — always white on dark overlay
+                  accessible={false}
+                />
+              </Pressable>
             </View>
           ) : null}
         </View>
@@ -248,72 +301,38 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
             {card.title}
           </ThemedText>
 
-          <RecipeAttributeRow facts={attributeFacts} />
-
-          {/* Rendered only when non-empty: an empty `recommendationReason`
-              (see `toCarouselCard`'s fallback chain, which terminates at
-              `recipe.cuisine ?? ""`) would otherwise leave a blank Text that
-              still reserves its `styles.reason` marginBottom — the sighted
-              counterpart of the composed-label double-period bug fixed in
-              PR 711. */}
-          {card.recommendationReason ? (
-            <ThemedText
-              testID="carousel-card-reason"
-              type="caption"
-              style={[styles.reason, { color: theme.textSecondary }]}
-              numberOfLines={1}
+          {showDetails ? (
+            <Animated.View
+              entering={
+                expandable && !reducedMotion ? FadeIn.duration(200) : undefined
+              }
+              style={styles.details}
             >
-              {card.recommendationReason}
-            </ThemedText>
-          ) : null}
+              <RecipeAttributeRow facts={attributeFacts} />
 
-          {/* Action buttons */}
-          {showActions ? (
-            <View style={styles.actions}>
-              <Pressable
-                onPress={handleFavourite}
-                style={[
-                  styles.actionButton,
-                  {
-                    backgroundColor: withOpacity(
-                      isFavourited ? theme.error : theme.textSecondary,
-                      0.1,
-                    ),
-                  },
-                ]}
-                hitSlop={4}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  isFavourited ? "Remove from favourites" : "Add to favourites"
-                }
-              >
-                <Animated.View style={heartPopStyle}>
-                  <Ionicons
-                    name={isFavourited ? "heart" : "heart-outline"}
-                    size={18}
-                    color={isFavourited ? theme.error : theme.textSecondary}
-                    accessible={false}
-                  />
-                </Animated.View>
-              </Pressable>
-              <Pressable
-                onPress={handleDismiss}
-                style={[
-                  styles.actionButton,
-                  { backgroundColor: withOpacity(theme.error, 0.1) },
-                ]}
-                hitSlop={4}
-                accessibilityRole="button"
-                accessibilityLabel="Dismiss recipe"
-              >
-                <Feather
-                  name="x"
-                  size={18}
-                  color={theme.error}
-                  accessible={false}
-                />
-              </Pressable>
-            </View>
+              {/* Rendered only when non-empty: an empty `recommendationReason`
+                  (see `toCarouselCard`'s fallback chain, which terminates at
+                  `recipe.cuisine ?? ""`) would otherwise leave a blank Text
+                  that still reserves its `styles.reason` marginBottom — the
+                  sighted counterpart of the composed-label double-period bug
+                  fixed in PR 711. */}
+              {card.recommendationReason ? (
+                <ThemedText
+                  testID="carousel-card-reason"
+                  type="caption"
+                  style={[styles.reason, { color: theme.textSecondary }]}
+                  numberOfLines={1}
+                >
+                  {card.recommendationReason}
+                </ThemedText>
+              ) : null}
+
+              {expandable ? (
+                <Button onPress={handleViewRecipe} style={styles.viewButton}>
+                  View recipe
+                </Button>
+              ) : null}
+            </Animated.View>
           ) : null}
         </View>
       </Animated.View>
@@ -358,11 +377,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  curatedBadge: {
-    position: "absolute",
-    top: Spacing.sm,
-    right: Spacing.sm,
-  },
   prepBadge: {
     position: "absolute",
     bottom: Spacing.sm,
@@ -388,21 +402,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 2,
   },
+  details: {
+    marginTop: Spacing.sm,
+  },
   reason: {
     fontSize: 12,
-    marginBottom: Spacing.sm,
+  },
+  viewButton: {
+    marginTop: Spacing.md,
+    // Hugs its label on the left: the Scan FAB floats over the bottom-right
+    // of the Home carousel (QA sweep #35).
+    alignSelf: "flex-start",
   },
   actions: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
     flexDirection: "row",
-    // Left-aligned: the Scan FAB floats over the bottom-right of the Home
-    // carousel and used to cover the dismiss button (QA sweep #35).
-    justifyContent: "flex-start",
     gap: Spacing.sm,
   },
   actionButton: {
     width: BUTTON_SIZE,
     height: BUTTON_SIZE,
     borderRadius: BUTTON_SIZE / 2,
+    // Same dark overlay as the prep-time badge so white icons read on any photo.
+    backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
   },
