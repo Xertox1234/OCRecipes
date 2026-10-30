@@ -21,6 +21,7 @@ const {
   mockNotifySessionExpired,
   mockClearOfflineQueue,
   mockClearHomeActionsState,
+  mockClearFeatureTipsState,
   mockClearScheduledCoachReminders,
   mockWhenQueryCacheRestored,
 } = vi.hoisted(() => {
@@ -44,6 +45,7 @@ const {
     // to falsy and the marker would never advance.
     mockClearOfflineQueue: vi.fn().mockResolvedValue(true),
     mockClearHomeActionsState: vi.fn().mockResolvedValue(true),
+    mockClearFeatureTipsState: vi.fn().mockResolvedValue(true),
     mockClearScheduledCoachReminders: vi.fn().mockResolvedValue(true),
     // Default: the persisted-cache restore gate is already settled, so the sweep
     // proceeds immediately. Individual tests override with a deferred promise to
@@ -96,6 +98,10 @@ vi.mock("@/lib/push-token-registration", () => ({
 
 vi.mock("@/lib/offline-queue", () => ({
   clearOfflineQueue: () => mockClearOfflineQueue(),
+}));
+
+vi.mock("@/lib/feature-tips-storage", () => ({
+  clearFeatureTipsState: () => mockClearFeatureTipsState(),
 }));
 
 vi.mock("@/lib/home-actions-storage", () => ({
@@ -1073,6 +1079,8 @@ describe("useAuth", () => {
       // path only: clearHomeActionsState runs solely via the shared
       // clearDurableLocalState chokepoint, so one path proves wiring for all five.
       expect(mockClearHomeActionsState).toHaveBeenCalled();
+      // ...and which teaching tips were seen / features used (same chokepoint).
+      expect(mockClearFeatureTipsState).toHaveBeenCalled();
       // ...and the OS-scheduled coach reminders (journal text) plus their global
       // id map (auth audit M2) — same chokepoint, so one path proves all five.
       expect(mockClearScheduledCoachReminders).toHaveBeenCalled();
