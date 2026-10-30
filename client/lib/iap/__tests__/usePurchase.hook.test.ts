@@ -194,6 +194,28 @@ describe("usePurchase.restore", () => {
     });
   });
 
+  it("tells the user a revoked purchase cannot be restored, without finishing it", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ success: false, code: "TRANSACTION_REVOKED" }),
+        ),
+      ),
+    );
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.restore());
+
+    // Left unfinished on purpose: Google Play auto-refunds an unacknowledged
+    // purchase, and a replay only surfaces on a user-initiated restore.
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    expect(refreshSubscription).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "PURCHASE_DECLINED" },
+    });
+  });
+
   it("says there is nothing to restore when the store has no purchase", async () => {
     iap.restorePurchases.mockResolvedValue(null);
     const { result } = renderHook(() => usePurchase());

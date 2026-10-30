@@ -194,6 +194,18 @@ describe("entitlementError", () => {
     ).toBe("STORE_UNAVAILABLE");
   });
 
+  it("maps a permanent decline to PURCHASE_DECLINED, with no retry advice", () => {
+    for (const code of [
+      "TRANSACTION_REVOKED",
+      "SUBSCRIPTION_EXPIRED",
+      "PRODUCT_MISMATCH",
+    ]) {
+      const error = entitlementError({ success: false, code });
+      expect(error?.code).toBe("PURCHASE_DECLINED");
+      expect(error?.message).not.toMatch(/try again/i);
+    }
+  });
+
   it("maps any other declined receipt to UNKNOWN", () => {
     for (const code of [
       "PURCHASE_NOT_ACTIVE",

@@ -1,4 +1,5 @@
 import type { PurchaseError } from "@shared/types/subscription";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type {
   UpgradeRequest,
   RestoreRequest,
@@ -116,6 +117,19 @@ export function mapIAPError(error: unknown): PurchaseError {
 }
 
 /**
+ * Server decline codes that no retry of the same store transaction can fix.
+ * They get non-retry copy so a replayed transaction does not loop the user on
+ * "try again". The transaction is still left unfinished (same as any decline):
+ * Google Play auto-refunds an unacknowledged purchase, and a replay only
+ * surfaces on a user-initiated restore.
+ */
+const PERMANENT_DECLINE_CODES: ReadonlySet<string> = new Set([
+  ErrorCode.TRANSACTION_REVOKED,
+  "SUBSCRIPTION_EXPIRED",
+  "PRODUCT_MISMATCH",
+]);
+
+/**
  * The error for an /upgrade or /restore answer that did not grant premium, or
  * null when it did. The server declines a receipt with HTTP 200 and
  * `{ success: false, code }` (e.g. STORE_API_ERROR on a store outage), which
@@ -135,6 +149,13 @@ export function entitlementError(body: unknown): PurchaseError | null {
     typeof body === "object" && body !== null
       ? (body as { code?: unknown }).code
       : undefined;
+  if (typeof code === "string" && PERMANENT_DECLINE_CODES.has(code)) {
+    return {
+      code: "PURCHASE_DECLINED",
+      message:
+        "This purchase can no longer unlock Premium. Contact support if you think this is a mistake.",
+    };
+  }
   if (code === "STORE_API_ERROR") {
     return {
       code: "STORE_UNAVAILABLE",

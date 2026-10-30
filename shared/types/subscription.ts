@@ -8,6 +8,9 @@ export interface PurchaseError {
     | "NOTHING_TO_RESTORE"
     // The purchase waits on someone else's approval (e.g. Ask to Buy).
     | "PENDING_APPROVAL"
+    // The server permanently declined the receipt (revoked, expired, wrong
+    // product): retrying the same transaction can never succeed.
+    | "PURCHASE_DECLINED"
     | "UNKNOWN";
   message: string;
   originalError?: unknown;
