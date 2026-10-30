@@ -21,7 +21,8 @@
  */
 import cron from "node-cron";
 import pLimit from "p-limit";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 import { storage } from "../storage";
 import { parseTimezone } from "../lib/civil-date";
 import { notify } from "./notifications/notify";
@@ -291,15 +292,17 @@ export function startNotificationScheduler(): void {
   scheduledTask = cron.schedule("0 9 * * *", () => {
     sendDueCommitmentReminders().catch((err) => {
       logger.error(
-        { err },
+        { err: toError(err) },
         "notification-scheduler: unhandled error in commitment cron",
       );
+      reportError(err, "notification-scheduler: commitment cron");
     });
     sendDailyCheckinReminders().catch((err) => {
       logger.error(
-        { err },
+        { err: toError(err) },
         "notification-scheduler: unhandled error in daily-checkin cron",
       );
+      reportError(err, "notification-scheduler: daily-checkin cron");
     });
   });
 
@@ -307,9 +310,10 @@ export function startNotificationScheduler(): void {
   mealLogTask = cron.schedule("0 12 * * *", () => {
     sendMealLogReminders().catch((err) => {
       logger.error(
-        { err },
+        { err: toError(err) },
         "notification-scheduler: unhandled error in meal-log cron",
       );
+      reportError(err, "notification-scheduler: meal-log cron");
     });
   });
 

@@ -538,7 +538,7 @@ export function register(app: Express): void {
       max: 10,
       message: {
         error: "Too many photo uploads. Please wait.",
-        code: "RATE_LIMITED",
+        code: ErrorCode.RATE_LIMITED,
       },
       standardHeaders: true,
       legacyHeaders: false,
