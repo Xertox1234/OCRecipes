@@ -23,6 +23,25 @@ describe("front-label-analysis", () => {
   });
 
   describe("analyzeFrontLabel", () => {
+    // With no timeout the OpenAI SDK default (600 s) applied
+    // (audit 2026-10-29 M-rel-2).
+    it("passes an explicit timeout to the AI call", async () => {
+      mockVisionResponse({
+        brand: null,
+        productName: null,
+        netWeight: null,
+        claims: [],
+        confidence: 0.5,
+      });
+
+      await analyzeFrontLabel("base64data");
+
+      expect(mockCreate.mock.calls[0][2]).toEqual(
+        expect.objectContaining({ timeout: expect.any(Number) }),
+      );
+      expect(mockCreate.mock.calls[0][2].timeout).toBeLessThanOrEqual(60_000);
+    });
+
     it("extracts all fields from a valid response", async () => {
       mockVisionResponse({
         brand: "Kind",
@@ -156,7 +175,7 @@ describe("front-label-analysis", () => {
       await analyzeFrontLabel("base64data");
 
       expect(mockCreate.mock.calls[0][0]).toBe("front-label-scan");
-      expect(mockCreate.mock.calls[0]).toHaveLength(2); // no options argument
+      expect(mockCreate.mock.calls[0]).toHaveLength(3); // timeout options
       const callArgs = mockCreate.mock.calls[0][1];
       const imageContent = callArgs.messages[1].content.find(
         (c: { type: string }) => c.type === "image_url",

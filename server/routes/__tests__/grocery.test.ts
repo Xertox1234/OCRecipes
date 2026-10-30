@@ -669,6 +669,28 @@ describe("Grocery Routes", () => {
       expect(res.status).toBe(201);
     });
 
+    it("returns 409 when the item was already added to the pantry", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
+        ...mockList,
+        items: [createMockGroceryListItem({ name: "Milk" })],
+      });
+      vi.mocked(storage.addGroceryItemToPantryAtomically).mockResolvedValue(
+        undefined,
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists/1/items/1/add-to-pantry")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("CONFLICT");
+    });
+
     it("returns 400 for invalid IDs", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",

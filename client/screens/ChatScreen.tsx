@@ -35,6 +35,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ChatBubble } from "@/components/ChatBubble";
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { TypingDots } from "@/components/TypingDots";
 import { SendButton } from "@/components/SendButton";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
@@ -362,7 +363,12 @@ export default function ChatScreen() {
   const validConversationId = isMalformedId ? null : conversationId;
 
   const queryClient = useQueryClient();
-  const { data: messages, isLoading } = useChatMessages(validConversationId);
+  const {
+    data: messages,
+    isLoading,
+    isError: messagesError,
+    refetch: refetchMessages,
+  } = useChatMessages(validConversationId);
   const {
     sendMessage,
     getStreamSnapshot,
@@ -681,6 +687,15 @@ export default function ChatScreen() {
     <CoachStreamingFooter content={streamingContent} />
   ) : null;
 
+  // An existing conversation whose messages failed to load must not render
+  // as a blank new chat — a send would land in it with its history unseen.
+  const loadFailed =
+    messagesError &&
+    validConversationId !== null &&
+    (!messages || messages.length === 0) &&
+    !isStreaming &&
+    !showPendingUser;
+
   const isEmpty =
     !isLoading &&
     (!messages || messages.length === 0) &&
@@ -694,6 +709,19 @@ export default function ChatScreen() {
     >
       {isLoading ? (
         <ChatSkeleton />
+      ) : loadFailed ? (
+        <View style={[styles.emptyContent, { paddingTop: headerInset }]}>
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't load this conversation"
+            description="Something went wrong. Tap below to try again."
+            actionLabel="Try Again"
+            onAction={() => {
+              void refetchMessages();
+            }}
+          />
+        </View>
       ) : isEmpty ? (
         <FlatList
           ref={flatListRef}

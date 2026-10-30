@@ -243,7 +243,19 @@ describe("Recipe Import", () => {
     });
 
     it("allows public IPv6", () => {
-      expect(isBlockedIPv6("2001:db8::1")).toBe(false);
+      expect(isBlockedIPv6("2606:4700:4700::1111")).toBe(false);
+    });
+
+    it.each([
+      "::ffff:0:7f00:1", // IPv4-translated (SIIT)
+      "64:ff9b:1::a9fe:a9fe", // local-use NAT64
+      "2001:0:4136:e378:8000:63bf:80ff:fffe", // Teredo
+      "2001:10::1", // ORCHID
+      "2001:db8::1", // documentation
+      "100::1", // discard-only
+      "fec0::1", // deprecated site-local
+    ])("blocks the special-purpose IPv6 address %s", (ip) => {
+      expect(isBlockedIPv6(ip)).toBe(true);
     });
   });
 
@@ -260,7 +272,7 @@ describe("Recipe Import", () => {
 
     it("delegates IPv6 to isBlockedIPv6", () => {
       expect(isBlockedIP("::1")).toBe(true);
-      expect(isBlockedIP("2001:db8::1")).toBe(false);
+      expect(isBlockedIP("2606:4700:4700::1111")).toBe(false);
     });
 
     it("delegates IPv4 to isBlockedIPv4", () => {
@@ -293,6 +305,41 @@ describe("Recipe Import", () => {
     it("blocks invalid URLs", () => {
       expect(isBlockedUrl("not a url")).toBe(true);
     });
+
+    // WHATWG URL rewrites [::ffff:127.0.0.1] to the hex form [::ffff:7f00:1],
+    // which a dotted-quad regex never sees — audit 2026-10-29 H-sec-1.
+    it.each([
+      "http://[::ffff:127.0.0.1]/",
+      "http://[::ffff:7f00:1]/",
+      "http://[::ffff:169.254.169.254]/",
+      "http://[::ffff:a9fe:a9fe]/",
+      "http://[::ffff:10.0.0.1]/",
+      "http://[::]/",
+      "http://[::127.0.0.1]/",
+      "http://[64:ff9b::7f00:1]/",
+      "http://[2002:7f00:1::]/",
+      "http://[ff02::1]/",
+    ])("blocks the internal IPv6 literal %s", (url) => {
+      expect(isBlockedUrl(url)).toBe(true);
+    });
+
+    it.each([
+      "http://198.18.0.1/",
+      "http://224.0.0.1/",
+      "http://240.0.0.1/",
+      "http://255.255.255.255/",
+      "http://192.0.0.8/",
+    ])("blocks the reserved IPv4 literal %s", (url) => {
+      expect(isBlockedUrl(url)).toBe(true);
+    });
+
+    it.each([
+      "http://[::ffff:8.8.8.8]/",
+      "http://[2606:4700:4700::1111]/",
+      "http://93.184.216.34/",
+    ])("still allows the public literal %s", (url) => {
+      expect(isBlockedUrl(url)).toBe(false);
+    });
   });
 
   describe("resolveAndValidateHost", () => {
@@ -309,6 +356,18 @@ describe("Recipe Import", () => {
     it("allows literal public IPs", async () => {
       const result = await resolveAndValidateHost("93.184.216.34");
       expect(result).toBe(true);
+    });
+
+    // URL.hostname keeps the brackets on an IPv6 literal, and that is what
+    // the import path passes in.
+    it("allows a bracketed public IPv6 literal from URL.hostname", async () => {
+      const host = new URL("http://[2606:4700:4700::1111]/").hostname;
+      expect(await resolveAndValidateHost(host)).toBe(true);
+    });
+
+    it("blocks a bracketed internal IPv6 literal from URL.hostname", async () => {
+      const host = new URL("http://[::ffff:127.0.0.1]/").hostname;
+      expect(await resolveAndValidateHost(host)).toBe(false);
     });
   });
 
@@ -337,6 +396,31 @@ describe("Recipe Import", () => {
       });
 
       const result = await importRecipeFromUrl("https://example.com/slow");
+      expect(result).toEqual({ success: false, error: "TIMEOUT" });
+    }, 15_000);
+
+    it("returns TIMEOUT when headers arrive but the body never finishes", async () => {
+      // Headers come back at once, then the body drips forever. Like undici,
+      // the body stream errors with an AbortError when the request's signal
+      // aborts — so the deadline must still be armed while the body is read.
+      globalThis.fetch = vi.fn().mockImplementation((_url, opts) => {
+        const signal = opts?.signal as AbortSignal | undefined;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("<html>"));
+            signal?.addEventListener("abort", () =>
+              controller.error(
+                new DOMException("The operation was aborted.", "AbortError"),
+              ),
+            );
+          },
+        });
+        return Promise.resolve(
+          new Response(body, { status: 200, headers: new Headers() }),
+        );
+      });
+
+      const result = await importRecipeFromUrl("https://example.com/drip");
       expect(result).toEqual({ success: false, error: "TIMEOUT" });
     }, 15_000);
 

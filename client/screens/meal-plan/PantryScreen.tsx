@@ -129,7 +129,7 @@ function PantryItemRow({
       <Pressable
         style={({ pressed }) => [pressed && { opacity: 0.7 }]}
         onPress={() => onDelete(item.id)}
-        hitSlop={8}
+        hitSlop={14}
         accessibilityRole="button"
         accessibilityLabel={`Delete ${item.name}`}
       >

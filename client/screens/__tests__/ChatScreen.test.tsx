@@ -893,3 +893,23 @@ describe("ChatScreen — teaching and Pro prompts", () => {
     expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 });
+
+// A failed messages load for an existing conversation used to render the
+// blank new-chat screen (audit 2026-10-29 M-crel-4).
+describe("ChatScreen — messages load failure", () => {
+  it("shows an error with a retry instead of a blank new chat", () => {
+    const mockRefetchMessages = vi.fn();
+    mockRouteParams.value = { conversationId: 7 };
+    mockUseChatMessages.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch: mockRefetchMessages,
+    });
+
+    renderComponent(<ChatScreen />);
+
+    fireEvent.click(screen.getByText("Try Again"));
+    expect(mockRefetchMessages).toHaveBeenCalled();
+  });
+});
