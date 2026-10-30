@@ -370,8 +370,7 @@ export async function lookupUSDAByUPC(code: string): Promise<{
 
   for (const variant of variants) {
     try {
-      const response = await cachedFetch(
-        "usda",
+      const response = await fetchUSDA(
         `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${USDA_API_KEY}`,
         {
           method: "POST",
@@ -381,13 +380,21 @@ export async function lookupUSDAByUPC(code: string): Promise<{
             dataType: ["Branded"],
             pageSize: 3,
           }),
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         },
+        "upc",
       );
 
-      if (!response.ok) continue;
+      // fetchUSDA already logged why (status / breaker / network).
+      if (response === "unavailable") continue;
       const parsed = usdaUpcResponseSchema.safeParse(await response.json());
-      if (!parsed.success || parsed.data.foods.length === 0) continue;
+      if (!parsed.success) {
+        log.warn(
+          { variant, issues: parsed.error.issues.slice(0, 3) },
+          "USDA UPC response failed schema validation",
+        );
+        continue;
+      }
+      if (parsed.data.foods.length === 0) continue;
 
       // Check that the UPC actually matches (text search can return false positives)
       const match = parsed.data.foods.find(
@@ -404,8 +411,8 @@ export async function lookupUSDAByUPC(code: string): Promise<{
         brandName: match.brandOwner || match.brandName || undefined,
         labelServingSize: usdaLabelServingSize(match),
       };
-    } catch {
-      // Continue to next variant
+    } catch (error) {
+      log.warn({ err: toError(error), variant }, "USDA UPC lookup error");
     }
   }
 
