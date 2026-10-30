@@ -337,6 +337,43 @@ describe("useAuth", () => {
       expect(mockNotifySessionExpired).not.toHaveBeenCalled();
     });
 
+    it.each([500, 502, 503, 429, 408, 403])(
+      "keeps the session on a transient %i from /me (no token clear, no durable sweep, cached user)",
+      async (status) => {
+        mockTokenStorage.get.mockResolvedValue("valid-token");
+        mockFetch.mockResolvedValue({ ok: false, status });
+        mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
+        // Same user as the durable stores were confirmed for (common resume).
+        mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
+
+        const { result } = renderHook(() => useAuth());
+
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+        expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+        expect(mockQueryClient.clear).not.toHaveBeenCalled();
+        expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
+          JSON.stringify(fakeUser),
+        );
+        expect(result.current.isAuthenticated).toBe(true);
+        expect(result.current.user).toEqual(fakeUser);
+      },
+    );
+
+    it("keeps the token on a transient /me failure even with no cached user", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({ ok: false, status: 503 });
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+      expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
     it("falls back to cached user on network error", async () => {
       mockTokenStorage.get.mockResolvedValue("valid-token");
       mockFetch.mockRejectedValue(new Error("Network error"));
