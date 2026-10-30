@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import {
   apiRequest,
   getQueryFn,
+  notifyIfStreamSessionExpired,
   subscribeToSessionExpiry,
 } from "../query-client";
 
@@ -279,5 +280,50 @@ describe("session-expiry interceptor (real query-client module)", () => {
       );
       expect(listener).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("notifyIfStreamSessionExpired (raw-XHR SSE streams, R22)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function fires(
+    status: number,
+    body: string,
+    sentToken: string | null,
+    storedToken: string | null = sentToken,
+  ): Promise<boolean> {
+    mockTokenStorage.get.mockResolvedValue(storedToken);
+    const listener = vi.fn();
+    const unsubscribe = subscribeToSessionExpiry(listener);
+    await notifyIfStreamSessionExpired(status, body, sentToken);
+    unsubscribe();
+    return listener.mock.calls.length > 0;
+  }
+
+  it("fires for a token-bearing 401 with a session code", async () => {
+    expect(
+      await fires(401, JSON.stringify({ code: "TOKEN_EXPIRED" }), "tok"),
+    ).toBe(true);
+    expect(
+      await fires(401, JSON.stringify({ code: "TOKEN_REVOKED" }), "tok"),
+    ).toBe(true);
+  });
+
+  it("does not fire for a non-session 401, a non-401, no token, or a superseded token", async () => {
+    expect(
+      await fires(401, JSON.stringify({ code: "UNAUTHORIZED" }), "tok"),
+    ).toBe(false);
+    expect(await fires(401, "not json", "tok")).toBe(false);
+    expect(
+      await fires(500, JSON.stringify({ code: "TOKEN_EXPIRED" }), "tok"),
+    ).toBe(false);
+    expect(
+      await fires(401, JSON.stringify({ code: "TOKEN_EXPIRED" }), null),
+    ).toBe(false);
+    expect(
+      await fires(401, JSON.stringify({ code: "TOKEN_EXPIRED" }), "old", "new"),
+    ).toBe(false);
   });
 });
