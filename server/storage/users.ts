@@ -952,11 +952,13 @@ export async function claimTransactionAndUpgrade(
       return { status: "created", transaction: inserted, user };
     }
 
-    // Conflict: a row already holds this transactionId.
+    // Conflict: a row already holds this transactionId. Lock it so a refund
+    // committing concurrently is seen (and never overwritten) below.
     const [existing] = await tx
       .select()
       .from(transactions)
-      .where(eq(transactions.transactionId, data.transactionId));
+      .where(eq(transactions.transactionId, data.transactionId))
+      .for("update");
 
     // Different account (or a vanished row) — never grant entitlement.
     if (!existing || existing.userId !== data.userId) {
@@ -1010,10 +1012,13 @@ export async function extendSubscriptionByTransactionId( // idor-safe
   purchasedAt?: Date | null,
 ): Promise<{ status: "extended" | "revoked"; userId: string } | null> {
   return db.transaction(async (tx) => {
+    // Row lock: serializes renewal / refund / expiry on this transaction so a
+    // renewal never overwrites a concurrently committed refund.
     const [txn] = await tx
       .select()
       .from(transactions)
-      .where(eq(transactions.transactionId, transactionId));
+      .where(eq(transactions.transactionId, transactionId))
+      .for("update");
 
     if (!txn) return null;
 
@@ -1051,10 +1056,13 @@ export async function revokeSubscriptionByTransactionId( // idor-safe
   revokedAt?: Date,
 ): Promise<{ userId: string } | null> {
   return db.transaction(async (tx) => {
+    // Row lock: serializes renewal / refund / expiry on this transaction so a
+    // renewal never overwrites a concurrently committed refund.
     const [txn] = await tx
       .select()
       .from(transactions)
-      .where(eq(transactions.transactionId, transactionId));
+      .where(eq(transactions.transactionId, transactionId))
+      .for("update");
 
     if (!txn) return null;
 
@@ -1125,10 +1133,13 @@ export async function expireSubscriptionByTransactionId( // idor-safe
   transactionId: string,
 ): Promise<{ userId: string } | null> {
   return db.transaction(async (tx) => {
+    // Row lock: serializes renewal / refund / expiry on this transaction so a
+    // renewal never overwrites a concurrently committed refund.
     const [txn] = await tx
       .select()
       .from(transactions)
-      .where(eq(transactions.transactionId, transactionId));
+      .where(eq(transactions.transactionId, transactionId))
+      .for("update");
 
     if (!txn) return null;
 
