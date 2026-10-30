@@ -9,6 +9,15 @@ import { z } from "zod";
 import { logger } from "./logger";
 import { isR2Configured } from "./image-store";
 
+// Opt-in boolean flags are read as `=== "true"`, so a typo ("True", "1")
+// would silently leave the feature off. Validate the spelling at startup.
+// "" is allowed: an empty Railway variable means unset.
+const booleanFlag = z
+  .enum(["true", "false", ""], {
+    message: 'must be "true" or "false"',
+  })
+  .optional();
+
 const envSchema = z.object({
   // Required — server will not start without these
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
@@ -134,6 +143,16 @@ const envSchema = z.object({
   // without it; only active in NODE_ENV=production, mirroring the client
   // reporter contract in client/lib/reporter.ts). See server/lib/error-reporter.ts.
   SENTRY_DSN: z.string().optional(),
+
+  // Feature flags (read at call time by their owners; validated here so a
+  // misspelled value fails the boot instead of silently disabling the feature)
+  RECIPE_FINDER_ENABLED: booleanFlag, // server/services/recipe-finder/config.ts
+  RECIPE_OFFER_ENABLED: booleanFlag, // server/services/recipe-finder/config.ts
+  RETENTION_CLEANUP_ENABLED: booleanFlag, // server/index.ts, cleanup-retention.ts
+  RECIPE_FINDER_SPOONACULAR_DAILY_CAP: z
+    .string()
+    .regex(/^\s*\d*\s*$/, "must be a non-negative integer")
+    .optional(),
 
   // Admin
   ADMIN_USER_IDS: z.string().optional(),
