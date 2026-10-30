@@ -11,6 +11,8 @@ import {
   communityRecipes,
   cookbookRecipes,
   favouriteRecipes,
+  savedItems,
+  recipeDismissals,
 } from "@shared/schema";
 import {
   isValidSubscriptionTier,
@@ -499,6 +501,24 @@ export async function deleteUser(id: string): Promise<boolean> {
             eq(favouriteRecipes.recipeType, "community"),
           ),
         );
+      // Same polymorphic cleanup as deleteCommunityRecipe — these rows
+      // belong to OTHER users and have no FK to cascade.
+      await tx
+        .delete(savedItems)
+        .where(
+          and(
+            inArray(savedItems.recipeId, recipeIds),
+            eq(savedItems.recipeType, "community"),
+          ),
+        );
+      await tx
+        .delete(recipeDismissals)
+        .where(
+          and(
+            inArray(recipeDismissals.recipeIdentifier, recipeIds.map(String)),
+            eq(recipeDismissals.source, "community"),
+          ),
+        );
       await tx
         .delete(communityRecipes)
         .where(eq(communityRecipes.authorId, id));
@@ -550,7 +570,7 @@ export async function getUserIdPage( // idor-safe
  * value is the stored IANA string or `null` when the column was never written.
  *
  * The value is intentionally NOT validated/normalized here — callers pass it
- * through `parseTimezone` (server/routes/_helpers.ts) to collapse
+ * through `parseTimezone` (server/lib/civil-date.ts) to collapse
  * null/undefined/invalid → `"UTC"`. Validating in storage would require
  * importing from the routes layer, creating a `storage → routes → storage`
  * import cycle (`_helpers` imports the storage barrel).

@@ -136,14 +136,20 @@ export default function App() {
     );
   }, []);
 
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
     Poppins_600SemiBold,
     Poppins_700Bold,
   });
 
-  if (!fontsLoaded) {
+  useEffect(() => {
+    if (fontError) logger.error("Font loading failed:", fontError);
+  }, [fontError]);
+
+  // A failed font load must not leave the spinner up forever — continue with
+  // the system fonts.
+  if (!fontsLoaded && !fontError) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" />

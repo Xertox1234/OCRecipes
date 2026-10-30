@@ -395,6 +395,10 @@ export function register(app: Express): void {
           itemId,
           listId,
         );
+        if (!pantryItem) {
+          sendError(res, 409, "Already added to pantry", ErrorCode.CONFLICT);
+          return;
+        }
 
         res.status(201).json(pantryItem);
       } catch (error) {

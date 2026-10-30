@@ -207,6 +207,34 @@ describe("error-reporter", () => {
       const event = { message: "boom" };
       expect(scrubEvent(event as ErrorEvent)).toBe(event);
     });
+
+    // A failed Drizzle query's message ends with every bound value
+    // ("\nparams: ..."), e.g. a password-hash rehash or a coach reply write
+    // (audit 2026-10-29 Phase 6 security review).
+    it("drops bound query parameters from exception messages", async () => {
+      const { scrubEvent } = await importReporter();
+      const event = {
+        exception: {
+          values: [
+            {
+              type: "DrizzleQueryError",
+              value:
+                'Failed query: update "users" set "password" = $1 where "id" = $2\nparams: pv2$NEWHASH,user-uuid',
+            },
+            { type: "Error", value: "connection reset" },
+          ],
+        },
+      };
+
+      const scrubbed = scrubEvent(event as ErrorEvent);
+
+      const values = scrubbed.exception?.values ?? [];
+      expect(values[0].value).toBe(
+        'Failed query: update "users" set "password" = $1 where "id" = $2',
+      );
+      expect(JSON.stringify(scrubbed)).not.toContain("NEWHASH");
+      expect(values[1].value).toBe("connection reset");
+    });
   });
 
   describe("SENSITIVE_HEADER_SNIPPETS drift guard", () => {

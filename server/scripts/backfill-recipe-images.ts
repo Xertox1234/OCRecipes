@@ -19,7 +19,7 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { db, pool } from "../db";
 import { communityRecipes, mealPlanRecipes } from "@shared/schema";
 import { generateImage, isRunwareConfigured } from "../lib/runware";
@@ -137,7 +137,9 @@ async function main() {
       mealTypes: mealPlanRecipes.mealTypes,
       title: mealPlanRecipes.title,
     })
-    .from(mealPlanRecipes);
+    .from(mealPlanRecipes)
+    // A soft-deleted recipe is invisible — don't pay to regenerate its image.
+    .where(isNull(mealPlanRecipes.deletedAt));
 
   let processed = 0;
   for (const r of community) {

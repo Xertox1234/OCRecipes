@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { aiChat } from "../lib/ai-client";
+import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -59,33 +60,39 @@ export async function analyzeFrontLabel(
 
   let response;
   try {
-    response = await aiChat("front-label-scan", {
-      max_completion_tokens: 300,
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content: FRONT_LABEL_PROMPT,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Extract product details from this package front:",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBase64}`,
-                detail: "low",
+    response = await aiChat(
+      "front-label-scan",
+      {
+        max_completion_tokens: 300,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: FRONT_LABEL_PROMPT,
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Extract product details from this package front:",
               },
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${imageBase64}`,
+                  detail: "low",
+                },
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      // Vision call — same tier as the other label/receipt scans; without
+      // it the SDK default is 600 s.
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
   } catch (error) {
     log.error({ err: toError(error) }, "front label analysis error");
     throw new Error("Failed to analyze product front label. Please try again.");

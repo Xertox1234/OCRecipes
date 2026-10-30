@@ -170,9 +170,9 @@ read the server's local-midnight `followUpDate` instant with `toISOString().slic
 UTC day, which for a UTC-positive user is the day *before*. It showed the wrong day, the dirty
 check compared against it, every edit-save wrote it back (moving the date one day earlier per
 save), and the reminder was scheduled from it. Convert a stored instant to a civil day with
-local accessors in one helper (`storedFollowUpToCivilDate` in `notebook-date-utils.ts`) and route
+local accessors (`toLocalDateString(new Date(stored))` from `shared/lib/date.ts`) and route
 **every** read through it — initial state, load effect, dirty check, scheduling. A bug fixed in
-3 of 4 reads still drifts.
+3 of 4 reads still drifts. (Fixed in #1621, audit M-xc-1.)
 
 ## Related Files
 
@@ -186,7 +186,7 @@ local accessors in one helper (`storedFollowUpToCivilDate` in `notebook-date-uti
 - `todos/archive/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md` —
   the product decision, now made: a true device-local basis
 - `todos/P2-2026-08-31-plan-slot-timezone-guards-never-run-in-ci.md` — the guard-durability gap
-- `client/components/coach/notebook-date-utils.ts` — `storedFollowUpToCivilDate` (the read-side counterpart); `client/screens/NotebookEntryScreen.tsx` — its four call sites
+- `client/screens/NotebookEntryScreen.tsx` — the four read sites, each `toLocalDateString(new Date(followUpDate))`
 
 ## See Also
 

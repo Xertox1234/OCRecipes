@@ -277,6 +277,75 @@ describe("NotebookEntryScreen — safe back navigation", () => {
   });
 });
 
+// The server stores a follow-up date as LOCAL midnight in the user's zone
+// (server/routes/notebook.ts). Reading it back as a UTC date put it a day
+// early for anyone east of UTC (audit 2026-10-29 M-xc-1).
+describe("NotebookEntryScreen — follow-up date east of UTC", () => {
+  const originalTz = process.env.TZ;
+  afterEach(() => {
+    // Assigning undefined would store the string "undefined".
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  it("keeps the local follow-up day when saving and scheduling the reminder", async () => {
+    process.env.TZ = "Australia/Sydney"; // UTC+11 on 30 Oct 2026
+    // Local midnight 2026-10-30 in Sydney is 2026-10-29T13:00Z.
+    const stored = "2026-10-29T13:00:00.000Z";
+    const entry = makeEntry({
+      type: "commitment",
+      content: "Walk after dinner",
+      followUpDate: stored,
+    });
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([entry]);
+    mockUpdateMutateAsync.mockResolvedValue({ ...entry, content: "Walk" });
+
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.change(screen.getByDisplayValue("Walk after dinner"), {
+      target: { value: "Walk" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await vi.waitFor(() => expect(mockScheduleReminder).toHaveBeenCalled());
+    expect(mockUpdateMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ followUpDate: "2026-10-30" }),
+    );
+    expect(mockScheduleReminder).toHaveBeenCalledWith(42, "Walk", "2026-10-30");
+  });
+});
+
+// The entry is already saved when the reminder is scheduled — a reminder
+// failure must not keep the user on the form, where a second Save would
+// create a duplicate entry (audit 2026-10-29 L-crel-9).
+describe("NotebookEntryScreen — reminder failure after a successful save", () => {
+  it("still leaves the screen and says the reminder wasn't set", async () => {
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    mockCreateMutateAsync.mockResolvedValue(
+      makeEntry({
+        id: 7,
+        type: "commitment",
+        content: "Stretch",
+        followUpDate: "2026-11-02T00:00:00.000Z",
+      }),
+    );
+    mockScheduleReminder.mockRejectedValue(new Error("notifications denied"));
+
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.change(screen.getByDisplayValue(""), {
+      target: { value: "Stretch" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await vi.waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockToast.error).toHaveBeenCalledWith(
+      expect.stringMatching(/reminder/i),
+    );
+  });
+});
+
 // The entry-type pills are SelectableTiles: picking a type ticks
 // `selection()` once (the real useHaptics → expo-haptics mock).
 describe("NotebookEntryScreen — one selection tick per type pick", () => {
@@ -355,56 +424,5 @@ describe("NotebookEntryScreen — empty note", () => {
 
     expect(screen.getByText(ERROR)).toBeTruthy();
     expect(mockUpdateMutateAsync).not.toHaveBeenCalled();
-  });
-});
-
-// R27: the server stores a follow-up day at LOCAL midnight in the user's zone.
-// For a UTC+ user that instant is the previous UTC day; reading it back via the
-// UTC slice re-saved (and scheduled the reminder for) the day before.
-describe("NotebookEntryScreen — follow-up date in a UTC+ zone (R27)", () => {
-  const originalTZ = process.env.TZ;
-  beforeAll(() => {
-    process.env.TZ = "Australia/Sydney";
-  });
-  afterAll(() => {
-    process.env.TZ = originalTZ;
-  });
-
-  it("an edit-save keeps the stored day and schedules the reminder for it", async () => {
-    // Oct 31 00:00 in Sydney (UTC+11).
-    const stored = "2026-10-30T13:00:00.000Z";
-    mockRouteParams.params = { entryId: 42 };
-    setupEntries([
-      makeEntry({
-        id: 42,
-        type: "commitment",
-        content: "Walk daily",
-        followUpDate: stored,
-      }),
-    ]);
-    mockUpdateMutateAsync.mockResolvedValue(
-      makeEntry({
-        id: 42,
-        type: "commitment",
-        content: "Walk daily, 30 min",
-        followUpDate: stored,
-      }),
-    );
-
-    renderComponent(<NotebookEntryScreen />);
-    fireEvent.change(screen.getByDisplayValue("Walk daily"), {
-      target: { value: "Walk daily, 30 min" },
-    });
-    fireEvent.click(screen.getByText("Save"));
-    await vi.waitFor(() => expect(mockScheduleReminder).toHaveBeenCalled());
-
-    expect(mockUpdateMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ followUpDate: "2026-10-31" }),
-    );
-    expect(mockScheduleReminder).toHaveBeenCalledWith(
-      42,
-      "Walk daily, 30 min",
-      "2026-10-31",
-    );
   });
 });

@@ -1,12 +1,16 @@
 import { compressImage, cleanupImage } from "../image-compression";
 
-const { mockManipulateAsync, mockGetInfoAsync, mockDeleteAsync } = vi.hoisted(
-  () => ({
+const { mockManipulateAsync, mockGetInfoAsync, mockDeleteAsync, mockGetSize } =
+  vi.hoisted(() => ({
     mockManipulateAsync: vi.fn(),
     mockGetInfoAsync: vi.fn(),
     mockDeleteAsync: vi.fn(),
-  }),
-);
+    mockGetSize: vi.fn(),
+  }));
+
+vi.mock("react-native", () => ({
+  Image: { getSize: (...args: unknown[]) => mockGetSize(...args) },
+}));
 
 vi.mock("expo-image-manipulator", () => ({
   manipulateAsync: (...args: unknown[]) => mockManipulateAsync(...args),
@@ -21,6 +25,9 @@ vi.mock("expo-file-system/legacy", () => ({
 describe("compressImage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // A 4:3 landscape camera photo unless a test says otherwise.
+    mockGetSize.mockResolvedValue({ width: 4032, height: 3024 });
+    mockDeleteAsync.mockResolvedValue(undefined);
   });
 
   it("resizes and compresses with default options", async () => {
@@ -35,7 +42,7 @@ describe("compressImage", () => {
 
     expect(mockManipulateAsync).toHaveBeenCalledWith(
       "file://original.jpg",
-      [{ resize: { width: 1024, height: 1024 } }],
+      [{ resize: { width: 1024 } }],
       { compress: 0.7, format: "jpeg" },
     );
     expect(result).toEqual({
@@ -62,7 +69,7 @@ describe("compressImage", () => {
 
     expect(mockManipulateAsync).toHaveBeenCalledWith(
       "file://orig.jpg",
-      [{ resize: { width: 512, height: 512 } }],
+      [{ resize: { width: 512 } }],
       { compress: 0.5, format: "jpeg" },
     );
   });
@@ -93,6 +100,12 @@ describe("compressImage", () => {
     expect(secondCall[2].compress).toBeCloseTo(0.525, 2);
     expect(result.uri).toBe("file://pass2.jpg");
     expect(result.sizeKB).toBe(800);
+    // The second pass keeps the aspect ratio too
+    expect(secondCall[1]).toEqual([{ resize: { width: 1024 } }]);
+    // The discarded first-pass file is deleted, not left in the cache
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file://pass1.jpg", {
+      idempotent: true,
+    });
   });
 
   it("clamps adaptive quality to minimum 0.3", async () => {
@@ -131,6 +144,57 @@ describe("compressImage", () => {
 
     // Only one pass since quality <= 0.3
     expect(mockManipulateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  // Passing both width and height makes expo-image-manipulator scale to
+  // exactly that box, stretching the photo (audit 2026-10-29 H-cam-1).
+  it("bounds a portrait photo by its height so it keeps its shape", async () => {
+    mockGetSize.mockResolvedValue({ width: 3024, height: 4032 });
+    mockManipulateAsync.mockResolvedValue({
+      uri: "file://p.jpg",
+      width: 768,
+      height: 1024,
+    });
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 300 * 1024 });
+
+    await compressImage("file://portrait.jpg", {
+      maxWidth: 1536,
+      maxHeight: 1536,
+    });
+
+    expect(mockManipulateAsync.mock.calls[0][1]).toEqual([
+      { resize: { height: 1536 } },
+    ]);
+  });
+
+  it("does not upscale a photo already inside the bounds", async () => {
+    mockGetSize.mockResolvedValue({ width: 640, height: 480 });
+    mockManipulateAsync.mockResolvedValue({
+      uri: "file://s.jpg",
+      width: 640,
+      height: 480,
+    });
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 80 * 1024 });
+
+    await compressImage("file://small.jpg");
+
+    expect(mockManipulateAsync.mock.calls[0][1]).toEqual([]);
+  });
+
+  it("still keeps the aspect ratio when the source size can't be read", async () => {
+    mockGetSize.mockRejectedValue(new Error("unreadable"));
+    mockManipulateAsync.mockResolvedValue({
+      uri: "file://u.jpg",
+      width: 1024,
+      height: 768,
+    });
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 300 * 1024 });
+
+    await compressImage("file://unknown.jpg");
+
+    expect(mockManipulateAsync.mock.calls[0][1]).toEqual([
+      { resize: { width: 1024 } },
+    ]);
   });
 
   it("handles non-existent file info gracefully", async () => {

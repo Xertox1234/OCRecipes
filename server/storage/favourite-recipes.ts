@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, and, or, inArray, sql } from "drizzle-orm";
+import { eq, and, or, inArray, sql, isNull } from "drizzle-orm";
 import {
   favouriteRecipes,
   mealPlanRecipes,
@@ -38,6 +38,7 @@ export async function toggleFavouriteRecipe(
           and(
             eq(mealPlanRecipes.id, recipeId),
             eq(mealPlanRecipes.userId, userId),
+            isNull(mealPlanRecipes.deletedAt),
           ),
         );
       if (!recipe) return false;
@@ -204,6 +205,7 @@ export async function getResolvedFavouriteRecipes(
             and(
               inArray(mealPlanRecipes.id, mealPlanIds),
               eq(mealPlanRecipes.userId, userId),
+              isNull(mealPlanRecipes.deletedAt),
             ),
           )
       : [],
