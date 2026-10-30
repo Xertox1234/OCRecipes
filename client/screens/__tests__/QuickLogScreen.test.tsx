@@ -69,6 +69,15 @@ vi.mock("@/context/PremiumContext", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useFeatureTip", () => ({
+  // Visible exactly when the screen says it is eligible (seen/used rules are
+  // tested in useFeatureTip.test.ts).
+  useFeatureTip: (_id: string, opts: { eligible: boolean }) => ({
+    visible: opts.eligible,
+    dismiss: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/useQuickLogSession", () => ({
   EMPTY_PARSE_MESSAGE: "Couldn't find any food in that.",
   useQuickLogSession: vi.fn(() => ({
@@ -696,5 +705,28 @@ describe("QuickLogScreen — food field label", () => {
     } finally {
       sessionHolder.isListening = false;
     }
+  });
+});
+
+describe("QuickLogScreen — camera tip", () => {
+  function withInput(inputText: string) {
+    const base = vi
+      .mocked(useQuickLogSessionModule.useQuickLogSession)
+      .getMockImplementation()!;
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockImplementation(
+      (...args) => ({ ...base(...args), inputText }),
+    );
+  }
+
+  it("shows the camera tip once the person starts typing", () => {
+    withInput("2 eggs");
+    renderComponent(<QuickLogScreen />);
+    expect(screen.getByText("Snap it instead.")).toBeDefined();
+  });
+
+  it("shows no camera tip before anything is typed", () => {
+    withInput("");
+    renderComponent(<QuickLogScreen />);
+    expect(screen.queryByText("Snap it instead.")).toBeNull();
   });
 });

@@ -21,6 +21,8 @@ interface FeatureTipProps {
   onDismiss: () => void;
   /** Which way the little pointer faces: toward the control the tip is about. */
   pointer: "up" | "down";
+  /** Which end of the bubble the pointer sits at (default: the end). */
+  pointerAlign?: "start" | "end";
   /** Position it next to its control; the parent decides where. */
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -37,6 +39,7 @@ export function FeatureTip({
   visible,
   onDismiss,
   pointer,
+  pointerAlign = "end",
   style,
   testID,
 }: FeatureTipProps) {
@@ -59,6 +62,7 @@ export function FeatureTip({
     styles.pointer,
     { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
     pointer === "up" ? styles.pointerUp : styles.pointerDown,
+    pointerAlign === "start" ? styles.pointerStart : styles.pointerEnd,
   ];
 
   return (
@@ -132,9 +136,15 @@ const styles = StyleSheet.create({
     width: POINTER,
     height: POINTER,
     transform: [{ rotate: "45deg" }],
+    zIndex: 1,
+  },
+  pointerStart: {
+    alignSelf: "flex-start",
+    marginLeft: Spacing.lg,
+  },
+  pointerEnd: {
     alignSelf: "flex-end",
     marginRight: Spacing.lg,
-    zIndex: 1,
   },
   pointerUp: {
     marginBottom: -POINTER / 2,

@@ -45,6 +45,8 @@ import {
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 import type { HomeAction } from "./action-config";
 import { formatIngredientLine } from "@/lib/format";
+import { FeatureTip } from "@/components/FeatureTip";
+import { useFeatureTip } from "@/hooks/useFeatureTip";
 
 interface FrequentChipProps {
   productName: string;
@@ -179,6 +181,11 @@ export function QuickLogDrawer({
   const session = useQuickLogSession({
     onLogSuccess: handleLogSuccess,
     isOpen,
+  });
+  // Once they start typing a food, point at the camera: "Snap it instead."
+  const cameraTip = useFeatureTip("quicklog-camera", {
+    feature: "scan",
+    eligible: session.inputText.trim().length > 0,
   });
 
   useEffect(() => {
@@ -358,6 +365,14 @@ export function QuickLogDrawer({
         </Pressable>
       </FocusField>
 
+      <FeatureTip
+        text="Snap it instead."
+        visible={cameraTip.visible}
+        onDismiss={cameraTip.dismiss}
+        pointer="up"
+        style={styles.cameraTip}
+      />
+
       {/* Parse error, or a parse that found no food */}
       <InlineError message={session.parseError} />
       {session.parseEmpty && (
@@ -443,6 +458,9 @@ export function QuickLogDrawer({
 }
 
 const styles = StyleSheet.create({
+  cameraTip: {
+    alignSelf: "flex-end",
+  },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",

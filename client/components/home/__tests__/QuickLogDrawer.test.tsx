@@ -69,6 +69,15 @@ const mockSession = {
 
 // The real module pulls in Expo native setup, so its exported message is
 // re-declared here; the tests assert the drawer shows it on parseEmpty.
+vi.mock("@/hooks/useFeatureTip", () => ({
+  // Visible exactly when the screen says it is eligible (seen/used rules are
+  // tested in useFeatureTip.test.ts).
+  useFeatureTip: (_id: string, opts: { eligible: boolean }) => ({
+    visible: opts.eligible,
+    dismiss: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/useQuickLogSession", () => ({
   useQuickLogSession: vi.fn(() => mockSession),
   EMPTY_PARSE_MESSAGE: "Couldn't find any food in that.",
@@ -858,5 +867,26 @@ describe("QuickLogDrawer", () => {
     expect(
       row.querySelector('[data-testid="focus-field-label"]')?.textContent,
     ).toBe("What did you eat?");
+  });
+});
+
+describe("QuickLogDrawer — camera tip", () => {
+  it("shows the camera tip once the person starts typing", () => {
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue({
+      ...mockSession,
+      inputText: "2 eggs",
+    });
+    renderComponent(<Harness />);
+    openDrawer();
+    expect(screen.getByText("Snap it instead.")).toBeTruthy();
+  });
+
+  it("shows no camera tip before anything is typed", () => {
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue(
+      mockSession,
+    );
+    renderComponent(<Harness />);
+    openDrawer();
+    expect(screen.queryByText("Snap it instead.")).toBeNull();
   });
 });
