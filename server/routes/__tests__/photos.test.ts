@@ -539,6 +539,56 @@ describe("Photos Routes", () => {
       expect(res.status).toBe(400);
     });
 
+    it.each([
+      ["a negative calorie value", { calories: -500 }],
+      ["a negative macro", { protein: -1 }],
+      ["a calorie value past the bound", { calories: 1e8 }],
+      ["a macro past the bound", { fat: 1e7 }],
+      ["a non-finite value", { carbs: Infinity }],
+    ])("returns 400 for %s", async (_label, override) => {
+      const res = await request(app)
+        .post("/api/photos/confirm")
+        .set("Authorization", "Bearer token")
+        .send({
+          sessionId: "test-session-id",
+          foods: [
+            {
+              name: "Apple",
+              quantity: "1 medium",
+              calories: 95,
+              protein: 0,
+              carbs: 25,
+              fat: 0,
+              ...override,
+            },
+          ],
+        });
+
+      expect(res.status).toBe(400);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 for more foods than one photo can hold", async () => {
+      const food = {
+        name: "Grape",
+        quantity: "1",
+        calories: 3,
+        protein: 0,
+        carbs: 1,
+        fat: 0,
+      };
+      const res = await request(app)
+        .post("/api/photos/confirm")
+        .set("Authorization", "Bearer token")
+        .send({
+          sessionId: "test-session-id",
+          foods: Array.from({ length: 51 }, () => food),
+        });
+
+      expect(res.status).toBe(400);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
     it("creates scanned item and daily log via storage", async () => {
       const mockItem = createMockScannedItem({
         id: 42,

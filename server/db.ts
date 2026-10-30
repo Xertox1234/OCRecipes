@@ -11,19 +11,32 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+// Server-enforced cap on any single statement. Request queries and the
+// retention cron (batched deletes) finish well inside it, as do the chunked
+// backfills. A script that runs one large unbatched statement (e.g.
+// backfill-email-verified.ts) can raise the cap, or pass 0 to disable it, with
+// DB_STATEMENT_TIMEOUT_MS.
+const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
+// Plain digits only: Number("") is 0, so a blank variable (an empty Railway
+// value) would otherwise switch the cap off.
+const statementTimeoutOverride = process.env.DB_STATEMENT_TIMEOUT_MS;
+const statementTimeoutMs =
+  statementTimeoutOverride !== undefined &&
+  /^\d+$/.test(statementTimeoutOverride)
+    ? Number(statementTimeoutOverride)
+    : DEFAULT_STATEMENT_TIMEOUT_MS;
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   // Pin the session timezone to UTC. All timestamp columns are timestamptz, so
   // values round-trip in UTC regardless; this pin keeps CURRENT_TIMESTAMP
   // column defaults consistent and guards any future naked `timestamp` column.
   options: "-c timezone=UTC",
-  // pg defaults to waiting forever for a pooled client and to no statement
-  // timeout, so pool exhaustion (lock contention, a DB brownout) or one
-  // runaway query would queue every request indefinitely. Fail fast instead.
-  // statement_timeout is a server-enforced startup GUC; it also bounds waits
-  // on pg_advisory_xact_lock. Generous enough for the one-off backfill scripts.
-  connectionTimeoutMillis: 10_000,
-  statement_timeout: 60_000,
+  // Without these, a pool whose connections are all busy makes every new
+  // request — the health check included — wait forever instead of failing,
+  // and one runaway query can hold a connection indefinitely.
+  connectionTimeoutMillis: 5_000,
+  statement_timeout: statementTimeoutMs,
   // A client leaked mid-transaction (a missed release, an await that never
   // settles inside db.transaction) would hold its row/advisory locks forever;
   // the server ends such a session after 60s idle-in-transaction.

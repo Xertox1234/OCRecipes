@@ -1173,6 +1173,23 @@ describe("lookupNutrition", () => {
     _resetCNFCacheForTesting();
   });
 
+  // A failed CNF list load was retried from scratch on every lookup, so an
+  // outage added up to 20 s to each one (audit 2026-10-29 M-rel-4).
+  it("does not re-download the CNF food lists on every lookup during an outage", async () => {
+    setupFetchMock({
+      "food/?lang=en": () => Promise.reject(new Error("CNF down")),
+      "food/?lang=fr": () => Promise.reject(new Error("CNF down")),
+    });
+
+    await lookupNutrition("sugar");
+    await lookupNutrition("rice");
+
+    const listFetches = mockFetch.mock.calls.filter(([url]) =>
+      String(url).includes("canadian-nutrient-file/food/?lang="),
+    );
+    expect(listFetches).toHaveLength(2); // one EN + one FR attempt, not 4
+  });
+
   it("returns CNF data when available", async () => {
     setupFetchMock({
       "food/?lang=en": cnfWithSugarEN,

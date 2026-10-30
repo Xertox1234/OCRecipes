@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import { MulterError } from "multer";
-import { logger } from "./lib/logger";
+import { logger, toError } from "./lib/logger";
+import { reportError } from "./lib/error-reporter";
 import { register as registerAuth } from "./routes/auth";
 import { register as registerAuthSocial } from "./routes/auth-social";
 import { register as registerAuthMfa } from "./routes/auth-mfa";
@@ -115,7 +116,8 @@ export function registerRoutes(app: Express): Server {
 
   // Initialize search index (non-blocking — server starts even if index fails)
   initSearchIndex().catch((err) => {
-    logger.error({ err }, "Failed to initialize search index");
+    logger.error({ err: toError(err) }, "Failed to initialize search index");
+    reportError(err, "search index init");
   });
 
   // Start push notification scheduler (daily 09:00 commitment reminders)

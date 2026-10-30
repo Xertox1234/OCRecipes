@@ -5,7 +5,7 @@ import {
   groceryListItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, lte, gte, sql } from "drizzle-orm";
+import { eq, and, or, isNull, lte, gte, sql } from "drizzle-orm";
 
 // ============================================================================
 // PANTRY ITEMS
@@ -51,23 +51,34 @@ export async function createPantryItem(
 
 /**
  * Atomically create a pantry item from a grocery item and flag it as added.
+ *
+ * The flag is claimed first, and only while it is still false — so a double
+ * tap or a retried request adds the item once. Returns `undefined` when the
+ * item was already added (or is not in that list).
  */
 export async function addGroceryItemToPantryAtomically(
   item: InsertPantryItem,
   groceryItemId: number,
   groceryListId: number,
-): Promise<PantryItem> {
+): Promise<PantryItem | undefined> {
   return db.transaction(async (tx) => {
-    const [created] = await tx.insert(pantryItems).values(item).returning();
-    await tx
+    const [claimed] = await tx
       .update(groceryListItems)
       .set({ addedToPantry: true })
       .where(
         and(
           eq(groceryListItems.id, groceryItemId),
           eq(groceryListItems.groceryListId, groceryListId),
+          // The column is nullable; NULL means not added yet.
+          or(
+            eq(groceryListItems.addedToPantry, false),
+            isNull(groceryListItems.addedToPantry),
+          ),
         ),
-      );
+      )
+      .returning({ id: groceryListItems.id });
+    if (!claimed) return undefined;
+    const [created] = await tx.insert(pantryItems).values(item).returning();
     return created;
   });
 }

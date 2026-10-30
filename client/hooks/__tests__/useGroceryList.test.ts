@@ -293,6 +293,33 @@ describe("useAddGroceryItemToPantry", () => {
       queryKey: ["/api/pantry/expiring"],
     });
   });
+
+  // The server answers 409 for an item a double tap already added — refetch
+  // the list so it stops offering the add.
+  it("refetches the list when the item was already added (409)", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+
+    mockApiRequest.mockRejectedValue(
+      new ApiError("409: Already added to pantry", "CONFLICT"),
+    );
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useAddGroceryItemToPantry(), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.mutate({ listId: 2, itemId: 10 });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/meal-plan/grocery-lists", 2],
+    });
+  });
 });
 
 describe("useToggleGroceryItem", () => {

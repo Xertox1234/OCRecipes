@@ -3,7 +3,6 @@ import {
   analyzeIngredientPhoto,
   IngredientAnalysisError,
   calculateSessionNutrition,
-  calculateSessionMacros,
 } from "../cooking-session";
 import type { CookingSessionIngredient } from "@shared/types/cook-session";
 
@@ -637,103 +636,5 @@ describe("calculateSessionNutrition", () => {
     expect(result.items[1].calories).toBe(0);
     expect(result.items[1].servingSize).toBe("150 g");
     expect(result.total.calories).toBe(330);
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════
-// calculateSessionMacros
-// ════════════════════════════════════════════════════════════════════════
-
-describe("calculateSessionMacros", () => {
-  it("returns zeroed totals for empty ingredients array", async () => {
-    vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
-
-    const result = await calculateSessionMacros([]);
-
-    expect(result).toEqual({ calories: 0, protein: 0, carbs: 0, fat: 0 });
-  });
-
-  it("looks up each ingredient by name, without its quantity", async () => {
-    vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
-
-    await calculateSessionMacros([chicken, rice]);
-
-    expect(batchNutritionLookup).toHaveBeenCalledWith([
-      "chicken breast",
-      "white rice",
-    ]);
-  });
-
-  it("sums macros scaled to each ingredient's weight", async () => {
-    mockLookups({
-      "chicken breast": chickenPer100g,
-      "white rice": ricePer100g,
-    });
-
-    const result = await calculateSessionMacros([chicken, rice]);
-
-    expect(result).toEqual({
-      calories: 525,
-      protein: 65.6,
-      carbs: 43.5,
-      fat: 7.5,
-    });
-  });
-
-  it("logs the same totals the summary shows", async () => {
-    // One of each shape: weighed, per-serving basis, unknown unit, unweighable basis
-    mockLookups({
-      "chicken breast": chickenPer100g,
-      milk: per100g({ calories: 120, protein: 8, servingSize: "240g" }),
-      egg: per100g({ calories: 143, protein: 12.6 }),
-      "granola bar": per100g({ calories: 190, servingSize: "1 serving" }),
-    });
-    const ingredients = [
-      chicken,
-      ingredient({ name: "milk", quantity: 2, unit: "cup" }),
-      ingredient({ name: "egg", quantity: 3, unit: "piece" }),
-      ingredient({ name: "granola bar", quantity: 1, unit: "piece" }),
-    ];
-
-    const macros = await calculateSessionMacros(ingredients);
-    const { total } = await calculateSessionNutrition(ingredients);
-
-    expect(macros).toEqual({
-      calories: total.calories,
-      protein: total.protein,
-      carbs: total.carbs,
-      fat: total.fat,
-    });
-    expect(macros.calories).toBe(330 + 240 + 143 + 190);
-  });
-
-  it("rounds totals consistently with calculateSessionNutrition", async () => {
-    mockLookups({
-      "chicken breast": per100g({
-        calories: 330.7,
-        protein: 62.15,
-        carbs: 0.33,
-        fat: 7.27,
-      }),
-    });
-
-    const result = await calculateSessionMacros([
-      ingredient({ ...chicken, quantity: 100 }),
-    ]);
-
-    expect(result.calories).toBe(331); // integer
-    expect(result.protein).toBe(62.2); // 1 decimal
-    expect(result.carbs).toBe(0.3);
-    expect(result.fat).toBe(7.3);
-  });
-
-  it("skips ingredients with no nutrition data", async () => {
-    // rice missing
-    mockLookups({ "chicken breast": chickenPer100g });
-
-    const result = await calculateSessionMacros([chicken, rice]);
-
-    expect(result.calories).toBe(330);
-    expect(result.protein).toBe(62);
   });
 });

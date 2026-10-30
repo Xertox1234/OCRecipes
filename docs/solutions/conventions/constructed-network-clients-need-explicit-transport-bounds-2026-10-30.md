@@ -18,21 +18,21 @@ When you call `new OpenAI(...)`, `new S3Client(...)`, `new Pool(...)` or any oth
 | ------ | ------- | --------------- |
 | `openai` SDK (OpenRouter, Vertex, direct OpenAI) | `timeout` 600 000 ms, `maxRetries` 2 → up to 3 × 10 min | `timeout: AI_ROUTE_TIMEOUT_MS` (45s), `maxRetries: AI_ROUTE_MAX_RETRIES` (1), both in `server/lib/ai-failure.ts`. The direct client uses `OPENAI_DEFAULT_TIMEOUT_MS` (45s) in `server/lib/openai.ts` |
 | `@aws-sdk/client-s3` (R2) | `connectionTimeout` 0, `requestTimeout` 0 (no limit) | `requestHandler: { connectionTimeout: 5_000, requestTimeout: 30_000, throwOnRequestTimeout: true }` |
-| `pg` `Pool` | `connectionTimeoutMillis` 0 (wait forever for a client), no `statement_timeout`, no idle-in-transaction limit | `connectionTimeoutMillis: 10_000`, `statement_timeout: 60_000`, `idle_in_transaction_session_timeout: 60_000` |
+| `pg` `Pool` | `connectionTimeoutMillis` 0 (wait forever for a client), no `statement_timeout`, no idle-in-transaction limit | `connectionTimeoutMillis: 5_000`, `statement_timeout` 30 000 (override with `DB_STATEMENT_TIMEOUT_MS`), `idle_in_transaction_session_timeout: 60_000` |
 
 ## Why
 
 Reliability audit 2026-10-30, findings R07, R10, R11 and N2:
 
 - **OpenAI SDK.** The direct-OpenAI client already had a 45s default. The OpenRouter and Vertex clients built in `ai-client.ts` and `vertex-client.ts` did not. `front-label-scan` and `coach-notebook-extract` pass no per-call timeout, so a stalled route could block for about 30 minutes before `aiChat`'s fallback chain ran. Use only one retry because `aiChat` already falls back to another route. OpenRouter construction is now `createOpenRouterClient(env)`, which can be tested without network.
-- **S3 / R2.** `requestTimeout` alone **only logs a warning**. `@smithy/node-http-handler` aborts only when `throwOnRequestTimeout: true` is also set (supported from 4.x, installed 4.7.7). Without it the limit appears to be configured but does nothing.
-- **pg.** If pool acquire has no limit, pool exhaustion (lock contention, a DB brownout) queues every request indefinitely. `statement_timeout` is passed as a startup GUC, so the server enforces it, and it also bounds waits on `pg_advisory_xact_lock`. 60s leaves headroom for the one-off backfill scripts, which share this pool. `idle_in_transaction_session_timeout` makes Postgres end a session that leaked mid-transaction (a missed release, or an `await` that never settles inside `db.transaction`), so its row and advisory locks are released. Keep the existing `options: "-c timezone=UTC"` pin next to these settings.
+- **S3 / R2.** `requestTimeout` alone **only logs a warning** unless `throwOnRequestTimeout: true` is also set. The full root cause is owned by [AWS SDK request timeouts need throwOnRequestTimeout](../logic-errors/aws-sdk-request-timeout-only-warns-without-throw-flag-2026-10-29.md).
+- **pg.** If pool acquire has no limit, pool exhaustion (lock contention, a DB brownout) queues every request indefinitely. `statement_timeout` is passed as a startup GUC, so the server enforces it, and it also bounds waits on `pg_advisory_xact_lock`. A one-off script that runs one large unbatched statement raises or disables the cap with `DB_STATEMENT_TIMEOUT_MS`. `idle_in_transaction_session_timeout` makes Postgres end a session that leaked mid-transaction (a missed release, or an `await` that never settles inside `db.transaction`), so its row and advisory locks are released. Keep the existing `options: "-c timezone=UTC"` pin next to these settings.
 
 ## Examples
 
 Pin each client with a test that inspects the constructed config. Don't wait for a real hang:
 
-- `server/__tests__/db-pool.test.ts` — asserts the three pool options
+- `server/__tests__/db.test.ts` — asserts the pool options, including the `DB_STATEMENT_TIMEOUT_MS` override
 - `server/lib/__tests__/image-store.test.ts` — asserts `requestHandler` including `throwOnRequestTimeout`
 - `server/lib/__tests__/ai-client-openrouter.test.ts`, `vertex-client.test.ts` — assert `timeout` and `maxRetries` on the constructed client
 

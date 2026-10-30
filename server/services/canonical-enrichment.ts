@@ -277,9 +277,12 @@ export async function generateEditorialContent(
 
     return {
       instructionDetails: padded,
+      // No affiliate program exists yet, so a model-supplied URL is never
+      // kept: every viewer of a canonical recipe can tap it, and the prompt's
+      // "return null" is not enforcement. Allowlist hosts here when one does.
       toolsRequired: data.toolsRequired.map((t) => ({
         name: t.name,
-        affiliateUrl: t.affiliateUrl ?? undefined,
+        affiliateUrl: undefined,
       })),
       chefTips: data.chefTips,
       cuisineOrigin: data.cuisineOrigin ?? "",

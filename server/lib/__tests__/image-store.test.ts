@@ -53,22 +53,23 @@ describe("image-store", () => {
     expect(isR2Configured()).toBe(true);
   });
 
-  it("builds the S3 client with connection/request timeouts that actually abort (R10)", async () => {
+  // The SDK's default handler has no timeouts, so a stalled R2 hangs every
+  // upload/delete; a requestTimeout alone only logs a warning unless
+  // throwOnRequestTimeout is set (audit 2026-10-29 M-rel-3).
+  it("builds the R2 client with connection and request timeouts that fail the call", async () => {
     setR2Env(true);
-    const { saveRecipeImage } = await load();
     const { S3Client } = await import("@aws-sdk/client-s3");
+    vi.mocked(S3Client).mockClear();
+    const { saveRecipeImage } = await load();
     await saveRecipeImage(Buffer.from("png-bytes"));
-    // SDK default is 0 = no timeout; without throwOnRequestTimeout a
-    // requestTimeout only logs a warning and the hung PutObject never ends.
-    expect(vi.mocked(S3Client)).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        requestHandler: expect.objectContaining({
-          connectionTimeout: expect.any(Number),
-          requestTimeout: expect.any(Number),
-          throwOnRequestTimeout: true,
-        }),
-      }),
-    );
+    const config = vi.mocked(S3Client).mock.calls[0][0] as {
+      requestHandler?: Record<string, unknown>;
+    };
+    expect(config.requestHandler).toMatchObject({
+      connectionTimeout: expect.any(Number),
+      requestTimeout: expect.any(Number),
+      throwOnRequestTimeout: true,
+    });
   });
 
   it("saveRecipeImage uploads to R2 and returns an absolute CDN URL", async () => {

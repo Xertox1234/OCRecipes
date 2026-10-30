@@ -25,6 +25,7 @@ import { lookupNutrition } from "./nutrition-lookup";
 import { findCommunity } from "./recipe-finder/find-community";
 import { getSubstitutions } from "./ingredient-substitution";
 import { logger } from "../lib/logger";
+import { sanitizeUserInput } from "../lib/ai-safety";
 import { isValidCalendarDate } from "../utils/date-validation";
 import type { UserProfile } from "@shared/schema";
 
@@ -198,6 +199,8 @@ function getInclusiveDayCount(startDate: string, endDate: string): number {
   );
 }
 
+// Titles and product names can come from other users' public recipes or an
+// external barcode database, and this goes back to the model as tool output.
 function compactMealPlanItems(
   items: Awaited<ReturnType<typeof storage.getMealPlanItems>>,
 ) {
@@ -209,7 +212,7 @@ function compactMealPlanItems(
     recipe: item.recipe
       ? {
           id: item.recipe.id,
-          title: item.recipe.title,
+          title: sanitizeUserInput(item.recipe.title),
           caloriesPerServing: item.recipe.caloriesPerServing,
           proteinPerServing: item.recipe.proteinPerServing,
           carbsPerServing: item.recipe.carbsPerServing,
@@ -219,7 +222,7 @@ function compactMealPlanItems(
     scannedItem: item.scannedItem
       ? {
           id: item.scannedItem.id,
-          productName: item.scannedItem.productName,
+          productName: sanitizeUserInput(item.scannedItem.productName),
           calories: item.scannedItem.calories,
           protein: item.scannedItem.protein,
           carbs: item.scannedItem.carbs,
@@ -563,9 +566,11 @@ export async function executeToolCall(
         [],
       );
       return {
+        // Other users' public recipe titles go back to the model as tool
+        // output — sanitize them like any other third-party text.
         results: items.map(({ id, title, imageUrl, readyInMinutes }) => ({
           id,
-          title,
+          title: sanitizeUserInput(title),
           imageUrl,
           readyInMinutes,
         })),

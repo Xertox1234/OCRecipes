@@ -23,6 +23,7 @@ import { logger, rootLogger, toError } from "./lib/logger";
 import {
   attachExpressErrorReporter,
   flushErrorReporter,
+  reportError,
 } from "./lib/error-reporter";
 import { requestContextMiddleware } from "./lib/request-context";
 import { installContractSnapshotMiddleware } from "./lib/contract-snapshot";
@@ -312,7 +313,11 @@ function startServer() {
       try {
         await pool.query("SELECT 1");
         res.json({ status: "ok" });
-      } catch {
+      } catch (err) {
+        logger.warn(
+          { err: toError(err) },
+          "health check: database unreachable",
+        );
         res
           .status(503)
           .json({ status: "unhealthy", error: "Database unreachable" });
@@ -382,6 +387,7 @@ function startServer() {
               { err: toError(err) },
               "retention cleanup: unhandled error",
             );
+            reportError(err, "retention cleanup");
           });
           retentionInFlight = run;
           void run.finally(() => {
