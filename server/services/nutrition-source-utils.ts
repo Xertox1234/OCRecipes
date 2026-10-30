@@ -17,6 +17,17 @@ export interface NutritionData {
   source: "api-ninjas" | "usda" | "cnf" | "cache";
 }
 
+/**
+ * Tri-state result of a nutrition source lookup. `not-found` means the source
+ * answered and has no match; `unavailable` means it could not be asked (rate
+ * limit, bad key, 5xx, network/timeout). Never cache or report `unavailable`
+ * as a miss.
+ */
+export type NutritionLookupOutcome =
+  | { status: "found"; data: NutritionData }
+  | { status: "not-found" }
+  | { status: "unavailable" };
+
 // Timeout for outbound API requests (10 seconds)
 export const FETCH_TIMEOUT_MS = 10_000;
 

@@ -3,7 +3,7 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import { lookupNutrition } from "../../services/nutrition-lookup";
+import { lookupNutritionOutcome } from "../../services/nutrition-lookup";
 import {
   BarcodeUpstreamError,
   lookupBarcode,
@@ -40,7 +40,7 @@ vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
 
 vi.mock("../../services/nutrition-lookup", () => ({
-  lookupNutrition: vi.fn(),
+  lookupNutritionOutcome: vi.fn(),
 }));
 
 // Partial mock: `lookupBarcode` (I/O) is a test double, but `buildLabelConflict`
@@ -230,15 +230,16 @@ describe("Nutrition Routes", () => {
 
   describe("GET /api/nutrition/lookup", () => {
     it("returns nutrition data for a valid name", async () => {
-      vi.mocked(lookupNutrition).mockResolvedValue(
-        createMockNutritionData({
+      vi.mocked(lookupNutritionOutcome).mockResolvedValue({
+        status: "found",
+        data: createMockNutritionData({
           calories: 165,
           protein: 31,
           carbs: 0,
           fat: 3.6,
           source: "usda",
         }),
-      );
+      });
 
       const res = await request(app)
         .get("/api/nutrition/lookup?name=chicken%20breast")
@@ -265,13 +266,28 @@ describe("Nutrition Routes", () => {
     });
 
     it("returns 404 when nutrition data not found", async () => {
-      vi.mocked(lookupNutrition).mockResolvedValue(null);
+      vi.mocked(lookupNutritionOutcome).mockResolvedValue({
+        status: "not-found",
+      });
 
       const res = await request(app)
         .get("/api/nutrition/lookup?name=nonexistent%20food")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(404);
+    });
+
+    it("returns a retryable 503 (not 404) when a nutrition source was unavailable (R09)", async () => {
+      vi.mocked(lookupNutritionOutcome).mockResolvedValue({
+        status: "unavailable",
+      });
+
+      const res = await request(app)
+        .get("/api/nutrition/lookup?name=lentils")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
     });
   });
 
@@ -1110,7 +1126,9 @@ describe("Nutrition Routes", () => {
 
   describe("Error catch blocks", () => {
     it("GET /api/nutrition/lookup returns 500 on service error", async () => {
-      vi.mocked(lookupNutrition).mockRejectedValue(new Error("API down"));
+      vi.mocked(lookupNutritionOutcome).mockRejectedValue(
+        new Error("API down"),
+      );
 
       const res = await request(app)
         .get("/api/nutrition/lookup?name=chicken")

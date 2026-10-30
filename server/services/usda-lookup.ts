@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CircuitBreaker } from "../lib/ai-failure";
 import { createServiceLogger, toError } from "../lib/logger";
 import { barcodeVariants } from "./barcode-policy";
 import { cachedFetch } from "./dev-api-cache";
@@ -11,6 +12,7 @@ import {
   FETCH_TIMEOUT_MS,
   findNutrientValue,
   type NutritionData,
+  type NutritionLookupOutcome,
 } from "./nutrition-source-utils";
 
 const log = createServiceLogger("nutrition-lookup");
@@ -73,6 +75,87 @@ const usdaUpcResponseSchema = z.object({
 const USDA_API_KEY = process.env.USDA_API_KEY || "DEMO_KEY";
 if (USDA_API_KEY === "DEMO_KEY") {
   log.warn("USDA_API_KEY not set — using DEMO_KEY with 40 requests/hour limit");
+}
+
+/**
+ * FoodData Central blocks the key for an hour once it exceeds its hourly
+ * quota (HTTP 429), so retrying a 429 only burns quota. The first 429 opens
+ * this breaker and USDA is skipped (reported `unavailable`) for a short
+ * cooldown; the first call after it is a single trial request.
+ */
+const USDA_RATE_LIMIT_COOLDOWN_MS = 5 * 60_000;
+const USDA_RETRY_DELAY_MS = 300;
+let usdaRateLimitBreaker = new CircuitBreaker({
+  threshold: 1,
+  cooldownMs: USDA_RATE_LIMIT_COOLDOWN_MS,
+});
+
+/** Test-only: close the USDA rate-limit breaker between tests. */
+export function _resetUsdaBreakerForTesting(): void {
+  usdaRateLimitBreaker = new CircuitBreaker({
+    threshold: 1,
+    cooldownMs: USDA_RATE_LIMIT_COOLDOWN_MS,
+  });
+}
+
+function isTimeout(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    (err.name === "TimeoutError" || err.name === "AbortError")
+  );
+}
+
+/**
+ * Fetch from USDA with failure classification. Returns the OK response, or
+ * `"unavailable"` when USDA could not answer — never conflated with an empty
+ * result. One retry (after a short delay) for a transient 5xx or a
+ * non-timeout network error; no retry for 429 (opens the breaker), other
+ * 4xx (bad/blocked key), or a timeout (would double the caller's wait).
+ */
+async function fetchUSDA(
+  url: string,
+  init: RequestInit,
+  context: string,
+): Promise<Response | "unavailable"> {
+  if (usdaRateLimitBreaker.isOpen()) {
+    log.debug({ context }, "USDA skipped — rate-limit breaker open");
+    return "unavailable";
+  }
+  for (let attempt = 0; ; attempt++) {
+    const canRetry = attempt === 0;
+    let response: Response;
+    try {
+      response = await cachedFetch("usda", url, {
+        ...init,
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+    } catch (error) {
+      if (canRetry && !isTimeout(error)) {
+        await new Promise((r) => setTimeout(r, USDA_RETRY_DELAY_MS));
+        continue;
+      }
+      log.warn({ err: toError(error), context }, "USDA request failed");
+      return "unavailable";
+    }
+    if (response.ok) {
+      usdaRateLimitBreaker.recordSuccess();
+      return response;
+    }
+    if (response.status === 429) {
+      usdaRateLimitBreaker.recordFailure();
+      log.warn(
+        { status: 429, context, cooldownMs: USDA_RATE_LIMIT_COOLDOWN_MS },
+        "USDA rate-limited — skipping USDA until cooldown ends",
+      );
+      return "unavailable";
+    }
+    if (canRetry && response.status >= 500) {
+      await new Promise((r) => setTimeout(r, USDA_RETRY_DELAY_MS));
+      continue;
+    }
+    log.warn({ status: response.status, context }, "USDA non-OK response");
+    return "unavailable";
+  }
 }
 
 type UsdaNutrient = {
@@ -182,30 +265,38 @@ function usdaHeadMatchesQuery(description: string, qWords: string[]): boolean {
  * zero regressions among 15 previously-USDA-sourced queries, and both
  * "doro wat" and "gyoza" no longer resolve to the wrong branded row.
  */
-export async function lookupUSDA(query: string): Promise<NutritionData | null> {
+export async function lookupUSDA(
+  query: string,
+): Promise<NutritionLookupOutcome> {
   try {
-    const response = await cachedFetch(
-      "usda",
+    const response = await fetchUSDA(
       `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${USDA_API_KEY}`,
-      { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+      {},
+      "search",
     );
-
-    if (!response.ok) {
-      return null;
-    }
+    if (response === "unavailable") return { status: "unavailable" };
 
     const json = await response.json();
     const parsed = usdaResponseSchema.safeParse(json);
 
-    if (!parsed.success || parsed.data.foods.length === 0) {
-      return null;
+    if (!parsed.success) {
+      // Upstream shape drift — USDA answered, but not in a form we can read.
+      log.warn(
+        { issues: parsed.error.issues.slice(0, 3) },
+        "USDA search response failed schema validation",
+      );
+      return { status: "unavailable" };
     }
+    if (parsed.data.foods.length === 0) return { status: "not-found" };
 
     const qWords = withoutLeadingQuantity(matchWords(query));
     // A degenerate query with no real words (rare — e.g. a bare quantity)
     // can't be word-matched; fall back to USDA's own top hit as before.
     if (qWords.length === 0) {
-      return mapUsdaFoodToNutrition(parsed.data.foods[0]);
+      return {
+        status: "found",
+        data: mapUsdaFoodToNutrition(parsed.data.foods[0]),
+      };
     }
 
     const match = parsed.data.foods.find(
@@ -215,10 +306,12 @@ export async function lookupUSDA(query: string): Promise<NutritionData | null> {
           usdaHeadMatchesQuery(food.description ?? "", qWords)),
     );
 
-    return match ? mapUsdaFoodToNutrition(match) : null;
+    return match
+      ? { status: "found", data: mapUsdaFoodToNutrition(match) }
+      : { status: "not-found" };
   } catch (error) {
     log.error({ err: toError(error) }, "USDA lookup error");
-    return null;
+    return { status: "unavailable" };
   }
 }
 

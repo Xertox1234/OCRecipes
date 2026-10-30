@@ -9,7 +9,7 @@ import { isUniqueViolation } from "../lib/db-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { insertScannedItemSchema } from "@shared/schema";
 import { logger, toError } from "../lib/logger";
-import { lookupNutrition } from "../services/nutrition-lookup";
+import { lookupNutritionOutcome } from "../services/nutrition-lookup";
 import {
   BarcodeUpstreamError,
   lookupBarcode,
@@ -242,12 +242,23 @@ export function register(app: Express): void {
       }
 
       try {
-        const result = await lookupNutrition(name);
-        if (!result) {
+        const outcome = await lookupNutritionOutcome(name);
+        if (outcome.status === "unavailable") {
+          // A source could not be asked (rate limit, bad key, 5xx) — retryable,
+          // not a definitive "this food has no nutrition data".
+          sendError(
+            res,
+            503,
+            "Nutrition lookup temporarily unavailable",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
+        if (outcome.status === "not-found") {
           sendError(res, 404, "Nutrition data not found", ErrorCode.NOT_FOUND);
           return;
         }
-        res.json(result);
+        res.json(outcome.data);
       } catch (error) {
         handleRouteError(res, error, "look up nutrition");
       }
