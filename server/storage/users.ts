@@ -11,6 +11,8 @@ import {
   communityRecipes,
   cookbookRecipes,
   favouriteRecipes,
+  savedItems,
+  recipeDismissals,
 } from "@shared/schema";
 import {
   isValidSubscriptionTier,
@@ -497,6 +499,24 @@ export async function deleteUser(id: string): Promise<boolean> {
           and(
             inArray(favouriteRecipes.recipeId, recipeIds),
             eq(favouriteRecipes.recipeType, "community"),
+          ),
+        );
+      // Same polymorphic cleanup as deleteCommunityRecipe — these rows
+      // belong to OTHER users and have no FK to cascade.
+      await tx
+        .delete(savedItems)
+        .where(
+          and(
+            inArray(savedItems.recipeId, recipeIds),
+            eq(savedItems.recipeType, "community"),
+          ),
+        );
+      await tx
+        .delete(recipeDismissals)
+        .where(
+          and(
+            inArray(recipeDismissals.recipeIdentifier, recipeIds.map(String)),
+            eq(recipeDismissals.source, "community"),
           ),
         );
       await tx
