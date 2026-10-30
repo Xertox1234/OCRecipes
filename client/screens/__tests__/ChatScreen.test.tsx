@@ -863,6 +863,23 @@ describe("ChatScreen — teaching and Pro prompts", () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
+  // The answer appears without a chat message, so screen readers must be
+  // told; a chip that used to send a message got the chat's announcement.
+  it("announces the teaching answer to screen readers", async () => {
+    const RN = await import("react-native");
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText(
+        "Suggested prompt: What's the fastest way to log a meal?",
+      ),
+    );
+    expect(announce).toHaveBeenCalledWith(
+      expect.stringContaining("nutrition label"),
+    );
+    announce.mockRestore();
+  });
+
   it("opens the camera from the teaching answer", () => {
     renderComponent(<ChatScreen />);
     fireEvent.click(
