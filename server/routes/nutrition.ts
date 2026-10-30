@@ -69,6 +69,22 @@ const scannedItemInputSchema = insertScannedItemSchema.extend({
   sodium: numericStringField,
 });
 
+// Shared catch for the GET and POST barcode routes. An OFF outage/rate limit
+// with no fallback hit is retryable (503), and the client falls back to
+// direct OFF on 5xx (never on 404); everything else goes to handleRouteError.
+function handleBarcodeRouteError(res: Response, error: unknown): void {
+  if (error instanceof BarcodeUpstreamError) {
+    sendError(
+      res,
+      503,
+      "Product lookup temporarily unavailable",
+      ErrorCode.NUTRITION_LOOKUP_FAILED,
+    );
+    return;
+  }
+  handleRouteError(res, error, "look up barcode");
+}
+
 // Builds the client response body for one BarcodeLookupResult: allergen +
 // universal flags, ODbL strip, verification fields. Used by GET and POST so
 // the flag-build + strip logic never drifts between the two branches.
@@ -313,18 +329,7 @@ export function register(app: Express): void {
         );
         res.json(body);
       } catch (error) {
-        if (error instanceof BarcodeUpstreamError) {
-          // OFF outage/rate limit with no fallback hit — retryable, and the
-          // client falls back to direct OFF on 5xx (never on 404).
-          sendError(
-            res,
-            503,
-            "Product lookup temporarily unavailable",
-            ErrorCode.NUTRITION_LOOKUP_FAILED,
-          );
-          return;
-        }
-        handleRouteError(res, error, "look up barcode");
+        handleBarcodeRouteError(res, error);
       }
     },
   );
@@ -506,18 +511,7 @@ export function register(app: Express): void {
         }
         res.json({ ...body, labelCompared: compared });
       } catch (error) {
-        if (error instanceof BarcodeUpstreamError) {
-          // OFF outage/rate limit with no fallback hit — retryable, and the
-          // client falls back to direct OFF on 5xx (never on 404).
-          sendError(
-            res,
-            503,
-            "Product lookup temporarily unavailable",
-            ErrorCode.NUTRITION_LOOKUP_FAILED,
-          );
-          return;
-        }
-        handleRouteError(res, error, "look up barcode");
+        handleBarcodeRouteError(res, error);
       }
     },
   );
