@@ -15,6 +15,7 @@ import { InlineError } from "@/components/InlineError";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
+import { toLocalDateString } from "@shared/lib/date";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -111,7 +112,7 @@ export default function NotebookEntryScreen() {
   const [contentFocused, setContentFocused] = useState(false);
   const [followUpDate, setFollowUpDate] = useState<string | null>(
     entry?.followUpDate
-      ? new Date(entry.followUpDate).toISOString().slice(0, 10)
+      ? toLocalDateString(new Date(entry.followUpDate))
       : null,
   );
 
@@ -121,7 +122,7 @@ export default function NotebookEntryScreen() {
       setContent(entry.content);
       setFollowUpDate(
         entry.followUpDate
-          ? new Date(entry.followUpDate).toISOString().slice(0, 10)
+          ? toLocalDateString(new Date(entry.followUpDate))
           : null,
       );
     }
@@ -144,7 +145,7 @@ export default function NotebookEntryScreen() {
       type !== entry?.type ||
       followUpDate !==
         (entry?.followUpDate
-          ? new Date(entry.followUpDate).toISOString().slice(0, 10)
+          ? toLocalDateString(new Date(entry.followUpDate))
           : null);
 
   // Disabled only while saving, or when an edit changed nothing. An empty
@@ -183,7 +184,7 @@ export default function NotebookEntryScreen() {
         await scheduleCommitmentReminder(
           savedEntry.id,
           savedEntry.content,
-          new Date(savedEntry.followUpDate).toISOString().slice(0, 10),
+          toLocalDateString(new Date(savedEntry.followUpDate)),
         );
       } else {
         await cancelCommitmentReminder(savedEntry.id);

@@ -277,6 +277,42 @@ describe("NotebookEntryScreen — safe back navigation", () => {
   });
 });
 
+// The server stores a follow-up date as LOCAL midnight in the user's zone
+// (server/routes/notebook.ts). Reading it back as a UTC date put it a day
+// early for anyone east of UTC (audit 2026-10-29 M-xc-1).
+describe("NotebookEntryScreen — follow-up date east of UTC", () => {
+  const originalTz = process.env.TZ;
+  afterEach(() => {
+    process.env.TZ = originalTz;
+  });
+
+  it("keeps the local follow-up day when saving and scheduling the reminder", async () => {
+    process.env.TZ = "Australia/Sydney"; // UTC+11 on 30 Oct 2026
+    // Local midnight 2026-10-30 in Sydney is 2026-10-29T13:00Z.
+    const stored = "2026-10-29T13:00:00.000Z";
+    const entry = makeEntry({
+      type: "commitment",
+      content: "Walk after dinner",
+      followUpDate: stored,
+    });
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([entry]);
+    mockUpdateMutateAsync.mockResolvedValue({ ...entry, content: "Walk" });
+
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.change(screen.getByDisplayValue("Walk after dinner"), {
+      target: { value: "Walk" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await vi.waitFor(() => expect(mockScheduleReminder).toHaveBeenCalled());
+    expect(mockUpdateMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ followUpDate: "2026-10-30" }),
+    );
+    expect(mockScheduleReminder).toHaveBeenCalledWith(42, "Walk", "2026-10-30");
+  });
+});
+
 // The entry-type pills are SelectableTiles: picking a type ticks
 // `selection()` once (the real useHaptics → expo-haptics mock).
 describe("NotebookEntryScreen — one selection tick per type pick", () => {
