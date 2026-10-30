@@ -153,6 +153,9 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
         decelerationRate="fast"
         contentContainerStyle={styles.listContent}
         getItemLayout={getItemLayout}
+        // Rows only re-render when data or extraData changes — without this a
+        // tap opens the card in state but it keeps its old shape on screen.
+        extraData={expandedId}
         windowSize={5}
         // Clipping detaches off-screen cards from the native tree, so VoiceOver
         // (and TalkBack) can't move past the second card. Explicit false:

@@ -415,6 +415,9 @@ const styles = StyleSheet.create({
   },
   viewButton: {
     marginTop: Spacing.md,
+    // Hugs its label on the left: the Scan FAB floats over the bottom-right
+    // of the Home carousel (QA sweep #35).
+    alignSelf: "flex-start",
   },
   actions: {
     position: "absolute",

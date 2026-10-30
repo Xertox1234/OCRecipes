@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { RecipeCarousel } from "../RecipeCarousel";
 
@@ -57,6 +58,24 @@ describe("RecipeCarousel FlatList props", () => {
     renderComponent(<RecipeCarousel />);
     expect(captured.value).toBeDefined();
     expect(captured.value?.removeClippedSubviews).toBe(false);
+  });
+
+  // FlatList only re-renders its rows when `data` or `extraData` changes, so
+  // the open card must ride in `extraData` — otherwise a tap updates the
+  // state but the card keeps its old shape until something else re-renders.
+  it("re-renders its rows when a card opens", () => {
+    renderComponent(<RecipeCarousel />);
+    const before = captured.value?.extraData;
+    const renderItem = captured.value?.renderItem as (info: {
+      item: { id: number; title: string };
+    }) => React.ReactElement<{
+      onToggleExpand: (card: { id: number; title: string }) => void;
+    }>;
+    const card = renderItem({ item: { id: 1, title: "Lentil Stew" } });
+    act(() => {
+      card.props.onToggleExpand({ id: 1, title: "Lentil Stew" });
+    });
+    expect(captured.value?.extraData).not.toEqual(before);
   });
 
   it("keeps its virtualization window", () => {
