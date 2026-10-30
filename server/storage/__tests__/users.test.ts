@@ -52,6 +52,7 @@ const {
   getTransaction,
   createTransaction,
   claimTransactionAndUpgrade,
+  extendSubscriptionByTransactionId,
   revokeSubscriptionByTransactionId,
   upsertProfileWithOnboarding,
   RESERVED_USERNAMES,
@@ -1062,6 +1063,109 @@ describe("users storage", () => {
       expect(user!.subscriptionTier).toBe("premium");
       expect(user!.subscriptionExpiresAt?.getTime()).toBe(future.getTime());
       const txn = await getTransaction("orig_revoked_1");
+      expect(txn!.status).toBe("completed");
+    });
+  });
+
+  describe("extendSubscriptionByTransactionId", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const firstExpiry = new Date(Date.now() + 5 * day);
+    const renewedExpiry = new Date(Date.now() + 370 * day);
+
+    beforeEach(async () => {
+      await claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_renew_1",
+          userId: testUser.id,
+          receipt: "receipt_1",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.annual",
+          status: "completed",
+        },
+        "premium",
+        firstExpiry,
+        new Date(Date.now() - 360 * day),
+      );
+    });
+
+    it("extends the owning user's expiry on a renewal", async () => {
+      const result = await extendSubscriptionByTransactionId(
+        "orig_renew_1",
+        renewedExpiry,
+        new Date(),
+      );
+
+      expect(result).toEqual({ status: "extended", userId: testUser.id });
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(
+        renewedExpiry.getTime(),
+      );
+    });
+
+    it("never moves expiry backward (GREATEST)", async () => {
+      const earlier = new Date(Date.now() + 1 * day);
+      const result = await extendSubscriptionByTransactionId(
+        "orig_renew_1",
+        earlier,
+        new Date(),
+      );
+
+      expect(result).toEqual({ status: "extended", userId: testUser.id });
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(
+        firstExpiry.getTime(),
+      );
+    });
+
+    it("returns null and changes nothing for an unknown transaction", async () => {
+      const result = await extendSubscriptionByTransactionId(
+        "orig_unknown",
+        renewedExpiry,
+        new Date(),
+      );
+
+      expect(result).toBeNull();
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(
+        firstExpiry.getTime(),
+      );
+    });
+
+    it("does not extend a revoked transaction from a renewal purchased before the revocation", async () => {
+      await revokeSubscriptionByTransactionId("orig_renew_1");
+
+      for (const purchasedAt of [undefined, new Date(Date.now() - 60 * 1000)]) {
+        const result = await extendSubscriptionByTransactionId(
+          "orig_renew_1",
+          renewedExpiry,
+          purchasedAt,
+        );
+        expect(result).toEqual({ status: "revoked", userId: testUser.id });
+      }
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+      expect(user!.subscriptionExpiresAt).toBeNull();
+      const txn = await getTransaction("orig_renew_1");
+      expect(txn!.status).toBe("revoked");
+    });
+
+    it("re-activates a revoked transaction for a renewal purchased after the revocation", async () => {
+      await revokeSubscriptionByTransactionId("orig_renew_1");
+
+      const result = await extendSubscriptionByTransactionId(
+        "orig_renew_1",
+        renewedExpiry,
+        new Date(Date.now() + 60 * 1000),
+      );
+
+      expect(result).toEqual({ status: "extended", userId: testUser.id });
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(
+        renewedExpiry.getTime(),
+      );
+      const txn = await getTransaction("orig_renew_1");
       expect(txn!.status).toBe("completed");
     });
   });

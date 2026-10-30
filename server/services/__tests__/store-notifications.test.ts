@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { verifyAppleNotification } from "../receipt-validation";
+import {
+  verifyAppleNotification,
+  validateReceipt,
+} from "../receipt-validation";
 import { storage } from "../../storage";
 import { invalidateCache } from "../subscription-tier-cache";
 import {
@@ -11,9 +14,13 @@ import {
 
 vi.mock("../receipt-validation", () => ({
   verifyAppleNotification: vi.fn(),
+  validateReceipt: vi.fn(),
 }));
 vi.mock("../../storage", () => ({
-  storage: { revokeSubscriptionByTransactionId: vi.fn() },
+  storage: {
+    revokeSubscriptionByTransactionId: vi.fn(),
+    extendSubscriptionByTransactionId: vi.fn(),
+  },
 }));
 vi.mock("../subscription-tier-cache", () => ({
   invalidateCache: vi.fn(),
@@ -239,5 +246,200 @@ describe("handleGoogleNotification", () => {
     });
 
     expect(invalidateCache).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleAppleNotification renewals", () => {
+  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+  const purchasedAt = new Date();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("extends entitlement on DID_RENEW from the verified transaction's expiry", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      originalTransactionId: "orig-r1",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId).mockResolvedValue({
+      status: "extended",
+      userId: "user-r1",
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-r1",
+      expiresAt,
+      purchasedAt,
+    );
+    expect(invalidateCache).toHaveBeenCalledWith("user-r1");
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("extends on a DID_RENEW BILLING_RECOVERY too", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      subtype: "BILLING_RECOVERY",
+      originalTransactionId: "orig-r2",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId).mockResolvedValue({
+      status: "extended",
+      userId: "user-r2",
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-r2",
+      expiresAt,
+      purchasedAt,
+    );
+  });
+
+  it("does not invalidate the cache when the row is revoked or unknown", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      originalTransactionId: "orig-r3",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId)
+      .mockResolvedValueOnce({ status: "revoked", userId: "user-r3" })
+      .mockResolvedValueOnce(null);
+
+    await handleAppleNotification("signed-payload");
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).toHaveBeenCalledTimes(2);
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a revoked transaction", { revoked: true }],
+    ["no expiry", { expiresAt: undefined }],
+    ["no originalTransactionId", { originalTransactionId: undefined }],
+  ])("does not extend a DID_RENEW with %s", async (_label, override) => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      originalTransactionId: "orig-r4",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+      ...override,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "SUBSCRIBED",
+    "DID_CHANGE_RENEWAL_PREF",
+    "DID_CHANGE_RENEWAL_STATUS",
+  ])("does not extend on %s (not a renewal)", async (notificationType) => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType,
+      originalTransactionId: "orig-r5",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleGoogleNotification renewals", () => {
+  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    [2, "SUBSCRIPTION_RENEWED"],
+    [1, "SUBSCRIPTION_RECOVERED"],
+  ])("re-reads live Play state and extends on %i (%s)", async (type) => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: true,
+      expiresAt,
+      originalTransactionId: "tok-r",
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId).mockResolvedValue({
+      status: "extended",
+      userId: "user-gr",
+    });
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(type, "tok-r") },
+    });
+
+    expect(validateReceipt).toHaveBeenCalledWith("tok-r", "android");
+    expect(storage.extendSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "tok-r",
+      expiresAt,
+      undefined,
+    );
+    expect(invalidateCache).toHaveBeenCalledWith("user-gr");
+  });
+
+  it("throws on a transient Play API failure so Pub/Sub redelivers", async () => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: false,
+      errorCode: "STORE_API_ERROR",
+    });
+
+    await expect(
+      handleGoogleNotification({ message: { data: rtdnMessage(2, "tok-t") } }),
+    ).rejects.toThrow();
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("does not extend (or throw) when Play says the subscription is not active", async () => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: false,
+      errorCode: "SUBSCRIPTION_EXPIRED",
+    });
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(2, "tok-x") },
+    });
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it("does not extend when Play returns no expiry", async () => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: true,
+      originalTransactionId: "tok-n",
+    });
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(2, "tok-n") },
+    });
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("does not call the Play API for a non-renewal type (SUBSCRIPTION_CANCELED)", async () => {
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(3, "tok-c") },
+    });
+
+    expect(validateReceipt).not.toHaveBeenCalled();
   });
 });

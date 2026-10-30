@@ -4,6 +4,7 @@ import { VerificationStatus } from "@apple/app-store-server-library";
 
 // Mock @apple/app-store-server-library
 const mockVerifyAndDecodeTransaction = vi.fn();
+const mockVerifyAndDecodeNotification = vi.fn();
 
 vi.mock("@apple/app-store-server-library", async () => {
   const actual = await vi.importActual<
@@ -13,6 +14,7 @@ vi.mock("@apple/app-store-server-library", async () => {
     ...actual,
     SignedDataVerifier: class MockSignedDataVerifier {
       verifyAndDecodeTransaction = mockVerifyAndDecodeTransaction;
+      verifyAndDecodeNotification = mockVerifyAndDecodeNotification;
     },
   };
 });
@@ -512,6 +514,75 @@ describe("Receipt Validation", () => {
       expect(result.errorCode).toBe("STORE_API_ERROR");
 
       fetchSpy.mockRestore();
+    });
+  });
+
+  describe("verifyAppleNotification", () => {
+    beforeEach(() => {
+      process.env.APPLE_ISSUER_ID = "test-issuer";
+      process.env.APPLE_KEY_ID = "test-key-id";
+      process.env.APPLE_PRIVATE_KEY = "test-private-key";
+      process.env.APPLE_BUNDLE_ID = "com.ocrecipes.app";
+    });
+
+    async function verify() {
+      vi.resetModules();
+      const mod = await import("../receipt-validation");
+      mod.resetAppleVerifier();
+      return mod.verifyAppleNotification("signed-payload");
+    }
+
+    it("carries the renewal transaction's expiry, purchase date and revocation", async () => {
+      const purchaseDate = Date.now() - 60_000;
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "DID_RENEW",
+        notificationUUID: "uuid-1",
+        data: { signedTransactionInfo: "signed-txn" },
+      });
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        originalTransactionId: "orig-1",
+        expiresDate: FUTURE_EXPIRY,
+        purchaseDate,
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      const n = await verify();
+
+      expect(mockVerifyAndDecodeTransaction).toHaveBeenCalledWith("signed-txn");
+      expect(n).toMatchObject({
+        notificationType: "DID_RENEW",
+        originalTransactionId: "orig-1",
+        revoked: false,
+      });
+      expect(n.expiresAt?.getTime()).toBe(FUTURE_EXPIRY);
+      expect(n.purchasedAt?.getTime()).toBe(purchaseDate);
+    });
+
+    it("flags a transaction that carries a revocationDate", async () => {
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "DID_RENEW",
+        data: { signedTransactionInfo: "signed-txn" },
+      });
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        originalTransactionId: "orig-1",
+        expiresDate: FUTURE_EXPIRY,
+        revocationDate: Date.now(),
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      const n = await verify();
+
+      expect(n.revoked).toBe(true);
+    });
+
+    it("leaves the renewal fields unset when there is no signed transaction", async () => {
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "TEST",
+      });
+
+      const n = await verify();
+
+      expect(n.originalTransactionId).toBeUndefined();
+      expect(n.expiresAt).toBeUndefined();
+      expect(n.purchasedAt).toBeUndefined();
     });
   });
 

@@ -946,6 +946,63 @@ export async function claimTransactionAndUpgrade(
 }
 
 /**
+ * Extend a subscription from a store RENEWAL notification (Apple DID_RENEW /
+ * Google SUBSCRIPTION_RENEWED|RECOVERED), keyed by its stable transaction id.
+ * `expiresAt` must come from store-verified data (the notification's signed
+ * transaction, or a live Play API read), never from a client.
+ *
+ * Applies the same rules as a same-user re-claim in claimTransactionAndUpgrade:
+ *  - unknown id                        → `null` (no writes; the receipt flow
+ *                                        has not stored it yet)
+ *  - row revoked and the renewal was purchased before that (or no purchase
+ *    date)                             → `revoked` (no writes; fail closed)
+ *  - otherwise                         → `extended`: tier premium, expiry
+ *    GREATEST(current, expiresAt) so an out-of-order renewal never moves it
+ *    backward, and the row marked `completed`.
+ *
+ * Not user-scoped by design (idor-safe): like revokeSubscriptionByTransactionId
+ * the store calls the webhook, the route verifies the Apple JWS / Google OIDC
+ * signature first, and the globally unique transactionId resolves the owner.
+ */
+export async function extendSubscriptionByTransactionId( // idor-safe
+  transactionId: string,
+  expiresAt: Date,
+  purchasedAt?: Date | null,
+): Promise<{ status: "extended" | "revoked"; userId: string } | null> {
+  return db.transaction(async (tx) => {
+    const [txn] = await tx
+      .select()
+      .from(transactions)
+      .where(eq(transactions.transactionId, transactionId));
+
+    if (!txn) return null;
+
+    if (isRevokedForReceipt(txn, purchasedAt)) {
+      return { status: "revoked", userId: txn.userId };
+    }
+
+    await tx
+      .update(transactions)
+      .set({ status: "completed", updatedAt: new Date() })
+      .where(eq(transactions.transactionId, transactionId));
+    const [user] = await tx
+      .update(users)
+      .set({
+        subscriptionTier: "premium",
+        subscriptionExpiresAt: sql`GREATEST(${users.subscriptionExpiresAt}, ${expiresAt})`,
+      })
+      .where(eq(users.id, txn.userId))
+      .returning({ id: users.id });
+    if (!user) {
+      throw new Error(
+        `User ${txn.userId} not found during subscription renewal`,
+      );
+    }
+    return { status: "extended", userId: txn.userId };
+  });
+}
+
+/**
  * Revoke a subscription identified by its stable transaction id (Apple
  * `originalTransactionId` / Google `purchaseToken`) — used by the store
  * refund/revoke/expire webhooks. Atomically downgrades the owning user to

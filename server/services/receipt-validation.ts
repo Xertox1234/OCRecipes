@@ -232,6 +232,12 @@ export interface AppleNotification {
   notificationUUID?: string;
   /** Stable subscription key — present for transaction-bearing notifications. */
   originalTransactionId?: string;
+  /** The signed transaction's expiresDate (a renewal carries the new one). */
+  expiresAt?: Date;
+  /** The signed transaction's purchaseDate. */
+  purchasedAt?: Date;
+  /** True when the signed transaction carries a revocationDate. */
+  revoked?: boolean;
 }
 
 /**
@@ -246,11 +252,23 @@ export async function verifyAppleNotification(
   const decoded = await verifier.verifyAndDecodeNotification(signedPayload);
 
   let originalTransactionId: string | undefined;
+  let expiresAt: Date | undefined;
+  let purchasedAt: Date | undefined;
+  let revoked: boolean | undefined;
   if (decoded.data?.signedTransactionInfo) {
     const txInfo = await verifier.verifyAndDecodeTransaction(
       decoded.data.signedTransactionInfo,
     );
     originalTransactionId = txInfo.originalTransactionId;
+    expiresAt =
+      txInfo.expiresDate !== undefined
+        ? new Date(txInfo.expiresDate)
+        : undefined;
+    purchasedAt =
+      txInfo.purchaseDate !== undefined
+        ? new Date(txInfo.purchaseDate)
+        : undefined;
+    revoked = txInfo.revocationDate !== undefined;
   }
 
   return {
@@ -258,6 +276,9 @@ export async function verifyAppleNotification(
     subtype: decoded.subtype ? String(decoded.subtype) : undefined,
     notificationUUID: decoded.notificationUUID,
     originalTransactionId,
+    expiresAt,
+    purchasedAt,
+    revoked,
   };
 }
 
