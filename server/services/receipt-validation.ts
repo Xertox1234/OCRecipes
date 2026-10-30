@@ -11,6 +11,7 @@ import {
 import type { JWSTransactionDecodedPayload } from "@apple/app-store-server-library";
 import type { Platform } from "@shared/schemas/subscription";
 import { createServiceLogger, toError } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 
 const log = createServiceLogger("receipt-validation");
 
@@ -392,7 +393,11 @@ async function validateGoogleReceipt(
   let accessToken: string;
   try {
     accessToken = await getGoogleAccessToken();
-  } catch {
+  } catch (err) {
+    // A rotated/malformed GOOGLE_SERVICE_ACCOUNT_KEY or email fails every
+    // Android purchase here; log + report so it is told apart from an outage.
+    log.error({ err: toError(err) }, "Google access token fetch failed");
+    reportError(err, "google-access-token");
     return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 

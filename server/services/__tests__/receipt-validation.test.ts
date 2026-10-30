@@ -19,6 +19,21 @@ vi.mock("@apple/app-store-server-library", async () => {
   };
 });
 
+const { mockLog, mockReportError } = vi.hoisted(() => ({
+  mockLog: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  mockReportError: vi.fn(),
+}));
+vi.mock("../../lib/logger", async () => {
+  const actual =
+    await vi.importActual<typeof import("../../lib/logger")>(
+      "../../lib/logger",
+    );
+  return { ...actual, createServiceLogger: () => mockLog };
+});
+vi.mock("../../lib/error-reporter", () => ({
+  reportError: mockReportError,
+}));
+
 // Mock fs.readFileSync to avoid needing real cert files in tests
 vi.mock("fs", async () => {
   const actual = await vi.importActual<typeof import("fs")>("fs");
@@ -592,6 +607,15 @@ describe("Receipt Validation", () => {
       const result = await mod.validateReceipt("purchase-token-123", "android");
       expect(result.valid).toBe(false);
       expect(result.errorCode).toBe("STORE_API_ERROR");
+      // A config fault (bad PEM/email) or OAuth outage must not be silent.
+      expect(mockLog.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error) }),
+        "Google access token fetch failed",
+      );
+      expect(mockReportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "google-access-token",
+      );
 
       fetchSpy.mockRestore();
     });
