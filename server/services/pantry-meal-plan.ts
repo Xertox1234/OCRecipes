@@ -251,8 +251,17 @@ Each meal needs: mealType, title, description, servings, prepTimeMinutes, cookTi
     throw new Error("AI returned invalid JSON response");
   }
 
-  const validated = aiResponseSchema.parse(parsed);
-  return validated;
+  // safeParse, not parse: a ZodError would be mapped to a 400 client
+  // validation error by handleRouteError, but a schema miss is a model fault.
+  const result = aiResponseSchema.safeParse(parsed);
+  if (!result.success) {
+    log.warn(
+      { zodErrors: result.error.flatten() },
+      "pantry meal plan AI output failed schema validation",
+    );
+    throw new Error("AI returned an invalid meal plan. Please try again.");
+  }
+  return result.data;
 }
 
 // ============================================================================

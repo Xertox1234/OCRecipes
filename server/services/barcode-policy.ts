@@ -27,6 +27,71 @@ export interface BarcodePer100g {
   caffeine?: number; // mg
 }
 
+// ── Per-100g plausibility bounds (R34) ───────────────────────────────
+// Physical ceilings for a single OFF per-100g field. Pure fat is ~900 kcal
+// per 100 g, so energy above that is a data-entry error (typically kJ typed
+// into the kcal field). No mass nutrient can exceed the 100 g it is measured
+// in — 100 g for gram fields, 100 000 mg for mg fields. The macro-sum ceiling
+// allows a few grams of label rounding slack (and US carbs include fibre).
+const MAX_KCAL_PER_100G = 900;
+const MAX_GRAMS_PER_100G = 100;
+const MAX_MG_PER_100G = 100_000;
+const MAX_MACRO_SUM_PER_100G = 105;
+
+const GRAM_FIELDS = [
+  "protein",
+  "carbs",
+  "fat",
+  "fiber",
+  "sugar",
+  "saturatedFat",
+  "transFat",
+] as const;
+const MG_FIELDS = ["sodium", "cholesterol", "caffeine"] as const;
+
+/**
+ * Drop physically impossible OFF per-100g values (negative, energy above the
+ * pure-fat ceiling, a mass nutrient above 100 g/100 g, or protein+carbs+fat
+ * summing past ~105 g). Dropped fields become `undefined` — absence, never a
+ * clamped or zeroed value — matching the drop-not-coerce policy of
+ * `offNutrimentsSchema`. `dropped` names every field removed so the caller can
+ * avoid freezing a known-bad entry into the first-write-wins public cache.
+ */
+export function boundOffPer100g(p: BarcodePer100g): {
+  per100g: BarcodePer100g;
+  dropped: (keyof BarcodePer100g)[];
+} {
+  const out: BarcodePer100g = { ...p };
+  const dropped: (keyof BarcodePer100g)[] = [];
+  const drop = (k: keyof BarcodePer100g) => {
+    if (out[k] !== undefined) {
+      delete out[k];
+      dropped.push(k);
+    }
+  };
+  const over = (k: keyof BarcodePer100g, max: number) => {
+    const v = out[k];
+    if (v !== undefined && (v < 0 || v > max)) drop(k);
+  };
+
+  over("calories", MAX_KCAL_PER_100G);
+  for (const k of GRAM_FIELDS) over(k, MAX_GRAMS_PER_100G);
+  for (const k of MG_FIELDS) over(k, MAX_MG_PER_100G);
+
+  const macroSum = (out.protein ?? 0) + (out.carbs ?? 0) + (out.fat ?? 0);
+  if (macroSum > MAX_MACRO_SUM_PER_100G) {
+    drop("protein");
+    drop("carbs");
+    drop("fat");
+  }
+
+  // Preserve key absence for untouched undefined inputs (toEqual-friendly).
+  for (const k of Object.keys(out) as (keyof BarcodePer100g)[]) {
+    if (out[k] === undefined) delete out[k];
+  }
+  return { per100g: out, dropped };
+}
+
 // Tolerance for the Atwater energy-vs-own-macros corroboration fallback (see
 // `offMacrosCorroborateEnergy` below), used only when an OFF entry has no
 // per-serving energy to self-check against. Deliberately loose (30%, vs. the

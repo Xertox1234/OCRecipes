@@ -9,7 +9,19 @@ import type {
 } from "@shared/schemas/coach-notebook";
 import { db } from "../db";
 import { logger } from "../lib/logger";
-import { eq, and, desc, lte, sql, inArray, isNull, ne, or } from "drizzle-orm";
+import {
+  eq,
+  and,
+  asc,
+  desc,
+  gt,
+  lte,
+  sql,
+  inArray,
+  isNull,
+  ne,
+  or,
+} from "drizzle-orm";
 import { createHash } from "crypto";
 
 export async function getActiveNotebookEntries(
@@ -248,10 +260,14 @@ export async function deleteNotebookEntry(
  * (across all users). Used by the notification scheduler to send server-driven
  * push reminders.
  *
- * Returns at most `limit` rows per invocation to bound the scheduler's work.
+ * Returns at most `limit` rows per call, ordered by (followUpDate, id). Pass
+ * the last row of the previous page as `after` to fetch the next page — the
+ * scheduler pages through ALL due rows, so permanently-undeliverable entries
+ * at the head of the queue cannot starve newer users' reminders.
  */
 export async function getDueCommitmentsAllUsers(
   limit = 500,
+  after?: { followUpDate: Date; id: number },
 ): Promise<CoachNotebookEntry[]> {
   return db
     .select()
@@ -261,8 +277,17 @@ export async function getDueCommitmentsAllUsers(
         eq(coachNotebook.type, "commitment"),
         eq(coachNotebook.status, "active"),
         lte(coachNotebook.followUpDate, new Date()),
+        after
+          ? or(
+              gt(coachNotebook.followUpDate, after.followUpDate),
+              and(
+                eq(coachNotebook.followUpDate, after.followUpDate),
+                gt(coachNotebook.id, after.id),
+              ),
+            )
+          : undefined,
       ),
     )
-    .orderBy(coachNotebook.followUpDate)
+    .orderBy(asc(coachNotebook.followUpDate), asc(coachNotebook.id))
     .limit(limit);
 }

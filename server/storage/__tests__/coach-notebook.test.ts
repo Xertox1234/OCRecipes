@@ -556,6 +556,46 @@ describe("Coach Notebook Storage", () => {
       expect(ids).not.toContain(insightEntry.id);
       expect(ids).not.toContain(archivedEntry.id);
     });
+
+    it("pages past the first `limit` rows with a (followUpDate, id) cursor (R30)", async () => {
+      // Pre-epoch dates sort ahead of any real dev row, so the first page is
+      // ours. Two share a followUpDate to exercise the id tiebreak.
+      const d1 = new Date("1969-01-01T00:00:00Z");
+      const d2 = new Date("1969-01-02T00:00:00Z");
+      const a = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "a",
+        status: "active",
+        followUpDate: d1,
+      });
+      const b = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "b",
+        status: "active",
+        followUpDate: d1,
+      });
+      const c = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "c",
+        status: "active",
+        followUpDate: d2,
+      });
+
+      const page1 = await getDueCommitmentsAllUsers(2);
+      expect(page1.map((e) => e.id)).toEqual([a.id, b.id]);
+
+      const last = page1[page1.length - 1];
+      const page2 = await getDueCommitmentsAllUsers(2, {
+        followUpDate: last.followUpDate!,
+        id: last.id,
+      });
+      expect(page2[0]?.id).toBe(c.id);
+      expect(page2.map((e) => e.id)).not.toContain(a.id);
+      expect(page2.map((e) => e.id)).not.toContain(b.id);
+    });
   });
 
   // --------------------------------------------------------------------------

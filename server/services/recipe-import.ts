@@ -1,4 +1,3 @@
-import { z } from "zod";
 import * as cheerio from "cheerio";
 import dns from "node:dns";
 import net from "node:net";
@@ -7,6 +6,10 @@ import type {
   ImportedRecipeData,
 } from "@shared/types/recipe-import";
 import { createServiceLogger } from "../lib/logger";
+import {
+  schemaOrgRecipeSchema,
+  type SchemaOrgRecipe,
+} from "./recipe-import-schema";
 
 const log = createServiceLogger("recipe-import");
 
@@ -14,59 +17,6 @@ export type {
   ParsedIngredient,
   ImportedRecipeData,
 } from "@shared/types/recipe-import";
-
-// ── Zod Schema for schema.org Recipe LD+JSON ─────────────────────────
-
-const howToStepSchema = z.object({
-  "@type": z.literal("HowToStep").optional(),
-  text: z.string(),
-});
-
-const schemaOrgRecipeSchema = z.object({
-  "@type": z.union([z.literal("Recipe"), z.array(z.string())]),
-  name: z.string(),
-  description: z.string().optional(),
-  image: z
-    .union([
-      z
-        .string()
-        .url()
-        .refine((u) => /^https?:\/\//i.test(u), {
-          message: "image URL must use http or https",
-        }),
-      z.array(
-        z
-          .string()
-          .url()
-          .refine((u) => /^https?:\/\//i.test(u), {
-            message: "image URL must use http or https",
-          }),
-      ),
-    ])
-    .optional(),
-  recipeIngredient: z.array(z.string()).optional(),
-  recipeInstructions: z
-    .union([z.string(), z.array(z.union([z.string(), howToStepSchema]))])
-    .optional(),
-  prepTime: z.string().optional(),
-  cookTime: z.string().optional(),
-  totalTime: z.string().optional(),
-  recipeYield: z.union([z.string(), z.array(z.string())]).optional(),
-  recipeCuisine: z.union([z.string(), z.array(z.string())]).optional(),
-  recipeCategory: z.union([z.string(), z.array(z.string())]).optional(),
-  keywords: z.union([z.string(), z.array(z.string())]).optional(),
-  nutrition: z
-    .object({
-      calories: z.string().optional(),
-      proteinContent: z.string().optional(),
-      carbohydrateContent: z.string().optional(),
-      fatContent: z.string().optional(),
-      fiberContent: z.string().optional(),
-      sugarContent: z.string().optional(),
-      sodiumContent: z.string().optional(),
-    })
-    .optional(),
-});
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -90,15 +40,23 @@ export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // 5 MB
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /**
- * Parse ISO 8601 duration (e.g., "PT15M", "PT1H30M") into minutes.
+ * Parse ISO 8601 duration (e.g., "PT15M", "PT1H30M", "P0DT30M", "PT1.5H")
+ * into whole minutes. Accepts a day component and fractional values; seconds
+ * are rounded into the total. Returns null for anything else.
  */
+const ISO_DURATION_RE =
+  /^P(?:(\d+(?:[.,]\d+)?)D)?(?:T(?=\d)(?:(\d+(?:[.,]\d+)?)H)?(?:(\d+(?:[.,]\d+)?)M)?(?:(\d+(?:[.,]\d+)?)S)?)?$/i;
+
 export function parseIsoDuration(duration: string | undefined): number | null {
   if (!duration) return null;
-  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  const match = duration.trim().match(ISO_DURATION_RE);
   if (!match) return null;
-  const hours = parseInt(match[1] || "0", 10);
-  const minutes = parseInt(match[2] || "0", 10);
-  return hours * 60 + minutes;
+  const [, d, h, m, sec] = match;
+  // A bare "P" matches with no components.
+  if (!d && !h && !m && !sec) return null;
+  const n = (v: string | undefined) =>
+    v ? parseFloat(v.replace(",", ".")) : 0;
+  return Math.round(n(d) * 1440 + n(h) * 60 + n(m) + n(sec) / 60);
 }
 
 /**
@@ -106,7 +64,7 @@ export function parseIsoDuration(duration: string | undefined): number | null {
  * an array of strings/HowToStep objects into a string[] of steps.
  */
 export function normalizeInstructions(
-  instructions: z.infer<typeof schemaOrgRecipeSchema>["recipeInstructions"],
+  instructions: SchemaOrgRecipe["recipeInstructions"],
 ): string[] | null {
   if (!instructions) return null;
   if (typeof instructions === "string") {
@@ -158,7 +116,12 @@ export function parseIngredientString(raw: string): ParsedIngredient {
  */
 function parseNutritionValue(value: string | undefined): string | null {
   if (!value) return null;
-  const match = value.match(/([\d.]+)\s*(kJ|KJ)?/i);
+  // Thousands separators ("1,046 kJ") are stripped; a comma not followed by
+  // exactly three digits is a decimal comma ("1,5 g").
+  const cleaned = value
+    .replace(/(\d),(?=\d{3}(?!\d))/g, "$1")
+    .replace(/(\d),(\d)/g, "$1.$2");
+  const match = cleaned.match(/([\d.]+)\s*(kJ|KJ)?/i);
   if (!match) return null;
   let num = parseFloat(match[1]);
   if (!Number.isFinite(num)) return null;
@@ -552,12 +515,19 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
       : recipe.keywords
     : [];
 
+  const prepTimeMinutes = parseIsoDuration(recipe.prepTime);
+  let cookTimeMinutes = parseIsoDuration(recipe.cookTime);
+  // Many sites publish only totalTime — surface it rather than no time at all.
+  if (prepTimeMinutes === null && cookTimeMinutes === null) {
+    cookTimeMinutes = parseIsoDuration(recipe.totalTime);
+  }
+
   const data: ImportedRecipeData = {
     title: recipe.name,
     description: recipe.description || null,
     servings: parseServings(recipe.recipeYield),
-    prepTimeMinutes: parseIsoDuration(recipe.prepTime),
-    cookTimeMinutes: parseIsoDuration(recipe.cookTime),
+    prepTimeMinutes,
+    cookTimeMinutes,
     cuisine: extractFirstString(recipe.recipeCuisine),
     dietTags: keywords,
     ingredients: (recipe.recipeIngredient || []).map(parseIngredientString),
