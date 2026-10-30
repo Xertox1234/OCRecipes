@@ -622,7 +622,8 @@ export default function ChatScreen() {
     messagesError &&
     validConversationId !== null &&
     (!messages || messages.length === 0) &&
-    !isStreaming;
+    !isStreaming &&
+    !showPendingUser;
 
   const isEmpty =
     !isLoading &&
