@@ -11,10 +11,11 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Server-enforced cap on any single statement. Request queries, the retention
-// cron (batched deletes) and the backfill scripts (chunked updates) all finish
-// well inside it; a one-off heavy script can raise it, or pass 0 to disable it,
-// with DB_STATEMENT_TIMEOUT_MS.
+// Server-enforced cap on any single statement. Request queries and the
+// retention cron (batched deletes) finish well inside it, as do the chunked
+// backfills. A script that runs one large unbatched statement (e.g.
+// backfill-email-verified.ts) can raise the cap, or pass 0 to disable it, with
+// DB_STATEMENT_TIMEOUT_MS.
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
 const statementTimeoutOverride = Number(process.env.DB_STATEMENT_TIMEOUT_MS);
 const statementTimeoutMs =
