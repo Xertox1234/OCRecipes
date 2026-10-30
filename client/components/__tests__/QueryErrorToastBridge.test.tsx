@@ -19,6 +19,9 @@ const { mockSubscribe, mockToastError, mockToastInfo, mockSubscribePaused } =
 vi.mock("@/lib/query-client", () => ({
   subscribeToQueryErrors: (listener: (message: string) => void) =>
     mockSubscribe(listener),
+}));
+
+vi.mock("@/lib/query-client-persistence", () => ({
   subscribeToPausedMutations: (listener: () => void) =>
     mockSubscribePaused(listener),
 }));

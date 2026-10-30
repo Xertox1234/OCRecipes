@@ -44,7 +44,6 @@ const nullishString = z
   .nullable()
   .transform((v) => (v === "null" || v === "undefined" || v === "" ? null : v));
 
-// Extended schema for scanned items with string coercion for numeric fields
 // Bounds for the client-supplied X-Queued-At on POST /api/scanned-items (R28).
 // The client offline queue holds writes for 24h; allow slack for a queue item
 // that waited a bit past that before its drain, and a little clock skew ahead.
@@ -63,6 +62,7 @@ function parseQueuedAt(raw: unknown): Date | undefined {
   return at;
 }
 
+// Extended schema for scanned items with string coercion for numeric fields
 const scannedItemInputSchema = insertScannedItemSchema.extend({
   barcode: z
     .string()

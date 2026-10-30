@@ -19,13 +19,12 @@ import {
   defaultShouldDehydrateQuery,
 } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { queryClient, asyncStoragePersister } from "@/lib/query-client";
 import {
-  queryClient,
-  asyncStoragePersister,
   handleQueryCacheRestored,
   handleQueryCacheRestoreFailed,
   shouldDehydrateResumableMutation,
-} from "@/lib/query-client";
+} from "@/lib/query-client-persistence";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
 import RootStackNavigator from "@/navigation/RootStackNavigator";

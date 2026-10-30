@@ -49,6 +49,10 @@ let usageCountsCache: Record<string, number> | null = null;
 let sweepEpoch = 0;
 let sweepInFlight: Promise<void> | null = null;
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * @param userId the active user's id (stringified), or null when unauthenticated.
  * The per-user history caches are committed only when the persisted durable-owner
@@ -58,10 +62,6 @@ let sweepInFlight: Promise<void> | null = null;
  * here on the next cold start; the marker check does. (Section state is a device
  * pref and is always committed, regardless of owner.)
  */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export function initHomeActionsCache(userId: string | null): Promise<void> {
   const load = (async () => {
     // Mirror-case guard: never read disk while a teardown sweep's removeItem is in

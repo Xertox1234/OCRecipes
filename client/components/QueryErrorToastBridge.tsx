@@ -1,9 +1,7 @@
 import { useEffect } from "react";
 
-import {
-  subscribeToPausedMutations,
-  subscribeToQueryErrors,
-} from "@/lib/query-client";
+import { subscribeToQueryErrors } from "@/lib/query-client";
+import { subscribeToPausedMutations } from "@/lib/query-client-persistence";
 import { useToast } from "@/context/ToastContext";
 
 /**
