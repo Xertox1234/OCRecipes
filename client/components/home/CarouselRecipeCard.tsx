@@ -1,11 +1,5 @@
 import React, { useCallback, useMemo } from "react";
-import {
-  AccessibilityInfo,
-  StyleSheet,
-  View,
-  Pressable,
-  Dimensions,
-} from "react-native";
+import { StyleSheet, View, Pressable, Dimensions } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import Animated, {
   FadeIn,
@@ -96,7 +90,8 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
 
   const handleDismiss = useCallback(() => {
     haptics.impact();
-    AccessibilityInfo.announceForAccessibility("Recipe dismissed");
+    // Nothing is hidden yet — the screen asks why first, and the reason
+    // sheet announces once the recipe is actually hidden.
     onDismiss?.(card);
   }, [onDismiss, card, haptics]);
 

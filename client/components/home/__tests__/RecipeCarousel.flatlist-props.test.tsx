@@ -55,7 +55,7 @@ describe("RecipeCarousel FlatList props", () => {
   // AXe tree dump, 2026-10-23). It must be an explicit `false`: an omitted
   // prop falls back to FlatList's default, which clips on Android.
   it("keeps off-screen cards in the accessibility tree (no clipping)", () => {
-    renderComponent(<RecipeCarousel />);
+    renderComponent(<RecipeCarousel onDismissRequest={vi.fn()} />);
     expect(captured.value).toBeDefined();
     expect(captured.value?.removeClippedSubviews).toBe(false);
   });
@@ -64,7 +64,7 @@ describe("RecipeCarousel FlatList props", () => {
   // the open card must ride in `extraData` — otherwise a tap updates the
   // state but the card keeps its old shape until something else re-renders.
   it("re-renders its rows when a card opens", () => {
-    renderComponent(<RecipeCarousel />);
+    renderComponent(<RecipeCarousel onDismissRequest={vi.fn()} />);
     const before = captured.value?.extraData;
     const renderItem = captured.value?.renderItem as (info: {
       item: { id: number; title: string };
@@ -78,8 +78,26 @@ describe("RecipeCarousel FlatList props", () => {
     expect(captured.value?.extraData).not.toEqual(before);
   });
 
+  // The X asks why before anything is hidden: it hands the card to the
+  // screen's reason sheet instead of dismissing straight away.
+  it("asks for a reason instead of hiding the card on X", () => {
+    const onDismissRequest = vi.fn();
+    renderComponent(<RecipeCarousel onDismissRequest={onDismissRequest} />);
+    const renderItem = captured.value?.renderItem as (info: {
+      item: { id: number; title: string };
+    }) => React.ReactElement<{
+      onDismiss: (card: { id: number; title: string }) => void;
+    }>;
+    const card = renderItem({ item: { id: 1, title: "Lentil Stew" } });
+    card.props.onDismiss({ id: 1, title: "Lentil Stew" });
+    expect(onDismissRequest).toHaveBeenCalledWith({
+      id: 1,
+      title: "Lentil Stew",
+    });
+  });
+
   it("keeps its virtualization window", () => {
-    renderComponent(<RecipeCarousel />);
+    renderComponent(<RecipeCarousel onDismissRequest={vi.fn()} />);
     expect(captured.value?.windowSize).toBe(5);
     expect(typeof captured.value?.getItemLayout).toBe("function");
   });

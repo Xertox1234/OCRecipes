@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
+import { RECIPE_DISMISS_REASONS } from "@shared/constants/recipe-dismiss-reasons";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { buildCarousel } from "../services/carousel-builder";
@@ -9,6 +10,8 @@ import { handleRouteError, formatZodError } from "./_helpers";
 
 const dismissSchema = z.object({
   recipeId: z.number().int().positive(),
+  // Optional: app versions from before the reason sheet send only recipeId.
+  reason: z.enum(RECIPE_DISMISS_REASONS).optional(),
 });
 
 export function register(app: Express): void {
@@ -52,7 +55,11 @@ export function register(app: Express): void {
           return;
         }
 
-        await storage.dismissRecipe(req.userId!, parsed.data.recipeId);
+        await storage.dismissRecipe(
+          req.userId!,
+          parsed.data.recipeId,
+          parsed.data.reason,
+        );
 
         res.status(204).send();
       } catch (error) {

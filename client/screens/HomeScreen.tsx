@@ -44,6 +44,7 @@ import { HomeInlineDrawer } from "@/components/home/HomeInlineDrawer";
 import { DailySummaryHeader } from "@/components/home/DailySummaryHeader";
 import { ThemedText } from "@/components/ThemedText";
 import { RecipeCarousel } from "@/components/home/RecipeCarousel";
+import { useDismissReasonSheet } from "@/hooks/useDismissReasonSheet";
 import { CuratedRecipeCarousel } from "@/components/home/CuratedRecipeCarousel";
 import { RecentActionsRow } from "@/components/home/RecentActionsRow";
 import { DiscoveryCarousel } from "@/components/home/DiscoveryCarousel";
@@ -164,6 +165,10 @@ export default function HomeScreen() {
   // useBeverageSheet-verified shape) — the state→effect→present shape
   // silently fails on this screen. See docs/solutions.
   const importSheetRef = useRef<BottomSheetModal>(null);
+
+  // "Why hide this recipe?" — owned here for the same .present() reason.
+  const { open: openDismissReasonSheet, DismissReasonSheet } =
+    useDismissReasonSheet();
 
   // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const {
@@ -675,7 +680,7 @@ export default function HomeScreen() {
             reducedMotion ? undefined : FadeInDown.delay(100).duration(400)
           }
         >
-          <RecipeCarousel />
+          <RecipeCarousel onDismissRequest={openDismissReasonSheet} />
         </Animated.View>
 
         <Animated.View
@@ -747,6 +752,8 @@ export default function HomeScreen() {
       >
         {importSheetChildren}
       </BottomSheetModal>
+
+      <DismissReasonSheet />
     </>
   );
 }

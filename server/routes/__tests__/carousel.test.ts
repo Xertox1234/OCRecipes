@@ -176,7 +176,34 @@ describe("Carousel Routes", () => {
       });
 
       expect(res.status).toBe(204);
-      expect(storage.dismissRecipe).toHaveBeenCalledWith("1", 1);
+      // No reason: an app version that never asks keeps working.
+      expect(storage.dismissRecipe).toHaveBeenCalledWith("1", 1, undefined);
+    });
+
+    it("passes the chosen reason to storage", async () => {
+      vi.mocked(storage.dismissRecipe).mockResolvedValue(undefined);
+
+      const res = await request(app).post("/api/carousel/dismiss").send({
+        recipeId: 1,
+        reason: "cuisine_disliked",
+      });
+
+      expect(res.status).toBe(204);
+      expect(storage.dismissRecipe).toHaveBeenCalledWith(
+        "1",
+        1,
+        "cuisine_disliked",
+      );
+    });
+
+    it("returns 400 for a reason that isn't on the list", async () => {
+      const res = await request(app).post("/api/carousel/dismiss").send({
+        recipeId: 1,
+        reason: "too spicy",
+      });
+
+      expect(res.status).toBe(400);
+      expect(storage.dismissRecipe).not.toHaveBeenCalled();
     });
 
     it("returns 400 for non-numeric recipeId", async () => {

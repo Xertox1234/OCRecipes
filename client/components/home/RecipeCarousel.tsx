@@ -12,10 +12,7 @@ import { CarouselSkeleton } from "./CarouselSkeleton";
 import { CarouselError } from "./CarouselError";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import {
-  useCarouselRecipes,
-  useDismissCarouselRecipe,
-} from "@/hooks/useCarouselRecipes";
+import { useCarouselRecipes } from "@/hooks/useCarouselRecipes";
 import {
   useFavouriteRecipeIds,
   useToggleFavouriteRecipe,
@@ -26,11 +23,18 @@ import type { HomeScreenNavigationProp } from "@/types/navigation";
 
 const SNAP_INTERVAL = CARD_WIDTH + Spacing.md;
 
-export const RecipeCarousel = React.memo(function RecipeCarousel() {
+interface RecipeCarouselProps {
+  /** X on a card: the screen asks why (see `useDismissReasonSheet`) and
+   * hides the card only once a reason is picked. */
+  onDismissRequest: (card: CarouselCardType) => void;
+}
+
+export const RecipeCarousel = React.memo(function RecipeCarousel({
+  onDismissRequest,
+}: RecipeCarouselProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { data, isLoading, isError, refetch } = useCarouselRecipes();
-  const { mutate: dismissRecipe } = useDismissCarouselRecipe();
   const { data: favouriteData } = useFavouriteRecipeIds();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
@@ -60,13 +64,6 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
     [navigation],
   );
 
-  const handleDismiss = useCallback(
-    (card: CarouselCardType) => {
-      dismissRecipe({ recipeId: card.id });
-    },
-    [dismissRecipe],
-  );
-
   const handleFavourite = useCallback(
     (recipeId: number) => {
       toggleFavourite({ recipeId, recipeType: "community" });
@@ -80,7 +77,7 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
         card={item}
         isFavourited={favouriteIdSet.has(`community:${item.id}`)}
         onPress={handlePress}
-        onDismiss={handleDismiss}
+        onDismiss={onDismissRequest}
         onFavourite={handleFavourite}
         expanded={expandedId === item.id}
         onToggleExpand={handleToggleExpand}
@@ -88,7 +85,7 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
     ),
     [
       handlePress,
-      handleDismiss,
+      onDismissRequest,
       handleFavourite,
       handleToggleExpand,
       favouriteIdSet,
