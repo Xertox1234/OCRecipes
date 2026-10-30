@@ -353,29 +353,3 @@ export async function calculateSessionNutrition(
 
   return { total, items };
 }
-
-/**
- * Calculate simple macro totals (calories, protein, carbs, fat) for a
- * cooking session's ingredients. Used when logging a meal.
- */
-export async function calculateSessionMacros(
-  ingredients: CookingSessionIngredient[],
-): Promise<{ calories: number; protein: number; carbs: number; fat: number }> {
-  const portions = await lookupIngredients(ingredients);
-
-  const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  for (const { nutrients } of portions) {
-    totals.calories += nutrients.calories;
-    totals.protein += nutrients.protein;
-    totals.carbs += nutrients.carbs;
-    totals.fat += nutrients.fat;
-  }
-
-  // Round consistently with calculateSessionNutrition
-  totals.calories = Math.round(totals.calories);
-  totals.protein = roundToOneDecimal(totals.protein);
-  totals.carbs = roundToOneDecimal(totals.carbs);
-  totals.fat = roundToOneDecimal(totals.fat);
-
-  return totals;
-}
