@@ -33,6 +33,7 @@ import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import {
   addDaysToISO,
   formatFollowUpDate,
+  storedFollowUpToCivilDate,
 } from "@/components/coach/notebook-date-utils";
 import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
@@ -110,20 +111,14 @@ export default function NotebookEntryScreen() {
   const haptics = useHaptics();
   const [contentFocused, setContentFocused] = useState(false);
   const [followUpDate, setFollowUpDate] = useState<string | null>(
-    entry?.followUpDate
-      ? new Date(entry.followUpDate).toISOString().slice(0, 10)
-      : null,
+    storedFollowUpToCivilDate(entry?.followUpDate),
   );
 
   useEffect(() => {
     if (entry) {
       setType(entry.type);
       setContent(entry.content);
-      setFollowUpDate(
-        entry.followUpDate
-          ? new Date(entry.followUpDate).toISOString().slice(0, 10)
-          : null,
-      );
+      setFollowUpDate(storedFollowUpToCivilDate(entry.followUpDate));
     }
     // Depend on entry?.id (not entryId) so a cold deep-link populates once the
     // entry actually loads — entryId is set at mount but entry resolves later.
@@ -142,10 +137,7 @@ export default function NotebookEntryScreen() {
     ? content.trim().length > 0
     : content !== entry?.content ||
       type !== entry?.type ||
-      followUpDate !==
-        (entry?.followUpDate
-          ? new Date(entry.followUpDate).toISOString().slice(0, 10)
-          : null);
+      followUpDate !== storedFollowUpToCivilDate(entry?.followUpDate);
 
   // Disabled only while saving, or when an edit changed nothing. An empty
   // note is a press that says what's missing.
@@ -179,11 +171,12 @@ export default function NotebookEntryScreen() {
       return;
     }
     if (savedEntry && savedEntry.type === "commitment") {
-      if (savedEntry.followUpDate) {
+      const followUpDay = storedFollowUpToCivilDate(savedEntry.followUpDate);
+      if (followUpDay) {
         await scheduleCommitmentReminder(
           savedEntry.id,
           savedEntry.content,
-          new Date(savedEntry.followUpDate).toISOString().slice(0, 10),
+          followUpDay,
         );
       } else {
         await cancelCommitmentReminder(savedEntry.id);

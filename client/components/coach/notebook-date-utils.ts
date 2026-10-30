@@ -41,3 +41,16 @@ export function formatFollowUpDate(iso: string | null): string {
     day: "numeric",
   });
 }
+
+/**
+ * Convert a stored follow-up instant (the server anchors the picked day at
+ * local midnight in the user's zone) back to the "YYYY-MM-DD" civil day in the
+ * device zone. Never `toISOString().slice(0, 10)`: that is the UTC day, which
+ * for a UTC+ user is the day BEFORE — shown in the editor, re-saved on every
+ * edit (drifting a day earlier each time), and used to schedule the reminder.
+ */
+export function storedFollowUpToCivilDate(
+  stored: string | null | undefined,
+): string | null {
+  return stored ? toISO(new Date(stored)) : null;
+}
