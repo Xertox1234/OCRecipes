@@ -117,6 +117,11 @@ vi.mock("@/hooks/useNotebookNotifications", () => ({
   clearScheduledCoachReminders: () => mockClearScheduledCoachReminders(),
 }));
 
+const { mockLoggerError } = vi.hoisted(() => ({ mockLoggerError: vi.fn() }));
+vi.mock("@/lib/logger", () => ({
+  logger: { error: mockLoggerError, warn: vi.fn(), info: vi.fn() },
+}));
+
 const { mockGetProviderToken } = vi.hoisted(() => ({
   mockGetProviderToken: vi.fn(),
 }));
@@ -1220,7 +1225,8 @@ describe("useAuth", () => {
         expect(result.current.isAuthenticated).toBe(true);
       });
 
-      mockApiRequest.mockRejectedValue(new Error("Server error"));
+      const serverError = new Error("Server error");
+      mockApiRequest.mockRejectedValue(serverError);
 
       await act(async () => {
         await result.current.logout();
@@ -1228,6 +1234,28 @@ describe("useAuth", () => {
 
       expect(mockTokenStorage.clear).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
+      // The token was NOT revoked server-side: that must be visible (R25).
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        expect.stringContaining("logout"),
+        serverError,
+      );
+    });
+
+    it("does not log when the server logout succeeds", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      mockApiRequest.mockResolvedValue({});
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(mockLoggerError).not.toHaveBeenCalled();
     });
 
     it("still clears auth state if queryClient.clear() throws during logout", async () => {

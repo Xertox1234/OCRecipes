@@ -9,6 +9,7 @@ import {
   whenQueryCacheRestored,
 } from "@/lib/query-client";
 import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
+import { logger } from "@/lib/logger";
 import type {
   MfaChallengeResult,
   MfaVerifyResult,
@@ -532,7 +533,14 @@ export function useAuth() {
     await unregisterPushToken();
     try {
       await apiRequest("POST", "/api/auth/logout", {});
-    } catch {}
+    } catch (error) {
+      // Local sign-out still proceeds, but the server never revoked the token
+      // (offline, 5xx): it stays usable until it expires. Make that visible.
+      logger.error(
+        "Server logout failed; token not revoked server-side",
+        error,
+      );
+    }
     await tokenStorage.clear();
     // Guarded like expireSession/deleteAccount: a storage rejection here must
     // not skip the durable sweep or the sign-out setState. A blob left on disk
