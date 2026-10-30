@@ -272,6 +272,12 @@ Counts by primary cause; MIXED records are split by their primary.
 
 ## 6. Re-ranked working list
 
+> **Mods addendum:** see [`2026-10-30-mods-addendum.md`](2026-10-30-mods-addendum.md).
+>
+> - Build rank 3 (N4) and rank 9 (N5) as mods, and move N5 up to follow rank 4.
+> - Collect item 1 (metrics) with a mod.
+> - New N9 (compact and continue) waits for the owner's yes.
+
 Each item gets spec → execute → compact → next. The ranking weighs evidence strength, then cost (smallest first), then risk.
 
 | Rank | Item                                                                                  | Why here                                                                           |
