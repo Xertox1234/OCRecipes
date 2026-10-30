@@ -51,6 +51,30 @@ describe("Recipe Import", () => {
     });
   });
 
+  describe("parseIsoDuration — full ISO 8601 forms (R37)", () => {
+    it("accepts a day component", () => {
+      expect(parseIsoDuration("P0DT30M")).toBe(30);
+      expect(parseIsoDuration("P1DT2H")).toBe(26 * 60);
+      expect(parseIsoDuration("P1D")).toBe(24 * 60);
+    });
+
+    it("accepts fractional values", () => {
+      expect(parseIsoDuration("PT1.5H")).toBe(90);
+      expect(parseIsoDuration("PT0.5M")).toBe(1);
+    });
+
+    it("rounds seconds into minutes", () => {
+      expect(parseIsoDuration("PT90S")).toBe(2);
+      expect(parseIsoDuration("PT10M30S")).toBe(11);
+    });
+
+    it("still rejects malformed strings", () => {
+      expect(parseIsoDuration("P")).toBeNull();
+      expect(parseIsoDuration("PT")).toBeNull();
+      expect(parseIsoDuration("30 minutes")).toBeNull();
+    });
+  });
+
   describe("normalizeInstructions", () => {
     it("returns null for undefined", () => {
       expect(normalizeInstructions(undefined)).toBeNull();
@@ -592,6 +616,66 @@ describe("Recipe Import", () => {
           expect(result.data.prepTimeMinutes).toBeNull();
           expect(result.data.ingredients).toHaveLength(1);
           expect(result.data.caloriesPerServing).toBeNull();
+        }
+      });
+    });
+
+    describe("totalTime fallback and comma nutrition (R37)", () => {
+      function mockPage(recipe: unknown) {
+        const html = `<html><head><script type="application/ld+json">${JSON.stringify(recipe)}</script></head><body></body></html>`;
+        const encoded = new TextEncoder().encode(html);
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoded);
+            controller.close();
+          },
+        });
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            "content-length": String(encoded.byteLength),
+          }),
+          body: stream,
+        });
+      }
+
+      it("uses totalTime when prepTime and cookTime are both absent", async () => {
+        mockPage({ "@type": "Recipe", name: "Total only", totalTime: "PT45M" });
+        const result = await importRecipeFromUrl("https://example.com/t");
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.prepTimeMinutes).toBeNull();
+          expect(result.data.cookTimeMinutes).toBe(45);
+        }
+      });
+
+      it("does not override explicit prep/cook times with totalTime", async () => {
+        mockPage({
+          "@type": "Recipe",
+          name: "Both",
+          prepTime: "PT10M",
+          totalTime: "PT45M",
+        });
+        const result = await importRecipeFromUrl("https://example.com/b");
+        if (result.success) {
+          expect(result.data.prepTimeMinutes).toBe(10);
+          expect(result.data.cookTimeMinutes).toBeNull();
+        }
+      });
+
+      it("strips thousands separators in nutrition values", async () => {
+        mockPage({
+          "@type": "Recipe",
+          name: "Commas",
+          nutrition: { calories: "1,046 kJ", proteinContent: "1,5 g" },
+        });
+        const result = await importRecipeFromUrl("https://example.com/c");
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.caloriesPerServing).toBe("250");
+          // A comma not followed by exactly 3 digits is a decimal comma.
+          expect(result.data.proteinPerServing).toBe("1.5");
         }
       });
     });

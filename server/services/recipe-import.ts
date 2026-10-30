@@ -173,15 +173,23 @@ export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // 5 MB
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /**
- * Parse ISO 8601 duration (e.g., "PT15M", "PT1H30M") into minutes.
+ * Parse ISO 8601 duration (e.g., "PT15M", "PT1H30M", "P0DT30M", "PT1.5H")
+ * into whole minutes. Accepts a day component and fractional values; seconds
+ * are rounded into the total. Returns null for anything else.
  */
+const ISO_DURATION_RE =
+  /^P(?:(\d+(?:[.,]\d+)?)D)?(?:T(?=\d)(?:(\d+(?:[.,]\d+)?)H)?(?:(\d+(?:[.,]\d+)?)M)?(?:(\d+(?:[.,]\d+)?)S)?)?$/i;
+
 export function parseIsoDuration(duration: string | undefined): number | null {
   if (!duration) return null;
-  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  const match = duration.trim().match(ISO_DURATION_RE);
   if (!match) return null;
-  const hours = parseInt(match[1] || "0", 10);
-  const minutes = parseInt(match[2] || "0", 10);
-  return hours * 60 + minutes;
+  const [, d, h, m, sec] = match;
+  // A bare "P" matches with no components.
+  if (!d && !h && !m && !sec) return null;
+  const n = (v: string | undefined) =>
+    v ? parseFloat(v.replace(",", ".")) : 0;
+  return Math.round(n(d) * 1440 + n(h) * 60 + n(m) + n(sec) / 60);
 }
 
 /**
@@ -241,7 +249,12 @@ export function parseIngredientString(raw: string): ParsedIngredient {
  */
 function parseNutritionValue(value: string | undefined): string | null {
   if (!value) return null;
-  const match = value.match(/([\d.]+)\s*(kJ|KJ)?/i);
+  // Thousands separators ("1,046 kJ") are stripped; a comma not followed by
+  // exactly three digits is a decimal comma ("1,5 g").
+  const cleaned = value
+    .replace(/(\d),(?=\d{3}(?!\d))/g, "$1")
+    .replace(/(\d),(\d)/g, "$1.$2");
+  const match = cleaned.match(/([\d.]+)\s*(kJ|KJ)?/i);
   if (!match) return null;
   let num = parseFloat(match[1]);
   if (!Number.isFinite(num)) return null;
@@ -629,12 +642,19 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
       : recipe.keywords
     : [];
 
+  const prepTimeMinutes = parseIsoDuration(recipe.prepTime);
+  let cookTimeMinutes = parseIsoDuration(recipe.cookTime);
+  // Many sites publish only totalTime — surface it rather than no time at all.
+  if (prepTimeMinutes === null && cookTimeMinutes === null) {
+    cookTimeMinutes = parseIsoDuration(recipe.totalTime);
+  }
+
   const data: ImportedRecipeData = {
     title: recipe.name,
     description: recipe.description || null,
     servings: parseServings(recipe.recipeYield),
-    prepTimeMinutes: parseIsoDuration(recipe.prepTime),
-    cookTimeMinutes: parseIsoDuration(recipe.cookTime),
+    prepTimeMinutes,
+    cookTimeMinutes,
     cuisine: extractFirstString(recipe.recipeCuisine),
     dietTags: keywords,
     ingredients: (recipe.recipeIngredient || []).map(parseIngredientString),
