@@ -8,6 +8,7 @@ const transactionDefaults: Transaction = {
   platform: "ios",
   productId: "com.ocrecipes.premium.monthly",
   status: "pending",
+  revokedAt: null,
   createdAt: new Date("2024-01-01"),
   updatedAt: new Date("2024-01-01"),
 };
