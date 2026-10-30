@@ -206,6 +206,7 @@ describe("handleAppleNotification", () => {
 
 describe("handleAppleNotification REFUND_REVERSED", () => {
   const expiresAt = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000);
+  const signedAt = new Date(Date.now() - 60 * 1000);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -218,9 +219,11 @@ describe("handleAppleNotification REFUND_REVERSED", () => {
       expiresAt,
       purchasedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
       revoked: false,
+      signedAt,
     });
     vi.mocked(storage.reinstateSubscriptionByTransactionId).mockResolvedValue({
       userId: "user-rr",
+      stale: false,
     });
 
     await handleAppleNotification("signed-payload");
@@ -228,6 +231,7 @@ describe("handleAppleNotification REFUND_REVERSED", () => {
     expect(storage.reinstateSubscriptionByTransactionId).toHaveBeenCalledWith(
       "orig-rr",
       expiresAt,
+      signedAt,
     );
     expect(invalidateCache).toHaveBeenCalledWith("user-rr");
     expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
@@ -239,9 +243,11 @@ describe("handleAppleNotification REFUND_REVERSED", () => {
       notificationType: "REFUND_REVERSED",
       originalTransactionId: "orig-rr",
       revoked: false,
+      signedAt,
     });
     vi.mocked(storage.reinstateSubscriptionByTransactionId).mockResolvedValue({
       userId: "user-rr",
+      stale: false,
     });
 
     await handleAppleNotification("signed-payload");
@@ -249,6 +255,7 @@ describe("handleAppleNotification REFUND_REVERSED", () => {
     expect(storage.reinstateSubscriptionByTransactionId).toHaveBeenCalledWith(
       "orig-rr",
       null,
+      signedAt,
     );
   });
 
@@ -259,11 +266,16 @@ describe("handleAppleNotification REFUND_REVERSED", () => {
       "there is no originalTransactionId",
       { revoked: false, originalTransactionId: undefined },
     ],
+    [
+      "the notification has no signedDate (cannot order it against a refund)",
+      { revoked: false, signedAt: undefined },
+    ],
   ])("does nothing when %s", async (_label, overrides) => {
     vi.mocked(verifyAppleNotification).mockResolvedValue({
       notificationType: "REFUND_REVERSED",
       originalTransactionId: "orig-rr",
       expiresAt,
+      signedAt,
       ...overrides,
     });
 
@@ -279,6 +291,7 @@ describe("handleAppleNotification REFUND_REVERSED", () => {
       originalTransactionId: "orig-unknown",
       expiresAt,
       revoked: false,
+      signedAt,
     });
     vi.mocked(storage.reinstateSubscriptionByTransactionId).mockResolvedValue(
       null,
@@ -286,6 +299,29 @@ describe("handleAppleNotification REFUND_REVERSED", () => {
 
     await handleAppleNotification("signed-payload");
 
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate the cache when the reversal is older than the row's refund", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND_REVERSED",
+      originalTransactionId: "orig-rr",
+      expiresAt,
+      revoked: false,
+      signedAt,
+    });
+    vi.mocked(storage.reinstateSubscriptionByTransactionId).mockResolvedValue({
+      userId: "user-rr",
+      stale: true,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.reinstateSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-rr",
+      expiresAt,
+      signedAt,
+    );
     expect(invalidateCache).not.toHaveBeenCalled();
   });
 });

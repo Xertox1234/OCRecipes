@@ -83,26 +83,41 @@ export async function handleAppleNotification(
   if (n.notificationType === "REFUND_REVERSED") {
     // Apple reversed a refund: the signed transaction must exist and no longer
     // carry a revocationDate. Skips the purchase-date gate — the verified
-    // notification itself authorizes restoring the row.
-    if (!n.originalTransactionId || n.revoked !== false) {
+    // notification itself authorizes restoring the row. signedDate is required
+    // (fail closed): without it a late retry cannot be ordered against a
+    // newer refund on the row.
+    if (!n.originalTransactionId || n.revoked !== false || !n.signedAt) {
       log.warn(
         {
           type: n.notificationType,
           uuid: n.notificationUUID,
           revoked: n.revoked,
+          hasSignedAt: n.signedAt !== undefined,
         },
-        "apple refund-reversed notification lacks an unrevoked transaction — not reinstated",
+        "apple refund-reversed notification lacks an unrevoked transaction or signedDate — not reinstated",
       );
       return;
     }
     const reinstated = await storage.reinstateSubscriptionByTransactionId(
       n.originalTransactionId,
       n.expiresAt ?? null,
+      n.signedAt,
     );
     if (!reinstated) {
       log.warn(
         { type: n.notificationType },
         "apple refund-reversed notification: no matching local transaction",
+      );
+      return;
+    }
+    if (reinstated.stale) {
+      log.warn(
+        {
+          type: n.notificationType,
+          uuid: n.notificationUUID,
+          userId: reinstated.userId,
+        },
+        "apple refund-reversed notification predates the row's refund (out-of-order delivery) — not reinstated",
       );
       return;
     }

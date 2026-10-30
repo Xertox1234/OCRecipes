@@ -25,6 +25,7 @@ import {
   communityRecipes,
   savedItems,
   recipeDismissals,
+  transactions,
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import {
@@ -1493,6 +1494,9 @@ describe("users storage", () => {
     const day = 24 * 60 * 60 * 1000;
     const future = new Date(Date.now() + 20 * day);
     const originalPurchase = new Date(Date.now() - 10 * day);
+    const refundedAt = new Date(Date.now() - 2 * day);
+    // The reversal Apple signed AFTER the refund it reverses.
+    const signedAt = new Date(Date.now() - 1 * day);
     const claim = (purchasedAt?: Date | null) =>
       claimTransactionAndUpgrade(
         {
@@ -1510,19 +1514,17 @@ describe("users storage", () => {
 
     beforeEach(async () => {
       await claim(originalPurchase);
-      await revokeSubscriptionByTransactionId(
-        "orig_reversed_1",
-        new Date(Date.now() - 2 * day),
-      );
+      await revokeSubscriptionByTransactionId("orig_reversed_1", refundedAt);
     });
 
     it("restores the row and premium when the reversed transaction is still in its period", async () => {
       const result = await reinstateSubscriptionByTransactionId(
         "orig_reversed_1",
         future,
+        signedAt,
       );
 
-      expect(result).toEqual({ userId: testUser.id });
+      expect(result).toEqual({ userId: testUser.id, stale: false });
       const txn = await getTransaction("orig_reversed_1");
       expect(txn!.status).toBe("completed");
       expect(txn!.revokedAt).toBeNull();
@@ -1532,7 +1534,11 @@ describe("users storage", () => {
     });
 
     it("lets the original pre-refund receipt restore after the reversal", async () => {
-      await reinstateSubscriptionByTransactionId("orig_reversed_1", future);
+      await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        future,
+        signedAt,
+      );
 
       const result = await claim(originalPurchase);
 
@@ -1543,9 +1549,10 @@ describe("users storage", () => {
       const result = await reinstateSubscriptionByTransactionId(
         "orig_reversed_1",
         new Date(Date.now() - 1 * day),
+        signedAt,
       );
 
-      expect(result).toEqual({ userId: testUser.id });
+      expect(result).toEqual({ userId: testUser.id, stale: false });
       const txn = await getTransaction("orig_reversed_1");
       expect(txn!.status).toBe("completed");
       expect(txn!.revokedAt).toBeNull();
@@ -1555,7 +1562,11 @@ describe("users storage", () => {
     });
 
     it("restores only the row status when the transaction has no expiry", async () => {
-      await reinstateSubscriptionByTransactionId("orig_reversed_1", null);
+      await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        null,
+        signedAt,
+      );
 
       const txn = await getTransaction("orig_reversed_1");
       expect(txn!.status).toBe("completed");
@@ -1567,6 +1578,7 @@ describe("users storage", () => {
       const result = await reinstateSubscriptionByTransactionId(
         "orig_unknown",
         future,
+        signedAt,
       );
 
       expect(result).toBeNull();
@@ -1588,10 +1600,114 @@ describe("users storage", () => {
       await reinstateSubscriptionByTransactionId(
         "orig_expired_only",
         new Date(Date.now() - 1 * day),
+        signedAt,
       );
 
       const txn = await getTransaction("orig_expired_only");
       expect(txn!.status).toBe("expired");
+    });
+
+    // Apple delivers out of order and retries for ~72h: a reversal signed
+    // BEFORE the refund now on the row must not undo that later refund.
+    it("ignores a reversal signed before the row's refund (stale, out-of-order delivery)", async () => {
+      const staleSignedAt = new Date(refundedAt.getTime() - 1 * day);
+
+      const result = await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        future,
+        staleSignedAt,
+      );
+
+      expect(result).toEqual({ userId: testUser.id, stale: true });
+      const txn = await getTransaction("orig_reversed_1");
+      expect(txn!.status).toBe("revoked");
+      expect(txn!.revokedAt?.getTime()).toBe(refundedAt.getTime());
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+      expect(user!.subscriptionExpiresAt).toBeNull();
+      // The replay gate still holds against the pre-refund receipt.
+      const replay = await claim(originalPurchase);
+      expect(replay.status).toBe("revoked");
+    });
+
+    it("treats a reversal signed at the exact refund time as stale", async () => {
+      const result = await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        future,
+        refundedAt,
+      );
+
+      expect(result).toEqual({ userId: testUser.id, stale: true });
+      const txn = await getTransaction("orig_reversed_1");
+      expect(txn!.status).toBe("revoked");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+    });
+
+    it("refund, reversal, second refund, then a retried copy of the reversal keeps the row revoked", async () => {
+      // refund 1 (beforeEach, at refundedAt) -> reversal (signedAt)
+      await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        future,
+        signedAt,
+      );
+      // refund 2, after the reversal
+      const secondRefund = new Date(signedAt.getTime() + 12 * 60 * 60 * 1000);
+      await revokeSubscriptionByTransactionId("orig_reversed_1", secondRefund);
+
+      // Apple's retried copy of the original reversal arrives last.
+      const result = await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        future,
+        signedAt,
+      );
+
+      expect(result).toEqual({ userId: testUser.id, stale: true });
+      const txn = await getTransaction("orig_reversed_1");
+      expect(txn!.status).toBe("revoked");
+      expect(txn!.revokedAt?.getTime()).toBe(secondRefund.getTime());
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+      const replay = await claim(originalPurchase);
+      expect(replay.status).toBe("revoked");
+    });
+
+    it("reinstates a legacy revoked row that has no revokedAt", async () => {
+      await tx
+        .update(transactions)
+        .set({ revokedAt: null })
+        .where(eq(transactions.transactionId, "orig_reversed_1"));
+
+      const result = await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        future,
+        signedAt,
+      );
+
+      expect(result).toEqual({ userId: testUser.id, stale: false });
+      const txn = await getTransaction("orig_reversed_1");
+      expect(txn!.status).toBe("completed");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+    });
+
+    it("re-applies premium to a row that is not revoked and is not stale", async () => {
+      await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        future,
+        signedAt,
+      );
+      const later = new Date(future.getTime() + 5 * day);
+
+      const result = await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        later,
+        new Date(signedAt.getTime() + 1000),
+      );
+
+      expect(result).toEqual({ userId: testUser.id, stale: false });
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(later.getTime());
     });
   });
 

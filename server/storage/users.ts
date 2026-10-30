@@ -31,7 +31,10 @@ import {
   gt,
   asc,
   isNotNull,
+  isNull,
+  lt,
   ne,
+  or,
 } from "drizzle-orm";
 import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
@@ -1170,13 +1173,20 @@ export async function expireSubscriptionByTransactionId( // idor-safe
  * status only. A row that is not `revoked` keeps its status. Returns `null`
  * for an unknown id.
  *
+ * Out-of-order guard: Apple delivers notifications out of order and retries
+ * for ~72h, so a reversal signed at or before the row's `revokedAt` reverses
+ * an EARLIER refund, not the one on the row. That is a no-op returning
+ * `stale: true` (no status flip, no premium). A legacy revoked row with no
+ * `revokedAt` cannot be ordered and is reinstated.
+ *
  * Not user-scoped by design (idor-safe): same as
  * revokeSubscriptionByTransactionId.
  */
 export async function reinstateSubscriptionByTransactionId( // idor-safe
   transactionId: string,
   expiresAt: Date | null,
-): Promise<{ userId: string } | null> {
+  signedAt: Date,
+): Promise<{ userId: string; stale: boolean } | null> {
   return db.transaction(async (tx) => {
     const [txn] = await tx
       .select()
@@ -1186,6 +1196,10 @@ export async function reinstateSubscriptionByTransactionId( // idor-safe
 
     if (!txn) return null;
 
+    if (txn.revokedAt && txn.revokedAt.getTime() >= signedAt.getTime()) {
+      return { userId: txn.userId, stale: true };
+    }
+
     await tx
       .update(transactions)
       .set({ status: "completed", revokedAt: null, updatedAt: new Date() })
@@ -1193,6 +1207,10 @@ export async function reinstateSubscriptionByTransactionId( // idor-safe
         and(
           eq(transactions.transactionId, transactionId),
           eq(transactions.status, "revoked"),
+          or(
+            isNull(transactions.revokedAt),
+            lt(transactions.revokedAt, signedAt),
+          ),
         ),
       );
 
@@ -1200,6 +1218,6 @@ export async function reinstateSubscriptionByTransactionId( // idor-safe
       await applyRenewalInTx(tx, txn.userId, "premium", expiresAt);
     }
 
-    return { userId: txn.userId };
+    return { userId: txn.userId, stale: false };
   });
 }
