@@ -18,6 +18,7 @@ import { sampleStoredAppleTokens } from "./storage/identities";
 import { runIdentityKeyBootCheck } from "./lib/social-identity/key-check";
 import { fireAndForget } from "./lib/fire-and-forget";
 import { startPromotionJob } from "./services/canonical-promotion";
+import { startPushReceiptJob } from "./services/push-notifications";
 import { logger, rootLogger, toError } from "./lib/logger";
 import {
   attachExpressErrorReporter,
@@ -356,6 +357,10 @@ function startServer() {
   // Start canonical recipe promotion job (every 6 hours)
   const promotionInterval = startPromotionJob();
 
+  // Check Expo push receipts every 15 minutes (prunes DeviceNotRegistered
+  // tokens that only surface in receipts, not send-time tickets).
+  const pushReceiptInterval = startPushReceiptJob();
+
   // Daily retention cleanup at 03:00 UTC. Opt-in only — refuses to start in
   // NODE_ENV=production without RETENTION_CLEANUP_ENABLED=true so the
   // destructive job can never run by accident. The flag is also required to
@@ -409,6 +414,7 @@ function startServer() {
     rootLogger.flush();
     clearInterval(cacheCleanupInterval);
     clearInterval(promotionInterval);
+    clearInterval(pushReceiptInterval);
     if (retentionCleanupTask) {
       void retentionCleanupTask.stop();
     }
