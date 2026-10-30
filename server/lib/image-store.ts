@@ -69,6 +69,14 @@ function client(cfg: R2Config): S3Client {
         accessKeyId: cfg.accessKeyId,
         secretAccessKey: cfg.secretAccessKey,
       },
+      // SDK defaults are 0 (no timeout), so a stalled R2 endpoint would hang
+      // the awaiting request handler. throwOnRequestTimeout is required —
+      // without it requestTimeout only logs a warning and never aborts.
+      requestHandler: {
+        connectionTimeout: 5_000,
+        requestTimeout: 30_000,
+        throwOnRequestTimeout: true,
+      },
     });
   }
   return cachedClient;

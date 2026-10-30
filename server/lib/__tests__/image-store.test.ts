@@ -53,6 +53,24 @@ describe("image-store", () => {
     expect(isR2Configured()).toBe(true);
   });
 
+  it("builds the S3 client with connection/request timeouts that actually abort (R10)", async () => {
+    setR2Env(true);
+    const { saveRecipeImage } = await load();
+    const { S3Client } = await import("@aws-sdk/client-s3");
+    await saveRecipeImage(Buffer.from("png-bytes"));
+    // SDK default is 0 = no timeout; without throwOnRequestTimeout a
+    // requestTimeout only logs a warning and the hung PutObject never ends.
+    expect(vi.mocked(S3Client)).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        requestHandler: expect.objectContaining({
+          connectionTimeout: expect.any(Number),
+          requestTimeout: expect.any(Number),
+          throwOnRequestTimeout: true,
+        }),
+      }),
+    );
+  });
+
   it("saveRecipeImage uploads to R2 and returns an absolute CDN URL", async () => {
     setR2Env(true);
     const { saveRecipeImage } = await load();
