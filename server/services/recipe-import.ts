@@ -470,28 +470,30 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
 
   let html: string;
   try {
+    // One deadline covers the headers AND the body: aborting the signal also
+    // errors the body stream, so a server that sends headers and then drips
+    // the body can't hold the request open past FETCH_TIMEOUT_MS.
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    let res: Response;
     try {
-      res = await safeFetch(url, controller.signal);
+      const res = await safeFetch(url, controller.signal);
+
+      if (!res.ok) {
+        return { success: false, error: "FETCH_FAILED" };
+      }
+
+      // Reject early if Content-Length header advertises an oversized response
+      const contentLength = res.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
+        return { success: false, error: "RESPONSE_TOO_LARGE" };
+      }
+
+      // Stream body with size enforcement (handles missing/inaccurate Content-Length)
+      html = await readBodyWithLimit(res, MAX_RESPONSE_BYTES);
     } finally {
       clearTimeout(timeout);
     }
-
-    if (!res.ok) {
-      return { success: false, error: "FETCH_FAILED" };
-    }
-
-    // Reject early if Content-Length header advertises an oversized response
-    const contentLength = res.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
-      return { success: false, error: "RESPONSE_TOO_LARGE" };
-    }
-
-    // Stream body with size enforcement (handles missing/inaccurate Content-Length)
-    html = await readBodyWithLimit(res, MAX_RESPONSE_BYTES);
   } catch (err) {
     if (err instanceof Error && err.message === "RESPONSE_TOO_LARGE") {
       return { success: false, error: "RESPONSE_TOO_LARGE" };

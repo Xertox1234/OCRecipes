@@ -375,6 +375,31 @@ describe("Recipe Import", () => {
       expect(result).toEqual({ success: false, error: "TIMEOUT" });
     }, 15_000);
 
+    it("returns TIMEOUT when headers arrive but the body never finishes", async () => {
+      // Headers come back at once, then the body drips forever. Like undici,
+      // the body stream errors with an AbortError when the request's signal
+      // aborts — so the deadline must still be armed while the body is read.
+      globalThis.fetch = vi.fn().mockImplementation((_url, opts) => {
+        const signal = opts?.signal as AbortSignal | undefined;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("<html>"));
+            signal?.addEventListener("abort", () =>
+              controller.error(
+                new DOMException("The operation was aborted.", "AbortError"),
+              ),
+            );
+          },
+        });
+        return Promise.resolve(
+          new Response(body, { status: 200, headers: new Headers() }),
+        );
+      });
+
+      const result = await importRecipeFromUrl("https://example.com/drip");
+      expect(result).toEqual({ success: false, error: "TIMEOUT" });
+    }, 15_000);
+
     it("returns RESPONSE_TOO_LARGE when Content-Length exceeds limit", async () => {
       const oversizedLength = MAX_RESPONSE_BYTES + 1;
       globalThis.fetch = vi.fn().mockResolvedValue({
