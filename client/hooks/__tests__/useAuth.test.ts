@@ -357,36 +357,38 @@ describe("useAuth", () => {
       expect(mockNotifySessionExpired).not.toHaveBeenCalled();
     });
 
-    it.each([500, 502, 503, 429, 408, 403])(
-      "keeps the session on a transient %i from /me (no token clear, no durable sweep, cached user)",
+    // A 429 or a 5xx during a deploy is not session death. It used to clear
+    // the token AND the offline queue, signing the user out and dropping
+    // queued food logs (pre-launch audit 2026-10-29).
+    it.each([403, 404, 408, 429, 500, 502, 503, 504])(
+      "keeps the session and the offline queue on a %i from /me",
       async (status) => {
         mockTokenStorage.get.mockResolvedValue("valid-token");
         mockFetch.mockResolvedValue({ ok: false, status });
         mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
-        // Same user as the durable stores were confirmed for (common resume).
+        // The common resume: this device's stores already belong to this user.
         mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
 
         const { result } = renderHook(() => useAuth());
-
         await waitFor(() => expect(result.current.isLoading).toBe(false));
 
+        expect(result.current.isAuthenticated).toBe(true);
+        expect(result.current.user).toEqual(fakeUser);
         expect(mockTokenStorage.clear).not.toHaveBeenCalled();
         expect(mockClearOfflineQueue).not.toHaveBeenCalled();
         expect(mockQueryClient.clear).not.toHaveBeenCalled();
         expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
           JSON.stringify(fakeUser),
         );
-        expect(result.current.isAuthenticated).toBe(true);
-        expect(result.current.user).toEqual(fakeUser);
+        expect(mockNotifySessionExpired).not.toHaveBeenCalled();
       },
     );
 
-    it("keeps the token on a transient /me failure even with no cached user", async () => {
+    it("keeps the token on a 503 from /me even with no cached profile", async () => {
       mockTokenStorage.get.mockResolvedValue("valid-token");
       mockFetch.mockResolvedValue({ ok: false, status: 503 });
 
       const { result } = renderHook(() => useAuth());
-
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
       expect(mockTokenStorage.clear).not.toHaveBeenCalled();

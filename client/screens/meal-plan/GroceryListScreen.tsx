@@ -486,7 +486,7 @@ export default function GroceryListScreen() {
               </ThemedText>
               <Pressable
                 onPress={handleShare}
-                hitSlop={8}
+                hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel="Copy list to clipboard"
               >

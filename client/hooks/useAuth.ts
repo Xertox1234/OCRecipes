@@ -155,6 +155,41 @@ async function reconcileOwnerFor(id: unknown): Promise<void> {
   await reconcileDurableOwner(String(id), clearDurableLocalState);
 }
 
+/**
+ * The auth state to resume with when /api/auth/me can't confirm the session
+ * but didn't say it is dead (a network error, a 429, a 5xx): the cached
+ * profile if there is one, otherwise signed out — and the token is kept either
+ * way, so the next check can restore the session.
+ */
+async function resumeFromCachedProfile(): Promise<AuthState> {
+  const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+  let cachedUser: User | null = null;
+  if (stored) {
+    try {
+      cachedUser = JSON.parse(stored) as User;
+    } catch {
+      // Corrupt cache blob. This must NOT log the user out: the session
+      // token is still valid — only the convenience cache is unreadable.
+      // Drop the poison key so it stops re-throwing, then fall through to
+      // the no-cache path WITH the token preserved. The next foreground
+      // re-check / relaunch re-validates and restores the session.
+      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+  }
+  if (!cachedUser) {
+    return { user: null, isLoading: false, isAuthenticated: false };
+  }
+  // Reconcile here too: this offline-resume path runs neither a teardown
+  // nor any other reconcile, and the query cache (unlike the home-actions
+  // and offline-queue stores, which gate at their own read points) has no
+  // independent owner gate. A user switch can't happen offline, so the
+  // marker normally matches and this is a no-op that preserves the offline
+  // cache; it only wipes when the marker proves the restored data isn't
+  // this user's (a prior failed wipe), closing the last query-cache hole.
+  await reconcileOwnerFor(cachedUser.id);
+  return { user: cachedUser, isLoading: false, isAuthenticated: true };
+}
+
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -163,42 +198,6 @@ export function useAuth() {
   });
 
   const checkAuth = useCallback(async () => {
-    // Resume from the cached user without touching the token: used when /me
-    // could not answer definitively (network error, non-401 failure).
-    const restoreCachedSession = async () => {
-      const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-      let cachedUser: User | null = null;
-      if (stored) {
-        try {
-          cachedUser = JSON.parse(stored) as User;
-        } catch {
-          // Corrupt cache blob. This must NOT log the user out: the session
-          // token is still valid — only the convenience cache is unreadable.
-          // Drop the poison key so it stops re-throwing, then fall through to
-          // the no-cache path WITH the token preserved. The next foreground
-          // re-check / relaunch re-validates and restores the session.
-          await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-        }
-      }
-      if (cachedUser) {
-        // Reconcile here too: this offline-resume path runs neither a teardown
-        // nor any other reconcile, and the query cache (unlike the home-actions
-        // and offline-queue stores, which gate at their own read points) has no
-        // independent owner gate. A user switch can't happen offline, so the
-        // marker normally matches and this is a no-op that preserves the offline
-        // cache; it only wipes when the marker proves the restored data isn't
-        // this user's (a prior failed wipe), closing the last query-cache hole.
-        await reconcileOwnerFor(cachedUser.id);
-        setState({
-          user: cachedUser,
-          isLoading: false,
-          isAuthenticated: true,
-        });
-      } else {
-        setState({ user: null, isLoading: false, isAuthenticated: false });
-      }
-    };
-
     try {
       let token: string | null;
       try {
@@ -212,7 +211,7 @@ export function useAuth() {
           .getOrThrow()
           .catch(() => tokenStorage.getOrThrow());
       } catch {
-        await restoreCachedSession();
+        setState(await resumeFromCachedProfile());
         return;
       }
       if (!token) {
@@ -266,12 +265,13 @@ export function useAuth() {
           // server's push token here too (never prompts; fire-and-forget).
           registerPushToken({ prompt: false }).catch(() => {});
         } else if (response.status !== 401) {
-          // Non-401 failures (5xx during a deploy, 429, 408, ...) are not
-          // session death: the server never rejects a dead token with anything
-          // but 401. Keep the token and durable state and resume from the
-          // cached user, exactly like a network error; the next foreground
-          // re-check (or any 401 from the query interceptor) re-validates.
-          await restoreCachedSession();
+          // Only a 401 means the token is dead. A 429 or a 5xx (a deploy, a
+          // rate limiter, a proxy hiccup) is a transient failure: tearing the
+          // session down here signed the user out and wiped their offline
+          // queue. Treat it like a network error — keep the token and resume
+          // from the cached profile. (No `throw` into the catch below: React
+          // Compiler skips a function that throws inside a try.)
+          setState(await resumeFromCachedProfile());
         } else {
           // Token invalid/expired (e.g. detected on foreground resume). Route
           // the 401 through the shared session-expiry signal so the
@@ -289,8 +289,8 @@ export function useAuth() {
           setState({ user: null, isLoading: false, isAuthenticated: false });
         }
       } catch {
-        // Network error - use cached data if available
-        await restoreCachedSession();
+        // Network error — keep the token and resume from the cached profile.
+        setState(await resumeFromCachedProfile());
       }
     } catch {
       setState({ user: null, isLoading: false, isAuthenticated: false });

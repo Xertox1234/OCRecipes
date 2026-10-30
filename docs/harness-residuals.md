@@ -265,6 +265,27 @@ reboot (missing stamp root) or the hand-back delivery path is the trigger. First
 reviewer, then `ls` the stamp dir; then pipe a `merge_pull_request` payload for an open, unreviewed PR into the
 guard by hand and read its decision.
 
+### HIT IN REAL USE 2026-10-23 — `code-reviewer` hand-backs write no review record; `mobile-reviewer` does (#1541)
+
+Observed, not constructed; root cause not investigated (harness frozen). Three background reviewers were
+dispatched at head `c00524a4db3caf5f0f86a16ba15719216b7cbbb2`, each with the AI_WORKFLOW dispatch prompt
+verbatim: `mobile-reviewer` over 18 files, and `code-reviewer` over all 27 changed files, twice (the second a
+fresh dispatch). All three handed back a well-formed report ending `No findings.`. Only
+`/tmp/ocrecipes-review-stamps-07d4e12e42b1/c00524a4…/mobile-reviewer.json` was written (verdict clean,
+digest `a310edc52ff5da85`); neither `code-reviewer` run left a file. `merge-review-guard.sh` then correctly
+denied `merge_pull_request`: the one record's digest did not cover the PR's 27-file digest `94b7daa172c8abe0`.
+The owner merged #1541 on GitHub.
+
+Checked and ruled out, using `jq` on the three transcripts: each has exactly one `SubagentHandback`, none
+contains any of the three severity tags, and none has a trailing text wrapper. `.claude/settings.json`'s
+SubagentStop matcher includes `code-reviewer`. Differences between the passing and failing reports: the
+`code-reviewer` lists include `.github/workflows/ci.yml`, `eslint.config.js` and `test/mocks/…` paths, and
+their bodies quote shell commands containing `|` and `2>&1`. Together with the #1535 entry above (also
+`code-reviewer`, also no record), this is the second session in a row where the baseline reviewer cannot
+produce a merge record. First check if reopened: replay one of these hand-back payloads into
+`review-stamp-writer.sh` with tracing on (`bash -x`) against a throwaway stamp root, and see which `exit 0`
+it takes.
+
 ### HIT IN REAL USE 2026-10-28 — a hand-back with no closing text wrote no review record (#1592)
 
 A `code-reviewer` dispatched in the background against `6993a2fd789ef004bf29ad364d8272dfa3527bfe` delivered a
@@ -280,3 +301,41 @@ fall to the transcript's last text (none, so empty), then the `NHB == 1` branch 
 hand-back. A replay of that transcript through the writer with `REVIEW_STAMP_ROOT` in the scratchpad was
 denied by auto mode, so whether the hook ran, saw a non-empty `last_assistant_message`, or read a transcript
 flushed before the hand-back is open. Workaround: every reviewer dispatch asks for that closing text line.
+
+### HIT IN REAL USE 2026-10-29 — three background reviewers in a desktop session wrote no review record (#1614)
+
+The 2026-10-28 shape again, now with the replay that entry could not run. In a Claude desktop (Code tab)
+session, `code-reviewer`, `mobile-reviewer` and `server-reviewer` were dispatched in parallel (the app runs
+every subagent in the background) against `ad7babedb4fc2c4c99277b4092ab6779cbd867b4`, with the AI_WORKFLOW
+prompt verbatim and the 19 files from `gh pr diff 1614 --name-only`. Each delivered one well-formed
+`SubagentHandback` (full REVIEWED-SHA, all 19 files, last line `No findings.`) and stopped with no closing
+text. No record was written: `/tmp/ocrecipes-review-stamps-07d4e12e42b1/ad7babed…/` did not exist, and
+`merge-review-guard.sh` correctly DENIED the merge.
+
+Measured by replaying the server reviewer's real transcript (it ends `TOOL: SubagentHandback`, no text)
+through `review-stamp-writer.sh` with `REVIEW_STAMP_ROOT` in the scratchpad, run under bash:
+
+| `last_assistant_message` in the payload                 | records | verdict |
+| ------------------------------------------------------- | ------- | ------- |
+| `""`                                                    | 1       | clean   |
+| key absent                                              | 1       | clean   |
+| `Review complete and handed back; no blocking issues.`  | 1       | clean   |
+| control: same transcript, `agent_type: general-purpose` | 0       | —       |
+
+So the writer's logic handles the no-closing-text hand-back; the 2026-10-28 "why" is not in its parsing.
+What remains is outside the script: the `SubagentStop` hook did not run for these background subagents, or
+ran before the transcript held the hand-back. Not measured which. Note the 10-28 workaround (ask for a
+closing text line) was not in this dispatch, so it is untested here.
+
+Landed by owner instruction ("Write the records"): the writer was run by hand on each of the three real
+transcripts into the real stamp dir; all three came out `verdict: clean`, digest `87e21253048aae4f`, and the
+gate then allowed the merge (`471a2e9`). First check if reopened: dispatch one background reviewer in a
+desktop session with a hook that only logs (`date >> <scratchpad>/subagentstop.log`) on the same matcher, and
+see whether it fires at all.
+
+**Cause found and fixed 2026-10-30 (#1618) for the 10-28 and 10-29 shape; the 10-23 entry is likely the same race but was not re-measured.**
+The hook ran EARLY. A temporary logging line in the writer caught a real background `mobile-reviewer` (Claude
+Code 2.1.312) with a readable transcript holding 0 hand-backs and `last_assistant_message` null at hook time,
+and the hand-back was present 3 s later. The writer now polls for the hand-back for up to 5 s
+(`REVIEW_STAMP_HANDBACK_WAIT_SECS`, capped at 8 inside the 10 s hook timeout); cases 78-80 in
+`test-review-stamp-writer.sh` pin it.

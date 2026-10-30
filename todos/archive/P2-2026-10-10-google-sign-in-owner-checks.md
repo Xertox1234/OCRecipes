@@ -1,9 +1,9 @@
 ---
 title: "Google sign-in: owner checks after build 8 (device checklist, publish the OAuth app, Android)"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-29
 assignee:
 labels: [deferred, auth, react-native]
 github_issue:
@@ -23,15 +23,15 @@ Carried over from `todos/archive/P1-2026-09-26-sign-in-with-google-and-apple.md`
 ## Acceptance Criteria
 
 - [ ] **Before App Review or external TestFlight testers: publish the Google OAuth app** (Google Cloud → Google Auth Platform → Audience → Publish app). In Testing mode Google blocks everyone not on the test-user list, including Apple's reviewers. Branding first: home page `https://ocrecipes.com`, privacy `https://ocrecipes.com/privacy`, terms `https://ocrecipes.com/terms`, authorised domain `ocrecipes.com`. Scopes are openid/email/profile only, so Google verification is not needed (a logo may trigger brand verification).
-- [ ] **On iPhone with build 8:**
-  - [ ] Sign up with Google.
-  - [ ] Sign out and sign in again with Google.
+- [x] **On iPhone with build 8:** (owner 2026-10-29: Google sign-in has worked on iOS for a long time)
+  - [x] Sign up with Google.
+  - [x] Sign out and sign in again with Google.
   - [ ] Connect Google to an existing password account (Settings → Sign-in methods).
   - [ ] Disconnect it.
   - [ ] Delete a Google-only account (Google re-auth).
   - [ ] Cancel the sheet: nothing is shown.
   - [ ] After publishing, sign in with a Google account that is not a test user.
-- [ ] **Android device test** when convenient (deferred by the owner; Apple-only hardware today). On the first real sign-in, watch the server logs: a "nonce mismatch" means the client must change, not the server check.
+- [x] **Android device test** when convenient (deferred by the owner; Apple-only hardware today). On the first real sign-in, watch the server logs: a "nonce mismatch" means the client must change, not the server check.
 - [ ] One throwaway local build with a wrong `Info.plist` URL scheme: tapping Google shows the error message and the app stays open.
 
 ## Implementation Notes
@@ -53,3 +53,11 @@ Carried over from `todos/archive/P1-2026-09-26-sign-in-with-google-and-apple.md`
 ### 2026-10-10
 
 - Created when the P1 sign-in todo was closed.
+
+### 2026-10-29
+
+- Closed. The owner confirmed that Google sign-in has worked on iOS for a long time.
+- Android passed on the EAS preview build: `POST /api/auth/social 200` at 22:47Z, against the live server. The build needed its own Android OAuth client, plus that client ID in `GOOGLE_OAUTH_APP_CLIENT_IDS` on Railway. Without the Railway entry the server returned a 401 (`azp` check).
+- Not done as separate checks; no fault has been reported: connect, disconnect, delete Google-only, cancel the sheet.
+- Dropped: the throwaway wrong-`Info.plist` build. The owner tests on live-server preview builds only, not local builds.
+- Moved to the launch-prep checklist: publishing the Google OAuth app, then signing in with a Google account that is not a test user. It is still required before App Review.

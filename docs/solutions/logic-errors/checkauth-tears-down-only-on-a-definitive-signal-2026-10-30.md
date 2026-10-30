@@ -30,9 +30,9 @@ An irreversible action (the durable sweep) was gated on an absence that could be
 
 ## Solution
 
-- Only `response.status === 401` (routed through `notifySessionExpired`) and a confirmed-null token reach the teardown. Every other non-OK status calls `restoreCachedSession()`: keep the token and durable state and resume from the cached user. This is the path a network error already took, extracted unchanged. The next foreground re-check, or any 401 caught by the query interceptor, re-validates.
+- Only `response.status === 401` (routed through `notifySessionExpired`) and a confirmed-null token reach the teardown. Every other non-OK status calls `setState(await resumeFromCachedProfile())`: keep the token and durable state and resume from the cached user. This is the path a network error already took. The helper is module-level and returns the next state rather than throwing into the catch, because React Compiler skips a function that throws inside a `try` (#1622 landed the 401-only half of this fix the same way). The next foreground re-check, or any 401 caught by the query interceptor, re-validates.
 - `tokenStorage.getOrThrow()` shares `get()`'s single in-flight read and cache, but **rejects** on a read failure. `SecureStore` resolves `null` only when no entry exists. The in-flight promise settles as `{ token } | { error }` and never rejects, so `set()`/`clear()` can still safely wait on it, and `get()` keeps answering `null` for existing callers. A failed read is not cached, so the next call retries.
-- `checkAuth` retries the read once. If it fails again, it calls `restoreCachedSession()`, with **no** durable sweep and **no** token clear.
+- `checkAuth` retries the read once. If it fails again, it calls `resumeFromCachedProfile()`, with **no** durable sweep and **no** token clear.
 
 ## Prevention
 
@@ -42,7 +42,7 @@ An irreversible action (the durable sweep) was gated on an absence that could be
 
 ## Related Files
 
-- `client/hooks/useAuth.ts`: `checkAuth`, `restoreCachedSession`.
+- `client/hooks/useAuth.ts`: `checkAuth`, `resumeFromCachedProfile`.
 - `client/lib/token-storage.ts`: `readToken`, `getOrThrow`.
 - `client/hooks/__tests__/useAuth.test.ts`, `client/lib/__tests__/token-storage.test.ts`.
 

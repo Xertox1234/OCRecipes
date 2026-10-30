@@ -67,6 +67,9 @@ export default function ReceiptCaptureScreen() {
   // photos off — `replace` unmounts this screen, and without this flag the
   // unmount cleanup below would delete the files ReceiptReview just received.
   const handedOffRef = useRef(false);
+  // A capture's file exists before it joins `photos` (on-device OCR runs
+  // first), so the unmount cleanup must see it here too.
+  const pendingCaptureRef = useRef<string | null>(null);
 
   // Premium gate on mount
   const shouldShowUpgrade = !isPremium;
@@ -78,7 +81,10 @@ export default function ReceiptCaptureScreen() {
   useEffect(() => {
     return () => {
       if (handedOffRef.current) return;
-      photosRef.current.forEach((uri) => {
+      const uris = pendingCaptureRef.current
+        ? [...photosRef.current, pendingCaptureRef.current]
+        : photosRef.current;
+      uris.forEach((uri) => {
         deleteAsync(uri, { idempotent: true }).catch(() => {});
       });
     };
@@ -95,6 +101,7 @@ export default function ReceiptCaptureScreen() {
         skipProcessing: Platform.OS === "android",
       });
       if (photo?.uri) {
+        pendingCaptureRef.current = photo.uri;
         // OCR failure here is non-fatal — the capture succeeded and the
         // server scan runs regardless (gallery picks have no OCR either).
         let ocrText: string | undefined;
@@ -107,6 +114,7 @@ export default function ReceiptCaptureScreen() {
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         setPhotos((prev) => [...prev, photo.uri]);
         setOcrTexts((prev) => [...prev, ocrText]);
+        pendingCaptureRef.current = null;
         AccessibilityInfo.announceForAccessibility(
           `Photo ${photos.length + 1} of ${MAX_PHOTOS} added`,
         );
@@ -126,12 +134,23 @@ export default function ReceiptCaptureScreen() {
     const remaining = MAX_PHOTOS - photos.length;
     if (remaining <= 0) return;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: true,
-      selectionLimit: remaining,
-      quality: 0.85,
-    });
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        quality: 0.85,
+      });
+    } catch (error) {
+      // e.g. photo-library permission denied — was an unhandled rejection.
+      logger.error("receipt gallery picker failed:", error);
+      Alert.alert(
+        "Couldn't open your photos",
+        "Check that OCRecipes can access your photo library, then try again.",
+      );
+      return;
+    }
 
     if (!result.canceled && result.assets.length > 0) {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);

@@ -95,7 +95,7 @@ export function register(app: Express): void {
       max: 20,
       message: {
         error: "Too many trending requests. Please wait.",
-        code: "RATE_LIMITED",
+        code: ErrorCode.RATE_LIMITED,
       },
       standardHeaders: true,
       legacyHeaders: false,

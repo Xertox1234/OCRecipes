@@ -39,6 +39,29 @@ describe("TastePicksGrid", () => {
     ).toBe("true");
   });
 
+  // React Native's core Image has no controllable disk cache, so every
+  // re-entry re-downloaded full-size photos (audit 2026-10-29 L-perf-1).
+  it("renders recipe photos with a memory-and-disk cached image", () => {
+    const one = [
+      {
+        id: 4,
+        title: "Pho",
+        imageUrl: "/api/recipe-images/4.jpg",
+        cuisineOrigin: null,
+      },
+    ] as unknown as RecipeCandidate[];
+    const { container } = renderComponent(
+      <TastePicksGrid
+        candidates={one}
+        selectedIds={new Set()}
+        onToggle={vi.fn()}
+      />,
+    );
+    expect(
+      container.querySelector("img")?.getAttribute("data-cache-policy"),
+    ).toBe("memory-disk");
+  });
+
   it("resolves server-relative image URLs against the API base", () => {
     const relative = [
       {
