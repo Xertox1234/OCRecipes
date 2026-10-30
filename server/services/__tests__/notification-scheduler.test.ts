@@ -219,11 +219,32 @@ describe("startNotificationScheduler", () => {
     expect(cron.schedule).toHaveBeenCalledWith(
       "0 9 * * *",
       expect.any(Function),
+      expect.anything(),
     );
     expect(cron.schedule).toHaveBeenCalledWith(
       "0 12 * * *",
       expect.any(Function),
+      expect.anything(),
     );
+  });
+
+  it("pins every job to UTC and forbids overlapping runs (N5)", () => {
+    startNotificationScheduler();
+
+    // Without an explicit timezone node-cron matches in the host's local TZ,
+    // so firing time silently depends on the deploy box. noOverlap stops a
+    // slow run from being re-entered by the next tick.
+    const calls = vi.mocked(cron.schedule).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call[2]).toEqual(
+        expect.objectContaining({
+          timezone: "UTC",
+          noOverlap: true,
+          name: expect.any(String),
+        }),
+      );
+    }
   });
 
   it("is idempotent — calling twice creates only two jobs total", () => {
@@ -243,6 +264,7 @@ describe("startNotificationScheduler", () => {
     expect(cron.schedule).toHaveBeenCalledWith(
       "0 12 * * *",
       expect.any(Function),
+      expect.anything(),
     );
   });
 

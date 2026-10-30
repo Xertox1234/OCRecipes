@@ -1,7 +1,7 @@
 /**
  * Server-driven commitment reminder scheduler.
  *
- * Runs a cron job at 09:00 server-local time every day. For each active
+ * Runs a cron job at 09:00 UTC every day. For each active
  * commitment notebook entry whose followUpDate is today or in the past, sends
  * a push notification to all registered devices for that user.
  *
@@ -287,34 +287,46 @@ let mealLogTask: ReturnType<typeof cron.schedule> | null = null;
 export function startNotificationScheduler(): void {
   if (scheduledTask || mealLogTask) return;
 
-  // 09:00 daily — commitments + daily check-in
-  scheduledTask = cron.schedule("0 9 * * *", () => {
-    sendDueCommitmentReminders().catch((err) => {
-      logger.error(
-        { err },
-        "notification-scheduler: unhandled error in commitment cron",
-      );
-    });
-    sendDailyCheckinReminders().catch((err) => {
-      logger.error(
-        { err },
-        "notification-scheduler: unhandled error in daily-checkin cron",
-      );
-    });
-  });
+  // Explicit UTC: without `timezone` node-cron matches in the host's local
+  // TZ, so firing time would silently depend on the deploy box. `noOverlap`
+  // skips a tick while the previous run is still in flight — the handlers
+  // RETURN their promise so node-cron can see when a run finishes.
+  // 09:00 UTC daily — commitments + daily check-in
+  scheduledTask = cron.schedule(
+    "0 9 * * *",
+    () =>
+      Promise.all([
+        sendDueCommitmentReminders().catch((err) => {
+          logger.error(
+            { err },
+            "notification-scheduler: unhandled error in commitment cron",
+          );
+        }),
+        sendDailyCheckinReminders().catch((err) => {
+          logger.error(
+            { err },
+            "notification-scheduler: unhandled error in daily-checkin cron",
+          );
+        }),
+      ]),
+    { timezone: "UTC", noOverlap: true, name: "commitment-and-checkin" },
+  );
 
-  // 12:00 daily — meal-log nudge for users who haven't logged anything yet today
-  mealLogTask = cron.schedule("0 12 * * *", () => {
-    sendMealLogReminders().catch((err) => {
-      logger.error(
-        { err },
-        "notification-scheduler: unhandled error in meal-log cron",
-      );
-    });
-  });
+  // 12:00 UTC daily — meal-log nudge for users who haven't logged anything yet today
+  mealLogTask = cron.schedule(
+    "0 12 * * *",
+    () =>
+      sendMealLogReminders().catch((err) => {
+        logger.error(
+          { err },
+          "notification-scheduler: unhandled error in meal-log cron",
+        );
+      }),
+    { timezone: "UTC", noOverlap: true, name: "meal-log" },
+  );
 
   logger.info(
-    "notification-scheduler: started (09:00 commitments+checkin, 12:00 meal-log)",
+    "notification-scheduler: started (09:00 UTC commitments+checkin, 12:00 UTC meal-log)",
   );
 }
 
