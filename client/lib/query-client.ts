@@ -450,8 +450,38 @@ onlineManager.setEventListener((setOnline) =>
   }),
 );
 
+/**
+ * Paused-mutation signal (R19). Only the three food-log hooks are backed by the
+ * durable offline queue (networkMode "always"); every other mutation fired
+ * offline is PAUSED by TanStack's default networkMode "online" — its button
+ * sits pending with no explanation. Emit once per offline stretch when a
+ * mutation pauses, so `QueryErrorToastBridge` can say what is happening.
+ * (Durable resume across a restart needs per-mutation setMutationDefaults —
+ * see shouldDehydrateResumableMutation.)
+ */
+type PausedMutationListener = () => void;
+const pausedMutationListeners = new Set<PausedMutationListener>();
+let pausedNoticeSentThisOfflineStretch = false;
+
+export function subscribeToPausedMutations(
+  listener: PausedMutationListener,
+): () => void {
+  pausedMutationListeners.add(listener);
+  return () => {
+    pausedMutationListeners.delete(listener);
+  };
+}
+
+mutationCache.subscribe((event) => {
+  if (event.type !== "updated" || event.action.type !== "pause") return;
+  if (pausedNoticeSentThisOfflineStretch) return;
+  pausedNoticeSentThisOfflineStretch = true;
+  pausedMutationListeners.forEach((listener) => listener());
+});
+
 onlineManager.subscribe((isOnline) => {
   if (isOnline) {
+    pausedNoticeSentThisOfflineStretch = false;
     queryClient.resumePausedMutations().catch(() => {
       // resumePausedMutations is best-effort — individual mutation onError
       // handlers will surface failures to the user. Swallow here to avoid

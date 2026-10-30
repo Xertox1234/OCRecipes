@@ -1,6 +1,9 @@
 import { useEffect } from "react";
 
-import { subscribeToQueryErrors } from "@/lib/query-client";
+import {
+  subscribeToPausedMutations,
+  subscribeToQueryErrors,
+} from "@/lib/query-client";
 import { useToast } from "@/context/ToastContext";
 
 /**
@@ -18,10 +21,21 @@ export function QueryErrorToastBridge(): null {
   const toast = useToast();
 
   useEffect(() => {
-    return subscribeToQueryErrors((message) => {
+    const offErrors = subscribeToQueryErrors((message) => {
       // Background failure, not a reply to a tap — no haptic.
       toast.error(message, { haptic: false });
     });
+    // An action tapped offline is paused until reconnect (R19); without this
+    // its button just spins. Emitted once per offline stretch.
+    const offPaused = subscribeToPausedMutations(() => {
+      toast.info("You're offline. This will finish when you reconnect.", {
+        haptic: false,
+      });
+    });
+    return () => {
+      offErrors();
+      offPaused();
+    };
   }, [toast]);
 
   return null;

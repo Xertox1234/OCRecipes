@@ -571,3 +571,47 @@ describe("query cache restore failure (R47)", () => {
     }
   });
 });
+
+// R19: a non-queue-backed mutation fired offline is PAUSED (default
+// networkMode "online") — its button sits pending with no explanation. Signal
+// the pause once per offline stretch so the bridge can say what is happening.
+describe("paused-mutation signal (R19)", () => {
+  afterEach(async () => {
+    const { onlineManager } = await import("@tanstack/react-query");
+    onlineManager.setOnline(true);
+  });
+
+  it("notifies once per offline stretch when a mutation pauses", async () => {
+    const { onlineManager, MutationObserver } = await import(
+      "@tanstack/react-query"
+    );
+    const { queryClient: client, subscribeToPausedMutations } = await import(
+      "../query-client"
+    );
+    const listener = vi.fn();
+    const off = subscribeToPausedMutations(listener);
+    const fire = () =>
+      void new MutationObserver(client, {
+        mutationFn: async () => "ok",
+      })
+        .mutate()
+        .catch(() => {});
+    try {
+      onlineManager.setOnline(false);
+      fire();
+      fire();
+      await vi.waitFor(() => expect(listener).toHaveBeenCalled());
+      expect(listener).toHaveBeenCalledOnce();
+
+      // Back online, then offline again: a new stretch notifies again.
+      onlineManager.setOnline(true);
+      onlineManager.setOnline(false);
+      fire();
+      await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(2));
+    } finally {
+      off();
+      onlineManager.setOnline(true);
+      client.getMutationCache().clear();
+    }
+  });
+});

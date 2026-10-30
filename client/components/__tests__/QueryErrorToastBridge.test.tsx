@@ -8,18 +8,23 @@ import { QueryErrorToastBridge } from "../QueryErrorToastBridge";
 // client/lib/__tests__/query-error-net.test.ts. The bridge itself has no auth
 // guard: it calls toast.error() for every message that reaches it.
 
-const { mockSubscribe, mockToastError } = vi.hoisted(() => ({
-  mockSubscribe: vi.fn(),
-  mockToastError: vi.fn(),
-}));
+const { mockSubscribe, mockToastError, mockToastInfo, mockSubscribePaused } =
+  vi.hoisted(() => ({
+    mockSubscribe: vi.fn(),
+    mockToastError: vi.fn(),
+    mockToastInfo: vi.fn(),
+    mockSubscribePaused: vi.fn(),
+  }));
 
 vi.mock("@/lib/query-client", () => ({
   subscribeToQueryErrors: (listener: (message: string) => void) =>
     mockSubscribe(listener),
+  subscribeToPausedMutations: (listener: () => void) =>
+    mockSubscribePaused(listener),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ error: mockToastError }),
+  useToast: () => ({ error: mockToastError, info: mockToastInfo }),
 }));
 
 describe("QueryErrorToastBridge", () => {
@@ -28,6 +33,7 @@ describe("QueryErrorToastBridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedListener = undefined;
+    mockSubscribePaused.mockReturnValue(() => {});
     mockSubscribe.mockImplementation((listener: (message: string) => void) => {
       capturedListener = listener;
       return () => {};
@@ -66,5 +72,22 @@ describe("QueryErrorToastBridge", () => {
     unmount();
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  // R19: an offline-paused mutation gets an explanation, not a silent spinner.
+  it("explains an offline-paused action with an info toast", () => {
+    let pausedListener: (() => void) | undefined;
+    mockSubscribePaused.mockImplementation((listener: () => void) => {
+      pausedListener = listener;
+      return () => {};
+    });
+    render(<QueryErrorToastBridge />);
+
+    pausedListener?.();
+
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "You're offline. This will finish when you reconnect.",
+      { haptic: false },
+    );
   });
 });
