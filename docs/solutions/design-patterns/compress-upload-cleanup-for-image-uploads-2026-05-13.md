@@ -20,6 +20,8 @@ Reduces upload payload (1024px max, JPEG quality 0.7, <1MB target), prevents tem
 
 When a native upload helper does not accept `AbortSignal` (for example Expo `uploadAsync`), cancellation is cooperative: check the signal before starting expensive work, after compression, after the upload returns, and before parsing or mutating React state. The network request may still finish server-side, so the caller must own its current controller and ignore aborted completions.
 
+The `try` starts on the line after `compressImage` returns. Any step between the two — building the `FormData`, reading the token, making the upload part — leaks the temp file if it throws. Code there can be safe today and leak later, without changing, when a helper it calls starts throwing: #1606 made `createUploadFilePart` throw for a file with no type, and `useAddCookPhoto` built its form before its `try`, so that error left the photo on the device (fixed in #1610). When you make an upload helper throw, find its callers and move each call inside the cleanup's `try`.
+
 ## Examples
 
 ```typescript
