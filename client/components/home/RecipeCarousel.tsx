@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   StyleSheet,
@@ -35,6 +35,12 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
   const cards = data?.cards ?? [];
+  // One card open at a time: opening another closes the first.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const handleToggleExpand = useCallback((card: CarouselCardType) => {
+    setExpandedId((current) => (current === card.id ? null : card.id));
+  }, []);
 
   const favouriteIdSet = useMemo(() => {
     const set = new Set<string>();
@@ -76,9 +82,18 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
         onPress={handlePress}
         onDismiss={handleDismiss}
         onFavourite={handleFavourite}
+        expanded={expandedId === item.id}
+        onToggleExpand={handleToggleExpand}
       />
     ),
-    [handlePress, handleDismiss, handleFavourite, favouriteIdSet],
+    [
+      handlePress,
+      handleDismiss,
+      handleFavourite,
+      handleToggleExpand,
+      favouriteIdSet,
+      expandedId,
+    ],
   );
 
   const keyExtractor = useCallback(

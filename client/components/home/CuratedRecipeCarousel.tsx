@@ -11,7 +11,6 @@ import { useNavigation } from "@react-navigation/native";
 import { ThemedText } from "@/components/ThemedText";
 import { PressableScale } from "@/components/PressableScale";
 import { FallbackImage } from "@/components/FallbackImage";
-import { CuratedBadge } from "@/components/CuratedBadge";
 import { CarouselSkeleton } from "./CarouselSkeleton";
 import { CarouselError } from "./CarouselError";
 import { useTheme } from "@/hooks/useTheme";
@@ -85,11 +84,6 @@ export const CuratedRecipeCarousel = React.memo(
                 resizeMode="cover"
                 accessible={false}
               />
-
-              {/* CuratedBadge overlay */}
-              <View style={styles.badgeContainer}>
-                <CuratedBadge compact />
-              </View>
 
               {/* Content */}
               <View style={styles.content}>
@@ -213,11 +207,6 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: CURATED_IMAGE_HEIGHT,
-  },
-  badgeContainer: {
-    position: "absolute",
-    top: Spacing.sm,
-    left: Spacing.sm,
   },
   content: {
     padding: Spacing.md,
