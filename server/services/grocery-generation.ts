@@ -4,6 +4,7 @@ import {
   type AllergenMatch,
   type AllergySeverity,
 } from "@shared/constants/allergens";
+import { normalizeQuantityToDecimal } from "@shared/lib/quantity";
 
 export const GROCERY_CATEGORIES = [
   "produce",
@@ -245,6 +246,48 @@ export function categorizeIngredient(name: string): GroceryCategory {
   return (bestMatch?.category as GroceryCategory) ?? "other";
 }
 
+/** Round to 2 decimals so float sums (0.1 + 0.2) don't persist as 0.30000000000000004. */
+export function roundQuantity(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+const RANGE_RE = /^(.+?)\s*(?:-|–|—|\bto\b)\s*(.+)$/i;
+
+function parseSingleQuantity(raw: string): number | null {
+  const normalized = normalizeQuantityToDecimal(raw);
+  if (normalized !== null) return Number(normalized);
+  return null;
+}
+
+/**
+ * Parse an ingredient quantity string to a number for summing. Handles
+ * integers, decimals, fractions ("1/2"), mixed numbers ("1 1/2") and unicode
+ * glyphs via normalizeQuantityToDecimal; a range ("1-2", "2 to 3") takes its
+ * upper end so the grocery list never under-buys. Free-form text keeps its
+ * leading number ("2 large" → 2). Returns null when nothing numeric is found.
+ * (Bare parseFloat read "1/2" as 1 and "1-2" as 1.)
+ */
+export function parseQuantityForSum(
+  raw: string | null | undefined,
+): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const single = parseSingleQuantity(trimmed);
+  if (single !== null) return single;
+
+  const range = trimmed.match(RANGE_RE);
+  if (range) {
+    const lo = parseSingleQuantity(range[1]);
+    const hi = parseSingleQuantity(range[2]);
+    if (lo !== null && hi !== null) return Math.max(lo, hi);
+  }
+
+  const leading = parseFloat(trimmed);
+  return Number.isFinite(leading) ? leading : null;
+}
+
 /**
  * Aggregate recipe ingredients into a grocery list, merging duplicates.
  * Pure function, no DB access.
@@ -264,12 +307,11 @@ export function generateGroceryItems(
     const key = `${normalized}|${unit || ""}`;
 
     const existing = grouped.get(key);
-    const raw = ing.quantity ? parseFloat(ing.quantity) : null;
-    const qty = raw !== null && !isNaN(raw) ? raw : null;
+    const qty = parseQuantityForSum(ing.quantity);
 
     if (existing) {
       if (existing.quantity !== null && qty !== null) {
-        existing.quantity += qty;
+        existing.quantity = roundQuantity(existing.quantity + qty);
       } else if (qty !== null) {
         existing.quantity = qty;
       }
