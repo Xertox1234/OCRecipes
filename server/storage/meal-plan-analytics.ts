@@ -179,7 +179,12 @@ export async function getFrequentRecipesForMealType(
   const recipes = await db
     .select()
     .from(mealPlanRecipes)
-    .where(inArray(mealPlanRecipes.id, recipeIds));
+    .where(
+      and(
+        inArray(mealPlanRecipes.id, recipeIds),
+        isNull(mealPlanRecipes.deletedAt),
+      ),
+    );
 
   // Preserve frequency order
   const recipeMap = new Map(recipes.map((r) => [r.id, r]));
@@ -232,6 +237,7 @@ export async function getPopularPicksByMealType(
         eq(mealPlanItems.mealType, mealType),
         eq(mealPlanRecipes.sourceType, "ai_suggestion"),
         ne(mealPlanRecipes.userId, userId),
+        isNull(mealPlanRecipes.deletedAt),
         // Limit scan window to recent items to prevent full table scan at scale
         gte(
           mealPlanItems.createdAt,

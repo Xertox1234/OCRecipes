@@ -12,6 +12,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { AppState, Platform } from "react-native";
 import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
+import { fetchWithTimeout } from "./fetch-timeout";
 import { reportError } from "./reporter";
 import { logger } from "./logger";
 
@@ -219,12 +220,20 @@ export async function apiRequest(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
+  const requestInit: RequestInit = {
     ...init,
     method,
     headers: { ...(init?.headers as Record<string, string>), ...headers },
     body: data ? JSON.stringify(data) : undefined,
-  });
+  };
+  // R16: RN fetch has no default timeout, so a hung connection would never
+  // settle (wedging the offline-queue drain lock and pending buttons). Apply
+  // the default deadline — unless the caller passed its own signal, in which
+  // case it owns the request's lifetime (e.g. withDeadline's 90s generation
+  // deadline, which a shorter default must not cut short).
+  const res = init?.signal
+    ? await fetch(url, requestInit)
+    : await fetchWithTimeout(url, requestInit);
 
   await notifyIfSessionExpired(res, token);
   await throwIfResNotOk(res);
@@ -236,7 +245,7 @@ export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+  async ({ queryKey, signal }) => {
     const baseUrl = getApiUrl();
     const url = new URL(queryKey.join("/") as string, baseUrl);
 
@@ -246,9 +255,10 @@ export const getQueryFn: <T>(options: {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const res = await fetch(url, {
-      headers,
-    });
+    // R16 / N3: bound a hung query with the default deadline AND forward
+    // TanStack's cancellation signal (unmount, cancelQueries, key change) so a
+    // cancelled query stops fetching instead of running to completion.
+    const res = await fetchWithTimeout(url, { headers, signal });
 
     await notifyIfSessionExpired(res, token);
 

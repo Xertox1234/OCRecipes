@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { logger } from "./logger";
 import { saveRecipeImage } from "./image-store";
+import { detectImageMimeType } from "./image-mime";
 import { z } from "zod";
 
 const RUNWARE_API_URL = "https://api.runware.ai/v1";
@@ -45,6 +46,24 @@ export interface GenerateImageOptions {
    * app-icon asset written to a `.png` path); do not default this globally.
    */
   outputFormat?: "PNG";
+}
+
+/**
+ * Decode Runware's base64 payload and verify it is a real image by magic
+ * bytes. `Buffer.from(_, "base64")` never throws, so a 200 carrying error
+ * text or truncated data would otherwise be stored as a permanently broken
+ * recipe/cookbook image; returning null lets callers fall back instead.
+ */
+function decodeImageOrNull(base64: string, op: string): Buffer | null {
+  const buffer = Buffer.from(base64, "base64");
+  if (!detectImageMimeType(buffer)) {
+    logger.error(
+      { op, bytes: buffer.length },
+      "Runware returned a payload that is not a recognised image",
+    );
+    return null;
+  }
+  return buffer;
 }
 
 /**
@@ -109,7 +128,7 @@ export async function generateImage(
       return null;
     }
 
-    return Buffer.from(imageData, "base64");
+    return decodeImageOrNull(imageData, "image generation");
   } catch (error) {
     logger.error({ err: error }, "Runware image generation error");
     return null;
@@ -175,7 +194,7 @@ export async function removeBackground(
       return null;
     }
 
-    return Buffer.from(imageData, "base64");
+    return decodeImageOrNull(imageData, "background removal");
   } catch (error) {
     logger.error({ err: error }, "Runware background removal error");
     return null;

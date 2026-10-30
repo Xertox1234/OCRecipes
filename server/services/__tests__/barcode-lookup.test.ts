@@ -6,6 +6,7 @@ import {
   extractOffUniversalData,
   offMacrosCorroborateEnergy,
 } from "../barcode-lookup";
+import { storage } from "../../storage";
 import {
   _resetCNFCacheForTesting,
   offNutrimentsSchema,
@@ -1718,5 +1719,81 @@ describe("extractOffUniversalData", () => {
     expect(
       extractOffUniversalData({ nova_group: "N/A" }).novaGroup,
     ).toBeUndefined();
+  });
+});
+
+describe("lookupBarcode — OFF per-100g plausibility bounds (R34)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+    vi.restoreAllMocks();
+  });
+
+  it("drops implausible OFF values and does not freeze them into barcodeNutrition", async () => {
+    const insertSpy = vi
+      .spyOn(storage, "insertBarcodeNutritionIfAbsent")
+      .mockResolvedValue(undefined);
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Typo Granola",
+              serving_size: "40 g",
+              nutriments: {
+                "energy-kcal_100g": 3700, // kJ typed as kcal
+                proteins_100g: 450,
+                carbohydrates_100g: 60,
+                fat_100g: -5,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000017");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBeUndefined();
+    expect(result!.per100g.protein).toBeUndefined();
+    expect(result!.per100g.fat).toBeUndefined();
+    expect(result!.per100g.carbs).toBe(60);
+    expect(insertSpy).not.toHaveBeenCalled();
+  });
+
+  it("still persists a plausible OFF entry", async () => {
+    const insertSpy = vi
+      .spyOn(storage, "insertBarcodeNutritionIfAbsent")
+      .mockResolvedValue(undefined);
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Plain Granola",
+              serving_size: "40 g",
+              nutriments: {
+                "energy-kcal_100g": 450,
+                proteins_100g: 10,
+                carbohydrates_100g: 60,
+                fat_100g: 18,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000024");
+    expect(result!.per100g.calories).toBe(450);
+    expect(insertSpy).toHaveBeenCalledTimes(1);
   });
 });

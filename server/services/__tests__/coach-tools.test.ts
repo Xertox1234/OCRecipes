@@ -264,6 +264,7 @@ describe("Coach Tools Service", () => {
           spiceLevel: null,
           createdAt: new Date(),
           updatedAt: new Date(),
+          deletedAt: null,
         },
         scannedItem: null,
       },

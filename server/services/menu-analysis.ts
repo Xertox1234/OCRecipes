@@ -163,7 +163,17 @@ export async function analyzeMenuPhoto(
   } catch {
     throw new Error("Menu analysis returned invalid data. Please try again.");
   }
-  const validated = menuAnalysisSchema.parse(parsed);
+  // safeParse, not parse: a ZodError here would be mapped to a 400 client
+  // validation error by handleRouteError, but a schema miss is a model fault.
+  const result = menuAnalysisSchema.safeParse(parsed);
+  if (!result.success) {
+    log.warn(
+      { zodErrors: result.error.flatten() },
+      "menu analysis AI output failed schema validation",
+    );
+    throw new Error("Menu analysis returned invalid data. Please try again.");
+  }
+  const validated = result.data;
 
   // Sort by recommendation: great > good > okay > avoid
   const order: Record<string, number> = {

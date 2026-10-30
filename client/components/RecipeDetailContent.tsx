@@ -155,7 +155,9 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
     setExpandedStep((prev) => (prev === index ? null : index));
     if (!hasShownHintRef.current) {
       setHasShownHint(true);
-      void AsyncStorage.setItem(CURATED_STEP_HINT_KEY, "1");
+      AsyncStorage.setItem(CURATED_STEP_HINT_KEY, "1").catch((err) =>
+        logger.error("Failed to persist curated step hint", err),
+      );
     }
   }, []); // stable reference — reads hasShownHint via ref
 
