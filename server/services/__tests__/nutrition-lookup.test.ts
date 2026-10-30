@@ -1042,6 +1042,23 @@ describe("lookupBarcode — Open Food Facts outage vs genuine miss (R08)", () =>
     // richer OFF row (allergens, NOVA) once OFF recovers.
     expect(mockInsertValues).not.toHaveBeenCalled();
   });
+
+  it("sends an identifying User-Agent to Open Food Facts (N1)", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+    });
+
+    await lookupBarcode("4444444444447");
+    const offCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).includes("openfoodfacts.org"),
+    );
+    expect(offCall).toBeDefined();
+    const headers = new Headers(
+      (offCall![1] as RequestInit | undefined)?.headers,
+    );
+    expect(headers.get("User-Agent")).toMatch(/^OCRecipes\//);
+  });
 });
 
 describe("lookupNutrition", () => {

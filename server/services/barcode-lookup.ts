@@ -23,6 +23,10 @@ const log = createServiceLogger("barcode-lookup");
 // Timeout for outbound API requests (10 seconds)
 const FETCH_TIMEOUT_MS = 10_000;
 
+// OFF asks every API client to identify itself ("AppName/Version
+// (ContactEmail or URL)"); anonymous clients are rate-limited/blocked first.
+const OFF_USER_AGENT = "OCRecipes/1.0 (https://ocrecipes.com)";
+
 /**
  * Open Food Facts could not be asked (429, 5xx, network/timeout, non-JSON
  * body) AND no other source identified the barcode. Distinct from `null`
@@ -440,7 +444,10 @@ export async function lookupBarcode(
     try {
       const res = await fetch(
         `https://world.openfoodfacts.org/api/v0/product/${variant}.json`,
-        { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+        {
+          headers: { "User-Agent": OFF_USER_AGENT },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
       );
       // 404 is OFF's genuine "unknown product"; anything else non-OK (429
       // rate limit, 5xx) means OFF could not answer, not that it said no.
