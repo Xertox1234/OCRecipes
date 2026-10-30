@@ -10,6 +10,7 @@ import {
 } from "@/lib/query-client";
 import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
+import { logger } from "@/lib/logger";
 import type {
   MfaChallengeResult,
   MfaVerifyResult,
@@ -116,17 +117,34 @@ async function clearDurableLocalState(): Promise<boolean> {
     // removal — the original ordering relied on clear() being last for this.
     try {
       queryClient.clear();
-    } catch {}
+    } catch (err) {
+      // Not fatal to the sweep (the disk removal below still runs), but a
+      // failed privacy wipe must leave an off-device signal (R47).
+      logger.error("Durable local state wipe: query cache clear failed", err);
+    }
     // Guard the disk removal independently so its failure feeds `ok` (gating the
     // owner-marker advance) without aborting — and without poisoning the marker
     // into never advancing if some OTHER step throws.
     try {
       await AsyncStorage.removeItem(QUERY_CACHE_KEY);
-    } catch {
+    } catch (err) {
+      logger.error("Durable local state wipe: query cache removal failed", err);
       ok = false;
     }
-  } catch {
+  } catch (err) {
+    logger.error("Durable local state wipe threw", err);
     ok = false;
+  }
+  // The non-throwing clear* steps report failure only as `false`. The retry on
+  // the next auth resolution limits user impact, but a failed privacy wipe must
+  // still be visible off-device (R47) — logger.error routes to the reporter.
+  if (!ok) {
+    logger.error(
+      "Durable local state wipe incomplete",
+      new Error(
+        "clearDurableLocalState: a wipe step failed; retried next auth",
+      ),
+    );
   }
   return ok;
 }

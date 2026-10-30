@@ -22,8 +22,8 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import {
   queryClient,
   asyncStoragePersister,
-  markQueryCacheRestored,
   handleQueryCacheRestored,
+  handleQueryCacheRestoreFailed,
   shouldDehydrateResumableMutation,
 } from "@/lib/query-client";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
@@ -178,7 +178,7 @@ export default function App() {
           // teardown. (These are provider props, NOT persistOptions fields.)
           // onSuccess also resumes the restored paused mutations (N4).
           onSuccess={handleQueryCacheRestored}
-          onError={markQueryCacheRestored}
+          onError={handleQueryCacheRestoreFailed}
         >
           <AuthProvider>
             <PremiumProvider>

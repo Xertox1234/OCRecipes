@@ -582,6 +582,20 @@ export function shouldDehydrateResumableMutation(mutation: {
  * blip. Offline, resumePausedMutations leaves them paused (they resume on
  * reconnect via the onlineManager subscription).
  */
+/**
+ * The persister's `onError`: the restore failed (corrupt/oversized blob — the
+ * library has discarded the persisted cache). Report it (R47; the provider
+ * passes no error argument, hence the fixed one) and release the restore gate
+ * so a failed restore can never wedge a session teardown.
+ */
+export function handleQueryCacheRestoreFailed(): void {
+  logger.error(
+    "Persisted query cache restore failed; cache discarded",
+    new Error("PersistQueryClientProvider restore failed"),
+  );
+  markQueryCacheRestored();
+}
+
 export function handleQueryCacheRestored(): void {
   markQueryCacheRestored();
   queryClient.resumePausedMutations().catch(() => {

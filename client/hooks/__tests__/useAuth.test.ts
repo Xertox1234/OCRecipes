@@ -145,6 +145,51 @@ describe("useAuth", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    // R47: a failed privacy wipe must leave an off-device signal, not just
+    // ok=false (which only gates the owner-marker advance).
+    describe("reports a failed durable-state wipe (R47)", () => {
+      it("reports a wipe step that returned false", async () => {
+        const { logger } = await import("@/lib/logger");
+        const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+        try {
+          mockTokenStorage.get.mockResolvedValue(null);
+          mockClearOfflineQueue.mockResolvedValueOnce(false);
+
+          const { result } = renderHook(() => useAuth());
+          await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+          expect(errorSpy).toHaveBeenCalledWith(
+            "Durable local state wipe incomplete",
+            expect.anything(),
+          );
+        } finally {
+          errorSpy.mockRestore();
+        }
+      });
+
+      it("reports a throwing query-cache clear", async () => {
+        const { logger } = await import("@/lib/logger");
+        const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+        try {
+          mockTokenStorage.get.mockResolvedValue(null);
+          const boom = new Error("clear failed");
+          mockQueryClient.clear.mockImplementationOnce(() => {
+            throw boom;
+          });
+
+          const { result } = renderHook(() => useAuth());
+          await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+          expect(errorSpy).toHaveBeenCalledWith(
+            "Durable local state wipe: query cache clear failed",
+            boom,
+          );
+        } finally {
+          errorSpy.mockRestore();
+        }
+      });
+    });
+
     it("sweeps the durable offline queue + persisted query cache on the cold-start no-token path (extends the sweep to the 5th teardown path, consistent with logout/expireSession/deleteAccount/dead-token)", async () => {
       // The `if (!token)` cold-start branch is the one teardown-shaped path that
       // did not run the durable sweep. A force-quit can interrupt a session

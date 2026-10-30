@@ -550,3 +550,24 @@ describe("persisted paused mutations (N4)", () => {
     }
   });
 });
+
+// R47: a failed persisted-cache restore (corrupt/oversized blob — the library
+// discards the cache) was invisible off-device. The provider's onError gets no
+// error argument, so report a fixed one, and still release the restore gate.
+describe("query cache restore failure (R47)", () => {
+  it("reports the failed restore and still releases the restore gate", async () => {
+    const mod = await import("../query-client");
+    const { logger } = await import("../logger");
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    try {
+      mod.handleQueryCacheRestoreFailed();
+      expect(errorSpy).toHaveBeenCalledWith(
+        "Persisted query cache restore failed; cache discarded",
+        expect.any(Error),
+      );
+      await expect(mod.whenQueryCacheRestored()).resolves.toBeUndefined();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
