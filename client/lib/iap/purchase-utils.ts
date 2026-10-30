@@ -115,6 +115,38 @@ export function mapIAPError(error: unknown): PurchaseError {
   };
 }
 
+/**
+ * The error for an /upgrade or /restore answer that did not grant premium, or
+ * null when it did. The server declines a receipt with HTTP 200 and
+ * `{ success: false, code }` (e.g. STORE_API_ERROR on a store outage), which
+ * apiRequest does not throw on, so the body itself decides. Anything but an
+ * explicit `success: true` fails closed: the caller must then leave the store
+ * transaction unfinished so the store redelivers it.
+ */
+export function entitlementError(body: unknown): PurchaseError | null {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    (body as { success?: unknown }).success === true
+  ) {
+    return null;
+  }
+  const code =
+    typeof body === "object" && body !== null
+      ? (body as { code?: unknown }).code
+      : undefined;
+  if (code === "STORE_API_ERROR") {
+    return {
+      code: "STORE_UNAVAILABLE",
+      message: "The store is currently unavailable. Try again later.",
+    };
+  }
+  return {
+    code: "UNKNOWN",
+    message: "We could not verify your purchase. Please try again.",
+  };
+}
+
 /** Returns true if the platform supports IAP. */
 export function isSupportedPlatform(os: string): os is "ios" | "android" {
   return os === "ios" || os === "android";

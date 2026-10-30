@@ -20,6 +20,13 @@ const PURCHASE: IAPPurchaseResult = {
   native: { from: "store" },
 };
 
+const GRANTED = JSON.stringify({ success: true, tier: "premium" });
+const DECLINED = JSON.stringify({
+  success: false,
+  error: "Receipt validation failed",
+  code: "STORE_API_ERROR",
+});
+
 const { iap, apiRequest, refreshSubscription } = vi.hoisted(() => ({
   iap: {
     connected: true,
@@ -29,7 +36,7 @@ const { iap, apiRequest, refreshSubscription } = vi.hoisted(() => ({
     finishTransaction: vi.fn(() => Promise.resolve()),
     refreshProducts: vi.fn(),
   },
-  apiRequest: vi.fn(() => Promise.resolve(new Response("{}"))),
+  apiRequest: vi.fn(() => Promise.resolve(new Response(GRANTED))),
   refreshSubscription: vi.fn(() => Promise.resolve()),
 }));
 
@@ -47,7 +54,7 @@ beforeEach(() => {
   iap.products = [PRODUCT];
   iap.requestPurchase.mockResolvedValue(PURCHASE);
   iap.restorePurchases.mockResolvedValue(PURCHASE);
-  apiRequest.mockImplementation(() => Promise.resolve(new Response("{}")));
+  apiRequest.mockImplementation(() => Promise.resolve(new Response(GRANTED)));
 });
 
 describe("usePurchase.purchase", () => {
@@ -108,6 +115,37 @@ describe("usePurchase.purchase", () => {
     expect(iap.finishTransaction).not.toHaveBeenCalled();
     await waitFor(() => expect(result.current.state.status).toBe("error"));
   });
+
+  it("does not finish the transaction when the server answers 200 with success: false", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.resolve(new Response(DECLINED)),
+    );
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.purchase());
+
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    expect(refreshSubscription).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "STORE_UNAVAILABLE" },
+    });
+  });
+
+  it("does not finish the transaction when the 200 body is not JSON", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.resolve(new Response("<html>proxy</html>")),
+    );
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.purchase());
+
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "UNKNOWN" },
+    });
+  });
 });
 
 describe("usePurchase.refreshProduct", () => {
@@ -134,6 +172,26 @@ describe("usePurchase.restore", () => {
     );
     expect(iap.finishTransaction).toHaveBeenCalledWith(PURCHASE);
     expect(result.current.state.status).toBe("success");
+  });
+
+  it("does not finish the restored transaction when the server declines it with 200", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ success: false, code: "PURCHASE_NOT_ACTIVE" }),
+        ),
+      ),
+    );
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.restore());
+
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    expect(refreshSubscription).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "UNKNOWN" },
+    });
   });
 
   it("says there is nothing to restore when the store has no purchase", async () => {
