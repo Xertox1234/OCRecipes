@@ -203,6 +203,7 @@ export async function initCache(): Promise<void> {
 - Services: `createServiceLogger("service-name")` where the name matches the filename.
 - Always serialize errors with `toError(err)` — never pass raw `err` (may not be an `Error` instance).
 - Zod validation failures log at `warn` level with `zodErrors: parsed.error.flatten()`.
+- **Level is the Sentry routing decision** (`pinoIntegration`, error level only): `logger.error` = actionable failure (background/cron/stream/provider send), with `err` holding a real Error; `logger.warn` + `err: toError(err)` = best-effort side effect (cache seed, stale-token delete, rollback). Flag `.catch(() => {})` / empty `catch {}` on any server side effect, and any fallback that returns the same empty result whether a check ran or failed — it must set a flag (`allergenCheckFailed`). (Ref: `docs/solutions/conventions/server-log-level-is-the-sentry-routing-decision-2026-10-30.md`)
 - Message style: lowercase, concise; proper nouns stay capitalized (Runware, OpenAI, Spoonacular).
 
 ## Review-Gate Diff Scope
