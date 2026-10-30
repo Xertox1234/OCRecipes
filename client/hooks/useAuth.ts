@@ -9,6 +9,7 @@ import {
   whenQueryCacheRestored,
 } from "@/lib/query-client";
 import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
+import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import type {
   MfaChallengeResult,
   MfaVerifyResult,
@@ -39,6 +40,15 @@ interface AuthState {
 }
 
 const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
+
+/**
+ * Deadline for the cold-start / foreground `/api/auth/me` check (R16). RN fetch
+ * has no default timeout, so on a captive portal or half-open connection the
+ * check would hang forever — the root navigator spins indefinitely and the
+ * cached-user offline fallback in the catch is never reached. Short, because
+ * this gates app launch and the fallback is a good answer.
+ */
+export const AUTH_ME_TIMEOUT_MS = 10_000;
 
 /**
  * Best-effort teardown of every piece of device-local state that outlives a
@@ -183,9 +193,11 @@ export function useAuth() {
       }
 
       try {
-        const response = await fetch(`${getApiUrl()}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetchWithTimeout(
+          `${getApiUrl()}/api/auth/me`,
+          { headers: { Authorization: `Bearer ${token}` } },
+          AUTH_ME_TIMEOUT_MS,
+        );
 
         // The token changed while /me was in flight (sign-out + new sign-in, or
         // a 2FA token swap): this answer is about a session that already ended,
