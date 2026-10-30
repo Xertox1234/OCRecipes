@@ -169,6 +169,60 @@ describe("tokenStorage.get — caching and failures", () => {
   });
 });
 
+describe("tokenStorage.getOrThrow — telling a read failure from no token", () => {
+  it("returns the token, sharing the cache with get()", async () => {
+    asyncStore.set(MARKER_KEY, "1");
+    secure.set(SECURE_KEY, "current-token");
+    const tokenStorage = await loadTokenStorage();
+
+    expect(await tokenStorage.getOrThrow()).toBe("current-token");
+    expect(await tokenStorage.get()).toBe("current-token");
+    expect(secureMock.getItemAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null when there is genuinely no token", async () => {
+    asyncStore.set(MARKER_KEY, "1");
+    const tokenStorage = await loadTokenStorage();
+
+    expect(await tokenStorage.getOrThrow()).toBeNull();
+  });
+
+  it("throws on a Keychain read error (not cached), and a later call retries", async () => {
+    asyncStore.set(MARKER_KEY, "1");
+    secure.set(SECURE_KEY, "current-token");
+    secureMock.getItemAsync.mockRejectedValueOnce(new Error("locked"));
+    const tokenStorage = await loadTokenStorage();
+
+    await expect(tokenStorage.getOrThrow()).rejects.toThrow("locked");
+    expect(await tokenStorage.getOrThrow()).toBe("current-token");
+  });
+
+  it("a concurrent get() still answers null (never throws) during a failed read", async () => {
+    asyncStore.set(MARKER_KEY, "1");
+    secureMock.getItemAsync.mockRejectedValueOnce(new Error("locked"));
+    const tokenStorage = await loadTokenStorage();
+
+    const [strict, lenient] = await Promise.allSettled([
+      tokenStorage.getOrThrow(),
+      tokenStorage.get(),
+    ]);
+    expect(strict.status).toBe("rejected");
+    expect(lenient).toEqual({ status: "fulfilled", value: null });
+  });
+
+  it("set() during a failed first read does not throw and keeps the new token", async () => {
+    asyncStore.set(MARKER_KEY, "1");
+    secureMock.getItemAsync.mockRejectedValueOnce(new Error("locked"));
+    const tokenStorage = await loadTokenStorage();
+
+    const read = tokenStorage.getOrThrow().catch(() => "failed");
+    await tokenStorage.set("new-token");
+
+    expect(await read).toBe("failed");
+    expect(await tokenStorage.get()).toBe("new-token");
+  });
+});
+
 describe("tokenStorage.set", () => {
   it("writes to the Keychain and never to AsyncStorage", async () => {
     const tokenStorage = await loadTokenStorage();

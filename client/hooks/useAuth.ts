@@ -198,7 +198,21 @@ export function useAuth() {
     };
 
     try {
-      const token = await tokenStorage.get();
+      let token: string | null;
+      try {
+        // A failed Keychain/Keystore read is NOT "no token": retry once, and if
+        // it still fails resume from the cached user WITHOUT the durable sweep
+        // below — the token is most likely still there (e.g. a launch racing
+        // the device lock), and sweeping would destroy un-drained offline
+        // writes. tokenStorage does not cache a failed read, so later requests
+        // and the next foreground re-check read it again.
+        token = await tokenStorage
+          .getOrThrow()
+          .catch(() => tokenStorage.getOrThrow());
+      } catch {
+        await restoreCachedSession();
+        return;
+      }
       if (!token) {
         // Cold-start with no token is also a teardown-shaped path: a force-quit
         // can interrupt a session teardown in the gap between tokenStorage.clear()

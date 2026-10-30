@@ -29,6 +29,9 @@ const {
     mockAsyncStorage,
     mockTokenStorage: {
       get: vi.fn(),
+      // Defaults to get()'s answer (set in beforeEach) so every test that
+      // stubs get() drives checkAuth's first, strict read too.
+      getOrThrow: vi.fn(),
       set: vi.fn(),
       clear: vi.fn(),
       invalidateCache: vi.fn(),
@@ -126,6 +129,10 @@ describe("useAuth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Object.keys(mockAsyncStorage).forEach((k) => delete mockAsyncStorage[k]);
+    mockTokenStorage.getOrThrow.mockReset();
+    mockTokenStorage.getOrThrow.mockImplementation(() =>
+      mockTokenStorage.get(),
+    );
   });
 
   describe("checkAuth", () => {
@@ -372,6 +379,40 @@ describe("useAuth", () => {
       expect(mockTokenStorage.clear).not.toHaveBeenCalled();
       expect(mockClearOfflineQueue).not.toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("retries a failed token read once and proceeds when the retry succeeds", async () => {
+      mockTokenStorage.getOrThrow.mockRejectedValueOnce(new Error("locked"));
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      expect(mockTokenStorage.getOrThrow).toHaveBeenCalledTimes(2);
+      expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+    });
+
+    it("does NOT sweep durable state or clear the token when the token read keeps failing", async () => {
+      mockTokenStorage.getOrThrow.mockRejectedValue(new Error("locked"));
+      mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
+      mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+      expect(mockQueryClient.clear).not.toHaveBeenCalled();
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
+      // Resumes from the cached user, like an offline start.
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.user).toEqual(fakeUser);
     });
 
     it("falls back to cached user on network error", async () => {

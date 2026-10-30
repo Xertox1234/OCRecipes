@@ -24,7 +24,13 @@ const { mockTokenStorage, mockFetch, mockToastError } = vi.hoisted(() => ({
   mockToastError: vi.fn(),
 }));
 
-vi.mock("@/lib/token-storage", () => ({ tokenStorage: mockTokenStorage }));
+vi.mock("@/lib/token-storage", () => ({
+  // checkAuth's first read is the strict getOrThrow(); answer it from get().
+  tokenStorage: {
+    ...mockTokenStorage,
+    getOrThrow: () => mockTokenStorage.get(),
+  },
+}));
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
     getItem: vi.fn(() => Promise.resolve(null)),
