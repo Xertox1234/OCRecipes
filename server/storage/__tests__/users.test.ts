@@ -60,6 +60,7 @@ const {
   claimTransactionAndUpgrade,
   extendSubscriptionByTransactionId,
   revokeSubscriptionByTransactionId,
+  expireSubscriptionByTransactionId,
   upsertProfileWithOnboarding,
   deleteUser,
   RESERVED_USERNAMES,
@@ -1367,6 +1368,120 @@ describe("users storage", () => {
 
       // The old transaction is found, but the user keeps premium because the
       // newer completed subscription is still active.
+      expect(result).toEqual({ userId: testUser.id });
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+    });
+  });
+
+  describe("expireSubscriptionByTransactionId", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const future = new Date(Date.now() + 30 * day);
+    const claim = (purchasedAt?: Date | null) =>
+      claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_expire_1",
+          userId: testUser.id,
+          receipt: "receipt_expire",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+        purchasedAt,
+      );
+
+    beforeEach(async () => {
+      await claim(new Date(Date.now() - 40 * day));
+    });
+
+    it("marks the row expired (not revoked) and downgrades the user", async () => {
+      const result = await expireSubscriptionByTransactionId("orig_expire_1");
+
+      expect(result).toEqual({ userId: testUser.id });
+      const txn = await getTransaction("orig_expire_1");
+      expect(txn!.status).toBe("expired");
+      expect(txn!.revokedAt).toBeNull();
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+      expect(user!.subscriptionExpiresAt).toBeNull();
+    });
+
+    it("returns null and changes nothing for an unknown transaction", async () => {
+      const result = await expireSubscriptionByTransactionId("orig_unknown");
+
+      expect(result).toBeNull();
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+    });
+
+    it("lets a re-subscription restore after a late EXPIRED (purchase predates our processing)", async () => {
+      // Re-subscribed 1 day ago; the stale EXPIRED is processed only now.
+      await expireSubscriptionByTransactionId("orig_expire_1");
+
+      const result = await claim(new Date(Date.now() - 1 * day));
+
+      expect(result.status).toBe("renewed");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(future.getTime());
+      const txn = await getTransaction("orig_expire_1");
+      expect(txn!.status).toBe("completed");
+    });
+
+    it("lets a late DID_RENEW extend an expired row", async () => {
+      await expireSubscriptionByTransactionId("orig_expire_1");
+
+      const result = await extendSubscriptionByTransactionId(
+        "orig_expire_1",
+        future,
+        new Date(Date.now() - 1 * day),
+      );
+
+      expect(result).toEqual({ status: "extended", userId: testUser.id });
+      const txn = await getTransaction("orig_expire_1");
+      expect(txn!.status).toBe("completed");
+    });
+
+    it("never turns a refunded row into a plain expiry", async () => {
+      const refundedAt = new Date(Date.now() - 2 * day);
+      await revokeSubscriptionByTransactionId("orig_expire_1", refundedAt);
+
+      await expireSubscriptionByTransactionId("orig_expire_1");
+
+      const txn = await getTransaction("orig_expire_1");
+      expect(txn!.status).toBe("revoked");
+      expect(txn!.revokedAt?.getTime()).toBe(refundedAt.getTime());
+      const result = await claim(new Date(Date.now() - 3 * day));
+      expect(result.status).toBe("revoked");
+    });
+
+    it("keeps premium when an older transaction expires but a newer completed subscription is active", async () => {
+      const older = new Date(Date.now() - 10 * day);
+      const newer = new Date(Date.now() - 1 * day);
+      await createTransaction({
+        transactionId: "txn_exp_old",
+        userId: testUser.id,
+        receipt: "rA",
+        platform: "apple",
+        productId: "com.ocrecipes.premium.monthly",
+        status: "completed",
+        createdAt: older,
+      });
+      await createTransaction({
+        transactionId: "txn_exp_new",
+        userId: testUser.id,
+        receipt: "rB",
+        platform: "apple",
+        productId: "com.ocrecipes.premium.monthly",
+        status: "completed",
+        createdAt: newer,
+      });
+      await updateSubscription(testUser.id, "premium", future);
+
+      const result = await expireSubscriptionByTransactionId("txn_exp_old");
+
       expect(result).toEqual({ userId: testUser.id });
       const user = await getUser(testUser.id);
       expect(user!.subscriptionTier).toBe("premium");

@@ -143,6 +143,7 @@ export const storage = {
   createTransaction: users.createTransaction,
   claimTransactionAndUpgrade: users.claimTransactionAndUpgrade,
   revokeSubscriptionByTransactionId: users.revokeSubscriptionByTransactionId,
+  expireSubscriptionByTransactionId: users.expireSubscriptionByTransactionId,
   extendSubscriptionByTransactionId: users.extendSubscriptionByTransactionId,
 
   // Nutrition (scanned items, daily logs, saved items)

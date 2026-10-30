@@ -15,13 +15,13 @@ import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("store-notifications");
 
-/** Apple notification types that REMOVE entitlement (revoke-class). */
-const APPLE_REVOKE_TYPES = new Set([
-  "REFUND",
-  "REVOKE",
-  "EXPIRED",
-  "GRACE_PERIOD_EXPIRED",
-]);
+/**
+ * Apple notification types that REMOVE entitlement. Only a refund/revoke marks
+ * the row `revoked` (which refuses receipts purchased before it); an expiry is
+ * stored as a plain `expired` row so a re-subscription or late renewal works.
+ */
+const APPLE_REFUND_TYPES = new Set(["REFUND", "REVOKE"]);
+const APPLE_EXPIRY_TYPES = new Set(["EXPIRED", "GRACE_PERIOD_EXPIRED"]);
 
 /**
  * Apple notification types that RENEW an existing subscription. DID_RENEW
@@ -67,7 +67,8 @@ async function applyRenewal(
 
 /**
  * Verify + process an Apple App Store Server Notification V2. Revokes
- * entitlement for revoke-class events, extends it on DID_RENEW; every other
+ * entitlement on REFUND/REVOKE, records a plain expiry on EXPIRED /
+ * GRACE_PERIOD_EXPIRED, extends it on DID_RENEW; every other
  * type is informational
  * (notably DID_CHANGE_RENEWAL_STATUS/AUTO_RENEW_DISABLED, which is NOT a
  * revoke — the sub is active until it actually EXPIRES). Throws only when the
@@ -100,7 +101,8 @@ export async function handleAppleNotification(
     return;
   }
 
-  if (!APPLE_REVOKE_TYPES.has(n.notificationType)) {
+  const isRefund = APPLE_REFUND_TYPES.has(n.notificationType);
+  if (!isRefund && !APPLE_EXPIRY_TYPES.has(n.notificationType)) {
     log.info(
       { type: n.notificationType, subtype: n.subtype },
       "apple notification: informational, no entitlement change",
@@ -116,12 +118,14 @@ export async function handleAppleNotification(
     return;
   }
 
-  // Time the revocation by the store (Apple revocationDate, else when Apple
-  // signed the notification), never by when we processed it.
-  const result = await storage.revokeSubscriptionByTransactionId(
-    n.originalTransactionId,
-    n.revokedAt ?? n.signedAt,
-  );
+  // Time a refund by the store (Apple revocationDate, else when Apple signed
+  // the notification), never by when we processed it.
+  const result = isRefund
+    ? await storage.revokeSubscriptionByTransactionId(
+        n.originalTransactionId,
+        n.revokedAt ?? n.signedAt,
+      )
+    : await storage.expireSubscriptionByTransactionId(n.originalTransactionId);
   if (result) {
     invalidateTierCache(result.userId);
     log.info(
@@ -140,10 +144,8 @@ export async function handleAppleNotification(
 const googleOAuthClient = new OAuth2Client();
 
 /** Google RTDN notificationType values that REMOVE entitlement. */
-const GOOGLE_REVOKE_TYPES = new Set([
-  12, // SUBSCRIPTION_REVOKED
-  13, // SUBSCRIPTION_EXPIRED
-]);
+const GOOGLE_REVOKED = 12; // SUBSCRIPTION_REVOKED — refund-class, blocks
+const GOOGLE_EXPIRED = 13; // SUBSCRIPTION_EXPIRED — plain expiry
 
 /** Google RTDN notificationType values that RENEW an existing subscription. */
 const GOOGLE_RENEW_TYPES = new Set([
@@ -193,7 +195,8 @@ export async function verifyGooglePushToken(
 
 /**
  * Process a (pre-authenticated) Google RTDN Pub/Sub push. Revokes entitlement
- * for revoke-class subscription events and extends it for renewals; every
+ * on SUBSCRIPTION_REVOKED, records a plain expiry on SUBSCRIPTION_EXPIRED and
+ * extends it for renewals; every
  * other type is informational.
  *
  * Renewals re-read live state from the Play Developer API (the RTDN carries no
@@ -261,7 +264,10 @@ export async function handleGoogleNotification(
     return;
   }
 
-  if (!GOOGLE_REVOKE_TYPES.has(sub.notificationType)) {
+  if (
+    sub.notificationType !== GOOGLE_REVOKED &&
+    sub.notificationType !== GOOGLE_EXPIRED
+  ) {
     log.info(
       { type: sub.notificationType },
       "google rtdn: informational, no entitlement change",
@@ -269,9 +275,10 @@ export async function handleGoogleNotification(
     return;
   }
 
-  const result = await storage.revokeSubscriptionByTransactionId(
-    sub.purchaseToken,
-  );
+  const result =
+    sub.notificationType === GOOGLE_REVOKED
+      ? await storage.revokeSubscriptionByTransactionId(sub.purchaseToken)
+      : await storage.expireSubscriptionByTransactionId(sub.purchaseToken);
   if (result) {
     invalidateTierCache(result.userId);
     log.info(

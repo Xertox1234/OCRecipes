@@ -31,6 +31,7 @@ import {
   gt,
   asc,
   isNotNull,
+  ne,
 } from "drizzle-orm";
 import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
@@ -1066,32 +1067,82 @@ export async function revokeSubscriptionByTransactionId( // idor-safe
       })
       .where(eq(transactions.transactionId, transactionId));
 
-    // Downgrade the owning user ONLY if this transaction was their active
-    // entitlement source. Assumption: single-tier app, at most one active
-    // subscription at a time, so the newest non-revoked `completed` transaction
-    // is the source. If a NEWER completed transaction exists, the user
-    // re-subscribed — a stale refund of the old sub must NOT cut off a paying
-    // customer. (Residual: a newer-but-expired row briefly preserves premium —
-    // it fails safe and self-heals via that row's own EXPIRED event, since
-    // resolveEffectiveTier also downgrades expired-premium at read time.)
-    const [newerActive] = await tx
-      .select({ id: transactions.id })
+    await downgradeIfActiveSourceInTx(tx, txn);
+    return { userId: txn.userId };
+  });
+}
+
+/**
+ * Downgrade the owning user ONLY if `txn` was their active entitlement source
+ * (shared by a refund/revoke and a plain expiry).
+ */
+async function downgradeIfActiveSourceInTx(
+  tx: Tx,
+  txn: Transaction,
+): Promise<void> {
+  // Downgrade the owning user ONLY if this transaction was their active
+  // entitlement source. Assumption: single-tier app, at most one active
+  // subscription at a time, so the newest non-revoked `completed` transaction
+  // is the source. If a NEWER completed transaction exists, the user
+  // re-subscribed — a stale refund of the old sub must NOT cut off a paying
+  // customer. (Residual: a newer-but-expired row briefly preserves premium —
+  // it fails safe and self-heals via that row's own EXPIRED event, since
+  // resolveEffectiveTier also downgrades expired-premium at read time.)
+  const [newerActive] = await tx
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, txn.userId),
+        eq(transactions.status, "completed"),
+        gt(transactions.createdAt, txn.createdAt),
+      ),
+    )
+    .limit(1);
+
+  if (!newerActive) {
+    await tx
+      .update(users)
+      .set({ subscriptionTier: "free", subscriptionExpiresAt: null })
+      .where(eq(users.id, txn.userId));
+  }
+}
+
+/**
+ * Record a store EXPIRY (Apple EXPIRED / GRACE_PERIOD_EXPIRED, Google
+ * SUBSCRIPTION_EXPIRED) for a stable transaction id. Unlike a refund it does
+ * NOT mark the row `revoked`: the row becomes `expired` and a re-subscription
+ * or late renewal re-activates it without the purchase-date gate. A row that
+ * is already `revoked` stays revoked (an expiry never clears a refund). The
+ * owning user is downgraded exactly as on a revoke. Returns `null` for an
+ * unknown id.
+ *
+ * Not user-scoped by design (idor-safe): same as
+ * revokeSubscriptionByTransactionId — the route verifies the store signature
+ * first and the globally unique transactionId resolves the owner.
+ */
+export async function expireSubscriptionByTransactionId( // idor-safe
+  transactionId: string,
+): Promise<{ userId: string } | null> {
+  return db.transaction(async (tx) => {
+    const [txn] = await tx
+      .select()
       .from(transactions)
+      .where(eq(transactions.transactionId, transactionId));
+
+    if (!txn) return null;
+
+    await tx
+      .update(transactions)
+      .set({ status: "expired", updatedAt: new Date() })
       .where(
         and(
-          eq(transactions.userId, txn.userId),
-          eq(transactions.status, "completed"),
-          gt(transactions.createdAt, txn.createdAt),
+          eq(transactions.transactionId, transactionId),
+          ne(transactions.status, "revoked"),
         ),
-      )
-      .limit(1);
+      );
 
-    if (!newerActive) {
-      await tx
-        .update(users)
-        .set({ subscriptionTier: "free", subscriptionExpiresAt: null })
-        .where(eq(users.id, txn.userId));
-    }
+    await downgradeIfActiveSourceInTx(tx, txn);
 
     return { userId: txn.userId };
   });

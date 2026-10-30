@@ -19,6 +19,7 @@ vi.mock("../receipt-validation", () => ({
 vi.mock("../../storage", () => ({
   storage: {
     revokeSubscriptionByTransactionId: vi.fn(),
+    expireSubscriptionByTransactionId: vi.fn(),
     extendSubscriptionByTransactionId: vi.fn(),
   },
 }));
@@ -108,21 +109,51 @@ describe("handleAppleNotification", () => {
     );
   });
 
-  it("revokes on EXPIRED", async () => {
+  it.each(["EXPIRED", "GRACE_PERIOD_EXPIRED"])(
+    "stores %s as a plain expiry, not a revoke",
+    async (notificationType) => {
+      vi.mocked(verifyAppleNotification).mockResolvedValue({
+        notificationType,
+        originalTransactionId: "orig-9",
+        signedAt: new Date(),
+      });
+      vi.mocked(storage.expireSubscriptionByTransactionId).mockResolvedValue({
+        userId: "user-9",
+      });
+
+      await handleAppleNotification("signed-payload");
+
+      expect(storage.expireSubscriptionByTransactionId).toHaveBeenCalledWith(
+        "orig-9",
+      );
+      expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+      expect(invalidateCache).toHaveBeenCalledWith("user-9");
+    },
+  );
+
+  it("does not invalidate the cache when an expiry matches no local transaction", async () => {
     vi.mocked(verifyAppleNotification).mockResolvedValue({
       notificationType: "EXPIRED",
-      originalTransactionId: "orig-9",
+      originalTransactionId: "orig-unknown",
     });
-    vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
-      userId: "user-9",
+    vi.mocked(storage.expireSubscriptionByTransactionId).mockResolvedValue(
+      null,
+    );
+
+    await handleAppleNotification("signed-payload");
+
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it("no-ops an expiry that carries no originalTransactionId", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "EXPIRED",
     });
 
     await handleAppleNotification("signed-payload");
 
-    expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
-      "orig-9",
-      undefined,
-    );
+    expect(storage.expireSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
   });
 
   it("does NOT revoke on an informational notification (AUTO_RENEW_DISABLED)", async () => {
@@ -252,8 +283,8 @@ describe("handleGoogleNotification", () => {
     expect(invalidateCache).toHaveBeenCalledWith("user-g");
   });
 
-  it("revokes on SUBSCRIPTION_EXPIRED (13)", async () => {
-    vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
+  it("stores SUBSCRIPTION_EXPIRED (13) as a plain expiry, not a revoke", async () => {
+    vi.mocked(storage.expireSubscriptionByTransactionId).mockResolvedValue({
       userId: "user-e",
     });
 
@@ -261,9 +292,23 @@ describe("handleGoogleNotification", () => {
       message: { data: rtdnMessage(13, "tok-2") },
     });
 
-    expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
+    expect(storage.expireSubscriptionByTransactionId).toHaveBeenCalledWith(
       "tok-2",
     );
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).toHaveBeenCalledWith("user-e");
+  });
+
+  it("does not invalidate the cache when an expiry matches no local transaction", async () => {
+    vi.mocked(storage.expireSubscriptionByTransactionId).mockResolvedValue(
+      null,
+    );
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(13, "tok-unknown") },
+    });
+
+    expect(invalidateCache).not.toHaveBeenCalled();
   });
 
   it("does NOT revoke on SUBSCRIPTION_CANCELED (3) — active until expiry", async () => {
