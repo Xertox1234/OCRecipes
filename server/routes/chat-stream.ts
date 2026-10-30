@@ -188,16 +188,21 @@ class SseSink {
   }
 }
 
+/** Write the SSE response headers and flush them so the stream opens now. */
+export function openSse(res: Response): void {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+}
+
 /**
  * Open the SSE stream and run the turn: stream via the type's loop, report
  * errors, settle a coach disconnect, end the response.
  */
 export async function runTurn(input: TurnInput): Promise<void> {
   const { res, conversationId: id } = input;
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
+  openSse(res);
 
   // Client disconnect aborts the OpenAI stream via this controller (M8).
   // Listen on `res`, not `req`: express.json() already consumed the body, so

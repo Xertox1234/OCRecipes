@@ -316,3 +316,22 @@ describe("AllConversationsScreen — search field label", () => {
     expect(input.getAttribute("placeholder")).toBe("e.g. meal prep");
   });
 });
+
+// A failed load used to render "No conversations found" with no retry
+// (audit 2026-10-29 M-crel-3).
+describe("AllConversationsScreen — load failure", () => {
+  it("shows an error with a retry instead of the empty message", () => {
+    mockUseChatConversations.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch: mockRefetch,
+    });
+
+    renderComponent(<AllConversationsScreen />);
+
+    expect(screen.queryByText("No conversations found")).toBeNull();
+    fireEvent.click(screen.getByText("Try Again"));
+    expect(mockRefetch).toHaveBeenCalled();
+  });
+});

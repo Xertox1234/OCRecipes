@@ -1,5 +1,6 @@
 // server/services/notebook-extraction.ts
 import { aiChat } from "../lib/ai-client";
+import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { civilDateString } from "../lib/civil-date";
 import {
   extractionResultSchema,
@@ -91,24 +92,29 @@ export async function extractNotebookEntries(
       : extractionPrompt +
         '\n- Do NOT include "coaching_strategy" entries this time.';
 
-    const response = await aiChat("coach-notebook-extract", {
-      messages: [
-        { role: "system", content: prompt },
-        ...messages
-          .filter((m) => m.role !== "system")
-          .map((m) => ({
-            role: m.role as "user" | "assistant",
-            // Sanitize before the extractor sees them so prompt-injection
-            // attempts in the chat transcript don't poison what we pull into
-            // the notebook (which is later re-injected into the coach
-            // system prompt).
-            content: sanitizeUserInput(m.content),
-          })),
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1000,
-      temperature: 0.3,
-    });
+    const response = await aiChat(
+      "coach-notebook-extract",
+      {
+        messages: [
+          { role: "system", content: prompt },
+          ...messages
+            .filter((m) => m.role !== "system")
+            .map((m) => ({
+              role: m.role as "user" | "assistant",
+              // Sanitize before the extractor sees them so prompt-injection
+              // attempts in the chat transcript don't poison what we pull into
+              // the notebook (which is later re-injected into the coach
+              // system prompt).
+              content: sanitizeUserInput(m.content),
+            })),
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 1000,
+        temperature: 0.3,
+      },
+      // Without it the SDK default is 600 s for this background call.
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
 
     const content = response.choices[0]?.message?.content;
     if (!content) return [];

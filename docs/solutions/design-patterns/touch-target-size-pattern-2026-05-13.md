@@ -6,7 +6,7 @@ module: client
 tags: [react-native, accessibility, touch-target, hitslop, wcag]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
 created: '2026-05-13'
-last_updated: '2026-09-25'
+last_updated: '2026-10-29'
 ---
 
 # Touch target size pattern (44x44 minimum) with hitSlop
@@ -72,6 +72,17 @@ servingControls: {
 This gives the parent real slack for the hitSlop to expand into.
 
 **General rule:** Before adding `hitSlop` to a control, check whether its immediate parent has padding or room on every axis the hitSlop needs. If not, add matching padding to the parent. When the parent is a tight row shared with an adjacent touchable target and even padding risks overlap, prefer the **explicit min 44 box** technique (set `minWidth: 44, minHeight: 44` on the control itself) which has no such clipping risk.
+
+**A bigger slop can steal a neighbour's taps (2026-10-29).** React Native
+hit-tests later siblings first, so an enlarged `hitSlop` that reaches into an
+adjacent button, or into the parent card's own `onPress`, captures taps meant
+for it. The 2026-10-29 audit raised five icon buttons to 44pt by slop; review
+put three back: a pantry-prompt dismiss whose slop reached 5pt into the "Yes"
+button beside it (8pt gap), and a meal-plan remove and a favourites heart whose
+slop covered part of the card that opens on tap — a destructive mis-tap is
+worse than a small target. Before raising a slop, measure the distance to every
+tappable neighbour (including the parent's `onPress`); where it is less than
+the extra slop, use a 44pt box or more spacing instead.
 
 **When the parent itself is shorter than 44pt.** A search bar whose content is a
 15pt `TextInput` with `padding: 0` is only about 36pt tall, including its 8pt

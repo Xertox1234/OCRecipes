@@ -54,10 +54,21 @@ const cnfNutrientAmountListSchema = z.array(
 let cnfFoodsEN: CNFFood[] | null = null;
 let cnfFoodsFR: CNFFood[] | null = null;
 let cnfFetchPromise: Promise<void> | null = null;
+// When the last load failed. During a CNF outage every uncached lookup would
+// otherwise re-download both lists (up to FETCH_TIMEOUT_MS each) before
+// falling back to USDA, so a failed load is not retried for a while.
+let cnfLoadFailedAt: number | null = null;
+const CNF_RETRY_AFTER_MS = 5 * 60 * 1000;
 
 async function ensureCNFFoods(): Promise<void> {
   if (cnfFoodsEN && cnfFoodsFR) return;
   if (cnfFetchPromise) return cnfFetchPromise;
+  if (
+    cnfLoadFailedAt !== null &&
+    Date.now() - cnfLoadFailedAt < CNF_RETRY_AFTER_MS
+  ) {
+    return;
+  }
 
   cnfFetchPromise = (async () => {
     try {
@@ -87,13 +98,16 @@ async function ensureCNFFoods(): Promise<void> {
           { enCount: cnfFoodsEN.length, frCount: cnfFoodsFR.length },
           "CNF food lists loaded",
         );
+        cnfLoadFailedAt = null;
       } else {
+        cnfLoadFailedAt = Date.now();
         log.warn(
           { enOk: enParsed.success, frOk: frParsed.success },
           "CNF food list failed validation — CNF source unavailable",
         );
       }
     } catch (err) {
+      cnfLoadFailedAt = Date.now();
       log.warn({ err: toError(err) }, "failed to load CNF food lists");
     }
     cnfFetchPromise = null;
@@ -387,5 +401,6 @@ export function _resetCNFCacheForTesting(): void {
   cnfFoodsEN = null;
   cnfFoodsFR = null;
   cnfFetchPromise = null;
+  cnfLoadFailedAt = null;
   descriptionTokenCache.clear();
 }

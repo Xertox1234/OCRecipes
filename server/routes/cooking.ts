@@ -34,7 +34,6 @@ import {
   analyzeIngredientPhoto,
   IngredientAnalysisError,
   calculateSessionNutrition,
-  calculateSessionMacros,
 } from "../services/cooking-session";
 import { generateRecipeContent } from "../services/recipe-generation";
 import { getSubstitutions } from "../services/ingredient-substitution";
@@ -454,8 +453,11 @@ export function register(app: Express): void {
           );
         }
 
-        // Get nutrition data for totals
-        const totals = await calculateSessionMacros(session.ingredients);
+        // The same totals the nutrition summary showed — including each
+        // ingredient's preparation method — not the raw sum.
+        const { total: totals } = await calculateSessionNutrition(
+          session.ingredients,
+        );
 
         // Composite product name (like photos.ts line 430)
         const productName = session.ingredients.map((i) => i.name).join(", ");

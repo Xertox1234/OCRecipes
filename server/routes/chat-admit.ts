@@ -25,14 +25,12 @@ import {
   type ConversationType,
   type TurnFeatures,
   type TurnInput,
+  openSse,
 } from "./chat-stream";
 
 /** A no-op turn (stale or repeated finder action): open and close the SSE. */
 function endQuietly(res: Response): void {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
+  openSse(res);
   res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
   res.end();
 }

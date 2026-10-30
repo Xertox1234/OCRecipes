@@ -197,10 +197,14 @@ export function useAddGroceryItemToPantry() {
       );
       return res.json();
     },
-    onSuccess: (_data, { listId }) => {
+    // On failure too: a 409 means a double tap already added the item, so
+    // the list must refetch to stop offering the add.
+    onSettled: (_data, _error, { listId }) => {
       void queryClient.invalidateQueries({
         queryKey: ["/api/meal-plan/grocery-lists", listId],
       });
+    },
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
       void queryClient.invalidateQueries({
         queryKey: ["/api/pantry/expiring"],

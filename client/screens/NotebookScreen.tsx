@@ -21,6 +21,7 @@ import {
   type NotebookEntry,
 } from "@/hooks/useNotebook";
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { toSecondPerson } from "@/components/coach/notebook-text-utils";
@@ -52,7 +53,12 @@ export default function NotebookScreen() {
         ? { status: "archived" }
         : { type: filter };
 
-  const { data: entries = [], isLoading } = useNotebookEntries(queryOpts);
+  const {
+    data: entries = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useNotebookEntries(queryOpts);
   const { mutate: updateEntryMutate } = useUpdateNotebookEntry();
   const { mutate: deleteEntryMutate } = useDeleteNotebookEntry();
 
@@ -274,12 +280,25 @@ export default function NotebookScreen() {
           ]}
           {...FLATLIST_DEFAULTS}
           ListEmptyComponent={
-            <ThemedText
-              type="small"
-              style={[styles.empty, { color: theme.textSecondary }]}
-            >
-              No entries yet
-            </ThemedText>
+            isError ? (
+              <EmptyState
+                variant="temporary"
+                icon="alert-circle"
+                title="Couldn't load your notebook"
+                description="Something went wrong. Tap below to try again."
+                actionLabel="Try Again"
+                onAction={() => {
+                  void refetch();
+                }}
+              />
+            ) : (
+              <ThemedText
+                type="small"
+                style={[styles.empty, { color: theme.textSecondary }]}
+              >
+                No entries yet
+              </ThemedText>
+            )
           }
         />
       )}
