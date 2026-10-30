@@ -116,8 +116,11 @@ export async function handleAppleNotification(
     return;
   }
 
+  // Time the revocation by the store (Apple revocationDate, else when Apple
+  // signed the notification), never by when we processed it.
   const result = await storage.revokeSubscriptionByTransactionId(
     n.originalTransactionId,
+    n.revokedAt ?? n.signedAt,
   );
   if (result) {
     invalidateTierCache(result.userId);

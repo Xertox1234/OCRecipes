@@ -865,14 +865,18 @@ export type ClaimResult =
  * captured before the refund carries no revocationDate and still validates.
  * Only a purchase made AFTER the revocation (an Apple re-subscription reuses
  * the same originalTransactionId) may bring the row back; with no purchase
- * date to compare we fail closed.
+ * date to compare we fail closed. The cutoff is the STORE's revocation time
+ * (`revokedAt`), not when we processed the notification — a late delivery must
+ * not refuse a purchase made in between. Legacy rows without it fall back to
+ * `updatedAt`.
  */
 function isRevokedForReceipt(
   existing: Transaction,
   purchasedAt: Date | null | undefined,
 ): boolean {
   if (existing.status !== "revoked") return false;
-  return !purchasedAt || purchasedAt.getTime() <= existing.updatedAt.getTime();
+  const cutoff = existing.revokedAt ?? existing.updatedAt;
+  return !purchasedAt || purchasedAt.getTime() <= cutoff.getTime();
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -970,6 +974,7 @@ export async function claimTransactionAndUpgrade(
       .set({
         receipt: data.receipt,
         status: data.status ?? "completed",
+        revokedAt: null,
         updatedAt: new Date(),
       })
       .where(eq(transactions.transactionId, data.transactionId))
@@ -1017,7 +1022,7 @@ export async function extendSubscriptionByTransactionId( // idor-safe
 
     await tx
       .update(transactions)
-      .set({ status: "completed", updatedAt: new Date() })
+      .set({ status: "completed", revokedAt: null, updatedAt: new Date() })
       .where(eq(transactions.transactionId, transactionId));
     await applyRenewalInTx(tx, txn.userId, "premium", expiresAt);
     return { status: "extended", userId: txn.userId };
@@ -1028,7 +1033,9 @@ export async function extendSubscriptionByTransactionId( // idor-safe
  * Revoke a subscription identified by its stable transaction id (Apple
  * `originalTransactionId` / Google `purchaseToken`) — used by the store
  * refund/revoke/expire webhooks. Atomically downgrades the owning user to
- * `free` and marks the transaction `revoked`. Idempotent: an unknown id is a
+ * `free` and marks the transaction `revoked`, recording `revokedAt` — the
+ * STORE's revocation time when given (else now). A repeat revoke never moves
+ * an existing `revokedAt` later (LEAST). Idempotent: an unknown id is a
  * no-op (returns `null`); re-revoking is a no-op. Returns the affected userId
  * so the caller can evict the tier cache.
  *
@@ -1040,6 +1047,7 @@ export async function extendSubscriptionByTransactionId( // idor-safe
  */
 export async function revokeSubscriptionByTransactionId( // idor-safe
   transactionId: string,
+  revokedAt?: Date,
 ): Promise<{ userId: string } | null> {
   return db.transaction(async (tx) => {
     const [txn] = await tx
@@ -1051,7 +1059,11 @@ export async function revokeSubscriptionByTransactionId( // idor-safe
 
     await tx
       .update(transactions)
-      .set({ status: "revoked", updatedAt: new Date() })
+      .set({
+        status: "revoked",
+        revokedAt: sql`LEAST(${transactions.revokedAt}, ${revokedAt ?? new Date()})`,
+        updatedAt: new Date(),
+      })
       .where(eq(transactions.transactionId, transactionId));
 
     // Downgrade the owning user ONLY if this transaction was their active

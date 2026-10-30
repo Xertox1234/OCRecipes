@@ -240,6 +240,10 @@ export interface AppleNotification {
   purchasedAt?: Date;
   /** True when the signed transaction carries a revocationDate. */
   revoked?: boolean;
+  /** The signed transaction's revocationDate (the store's refund/revoke time). */
+  revokedAt?: Date;
+  /** The notification's signedDate (when Apple signed this notification). */
+  signedAt?: Date;
 }
 
 /**
@@ -257,6 +261,7 @@ export async function verifyAppleNotification(
   let expiresAt: Date | undefined;
   let purchasedAt: Date | undefined;
   let revoked: boolean | undefined;
+  let revokedAt: Date | undefined;
   if (decoded.data?.signedTransactionInfo) {
     const txInfo = await verifier.verifyAndDecodeTransaction(
       decoded.data.signedTransactionInfo,
@@ -271,6 +276,10 @@ export async function verifyAppleNotification(
         ? new Date(txInfo.purchaseDate)
         : undefined;
     revoked = txInfo.revocationDate !== undefined;
+    revokedAt =
+      txInfo.revocationDate !== undefined
+        ? new Date(txInfo.revocationDate)
+        : undefined;
   }
 
   return {
@@ -281,6 +290,11 @@ export async function verifyAppleNotification(
     expiresAt,
     purchasedAt,
     revoked,
+    revokedAt,
+    signedAt:
+      decoded.signedDate !== undefined
+        ? new Date(decoded.signedDate)
+        : undefined,
   };
 }
 

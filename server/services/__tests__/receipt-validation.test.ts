@@ -677,6 +677,41 @@ describe("Receipt Validation", () => {
       expect(n.revoked).toBe(true);
     });
 
+    it("carries the store's revocationDate and the notification's signedDate", async () => {
+      const revocationDate = Date.now() - 5 * 60_000;
+      const signedDate = Date.now() - 60_000;
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "REFUND",
+        signedDate,
+        data: { signedTransactionInfo: "signed-txn" },
+      });
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        originalTransactionId: "orig-1",
+        revocationDate,
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      const n = await verify();
+
+      expect(n.revokedAt?.getTime()).toBe(revocationDate);
+      expect(n.signedAt?.getTime()).toBe(signedDate);
+    });
+
+    it("leaves revokedAt unset for an unrevoked transaction", async () => {
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "DID_RENEW",
+        data: { signedTransactionInfo: "signed-txn" },
+      });
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        originalTransactionId: "orig-1",
+        expiresDate: FUTURE_EXPIRY,
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      const n = await verify();
+
+      expect(n.revokedAt).toBeUndefined();
+      expect(n.signedAt).toBeUndefined();
+    });
+
     it("leaves the renewal fields unset when there is no signed transaction", async () => {
       mockVerifyAndDecodeNotification.mockResolvedValue({
         notificationType: "TEST",

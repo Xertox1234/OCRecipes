@@ -61,8 +61,51 @@ describe("handleAppleNotification", () => {
 
     expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
       "orig-123",
+      undefined,
     );
     expect(invalidateCache).toHaveBeenCalledWith("user-1");
+  });
+
+  it.each(["REFUND", "REVOKE"])(
+    "times a %s by the store's revocationDate",
+    async (notificationType) => {
+      const revokedAt = new Date(Date.now() - 60 * 60 * 1000);
+      vi.mocked(verifyAppleNotification).mockResolvedValue({
+        notificationType,
+        originalTransactionId: "orig-123",
+        revokedAt,
+        signedAt: new Date(),
+      });
+      vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
+        userId: "user-1",
+      });
+
+      await handleAppleNotification("signed-payload");
+
+      expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
+        "orig-123",
+        revokedAt,
+      );
+    },
+  );
+
+  it("falls back to the notification's signedDate when the transaction has no revocationDate", async () => {
+    const signedAt = new Date(Date.now() - 60 * 1000);
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND",
+      originalTransactionId: "orig-123",
+      signedAt,
+    });
+    vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
+      userId: "user-1",
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-123",
+      signedAt,
+    );
   });
 
   it("revokes on EXPIRED", async () => {
@@ -78,6 +121,7 @@ describe("handleAppleNotification", () => {
 
     expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
       "orig-9",
+      undefined,
     );
   });
 
