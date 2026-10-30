@@ -85,7 +85,7 @@ async function setupGoogleTest(subscriptionResponse: object, status = 200) {
 
   const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (url) => {
     const urlStr = typeof url === "string" ? url : url.toString();
-    if (urlStr.includes("oauth2.googleapis.com")) {
+    if (new URL(urlStr).hostname === "oauth2.googleapis.com") {
       return new Response(
         JSON.stringify({
           access_token: "mock-access-token",
@@ -94,7 +94,7 @@ async function setupGoogleTest(subscriptionResponse: object, status = 200) {
         { status: 200 },
       );
     }
-    if (urlStr.includes("androidpublisher.googleapis.com")) {
+    if (new URL(urlStr).hostname === "androidpublisher.googleapis.com") {
       return new Response(JSON.stringify(subscriptionResponse), { status });
     }
     throw new Error(`Unexpected fetch to ${urlStr}`);
@@ -571,7 +571,7 @@ describe("Receipt Validation", () => {
         .spyOn(global, "fetch")
         .mockImplementation(async (url) => {
           const urlStr = typeof url === "string" ? url : url.toString();
-          if (urlStr.includes("oauth2.googleapis.com")) {
+          if (new URL(urlStr).hostname === "oauth2.googleapis.com") {
             return new Response(
               JSON.stringify({
                 access_token: "mock-access-token",
@@ -580,7 +580,7 @@ describe("Receipt Validation", () => {
               { status: 200 },
             );
           }
-          if (urlStr.includes("androidpublisher.googleapis.com")) {
+          if (new URL(urlStr).hostname === "androidpublisher.googleapis.com") {
             return new Response("Internal Server Error", { status: 500 });
           }
           throw new Error(`Unexpected fetch to ${urlStr}`);
@@ -601,7 +601,7 @@ describe("Receipt Validation", () => {
         .spyOn(global, "fetch")
         .mockImplementation(async (url) => {
           const urlStr = typeof url === "string" ? url : url.toString();
-          if (urlStr.includes("oauth2.googleapis.com")) {
+          if (new URL(urlStr).hostname === "oauth2.googleapis.com") {
             return new Response(
               JSON.stringify({
                 access_token: "mock-access-token",
@@ -645,7 +645,7 @@ describe("Receipt Validation", () => {
         .spyOn(global, "fetch")
         .mockImplementation(async (url) => {
           const urlStr = typeof url === "string" ? url : url.toString();
-          if (urlStr.includes("oauth2.googleapis.com")) {
+          if (new URL(urlStr).hostname === "oauth2.googleapis.com") {
             return new Response(
               JSON.stringify({
                 access_token: "mock-access-token",
