@@ -296,6 +296,16 @@ export default function CoachChat({
         setStreamingError("Something went wrong. Please try again.");
       }
       setOptimisticMessage(null);
+      // The server may already have saved this turn (the chat route persists
+      // the user message before streaming; an interrupt/timeout can land after
+      // it, or even after the reply). Clearing the optimistic copy without a refetch hid a
+      // saved question and invited a duplicate retry (R23) — reconcile.
+      const convId = activeConvIdRef.current;
+      if (convId !== null) {
+        void queryClient.invalidateQueries({
+          queryKey: [`/api/chat/conversations/${convId}/messages`],
+        });
+      }
     },
   });
 

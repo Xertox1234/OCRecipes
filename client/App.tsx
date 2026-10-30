@@ -14,15 +14,17 @@ import {
 } from "@expo-google-fonts/poppins";
 
 import {
+  focusManager,
   onlineManager,
   defaultShouldDehydrateQuery,
 } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { queryClient, asyncStoragePersister } from "@/lib/query-client";
 import {
-  queryClient,
-  asyncStoragePersister,
-  markQueryCacheRestored,
-} from "@/lib/query-client";
+  handleQueryCacheRestored,
+  handleQueryCacheRestoreFailed,
+  shouldDehydrateResumableMutation,
+} from "@/lib/query-client-persistence";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
 import RootStackNavigator from "@/navigation/RootStackNavigator";
@@ -84,6 +86,14 @@ onlineManager.subscribe((isOnline) => {
   if (isOnline) {
     void drainQueue();
   }
+});
+
+// Also drain on app foreground (focusManager is wired to AppState in
+// query-client.ts). A drain halted by a transient 5xx/429 leaves its items
+// queued (R15); without this trigger they would wait for the next connectivity
+// blip or cold start even though the server has long since recovered.
+focusManager.subscribe((isFocused) => {
+  if (isFocused && onlineManager.isOnline()) void drainQueue();
 });
 
 function AppContent() {
@@ -160,6 +170,9 @@ export default function App() {
               shouldDehydrateQuery: (query) =>
                 defaultShouldDehydrateQuery(query) &&
                 PERSISTED_QUERY_KEYS.has(query.queryKey[0]),
+              // Only paused mutations that can resume after a restart (a
+              // default mutationFn is registered for their key) — see N4.
+              shouldDehydrateMutation: shouldDehydrateResumableMutation,
             },
           }}
           // Release the durable-sweep restore gate once the persisted cache has
@@ -168,8 +181,9 @@ export default function App() {
           // prior user's data after the clear (cross-user leak on a shared device).
           // onError covers a corrupt/oversized blob so a failed restore can't wedge
           // teardown. (These are provider props, NOT persistOptions fields.)
-          onSuccess={markQueryCacheRestored}
-          onError={markQueryCacheRestored}
+          // onSuccess also resumes the restored paused mutations (N4).
+          onSuccess={handleQueryCacheRestored}
+          onError={handleQueryCacheRestoreFailed}
         >
           <AuthProvider>
             <PremiumProvider>

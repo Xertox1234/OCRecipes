@@ -719,3 +719,35 @@ describe("CoachChat — unmount marks the conversation stale (H6)", () => {
     });
   });
 });
+
+// R23: a stream that fails AFTER the server saved the user's turn (a mid-stream
+// interrupt, a timeout) cleared the optimistic copy with no refetch — the
+// question vanished from the UI while it existed server-side, inviting a
+// duplicate retry. On failure, reconcile with the server.
+describe("CoachChat — reconciles with the server after a stream failure (R23)", () => {
+  let invalidateSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  });
+  afterEach(() => {
+    invalidateSpy.mockRestore();
+  });
+
+  it("refetches the conversation's messages when the stream errors", () => {
+    renderCoachChat();
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Hello coach" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    invalidateSpy.mockClear();
+
+    act(() => {
+      coachStreamRef.onError?.("Response interrupted", undefined);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/1/messages"],
+    });
+  });
+});

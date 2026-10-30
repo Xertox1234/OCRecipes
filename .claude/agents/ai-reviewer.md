@@ -95,6 +95,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 ### LLM Output Validation
 
 - [ ] LLM JSON responses consumed by code go through `zod.safeParse()` — never `JSON.parse(...) as T`. Casts hide schema drift: unknown enum values silently coerce via `as RubricDimension` (Ref: audit 2026-04-17 H11)
+- [ ] A service validating AI output never calls `schema.parse()`. `handleRouteError` maps every `ZodError` to a 400 `VALIDATION_ERROR`, which tells the client its request was invalid when the model was at fault. Require `safeParse`, then a `warn` log with `error.flatten()`, then `throw new Error("...try again")` so the route returns 500, with quota consumed only after a successful parse (Ref: `docs/solutions/conventions/typed-service-errors-explicit-catch-before-handleRouteError-2026-05-16.md`, audit 2026-10-30 R33)
 - [ ] Enum-like fields (tool names, dimension labels, classification buckets) use `.refine()` against an explicit allowlist
 - [ ] Safety-critical assertions fail CLOSED on invalid schema (return conservative default, e.g., score = 0, assertion failed)
 - [ ] Aggregation code that iterates LLM output doesn't use `if (entry)` guards that silently drop unrecognized shapes — Zod validation should reject them upstream

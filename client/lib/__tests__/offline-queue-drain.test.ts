@@ -10,6 +10,7 @@ vi.mock("@/lib/offline-queue", () => ({
   loadQueue: vi.fn(),
   dequeue: vi.fn(),
   incrementAttempts: vi.fn(),
+  QUEUE_TTL_MS: 24 * 60 * 60 * 1000,
 }));
 
 vi.mock("@/lib/query-keys", () => ({
@@ -45,6 +46,10 @@ describe("offline-queue-drain", () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.useFakeTimers();
+    // Pin the clock just after the fixtures' savedAt (1000-ish) so every queued
+    // item is "fresh" (well inside the 24h queue TTL). The expired-item test
+    // advances the clock past the TTL explicitly.
+    vi.setSystemTime(10_000);
     // Default: an authenticated user (token-A). Individual tests override this
     // to exercise the unauthenticated and cross-user-straddle paths. vi.mocked()
     // resolves the module mock declared above (reset by vi.resetModules()).
@@ -246,7 +251,7 @@ describe("offline-queue-drain", () => {
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
   });
 
-  it("treats an unknown (non-ApiError, statusless) error as a server failure and evicts after MAX_ATTEMPTS", async () => {
+  it("treats an unknown (non-ApiError, statusless) error as a server failure: bounded retries, then left queued (R15)", async () => {
     const { loadQueue, incrementAttempts, dequeue } = await import(
       "@/lib/offline-queue"
     );
@@ -267,8 +272,8 @@ describe("offline-queue-drain", () => {
     });
     // A plain Error has no numeric `.status`, so it is neither a network
     // TypeError nor a classified 4xx — it must fall into the server-retry
-    // budget so the `while (!done)` loop stays bounded and the item is
-    // eventually evicted, not retried forever.
+    // budget so the `while (!done)` loop stays bounded. A fresh item is then
+    // LEFT QUEUED for the next drain (R15) — only the queue TTL evicts it.
     vi.mocked(apiRequest).mockRejectedValue(new Error("unexpected failure"));
     vi.mocked(dequeue).mockResolvedValue(undefined);
 
@@ -281,8 +286,9 @@ describe("offline-queue-drain", () => {
     await vi.runAllTimersAsync();
     await p;
 
-    expect(dequeue).toHaveBeenCalledWith("unknown-err");
-    expect(errorListener).toHaveBeenCalledOnce();
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(4);
+    expect(dequeue).not.toHaveBeenCalled();
+    expect(errorListener).not.toHaveBeenCalled();
   });
 
   it("gives a force-quit-restored item (high persisted attempts) a fresh server-retry budget — eviction uses serverAttempts, not raw attempts (M2)", async () => {
@@ -319,11 +325,42 @@ describe("offline-queue-drain", () => {
     await vi.runAllTimersAsync();
     await p;
 
-    // A fresh server budget = 4 server attempts before eviction, despite the
-    // restored raw attempts already being 3. Raw-attempts eviction would have
-    // fired after the first call.
+    // A fresh server budget = 4 server attempts in this drain, despite the
+    // restored raw attempts already being 3. Raw-attempts budgeting would have
+    // stopped after the first call. The fresh item then stays queued (R15).
     expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(4);
-    expect(dequeue).toHaveBeenCalledWith("restored");
+    expect(dequeue).not.toHaveBeenCalled();
+  });
+
+  it("sends the enqueue time as X-Queued-At so a late replay keeps the log's day (R28)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { drainQueue } = await importDrain();
+
+    const savedAt = Date.UTC(2026, 9, 29, 23, 50);
+    vi.setSystemTime(savedAt + 9 * 60 * 60 * 1000); // replayed next morning
+    vi.mocked(loadQueue).mockReturnValue([
+      {
+        id: "late",
+        endpoint: "/api/scanned-items",
+        method: "POST",
+        body: {},
+        attempts: 0,
+        savedAt,
+      },
+    ]);
+    vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+    vi.mocked(apiRequest).mockResolvedValue(new Response());
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    await drainQueue();
+
+    const initArg = vi.mocked(apiRequest).mock.calls[0][3];
+    expect((initArg?.headers as Record<string, string>)["X-Queued-At"]).toBe(
+      "2026-10-29T23:50:00.000Z",
+    );
   });
 
   it("increments attempts BEFORE making the apiRequest call", async () => {
@@ -508,8 +545,8 @@ describe("offline-queue-drain", () => {
     // Call sequence across all drainQueue invocations:
     // invocation 1 → TypeError (budget: 0 server attempts)
     // invocation 2 → TypeError (budget: 0 server attempts)
-    // invocation 3 → loops: 5xx, 5xx, 5xx, 5xx → evict on 4th server error
-    // If TypeErrors wrongly consumed budget, eviction would fire at svrCount=2.
+    // invocation 3 → loops: 5xx, 5xx, 5xx, 5xx → budget exhausted on the 4th
+    // If TypeErrors wrongly consumed budget, the loop would stop at svrCount=2.
     let callCount = 0;
     vi.mocked(apiRequest).mockImplementation(async () => {
       callCount++;
@@ -546,9 +583,11 @@ describe("offline-queue-drain", () => {
     await vi.runAllTimersAsync();
     await p;
 
-    // Only after 4 server-side (5xx) attempts should the item be evicted.
-    expect(dequeue).toHaveBeenCalledWith("mix-1");
-    expect(errorListener).toHaveBeenCalledOnce();
+    // 2 TypeErrors + a full 4-attempt server budget = 6 dispatches. The fresh
+    // item is left queued after the budget (R15), never discarded on 5xx.
+    expect(apiRequest).toHaveBeenCalledTimes(6);
+    expect(dequeue).not.toHaveBeenCalled();
+    expect(errorListener).not.toHaveBeenCalled();
   });
 
   it("does not drain (no apiRequest) when unauthenticated (auth gate)", async () => {
@@ -784,5 +823,213 @@ describe("offline-queue-drain", () => {
     // removed by clearOfflineQueue, so the abort path must not double-clear.
     expect(apiRequest).not.toHaveBeenCalled();
     expect(dequeue).not.toHaveBeenCalled();
+  });
+  describe("transient server errors never discard a queued write (R15)", () => {
+    const mkItem = (id: string, savedAt = 1000) => ({
+      id,
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 0,
+      savedAt,
+    });
+
+    it.each([401, 408, 425, 429])(
+      "a %i leaves the item queued, toasts nothing, and halts the drain",
+      async (status) => {
+        const { loadQueue, incrementAttempts, dequeue } = await import(
+          "@/lib/offline-queue"
+        );
+        const { apiRequest } = await import("@/lib/query-client");
+        const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+        const { ApiError } = await import("@/lib/api-error");
+
+        const items = [mkItem("t1", 1000), mkItem("t2", 1001)];
+        vi.mocked(loadQueue).mockReturnValue(items);
+        vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+        vi.mocked(apiRequest).mockRejectedValue(
+          new ApiError(`${status}: transient`, undefined, status),
+        );
+        vi.mocked(dequeue).mockResolvedValue(undefined);
+        const errorListener = vi.fn();
+        subscribeToQueueDrainErrors(errorListener);
+
+        const p = drainQueue();
+        await vi.runAllTimersAsync();
+        await p;
+
+        expect(dequeue).not.toHaveBeenCalled();
+        expect(errorListener).not.toHaveBeenCalled();
+        // Halted: the second item is not hammered against a throttling/
+        // unauthenticated server.
+        expect(apiRequest).toHaveBeenCalledOnce();
+      },
+    );
+
+    it("a 5xx outlasting the backoff budget leaves the item queued; two such items in a row halt the drain (systemic outage)", async () => {
+      const { loadQueue, incrementAttempts, dequeue } = await import(
+        "@/lib/offline-queue"
+      );
+      const { apiRequest } = await import("@/lib/query-client");
+      const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+      const { ApiError } = await import("@/lib/api-error");
+
+      const items = [
+        { ...mkItem("s1", 1000), endpoint: "/api/s1" },
+        { ...mkItem("s2", 1001), endpoint: "/api/s2" },
+        { ...mkItem("s3", 1002), endpoint: "/api/s3" },
+      ];
+      vi.mocked(loadQueue).mockReturnValue(items);
+      vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+        const it = items.find((i) => i.id === id);
+        if (it) it.attempts++;
+      });
+      vi.mocked(apiRequest).mockRejectedValue(
+        new ApiError("503: Service Unavailable", undefined, 503),
+      );
+      vi.mocked(dequeue).mockResolvedValue(undefined);
+      const errorListener = vi.fn();
+      subscribeToQueueDrainErrors(errorListener);
+
+      const p = drainQueue();
+      await vi.runAllTimersAsync();
+      await p;
+
+      expect(dequeue).not.toHaveBeenCalled();
+      expect(errorListener).not.toHaveBeenCalled();
+      // 4 attempts on s1, 4 on s2, then halt — s3 is not tried against a
+      // server that has now failed two distinct writes in a row.
+      const endpoints = vi.mocked(apiRequest).mock.calls.map((c) => c[1]);
+      expect(endpoints).toEqual([
+        ...Array(4).fill("/api/s1"),
+        ...Array(4).fill("/api/s2"),
+      ]);
+    });
+
+    it("a single poison item (deterministic 5xx) does not block healthy items queued behind it", async () => {
+      const { loadQueue, incrementAttempts, dequeue } = await import(
+        "@/lib/offline-queue"
+      );
+      const { apiRequest } = await import("@/lib/query-client");
+      const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+      const { ApiError } = await import("@/lib/api-error");
+
+      const items = [
+        { ...mkItem("poison", 1000), endpoint: "/api/poison" },
+        { ...mkItem("ok1", 1001), endpoint: "/api/ok1" },
+        { ...mkItem("ok2", 1002), endpoint: "/api/ok2" },
+      ];
+      vi.mocked(loadQueue).mockReturnValue(items);
+      vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+        const it = items.find((i) => i.id === id);
+        if (it) it.attempts++;
+      });
+      vi.mocked(apiRequest).mockImplementation(async (_m, endpoint) => {
+        if (endpoint === "/api/poison") {
+          throw new ApiError("500: Internal Server Error", undefined, 500);
+        }
+        return new Response();
+      });
+      vi.mocked(dequeue).mockResolvedValue(undefined);
+      const errorListener = vi.fn();
+      subscribeToQueueDrainErrors(errorListener);
+
+      const p = drainQueue();
+      await vi.runAllTimersAsync();
+      await p;
+
+      // The poison item stays queued (inside the TTL), no toast…
+      expect(dequeue).not.toHaveBeenCalledWith("poison");
+      expect(errorListener).not.toHaveBeenCalled();
+      // …and the healthy writes behind it still sync.
+      expect(dequeue).toHaveBeenCalledWith("ok1");
+      expect(dequeue).toHaveBeenCalledWith("ok2");
+    });
+
+    it("a later drain gets a fresh server budget for a left-queued item", async () => {
+      const { loadQueue, incrementAttempts, dequeue } = await import(
+        "@/lib/offline-queue"
+      );
+      const { apiRequest } = await import("@/lib/query-client");
+      const { drainQueue } = await importDrain();
+      const { ApiError } = await import("@/lib/api-error");
+
+      const item = mkItem("again");
+      vi.mocked(loadQueue).mockReturnValue([item]);
+      vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+        if (item.id === id) item.attempts++;
+      });
+      vi.mocked(dequeue).mockResolvedValue(undefined);
+      let calls = 0;
+      vi.mocked(apiRequest).mockImplementation(async () => {
+        calls++;
+        if (calls <= 4) throw new ApiError("502: Bad Gateway", undefined, 502);
+        return new Response();
+      });
+
+      let p = drainQueue();
+      await vi.runAllTimersAsync();
+      await p;
+      expect(dequeue).not.toHaveBeenCalled();
+
+      p = drainQueue(); // server recovered
+      await vi.runAllTimersAsync();
+      await p;
+      expect(dequeue).toHaveBeenCalledWith("again");
+    });
+
+    it("evicts (with the discard toast) only once a failing item has outlived the queue TTL", async () => {
+      const { loadQueue, incrementAttempts, dequeue, QUEUE_TTL_MS } =
+        await import("@/lib/offline-queue");
+      const { apiRequest } = await import("@/lib/query-client");
+      const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+      const { ApiError } = await import("@/lib/api-error");
+
+      vi.setSystemTime(1000 + QUEUE_TTL_MS + 1);
+      const item = mkItem("expired", 1000);
+      vi.mocked(loadQueue).mockReturnValue([item]);
+      vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+        if (item.id === id) item.attempts++;
+      });
+      vi.mocked(apiRequest).mockRejectedValue(
+        new ApiError("500: Internal Server Error", undefined, 500),
+      );
+      vi.mocked(dequeue).mockResolvedValue(undefined);
+      const errorListener = vi.fn();
+      subscribeToQueueDrainErrors(errorListener);
+
+      const p = drainQueue();
+      await vi.runAllTimersAsync();
+      await p;
+
+      expect(dequeue).toHaveBeenCalledWith("expired");
+      expect(errorListener).toHaveBeenCalledOnce();
+    });
+
+    it.each([400, 403, 409, 422])(
+      "a permanent %i is still discarded with the toast",
+      async (status) => {
+        const { loadQueue, incrementAttempts, dequeue } = await import(
+          "@/lib/offline-queue"
+        );
+        const { apiRequest } = await import("@/lib/query-client");
+        const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+        const { ApiError } = await import("@/lib/api-error");
+
+        vi.mocked(loadQueue).mockReturnValue([mkItem("perm")]);
+        vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+        vi.mocked(apiRequest).mockRejectedValue(
+          new ApiError(`${status}: permanent`, undefined, status),
+        );
+        vi.mocked(dequeue).mockResolvedValue(undefined);
+        const errorListener = vi.fn();
+        subscribeToQueueDrainErrors(errorListener);
+
+        await drainQueue();
+
+        expect(dequeue).toHaveBeenCalledWith("perm");
+        expect(errorListener).toHaveBeenCalledOnce();
+      },
+    );
   });
 });

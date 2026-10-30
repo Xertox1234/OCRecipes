@@ -5,6 +5,7 @@ category: conventions
 module: server
 tags: [api, errors, error-handling, zod, services]
 applies_to: [server/routes/**/*.ts, server/services/**/*.ts]
+last_updated: '2026-10-30'
 created: '2026-05-16'
 ---
 
@@ -73,11 +74,16 @@ check before the fall-through is the established pattern for both concerns.
 - `server/services/pantry-meal-plan.ts` — defines `EmptyPantryError` and the
   `buildPantryMealPlanForUser` orchestrator that throws it.
 
+### Service-side fix: never `.parse()` AI output (2026-10-30, R33)
+
+The route-side `instanceof` catch only protects routes that remember to add it. The 2026-10-30 reliability audit found three services (`menu-analysis.ts`, `meal-suggestions.ts`, `pantry-meal-plan.ts`) still calling `aiSchema.parse(parsed)`, so when the model returned off-schema output the client got a 400 `VALIDATION_ERROR`. The durable fix is in the service. Use `safeParse`, log `result.error.flatten()` at `warn`, and throw a **plain `Error`** with a retry message. `handleRouteError` then maps it to 500 whichever catch shape the route uses. Consume quota only after a successful parse. In short, a `ZodError` should only ever come from request-body validation.
+
 ## Related Files
 
 - `server/routes/meal-plan.ts`
 - `server/services/pantry-meal-plan.ts`
 - `server/routes/_helpers.ts` — `handleRouteError` definition
+- `server/services/menu-analysis.ts`, `server/services/meal-suggestions.ts` — 2026-10-30 safeParse + plain-Error instances
 
 ## See Also
 

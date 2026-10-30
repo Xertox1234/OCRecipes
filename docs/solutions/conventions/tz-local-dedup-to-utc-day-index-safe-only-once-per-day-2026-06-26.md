@@ -5,6 +5,7 @@ category: conventions
 module: server
 tags: [architecture, dedup, idempotency, timezone, unique-index, cron, onConflictDoNothing, scheduler, behavior-preservation]
 applies_to: [server/services/notification-scheduler.ts, server/services/**/*scheduler*.ts]
+last_updated: '2026-10-30'
 created: '2026-06-26'
 ---
 
@@ -24,6 +25,8 @@ The two guards bucket "one per day" differently:
 Near a tz offset, a single UTC day spans parts of two local days and vice-versa. If a producer fired **twice** in one UTC day, the local-tz check might allow the second (different local day) while the UTC index would suppress it — a behavioral divergence. The swap is safe precisely when "twice in one UTC day" never happens.
 
 In this codebase the cron fires each producer exactly once per UTC day (commitments + daily-checkin at 09:00 UTC, meal-log at 12:00 UTC), so within any UTC day there is only ever one insert attempt per user — nothing for either guard to dedup against, and the tz-bucket difference is unobservable. That cadence fact — not the index alone — is what makes deleting `hasPendingReminderToday` a zero-behavior-change refactor. The same is true for the new `notification_sends` ledger, whose unique index uses the identical `DATE(sent_at AT TIME ZONE 'UTC')` bucket.
+
+**Update 2026-10-30 (R31):** the scheduler cadence described above has changed. Daily check-in and meal-log now run on an **hourly** UTC cron, and each tick processes only the users whose local hour is 9 or 12 (`filterByLocalHour`). The *cron* fires 24 times per UTC day, but each *user* is still attempted once per local day, which almost always means once per UTC day, so the UTC-day index remains a safe dedup. The edge case is a DST transition or a user changing their stored timezone. Either can bring two local-hour matches within one UTC day, and the index then suppresses the second reminder. That trade-off is acceptable, but it does mean the cadence is per-user, not per-cron. Commitment pushes stay on the 09:00 UTC daily job. See `docs/solutions/logic-errors/node-cron-host-timezone-and-nooverlap-needs-returned-promise-2026-10-30.md`.
 
 ## Examples
 
