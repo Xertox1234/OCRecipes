@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { reauthenticate } from "../auth-social";
 import { storage } from "../../storage";
-import { verifyGoogleIdToken } from "../../lib/social-identity/verify";
 
-const { mockLog } = vi.hoisted(() => ({
+const { mockLog, mockGetKey } = vi.hoisted(() => ({
   mockLog: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  mockGetKey: vi.fn(),
 }));
 vi.mock("../../lib/logger", async (orig) => ({
   ...(await orig<typeof import("../../lib/logger")>()),
@@ -17,10 +17,11 @@ vi.mock("../../storage", () => ({
   isReservedUsername: () => false,
   storage: { consumeNonce: vi.fn(), findIdentity: vi.fn() },
 }));
-vi.mock("../../lib/social-identity/verify", async (orig) => ({
-  ...(await orig<typeof import("../../lib/social-identity/verify")>()),
-  verifyGoogleIdToken: vi.fn(),
-  verifyAppleIdToken: vi.fn(),
+// Only the network is faked: the remote JWKS key fetch. The real verifyJwt /
+// TokenVerificationError / verifyProviderToken mapping all run.
+vi.mock("jose", async (orig) => ({
+  ...(await orig<typeof import("jose")>()),
+  createRemoteJWKSet: () => mockGetKey,
 }));
 
 const ENV_KEYS = ["GOOGLE_OAUTH_WEB_CLIENT_ID", "GOOGLE_OAUTH_APP_CLIENT_IDS"];
@@ -39,26 +40,55 @@ afterEach(() => {
   }
 });
 
-describe("reauthenticate — provider verification failure (R45)", () => {
-  it("still answers false, but logs a warn naming the provider", async () => {
-    const outage = new Error("JWKS fetch failed: ECONNRESET");
-    vi.mocked(verifyGoogleIdToken).mockRejectedValue(outage);
+/** A structurally valid compact JWS (RS256 header) — reaches the key fetch. */
+function wellFormedToken(): string {
+  const b64 = (o: object) =>
+    Buffer.from(JSON.stringify(o)).toString("base64url");
+  return `${b64({ alg: "RS256", kid: "k1" })}.${b64({ sub: "s" })}.c2lnbmF0dXJl`;
+}
 
-    const ok = await reauthenticate("user-1", null, {
-      provider: "google",
-      idToken: "secret-id-token",
-      nonce: "n-1",
-    });
+async function reauthWith(idToken: string) {
+  return reauthenticate("user-1", null, {
+    provider: "google",
+    idToken,
+    nonce: "n-1",
+  });
+}
+
+function loggedCause(): unknown {
+  expect(mockLog.warn).toHaveBeenCalledTimes(1);
+  return (mockLog.warn.mock.calls[0][0] as { cause?: unknown }).cause;
+}
+
+describe("reauthenticate — provider verification failure (R45)", () => {
+  it("logs a JWKS/provider outage with its underlying cause", async () => {
+    const token = wellFormedToken();
+    mockGetKey.mockRejectedValue(new TypeError("fetch failed: ECONNRESET"));
+
+    const ok = await reauthWith(token);
 
     expect(ok).toBe(false);
+    expect(mockGetKey).toHaveBeenCalled();
     expect(storage.consumeNonce).not.toHaveBeenCalled();
     expect(mockLog.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "google", err: outage }),
+      expect.objectContaining({ provider: "google" }),
       expect.stringContaining("reauth"),
     );
+    expect(loggedCause()).toContain("TypeError: fetch failed: ECONNRESET");
     // The provider token itself is never logged.
+    expect(JSON.stringify(mockLog.warn.mock.calls)).not.toContain(token);
+  });
+
+  it("logs a bad token with a different cause than an outage (control)", async () => {
+    const ok = await reauthWith("secret-not-a-jwt");
+
+    expect(ok).toBe(false);
+    expect(mockGetKey).not.toHaveBeenCalled();
+    const cause = loggedCause();
+    expect(cause).toContain("JWSInvalid");
+    expect(cause).not.toContain("fetch failed");
     expect(JSON.stringify(mockLog.warn.mock.calls)).not.toContain(
-      "secret-id-token",
+      "secret-not-a-jwt",
     );
   });
 });
