@@ -10,7 +10,18 @@ import {
   recipeDismissals,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lt, sql, or, ilike, inArray } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  and,
+  gte,
+  lt,
+  sql,
+  or,
+  ilike,
+  inArray,
+  isNull,
+} from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
 import {
   addToIndex,
@@ -507,6 +518,7 @@ export async function getRecipeSharePayload(
         and(
           eq(mealPlanRecipes.id, recipeId),
           eq(mealPlanRecipes.userId, userId),
+          isNull(mealPlanRecipes.deletedAt),
         ),
       );
     if (!recipe) return null;

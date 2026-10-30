@@ -180,6 +180,40 @@ describe("generateEditorialContent", () => {
       affiliateUrl: undefined,
     });
   });
+
+  // The prompt asks for null, but nothing enforced it: a steered model could
+  // put a phishing link on a canonical recipe that every viewer can tap
+  // (audit 2026-10-29 L-sec-8). No affiliate program exists, so none is kept.
+  it("never stores a model-supplied affiliate URL", async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              instructionDetails: [],
+              toolsRequired: [
+                { name: "Skillet", affiliateUrl: "https://evil.example/login" },
+                { name: "Knife", affiliateUrl: "javascript:alert(1)" },
+              ],
+              chefTips: [],
+              cuisineOrigin: "",
+            }),
+          },
+        },
+      ],
+    });
+
+    const result = await generateEditorialContent({
+      title: "Hash",
+      ingredients: [],
+      instructions: [],
+    });
+
+    expect(result.toolsRequired).toEqual([
+      { name: "Skillet", affiliateUrl: undefined },
+      { name: "Knife", affiliateUrl: undefined },
+    ]);
+  });
 });
 
 describe("enrichRecipe", () => {

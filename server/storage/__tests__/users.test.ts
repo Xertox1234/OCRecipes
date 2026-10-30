@@ -19,7 +19,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { users, userProfiles } from "@shared/schema";
+import {
+  users,
+  userProfiles,
+  communityRecipes,
+  savedItems,
+  recipeDismissals,
+} from "@shared/schema";
 import { eq } from "drizzle-orm";
 import {
   isUniqueViolation,
@@ -54,6 +60,7 @@ const {
   claimTransactionAndUpgrade,
   revokeSubscriptionByTransactionId,
   upsertProfileWithOnboarding,
+  deleteUser,
   RESERVED_USERNAMES,
   ReservedUsernameError,
   isReservedUsername,
@@ -1215,6 +1222,50 @@ describe("users storage", () => {
       expect(result.healthDataConsentAt?.getTime()).toBe(stored!.getTime());
       // Other fields still update normally — only the consent column is locked.
       expect(result.dietType).toBe("keto");
+    });
+  });
+
+  describe("deleteUser — the author's community recipes", () => {
+    // Saved items and dismissals reference a community recipe with no FK
+    // (polymorphic); deleteCommunityRecipe removes them, deleteUser did not
+    // (audit 2026-10-29 M-data-3).
+    it("removes other users' saved items and dismissals of the deleted author's recipes", async () => {
+      const author = await createTestUser(tx);
+      const [recipe] = await tx
+        .insert(communityRecipes)
+        .values({
+          authorId: author.id,
+          normalizedProductName: "test",
+          title: "Author's stew",
+          instructions: ["Cook"],
+          ingredients: [],
+        })
+        .returning();
+      await tx.insert(savedItems).values({
+        userId: testUser.id,
+        type: "recipe",
+        title: "Author's stew",
+        recipeId: recipe.id,
+        recipeType: "community",
+      });
+      await tx.insert(recipeDismissals).values({
+        userId: testUser.id,
+        recipeIdentifier: String(recipe.id),
+        source: "community",
+      });
+
+      expect(await deleteUser(author.id)).toBe(true);
+
+      const saved = await tx
+        .select()
+        .from(savedItems)
+        .where(eq(savedItems.userId, testUser.id));
+      const dismissed = await tx
+        .select()
+        .from(recipeDismissals)
+        .where(eq(recipeDismissals.userId, testUser.id));
+      expect(saved).toHaveLength(0);
+      expect(dismissed).toHaveLength(0);
     });
   });
 });

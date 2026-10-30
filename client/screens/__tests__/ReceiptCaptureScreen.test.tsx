@@ -4,13 +4,21 @@ import { screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import ReceiptCaptureScreen from "../ReceiptCaptureScreen";
 
-const { mockReplace, mockGoBack, mockDeleteAsync, mockLaunchImageLibrary } =
-  vi.hoisted(() => ({
-    mockReplace: vi.fn(),
-    mockGoBack: vi.fn(),
-    mockDeleteAsync: vi.fn().mockResolvedValue(undefined),
-    mockLaunchImageLibrary: vi.fn(),
-  }));
+const {
+  mockReplace,
+  mockGoBack,
+  mockDeleteAsync,
+  mockLaunchImageLibrary,
+  mockTakePicture,
+  mockRecognize,
+} = vi.hoisted(() => ({
+  mockReplace: vi.fn(),
+  mockGoBack: vi.fn(),
+  mockDeleteAsync: vi.fn().mockResolvedValue(undefined),
+  mockLaunchImageLibrary: vi.fn(),
+  mockTakePicture: vi.fn(),
+  mockRecognize: vi.fn(),
+}));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
@@ -20,15 +28,21 @@ vi.mock("@react-navigation/native", () => ({
   useIsFocused: () => true,
 }));
 
-vi.mock("@/camera", () => ({
-  CameraView: () => null,
-  useCameraPermissions: () => ({
-    permission: { status: "granted", canAskAgain: false },
-    isLoading: false,
-    requestPermission: vi.fn(),
-  }),
-  recognizeTextFromPhoto: vi.fn().mockResolvedValue({ text: "", blocks: [] }),
-}));
+vi.mock("@/camera", async () => {
+  const React = await import("react");
+  return {
+    CameraView: React.forwardRef(function CameraView(_props, ref) {
+      React.useImperativeHandle(ref, () => ({ takePicture: mockTakePicture }));
+      return null;
+    }),
+    useCameraPermissions: () => ({
+      permission: { status: "granted", canAskAgain: false },
+      isLoading: false,
+      requestPermission: vi.fn(),
+    }),
+    recognizeTextFromPhoto: (...args: unknown[]) => mockRecognize(...args),
+  };
+});
 
 vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: (...args: unknown[]) =>
@@ -78,6 +92,7 @@ describe("ReceiptCaptureScreen — captured photo file cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDeleteAsync.mockResolvedValue(undefined);
+    mockRecognize.mockResolvedValue({ text: "", blocks: [] });
   });
 
   // Audit finding L2: "removed receipt photos" are never deleted. Fails on
@@ -154,5 +169,51 @@ describe("ReceiptCaptureScreen — captured photo file cleanup", () => {
         idempotent: true,
       });
     });
+  });
+});
+
+describe("ReceiptCaptureScreen — capture and gallery failures", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDeleteAsync.mockResolvedValue(undefined);
+  });
+
+  // The photo is only added to the list after on-device OCR finishes, so
+  // leaving the screen mid-OCR used to leak its file
+  // (audit 2026-10-29 L-cam-4).
+  it("deletes a photo whose OCR is still running when the screen unmounts", async () => {
+    mockTakePicture.mockResolvedValue({ uri: "file:///capture-1.jpg" });
+    mockRecognize.mockReturnValue(new Promise(() => {})); // never settles
+    const { unmount } = renderComponent(<ReceiptCaptureScreen />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo of receipt"));
+    });
+    await waitFor(() => expect(mockRecognize).toHaveBeenCalled());
+
+    await act(async () => {
+      unmount();
+    });
+
+    await waitFor(() =>
+      expect(mockDeleteAsync).toHaveBeenCalledWith("file:///capture-1.jpg", {
+        idempotent: true,
+      }),
+    );
+  });
+
+  // A picker error (e.g. photo-library permission denied) was an unhandled
+  // rejection with no feedback (audit 2026-10-29 L-cam-5).
+  it("tells the user when the gallery picker fails", async () => {
+    const RN = await import("react-native");
+    const alertSpy = vi.spyOn(RN.Alert, "alert");
+    mockLaunchImageLibrary.mockRejectedValueOnce(new Error("denied"));
+    renderComponent(<ReceiptCaptureScreen />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Pick from gallery"));
+    });
+
+    expect(alertSpy).toHaveBeenCalled();
   });
 });

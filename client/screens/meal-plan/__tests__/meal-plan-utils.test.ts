@@ -32,6 +32,7 @@ function makeRecipe(overrides: Record<string, unknown> = {}): MealPlanRecipe {
   return {
     id: 1,
     userId: "user-1",
+    deletedAt: null,
     title: "Test Recipe",
     description: null,
     sourceType: "user_created",

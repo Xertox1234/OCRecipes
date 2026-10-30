@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
-import { View, FlatList, Image, StyleSheet } from "react-native";
+import { View, FlatList, StyleSheet } from "react-native";
+import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { resolveImageUrl } from "@/lib/query-client";
@@ -49,7 +50,8 @@ const RecipeCard = React.memo(function RecipeCard({
         <Image
           source={{ uri: resolveImageUrl(item.imageUrl) ?? undefined }}
           style={styles.image}
-          resizeMode="cover"
+          contentFit="cover"
+          cachePolicy="memory-disk"
         />
         {selected && (
           <View

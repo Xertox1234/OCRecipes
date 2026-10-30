@@ -21,10 +21,10 @@
  */
 import cron from "node-cron";
 import pLimit from "p-limit";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 import { storage } from "../storage";
-import { parseTimezone } from "../routes/_helpers";
-import { civilHourInTz } from "../lib/civil-date";
+import { civilHourInTz, parseTimezone } from "../lib/civil-date";
 import { notify } from "./notifications/notify";
 import type { ReminderMutes } from "@shared/types/reminders";
 
@@ -366,9 +366,10 @@ export function startNotificationScheduler(): void {
     () =>
       sendDueCommitmentReminders().catch((err) => {
         logger.error(
-          { err },
+          { err: toError(err) },
           "notification-scheduler: unhandled error in commitment cron",
         );
+        reportError(err, "notification-scheduler: commitment cron");
       }),
     { timezone: "UTC", noOverlap: true, name: "commitment-reminders" },
   );
@@ -387,16 +388,18 @@ export function startNotificationScheduler(): void {
           localHour: DAILY_CHECKIN_LOCAL_HOUR,
         }).catch((err) => {
           logger.error(
-            { err },
+            { err: toError(err) },
             "notification-scheduler: unhandled error in daily-checkin cron",
           );
+          reportError(err, "notification-scheduler: daily-checkin cron");
         }),
         sendMealLogReminders({ now, localHour: MEAL_LOG_LOCAL_HOUR }).catch(
           (err) => {
             logger.error(
-              { err },
+              { err: toError(err) },
               "notification-scheduler: unhandled error in meal-log cron",
             );
+            reportError(err, "notification-scheduler: meal-log cron");
           },
         ),
       ]);

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React from "react";
+import React, { useEffect } from "react";
 import { act, screen } from "@testing-library/react";
 import * as RN from "react-native";
 import { FullWindowOverlay } from "react-native-screens";
@@ -39,7 +39,11 @@ vi.mock("react-native-gesture-handler", async (importOriginal) => {
 type Api = ReturnType<typeof useToast>;
 let api: Api;
 function Capture() {
-  api = useToast();
+  const current = useToast();
+  // Assigned in an effect (not during render) to satisfy react-hooks/globals.
+  useEffect(() => {
+    api = current;
+  });
   return null;
 }
 

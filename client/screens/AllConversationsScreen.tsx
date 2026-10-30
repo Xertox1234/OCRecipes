@@ -33,6 +33,7 @@ import {
   useRefreshOnFocus,
 } from "@/hooks/useRefreshOnFocus";
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import {
   Spacing,
   BorderRadius,
@@ -83,6 +84,7 @@ export default function AllConversationsScreen() {
   const {
     data: conversations = [],
     isLoading,
+    isError,
     refetch,
   } = useChatConversations(activeSegment, {
     search: debouncedSearch || undefined,
@@ -395,13 +397,26 @@ export default function AllConversationsScreen() {
               {unpinned.map(renderRow)}
             </>
           )}
-          {conversations.length === 0 && (
-            <ThemedText
-              type="small"
-              style={[styles.empty, { color: theme.textSecondary }]}
-            >
-              No conversations found
-            </ThemedText>
+          {isError && conversations.length === 0 ? (
+            <EmptyState
+              variant="temporary"
+              icon="alert-circle"
+              title="Couldn't load your conversations"
+              description="Something went wrong. Tap below to try again."
+              actionLabel="Try Again"
+              onAction={() => {
+                void refetch();
+              }}
+            />
+          ) : (
+            conversations.length === 0 && (
+              <ThemedText
+                type="small"
+                style={[styles.empty, { color: theme.textSecondary }]}
+              >
+                No conversations found
+              </ThemedText>
+            )
           )}
         </ScrollView>
       )}

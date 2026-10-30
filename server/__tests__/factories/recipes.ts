@@ -13,6 +13,7 @@ import type {
 const mealPlanRecipeDefaults: MealPlanRecipe = {
   id: 1,
   userId: "1",
+  deletedAt: null,
   title: "Test Recipe",
   description: null,
   sourceType: "user_created",
