@@ -472,16 +472,13 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
   }
 
   let html: string;
+  // One deadline covers headers AND body: the timer must stay live through
+  // readBodyWithLimit, or a peer that sends headers then trickles bytes holds
+  // the request open indefinitely (undici's per-chunk bodyTimeout is 300s).
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-    let res: Response;
-    try {
-      res = await safeFetch(url, controller.signal);
-    } finally {
-      clearTimeout(timeout);
-    }
+    const res = await safeFetch(url, controller.signal);
 
     if (!res.ok) {
       return { success: false, error: "FETCH_FAILED" };
@@ -503,6 +500,8 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
       return { success: false, error: "TIMEOUT" };
     }
     return { success: false, error: "FETCH_FAILED" };
+  } finally {
+    clearTimeout(timeout);
   }
 
   const $ = cheerio.load(html);

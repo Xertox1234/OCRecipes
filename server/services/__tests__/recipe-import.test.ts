@@ -11,6 +11,7 @@ import {
   isBlockedUrl,
   resolveAndValidateHost,
   MAX_RESPONSE_BYTES,
+  FETCH_TIMEOUT_MS,
 } from "../recipe-import";
 
 vi.mock("node:dns", () => {
@@ -339,6 +340,43 @@ describe("Recipe Import", () => {
       const result = await importRecipeFromUrl("https://example.com/slow");
       expect(result).toEqual({ success: false, error: "TIMEOUT" });
     }, 15_000);
+
+    it("returns TIMEOUT when headers arrive but the body trickles past the deadline (R06)", async () => {
+      vi.useFakeTimers();
+      try {
+        globalThis.fetch = vi.fn().mockImplementation((_url, opts) => {
+          const signal = opts?.signal as AbortSignal | undefined;
+          // Headers arrive immediately; the body never completes unless the
+          // request signal aborts (mirrors undici erroring the body stream on abort).
+          const body = new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("<html>"));
+              signal?.addEventListener("abort", () => {
+                controller.error(
+                  new DOMException("The operation was aborted.", "AbortError"),
+                );
+              });
+            },
+          });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ "content-type": "text/html" }),
+            body,
+          });
+        });
+
+        const pending = importRecipeFromUrl("https://example.com/slow-drip");
+        await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS + 1);
+        const outcome = await Promise.race([
+          pending,
+          Promise.resolve("still-pending" as const),
+        ]);
+        expect(outcome).toEqual({ success: false, error: "TIMEOUT" });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
     it("returns RESPONSE_TOO_LARGE when Content-Length exceeds limit", async () => {
       const oversizedLength = MAX_RESPONSE_BYTES + 1;
