@@ -1169,13 +1169,20 @@ export const mealPlanRecipes = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
+    // Soft delete. `null` = live. Deleting a recipe stamps this instead of
+    // removing the row, because daily_logs.recipe_id points here and a hard
+    // delete cascaded the user's logged history away. Every user-facing read
+    // filters `deleted_at IS NULL`; nutrition-history reads (getDailySummary)
+    // deliberately do not.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     index("meal_plan_recipes_user_id_idx").on(table.userId),
-    uniqueIndex("meal_plan_recipes_user_external_id_idx").on(
-      table.userId,
-      table.externalId,
-    ),
+    // Partial: a deleted recipe must not block saving the same catalog
+    // recipe again.
+    uniqueIndex("meal_plan_recipes_user_external_id_idx")
+      .on(table.userId, table.externalId)
+      .where(sql`deleted_at IS NULL`),
     index("meal_plan_recipes_title_trgm_idx").using(
       "gin",
       table.title.op("gin_trgm_ops"),

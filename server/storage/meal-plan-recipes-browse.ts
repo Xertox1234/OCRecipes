@@ -8,7 +8,7 @@ import {
 // sub-module never depends on the barrel (avoids latent circular-import risk).
 import { FEATURED_COLUMNS, type FeaturedRecipe } from "./community-recipes";
 import { db } from "../db";
-import { eq, desc, and, or, ilike, inArray, sql } from "drizzle-orm";
+import { eq, desc, and, or, ilike, inArray, sql, isNull } from "drizzle-orm";
 import { escapeLike } from "./helpers";
 import {
   addToIndex,
@@ -52,7 +52,11 @@ const UNIFIED_PERSONAL_COLUMNS = {
 } as const;
 
 /** Personal recipe row without heavy `instructions` JSONB. */
-export type PersonalRecipeBrief = Omit<MealPlanRecipe, "instructions">;
+// `deletedAt` is server-internal: browse only ever returns live recipes.
+export type PersonalRecipeBrief = Omit<
+  MealPlanRecipe,
+  "instructions" | "deletedAt"
+>;
 
 /**
  * Load all meal-plan recipes for search index initialization.
@@ -63,32 +67,36 @@ export type PersonalRecipeBrief = Omit<MealPlanRecipe, "instructions">;
 export async function getAllMealPlanRecipes(): Promise<
   SearchIndexableMealPlanRecipe[]
 > {
-  return db
-    .select({
-      id: mealPlanRecipes.id,
-      userId: mealPlanRecipes.userId,
-      title: mealPlanRecipes.title,
-      description: mealPlanRecipes.description,
-      cuisine: mealPlanRecipes.cuisine,
-      dietTags: mealPlanRecipes.dietTags,
-      mealTypes: mealPlanRecipes.mealTypes,
-      allergens: mealPlanRecipes.allergens,
-      dietConflicts: mealPlanRecipes.dietConflicts,
-      spiceLevel: mealPlanRecipes.spiceLevel,
-      difficulty: mealPlanRecipes.difficulty,
-      prepTimeMinutes: mealPlanRecipes.prepTimeMinutes,
-      cookTimeMinutes: mealPlanRecipes.cookTimeMinutes,
-      caloriesPerServing: mealPlanRecipes.caloriesPerServing,
-      proteinPerServing: mealPlanRecipes.proteinPerServing,
-      carbsPerServing: mealPlanRecipes.carbsPerServing,
-      fatPerServing: mealPlanRecipes.fatPerServing,
-      servings: mealPlanRecipes.servings,
-      imageUrl: mealPlanRecipes.imageUrl,
-      sourceUrl: mealPlanRecipes.sourceUrl,
-      createdAt: mealPlanRecipes.createdAt,
-    })
-    .from(mealPlanRecipes)
-    .orderBy(desc(mealPlanRecipes.createdAt));
+  return (
+    db
+      .select({
+        id: mealPlanRecipes.id,
+        userId: mealPlanRecipes.userId,
+        title: mealPlanRecipes.title,
+        description: mealPlanRecipes.description,
+        cuisine: mealPlanRecipes.cuisine,
+        dietTags: mealPlanRecipes.dietTags,
+        mealTypes: mealPlanRecipes.mealTypes,
+        allergens: mealPlanRecipes.allergens,
+        dietConflicts: mealPlanRecipes.dietConflicts,
+        spiceLevel: mealPlanRecipes.spiceLevel,
+        difficulty: mealPlanRecipes.difficulty,
+        prepTimeMinutes: mealPlanRecipes.prepTimeMinutes,
+        cookTimeMinutes: mealPlanRecipes.cookTimeMinutes,
+        caloriesPerServing: mealPlanRecipes.caloriesPerServing,
+        proteinPerServing: mealPlanRecipes.proteinPerServing,
+        carbsPerServing: mealPlanRecipes.carbsPerServing,
+        fatPerServing: mealPlanRecipes.fatPerServing,
+        servings: mealPlanRecipes.servings,
+        imageUrl: mealPlanRecipes.imageUrl,
+        sourceUrl: mealPlanRecipes.sourceUrl,
+        createdAt: mealPlanRecipes.createdAt,
+      })
+      .from(mealPlanRecipes)
+      // A soft-deleted recipe never re-enters search on a boot rebuild.
+      .where(isNull(mealPlanRecipes.deletedAt))
+      .orderBy(desc(mealPlanRecipes.createdAt))
+  );
 }
 
 /**
@@ -138,6 +146,7 @@ export async function getUnifiedRecipes(params: {
   ];
   const personalConditions = [
     eq(mealPlanRecipes.userId, userId),
+    isNull(mealPlanRecipes.deletedAt),
     // Quality gate: exclude recipes with no instructions AND no ingredients
     sql`(
       COALESCE(jsonb_array_length(${mealPlanRecipes.instructions}), 0) > 0
@@ -229,9 +238,8 @@ export async function getUnifiedRecipes(params: {
  * Get recipes with empty or null mealTypes, along with their ingredients.
  * Used by the meal-type inference backfill job.
  *
- * Defense-in-depth (L28): if a `discardedAt` soft-delete column is ever added
- * to `mealPlanRecipes`, add `isNull(mealPlanRecipes.discardedAt)` to the where
- * clause below so discarded recipes are excluded from backfill processing.
+ * Soft-deleted recipes (`deletedAt` set) are excluded — they are never shown
+ * again, so classifying them is wasted work.
  */
 export async function getRecipesWithEmptyMealTypes(): Promise<{
   recipes: { id: number; title: string }[];
@@ -244,7 +252,10 @@ export async function getRecipesWithEmptyMealTypes(): Promise<{
     })
     .from(mealPlanRecipes)
     .where(
-      sql`${mealPlanRecipes.mealTypes}::jsonb = '[]'::jsonb OR ${mealPlanRecipes.mealTypes} IS NULL`,
+      and(
+        isNull(mealPlanRecipes.deletedAt),
+        sql`(${mealPlanRecipes.mealTypes}::jsonb = '[]'::jsonb OR ${mealPlanRecipes.mealTypes} IS NULL)`,
+      ),
     );
 
   if (recipes.length === 0) {

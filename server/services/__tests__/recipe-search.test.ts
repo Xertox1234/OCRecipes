@@ -38,6 +38,7 @@ vi.mock("../../services/recipe-catalog", () => ({
 const baseMealPlanRecipe: MealPlanRecipe = {
   id: 1,
   userId: "user1",
+  deletedAt: null,
   title: "Chicken Parmesan",
   description: "Classic Italian comfort food",
   sourceType: "user_created",

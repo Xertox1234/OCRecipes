@@ -124,10 +124,25 @@ describe("meal-plan recipe image cleanup only removes unreferenced images", () =
     expect(mockDeleteImage).not.toHaveBeenCalledWith(VICTIM_IMAGE, "recipe");
   });
 
-  it("still deletes the user's own image once nothing references it", async () => {
+  // Deleting is a soft delete: the row (and the daily logs that point at it)
+  // still references the image, so it stays.
+  it("keeps the user's own image when the recipe is soft-deleted", async () => {
     const id = await addPlanRecipe(attacker.id, OWN_IMAGE);
 
     await deleteMealPlanRecipe(id, attacker.id);
+    await settle();
+
+    expect(mockDeleteImage).not.toHaveBeenCalledWith(OWN_IMAGE, "recipe");
+  });
+
+  it("still deletes the user's own image when an edit replaces it", async () => {
+    const id = await addPlanRecipe(attacker.id, OWN_IMAGE);
+
+    // A different object — `?v=` variants of the same URL count as the same
+    // stored image and are rightly kept.
+    await updateMealPlanRecipe(id, attacker.id, {
+      imageUrl: `${CDN}/recipe-images/own-new.jpg`,
+    });
     await settle();
 
     expect(mockDeleteImage).toHaveBeenCalledWith(OWN_IMAGE, "recipe");
