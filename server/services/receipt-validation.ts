@@ -434,7 +434,18 @@ async function validateGoogleReceipt(
     "SUBSCRIPTION_STATE_ACTIVE",
     "SUBSCRIPTION_STATE_IN_GRACE_PERIOD",
   ];
-  if (
+  // CANCELED means auto-renew is off, but the user keeps access until the
+  // line item's expiryTime (Play Billing "Cancellations"). Entitled only while
+  // that expiry is in the future; no expiry fails closed below.
+  if (data.subscriptionState === "SUBSCRIPTION_STATE_CANCELED") {
+    const expiryMs = Date.parse(data.lineItems?.[0]?.expiryTime ?? "");
+    if (Number.isNaN(expiryMs)) {
+      return { valid: false, errorCode: "PURCHASE_NOT_ACTIVE" };
+    }
+    if (expiryMs <= Date.now()) {
+      return { valid: false, errorCode: "SUBSCRIPTION_EXPIRED" };
+    }
+  } else if (
     !data.subscriptionState ||
     !activeStates.includes(data.subscriptionState)
   ) {

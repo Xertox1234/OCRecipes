@@ -445,6 +445,86 @@ describe("Receipt Validation", () => {
       fetchSpy.mockRestore();
     });
 
+    it("accepts a CANCELED subscription still paid through a future expiry", async () => {
+      const { validate, fetchSpy } = await setupGoogleTest({
+        subscriptionState: "SUBSCRIPTION_STATE_CANCELED",
+        lineItems: [
+          {
+            productId: "premium_monthly",
+            expiryTime: new Date(FUTURE_EXPIRY).toISOString(),
+          },
+        ],
+      });
+
+      const result = await validate("purchase-token-123", "android");
+      expect(result.valid).toBe(true);
+      expect(result.expiresAt?.getTime()).toBe(FUTURE_EXPIRY);
+      expect(result.originalTransactionId).toBe("purchase-token-123");
+
+      fetchSpy.mockRestore();
+    });
+
+    it("rejects a CANCELED subscription whose expiry has passed", async () => {
+      const { validate, fetchSpy } = await setupGoogleTest({
+        subscriptionState: "SUBSCRIPTION_STATE_CANCELED",
+        lineItems: [
+          {
+            productId: "premium_monthly",
+            expiryTime: new Date(PAST_EXPIRY).toISOString(),
+          },
+        ],
+      });
+
+      const result = await validate("purchase-token-123", "android");
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("SUBSCRIPTION_EXPIRED");
+
+      fetchSpy.mockRestore();
+    });
+
+    it.each([
+      ["no expiry", { productId: "premium_monthly" }],
+      [
+        "an unparseable expiry",
+        { productId: "premium_monthly", expiryTime: "soon" },
+      ],
+    ])(
+      "rejects a CANCELED subscription with %s (fails closed)",
+      async (_label, lineItem) => {
+        const { validate, fetchSpy } = await setupGoogleTest({
+          subscriptionState: "SUBSCRIPTION_STATE_CANCELED",
+          lineItems: [lineItem],
+        });
+
+        const result = await validate("purchase-token-123", "android");
+        expect(result.valid).toBe(false);
+        expect(result.errorCode).toBe("PURCHASE_NOT_ACTIVE");
+
+        fetchSpy.mockRestore();
+      },
+    );
+
+    it.each(["SUBSCRIPTION_STATE_ON_HOLD", "SUBSCRIPTION_STATE_PAUSED"])(
+      "still rejects %s even with a future expiry",
+      async (subscriptionState) => {
+        const { validate, fetchSpy } = await setupGoogleTest({
+          subscriptionState,
+          lineItems: [
+            {
+              productId: "premium_monthly",
+              expiryTime: new Date(FUTURE_EXPIRY).toISOString(),
+            },
+          ],
+        });
+
+        const result = await validate("purchase-token-123", "android");
+        expect(result.valid).toBe(false);
+        expect(result.errorCode).toBe("PURCHASE_NOT_ACTIVE");
+
+        fetchSpy.mockRestore();
+      },
+    );
+
     it("rejects product mismatch on Google", async () => {
       const { validate, fetchSpy } = await setupGoogleTest({
         subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
