@@ -93,21 +93,26 @@ export async function getUserVerificationStats(userId: string): Promise<{
       })
       .from(verificationHistory)
       .where(eq(verificationHistory.userId, userId)),
-    db
-      .select({
-        backDay: sql<string>`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`,
-        frontDay: sql<
-          string | null
-        >`DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
-      })
-      .from(verificationHistory)
-      .where(
-        and(
-          eq(verificationHistory.userId, userId),
-          sql`${verificationHistory.createdAt} >= NOW() - INTERVAL '90 days'`,
-        ),
-      )
-      .limit(90), // Performance guard: max 90 distinct dates in 90 days; multiple per day is fine
+    // Distinct activity days (back-label createdAt ∪ front-label scan day),
+    // newest first. The LIMIT applies to distinct DAYS with an ORDER BY —
+    // a row-level LIMIT without ORDER BY returns an arbitrary subset and
+    // drops days for users with several verifications per day.
+    db.execute<{ day: string }>(sql`
+      SELECT day::text AS day FROM (
+        SELECT DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC') AS day
+          FROM ${verificationHistory}
+          WHERE ${verificationHistory.userId} = ${userId}
+            AND ${verificationHistory.createdAt} >= NOW() - INTERVAL '90 days'
+        UNION
+        SELECT DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC') AS day
+          FROM ${verificationHistory}
+          WHERE ${verificationHistory.userId} = ${userId}
+            AND ${verificationHistory.createdAt} >= NOW() - INTERVAL '90 days'
+            AND ${verificationHistory.frontLabelScannedAt} IS NOT NULL
+      ) days
+      ORDER BY day DESC
+      LIMIT 91
+    `),
   ]);
 
   const count = countResult[0]?.count ?? 0;
@@ -117,15 +122,8 @@ export async function getUserVerificationStats(userId: string): Promise<{
   if (count === 0)
     return { count: 0, frontLabelCount: 0, compositeScore: 0, streak: 0 };
 
-  // Collect unique dates from both columns
-  const dateSet = new Set<string>();
-  for (const row of activityRows) {
-    dateSet.add(row.backDay);
-    if (row.frontDay) dateSet.add(row.frontDay);
-  }
-  const dates = [...dateSet]
-    .sort((a, b) => b.localeCompare(a))
-    .map((day) => ({ day }));
+  // Already distinct and sorted newest-first by the query.
+  const dates = activityRows.rows;
 
   // Walk backwards from today counting consecutive days
   const today = new Date();
