@@ -97,6 +97,43 @@ describe("home-actions-storage", () => {
     });
   });
 
+  // R24: a valid-JSON blob of the wrong shape (e.g. from a future/older schema
+  // or storage corruption) must not break Home action tracking until rewritten.
+  describe("shape-validates persisted blobs (R24)", () => {
+    it("treats a non-array recent list and a non-object usage map as empty", async () => {
+      mockAsyncStorage.getItem.mockImplementation((key: string) => {
+        if (key === "@ocrecipes_recent_actions") return Promise.resolve("5");
+        if (key === "@ocrecipes_action_usage_counts")
+          return Promise.resolve('["x"]');
+        if (key === "@ocrecipes_home_sections")
+          return Promise.resolve('"oops"');
+        if (key === "@ocrecipes_durable_owner")
+          return Promise.resolve("user-1");
+        return Promise.resolve(null);
+      });
+
+      await initHomeActionsCache("user-1");
+
+      expect(getRecentActions()).toEqual([]);
+      expect(getActionUsageCounts()).toEqual({});
+      expect(getSectionState().scanning).toBe(true);
+      // And the next write works instead of throwing on `.filter`.
+      await pushRecentAction("scan-barcode");
+      expect(getRecentActions()).toEqual(["scan-barcode"]);
+    });
+  });
+
+  // R24: fire-and-forget callers (`void setSectionExpanded(...)`) must not get
+  // an unhandled rejection when the disk write fails.
+  it("setSectionExpanded never rejects on a failed write (keeps the in-memory state)", async () => {
+    await initHomeActionsCache("user-1");
+    mockAsyncStorage.setItem.mockReturnValue(Promise.reject(new Error("full")));
+    await expect(
+      setSectionExpanded("scanning", false),
+    ).resolves.toBeUndefined();
+    expect(getSectionState().scanning).toBe(false);
+  });
+
   describe("setSectionExpanded", () => {
     it("persists section state to AsyncStorage", async () => {
       await initHomeActionsCache("user-1");

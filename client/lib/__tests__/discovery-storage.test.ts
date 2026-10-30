@@ -69,4 +69,17 @@ describe("discovery-storage", () => {
     expect(ids.has("scan-receipt")).toBe(true);
     expect(ids.has("pantry")).toBe(true);
   });
+
+  // R24/R50: wrong-shape blob and fire-and-forget write failures.
+  it("treats a non-array persisted blob as nothing dismissed", async () => {
+    mockAsyncStorage.getItem.mockResolvedValue('{"a":1}');
+    await initDiscoveryCache();
+    expect(getDismissedCardIds().size).toBe(0);
+  });
+
+  it("dismissCard never rejects on a failed write (the card stays dismissed this session)", async () => {
+    mockAsyncStorage.setItem.mockRejectedValue(new Error("full"));
+    await expect(dismissCard("card-1")).resolves.toBeUndefined();
+    expect(getDismissedCardIds().has("card-1")).toBe(true);
+  });
 });
