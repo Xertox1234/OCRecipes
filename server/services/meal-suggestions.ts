@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
-import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import { SYSTEM_PROMPT_BOUNDARY, sanitizeUserInput } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { buildDismissalContext } from "../lib/dismissal-context";
 import { buildMacroGapEmphasis } from "../lib/macro-gap-context";
@@ -108,7 +108,11 @@ export async function generateMealSuggestions(
   const existingMealsSummary =
     input.existingMeals.length > 0
       ? input.existingMeals
-          .map((m) => `- ${m.mealType}: ${m.title} (${m.calories} cal)`)
+          // A title can be a product name from an external barcode database.
+          .map(
+            (m) =>
+              `- ${m.mealType}: ${sanitizeUserInput(m.title)} (${m.calories} cal)`,
+          )
           .join("\n")
       : "No meals planned yet today.";
 

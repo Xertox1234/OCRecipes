@@ -25,6 +25,7 @@ import { lookupNutrition } from "./nutrition-lookup";
 import { findCommunity } from "./recipe-finder/find-community";
 import { getSubstitutions } from "./ingredient-substitution";
 import { logger } from "../lib/logger";
+import { sanitizeUserInput } from "../lib/ai-safety";
 import { isValidCalendarDate } from "../utils/date-validation";
 import type { UserProfile } from "@shared/schema";
 
@@ -563,9 +564,11 @@ export async function executeToolCall(
         [],
       );
       return {
+        // Other users' public recipe titles go back to the model as tool
+        // output — sanitize them like any other third-party text.
         results: items.map(({ id, title, imageUrl, readyInMinutes }) => ({
           id,
-          title,
+          title: sanitizeUserInput(title),
           imageUrl,
           readyInMinutes,
         })),
