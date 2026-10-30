@@ -231,9 +231,29 @@ if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   if objection_in "$MSG"; then
     exit 0
   fi
-  NHB=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
-                 | select(.type=="tool_use" and .name=="SubagentHandback")]
-                | length' "$TP" 2>/dev/null) || NHB=0
+  count_handbacks() {
+    jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
+             | select(.type=="tool_use" and .name=="SubagentHandback")]
+            | length' "$TP" 2>/dev/null || echo 0
+  }
+  NHB=$(count_handbacks)
+  # LATE HAND-BACK (2026-10-30). SubagentStop can fire before the hand-back entry reaches the
+  # transcript. Measured on a real background reviewer (Claude Code 2.1.312): readable
+  # transcript, 0 hand-backs at hook time, `last_assistant_message` null, the hand-back present
+  # within 3 s — and every clean review in that session wrote no record. So when there is none
+  # yet, poll for one. Waiting only changes WHEN the transcript is read: whatever arrives still
+  # goes through the exactly-one rule below and every guard after it. Bounded so the hook stays
+  # inside its 10 s timeout (.claude/settings.json); the self-test sets 0 to keep its
+  # no-handback controls fast.
+  WAIT=${REVIEW_STAMP_HANDBACK_WAIT_SECS:-5}
+  case "$WAIT" in ''|*[!0-9]*) WAIT=5 ;; esac
+  [ "$WAIT" -gt 8 ] && WAIT=8
+  tries=$((WAIT * 4))
+  while [ "${NHB:-0}" -eq 0 ] && [ "$tries" -gt 0 ]; do
+    sleep 0.25
+    tries=$((tries - 1))
+    NHB=$(count_handbacks)
+  done
   if [ "${NHB:-0}" -eq 1 ]; then
     HANDBACK=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
                        | select(.type=="tool_use" and .name=="SubagentHandback")]
