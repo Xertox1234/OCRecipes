@@ -246,3 +246,129 @@ describe("validateEnv OPENROUTER_API_KEY", () => {
     expect(validateEnv().OPENROUTER_API_KEY).toBeUndefined();
   });
 });
+
+describe("validateEnv IAP / RTDN configuration", () => {
+  const saved = { ...process.env };
+  const IAP_KEYS = [
+    "APPLE_ISSUER_ID",
+    "APPLE_KEY_ID",
+    "APPLE_PRIVATE_KEY",
+    "APPLE_BUNDLE_ID",
+    "APPLE_ENVIRONMENT",
+    "APPLE_APP_ID",
+    "GOOGLE_PACKAGE_NAME",
+    "GOOGLE_SERVICE_ACCOUNT_EMAIL",
+    "GOOGLE_SERVICE_ACCOUNT_KEY",
+    "GOOGLE_PUBSUB_AUDIENCE",
+    "GOOGLE_PUBSUB_SA_EMAIL",
+    "RECEIPT_VALIDATION_STUB",
+  ];
+  const APPLE_CREDS = {
+    APPLE_ISSUER_ID: "issuer",
+    APPLE_KEY_ID: "key",
+    APPLE_PRIVATE_KEY: "pem",
+  };
+  const APPLE_FULL = {
+    ...APPLE_CREDS,
+    APPLE_BUNDLE_ID: "com.ocrecipes.app",
+    APPLE_ENVIRONMENT: "production",
+    APPLE_APP_ID: "123456",
+  };
+  const GOOGLE_CREDS = {
+    GOOGLE_SERVICE_ACCOUNT_EMAIL: "iap@example.iam.gserviceaccount.com",
+    GOOGLE_SERVICE_ACCOUNT_KEY: "pem",
+  };
+  const GOOGLE_FULL = {
+    ...GOOGLE_CREDS,
+    GOOGLE_PACKAGE_NAME: "com.ocrecipes.app",
+    GOOGLE_PUBSUB_AUDIENCE: "https://api.example.com/webhooks/google/rtdn",
+    GOOGLE_PUBSUB_SA_EMAIL: "pubsub@example.iam.gserviceaccount.com",
+  };
+  const R2 = {
+    R2_ACCOUNT_ID: "a",
+    R2_ACCESS_KEY_ID: "b",
+    R2_SECRET_ACCESS_KEY: "c",
+    R2_BUCKET: "d",
+    R2_PUBLIC_BASE_URL: "https://img.example.com",
+  };
+
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE, ...R2 };
+    for (const k of IAP_KEYS) delete process.env[k];
+    process.env.NODE_ENV = "production";
+    mockWarn.mockClear();
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  async function warningsFor(env: Record<string, string>): Promise<string[]> {
+    Object.assign(process.env, env);
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
+    return mockWarn.mock.calls.map((c) => String(c[1]));
+  }
+  const mentions = (ws: string[], text: string) =>
+    ws.some((w) => w.includes(text));
+
+  it("warns nothing IAP-related when Apple and Google are fully configured", async () => {
+    const ws = await warningsFor({ ...APPLE_FULL, ...GOOGLE_FULL });
+    expect(ws.filter((w) => /APPLE_|GOOGLE_/.test(w))).toEqual([]);
+  });
+
+  it("warns when Apple credentials are set without APPLE_BUNDLE_ID", async () => {
+    const { APPLE_BUNDLE_ID: _omit, ...rest } = APPLE_FULL;
+    expect(mentions(await warningsFor(rest), "APPLE_BUNDLE_ID")).toBe(true);
+  });
+
+  it("warns when production runs Apple against the SANDBOX default", async () => {
+    const { APPLE_ENVIRONMENT: _omit, ...rest } = APPLE_FULL;
+    expect(mentions(await warningsFor(rest), "APPLE_ENVIRONMENT")).toBe(true);
+  });
+
+  it("warns on an APPLE_ENVIRONMENT that is neither sandbox nor production", async () => {
+    process.env.NODE_ENV = "development";
+    const ws = await warningsFor({
+      ...APPLE_FULL,
+      APPLE_ENVIRONMENT: "prodution",
+    });
+    expect(mentions(ws, "APPLE_ENVIRONMENT")).toBe(true);
+  });
+
+  it("does not warn about a sandbox Apple environment outside production", async () => {
+    process.env.NODE_ENV = "development";
+    const ws = await warningsFor({
+      ...APPLE_FULL,
+      APPLE_ENVIRONMENT: "sandbox",
+    });
+    expect(mentions(ws, "APPLE_ENVIRONMENT")).toBe(false);
+  });
+
+  it("warns when APPLE_ENVIRONMENT=production has no APPLE_APP_ID", async () => {
+    const { APPLE_APP_ID: _omit, ...rest } = APPLE_FULL;
+    expect(mentions(await warningsFor(rest), "APPLE_APP_ID")).toBe(true);
+  });
+
+  it("warns when only some Apple credentials are set", async () => {
+    const ws = await warningsFor({ APPLE_ISSUER_ID: "issuer" });
+    expect(mentions(ws, "APPLE_PRIVATE_KEY")).toBe(true);
+  });
+
+  it("warns when Google credentials are set without GOOGLE_PACKAGE_NAME", async () => {
+    const { GOOGLE_PACKAGE_NAME: _omit, ...rest } = GOOGLE_FULL;
+    expect(mentions(await warningsFor(rest), "GOOGLE_PACKAGE_NAME")).toBe(true);
+  });
+
+  it("warns when Google IAP is configured but RTDN push verification is not", async () => {
+    const ws = await warningsFor({
+      ...GOOGLE_CREDS,
+      GOOGLE_PACKAGE_NAME: "com.ocrecipes.app",
+    });
+    expect(mentions(ws, "GOOGLE_PUBSUB_AUDIENCE")).toBe(true);
+  });
+
+  it("says nothing about IAP when no IAP credential is set", async () => {
+    const ws = await warningsFor({});
+    expect(ws.filter((w) => /APPLE_|GOOGLE_/.test(w))).toEqual([]);
+  });
+});

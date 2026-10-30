@@ -146,6 +146,79 @@ const envSchema = z.object({
 
 type Env = z.infer<typeof envSchema>;
 
+/**
+ * Warnings for a partial or inconsistent IAP / RTDN setup, which otherwise
+ * surfaces only at the first receipt or webhook (every one rejected). Warn,
+ * not throw: a misconfigured store degrades purchases, not the whole server.
+ */
+function iapConfigWarnings(env: Env): string[] {
+  const warnings: string[] = [];
+  const isProd = env.NODE_ENV === "production";
+
+  const appleCreds = {
+    APPLE_ISSUER_ID: env.APPLE_ISSUER_ID,
+    APPLE_KEY_ID: env.APPLE_KEY_ID,
+    APPLE_PRIVATE_KEY: env.APPLE_PRIVATE_KEY,
+  };
+  const appleMissing = Object.entries(appleCreds)
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+  if (appleMissing.length > 0 && appleMissing.length < 3) {
+    warnings.push(
+      `Apple IAP partially configured — ${appleMissing.join(", ")} not set, ` +
+        "so Apple receipt validation is disabled",
+    );
+  }
+  if (appleMissing.length === 0) {
+    if (!env.APPLE_BUNDLE_ID) {
+      warnings.push(
+        "APPLE_BUNDLE_ID not set — every Apple receipt and App Store " +
+          "notification will fail verification",
+      );
+    }
+    const appleEnv = env.APPLE_ENVIRONMENT;
+    if (
+      appleEnv !== undefined &&
+      appleEnv !== "sandbox" &&
+      appleEnv !== "production"
+    ) {
+      warnings.push(
+        `APPLE_ENVIRONMENT="${appleEnv}" is neither "sandbox" nor ` +
+          '"production" — Apple verification is defaulting to SANDBOX',
+      );
+    } else if (isProd && appleEnv !== "production") {
+      warnings.push(
+        'APPLE_ENVIRONMENT is not "production" in production — Apple ' +
+          "verification uses SANDBOX and rejects every real receipt and " +
+          "App Store notification",
+      );
+    }
+    if (appleEnv === "production" && !env.APPLE_APP_ID) {
+      warnings.push(
+        "APPLE_APP_ID not set with APPLE_ENVIRONMENT=production — Apple " +
+          "receipt verification cannot start",
+      );
+    }
+  }
+
+  if (env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    if (!env.GOOGLE_PACKAGE_NAME) {
+      warnings.push(
+        "GOOGLE_PACKAGE_NAME not set — Google Play receipt validation is " +
+          "disabled (PLATFORM_NOT_CONFIGURED)",
+      );
+    }
+    if (!env.GOOGLE_PUBSUB_AUDIENCE || !env.GOOGLE_PUBSUB_SA_EMAIL) {
+      warnings.push(
+        "GOOGLE_PUBSUB_AUDIENCE / GOOGLE_PUBSUB_SA_EMAIL not set — every " +
+          "Google RTDN push is rejected, so Play refunds, revokes and " +
+          "renewals never apply",
+      );
+    }
+  }
+  return warnings;
+}
+
 let validated: Env | null = null;
 
 /**
@@ -203,6 +276,7 @@ export function validateEnv(): Env {
         "verification gate in auth.ts is inert)",
     );
   }
+  warnings.push(...iapConfigWarnings(validated));
   if (
     validated.RECEIPT_VALIDATION_STUB === "true" &&
     validated.NODE_ENV === "production"
