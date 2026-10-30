@@ -1147,3 +1147,48 @@ export async function expireSubscriptionByTransactionId( // idor-safe
     return { userId: txn.userId };
   });
 }
+
+/**
+ * Undo a refund the store REVERSED (Apple REFUND_REVERSED). The caller must
+ * pass only store-verified data: the notification's signed transaction, which
+ * must no longer be revoked. A `revoked` row goes back to `completed` with
+ * `revokedAt` cleared; this skips the purchase-date gate because Apple's
+ * signed notification itself authorizes it. Premium is re-applied (monotonic
+ * expiry, see applyRenewalInTx) only while `expiresAt` is still in the
+ * future — a reversed refund of an already-ended period restores the row
+ * status only. A row that is not `revoked` keeps its status. Returns `null`
+ * for an unknown id.
+ *
+ * Not user-scoped by design (idor-safe): same as
+ * revokeSubscriptionByTransactionId.
+ */
+export async function reinstateSubscriptionByTransactionId( // idor-safe
+  transactionId: string,
+  expiresAt: Date | null,
+): Promise<{ userId: string } | null> {
+  return db.transaction(async (tx) => {
+    const [txn] = await tx
+      .select()
+      .from(transactions)
+      .where(eq(transactions.transactionId, transactionId))
+      .for("update");
+
+    if (!txn) return null;
+
+    await tx
+      .update(transactions)
+      .set({ status: "completed", revokedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(transactions.transactionId, transactionId),
+          eq(transactions.status, "revoked"),
+        ),
+      );
+
+    if (expiresAt && expiresAt.getTime() > Date.now()) {
+      await applyRenewalInTx(tx, txn.userId, "premium", expiresAt);
+    }
+
+    return { userId: txn.userId };
+  });
+}

@@ -61,6 +61,7 @@ const {
   extendSubscriptionByTransactionId,
   revokeSubscriptionByTransactionId,
   expireSubscriptionByTransactionId,
+  reinstateSubscriptionByTransactionId,
   upsertProfileWithOnboarding,
   deleteUser,
   RESERVED_USERNAMES,
@@ -1485,6 +1486,112 @@ describe("users storage", () => {
       expect(result).toEqual({ userId: testUser.id });
       const user = await getUser(testUser.id);
       expect(user!.subscriptionTier).toBe("premium");
+    });
+  });
+
+  describe("reinstateSubscriptionByTransactionId (Apple REFUND_REVERSED)", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const future = new Date(Date.now() + 20 * day);
+    const originalPurchase = new Date(Date.now() - 10 * day);
+    const claim = (purchasedAt?: Date | null) =>
+      claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_reversed_1",
+          userId: testUser.id,
+          receipt: "receipt_reversed",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+        purchasedAt,
+      );
+
+    beforeEach(async () => {
+      await claim(originalPurchase);
+      await revokeSubscriptionByTransactionId(
+        "orig_reversed_1",
+        new Date(Date.now() - 2 * day),
+      );
+    });
+
+    it("restores the row and premium when the reversed transaction is still in its period", async () => {
+      const result = await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        future,
+      );
+
+      expect(result).toEqual({ userId: testUser.id });
+      const txn = await getTransaction("orig_reversed_1");
+      expect(txn!.status).toBe("completed");
+      expect(txn!.revokedAt).toBeNull();
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(future.getTime());
+    });
+
+    it("lets the original pre-refund receipt restore after the reversal", async () => {
+      await reinstateSubscriptionByTransactionId("orig_reversed_1", future);
+
+      const result = await claim(originalPurchase);
+
+      expect(result.status).toBe("renewed");
+    });
+
+    it("restores only the row status when the reversed period has already ended", async () => {
+      const result = await reinstateSubscriptionByTransactionId(
+        "orig_reversed_1",
+        new Date(Date.now() - 1 * day),
+      );
+
+      expect(result).toEqual({ userId: testUser.id });
+      const txn = await getTransaction("orig_reversed_1");
+      expect(txn!.status).toBe("completed");
+      expect(txn!.revokedAt).toBeNull();
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+      expect(user!.subscriptionExpiresAt).toBeNull();
+    });
+
+    it("restores only the row status when the transaction has no expiry", async () => {
+      await reinstateSubscriptionByTransactionId("orig_reversed_1", null);
+
+      const txn = await getTransaction("orig_reversed_1");
+      expect(txn!.status).toBe("completed");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+    });
+
+    it("returns null and changes nothing for an unknown transaction", async () => {
+      const result = await reinstateSubscriptionByTransactionId(
+        "orig_unknown",
+        future,
+      );
+
+      expect(result).toBeNull();
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+    });
+
+    it("does not flip a plain expired row back to completed", async () => {
+      await createTransaction({
+        transactionId: "orig_expired_only",
+        userId: testUser.id,
+        receipt: "r",
+        platform: "apple",
+        productId: "com.ocrecipes.premium.monthly",
+        status: "completed",
+      });
+      await expireSubscriptionByTransactionId("orig_expired_only");
+
+      await reinstateSubscriptionByTransactionId(
+        "orig_expired_only",
+        new Date(Date.now() - 1 * day),
+      );
+
+      const txn = await getTransaction("orig_expired_only");
+      expect(txn!.status).toBe("expired");
     });
   });
 

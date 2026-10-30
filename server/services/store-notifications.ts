@@ -68,7 +68,8 @@ async function applyRenewal(
 /**
  * Verify + process an Apple App Store Server Notification V2. Revokes
  * entitlement on REFUND/REVOKE, records a plain expiry on EXPIRED /
- * GRACE_PERIOD_EXPIRED, extends it on DID_RENEW; every other
+ * GRACE_PERIOD_EXPIRED, reinstates it on REFUND_REVERSED, extends it on
+ * DID_RENEW; every other
  * type is informational
  * (notably DID_CHANGE_RENEWAL_STATUS/AUTO_RENEW_DISABLED, which is NOT a
  * revoke — the sub is active until it actually EXPIRES). Throws only when the
@@ -78,6 +79,40 @@ export async function handleAppleNotification(
   signedPayload: string,
 ): Promise<void> {
   const n = await verifyAppleNotification(signedPayload);
+
+  if (n.notificationType === "REFUND_REVERSED") {
+    // Apple reversed a refund: the signed transaction must exist and no longer
+    // carry a revocationDate. Skips the purchase-date gate — the verified
+    // notification itself authorizes restoring the row.
+    if (!n.originalTransactionId || n.revoked !== false) {
+      log.warn(
+        {
+          type: n.notificationType,
+          uuid: n.notificationUUID,
+          revoked: n.revoked,
+        },
+        "apple refund-reversed notification lacks an unrevoked transaction — not reinstated",
+      );
+      return;
+    }
+    const reinstated = await storage.reinstateSubscriptionByTransactionId(
+      n.originalTransactionId,
+      n.expiresAt ?? null,
+    );
+    if (!reinstated) {
+      log.warn(
+        { type: n.notificationType },
+        "apple refund-reversed notification: no matching local transaction",
+      );
+      return;
+    }
+    invalidateTierCache(reinstated.userId);
+    log.info(
+      { type: n.notificationType, userId: reinstated.userId },
+      "apple notification: refund reversed, entitlement reinstated",
+    );
+    return;
+  }
 
   if (APPLE_RENEW_TYPES.has(n.notificationType)) {
     if (!n.originalTransactionId || !n.expiresAt || n.revoked) {
