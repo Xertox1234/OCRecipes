@@ -49,11 +49,15 @@ describe("useFieldFocus", () => {
     expect(result.current.focused).toBe(false);
     expect(result.current.progress.get()).toBe(0);
 
-    act(() => result.current.onFocus(focusEvent));
+    act(() => {
+      result.current.onFocus(focusEvent);
+    });
     expect(result.current.focused).toBe(true);
     expect(result.current.progress.get()).toBe(1);
 
-    act(() => result.current.onBlur(blurEvent));
+    act(() => {
+      result.current.onBlur(blurEvent);
+    });
     expect(result.current.focused).toBe(false);
     expect(result.current.progress.get()).toBe(0);
   });
@@ -63,8 +67,12 @@ describe("useFieldFocus", () => {
     const onBlur = vi.fn();
     const { result } = renderHook(() => useFieldFocus({ onFocus, onBlur }));
 
-    act(() => result.current.onFocus(focusEvent));
-    act(() => result.current.onBlur(blurEvent));
+    act(() => {
+      result.current.onFocus(focusEvent);
+    });
+    act(() => {
+      result.current.onBlur(blurEvent);
+    });
 
     expect(onFocus).toHaveBeenCalledOnce();
     expect(onFocus).toHaveBeenCalledWith(focusEvent);
@@ -74,7 +82,9 @@ describe("useFieldFocus", () => {
 
   it("animates over the focus timing (160ms) by default", () => {
     const { result } = renderHook(() => useFieldFocus());
-    act(() => result.current.onFocus(focusEvent));
+    act(() => {
+      result.current.onFocus(focusEvent);
+    });
     expect(Reanimated.withTiming).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ duration: 160 }),
@@ -85,7 +95,9 @@ describe("useFieldFocus", () => {
     const spy = vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(true);
     try {
       const { result } = renderHook(() => useFieldFocus());
-      act(() => result.current.onFocus(focusEvent));
+      act(() => {
+        result.current.onFocus(focusEvent);
+      });
       expect(Reanimated.withTiming).toHaveBeenCalledWith(
         1,
         expect.objectContaining({ duration: 0 }),

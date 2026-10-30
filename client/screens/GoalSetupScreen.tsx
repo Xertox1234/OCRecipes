@@ -2,7 +2,6 @@ import React, { useRef, useState } from "react";
 import {
   StyleSheet,
   View,
-  ScrollView,
   type ScrollViewInstance,
   type TextInputInstance,
 } from "react-native";
