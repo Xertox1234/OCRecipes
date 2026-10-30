@@ -466,7 +466,7 @@ function MealCard({
           <Pressable
             style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             onPress={onRemove}
-            hitSlop={13}
+            hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={`Remove ${meal.title}`}
           >

@@ -173,7 +173,7 @@ export default function FavouriteRecipesScreen() {
           </View>
           <Pressable
             onPress={() => handleUnfavourite(item)}
-            hitSlop={12}
+            hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={`Remove ${item.title} from favourites`}
           >

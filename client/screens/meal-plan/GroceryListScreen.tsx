@@ -605,7 +605,7 @@ export default function GroceryListScreen() {
           </Pressable>
           <Pressable
             onPress={handleDismissPantryPrompt}
-            hitSlop={13}
+            hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Dismiss"
           >
