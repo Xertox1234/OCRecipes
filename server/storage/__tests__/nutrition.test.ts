@@ -1050,6 +1050,33 @@ describe("nutrition storage", () => {
       expect(log.mealType).toBeNull();
     });
 
+    it("stamps scannedAt and loggedAt with occurredAt when given (R28: offline replay keeps the meal's time)", async () => {
+      const occurredAt = new Date("2026-10-29T23:50:00.000Z");
+      const item = await createScannedItemWithLog(
+        {
+          userId: testUser.id,
+          productName: "Late Snack",
+          barcode: "444555",
+          calories: "200",
+          protein: "5",
+          carbs: "30",
+          fat: "7",
+          servingSize: "1 bar",
+          sourceType: "barcode",
+        },
+        { occurredAt },
+      );
+
+      expect(item.scannedAt.toISOString()).toBe(occurredAt.toISOString());
+      const t = getTestTx();
+      const [log] = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.scannedItemId, item.id));
+      expect(log.loggedAt.toISOString()).toBe(occurredAt.toISOString());
+      expect(log.source).toBe("scan");
+    });
+
     it("applies logOverrides for source and mealType", async () => {
       const item = await createScannedItemWithLog(
         {

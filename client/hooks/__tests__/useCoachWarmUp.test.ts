@@ -152,4 +152,54 @@ describe("useCoachWarmUp", () => {
       vi.useRealTimers();
     });
   });
+
+  // R48: warm-up is a best-effort prefetch, so offline / 4xx misses stay
+  // quiet, but a server error (systematic 5xx, contract break) is reported.
+  describe("failure reporting (R48)", () => {
+    it.each([
+      [
+        "sendWarmUp",
+        "this is a longer transcript that exceeds twenty characters",
+      ],
+      ["sendTextWarmUp", "hello coach"],
+    ] as const)("%s reports a 5xx", async (method, text) => {
+      vi.useFakeTimers();
+      const { logger } = await import("@/lib/logger");
+      const { ApiError } = await import("@/lib/api-error");
+      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      try {
+        const boom = new ApiError("503: down", undefined, 503);
+        mockApiRequest.mockRejectedValue(boom);
+        const { result } = renderHook(() => useCoachWarmUp(42));
+        act(() => {
+          void result.current[method](text);
+        });
+        await act(() => vi.advanceTimersByTimeAsync(600));
+        expect(errorSpy).toHaveBeenCalledWith("Coach warm-up failed", boom);
+      } finally {
+        errorSpy.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it("stays quiet on a network error (offline is expected for a prefetch)", async () => {
+      vi.useFakeTimers();
+      const { logger } = await import("@/lib/logger");
+      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      try {
+        mockApiRequest.mockRejectedValue(
+          new TypeError("Network request failed"),
+        );
+        const { result } = renderHook(() => useCoachWarmUp(42));
+        act(() => {
+          void result.current.sendTextWarmUp("hello coach");
+        });
+        await act(() => vi.advanceTimersByTimeAsync(600));
+        expect(errorSpy).not.toHaveBeenCalled();
+      } finally {
+        errorSpy.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+  });
 });

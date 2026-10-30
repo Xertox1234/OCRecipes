@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDurableOwner } from "@/lib/durable-owner";
+import { logger } from "@/lib/logger";
 
 const RECENT_SEARCHES_KEY = "@ocrecipes_recent_recipe_searches";
 const MAX_RECENT_SEARCHES = 8;
@@ -62,7 +63,12 @@ export function initRecentSearchesCache(userId: string | null): Promise<void> {
     if (sweepEpoch === startEpoch) {
       if (ownsHistory) {
         try {
-          cache = raw ? (JSON.parse(raw) as string[]) : [];
+          // Shape-validate (R24): a non-array blob would crash the next
+          // pushRecentSearch `.filter` until the key was rewritten.
+          const parsed: unknown = raw ? JSON.parse(raw) : [];
+          cache = Array.isArray(parsed)
+            ? parsed.filter((q): q is string => typeof q === "string")
+            : [];
         } catch {
           cache = [];
         }
@@ -85,7 +91,14 @@ export async function pushRecentSearch(query: string): Promise<void> {
   );
   const updated = [q, ...current].slice(0, MAX_RECENT_SEARCHES);
   cache = updated;
-  await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
+  // Fire-and-forget at the call site (`void pushRecentSearch(q)`): never reject
+  // (R24/R50). The in-memory list already holds; only persistence failed.
+  await AsyncStorage.setItem(
+    RECENT_SEARCHES_KEY,
+    JSON.stringify(updated),
+  ).catch((err: unknown) =>
+    logger.error("Failed to persist recent recipe searches", err),
+  );
 }
 
 /**

@@ -1,5 +1,9 @@
 import type { PantryItem } from "@shared/schema";
-import type { AggregatedGroceryItem } from "./grocery-generation";
+import {
+  type AggregatedGroceryItem,
+  parseQuantityForSum,
+  roundQuantity,
+} from "./grocery-generation";
 
 /**
  * Normalize a name for matching: lowercase, trim, collapse whitespace.
@@ -24,8 +28,8 @@ export function deductPantryFromGrocery(
     const name = normalizeName(p.name);
     const unit = p.unit?.toLowerCase().trim() || "";
     const key = `${name}|${unit}`;
-    const qty = p.quantity ? parseFloat(p.quantity) : 0;
-    pantryMap.set(key, (pantryMap.get(key) || 0) + (isNaN(qty) ? 0 : qty));
+    const qty = parseQuantityForSum(p.quantity) ?? 0;
+    pantryMap.set(key, roundQuantity((pantryMap.get(key) || 0) + qty));
   }
 
   const result: AggregatedGroceryItem[] = [];
@@ -49,9 +53,9 @@ export function deductPantryFromGrocery(
       continue;
     }
 
-    const remaining = item.quantity - pantryQty;
+    const remaining = roundQuantity(item.quantity - pantryQty);
     // Consume from pantry map so further items with same key are handled
-    pantryMap.set(key, Math.max(0, pantryQty - item.quantity));
+    pantryMap.set(key, Math.max(0, roundQuantity(pantryQty - item.quantity)));
 
     if (remaining > 0) {
       result.push({ ...item, quantity: remaining });

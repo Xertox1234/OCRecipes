@@ -240,14 +240,19 @@ describe("pantry-meal-plan", () => {
       );
     });
 
-    it("should throw a ZodError if AI returns valid JSON of the wrong shape", async () => {
+    it("should throw a plain (non-Zod) error if AI returns valid JSON of the wrong shape", async () => {
       vi.mocked(aiChat).mockResolvedValue(
         createMockChatCompletion(JSON.stringify({ unexpected: true })),
       );
 
-      await expect(
-        generateMealPlanFromPantry(BASE_INPUT),
-      ).rejects.toBeInstanceOf(ZodError);
+      // ZodError would be mapped to a 400 by handleRouteError; a model-output
+      // defect is a server fault.
+      const err = await generateMealPlanFromPantry(BASE_INPUT).catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(ZodError);
+      expect(err.message).toBe(
+        "AI returned an invalid meal plan. Please try again.",
+      );
     });
 
     it("should throw if OpenAI API fails", async () => {
