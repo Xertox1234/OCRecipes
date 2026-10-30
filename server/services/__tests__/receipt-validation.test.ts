@@ -593,6 +593,76 @@ describe("Receipt Validation", () => {
       fetchSpy.mockRestore();
     });
 
+    async function validateWithPlayStatus(status: number) {
+      vi.resetModules();
+      const mod = await import("../receipt-validation");
+      mod.resetGoogleTokenCache();
+      const fetchSpy = vi
+        .spyOn(global, "fetch")
+        .mockImplementation(async (url) => {
+          const urlStr = typeof url === "string" ? url : url.toString();
+          if (urlStr.includes("oauth2.googleapis.com")) {
+            return new Response(
+              JSON.stringify({
+                access_token: "mock-access-token",
+                expires_in: 3600,
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response("error", { status });
+        });
+      try {
+        return await mod.validateReceipt("purchase-token-123", "android");
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    }
+
+    it.each([400, 404, 410])(
+      "maps a permanent Play %i (unknown / invalid token) to PURCHASE_TOKEN_INVALID",
+      async (status) => {
+        const result = await validateWithPlayStatus(status);
+        expect(result.valid).toBe(false);
+        expect(result.errorCode).toBe("PURCHASE_TOKEN_INVALID");
+      },
+    );
+
+    it.each([401, 403, 429, 500, 503])(
+      "keeps a transient Play %i as STORE_API_ERROR",
+      async (status) => {
+        const result = await validateWithPlayStatus(status);
+        expect(result.valid).toBe(false);
+        expect(result.errorCode).toBe("STORE_API_ERROR");
+      },
+    );
+
+    it("returns STORE_API_ERROR when the Play request itself fails (network / timeout)", async () => {
+      vi.resetModules();
+      const mod = await import("../receipt-validation");
+      mod.resetGoogleTokenCache();
+      const fetchSpy = vi
+        .spyOn(global, "fetch")
+        .mockImplementation(async (url) => {
+          const urlStr = typeof url === "string" ? url : url.toString();
+          if (urlStr.includes("oauth2.googleapis.com")) {
+            return new Response(
+              JSON.stringify({
+                access_token: "mock-access-token",
+                expires_in: 3600,
+              }),
+              { status: 200 },
+            );
+          }
+          throw new TypeError("fetch failed");
+        });
+
+      const result = await mod.validateReceipt("purchase-token-123", "android");
+      expect(result.errorCode).toBe("STORE_API_ERROR");
+
+      fetchSpy.mockRestore();
+    });
+
     it("returns STORE_API_ERROR when OAuth token fails", async () => {
       vi.resetModules();
       const mod = await import("../receipt-validation");

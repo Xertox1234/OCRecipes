@@ -53,6 +53,9 @@ const STUB_MODE =
   !HAS_APPLE_CREDENTIALS &&
   !HAS_GOOGLE_CREDENTIALS;
 
+/** Play API statuses meaning the purchase token itself is unusable (permanent). */
+const PLAY_PERMANENT_TOKEN_STATUSES = new Set([400, 404, 410]);
+
 /** Timeout for outbound API requests to Google (10 seconds). */
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -432,9 +435,15 @@ async function validateGoogleReceipt(
   if (!response.ok) {
     const text = await response.text();
     log.error(
-      { responseBody: text.slice(0, 200) },
+      { status: response.status, responseBody: text.slice(0, 200) },
       "Google Play subscription check failed",
     );
+    // 400/404/410: Play does not know this token (invalid, foreign or long
+    // expired) — permanent, so a retry can never succeed. Everything else
+    // (5xx, 429, 401/403 permission) stays transient.
+    if (PLAY_PERMANENT_TOKEN_STATUSES.has(response.status)) {
+      return { valid: false, errorCode: "PURCHASE_TOKEN_INVALID" };
+    }
     return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 

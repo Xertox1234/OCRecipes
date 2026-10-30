@@ -274,7 +274,9 @@ export async function handleGoogleNotification(
     const live = await validateReceipt(sub.purchaseToken, "android");
     if (!live.valid) {
       if (live.errorCode === "STORE_API_ERROR") {
-        // Transient: throw so the route answers 5xx and Pub/Sub redelivers.
+        // Transient (5xx/429/401/403/network/token fetch): throw so the route
+        // answers 5xx and Pub/Sub redelivers. A permanent answer (e.g.
+        // PURCHASE_TOKEN_INVALID for a Play 400/404/410) is logged and acked.
         throw new Error("google rtdn renewal: Play API unavailable");
       }
       log.warn(

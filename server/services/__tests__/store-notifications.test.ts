@@ -584,6 +584,20 @@ describe("handleGoogleNotification renewals", () => {
     expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
   });
 
+  it("acks (does not throw) a permanent invalid-token answer from Play, so Pub/Sub does not redeliver", async () => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: false,
+      errorCode: "PURCHASE_TOKEN_INVALID",
+    });
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(2, "tok-gone") },
+    });
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
   it("does not extend (or throw) when Play says the subscription is not active", async () => {
     vi.mocked(validateReceipt).mockResolvedValue({
       valid: false,
