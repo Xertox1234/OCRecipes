@@ -51,10 +51,12 @@ import { logger } from "@/lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
   useAddRecipeToCookbook,
+  useAttachCoverCandidate,
   useCreateCookbook,
-  useGenerateCookbookCover,
+  useGenerateCoverCandidates,
   useUploadCookbookCover,
 } from "@/hooks/useCookbooks";
+import { requestCoverSet } from "@/components/cookbook/cover-studio-utils";
 import { Spacing } from "@/constants/theme";
 import type { CookbookCreateScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
@@ -108,7 +110,12 @@ export default function CookbookCreateWizard() {
 
   const createMutation = useCreateCookbook();
   const uploadCoverMutation = useUploadCookbookCover();
-  const generateCoverMutation = useGenerateCookbookCover();
+  const attachCandidateMutation = useAttachCoverCandidate();
+  // Destructured: the mutation object is a new ref every render.
+  const { mutateAsync: generateCandidates, isPending: generatingCandidates } =
+    useGenerateCoverCandidates();
+  const [studioError, setStudioError] = useState<string | null>(null);
+  const [promptIgnored, setPromptIgnored] = useState(false);
   const addRecipeMutation = useAddRecipeToCookbook();
 
   const [state, dispatch] = useReducer(wizardReducer, initialWizardState);
@@ -293,6 +300,31 @@ export default function CookbookCreateWizard() {
     });
   };
 
+  const handleGenerateCovers = async () => {
+    if (generatingCandidates) return;
+    setStudioError(null);
+    const description = state.description.trim();
+    const coverPrompt = state.studio.prompt.trim();
+    const result = await requestCoverSet(() =>
+      generateCandidates({
+        name: state.name.trim(),
+        description: description === "" ? undefined : description,
+        coverPrompt: coverPrompt === "" ? undefined : coverPrompt,
+        style: state.studio.style,
+      }),
+    );
+    if (!result.ok) {
+      haptics.notification(NotificationFeedbackType.Error);
+      // InlineError announces the message itself.
+      setStudioError(result.error);
+      return;
+    }
+    const { set } = result;
+    dispatch({ type: "setCandidates", candidates: set.candidates });
+    setPromptIgnored(set.promptIgnored);
+    toast.success(`${set.candidates.length} covers ready`);
+  };
+
   const handleRequestUpgrade = () => {
     haptics.selection();
     setShowUpgradeModal(true);
@@ -315,7 +347,7 @@ export default function CookbookCreateWizard() {
       outcome = await createCookbookFromWizard(state, {
         create: createMutation.mutateAsync,
         uploadCover: uploadCoverMutation.mutateAsync,
-        generateCover: generateCoverMutation.mutateAsync,
+        attachCandidate: attachCandidateMutation.mutateAsync,
         addRecipe: addRecipeMutation.mutateAsync,
         onCoverStart: setCreateLoadingText,
       });
@@ -377,6 +409,12 @@ export default function CookbookCreateWizard() {
           onRequestUpgrade={handleRequestUpgrade}
           onPickPhoto={() => void handlePickPhoto()}
           coverWidth={resolveCoverWidth(screenWidth, false, SCREEN_PADDING)}
+          studioControls={{
+            generating: generatingCandidates,
+            error: studioError,
+            promptIgnored,
+            onGenerate: () => void handleGenerateCovers(),
+          }}
         />
       );
       break;

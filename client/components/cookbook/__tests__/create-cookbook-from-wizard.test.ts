@@ -26,7 +26,7 @@ function makeDeps() {
   return {
     create: vi.fn().mockResolvedValue({ id: 42 }),
     uploadCover: vi.fn().mockResolvedValue(undefined),
-    generateCover: vi.fn().mockResolvedValue(undefined),
+    attachCandidate: vi.fn().mockResolvedValue(undefined),
     addRecipe: vi.fn().mockResolvedValue(undefined),
     onCoverStart: vi.fn(),
   };
@@ -63,7 +63,7 @@ describe("createCookbookFromWizard", () => {
   it("makes no cover calls and no onCoverStart with cover none", async () => {
     const result = await createCookbookFromWizard(stateWith({}), deps);
     expect(deps.uploadCover).not.toHaveBeenCalled();
-    expect(deps.generateCover).not.toHaveBeenCalled();
+    expect(deps.attachCandidate).not.toHaveBeenCalled();
     expect(deps.onCoverStart).not.toHaveBeenCalled();
     expect(result).toEqual({
       cookbookId: 42,
@@ -82,16 +82,25 @@ describe("createCookbookFromWizard", () => {
       cookbookId: 42,
       uri: "file:///c.jpg",
     });
-    expect(deps.generateCover).not.toHaveBeenCalled();
+    expect(deps.attachCandidate).not.toHaveBeenCalled();
   });
 
-  it("generates a cover against the new id and labels it", async () => {
+  it("attaches a picked studio cover to the new id by candidate id", async () => {
     await createCookbookFromWizard(
-      stateWith({ cover: { kind: "generate" } }),
+      stateWith({
+        cover: {
+          kind: "candidate",
+          candidateId: "c-1",
+          imageUrl: "https://cdn.test/c1.jpg",
+        },
+      }),
       deps,
     );
-    expect(deps.onCoverStart).toHaveBeenCalledWith("Generating your cover…");
-    expect(deps.generateCover).toHaveBeenCalledWith(42);
+    expect(deps.onCoverStart).toHaveBeenCalledWith("Adding your cover…");
+    expect(deps.attachCandidate).toHaveBeenCalledWith({
+      cookbookId: 42,
+      candidateId: "c-1",
+    });
     expect(deps.uploadCover).not.toHaveBeenCalled();
   });
 
@@ -146,17 +155,22 @@ describe("createCookbookFromWizard", () => {
     expect(deps.addRecipe).toHaveBeenCalledTimes(2);
   });
 
-  it("reports coverFailed when generation rejects", async () => {
-    deps.generateCover.mockRejectedValue(new Error("nope"));
+  it("reports coverFailed when attaching the candidate rejects (e.g. it expired)", async () => {
+    deps.attachCandidate.mockRejectedValue(new Error("410: expired"));
     const result = await createCookbookFromWizard(
-      stateWith({ cover: { kind: "generate" } }),
+      stateWith({
+        cover: { kind: "candidate", candidateId: "c-1", imageUrl: "u" },
+      }),
       deps,
     );
     expect(result.coverFailed).toBe(true);
   });
 
   it.each([
-    [{ kind: "generate" } as const, "generateCover"],
+    [
+      { kind: "candidate", candidateId: "c-1", imageUrl: "u" } as const,
+      "attachCandidate",
+    ],
     [{ kind: "photo", uri: "file:///c.jpg" } as const, "uploadCover"],
   ] as const)(
     "a throwing onCoverStart is logged and the %o cover still runs",
@@ -198,11 +212,14 @@ describe("createCookbookFromWizard", () => {
     deps.create.mockRejectedValue(new Error("down"));
     await expect(
       createCookbookFromWizard(
-        stateWith({ cover: { kind: "generate" }, recipes: [recipe(1)] }),
+        stateWith({
+          cover: { kind: "candidate", candidateId: "c-1", imageUrl: "u" },
+          recipes: [recipe(1)],
+        }),
         deps,
       ),
     ).rejects.toThrow("down");
-    expect(deps.generateCover).not.toHaveBeenCalled();
+    expect(deps.attachCandidate).not.toHaveBeenCalled();
     expect(deps.addRecipe).not.toHaveBeenCalled();
   });
 });

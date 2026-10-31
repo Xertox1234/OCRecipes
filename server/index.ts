@@ -14,6 +14,7 @@ import { registerRoutes } from "./routes";
 import * as path from "path";
 import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
+import { startCoverCandidatePurgeJob } from "./storage/cookbook-cover-candidates";
 import { sampleStoredAppleTokens } from "./storage/identities";
 import { runIdentityKeyBootCheck } from "./lib/social-identity/key-check";
 import { fireAndForget } from "./lib/fire-and-forget";
@@ -358,6 +359,10 @@ function startServer() {
   // Start periodic cache cleanup (every 6 hours)
   const cacheCleanupInterval = startCacheCleanupJob();
 
+  // Hourly purge of expired cover-studio candidates and their stored objects.
+  // Not in the retention cron: that is off in production until opted in.
+  const coverCandidatePurgeInterval = startCoverCandidatePurgeJob();
+
   // Start canonical recipe promotion job (every 6 hours)
   const promotionInterval = startPromotionJob();
 
@@ -414,6 +419,7 @@ function startServer() {
     logger.info({ signal }, "graceful shutdown initiated");
     rootLogger.flush();
     clearInterval(cacheCleanupInterval);
+    clearInterval(coverCandidatePurgeInterval);
     clearInterval(promotionInterval);
     if (retentionCleanupTask) {
       void retentionCleanupTask.stop();

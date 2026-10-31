@@ -56,7 +56,7 @@ interface CookbookCoverPlateProps {
   busy?: boolean;
   /** Copy under the spinner, e.g. "Generating…". */
   busyLabel?: string;
-  /** Create mode's "generate on save" is armed — marks the cover with a feather. */
+  /** An AI cover is on the way (the wizard's cover studio is open) — marks the cover with a feather. */
   generateArmed?: boolean;
   /**
    * Tapping the cover is a shortcut to the photo picker. The plate stays out

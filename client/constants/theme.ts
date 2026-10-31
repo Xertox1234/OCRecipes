@@ -71,6 +71,16 @@ export const Colors = {
     accentGreen: "#15803D", // 5.0:1
     accentBlue: "#2563EB", // 5.2:1
     accentPink: "#E07050", // warm salmon (property name kept for compat), 3.2:1
+
+    // Cover-studio style swatches — a dot of each style's palette beside its
+    // label on the New Cookbook Cover step. Decorative: the label carries the
+    // meaning (exempt from WCAG 1.4.11), and the dot always has a border so
+    // the light and dark swatches still read on either background. The same
+    // in both modes: they show what the generated cover will look like.
+    coverStyleRustic: "#A8431F",
+    coverStyleBotanical: "#DCCFB8",
+    coverStyleGolden: "#E0892F",
+    coverStyleMidnight: "#24202B",
   },
   dark: {
     // Text
@@ -131,6 +141,16 @@ export const Colors = {
     accentGreen: "#15803D", // 5.0:1
     accentBlue: "#2563EB", // 5.2:1
     accentPink: "#D9683F", // warm peach (property name kept for compat), 3.5:1
+
+    // Cover-studio style swatches — a dot of each style's palette beside its
+    // label on the New Cookbook Cover step. Decorative: the label carries the
+    // meaning (exempt from WCAG 1.4.11), and the dot always has a border so
+    // the light and dark swatches still read on either background. The same
+    // in both modes: they show what the generated cover will look like.
+    coverStyleRustic: "#A8431F",
+    coverStyleBotanical: "#DCCFB8",
+    coverStyleGolden: "#E0892F",
+    coverStyleMidnight: "#24202B",
   },
 };
 

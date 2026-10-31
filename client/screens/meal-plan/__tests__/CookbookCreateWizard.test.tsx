@@ -13,6 +13,7 @@ import { renderComponent } from "../../../../test/utils/render-component";
 import { reactProps } from "../../../../test/utils/react-props";
 import CookbookCreateWizard from "../CookbookCreateWizard";
 import { stepBlocker } from "@/components/cookbook/cookbook-wizard-utils";
+import { ApiError } from "@/lib/api-error";
 
 const { stepBlocker: actualStepBlocker } = await vi.importActual<
   typeof import("@/components/cookbook/cookbook-wizard-utils")
@@ -29,7 +30,8 @@ const {
   mockRouteParams,
   mockCreate,
   mockUploadCover,
-  mockGenerateCover,
+  mockGenerateCandidates,
+  mockAttachCandidate,
   mockAddRecipe,
   mockPremiumFeature,
   mockLaunchImageLibrary,
@@ -48,7 +50,8 @@ const {
   mockRouteParams: vi.fn(),
   mockCreate: vi.fn(),
   mockUploadCover: vi.fn(),
-  mockGenerateCover: vi.fn(),
+  mockGenerateCandidates: vi.fn(),
+  mockAttachCandidate: vi.fn(),
   mockAddRecipe: vi.fn(),
   mockPremiumFeature: vi.fn(),
   mockLaunchImageLibrary: vi.fn(),
@@ -131,8 +134,12 @@ vi.mock("@/hooks/useCookbooks", () => ({
     mutateAsync: mockUploadCover,
     isPending: false,
   }),
-  useGenerateCookbookCover: () => ({
-    mutateAsync: mockGenerateCover,
+  useGenerateCoverCandidates: () => ({
+    mutateAsync: mockGenerateCandidates,
+    isPending: false,
+  }),
+  useAttachCoverCandidate: () => ({
+    mutateAsync: mockAttachCandidate,
     isPending: false,
   }),
   useAddRecipeToCookbook: () => ({
@@ -219,7 +226,15 @@ beforeEach(() => {
   mockPremiumFeature.mockReturnValue(true);
   mockCreate.mockResolvedValue({ id: 7, name: "Weeknight Dinners" });
   mockUploadCover.mockResolvedValue({ id: 7 });
-  mockGenerateCover.mockResolvedValue({ id: 7 });
+  mockGenerateCandidates.mockResolvedValue({
+    candidates: [
+      { id: "cand-a", imageUrl: "https://cdn.test/a.jpg" },
+      { id: "cand-b", imageUrl: "https://cdn.test/b.jpg" },
+    ],
+    expiresAt: "2026-10-31T18:00:00.000Z",
+    promptIgnored: false,
+  });
+  mockAttachCandidate.mockResolvedValue({ id: 7 });
   mockAddRecipe.mockResolvedValue({});
   mockLaunchImageLibrary.mockResolvedValue({ canceled: true, assets: [] });
   sources.favourites = [chicken];
@@ -242,6 +257,15 @@ function typeName(value: string) {
 
 function pressContinue() {
   fireEvent.click(screen.getByRole("button", { name: /^Continue/ }));
+}
+
+/** On the Cover step: open the studio, generate a set, pick the second. */
+async function generateAndPick() {
+  fireEvent.click(screen.getByLabelText("Generate with AI"));
+  fireEvent.click(screen.getByRole("button", { name: "Generate 4 covers" }));
+  fireEvent.click(
+    await screen.findByRole("radio", { name: "Cover option 2 of 2" }),
+  );
 }
 
 /** Name → Cover → Recipes (picking the chicken) → Review. */
@@ -413,7 +437,8 @@ describe("CookbookCreateWizard — cover", () => {
     pressContinue();
     fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
-    expect(mockGenerateCover).not.toHaveBeenCalled();
+    expect(mockGenerateCandidates).not.toHaveBeenCalled();
+    expect(mockAttachCandidate).not.toHaveBeenCalled();
   });
 
   it("uploads a picked photo against the newly created id", async () => {
@@ -450,7 +475,53 @@ describe("CookbookCreateWizard — cover", () => {
         uri: "file:///picked.jpg",
       }),
     );
-    expect(mockGenerateCover).not.toHaveBeenCalled();
+    expect(mockAttachCandidate).not.toHaveBeenCalled();
+  });
+
+  it("generates a set from the name, description, request and style", async () => {
+    renderComponent(<CookbookCreateWizard />);
+    typeName("Weeknight Dinners");
+    pressContinue();
+    fireEvent.click(screen.getByLabelText("Generate with AI"));
+    fireEvent.change(screen.getByLabelText("Describe your cover"), {
+      target: { value: "  pasta on a board  " },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Golden hour style" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate 4 covers" }));
+
+    await waitFor(() =>
+      expect(mockGenerateCandidates).toHaveBeenCalledWith({
+        name: "Weeknight Dinners",
+        description: undefined,
+        coverPrompt: "pasta on a board",
+        style: "golden-hour",
+      }),
+    );
+    expect(
+      await screen.findByRole("radio", { name: "Cover option 1 of 2" }),
+    ).toBeTruthy();
+    expect(mockToastSuccess).toHaveBeenCalledWith("2 covers ready");
+    expect(
+      screen.getByRole("button", { name: "Generate 4 more" }),
+    ).toBeTruthy();
+  });
+
+  it("shows user-safe copy when a set can't be made", async () => {
+    mockGenerateCandidates.mockRejectedValue(
+      new ApiError("429: raw server text", "DAILY_LIMIT_REACHED", 429),
+    );
+    renderComponent(<CookbookCreateWizard />);
+    typeName("Weeknight Dinners");
+    pressContinue();
+    fireEvent.click(screen.getByLabelText("Generate with AI"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate 4 covers" }));
+
+    expect(
+      await screen.findByText(
+        "You've made a lot of covers today. Try again tomorrow.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/raw server text/)).toBeNull();
   });
 
   it("toasts when the photo library can't be opened", async () => {
@@ -530,7 +601,27 @@ describe("CookbookCreateWizard — create", () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("generates the armed cover against the new id", async () => {
+  it("attaches the picked cover to the new id", async () => {
+    renderComponent(<CookbookCreateWizard />);
+    typeName("Weeknight Dinners");
+    pressContinue();
+    await generateAndPick();
+    pressContinue();
+    fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
+    pressContinue();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
+
+    await waitFor(() =>
+      expect(mockAttachCandidate).toHaveBeenCalledWith({
+        cookbookId: 7,
+        candidateId: "cand-b",
+      }),
+    );
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  });
+
+  it("creates with the plain cover when the studio is open but nothing is picked", async () => {
     renderComponent(<CookbookCreateWizard />);
     typeName("Weeknight Dinners");
     pressContinue();
@@ -541,26 +632,26 @@ describe("CookbookCreateWizard — create", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
 
-    await waitFor(() => expect(mockGenerateCover).toHaveBeenCalledWith(7));
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    expect(mockAttachCandidate).not.toHaveBeenCalled();
   });
 
-  it("says the cover is generating while that slow step runs", async () => {
+  it("says the cover is being added while that step runs", async () => {
     let finishGenerate: (v: unknown) => void = () => {};
-    mockGenerateCover.mockImplementation(
+    mockAttachCandidate.mockImplementation(
       () => new Promise((resolve) => (finishGenerate = resolve)),
     );
     renderComponent(<CookbookCreateWizard />);
     typeName("Weeknight Dinners");
     pressContinue();
-    fireEvent.click(screen.getByLabelText("Generate with AI"));
+    await generateAndPick();
     pressContinue();
     fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
     pressContinue();
 
     fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
 
-    expect(await screen.findByText("Generating your cover…")).toBeTruthy();
+    expect(await screen.findByText("Adding your cover…")).toBeTruthy();
     expect(screen.queryByText("Creating…")).toBeNull();
     await act(async () => finishGenerate({ id: 7 }));
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
@@ -589,11 +680,11 @@ describe("CookbookCreateWizard — create", () => {
   });
 
   it("still completes when the cover step fails after the cookbook is saved", async () => {
-    mockGenerateCover.mockRejectedValue(new Error("provider down"));
+    mockAttachCandidate.mockRejectedValue(new Error("410: expired"));
     renderComponent(<CookbookCreateWizard />);
     typeName("Weeknight Dinners");
     pressContinue();
-    fireEvent.click(screen.getByLabelText("Generate with AI"));
+    await generateAndPick();
     pressContinue();
     fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
     pressContinue();

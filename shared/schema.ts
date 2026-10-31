@@ -2010,6 +2010,56 @@ export const cookbookRecipes = pgTable(
   ],
 );
 
+/**
+ * Cover-studio candidates waiting to be picked. Short-lived: a new set
+ * replaces the user's old one, attaching deletes the picked row, and the
+ * hourly purge deletes expired rows and their stored objects. `image_url` is
+ * only ever a URL `saveCookbookCover` minted — never client input.
+ */
+export const cookbookCoverCandidates = pgTable(
+  "cookbook_cover_candidates",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    imageUrl: text("image_url").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("cookbook_cover_candidates_user_id_idx").on(table.userId),
+    index("cookbook_cover_candidates_expires_idx").on(table.expiresAt),
+  ],
+);
+
+/**
+ * One row per STORED cover-studio set — the daily cap's counter. Kept apart
+ * from the candidates, which are deleted on replace and attach.
+ */
+export const cookbookCoverGenerationLog = pgTable(
+  "cookbook_cover_generation_log",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    index("cookbook_cover_generation_log_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const cookbooksRelations = relations(cookbooks, ({ one, many }) => ({
   user: one(users, {
     fields: [cookbooks.userId],

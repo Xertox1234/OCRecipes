@@ -2,6 +2,10 @@
  * Pure state and step rules for the New Cookbook wizard. Extracted so Vitest
  * can cover them without rendering — no React or React Native imports here.
  */
+import {
+  DEFAULT_COOKBOOK_COVER_STYLE,
+  type CookbookCoverStyle,
+} from "@shared/constants/cookbook-cover-styles";
 
 export type WizardStep = "basics" | "cover" | "recipes" | "review";
 
@@ -15,7 +19,22 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
 export type WizardCover =
   | { kind: "none" }
   | { kind: "photo"; uri: string }
-  | { kind: "generate" };
+  /** A cover-studio candidate, attached by id once the book exists. */
+  | { kind: "candidate"; candidateId: string; imageUrl: string };
+
+export interface CoverCandidate {
+  id: string;
+  imageUrl: string;
+}
+
+/** The AI cover studio's inputs and its current set of candidates. */
+export interface CoverStudioState {
+  /** The "Generate with AI" card is selected. */
+  open: boolean;
+  prompt: string;
+  style: CookbookCoverStyle;
+  candidates: CoverCandidate[];
+}
 
 export interface WizardRecipe {
   recipeId: number;
@@ -37,6 +56,7 @@ export interface WizardState {
   name: string;
   description: string;
   cover: WizardCover;
+  studio: CoverStudioState;
   recipes: WizardRecipe[];
 }
 
@@ -46,6 +66,12 @@ export const initialWizardState: WizardState = {
   name: "",
   description: "",
   cover: { kind: "none" },
+  studio: {
+    open: false,
+    prompt: "",
+    style: DEFAULT_COOKBOOK_COVER_STYLE,
+    candidates: [],
+  },
   recipes: [],
 };
 
@@ -53,6 +79,12 @@ export type WizardAction =
   | { type: "setName"; value: string }
   | { type: "setDescription"; value: string }
   | { type: "setCover"; cover: WizardCover }
+  | { type: "openStudio" }
+  | { type: "closeStudio" }
+  | { type: "setCoverPrompt"; value: string }
+  | { type: "setCoverStyle"; style: CookbookCoverStyle }
+  | { type: "setCandidates"; candidates: CoverCandidate[] }
+  | { type: "pickCandidate"; candidate: CoverCandidate }
   | { type: "toggleRecipe"; recipe: WizardRecipe }
   | { type: "next" }
   | { type: "back" }
@@ -68,7 +100,56 @@ export function wizardReducer(
     case "setDescription":
       return { ...state, description: action.value };
     case "setCover":
-      return { ...state, cover: action.cover };
+      // A photo and the studio are the two cover sources; choosing a photo
+      // closes the studio (keeping its prompt and set for a later return).
+      return {
+        ...state,
+        cover: action.cover,
+        studio:
+          action.cover.kind === "photo"
+            ? { ...state.studio, open: false }
+            : state.studio,
+      };
+    case "openStudio":
+      return {
+        ...state,
+        // Drops a photo so only one cover source reads as selected.
+        cover: state.cover.kind === "photo" ? { kind: "none" } : state.cover,
+        studio: { ...state.studio, open: true },
+      };
+    case "closeStudio":
+      return {
+        ...state,
+        cover:
+          state.cover.kind === "candidate" ? { kind: "none" } : state.cover,
+        studio: { ...state.studio, open: false },
+      };
+    case "setCoverPrompt":
+      return { ...state, studio: { ...state.studio, prompt: action.value } };
+    case "setCoverStyle":
+      return { ...state, studio: { ...state.studio, style: action.style } };
+    case "setCandidates": {
+      // The server deleted the previous set when this one was stored, so a
+      // pick from it can no longer be attached.
+      const { cover } = state;
+      const stale =
+        cover.kind === "candidate" &&
+        !action.candidates.some((c) => c.id === cover.candidateId);
+      return {
+        ...state,
+        cover: stale ? { kind: "none" } : cover,
+        studio: { ...state.studio, candidates: action.candidates },
+      };
+    }
+    case "pickCandidate":
+      return {
+        ...state,
+        cover: {
+          kind: "candidate",
+          candidateId: action.candidate.id,
+          imageUrl: action.candidate.imageUrl,
+        },
+      };
     case "toggleRecipe": {
       const key = recipeKey(action.recipe);
       const exists = state.recipes.some((r) => recipeKey(r) === key);

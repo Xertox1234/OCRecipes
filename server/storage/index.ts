@@ -26,6 +26,7 @@ import * as community from "./community";
 import * as menu from "./menu";
 import * as receipt from "./receipt";
 import * as cookbooksStorage from "./cookbooks";
+import * as coverCandidates from "./cookbook-cover-candidates";
 import * as favouriteRecipesStorage from "./favourite-recipes";
 import * as verification from "./verification";
 import * as apiKeysStorage from "./api-keys";
@@ -297,6 +298,9 @@ export const storage = {
   removeRecipeFromCookbook: cookbooksStorage.removeRecipeFromCookbook,
   getCookbookRecipes: cookbooksStorage.getCookbookRecipes,
   getResolvedCookbookRecipes: cookbooksStorage.getResolvedCookbookRecipes,
+  storeCoverCandidateSet: coverCandidates.storeCoverCandidateSet,
+  claimCoverCandidate: coverCandidates.claimCoverCandidate,
+  countCoverSetsSince: coverCandidates.countCoverSetsSince,
 
   // Favourite recipes
   toggleFavouriteRecipe: favouriteRecipesStorage.toggleFavouriteRecipe,

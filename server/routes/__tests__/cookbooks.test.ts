@@ -5,7 +5,12 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { register } from "../cookbooks";
 import { deleteImage, saveCookbookCover } from "../../lib/image-store";
-import { generateCookbookCover } from "../../services/cookbook-cover";
+import {
+  CoverPrePassError,
+  generateCookbookCover,
+  generateCoverCandidates,
+} from "../../services/cookbook-cover";
+import { isArtDirectorLLMEnabled } from "../../services/image-art-direction";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -21,6 +26,9 @@ vi.mock("../../storage", () => ({
     // Backs the real checkPremiumFeature helper (via getPremiumFeatures) —
     // the premium gate is exercised for real rather than stubbed out.
     getEffectiveTierForUser: vi.fn(),
+    storeCoverCandidateSet: vi.fn(),
+    claimCoverCandidate: vi.fn(),
+    countCoverSetsSince: vi.fn(),
   },
 }));
 
@@ -35,6 +43,19 @@ vi.mock("../../lib/image-store", () => ({
 
 vi.mock("../../services/cookbook-cover", () => ({
   generateCookbookCover: vi.fn(),
+  generateCoverCandidates: vi.fn(),
+  CoverPrePassError: class CoverPrePassError extends Error {},
+}));
+
+vi.mock("../../services/image-art-direction", () => ({
+  isArtDirectorLLMEnabled: vi.fn(),
+}));
+
+const runwareState = vi.hoisted(() => ({ configured: true }));
+vi.mock("../../lib/runware", () => ({
+  get isRunwareConfigured() {
+    return runwareState.configured;
+  },
 }));
 
 vi.mock("../../middleware/auth");
@@ -695,6 +716,309 @@ describe("Cookbook Routes", () => {
 
       expect(res.status).toBe(503);
       expect(vi.mocked(storage.updateCookbook)).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /api/cookbook-covers/candidates", () => {
+    const body = {
+      name: "Sunday Suppers",
+      description: "Family dinners",
+      coverPrompt: "fresh pasta on a floured board",
+      style: "golden-hour",
+    };
+    const CANDIDATE_IDS = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+    ];
+
+    beforeEach(() => {
+      runwareState.configured = true;
+      vi.mocked(isArtDirectorLLMEnabled).mockReturnValue(true);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      vi.mocked(storage.countCoverSetsSince).mockResolvedValue(0);
+      vi.mocked(generateCoverCandidates).mockResolvedValue({
+        buffers: [Buffer.from("1"), Buffer.from("2"), Buffer.from("3")],
+        promptIgnored: false,
+      });
+      let n = 0;
+      vi.mocked(saveCookbookCover).mockImplementation(
+        async () => `https://cdn.test/cookbook-covers/c${++n}.jpg`,
+      );
+      vi.mocked(storage.storeCoverCandidateSet).mockImplementation(
+        async (_userId, urls) => ({
+          candidates: urls.map((imageUrl, i) => ({
+            id: CANDIDATE_IDS[i],
+            imageUrl,
+          })),
+          expiresAt: new Date("2026-10-31T16:00:00Z"),
+          replacedUrls: ["https://cdn.test/cookbook-covers/old.jpg"],
+        }),
+      );
+    });
+
+    const post = (payload: object = body) =>
+      request(app).post("/api/cookbook-covers/candidates").send(payload);
+
+    it("generates, stores and returns a set", async () => {
+      const res = await post();
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        candidates: [
+          {
+            id: CANDIDATE_IDS[0],
+            imageUrl: "https://cdn.test/cookbook-covers/c1.jpg",
+          },
+          {
+            id: CANDIDATE_IDS[1],
+            imageUrl: "https://cdn.test/cookbook-covers/c2.jpg",
+          },
+          {
+            id: CANDIDATE_IDS[2],
+            imageUrl: "https://cdn.test/cookbook-covers/c3.jpg",
+          },
+        ],
+        expiresAt: "2026-10-31T16:00:00.000Z",
+        promptIgnored: false,
+      });
+      expect(vi.mocked(generateCoverCandidates)).toHaveBeenCalledWith({
+        name: "Sunday Suppers",
+        description: "Family dinners",
+        coverPrompt: "fresh pasta on a floured board",
+        style: "golden-hour",
+      });
+      expect(vi.mocked(saveCookbookCover)).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        "jpg",
+      );
+      expect(vi.mocked(storage.storeCoverCandidateSet)).toHaveBeenCalledWith(
+        "1",
+        expect.any(Array),
+      );
+    });
+
+    it("deletes the replaced set's objects", async () => {
+      await post();
+      await vi.waitFor(() =>
+        expect(vi.mocked(deleteImage)).toHaveBeenCalledWith(
+          "https://cdn.test/cookbook-covers/old.jpg",
+          "cookbook",
+        ),
+      );
+    });
+
+    it("passes promptIgnored through", async () => {
+      vi.mocked(generateCoverCandidates).mockResolvedValue({
+        buffers: [Buffer.from("1"), Buffer.from("2")],
+        promptIgnored: true,
+      });
+      const res = await post();
+      expect(res.body.promptIgnored).toBe(true);
+    });
+
+    it.each([
+      ["an unknown style", { ...body, style: "neon" }],
+      ["an extra field", { ...body, prompt: "raw prompt" }],
+      ["an over-long request", { ...body, coverPrompt: "x".repeat(201) }],
+      ["a missing name", { ...body, name: "" }],
+    ])("returns 400 for %s without spending", async (_label, payload) => {
+      const res = await post(payload);
+      expect(res.status).toBe(400);
+      expect(vi.mocked(generateCoverCandidates)).not.toHaveBeenCalled();
+    });
+
+    it("returns 403 for a free user before any spend", async () => {
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+
+      const res = await post();
+
+      expect(res.status).toBe(403);
+      expect(vi.mocked(generateCoverCandidates)).not.toHaveBeenCalled();
+      expect(vi.mocked(storage.countCoverSetsSince)).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["Runware is not configured", () => (runwareState.configured = false)],
+      [
+        "the pre-pass is switched off",
+        () => vi.mocked(isArtDirectorLLMEnabled).mockReturnValue(false),
+      ],
+    ])("returns 503 AI_NOT_CONFIGURED when %s", async (_label, arrange) => {
+      arrange();
+      const res = await post();
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("AI_NOT_CONFIGURED");
+      expect(vi.mocked(generateCoverCandidates)).not.toHaveBeenCalled();
+    });
+
+    it("returns 429 at the daily cap, counting the last 24 hours, before any spend", async () => {
+      vi.mocked(storage.countCoverSetsSince).mockResolvedValue(15);
+      const before = Date.now();
+
+      const res = await post();
+
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
+      expect(vi.mocked(generateCoverCandidates)).not.toHaveBeenCalled();
+      const since = vi.mocked(storage.countCoverSetsSince).mock.calls[0][1];
+      expect(before - since.getTime()).toBeGreaterThanOrEqual(
+        24 * 60 * 60 * 1000 - 1000,
+      );
+      expect(before - since.getTime()).toBeLessThanOrEqual(
+        24 * 60 * 60 * 1000 + 1000,
+      );
+    });
+
+    it("allows the set just under the cap", async () => {
+      vi.mocked(storage.countCoverSetsSince).mockResolvedValue(14);
+      expect((await post()).status).toBe(200);
+    });
+
+    it("returns 503 AI_UNAVAILABLE when the pre-pass fails on a request", async () => {
+      vi.mocked(generateCoverCandidates).mockRejectedValue(
+        new CoverPrePassError("down"),
+      );
+
+      const res = await post();
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("AI_UNAVAILABLE");
+    });
+
+    it("returns 503 and stores nothing when fewer than 2 images came back", async () => {
+      vi.mocked(generateCoverCandidates).mockResolvedValue({
+        buffers: [Buffer.from("1")],
+        promptIgnored: false,
+      });
+
+      const res = await post();
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("IMAGE_GENERATION_FAILED");
+      expect(vi.mocked(saveCookbookCover)).not.toHaveBeenCalled();
+      expect(vi.mocked(storage.storeCoverCandidateSet)).not.toHaveBeenCalled();
+    });
+
+    it("deletes the saved objects when storing the set fails", async () => {
+      vi.mocked(storage.storeCoverCandidateSet).mockRejectedValue(
+        new Error("db down"),
+      );
+
+      const res = await post();
+
+      expect(res.status).toBe(500);
+      await vi.waitFor(() => {
+        for (const n of [1, 2, 3]) {
+          expect(vi.mocked(deleteImage)).toHaveBeenCalledWith(
+            `https://cdn.test/cookbook-covers/c${n}.jpg`,
+            "cookbook",
+          );
+        }
+      });
+    });
+
+    it("deletes the already-saved objects when a later save fails", async () => {
+      vi.mocked(saveCookbookCover)
+        .mockResolvedValueOnce("https://cdn.test/cookbook-covers/c1.jpg")
+        .mockRejectedValueOnce(new Error("r2 down"));
+
+      const res = await post();
+
+      expect(res.status).toBe(500);
+      expect(vi.mocked(storage.storeCoverCandidateSet)).not.toHaveBeenCalled();
+      await vi.waitFor(() =>
+        expect(vi.mocked(deleteImage)).toHaveBeenCalledWith(
+          "https://cdn.test/cookbook-covers/c1.jpg",
+          "cookbook",
+        ),
+      );
+    });
+  });
+
+  describe("POST /api/cookbooks/:id/cover/candidate", () => {
+    const candidateId = "11111111-1111-4111-8111-111111111111";
+    const pickedUrl = "https://cdn.test/cookbook-covers/picked.jpg";
+
+    beforeEach(() => {
+      vi.mocked(storage.getCookbook).mockResolvedValue({
+        ...mockCookbook,
+        coverImageUrl: "https://cdn.test/cookbook-covers/previous.jpg",
+      });
+      vi.mocked(storage.claimCoverCandidate).mockResolvedValue(pickedUrl);
+      vi.mocked(storage.updateCookbook).mockResolvedValue({
+        ...mockCookbook,
+        coverImageUrl: pickedUrl,
+      });
+    });
+
+    const attach = (id = "1", payload: object = { candidateId }) =>
+      request(app).post(`/api/cookbooks/${id}/cover/candidate`).send(payload);
+
+    it("attaches the claimed candidate's image and deletes the replaced cover", async () => {
+      const res = await attach();
+
+      expect(res.status).toBe(200);
+      expect(res.body.coverImageUrl).toBe(pickedUrl);
+      expect(vi.mocked(storage.claimCoverCandidate)).toHaveBeenCalledWith(
+        candidateId,
+        "1",
+      );
+      expect(vi.mocked(storage.updateCookbook)).toHaveBeenCalledWith(1, "1", {
+        coverImageUrl: pickedUrl,
+      });
+      await vi.waitFor(() =>
+        expect(vi.mocked(deleteImage)).toHaveBeenCalledWith(
+          "https://cdn.test/cookbook-covers/previous.jpg",
+          "cookbook",
+        ),
+      );
+    });
+
+    it.each([
+      ["a non-uuid id", { candidateId: "not-a-uuid" }],
+      ["an image URL instead of an id", { imageUrl: pickedUrl }],
+      ["an extra field", { candidateId, imageUrl: pickedUrl }],
+    ])("returns 400 for %s", async (_label, payload) => {
+      const res = await attach("1", payload);
+      expect(res.status).toBe(400);
+      expect(vi.mocked(storage.claimCoverCandidate)).not.toHaveBeenCalled();
+    });
+
+    it("returns 404 for another user's cookbook without claiming", async () => {
+      vi.mocked(storage.getCookbook).mockResolvedValue(undefined);
+
+      const res = await attach("999");
+
+      expect(res.status).toBe(404);
+      expect(vi.mocked(storage.claimCoverCandidate)).not.toHaveBeenCalled();
+    });
+
+    it("returns 410 when the candidate is gone, expired or not this user's", async () => {
+      vi.mocked(storage.claimCoverCandidate).mockResolvedValue(null);
+
+      const res = await attach();
+
+      expect(res.status).toBe(410);
+      expect(res.body.code).toBe("COVER_CANDIDATE_EXPIRED");
+      expect(vi.mocked(storage.updateCookbook)).not.toHaveBeenCalled();
+    });
+
+    it("rolls back the stored image when the cookbook vanished mid-attach", async () => {
+      vi.mocked(storage.updateCookbook).mockResolvedValue(undefined);
+
+      const res = await attach();
+
+      expect(res.status).toBe(404);
+      expect(vi.mocked(deleteImage)).toHaveBeenCalledWith(
+        pickedUrl,
+        "cookbook",
+      );
+    });
+
+    it("needs no premium check (the spend was already gated)", async () => {
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+      expect((await attach()).status).toBe(200);
     });
   });
 });
