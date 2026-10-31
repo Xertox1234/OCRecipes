@@ -1,12 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import {
   COVER_IDEAS,
   coverStudioErrorCopy,
   generateButtonLabel,
+  requestCoverSet,
 } from "../cover-studio-utils";
 import { ApiError } from "@/lib/api-error";
 import { COOKBOOK_COVER_PROMPT_MAX } from "@shared/constants/cookbook-cover-styles";
+
+vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }));
 
 describe("COVER_IDEAS", () => {
   it("leads with the design's first idea", () => {
@@ -54,5 +57,25 @@ describe("coverStudioErrorCopy", () => {
     expect(coverStudioErrorCopy(new Error("500: stack trace"))).toBe(
       "Couldn't make covers right now. Try again.",
     );
+  });
+});
+
+describe("requestCoverSet", () => {
+  it("returns the set on success", async () => {
+    await expect(requestCoverSet(async () => "set")).resolves.toEqual({
+      ok: true,
+      set: "set",
+    });
+  });
+
+  it("returns user copy, never the raw message, on failure", async () => {
+    await expect(
+      requestCoverSet(async () => {
+        throw new ApiError("429: raw", "RATE_LIMITED", 429);
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: "Give it a moment, then try again.",
+    });
   });
 });

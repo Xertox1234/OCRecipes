@@ -3,6 +3,7 @@
  * Cover step. No React here, so Vitest covers it without rendering.
  */
 import { ApiError } from "@/lib/api-error";
+import { logger } from "@/lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 
 /** Idea chips under "Describe your cover"; a tap fills the field. */
@@ -39,5 +40,21 @@ export function coverStudioErrorCopy(err: unknown): string {
       return "AI covers are a premium feature.";
     default:
       return GENERIC;
+  }
+}
+
+/**
+ * Run one cover-set request and turn a failure into user copy. Kept out of
+ * the screen: written inline in its handler, React Compiler skipped the
+ * screen (scripts/check-react-compiler-bailouts.js flagged it).
+ */
+export async function requestCoverSet<T>(
+  request: () => Promise<T>,
+): Promise<{ ok: true; set: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, set: await request() };
+  } catch (err) {
+    logger.error("Cover studio set failed:", err);
+    return { ok: false, error: coverStudioErrorCopy(err) };
   }
 }

@@ -55,9 +55,8 @@ import {
   useCreateCookbook,
   useGenerateCoverCandidates,
   useUploadCookbookCover,
-  type CoverCandidateSet,
 } from "@/hooks/useCookbooks";
-import { coverStudioErrorCopy } from "@/components/cookbook/cover-studio-utils";
+import { requestCoverSet } from "@/components/cookbook/cover-studio-utils";
 import { Spacing } from "@/constants/theme";
 import type { CookbookCreateScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
@@ -306,21 +305,21 @@ export default function CookbookCreateWizard() {
     setStudioError(null);
     const description = state.description.trim();
     const coverPrompt = state.studio.prompt.trim();
-    let set: CoverCandidateSet;
-    try {
-      set = await generateCandidates({
+    const result = await requestCoverSet(() =>
+      generateCandidates({
         name: state.name.trim(),
         description: description === "" ? undefined : description,
         coverPrompt: coverPrompt === "" ? undefined : coverPrompt,
         style: state.studio.style,
-      });
-    } catch (err) {
-      logger.error("Cover studio set failed:", err);
+      }),
+    );
+    if (!result.ok) {
       haptics.notification(NotificationFeedbackType.Error);
       // InlineError announces the message itself.
-      setStudioError(coverStudioErrorCopy(err));
+      setStudioError(result.error);
       return;
     }
+    const { set } = result;
     dispatch({ type: "setCandidates", candidates: set.candidates });
     setPromptIgnored(set.promptIgnored);
     toast.success(`${set.candidates.length} covers ready`);

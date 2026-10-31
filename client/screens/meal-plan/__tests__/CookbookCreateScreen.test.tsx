@@ -133,8 +133,13 @@ vi.mock("@/hooks/useCookbooks", () => ({
     mutateAsync: mockGenerateCover,
     isPending: false,
   }),
-  // Create mode renders the wizard, which takes this hook up front.
+  // Create mode renders the wizard, which takes these hooks up front.
   useAddRecipeToCookbook: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useGenerateCoverCandidates: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+  useAttachCoverCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 const idleDetail = {

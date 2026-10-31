@@ -151,6 +151,37 @@ export interface CoverCandidateSet {
  */
 const COVER_SET_DEADLINE_MS = 75_000;
 
+export interface CoverSetRequest {
+  name: string;
+  description?: string;
+  coverPrompt?: string;
+  style: CookbookCoverStyle;
+}
+
+/**
+ * Module-level, not inline in the mutation: a try/finally inside a hook
+ * callback makes React Compiler skip the file.
+ */
+async function postCoverSet(
+  input: CoverSetRequest,
+): Promise<CoverCandidateSet> {
+  // Own signal, so apiRequest's shorter default deadline doesn't apply.
+  // AbortController + setTimeout: Hermes has no AbortSignal.timeout.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), COVER_SET_DEADLINE_MS);
+  try {
+    const res = await apiRequest(
+      "POST",
+      "/api/cookbook-covers/candidates",
+      input,
+      { signal: controller.signal },
+    );
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Generate a set of four candidate covers before the cookbook exists.
  * Premium-only (403 `PREMIUM_REQUIRED`); 429 `DAILY_LIMIT_REACHED` at the
@@ -158,28 +189,7 @@ const COVER_SET_DEADLINE_MS = 75_000;
  */
 export function useGenerateCoverCandidates() {
   return useMutation({
-    mutationFn: async (input: {
-      name: string;
-      description?: string;
-      coverPrompt?: string;
-      style: CookbookCoverStyle;
-    }): Promise<CoverCandidateSet> => {
-      // Own signal, so apiRequest's shorter default deadline doesn't apply.
-      // AbortController + setTimeout: Hermes has no AbortSignal.timeout.
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), COVER_SET_DEADLINE_MS);
-      try {
-        const res = await apiRequest(
-          "POST",
-          "/api/cookbook-covers/candidates",
-          input,
-          { signal: controller.signal },
-        );
-        return await res.json();
-      } finally {
-        clearTimeout(timer);
-      }
-    },
+    mutationFn: postCoverSet,
     // The studio shows its own inline error.
     meta: { silentError: true },
   });
