@@ -32,6 +32,7 @@ import { useParseRecipeFromUrl } from "@/hooks/useMealPlanRecipes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeImportScreenNavigationProp } from "@/types/navigation";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
+import { useHeaderCloseButton } from "@/hooks/useHeaderCloseButton";
 import { urlImportErrorCopy } from "./recipe-import-utils";
 import { useMarkFeatureUsed } from "@/hooks/useFeatureTip";
 
@@ -52,6 +53,7 @@ export default function RecipeImportScreen() {
   const returnToMealPlan = route.params?.returnToMealPlan;
   const fromHome = route.params?.fromHome;
   useFromHomeBackRedirect(navigation, fromHome);
+  useHeaderCloseButton(navigation, fromHome, "Close");
   const parseMutation = useParseRecipeFromUrl();
 
   // Import stays pressable with an empty link; pressing it names the field

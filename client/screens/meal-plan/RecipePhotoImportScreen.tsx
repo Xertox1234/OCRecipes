@@ -31,6 +31,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipePhotoImportScreenNavigationProp } from "@/types/navigation";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
+import { useHeaderCloseButton } from "@/hooks/useHeaderCloseButton";
 import { useMarkFeatureUsed } from "@/hooks/useFeatureTip";
 
 /**
@@ -73,6 +74,7 @@ export default function RecipePhotoImportScreen() {
 
   const { photoUri, returnToMealPlan, fromHome } = route.params;
   useFromHomeBackRedirect(navigation, fromHome);
+  useHeaderCloseButton(navigation, fromHome, "Close");
   const photoImportMutation = useRecipePhotoImport();
 
   const { state, result, errorMessage, retry } = useRecipeExtractionFlow({

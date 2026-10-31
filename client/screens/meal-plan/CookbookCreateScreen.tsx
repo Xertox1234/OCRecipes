@@ -1,22 +1,14 @@
-import React, {
-  useState,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-} from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   AccessibilityInfo,
   type TextInput as RNTextInput,
   StyleSheet,
   View,
   ScrollView,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -58,6 +50,7 @@ import { Spacing, FontFamily } from "@/constants/theme";
 import type { CookbookCreateScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
+import { useHeaderCloseButton } from "@/hooks/useHeaderCloseButton";
 
 const NAME_MAX = 100;
 const DESCRIPTION_MAX = 500;
@@ -171,53 +164,13 @@ export default function CookbookCreateScreen() {
   const storedCoverUrl = existingCookbook?.coverImageUrl ?? null;
   const hasCover = !!(pendingCoverUri ?? storedCoverUrl);
 
-  /**
-   * Leave the screen, and REMOVE it from the Plan stack. Don't branch on
-   * `canGoBack()`: it bubbles — it is true whenever any PARENT can go back,
-   * and the tab router can always go back to Home. When Home routes here via
-   * a nested `navigate`, this screen is the only route in the Plan stack, so
-   * `goBack()` went to the TAB navigator: Home was shown, this route was
-   * never removed, and the form reappeared on every return to Plan. With a
-   * route beneath, `goBack()` is intercepted by `useFromHomeBackRedirect`,
-   * which also shows Home while leaving the form mounted.
-   *
-   * So only an in-Plan visit with a route in this stack's OWN state goes
-   * back. Otherwise `popTo("MealPlanHome")` removes this route (adding
-   * MealPlanHome if the stack never had it) — "POP_TO" isn't a back action,
-   * so `useFromHomeBackRedirect` re-dispatches it unchanged — and a Home
-   * visit then shows Home.
-   */
-  const dismiss = useCallback(() => {
-    if (!fromHome && navigation.getState().routes.length > 1) {
-      navigation.goBack();
-      return;
-    }
-    navigation.popTo("MealPlanHome");
-    if (fromHome) navigation.getParent()?.navigate("HomeTab");
-  }, [fromHome, navigation]);
-
-  // An explicit close control, always present. Without it this screen can be
-  // a dead end (see `dismiss` above), and `headerBackVisible: false` keeps the
-  // native chevron from doubling up when there IS a route beneath.
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerBackVisible: false,
-      headerLeft: () => (
-        <Pressable
-          onPress={() => {
-            haptics.selection();
-            dismiss();
-          }}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Close without saving"
-          style={{ marginLeft: Spacing.xs }}
-        >
-          <Feather name="x" size={24} color={theme.text} />
-        </Pressable>
-      ),
-    });
-  }, [navigation, dismiss, haptics, theme.text]);
+  // Close control + `dismiss` that removes this route — see the hook for why
+  // `canGoBack()` and a plain `goBack()` both get the one-route case wrong.
+  const dismiss = useHeaderCloseButton(
+    navigation,
+    fromHome,
+    "Close without saving",
+  );
 
   /**
    * User-safe copy for a cover step. Never surfaces `err.message` — that is

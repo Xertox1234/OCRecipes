@@ -1,7 +1,7 @@
 /**
  * Notebook entries are extracted by the model in the third person
- * ("User has…", "User's breakfast…"). Show them to the user in the second
- * person without changing what is stored.
+ * ("User has…", "The user has…", "User's breakfast…"). Show them to the user
+ * in the second person without changing what is stored.
  */
 const IRREGULAR: Record<string, string> = {
   has: "have",
@@ -14,7 +14,7 @@ const IRREGULAR: Record<string, string> = {
   "hasn't": "haven't",
 };
 
-export function toSecondPerson(text: string): string {
+function rewriteLeadingSubject(text: string): string {
   if (/^User's\b/.test(text)) return text.replace(/^User's\b/, "Your");
   const m = /^User (\w+n't|\w+)/.exec(text);
   if (!m) return text;
@@ -28,4 +28,15 @@ export function toSecondPerson(text: string): string {
   else if (lower.endsWith("s") && !lower.endsWith("ss"))
     converted = verb.slice(0, -1);
   return text.replace(/^User (?:\w+n't|\w+)/, `You ${converted}`);
+}
+
+export function toSecondPerson(text: string): string {
+  const normalised = text.replace(/^The user\b/i, "User");
+  const rewritten = rewriteLeadingSubject(normalised);
+  if (rewritten === normalised) return text;
+  // Only a note that opened with the user as its subject gets "their" → "your":
+  // elsewhere "their" may mean someone else ("Kids like their pasta plain").
+  return rewritten
+    .replace(/\btheir\b/g, "your")
+    .replace(/\bthemselves\b/g, "yourself");
 }
