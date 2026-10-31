@@ -192,6 +192,10 @@ export default function CookbookCreateWizard() {
    */
   const rejectAt = (step: WizardStep) => {
     if (step !== state.step) {
+      // The error below announces this moment; a step announcement in the
+      // same commit would collide with it (iOS drops one), so mark the step
+      // as already said.
+      announcedStep.current = step;
       setCreateError(null);
       dispatch({ type: "goTo", step });
     }
@@ -214,6 +218,9 @@ export default function CookbookCreateWizard() {
     const from = WIZARD_STEPS.indexOf(state.step);
     const to = WIZARD_STEPS.indexOf(target);
     for (let i = from; i < to; i++) {
+      // Like Continue: while availability is unknown, Recipes can neither be
+      // skipped nor blocked, so stay put silently.
+      if (WIZARD_STEPS[i] === "recipes" && hasAnyRecipes === null) return;
       if (stepBlocker(state, WIZARD_STEPS[i], recipesAvailable)) {
         rejectAt(WIZARD_STEPS[i]);
         return;

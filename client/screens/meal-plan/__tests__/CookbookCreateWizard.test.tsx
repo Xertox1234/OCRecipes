@@ -51,7 +51,13 @@ const {
   mockToastError: vi.fn(),
   mockToastSuccess: vi.fn(),
   mockAnnounce: vi.fn(),
-  sources: { favourites: [] as unknown[], pending: false },
+  sources: {
+    favourites: [] as unknown[],
+    pending: false,
+    // Forces the Recipes step to report availability as unknown again — a
+    // state the real sources can't return to once settled.
+    reportUnknown: false,
+  },
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -147,6 +153,26 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
   }),
 }));
 
+// Wraps the real step; can report availability as unknown (see sources).
+vi.mock("@/components/cookbook/WizardRecipesStep", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/components/cookbook/WizardRecipesStep")
+    >();
+  function WizardRecipesStep(
+    props: React.ComponentProps<typeof actual.WizardRecipesStep>,
+  ) {
+    const { onAvailability } = props;
+    React.useEffect(() => {
+      if (sources.reportUnknown) {
+        (onAvailability as (v: boolean | null) => void)(null);
+      }
+    }, [onAvailability]);
+    return React.createElement(actual.WizardRecipesStep, props);
+  }
+  return { ...actual, WizardRecipesStep };
+});
+
 // Pass-through by default; the Create backstop test overrides it to get a
 // blank name past the step rules.
 vi.mock(
@@ -187,6 +213,7 @@ beforeEach(() => {
   mockLaunchImageLibrary.mockResolvedValue({ canceled: true, assets: [] });
   sources.favourites = [chicken];
   sources.pending = false;
+  sources.reportUnknown = false;
   vi.mocked(stepBlocker).mockImplementation(actualStepBlocker);
   vi.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(
     mockAnnounce,
@@ -656,5 +683,49 @@ describe("CookbookCreateWizard — forward jumps keep the step rules", () => {
     expect(screen.getByText("Enter a name for your cookbook.")).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByLabelText("Cookbook name"));
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("CookbookCreateWizard — refused jumps (round 2)", () => {
+  it("says the error, not the step, when a refused jump moves to the blocking step", () => {
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+    fireEvent.click(screen.getByLabelText("Edit Recipes"));
+    fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("Design your cover")).toBeTruthy();
+    mockAnnounce.mockClear();
+
+    fireEvent.click(screen.getByLabelText("Go back to Review"));
+
+    expect(screen.getByText("Choose your recipes")).toBeTruthy();
+    expect(screen.getByText("Pick at least one recipe.")).toBeTruthy();
+    expect(mockAnnounce).not.toHaveBeenCalledWith("Step 3 of 4, Recipes");
+  });
+
+  it("still announces a normal step change exactly once", () => {
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+    fireEvent.click(screen.getByLabelText("Edit Recipes"));
+    mockAnnounce.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(mockAnnounce).toHaveBeenCalledTimes(1);
+    expect(mockAnnounce).toHaveBeenCalledWith("Step 2 of 4, Cover");
+  });
+
+  it("won't jump ahead out of Recipes while availability is unknown", () => {
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+    sources.reportUnknown = true;
+    fireEvent.click(screen.getByLabelText("Edit Recipes"));
+    vi.mocked(Haptics.notificationAsync).mockClear();
+
+    fireEvent.click(screen.getByLabelText("Go back to Review"));
+
+    expect(screen.getByText("Choose your recipes")).toBeTruthy();
+    expect(screen.queryByText("Pick at least one recipe.")).toBeNull();
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
   });
 });
