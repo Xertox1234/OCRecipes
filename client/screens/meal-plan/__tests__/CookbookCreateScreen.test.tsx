@@ -33,6 +33,7 @@ const {
   mockPremiumFeature,
   mockLaunchImageLibrary,
   mockToastError,
+  mockToastSuccess,
   mockAnnounce,
 } = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
@@ -52,6 +53,7 @@ const {
   mockPremiumFeature: vi.fn(),
   mockLaunchImageLibrary: vi.fn(),
   mockToastError: vi.fn(),
+  mockToastSuccess: vi.fn(),
   mockAnnounce: vi.fn(),
 }));
 
@@ -84,9 +86,20 @@ vi.mock("expo-image-picker", () => ({
     mockLaunchImageLibrary(...args),
 }));
 
+// react-native-keyboard-controller ships untransformed native source — passthrough.
+vi.mock("react-native-keyboard-controller", () => ({
+  KeyboardAwareScrollView: ({
+    children,
+    ...props
+  }: {
+    children?: React.ReactNode;
+    [key: string]: unknown;
+  }) => React.createElement("div", props, children),
+}));
+
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
-    success: vi.fn(),
+    success: mockToastSuccess,
     error: mockToastError,
     info: vi.fn(),
   }),
@@ -359,15 +372,34 @@ describe("CookbookCreateScreen — create then attach", () => {
   });
 
   it("announces creation exactly once on the happy path", async () => {
-    // Two announceForAccessibility calls in the same commit collide on iOS.
+    // The success toast is the one announcer (iOS imperative + Android live
+    // region); a second announceForAccessibility would collide with it on
+    // iOS. Its haptic is off because the screen already fired one.
     renderComponent(<CookbookCreateScreen />);
     typeName("Weeknight Dinners");
 
     fireEvent.click(screen.getByLabelText("Create cookbook"));
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
-    expect(mockAnnounce).toHaveBeenCalledTimes(1);
-    expect(mockAnnounce).toHaveBeenCalledWith("Cookbook created");
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+    expect(mockToastSuccess).toHaveBeenCalledWith("Cookbook created", {
+      haptic: false,
+    });
+    expect(mockAnnounce).not.toHaveBeenCalled();
+  });
+
+  it("lets the cover's success pop land before closing", async () => {
+    renderComponent(<CookbookCreateScreen />);
+    typeName("Weeknight Dinners");
+
+    fireEvent.click(screen.getByLabelText("Create cookbook"));
+
+    // The toast and the close timer are set in the same step, so the screen
+    // is still open the moment the toast fires…
+    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalled());
+    expect(mockGoBack).not.toHaveBeenCalled();
+    // …and closes once the settle has passed.
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 });
 
@@ -405,7 +437,10 @@ describe("CookbookCreateScreen — edit-mode load guard", () => {
       }),
     );
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
-    expect(mockAnnounce).toHaveBeenCalledWith("Cookbook updated");
+    expect(mockToastSuccess).toHaveBeenCalledWith("Changes saved", {
+      haptic: false,
+    });
+    expect(mockAnnounce).not.toHaveBeenCalled();
   });
 
   it("leaves the cover actions usable when the cookbook loaded", () => {

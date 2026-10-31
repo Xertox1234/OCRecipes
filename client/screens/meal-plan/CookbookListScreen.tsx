@@ -32,7 +32,7 @@ export default function CookbookListScreen() {
   const navigation = useNavigation<CookbookListScreenNavigationProp>();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useSafeTabBarHeight();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const toast = useToast();
@@ -120,9 +120,9 @@ export default function CookbookListScreen() {
             accessibilityLabel={`${item.name}, ${item.recipeCount} recipes`}
           >
             {/* Cover thumbnail at the same 3:4 book proportion the create screen
-            uses. The slot renders even without a cover so rows stay aligned
-            in a mixed list — and so the empty state reads as "this can have
-            a cover" rather than as a missing element. */}
+            uses. Without a photo it is the same terracotta cloth the create
+            screen's cover plate shows, so a book looks the same in the list
+            as it did while you were making it, and rows stay aligned. */}
             {coverUri ? (
               <Image
                 source={{ uri: coverUri }}
@@ -135,16 +135,16 @@ export default function CookbookListScreen() {
                 style={[
                   styles.cover,
                   styles.coverEmpty,
-                  {
-                    backgroundColor: withOpacity(theme.text, 0.06),
-                    borderColor: withOpacity(theme.link, 0.25),
-                  },
+                  { backgroundColor: theme.accentSolid },
                 ]}
               >
                 <Feather
                   name="book"
                   size={14}
-                  color={withOpacity(theme.text, 0.35)}
+                  color={withOpacity(
+                    isDark ? theme.text : theme.backgroundRoot,
+                    0.85,
+                  )}
                   accessible={false}
                 />
               </View>
@@ -181,7 +181,7 @@ export default function CookbookListScreen() {
         </Animated.View>
       );
     },
-    [theme, haptics, navigation, handleDelete, reducedMotion],
+    [theme, isDark, haptics, navigation, handleDelete, reducedMotion],
   );
 
   if (isLoading) {
@@ -366,7 +366,6 @@ const styles = StyleSheet.create({
   coverEmpty: {
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: StyleSheet.hairlineWidth,
   },
   listItemContent: {
     flex: 1,

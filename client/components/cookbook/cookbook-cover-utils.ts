@@ -23,6 +23,19 @@ export function resolveCoverTitle(name: string): string {
   return trimmed.length > 0 ? trimmed : COVER_TITLE_PLACEHOLDER;
 }
 
+/**
+ * The description as a single line of cover copy, or null when there is
+ * nothing to show. Runs of whitespace (newlines included) collapse to one
+ * space: the cover has room for a short run under the title, and a newline
+ * would strand a word on its own row.
+ */
+export function resolveCoverSubtitle(
+  description: string | null | undefined,
+): string | null {
+  const collapsed = (description ?? "").replace(/\s+/g, " ").trim();
+  return collapsed.length > 0 ? collapsed : null;
+}
+
 /** Whether the cover is showing the placeholder rather than a real title. */
 export function isCoverTitlePlaceholder(name: string): boolean {
   return name.trim().length === 0;

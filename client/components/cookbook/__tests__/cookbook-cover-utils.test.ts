@@ -7,6 +7,7 @@ import {
   coverGenerateActionLabel,
   coverPhotoActionLabel,
   isCoverTitlePlaceholder,
+  resolveCoverSubtitle,
   resolveCoverTitle,
   resolveCoverWidth,
 } from "../cookbook-cover-utils";
@@ -36,6 +37,29 @@ describe("isCoverTitlePlaceholder", () => {
         resolveCoverTitle(input) === COVER_TITLE_PLACEHOLDER,
       );
     }
+  });
+});
+
+describe("resolveCoverSubtitle", () => {
+  it("returns the trimmed description", () => {
+    expect(resolveCoverSubtitle("  Family favourites  ")).toBe(
+      "Family favourites",
+    );
+  });
+
+  it("joins lines into one run of text", () => {
+    // The cover has room for a short line under the title, not paragraphs —
+    // a newline would strand a single word on its own row.
+    expect(resolveCoverSubtitle("Quick dinners\n\nfor busy  weeks")).toBe(
+      "Quick dinners for busy weeks",
+    );
+  });
+
+  it("returns null when there is nothing to show", () => {
+    expect(resolveCoverSubtitle("")).toBeNull();
+    expect(resolveCoverSubtitle("   \n\t ")).toBeNull();
+    expect(resolveCoverSubtitle(null)).toBeNull();
+    expect(resolveCoverSubtitle(undefined)).toBeNull();
   });
 });
 

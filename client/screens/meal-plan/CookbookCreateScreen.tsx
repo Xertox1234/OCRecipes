@@ -4,9 +4,6 @@ import {
   type TextInput as RNTextInput,
   StyleSheet,
   View,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   useWindowDimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -19,6 +16,7 @@ import { NotificationFeedbackType } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { FieldCounter } from "@/components/FieldCounter";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
@@ -32,6 +30,7 @@ import {
 } from "@/components/cookbook/cookbook-cover-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useAccessibility } from "@/hooks/useAccessibility";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
 import { useToast } from "@/context/ToastContext";
@@ -55,6 +54,8 @@ import { useHeaderCloseButton } from "@/hooks/useHeaderCloseButton";
 const NAME_MAX = 100;
 const DESCRIPTION_MAX = 500;
 const SCREEN_PADDING = Spacing.lg;
+/** Long enough for the cover's success pop to land before the screen closes. */
+const SUCCESS_SETTLE_MS = 450;
 
 export default function CookbookCreateScreen() {
   const navigation = useNavigation<CookbookCreateScreenNavigationProp>();
@@ -69,6 +70,7 @@ export default function CookbookCreateScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
   const toast = useToast();
   const canGenerateCover = usePremiumFeature("cookbookCoverGeneration");
 
@@ -141,6 +143,17 @@ export default function CookbookCreateScreen() {
     kind: "upload" | "generate";
     label: string;
   } | null>(null);
+  // Bumped once the save lands: the cover plays its success pop, and the form
+  // stays locked through the short settle before the screen closes.
+  const [celebrateKey, setCelebrateKey] = useState(0);
+  const saved = celebrateKey > 0;
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    },
+    [],
+  );
 
   // Pre-populate form when editing
   useEffect(() => {
@@ -159,7 +172,11 @@ export default function CookbookCreateScreen() {
     !editLoadBlocked &&
     // An in-flight cover step owns the screen — submitting under it would
     // race a second mutation against the same cookbook.
-    coverBusy === null;
+    coverBusy === null &&
+    !saved;
+  // Fields stop taking edits while a save is running or has landed — an edit
+  // typed then would be silently dropped.
+  const formLocked = mutation.isPending || coverBusy !== null || saved;
 
   const storedCoverUrl = existingCookbook?.coverImageUrl ?? null;
   const hasCover = !!(pendingCoverUri ?? storedCoverUrl);
@@ -319,8 +336,12 @@ export default function CookbookCreateScreen() {
           description: description.trim() || null,
         });
         haptics.notification(NotificationFeedbackType.Success);
-        AccessibilityInfo.announceForAccessibility("Cookbook updated");
-        dismiss();
+        // The toast is this branch's one announcer (iOS announce + Android
+        // live region); its own haptic is off — the line above already fired.
+        toast.success("Changes saved", { haptic: false });
+        setCelebrateKey((k) => k + 1);
+        if (reducedMotion) dismiss();
+        else closeTimer.current = setTimeout(dismiss, SUCCESS_SETTLE_MS);
       } catch (err) {
         haptics.notification(NotificationFeedbackType.Error);
         const msg = describeError(err);
@@ -380,19 +401,22 @@ export default function CookbookCreateScreen() {
     // Exactly ONE announcer per branch. Toast is itself an announcer (an
     // iOS-gated announceForAccessibility PLUS an Android polite live region),
     // so announcing here as well would drop one message on iOS — where
-    // announcements don't queue — and double-speak on TalkBack. On the
-    // failure branch Toast carries it; only the silent success path needs an
-    // announce of its own, ungated because nothing else covers it.
+    // announcements don't queue — and double-speak on TalkBack. The haptic
+    // above already marks the outcome, so neither toast fires its own.
     if (coverFailed) {
-      // The Warning haptic above already marks this partial success.
       toast.error(
         "Cookbook created, but the cover couldn't be added. You can add one by editing the cookbook.",
         { haptic: false },
       );
-    } else {
-      AccessibilityInfo.announceForAccessibility("Cookbook created");
+      dismiss();
+      return;
     }
-    dismiss();
+    toast.success("Cookbook created", { haptic: false });
+    // The full success gets its moment: the cover pops, then the screen
+    // closes once it has landed.
+    setCelebrateKey((k) => k + 1);
+    if (reducedMotion) dismiss();
+    else closeTimer.current = setTimeout(dismiss, SUCCESS_SETTLE_MS);
   }, [
     nameField,
     trimmedName,
@@ -409,6 +433,7 @@ export default function CookbookCreateScreen() {
     generateOnCreate,
     describeError,
     dismiss,
+    reducedMotion,
   ]);
 
   // The plate shrinks while a field is focused so it stays visible above the
@@ -423,12 +448,10 @@ export default function CookbookCreateScreen() {
   const submitLabel = isEditMode ? "Save Changes" : "Create Cookbook";
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={headerHeight}
-    >
-      <ScrollView
+    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+      {/* Scrolls the focused field clear of the keyboard: with a plain
+          ScrollView the description field sat under it while you typed. */}
+      <KeyboardAwareScrollViewCompat
         style={styles.container}
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.lg,
@@ -436,16 +459,22 @@ export default function CookbookCreateScreen() {
           paddingBottom: tabBarHeight + Spacing.xl,
           gap: Spacing.lg,
         }}
-        keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        bottomOffset={Spacing.lg}
       >
         <CookbookCoverPlate
           name={name}
+          description={description}
           coverImageUrl={storedCoverUrl}
           previewUri={pendingCoverUri}
           width={coverWidth}
           busy={isCoverBusy}
           busyLabel={coverBusy?.label}
+          generateArmed={!isEditMode && generateOnCreate}
+          onPress={() => void handlePickPhoto()}
+          // Same guards as the "Add photo" button it stands in for.
+          disabled={formLocked || editLoadBlocked}
+          celebrateKey={celebrateKey}
         />
 
         <View style={styles.coverActions}>
@@ -463,7 +492,7 @@ export default function CookbookCreateScreen() {
             // a cookbook that HAS one. The server does its own lookup, finds
             // the real cover, and deletes it — silent data loss behind a
             // label that promises the opposite.
-            disabled={isCoverBusy || editLoadBlocked}
+            disabled={formLocked || editLoadBlocked}
           />
           <CoverActionButton
             icon="feather"
@@ -483,7 +512,7 @@ export default function CookbookCreateScreen() {
             loading={coverBusy?.kind === "generate"}
             // Same guard as the photo button above — generating also replaces
             // (and deletes) the existing cover we currently can't see.
-            disabled={isCoverBusy || editLoadBlocked}
+            disabled={formLocked || editLoadBlocked}
           />
         </View>
 
@@ -510,6 +539,7 @@ export default function CookbookCreateScreen() {
               nameField.onBlur();
             }}
             maxLength={NAME_MAX}
+            editable={!formLocked}
             error={!!nameField.error}
             returnKeyType="next"
             // Keep the keyboard up while focus moves on (spec §5.6).
@@ -539,6 +569,7 @@ export default function CookbookCreateScreen() {
             onFocus={() => handleFieldFocus("description")}
             onBlur={() => handleFieldBlur("description")}
             maxLength={DESCRIPTION_MAX}
+            editable={!formLocked}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
@@ -580,13 +611,13 @@ export default function CookbookCreateScreen() {
         >
           {submitLabel}
         </Button>
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
 
       <UpgradeModal
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
