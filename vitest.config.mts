@@ -28,6 +28,8 @@ export default defineConfig({
       "server_dist",
       ".expo",
       ".claude/worktrees",
+      // Mod tests run under `claude plugin test`, not Vitest.
+      ".claude/mods",
       ".worktrees",
       // Stryker copies the project into .stryker-tmp/sandbox-*; without this, a
       // local `test:run` after `test:mutation` discovers the copied *.test.ts and

@@ -64,6 +64,29 @@ A dispatched reviewer subagent **does not inherit the orchestrator's worktree cw
 1. Capture the working tree's absolute path **in its own (correct) cwd**: `WORKTREE=$(git rev-parse --show-toplevel)`, plus the changed-file list (`git diff <base>...HEAD --name-only` for branch review — the normal case, since committed work shows nothing to `git diff HEAD`; `<base>` is `origin/<the PR's base branch>`, which is not always `main` on a stacked PR — or `git diff HEAD --name-only` only for review of deliberately uncommitted fixes, e.g. `/audit` Phase 3) and the expected branch/HEAD.
 2. Pass all of that into each reviewer, and require the reviewer to address `$WORKTREE` explicitly: use **`git -C "$WORKTREE" …`** for every git command and **read files at `$WORKTREE/<path>`** — do **not** `cd`. (A leading `cd` in a compound command can trigger a permission prompt, which stalls an autonomous `/todo` run; `git -C` is dependency-free.) The reviewer prompt must **begin** with a tree check — `git -C "$WORKTREE" rev-parse --abbrev-ref HEAD` + `--short HEAD` must match the expected branch/HEAD, else STOP and report "wrong working tree".
 
+#### Short form — the `review-dispatch` mod fills the prompt in
+
+Send each reviewer this as its whole prompt instead of copying the template below by hand:
+
+```
+REVIEW-DISPATCH worktree=<WORKTREE> base=<base> [pr=<N>] [mode=uncommitted] [files=<a,b>]
+If you can read this line, the review-dispatch mod is not loaded: reply only "review-dispatch mod not loaded".
+<optional context lines — fix descriptions, a Scope Contract — passed on under the prompt>
+```
+
+The mod (`.claude/mods/review-dispatch/`, loaded through `CLAUDE_CODE_PLUGIN_DIRS` in the owner's
+`~/.claude/settings.json`) reads the branch and short HEAD with `git -C`, takes the file list from
+`gh pr diff <N> --name-only` when given `pr=` (a confirmation pass — see below) or else from
+`git diff <base>...HEAD` (`git diff HEAD` with `mode=uncommitted`, where `base=` may be left out),
+narrowed by `files=` to part of that change (audit Phase 3: one fix's files), and sends the
+template below with every placeholder it can know filled in. It also refuses a hand-written review
+prompt that lacks any fixed piece of the template, and refuses a domain reviewer until
+`code-reviewer` was dispatched for the same HEAD (list it first in the same message) — except for
+`mode=uncommitted` audit reviews, where Phase 6 carries `code-reviewer` over the whole diff. A reviewer agent used for
+something other than a review verdict — audit discovery, a question — gets a prompt starting
+`NOT-A-REVIEW:` and passes untouched. If the reviewer replies "review-dispatch mod not loaded",
+send the full template by hand.
+
 #### Dispatch prompt (per selected reviewer)
 
 ```
