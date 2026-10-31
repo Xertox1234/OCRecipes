@@ -43,3 +43,39 @@ Moments and budget:
 
 Reduced motion: the cover's size change snaps, a cover press dims instead of scaling, and save
 skips the pop and closes at once. The haptic and the toast stay.
+
+### New Cookbook flow (create) — 2026-10-31
+
+New Cookbook is four steps: Basics, Cover, Recipes, Review. It follows the owner's Claude Design
+project "AI-Powered Cookbook Creator", scoped to what today's server can do. Left for later: the AI
+cover studio, Pages, "What's it for", and the AI suggestion chips. Edit mode keeps the single-page
+form (`CookbookEditForm`).
+
+| Part                | Look                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| Step bar segments   | `link` for every step reached so far, `backgroundTertiary` for the rest; the fill colour fades in       |
+| Step bar labels     | Uppercase. The current step is `link` in semibold, the others `textSecondary`                           |
+| Finished steps      | Tappable ("Go back to Cover"). Each label cell is at least 44pt tall                                    |
+| Cover cards         | Unselected: `border` outline on `surface`. Selected: `link` outline, `link` at 8% fill, tinted icon     |
+| Bottom bar          | Back (steps 2 to 4) beside one primary button, on `backgroundRoot` with a `border` top line             |
+| Primary button text | Continue; "Continue · N recipes" once some are picked; "Skip for now" with none; "Create Cookbook" last |
+
+Rules:
+
+- The name is required.
+- The cover is optional: the plain cloth is a valid cover.
+- Pick at least one recipe, unless you have none. Then the button reads "Skip for now".
+- Jumping forward (step bar, Review's Edit links) is refused while an earlier rule is unmet.
+- While recipes are still loading, Continue does not advance.
+
+Moments and budget:
+
+| Moment             | How often      | Budget                                                                                                                     |
+| ------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Step change        | A few times    | Cross-fade: 220ms in, 120ms out. Scrolls to the top. VoiceOver hears "Step n of 4, <Label>"                                |
+| Blocked Continue   | Rare           | Error haptic, the message shakes, and the message is announced. A refused jump stays quiet (no step announcement)          |
+| Cookbook created   | Once per visit | The signature: the cover pops (`successPopConfig`), success haptic, toast "Cookbook created", close after 450ms            |
+| Created with a gap | Rare           | No pop. Warning haptic and a toast from `describeWizardOutcome`, e.g. "Cookbook created, but 2 recipes couldn't be added." |
+
+Reduced motion: no fade, no pop, and the screen closes at once. The announcements, haptics and
+messages stay.
