@@ -57,6 +57,8 @@ const {
     // Forces the Recipes step to report availability as unknown again — a
     // state the real sources can't return to once settled.
     reportUnknown: false,
+    // Fails the "my recipes" source, leaving favourites loaded.
+    unifiedError: false,
   },
 }));
 
@@ -144,11 +146,12 @@ vi.mock("@/hooks/useFavouriteRecipes", () => ({
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({
   useUnifiedRecipes: () => ({
-    data: sources.pending
-      ? undefined
-      : { community: [], personal: [], frequent: [] },
+    data:
+      sources.pending || sources.unifiedError
+        ? undefined
+        : { community: [], personal: [], frequent: [] },
     isPending: sources.pending,
-    isError: false,
+    isError: sources.unifiedError,
     refetch: vi.fn(),
   }),
 }));
@@ -214,6 +217,7 @@ beforeEach(() => {
   sources.favourites = [chicken];
   sources.pending = false;
   sources.reportUnknown = false;
+  sources.unifiedError = false;
   vi.mocked(stepBlocker).mockImplementation(actualStepBlocker);
   vi.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(
     mockAnnounce,
@@ -347,6 +351,21 @@ describe("CookbookCreateWizard — moving through the steps", () => {
     expect(screen.getByText("Review & create")).toBeTruthy();
   });
 
+  it("counts the picked recipes, not 'Skip for now', when one source failed", () => {
+    sources.unifiedError = true;
+    renderComponent(<CookbookCreateWizard />);
+    typeName("Weeknight Dinners");
+    pressContinue();
+    pressContinue();
+
+    fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
+
+    expect(
+      screen.getByRole("button", { name: "Continue · 1 recipe" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull();
+  });
+
   it("Edit Name on Review returns to Basics with the name kept", () => {
     renderComponent(<CookbookCreateWizard />);
     walkToReview();
@@ -378,7 +397,7 @@ describe("CookbookCreateWizard — cover", () => {
     typeName("Weeknight Dinners");
     pressContinue();
 
-    fireEvent.click(screen.getByLabelText("Generate with AI"));
+    fireEvent.click(screen.getByLabelText("Generate a cover, premium feature"));
 
     expect(screen.getByText("UPGRADE_MODAL")).toBeTruthy();
     pressContinue();
@@ -501,7 +520,7 @@ describe("CookbookCreateWizard — create", () => {
     renderComponent(<CookbookCreateWizard />);
     typeName("Weeknight Dinners");
     pressContinue();
-    fireEvent.click(screen.getByLabelText("Generate with AI"));
+    fireEvent.click(screen.getByLabelText("Generate a cover"));
     pressContinue();
     fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
     pressContinue();
@@ -539,7 +558,7 @@ describe("CookbookCreateWizard — create", () => {
     renderComponent(<CookbookCreateWizard />);
     typeName("Weeknight Dinners");
     pressContinue();
-    fireEvent.click(screen.getByLabelText("Generate with AI"));
+    fireEvent.click(screen.getByLabelText("Generate a cover"));
     pressContinue();
     fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
     pressContinue();

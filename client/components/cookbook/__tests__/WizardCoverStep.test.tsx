@@ -71,14 +71,16 @@ describe("WizardCoverStep", () => {
 
   it("asks to upgrade, without arming generate, when the user can't generate", () => {
     renderStep({ canGenerate: false });
-    fireEvent.click(screen.getByRole("radio", { name: "Generate with AI" }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: "Generate a cover, premium feature" }),
+    );
     expect(onRequestUpgrade).toHaveBeenCalledTimes(1);
     expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("arms generate when the user can generate", () => {
     renderStep({ canGenerate: true });
-    fireEvent.click(screen.getByRole("radio", { name: "Generate with AI" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Generate a cover" }));
     expect(dispatch).toHaveBeenCalledWith({
       type: "setCover",
       cover: { kind: "generate" },
@@ -88,7 +90,9 @@ describe("WizardCoverStep", () => {
 
   it("turns generate off when the armed card is tapped again", () => {
     renderStep({ cover: { kind: "generate" }, canGenerate: true });
-    fireEvent.click(screen.getByRole("radio", { name: "Generate with AI" }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: "Generate a new cover" }),
+    );
     expect(dispatch).toHaveBeenCalledWith({
       type: "setCover",
       cover: { kind: "none" },
@@ -103,7 +107,7 @@ describe("WizardCoverStep", () => {
     renderStep({ cover: { kind: "generate" } });
     expect(
       screen
-        .getByRole("radio", { name: "Generate with AI" })
+        .getByRole("radio", { name: "Generate a new cover" })
         .getAttribute("aria-selected"),
     ).toBe("true");
     expect(
@@ -130,5 +134,32 @@ describe("WizardCoverStep", () => {
         "Your cover is made from the name and description when you create the book.",
       ),
     ).toBeNull();
+  });
+
+  it("speaks the premium status on the locked generate card", () => {
+    renderStep({ canGenerate: false });
+    const card = screen.getByRole("radio", { name: /^Generate a cover/ });
+    expect(card.getAttribute("aria-label")).toContain("premium feature");
+  });
+
+  it("names the cover choices as a group", () => {
+    renderStep();
+    expect(
+      screen.getByRole("radiogroup", { name: "Cover source" }),
+    ).toBeTruthy();
+  });
+
+  it("removes the photo when the selected upload card is tapped again", () => {
+    renderStep({ cover: { kind: "photo", uri: "file:///cover.jpg" } });
+    const card = screen.getByRole("radio", { name: "Upload a photo" });
+    expect(card.getAttribute("aria-hint")).toBe("Removes the photo");
+
+    fireEvent.click(card);
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setCover",
+      cover: { kind: "none" },
+    });
+    expect(onPickPhoto).not.toHaveBeenCalled();
   });
 });

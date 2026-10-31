@@ -12,6 +12,7 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { CookbookCoverPlate } from "./CookbookCoverPlate";
+import { coverGenerateActionLabel } from "./cookbook-cover-utils";
 import type { WizardAction, WizardState } from "./cookbook-wizard-utils";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
@@ -42,6 +43,17 @@ export function WizardCoverStep({
   const { theme } = useTheme();
   const { cover } = state;
   const generateArmed = cover.kind === "generate";
+  const hasPhoto = cover.kind === "photo";
+
+  const handleUpload = () => {
+    // Tapping the selected card again drops the photo, back to the plain
+    // cloth cover — mirrors the generate toggle.
+    if (hasPhoto) {
+      dispatch({ type: "setCover", cover: { kind: "none" } });
+      return;
+    }
+    onPickPhoto();
+  };
 
   const handleGenerate = () => {
     if (!canGenerate) {
@@ -67,14 +79,22 @@ export function WizardCoverStep({
         </ThemedText>
       </View>
 
-      <View style={styles.cards} accessibilityRole="radiogroup">
+      <View
+        style={styles.cards}
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Cover source"
+      >
         <CoverChoiceCard
           icon="image"
           title="Upload a photo"
           sub="From your camera roll"
-          selected={cover.kind === "photo"}
-          onPress={onPickPhoto}
-          accessibilityHint="Choose a cover image from your photo library"
+          selected={hasPhoto}
+          onPress={handleUpload}
+          accessibilityHint={
+            hasPhoto
+              ? "Removes the photo"
+              : "Choose a cover image from your photo library"
+          }
         />
         <CoverChoiceCard
           icon="feather"
@@ -83,6 +103,12 @@ export function WizardCoverStep({
           selected={generateArmed}
           locked={!canGenerate}
           onPress={handleGenerate}
+          // Spoken rather than the title, so a locked card says it is a
+          // premium feature — the lock badge alone is silent.
+          accessibilityLabel={coverGenerateActionLabel(
+            cover.kind !== "none",
+            canGenerate,
+          )}
           accessibilityHint={
             canGenerate
               ? "Creates cover art from the name and description"
@@ -94,7 +120,7 @@ export function WizardCoverStep({
       <CookbookCoverPlate
         name={state.name}
         description={state.description}
-        previewUri={cover.kind === "photo" ? cover.uri : null}
+        previewUri={hasPhoto ? cover.uri : null}
         width={coverWidth}
         generateArmed={generateArmed}
         // Tapping the cover is a shortcut to the photo picker — except while
@@ -122,6 +148,7 @@ function CoverChoiceCard({
   selected,
   locked = false,
   onPress,
+  accessibilityLabel = title,
   accessibilityHint,
 }: {
   icon: FeatherIconName;
@@ -130,6 +157,7 @@ function CoverChoiceCard({
   selected: boolean;
   locked?: boolean;
   onPress: () => void;
+  accessibilityLabel?: string;
   accessibilityHint: string;
 }) {
   const { theme } = useTheme();
@@ -139,7 +167,7 @@ function CoverChoiceCard({
       onPress={onPress}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
-      accessibilityLabel={title}
+      accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       style={[
         styles.card,

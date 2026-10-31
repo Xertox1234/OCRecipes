@@ -377,7 +377,9 @@ export default function CookbookCreateWizard() {
 
   let primaryLabel = "Continue";
   if (state.step === "recipes") {
-    if (hasAnyRecipes === true) {
+    // Picks win: a source that failed after the user picked from the other
+    // one must not offer to skip what they chose.
+    if (state.recipes.length > 0 || hasAnyRecipes === true) {
       primaryLabel = `Continue · ${recipesLabel(state.recipes.length)}`;
     } else if (hasAnyRecipes === false) {
       primaryLabel = "Skip for now";

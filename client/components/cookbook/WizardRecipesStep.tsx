@@ -62,9 +62,17 @@ export function WizardRecipesStep({
   const unifiedQuery = useUnifiedRecipes();
   // A failed source settles with no data. It shows a load error with a
   // retry (above any rows the other source loaded) — never the "no saved
-  // recipes" empty state, which would claim a false cause.
-  const settled = !favouritesQuery.isPending && !unifiedQuery.isPending;
-  const loadFailed = favouritesQuery.isError || unifiedQuery.isError;
+  // recipes" empty state, which would claim a false cause. A fetch paused
+  // offline stays pending forever, so it counts as failed too: otherwise
+  // the step would spin with no way past it.
+  const favouritesPaused = favouritesQuery.fetchStatus === "paused";
+  const unifiedPaused = unifiedQuery.fetchStatus === "paused";
+  const favouritesFailed = favouritesQuery.isError || favouritesPaused;
+  const unifiedFailed = unifiedQuery.isError || unifiedPaused;
+  const settled =
+    (!favouritesQuery.isPending || favouritesPaused) &&
+    (!unifiedQuery.isPending || unifiedPaused);
+  const loadFailed = favouritesFailed || unifiedFailed;
   const all = mergeRecipeSources(
     favouritesQuery.data ?? [],
     unifiedQuery.data?.personal ?? [],
@@ -81,8 +89,8 @@ export function WizardRecipesStep({
   }, [settled, available, onAvailability]);
 
   const retry = () => {
-    if (favouritesQuery.isError) void favouritesQuery.refetch();
-    if (unifiedQuery.isError) void unifiedQuery.refetch();
+    if (favouritesFailed) void favouritesQuery.refetch();
+    if (unifiedFailed) void unifiedQuery.refetch();
   };
 
   const errorBlock = loadFailed ? (

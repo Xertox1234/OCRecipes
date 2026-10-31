@@ -22,6 +22,8 @@ const { mockSelection, sources, refetchFavourites, refetchPersonal } =
       loading: false,
       favouritesError: false,
       personalError: false,
+      // Offline: TanStack Query pauses the fetch, leaving it pending.
+      favouritesPaused: false,
     },
   }));
 
@@ -40,21 +42,29 @@ vi.mock("@/hooks/useHaptics", () => ({
 
 vi.mock("@/hooks/useFavouriteRecipes", () => ({
   useFavouriteRecipes: () =>
-    sources.loading
-      ? { data: undefined, isPending: true, isError: false }
-      : sources.favouritesError
-        ? {
-            data: undefined,
-            isPending: false,
-            isError: true,
-            refetch: refetchFavourites,
-          }
-        : {
-            data: sources.favourites,
-            isPending: false,
-            isError: false,
-            refetch: refetchFavourites,
-          },
+    sources.favouritesPaused
+      ? {
+          data: undefined,
+          isPending: true,
+          isError: false,
+          fetchStatus: "paused",
+          refetch: refetchFavourites,
+        }
+      : sources.loading
+        ? { data: undefined, isPending: true, isError: false }
+        : sources.favouritesError
+          ? {
+              data: undefined,
+              isPending: false,
+              isError: true,
+              refetch: refetchFavourites,
+            }
+          : {
+              data: sources.favourites,
+              isPending: false,
+              isError: false,
+              refetch: refetchFavourites,
+            },
 }));
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({
@@ -111,6 +121,7 @@ beforeEach(() => {
   sources.loading = false;
   sources.favouritesError = false;
   sources.personalError = false;
+  sources.favouritesPaused = false;
 });
 
 const ERROR_COPY =
@@ -233,5 +244,21 @@ describe("WizardRecipesStep", () => {
       screen.getByRole("checkbox", { name: "Garlic Lemon Chicken" }),
     ).toBeTruthy();
     expect(onAvailability).toHaveBeenCalledWith(false);
+  });
+
+  it("treats a source paused offline as a load failure, so the step can be skipped", () => {
+    sources.favouritesPaused = true;
+    sources.personal = [];
+    renderStep();
+    expect(screen.getByText(ERROR_COPY)).toBeTruthy();
+    expect(screen.queryByLabelText("Loading your recipes")).toBeNull();
+    expect(onAvailability).toHaveBeenCalledWith(false);
+    expect(onAvailability).not.toHaveBeenCalledWith(true);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Try loading your recipes again" }),
+    );
+    expect(refetchFavourites).toHaveBeenCalledTimes(1);
+    expect(refetchPersonal).not.toHaveBeenCalled();
   });
 });
