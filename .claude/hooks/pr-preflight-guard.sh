@@ -199,6 +199,9 @@ fi
 # this checks file-path OVERLAP specifically, not mere staleness.
 # Scope, deliberately narrow: always compares against origin/main (no --base /
 # tool_input.base parsing) — every PR in this repo targets main.
+# Earlier copy: the review-dispatch mod (.claude/mods/review-dispatch, refuseOverlap) runs the
+# same comparison before review (harness diagnosis N3), so a merge of main lands before the
+# review instead of after it; this check stays as the backstop for main moving after review.
 # Escape: SKIP_PR_DRIFT_CHECK=1 skips just this check (SKIP_PR_PREFLIGHT=1 above already
 # skips the whole hook, stamp check included).
 if [ -z "${SKIP_PR_DRIFT_CHECK:-}" ]; then

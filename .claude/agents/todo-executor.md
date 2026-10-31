@@ -229,7 +229,7 @@ Then end the note with: "Please end your response with exactly one verdict line:
 
 Execute the todo:
 
-0. **Mark in-progress**: Update the todo's YAML frontmatter `status` to `in-progress` before starting work. This signals that the todo is being worked on. Add `todos/<filename>.md` to your tracked-files list now — it must be included in any revert in the Failure Path.
+0. **Mark in-progress**: Update the todo's YAML frontmatter `status` to `in-progress` before starting work. This signals that the todo is being worked on. Add `todos/<filename>.md` **and** `todos/archive/<filename>.md` to your tracked-files list now — both must be included in any revert in the Failure Path (the commit gate archives the todo before review).
 1. Use the **Acceptance Criteria** as the definition of done. Every checkbox item must be satisfied.
 2. Use the **Implementation Notes** as guidance for approach, but the acceptance criteria take precedence if they conflict.
 3. Apply patterns discovered in Step 3, including any `verified_solutions` surfaced there — treat a glob-matched solution's `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) as **authoritative guidance**, following it over re-derivation. If a solution conflicts with the todo, Acceptance Criteria win; flag the conflict in your Step 11 report rather than silently diverging. Follow established conventions — do not introduce new patterns without cause.
@@ -256,12 +256,33 @@ If it fails: read the error output, fix the issue, re-run until it passes.
 
 ### Commit gate — runs between Step 5a and Step 5b, before ANY reviewer is dispatched (mandatory)
 
-Commit what you just implemented. Do not dispatch a reviewer against an uncommitted tree:
+Commit what you just implemented, **with the todo already archived**, then bring in the base
+branch. Do not dispatch a reviewer against an uncommitted tree:
 
-```bash
-git add <list of changed files>
-git commit -F <message file>     # see Step 8 for the label->type mapping; subject: "<type>: <todo title>"
-```
+1. **Archive the todo** (Step 8 item 1: `status: done`, then `mv` to `todos/archive/`, then verify).
+2. **Commit** the implementation and both todo paths together:
+
+   ```bash
+   git add <list of changed files> todos/<filename>.md todos/archive/<filename>.md
+   git commit -F <message file>     # see Step 8 for the label->type mapping; subject: "<type>: <todo title>"
+   ```
+
+3. **Merge the base branch in** — after the commit, never onto uncommitted changes:
+
+   ```bash
+   git fetch -q origin <base branch from your spawn prompt>
+   git merge --no-edit origin/<base branch from your spawn prompt>
+   ```
+
+   On a conflict, resolve it, commit, and re-run Step 5a. A merge that brought nothing is a no-op.
+
+**Why archive and merge here, before review (harness diagnosis N3).** A review record binds one
+head sha, so every commit after review needs a second, confirmation review. Most `/todo` PRs
+codify nothing (108 of 139 todo-archiving merges, 2026-10-01 → 10-31), so the archive commit was
+their only post-review commit, and a merge of main forced by Step 10's PR guard was the other.
+Done here, both are inside the reviewed head, and Step 10 step 7 finds the Step 6 record still
+valid. The `review-dispatch` mod refuses `code-reviewer` while the base branch has changed a file
+this branch also changes, so a skipped merge shows up as a refused dispatch, not a second review.
 
 **Why this is mandatory and not a tidiness preference.** A reviewer reports
 `REVIEWED-SHA: $(git rev-parse HEAD)` and `review-stamp-writer.sh` files its record under that
@@ -349,9 +370,12 @@ Process the code review findings. The project convention (see `CLAUDE.md` and `d
 
 ## Step 8 — Commit & Archive
 
-Once implementation passes verification and code review:
+The archive itself already happened, before review, in the commit gate (Step 5) — item 1 below
+is the procedure it follows. Once implementation passes verification and code review, this
+step only commits what is still uncommitted (item 2): normally nothing, since every Step 7 fix
+round commits itself.
 
-1. **Mark the todo `done`, then archive it.** First update the todo's YAML
+1. **Mark the todo `done`, then archive it** (run by the commit gate). First update the todo's YAML
    frontmatter `status` from `in-progress` (set in Step 4.0) to `done`. Then
    move the file:
 
@@ -367,23 +391,24 @@ After the `mv`, **verify**: re-read `todos/archive/<filename>.md` and confirm
 its frontmatter reads `status: done`. If it still says `in-progress`, the
 Step 4.0 status was never reset — fix the frontmatter now, before staging.
 
-2. **Stage the archive move** (the implementation and every review fix are already committed by
-   the commit gate and Step 7; stage the archive move plus anything still uncommitted):
+2. **Stage anything still uncommitted** (the implementation, the archive move and every review fix
+   are already committed by the commit gate and Step 7). If `git status --porcelain` is empty, skip
+   item 3 — an empty commit would move the head for nothing:
 
 ```bash
-git add <any files still uncommitted> todos/<filename>.md todos/archive/<filename>.md
+git add <any files still uncommitted>
 ```
 
-Both todo paths are required: `todos/<filename>.md` stages the deletion side of
-the rename, `todos/archive/<filename>.md` stages the added file. Git records
-the move only when both are staged.
+When the commit gate staged the archive, both todo paths were required: `todos/<filename>.md`
+stages the deletion side of the rename, `todos/archive/<filename>.md` stages the added file. Git
+records the move only when both are staged.
 
 Note for Step 10 step 7: when an archive move also **rewrites** the todo's body — which this
 step does whenever you append an Updates entry — similarity detection fails and git records a
 **delete plus an add**, i.e. two paths in the PR's changed-file list, not one. Never hand-assemble
 that list; Step 10 step 7 takes it from `gh pr diff --name-only`.
 
-3. **Commit** with a conventional commit message. Map the todo's primary label to a commit type:
+3. **Commit** (only if item 2 staged something) with a conventional commit message. The commit gate uses the same mapping. Map the todo's primary label to a commit type:
 
 | Label                                     | Commit type |
 | ----------------------------------------- | ----------- |
@@ -618,11 +643,13 @@ Todo: `todos/<filename>.md` (archived in this commit)
 
 7. **Bind a review record to the PR head — the confirmation pass.** `merge-review-guard.sh` is
    fail-closed and keys a review record to the PR's **exact head SHA _and_ a digest over the PR's
-   whole changed-file list**. Step 6's review cannot satisfy it on either count: Step 8's archive
-   commit and Step 9's codification commit move the head past the reviewed SHA, and the archived
-   todo and the solution file are themselves part of the PR's diff, so a record written before
-   Step 9 can never carry a matching digest. Without this step every `/todo` PR arrives at an
-   agent-driven merge unstamped and is denied — structurally, on a flawless run.
+   whole changed-file list**. Step 6's records satisfy it only while nothing has been committed
+   since Step 6. The commit gate archives the todo and merges the base branch before review, so on
+   a run with no Step 7 fix, no Step 9 codification and no Step 10 merge, the Step 6 records still
+   bind the PR head. The short form's file list (`git diff --name-only <base>...HEAD`) is the same
+   list `gh pr diff` gives, archive delete-plus-add included (measured on 7 PRs, 2026-10-31). Any
+   later commit moves the head, and then this step dispatches one confirmation reviewer. Without a
+   binding record every `/todo` PR arrives at an agent-driven merge unstamped and is denied.
 
    **Skip this step entirely when step 5 reported `MERGE_ELIGIBLE: yes`** — including the
    `auto-merge enable FAILED` variant, where the merge is manual. The reason is NOT that GitHub's
@@ -635,7 +662,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
    `review-required`: those are exactly the PRs the gate does demand a record from.
 
    a. **Take the file list and digest from the gate's own commands.** Never assemble the list by
-   hand and never derive it from `git diff --name-only`: the archive move in Step 8 rewrites
+   hand and never derive it from `git diff --name-only`: the archive move rewrites
    the todo body, so git records a delete **plus** an add and any hand-built list is one path
    short — the record then passes on verdict and fails on scope
    (`docs/solutions/code-quality/an-archive-move-git-reads-as-delete-plus-add-mis-scopes-the-review-stamp-2026-09-17.md`).
@@ -647,7 +674,33 @@ Todo: `todos/<filename>.md` (archived in this commit)
    WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum | cut -c1-16)
    ```
 
-   b. **Dispatch ONE `code-reviewer`** (with `run_in_background: false` — see Step 5b) with the
+   **Check first — does a record already bind this head?** Run step c's `$MATCH` command now, and
+   list the records at this head that would block the merge, by the gate's own rule (any record
+   for this head that is unreadable or not clean/advisory with an empty `unresolved` denies,
+   whatever else is recorded):
+
+   ```bash
+   DIR=$( cd "$WORKTREE" && . .claude/hooks/lib/review-stamp-path.sh && review_stamp_dir "$HEAD_SHA" )
+   OBJECTING=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null | while IFS= read -r f; do
+     # unreadable, or no head_sha: the gate denies on it, so name it by its file
+     jq -e '(.head_sha // "") != ""' "$f" >/dev/null 2>&1 || { basename "$f" .json; continue; }
+     jq -r --arg s "$HEAD_SHA" 'select(.head_sha == $s and
+       ((.verdict == "clean" or .verdict == "advisory") and ((.unresolved // []) | length) == 0 | not))
+       | .agent_type // "unknown"' "$f"
+   done)
+   ```
+
+   - `$MATCH` set and `$OBJECTING` empty → the Step 6 record binds the head. Skip b–d and report
+     `REVIEW_STAMP: <verdict from $MATCH> (Step 6 record, head unchanged)`.
+   - `$OBJECTING` names a reviewer → its Step 6 record blocks this head (a CRITICAL is Step 7's
+     Failure Path, so this is a deferred finding recorded as `findings`). A confirmation by
+     anyone else cannot clear it. In step b, dispatch **that reviewer** instead of
+     `code-reviewer`: the writer keeps one file per reviewer per head, so its fresh record
+     replaces the old one. An unreadable record is named by its file (`<agent>.json`), so the
+     same applies: dispatch that reviewer.
+   - Otherwise (the head moved, so nothing matches) → step b as written.
+
+   b. **Dispatch ONE `code-reviewer`** (or the reviewer the check above named) (with `run_in_background: false` — see Step 5b) with the
    short form `REVIEW-DISPATCH worktree=<worktree path> base=origin/<base branch> pr=<pr-number>`
    (plus the "If you can read this line" sentence) — `pr=` makes the mod take the file list from
    `gh pr diff`, the gate's own command. Only if it replies "review-dispatch mod not loaded", use
