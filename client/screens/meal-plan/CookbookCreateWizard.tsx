@@ -1,5 +1,10 @@
 import React, { useEffect, useReducer, useRef, useState } from "react";
-import { StyleSheet, View, useWindowDimensions } from "react-native";
+import {
+  AccessibilityInfo,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import * as ImagePicker from "expo-image-picker";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -12,7 +17,10 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { UpgradeModal } from "@/components/UpgradeModal";
-import { WizardStepBar } from "@/components/cookbook/WizardStepBar";
+import {
+  STEP_LABELS,
+  WizardStepBar,
+} from "@/components/cookbook/WizardStepBar";
 import { WizardBasicsStep } from "@/components/cookbook/WizardBasicsStep";
 import { WizardCoverStep } from "@/components/cookbook/WizardCoverStep";
 import { WizardRecipesStep } from "@/components/cookbook/WizardRecipesStep";
@@ -21,6 +29,7 @@ import { resolveCoverWidth } from "@/components/cookbook/cookbook-cover-utils";
 import {
   initialWizardState,
   stepBlocker,
+  WIZARD_STEPS,
   wizardReducer,
   type WizardStep,
 } from "@/components/cookbook/cookbook-wizard-utils";
@@ -119,9 +128,13 @@ export default function CookbookCreateWizard() {
   // treats an object read through `.ref` as a ref and skips the component.
   const { ref: nameRef } = nameField;
 
-  // Reported by the Recipes step once its sources load. A state setter, so
-  // it is stable for the step's effect.
-  const [hasAnyRecipes, setHasAnyRecipes] = useState(false);
+  // Reported by the Recipes step once its sources load; null until then, so
+  // the step can't be skipped (or blocked) on a guess. A state setter, so it
+  // is stable for the step's effect.
+  const [hasAnyRecipes, setHasAnyRecipes] = useState<boolean | null>(null);
+  const recipesAvailable = hasAnyRecipes === true;
+  // Bumped to focus the name once Basics has mounted after a jump back to it.
+  const [focusNameKey, setFocusNameKey] = useState(0);
   // Bumped by each rejected Continue on Recipes so its message shakes.
   const [recipesShakeKey, setRecipesShakeKey] = useState(0);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -150,17 +163,64 @@ export default function CookbookCreateWizard() {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [state.step]);
 
+  // Say the new step out loud: the progressbar's value changes silently on
+  // iOS. Keyed on the last announced step rather than a first-render flag,
+  // so StrictMode's double effect run can't announce on mount.
+  const announcedStep = useRef(state.step);
+  useEffect(() => {
+    if (announcedStep.current === state.step) return;
+    announcedStep.current = state.step;
+    AccessibilityInfo.announceForAccessibility(
+      `Step ${WIZARD_STEPS.indexOf(state.step) + 1} of ${WIZARD_STEPS.length}, ${STEP_LABELS[state.step]}`,
+    );
+  }, [state.step]);
+
+  useEffect(() => {
+    if (focusNameKey > 0) nameRef.current?.focus();
+  }, [focusNameKey, nameRef]);
+
   // Shown only after a rejected Continue, and only while it still applies —
   // picking a recipe clears it.
   const recipesError =
     state.step === "recipes" && recipesShakeKey > 0
-      ? stepBlocker(state, "recipes", hasAnyRecipes)
+      ? stepBlocker(state, "recipes", recipesAvailable)
       : null;
 
-  const goTo = (step: WizardStep) => {
+  /**
+   * Show why `step` can't be left: it becomes the current step if it isn't
+   * already, its message shows (with a shake), and the error haptic fires.
+   */
+  const rejectAt = (step: WizardStep) => {
+    if (step !== state.step) {
+      setCreateError(null);
+      dispatch({ type: "goTo", step });
+    }
+    if (step === "basics") {
+      // Marks the name submitted (its error shows and shakes) and focuses it
+      // now if Basics is mounted, or once it mounts.
+      focusFirstInvalid([nameField]);
+      if (step !== state.step) setFocusNameKey((k) => k + 1);
+    } else {
+      setRecipesShakeKey((k) => k + 1);
+    }
+    haptics.notification(NotificationFeedbackType.Error);
+  };
+
+  const goTo = (target: WizardStep) => {
     if (locked) return;
+    // A forward jump must pass every step it skips over, starting with this
+    // one — the step bar and Edit links otherwise route around the rules.
+    // Backward jumps are always allowed.
+    const from = WIZARD_STEPS.indexOf(state.step);
+    const to = WIZARD_STEPS.indexOf(target);
+    for (let i = from; i < to; i++) {
+      if (stepBlocker(state, WIZARD_STEPS[i], recipesAvailable)) {
+        rejectAt(WIZARD_STEPS[i]);
+        return;
+      }
+    }
     setCreateError(null);
-    dispatch({ type: "goTo", step });
+    dispatch({ type: "goTo", step: target });
   };
 
   const handleBack = () => {
@@ -170,13 +230,11 @@ export default function CookbookCreateWizard() {
   };
 
   const handleContinue = () => {
-    if (state.step === "basics" && !focusFirstInvalid([nameField])) {
-      haptics.notification(NotificationFeedbackType.Error);
-      return;
-    }
-    if (stepBlocker(state, state.step, hasAnyRecipes)) {
-      setRecipesShakeKey((k) => k + 1);
-      haptics.notification(NotificationFeedbackType.Error);
+    // Until the sources say whether there is anything to pick, Recipes can
+    // neither be skipped nor blocked.
+    if (state.step === "recipes" && hasAnyRecipes === null) return;
+    if (stepBlocker(state, state.step, recipesAvailable)) {
+      rejectAt(state.step);
       return;
     }
     setRecipesShakeKey(0);
@@ -212,6 +270,11 @@ export default function CookbookCreateWizard() {
 
   const handleCreate = async () => {
     if (submittingRef.current || saved) return;
+    // Backstop: never create a nameless book, however Review was reached.
+    if (stepBlocker(state, "basics", true)) {
+      rejectAt("basics");
+      return;
+    }
     submittingRef.current = true;
     setSubmitting(true);
     setCreateError(null);
@@ -307,9 +370,11 @@ export default function CookbookCreateWizard() {
 
   let primaryLabel = "Continue";
   if (state.step === "recipes") {
-    primaryLabel = hasAnyRecipes
-      ? `Continue · ${recipesLabel(state.recipes.length)}`
-      : "Skip for now";
+    if (hasAnyRecipes === true) {
+      primaryLabel = `Continue · ${recipesLabel(state.recipes.length)}`;
+    } else if (hasAnyRecipes === false) {
+      primaryLabel = "Skip for now";
+    }
   } else if (state.step === "review") {
     primaryLabel = "Create Cookbook";
   }

@@ -12,6 +12,11 @@ import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { reactProps } from "../../../../test/utils/react-props";
 import CookbookCreateWizard from "../CookbookCreateWizard";
+import { stepBlocker } from "@/components/cookbook/cookbook-wizard-utils";
+
+const { stepBlocker: actualStepBlocker } = await vi.importActual<
+  typeof import("@/components/cookbook/cookbook-wizard-utils")
+>("@/components/cookbook/cookbook-wizard-utils");
 
 const {
   mockGoBack,
@@ -46,7 +51,7 @@ const {
   mockToastError: vi.fn(),
   mockToastSuccess: vi.fn(),
   mockAnnounce: vi.fn(),
-  sources: { favourites: [] as unknown[] },
+  sources: { favourites: [] as unknown[], pending: false },
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -124,8 +129,8 @@ vi.mock("@/hooks/useCookbooks", () => ({
 
 vi.mock("@/hooks/useFavouriteRecipes", () => ({
   useFavouriteRecipes: () => ({
-    data: sources.favourites,
-    isPending: false,
+    data: sources.pending ? undefined : sources.favourites,
+    isPending: sources.pending,
     isError: false,
     refetch: vi.fn(),
   }),
@@ -133,12 +138,27 @@ vi.mock("@/hooks/useFavouriteRecipes", () => ({
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({
   useUnifiedRecipes: () => ({
-    data: { community: [], personal: [], frequent: [] },
-    isPending: false,
+    data: sources.pending
+      ? undefined
+      : { community: [], personal: [], frequent: [] },
+    isPending: sources.pending,
     isError: false,
     refetch: vi.fn(),
   }),
 }));
+
+// Pass-through by default; the Create backstop test overrides it to get a
+// blank name past the step rules.
+vi.mock(
+  "@/components/cookbook/cookbook-wizard-utils",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("@/components/cookbook/cookbook-wizard-utils")
+      >();
+    return { ...actual, stepBlocker: vi.fn(actual.stepBlocker) };
+  },
+);
 
 const chicken = {
   recipeId: 11,
@@ -166,6 +186,8 @@ beforeEach(() => {
   mockAddRecipe.mockResolvedValue({});
   mockLaunchImageLibrary.mockResolvedValue({ canceled: true, assets: [] });
   sources.favourites = [chicken];
+  sources.pending = false;
+  vi.mocked(stepBlocker).mockImplementation(actualStepBlocker);
   vi.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(
     mockAnnounce,
   );
@@ -397,6 +419,8 @@ describe("CookbookCreateWizard — create", () => {
   it("creates the cookbook, adds the picked recipe, toasts once and closes", async () => {
     renderComponent(<CookbookCreateWizard />);
     walkToReview();
+    // Each step change announces itself; only Create's outcome counts here.
+    mockAnnounce.mockClear();
 
     fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
 
@@ -465,6 +489,7 @@ describe("CookbookCreateWizard — create", () => {
     mockAddRecipe.mockRejectedValue(new Error("server down"));
     renderComponent(<CookbookCreateWizard />);
     walkToReview();
+    mockAnnounce.mockClear();
 
     fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
 
@@ -526,5 +551,110 @@ describe("CookbookCreateWizard — create", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
     expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("CookbookCreateWizard — step announcements", () => {
+  it("announces nothing on mount", () => {
+    renderComponent(<CookbookCreateWizard />);
+    expect(mockAnnounce).not.toHaveBeenCalled();
+  });
+
+  it("announces each step change once, with its number and name", () => {
+    renderComponent(<CookbookCreateWizard />);
+    typeName("Weeknight Dinners");
+
+    pressContinue();
+    expect(mockAnnounce).toHaveBeenCalledTimes(1);
+    expect(mockAnnounce).toHaveBeenLastCalledWith("Step 2 of 4, Cover");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(mockAnnounce).toHaveBeenCalledTimes(2);
+    expect(mockAnnounce).toHaveBeenLastCalledWith("Step 1 of 4, Basics");
+  });
+});
+
+describe("CookbookCreateWizard — recipes still loading", () => {
+  it("reads Continue and stays put until it knows whether there are recipes", () => {
+    sources.pending = true;
+    renderComponent(<CookbookCreateWizard />);
+    typeName("Weeknight Dinners");
+    pressContinue();
+    pressContinue();
+    vi.mocked(Haptics.notificationAsync).mockClear();
+
+    expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(screen.getByText("Choose your recipes")).toBeTruthy();
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+    expect(screen.queryByText("Pick at least one recipe.")).toBeNull();
+  });
+});
+
+describe("CookbookCreateWizard — forward jumps keep the step rules", () => {
+  it("won't jump ahead from Basics with the name cleared, and never creates", () => {
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+    fireEvent.click(screen.getByLabelText("Edit Name"));
+    typeName("");
+    vi.mocked(Haptics.notificationAsync).mockClear();
+
+    fireEvent.click(screen.getByLabelText("Go back to Review"));
+
+    expect(screen.getByText("Name your cookbook")).toBeTruthy();
+    expect(screen.getByText("Enter a name for your cookbook.")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText("Cookbook name"));
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Create Cookbook" }),
+    ).toBeNull();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("won't jump past Recipes with every pick cleared", () => {
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+    fireEvent.click(screen.getByLabelText("Edit Recipes"));
+    fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
+    vi.mocked(Haptics.notificationAsync).mockClear();
+
+    fireEvent.click(screen.getByLabelText("Go back to Review"));
+
+    expect(screen.getByText("Choose your recipes")).toBeTruthy();
+    expect(screen.getByText("Pick at least one recipe.")).toBeTruthy();
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+  });
+
+  it("still allows jumping back", () => {
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+
+    fireEvent.click(screen.getByLabelText("Go back to Cover"));
+
+    expect(screen.getByText("Design your cover")).toBeTruthy();
+  });
+
+  it("Create sends a blank name back to Basics instead of creating", () => {
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+    fireEvent.click(screen.getByLabelText("Edit Name"));
+    typeName("");
+    // Simulate a path past the step rules, so only Create's own check stands.
+    vi.mocked(stepBlocker).mockReturnValue(null);
+    fireEvent.click(screen.getByLabelText("Go back to Review"));
+    expect(screen.getByText("Review & create")).toBeTruthy();
+    vi.mocked(stepBlocker).mockImplementation(actualStepBlocker);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
+
+    expect(screen.getByText("Name your cookbook")).toBeTruthy();
+    expect(screen.getByText("Enter a name for your cookbook.")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText("Cookbook name"));
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

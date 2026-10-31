@@ -13,7 +13,7 @@ import { FontFamily, Spacing } from "@/constants/theme";
 import { contentRevealTimingConfig } from "@/constants/animations";
 import { WIZARD_STEPS, type WizardStep } from "./cookbook-wizard-utils";
 
-const STEP_LABELS: Record<WizardStep, string> = {
+export const STEP_LABELS: Record<WizardStep, string> = {
   basics: "Basics",
   cover: "Cover",
   recipes: "Recipes",
