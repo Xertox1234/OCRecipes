@@ -136,7 +136,7 @@ No route accepts an image URL from the client.
 - `WizardCover` = `none | photo | candidate { candidateId, imageUrl }` (the `generate` variant is removed; `WizardReviewStep` and `CookbookCoverPlate`'s `generateArmed` use are updated).
 - `WizardState.studio`: `{ open: boolean; prompt: string; style: CookbookCoverStyle; candidates: { id, imageUrl }[] }`. In the reducer so Back/Next preserves it.
 - Actions: `openStudio` / `closeStudio`, `setCoverPrompt`, `setCoverStyle`, `setCandidates` (replaces the grid and clears a `candidate` cover no longer in it), `pickCandidate`.
-- Choosing a photo closes the studio; opening the studio keeps a photo until a candidate is picked (picking replaces it).
+- Choosing a photo closes the studio (its prompt and set are kept for a return); opening the studio drops a photo, so only one of the two cover cards reads as selected (radio semantics). Closing the studio drops a picked candidate.
 
 ### Hooks — `client/hooks/useCookbooks.ts`
 
