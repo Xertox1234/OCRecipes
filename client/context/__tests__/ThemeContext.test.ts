@@ -144,8 +144,8 @@ describe("ThemeContext", () => {
       expect(result.current.isDark).toBe(false);
     });
 
-    it("falls back to light when system color scheme is unspecified", async () => {
-      vi.spyOn(RN, "useColorScheme").mockReturnValue("unspecified");
+    it("falls back to light when the system has no color scheme", async () => {
+      vi.spyOn(RN, "useColorScheme").mockReturnValue(null);
 
       const wrapper = createWrapper();
       const { result } = renderHook(() => useThemePreference(), { wrapper });

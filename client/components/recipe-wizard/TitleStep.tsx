@@ -1,9 +1,5 @@
 import React, { useRef, useState } from "react";
-import {
-  StyleSheet,
-  ScrollView,
-  type TextInput as RNTextInput,
-} from "react-native";
+import { StyleSheet, ScrollView, type TextInputInstance } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FieldCounter } from "@/components/FieldCounter";
 import { useTheme } from "@/hooks/useTheme";
@@ -32,7 +28,7 @@ export default function TitleStep({
   const [focusedField, setFocusedField] = useState<
     "title" | "description" | null
   >(null);
-  const descriptionRef = useRef<RNTextInput>(null);
+  const descriptionRef = useRef<TextInputInstance>(null);
 
   return (
     <ScrollView

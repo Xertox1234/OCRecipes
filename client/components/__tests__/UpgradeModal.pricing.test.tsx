@@ -49,7 +49,7 @@ describe("UpgradeModal — pricing disclosure", () => {
     refreshProduct.mockClear();
     openSpy = vi
       .spyOn(RN.Linking, "openURL")
-      .mockImplementation(() => Promise.resolve(true));
+      .mockImplementation(() => Promise.resolve());
   });
 
   afterEach(() => {

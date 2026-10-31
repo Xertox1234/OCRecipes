@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   AccessibilityInfo,
-  type TextInput as RNTextInput,
+  type TextInputInstance,
   StyleSheet,
   View,
   useWindowDimensions,
@@ -111,7 +111,7 @@ function CookbookEditForm() {
   const { ref: nameRef } = nameField;
   const name = nameField.value;
   const setName = nameField.setValue;
-  const descriptionRef = useRef<RNTextInput>(null);
+  const descriptionRef = useRef<TextInputInstance>(null);
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);

@@ -5,8 +5,13 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
-import type { TextInput } from "react-native-gesture-handler";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  ActivityIndicator,
+  type TextInputInstance,
+} from "react-native";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
@@ -75,7 +80,7 @@ function SimpleEntrySheetContentInner(
   const haptics = useHaptics();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
 
   useImperativeHandle(forwardedRef, () => ({
     focusDishNameInput: () => inputRef.current?.focus(),

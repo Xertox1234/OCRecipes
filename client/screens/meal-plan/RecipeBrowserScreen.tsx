@@ -775,7 +775,7 @@ export default function RecipeBrowserScreen() {
                 style={{ paddingVertical: Spacing.lg }}
                 color={theme.link}
               />
-            ) : null
+            ) : undefined
           }
           contentContainerStyle={{
             paddingHorizontal: Spacing.lg,

@@ -3,6 +3,7 @@
  * Platform-agnostic helpers for permission management and channel setup.
  */
 import * as Notifications from "expo-notifications";
+import { AndroidImportance } from "expo-notifications";
 import { Platform } from "react-native";
 
 /** Create the Android notification channel (no-op on iOS). Call once at app startup. */
@@ -17,7 +18,7 @@ export async function setupNotificationChannel(): Promise<void> {
   // channel; shipping a real custom sound later needs a NEW channel id.
   await Notifications.setNotificationChannelAsync("coach-reminders", {
     name: "Coach Reminders",
-    importance: Notifications.AndroidImportance.DEFAULT,
+    importance: AndroidImportance.DEFAULT,
   });
 }
 

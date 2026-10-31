@@ -998,7 +998,7 @@ export default function RecipeChatScreen() {
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
           keyboardDismissMode="interactive"
           {...FLATLIST_DEFAULTS}
-          ListFooterComponent={streamingFooter}
+          ListFooterComponent={streamingFooter ?? undefined}
         />
       )}
 
