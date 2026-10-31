@@ -238,28 +238,11 @@ export default function CoachProScreen() {
         </View>
       )}
       {context && (
-        <>
-          <View
-            style={[styles.notebookHeader, { borderBottomColor: theme.border }]}
-          >
-            <ThemedText type="h4">Coach</ThemedText>
-            <Pressable
-              onPress={() => navigation.navigate("NotebookScreen")}
-              style={[styles.notebookBtn, { borderColor: theme.border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Open notebook"
-            >
-              <Feather name="book-open" size={16} color={theme.textSecondary} />
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                Notebook
-              </ThemedText>
-            </Pressable>
-          </View>
-          <CoachDashboard
-            context={context}
-            onSuggestionPress={handleSuggestionPress}
-          />
-        </>
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={handleSuggestionPress}
+          onNotebookPress={() => navigation.navigate("NotebookScreen")}
+        />
       )}
       <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
         <Pressable
@@ -433,21 +416,4 @@ const styles = StyleSheet.create({
   },
   pinIcon: { marginRight: 3 },
   seeAllChip: { width: 72 },
-  notebookHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  notebookBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-  },
 });
