@@ -209,6 +209,7 @@ describe("Subscription Routes", () => {
         expect.objectContaining({ transactionId: "apple-original-txn-1" }),
         "premium",
         expect.any(Date),
+        null,
       );
     });
 
@@ -246,6 +247,54 @@ describe("Subscription Routes", () => {
         .send(validBody);
 
       expect(res.status).toBe(409);
+    });
+
+    it("passes the receipt's purchase date to the claim", async () => {
+      const purchasedAt = new Date("2025-01-01T00:00:00Z");
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: true,
+        expiresAt: new Date("2025-12-31"),
+        purchasedAt,
+        originalTransactionId: "apple-original-txn-3",
+      });
+      vi.mocked(storage.claimTransactionAndUpgrade).mockResolvedValue({
+        status: "renewed",
+        transaction: createMockTransaction(),
+        user: createMockUser(),
+      });
+
+      await request(app)
+        .post("/api/subscription/upgrade")
+        .set("Authorization", "Bearer token")
+        .send(validBody);
+
+      expect(storage.claimTransactionAndUpgrade).toHaveBeenCalledWith(
+        expect.objectContaining({ transactionId: "apple-original-txn-3" }),
+        "premium",
+        expect.any(Date),
+        purchasedAt,
+      );
+    });
+
+    it("declines without granting when the transaction was refunded/revoked", async () => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: true,
+        expiresAt: new Date("2025-12-31"),
+        originalTransactionId: "apple-original-txn-4",
+      });
+      vi.mocked(storage.claimTransactionAndUpgrade).mockResolvedValue({
+        status: "revoked",
+      });
+
+      const res = await request(app)
+        .post("/api/subscription/upgrade")
+        .set("Authorization", "Bearer token")
+        .send(validBody);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe("TRANSACTION_REVOKED");
+      expect(res.body.tier).toBeUndefined();
     });
 
     it("handles invalid receipt", async () => {
@@ -302,6 +351,7 @@ describe("Subscription Routes", () => {
         expect.objectContaining({ transactionId: "apple-original-restore-1" }),
         "premium",
         expect.any(Date),
+        null,
       );
     });
 

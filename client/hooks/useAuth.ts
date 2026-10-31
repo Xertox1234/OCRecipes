@@ -28,6 +28,7 @@ import {
   registerPushToken,
   unregisterPushToken,
 } from "@/lib/push-token-registration";
+import { usePushTokenRotation } from "./usePushTokenRotation";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
 import { clearFeatureTipsState } from "@/lib/feature-tips-storage";
@@ -228,7 +229,21 @@ export function useAuth() {
 
   const checkAuth = useCallback(async () => {
     try {
-      const token = await tokenStorage.get();
+      let token: string | null;
+      try {
+        // A failed Keychain/Keystore read is NOT "no token": retry once, and if
+        // it still fails resume from the cached user WITHOUT the durable sweep
+        // below — the token is most likely still there (e.g. a launch racing
+        // the device lock), and sweeping would destroy un-drained offline
+        // writes. tokenStorage does not cache a failed read, so later requests
+        // and the next foreground re-check read it again.
+        token = await tokenStorage
+          .getOrThrow()
+          .catch(() => tokenStorage.getOrThrow());
+      } catch {
+        setState(await resumeFromCachedProfile());
+        return;
+      }
       if (!token) {
         // Cold-start with no token is also a teardown-shaped path: a force-quit
         // can interrupt a session teardown in the gap between tokenStorage.clear()
@@ -278,6 +293,9 @@ export function useAuth() {
             isLoading: false,
             isAuthenticated: true,
           });
+          // A persisted session never passes through sign-in, so refresh the
+          // server's push token here too (never prompts; fire-and-forget).
+          registerPushToken({ prompt: false }).catch(() => {});
         } else if (response.status !== 401) {
           // Only a 401 means the token is dead. A 429 or a 5xx (a deploy, a
           // rate limiter, a proxy hiccup) is a transient failure: tearing the
@@ -347,6 +365,9 @@ export function useAuth() {
     );
     return () => subscription.remove();
   }, [checkAuth]);
+
+  // While signed in, re-send a push token the platform rotates at runtime.
+  const stopPushRotation = usePushTokenRotation(state.isAuthenticated);
 
   // Shared by every path that ends with a session token (password login and
   // each Google/Apple path).
@@ -524,11 +545,20 @@ export function useAuth() {
     // the global interceptor fires the session-expiry toast. Accepted by design
     // — the user is logging out anyway, so "session expired" then Login is benign.
     // Unregister this device's push token first: the logout POST revokes the
-    // session token the DELETE needs (unregisterPushToken never throws).
+    // session token the DELETE needs (unregisterPushToken never throws). Stop
+    // the rotation listener before that so it cannot re-register the token.
+    stopPushRotation();
     await unregisterPushToken();
     try {
       await apiRequest("POST", "/api/auth/logout", {});
-    } catch {}
+    } catch (error) {
+      // Local sign-out still proceeds, but the server never revoked the token
+      // (offline, 5xx): it stays usable until it expires. Make that visible.
+      logger.error(
+        "Server logout failed; token not revoked server-side",
+        error,
+      );
+    }
     await tokenStorage.clear();
     // Guarded like expireSession/deleteAccount: a storage rejection here must
     // not skip the durable sweep or the sign-out setState. A blob left on disk
@@ -538,7 +568,7 @@ export function useAuth() {
     } catch {}
     await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
-  }, []);
+  }, [stopPushRotation]);
 
   /**
    * Local-only session teardown for an expired/revoked token (a token-bearing

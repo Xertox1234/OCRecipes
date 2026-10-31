@@ -8,7 +8,11 @@ import { AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 import type { User } from "@shared/types/auth";
 
 import { useAuth, AUTH_ME_TIMEOUT_MS } from "../useAuth";
-import { unregisterPushToken } from "@/lib/push-token-registration";
+import {
+  registerPushToken,
+  subscribePushTokenRotation,
+  unregisterPushToken,
+} from "@/lib/push-token-registration";
 
 // Create mock storage and functions that survive vi.mock hoisting
 const {
@@ -30,6 +34,9 @@ const {
     mockAsyncStorage,
     mockTokenStorage: {
       get: vi.fn(),
+      // Defaults to get()'s answer (set in beforeEach) so every test that
+      // stubs get() drives checkAuth's first, strict read too.
+      getOrThrow: vi.fn(),
       set: vi.fn(),
       clear: vi.fn(),
       invalidateCache: vi.fn(),
@@ -91,9 +98,13 @@ vi.mock("@/lib/query-client", () => ({
   whenQueryCacheRestored: () => mockWhenQueryCacheRestored(),
 }));
 
+const { mockUnsubscribeRotation } = vi.hoisted(() => ({
+  mockUnsubscribeRotation: vi.fn(),
+}));
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
   unregisterPushToken: vi.fn().mockResolvedValue(undefined),
+  subscribePushTokenRotation: vi.fn(() => mockUnsubscribeRotation),
 }));
 
 vi.mock("@/lib/offline-queue", () => ({
@@ -110,6 +121,11 @@ vi.mock("@/lib/home-actions-storage", () => ({
 
 vi.mock("@/hooks/useNotebookNotifications", () => ({
   clearScheduledCoachReminders: () => mockClearScheduledCoachReminders(),
+}));
+
+const { mockLoggerError } = vi.hoisted(() => ({ mockLoggerError: vi.fn() }));
+vi.mock("@/lib/logger", () => ({
+  logger: { error: mockLoggerError, warn: vi.fn(), info: vi.fn() },
 }));
 
 const { mockGetProviderToken } = vi.hoisted(() => ({
@@ -132,6 +148,10 @@ describe("useAuth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Object.keys(mockAsyncStorage).forEach((k) => delete mockAsyncStorage[k]);
+    mockTokenStorage.getOrThrow.mockReset();
+    mockTokenStorage.getOrThrow.mockImplementation(() =>
+      mockTokenStorage.get(),
+    );
   });
 
   describe("checkAuth", () => {
@@ -409,6 +429,10 @@ describe("useAuth", () => {
         expect(result.current.user).toEqual(fakeUser);
         expect(mockTokenStorage.clear).not.toHaveBeenCalled();
         expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+        expect(mockQueryClient.clear).not.toHaveBeenCalled();
+        expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
+          JSON.stringify(fakeUser),
+        );
         expect(mockNotifySessionExpired).not.toHaveBeenCalled();
       },
     );
@@ -422,6 +446,41 @@ describe("useAuth", () => {
 
       expect(mockTokenStorage.clear).not.toHaveBeenCalled();
       expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("retries a failed token read once and proceeds when the retry succeeds", async () => {
+      mockTokenStorage.getOrThrow.mockRejectedValueOnce(new Error("locked"));
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      expect(mockTokenStorage.getOrThrow).toHaveBeenCalledTimes(2);
+      expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+    });
+
+    it("does NOT sweep durable state or clear the token when the token read keeps failing", async () => {
+      mockTokenStorage.getOrThrow.mockRejectedValue(new Error("locked"));
+      mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
+      mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+      expect(mockQueryClient.clear).not.toHaveBeenCalled();
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
+      // Resumes from the cached user, like an offline start.
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.user).toEqual(fakeUser);
     });
 
     it("falls back to cached user on network error", async () => {
@@ -505,6 +564,76 @@ describe("useAuth", () => {
       // Offline + no usable cache → unauthenticated, but recoverable.
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
+    });
+  });
+
+  describe("push token upkeep (R20)", () => {
+    const signedInViaMe = () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+    };
+
+    it("re-registers the push token without prompting when /me restores a session", async () => {
+      signedInViaMe();
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      expect(vi.mocked(registerPushToken)).toHaveBeenCalledWith({
+        prompt: false,
+      });
+    });
+
+    it("does not register on a cold start with no token, or a dead token", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      const first = renderHook(() => useAuth());
+      await waitFor(() => expect(first.result.current.isLoading).toBe(false));
+      first.unmount();
+
+      mockTokenStorage.get.mockResolvedValue("expired-token");
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+      const second = renderHook(() => useAuth());
+      await waitFor(() => expect(second.result.current.isLoading).toBe(false));
+
+      expect(vi.mocked(registerPushToken)).not.toHaveBeenCalled();
+      expect(vi.mocked(subscribePushTokenRotation)).not.toHaveBeenCalled();
+    });
+
+    it("listens for token rotation while signed in and stops before logout unregisters", async () => {
+      signedInViaMe();
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      await waitFor(() =>
+        expect(vi.mocked(subscribePushTokenRotation)).toHaveBeenCalledTimes(1),
+      );
+      expect(mockUnsubscribeRotation).not.toHaveBeenCalled();
+
+      mockApiRequest.mockResolvedValue({});
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(mockUnsubscribeRotation).toHaveBeenCalled();
+      expect(mockUnsubscribeRotation.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(unregisterPushToken).mock.invocationCallOrder[0],
+      );
+    });
+
+    it("stops listening on unmount", async () => {
+      signedInViaMe();
+
+      const { result, unmount } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      await waitFor(() =>
+        expect(vi.mocked(subscribePushTokenRotation)).toHaveBeenCalled(),
+      );
+      unmount();
+
+      expect(mockUnsubscribeRotation).toHaveBeenCalled();
     });
   });
 
@@ -1183,7 +1312,8 @@ describe("useAuth", () => {
         expect(result.current.isAuthenticated).toBe(true);
       });
 
-      mockApiRequest.mockRejectedValue(new Error("Server error"));
+      const serverError = new Error("Server error");
+      mockApiRequest.mockRejectedValue(serverError);
 
       await act(async () => {
         await result.current.logout();
@@ -1191,6 +1321,28 @@ describe("useAuth", () => {
 
       expect(mockTokenStorage.clear).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
+      // The token was NOT revoked server-side: that must be visible (R25).
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        expect.stringContaining("logout"),
+        serverError,
+      );
+    });
+
+    it("does not log when the server logout succeeds", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      mockApiRequest.mockResolvedValue({});
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(mockLoggerError).not.toHaveBeenCalled();
     });
 
     it("still clears auth state if queryClient.clear() throws during logout", async () => {

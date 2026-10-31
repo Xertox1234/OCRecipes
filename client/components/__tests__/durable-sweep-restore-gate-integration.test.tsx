@@ -37,7 +37,13 @@ const { mockTokenStorage } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/lib/token-storage", () => ({ tokenStorage: mockTokenStorage }));
+vi.mock("@/lib/token-storage", () => ({
+  // checkAuth's first read is the strict getOrThrow(); answer it from get().
+  tokenStorage: {
+    ...mockTokenStorage,
+    getOrThrow: () => mockTokenStorage.get(),
+  },
+}));
 // Empty restore: every key reads null, so persistQueryClientRestore resolves with
 // no persisted client and fires onSuccess (the fresh-install cold-start shape).
 vi.mock("@react-native-async-storage/async-storage", () => ({
@@ -49,6 +55,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
+  subscribePushTokenRotation: vi.fn(() => () => {}),
 }));
 
 function Probe() {

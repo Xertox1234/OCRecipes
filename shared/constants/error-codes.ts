@@ -48,6 +48,8 @@ export const ErrorCode = {
   // Subscription / IAP entitlement errors
   MISSING_TRANSACTION_ID: "MISSING_TRANSACTION_ID",
   SUBSCRIPTION_ALREADY_LINKED: "SUBSCRIPTION_ALREADY_LINKED",
+  /** The store transaction was refunded/revoked — permanent, never re-grants premium. */
+  TRANSACTION_REVOKED: "TRANSACTION_REVOKED",
   // Sign in with Google/Apple
   INVALID_PROVIDER_TOKEN: "INVALID_PROVIDER_TOKEN",
   PROVIDER_EMAIL_REQUIRED: "PROVIDER_EMAIL_REQUIRED",

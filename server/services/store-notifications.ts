@@ -1,29 +1,76 @@
 /**
  * Store server-notification processing (Apple App Store Server Notifications V2;
- * Google RTDN is added alongside). Revoke-class events remove entitlement; all
- * other lifecycle events are informational (grants stay on the client receipt
- * flow). Entitlement is found by the same stable id the receipt flow stores
- * (`transactions.transactionId`), so a refund/revoke can locate the user.
+ * Google RTDN is added alongside). Revoke-class events remove entitlement;
+ * renewal events extend the expiry of an already-claimed subscription; all
+ * other lifecycle events are informational (first grants stay on the client
+ * receipt flow). Entitlement is found by the same stable id the receipt flow
+ * stores (`transactions.transactionId`), so a refund/revoke/renewal can locate
+ * the user.
  */
 import { OAuth2Client } from "google-auth-library";
-import { verifyAppleNotification } from "./receipt-validation";
+import { verifyAppleNotification, validateReceipt } from "./receipt-validation";
 import { storage } from "../storage";
 import { invalidateCache as invalidateTierCache } from "./subscription-tier-cache";
 import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("store-notifications");
 
-/** Apple notification types that REMOVE entitlement (revoke-class). */
-const APPLE_REVOKE_TYPES = new Set([
-  "REFUND",
-  "REVOKE",
-  "EXPIRED",
-  "GRACE_PERIOD_EXPIRED",
-]);
+/**
+ * Apple notification types that REMOVE entitlement. Only a refund/revoke marks
+ * the row `revoked` (which refuses receipts purchased before it); an expiry is
+ * stored as a plain `expired` row so a re-subscription or late renewal works.
+ */
+const APPLE_REFUND_TYPES = new Set(["REFUND", "REVOKE"]);
+const APPLE_EXPIRY_TYPES = new Set(["EXPIRED", "GRACE_PERIOD_EXPIRED"]);
+
+/**
+ * Apple notification types that RENEW an existing subscription. DID_RENEW
+ * (incl. subtype BILLING_RECOVERY) carries a new transaction with a new
+ * expiresDate; Apple's expiresDate is static per transaction, so without this
+ * the server expiry would stop at the first period's end.
+ */
+const APPLE_RENEW_TYPES = new Set(["DID_RENEW"]);
+
+/**
+ * Extend entitlement from a verified renewal. Logs and returns on anything
+ * short of a clean extension; never throws for a missing row (the receipt
+ * flow may not have stored it yet).
+ */
+async function applyRenewal(
+  source: string,
+  transactionId: string,
+  expiresAt: Date,
+  purchasedAt: Date | undefined,
+): Promise<void> {
+  const result = await storage.extendSubscriptionByTransactionId(
+    transactionId,
+    expiresAt,
+    purchasedAt,
+  );
+  if (!result) {
+    log.warn({ source }, "renewal notification: no matching local transaction");
+    return;
+  }
+  if (result.status === "revoked") {
+    log.warn(
+      { source, userId: result.userId },
+      "renewal notification for a revoked transaction — not extended",
+    );
+    return;
+  }
+  invalidateTierCache(result.userId);
+  log.info(
+    { source, userId: result.userId },
+    "renewal notification: entitlement extended",
+  );
+}
 
 /**
  * Verify + process an Apple App Store Server Notification V2. Revokes
- * entitlement for revoke-class events; every other type is informational
+ * entitlement on REFUND/REVOKE, records a plain expiry on EXPIRED /
+ * GRACE_PERIOD_EXPIRED, reinstates it on REFUND_REVERSED, extends it on
+ * DID_RENEW; every other
+ * type is informational
  * (notably DID_CHANGE_RENEWAL_STATUS/AUTO_RENEW_DISABLED, which is NOT a
  * revoke — the sub is active until it actually EXPIRES). Throws only when the
  * signature cannot be verified, so the caller maps that to 5xx and Apple retries.
@@ -33,7 +80,79 @@ export async function handleAppleNotification(
 ): Promise<void> {
   const n = await verifyAppleNotification(signedPayload);
 
-  if (!APPLE_REVOKE_TYPES.has(n.notificationType)) {
+  if (n.notificationType === "REFUND_REVERSED") {
+    // Apple reversed a refund: the signed transaction must exist and no longer
+    // carry a revocationDate. Skips the purchase-date gate — the verified
+    // notification itself authorizes restoring the row. signedDate is required
+    // (fail closed): without it a late retry cannot be ordered against a
+    // newer refund on the row.
+    if (!n.originalTransactionId || n.revoked !== false || !n.signedAt) {
+      log.warn(
+        {
+          type: n.notificationType,
+          uuid: n.notificationUUID,
+          revoked: n.revoked,
+          hasSignedAt: n.signedAt !== undefined,
+        },
+        "apple refund-reversed notification lacks an unrevoked transaction or signedDate — not reinstated",
+      );
+      return;
+    }
+    const reinstated = await storage.reinstateSubscriptionByTransactionId(
+      n.originalTransactionId,
+      n.expiresAt ?? null,
+      n.signedAt,
+    );
+    if (!reinstated) {
+      log.warn(
+        { type: n.notificationType },
+        "apple refund-reversed notification: no matching local transaction",
+      );
+      return;
+    }
+    if (reinstated.stale) {
+      log.warn(
+        {
+          type: n.notificationType,
+          uuid: n.notificationUUID,
+          userId: reinstated.userId,
+        },
+        "apple refund-reversed notification predates the row's refund (out-of-order delivery) — not reinstated",
+      );
+      return;
+    }
+    invalidateTierCache(reinstated.userId);
+    log.info(
+      { type: n.notificationType, userId: reinstated.userId },
+      "apple notification: refund reversed, entitlement reinstated",
+    );
+    return;
+  }
+
+  if (APPLE_RENEW_TYPES.has(n.notificationType)) {
+    if (!n.originalTransactionId || !n.expiresAt || n.revoked) {
+      log.warn(
+        {
+          type: n.notificationType,
+          subtype: n.subtype,
+          uuid: n.notificationUUID,
+          revoked: n.revoked,
+        },
+        "apple renewal notification lacks a usable transaction — not extended",
+      );
+      return;
+    }
+    await applyRenewal(
+      `apple:${n.notificationType}`,
+      n.originalTransactionId,
+      n.expiresAt,
+      n.purchasedAt,
+    );
+    return;
+  }
+
+  const isRefund = APPLE_REFUND_TYPES.has(n.notificationType);
+  if (!isRefund && !APPLE_EXPIRY_TYPES.has(n.notificationType)) {
     log.info(
       { type: n.notificationType, subtype: n.subtype },
       "apple notification: informational, no entitlement change",
@@ -49,9 +168,14 @@ export async function handleAppleNotification(
     return;
   }
 
-  const result = await storage.revokeSubscriptionByTransactionId(
-    n.originalTransactionId,
-  );
+  // Time a refund by the store (Apple revocationDate, else when Apple signed
+  // the notification), never by when we processed it.
+  const result = isRefund
+    ? await storage.revokeSubscriptionByTransactionId(
+        n.originalTransactionId,
+        n.revokedAt ?? n.signedAt,
+      )
+    : await storage.expireSubscriptionByTransactionId(n.originalTransactionId);
   if (result) {
     invalidateTierCache(result.userId);
     log.info(
@@ -70,9 +194,24 @@ export async function handleAppleNotification(
 const googleOAuthClient = new OAuth2Client();
 
 /** Google RTDN notificationType values that REMOVE entitlement. */
-const GOOGLE_REVOKE_TYPES = new Set([
-  12, // SUBSCRIPTION_REVOKED
-  13, // SUBSCRIPTION_EXPIRED
+const GOOGLE_REVOKED = 12; // SUBSCRIPTION_REVOKED — refund-class, blocks
+const GOOGLE_EXPIRED = 13; // SUBSCRIPTION_EXPIRED — plain expiry
+
+/** Google RTDN notificationType values that RENEW an existing subscription. */
+const GOOGLE_RENEW_TYPES = new Set([
+  1, // SUBSCRIPTION_RECOVERED
+  2, // SUBSCRIPTION_RENEWED
+]);
+
+/**
+ * validateReceipt error codes that must NOT ack a renewal RTDN: a Play outage
+ * (STORE_API_ERROR), or a deploy missing Google config / still on the
+ * production receipt stub — retrying succeeds once it is fixed.
+ */
+const GOOGLE_RENEWAL_RETRY_CODES = new Set([
+  "STORE_API_ERROR",
+  "PLATFORM_NOT_CONFIGURED",
+  "NOT_IMPLEMENTED",
 ]);
 
 interface PubSubPushBody {
@@ -117,9 +256,12 @@ export async function verifyGooglePushToken(
 
 /**
  * Process a (pre-authenticated) Google RTDN Pub/Sub push. Revokes entitlement
- * for revoke-class subscription events; every other type is informational.
+ * on SUBSCRIPTION_REVOKED, records a plain expiry on SUBSCRIPTION_EXPIRED and
+ * extends it for renewals; every
+ * other type is informational.
  *
- * We deliberately do NOT call the Play Developer API here: each purchaseToken is
+ * Renewals re-read live state from the Play Developer API (the RTDN carries no
+ * expiry). Revokes deliberately do NOT call it: each purchaseToken is
  * stored as its own `transactions` row by the receipt flow, so the RTDN's token
  * resolves the owning row directly; the payer guard in
  * `revokeSubscriptionByTransactionId` keeps a re-subscribed user premium, and
@@ -152,7 +294,46 @@ export async function handleGoogleNotification(
     return;
   }
 
-  if (!GOOGLE_REVOKE_TYPES.has(sub.notificationType)) {
+  if (GOOGLE_RENEW_TYPES.has(sub.notificationType)) {
+    // The RTDN carries no expiry: re-read live state from the Play API (the
+    // same path the receipt flow uses) and extend from that.
+    const live = await validateReceipt(sub.purchaseToken, "android");
+    if (!live.valid) {
+      if (live.errorCode && GOOGLE_RENEWAL_RETRY_CODES.has(live.errorCode)) {
+        // Transient (5xx/429/401/403/network/token fetch) or a fixable server
+        // misconfiguration: throw so the route answers 5xx and Pub/Sub
+        // redelivers. A permanent answer (e.g. PURCHASE_TOKEN_INVALID for a
+        // Play 400/404/410) is logged and acked.
+        throw new Error(
+          `google rtdn renewal: Play state unavailable (${live.errorCode})`,
+        );
+      }
+      log.warn(
+        { type: sub.notificationType, errorCode: live.errorCode },
+        "google rtdn renewal: subscription not active — not extended",
+      );
+      return;
+    }
+    if (!live.expiresAt) {
+      log.warn(
+        { type: sub.notificationType },
+        "google rtdn renewal: Play state has no expiry — not extended",
+      );
+      return;
+    }
+    await applyRenewal(
+      `google:${sub.notificationType}`,
+      sub.purchaseToken,
+      live.expiresAt,
+      undefined,
+    );
+    return;
+  }
+
+  if (
+    sub.notificationType !== GOOGLE_REVOKED &&
+    sub.notificationType !== GOOGLE_EXPIRED
+  ) {
     log.info(
       { type: sub.notificationType },
       "google rtdn: informational, no entitlement change",
@@ -160,9 +341,10 @@ export async function handleGoogleNotification(
     return;
   }
 
-  const result = await storage.revokeSubscriptionByTransactionId(
-    sub.purchaseToken,
-  );
+  const result =
+    sub.notificationType === GOOGLE_REVOKED
+      ? await storage.revokeSubscriptionByTransactionId(sub.purchaseToken)
+      : await storage.expireSubscriptionByTransactionId(sub.purchaseToken);
   if (result) {
     invalidateTierCache(result.userId);
     log.info(

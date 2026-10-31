@@ -192,6 +192,10 @@ describe("getUpgradeErrorMessage", () => {
     ],
     ["NOTHING_TO_RESTORE", "No previous purchase was found to restore."],
     [
+      "PURCHASE_DECLINED",
+      "This purchase can no longer unlock Premium. Contact support if you think this is a mistake.",
+    ],
+    [
       "PENDING_APPROVAL",
       "Your purchase is waiting for approval. Premium unlocks once it's approved.",
     ],

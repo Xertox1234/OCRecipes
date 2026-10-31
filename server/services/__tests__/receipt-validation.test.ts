@@ -4,6 +4,7 @@ import { VerificationStatus } from "@apple/app-store-server-library";
 
 // Mock @apple/app-store-server-library
 const mockVerifyAndDecodeTransaction = vi.fn();
+const mockVerifyAndDecodeNotification = vi.fn();
 
 vi.mock("@apple/app-store-server-library", async () => {
   const actual = await vi.importActual<
@@ -13,9 +14,25 @@ vi.mock("@apple/app-store-server-library", async () => {
     ...actual,
     SignedDataVerifier: class MockSignedDataVerifier {
       verifyAndDecodeTransaction = mockVerifyAndDecodeTransaction;
+      verifyAndDecodeNotification = mockVerifyAndDecodeNotification;
     },
   };
 });
+
+const { mockLog, mockReportError } = vi.hoisted(() => ({
+  mockLog: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  mockReportError: vi.fn(),
+}));
+vi.mock("../../lib/logger", async () => {
+  const actual =
+    await vi.importActual<typeof import("../../lib/logger")>(
+      "../../lib/logger",
+    );
+  return { ...actual, createServiceLogger: () => mockLog };
+});
+vi.mock("../../lib/error-reporter", () => ({
+  reportError: mockReportError,
+}));
 
 // Mock fs.readFileSync to avoid needing real cert files in tests
 vi.mock("fs", async () => {
@@ -68,7 +85,7 @@ async function setupGoogleTest(subscriptionResponse: object, status = 200) {
 
   const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (url) => {
     const urlStr = typeof url === "string" ? url : url.toString();
-    if (urlStr.includes("oauth2.googleapis.com")) {
+    if (new URL(urlStr).hostname === "oauth2.googleapis.com") {
       return new Response(
         JSON.stringify({
           access_token: "mock-access-token",
@@ -77,7 +94,7 @@ async function setupGoogleTest(subscriptionResponse: object, status = 200) {
         { status: 200 },
       );
     }
-    if (urlStr.includes("androidpublisher.googleapis.com")) {
+    if (new URL(urlStr).hostname === "androidpublisher.googleapis.com") {
       return new Response(JSON.stringify(subscriptionResponse), { status });
     }
     throw new Error(`Unexpected fetch to ${urlStr}`);
@@ -179,6 +196,44 @@ describe("Receipt Validation", () => {
       expect(result.productId).toBe("premium_monthly");
       expect(result.originalTransactionId).toBe("txn-123");
       expect(result.expiresAt).toBeDefined();
+    });
+
+    it("carries the transaction's purchaseDate as purchasedAt", async () => {
+      const purchaseDate = Date.now() - 60_000;
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        productId: "premium_monthly",
+        expiresDate: FUTURE_EXPIRY,
+        purchaseDate,
+        originalTransactionId: "txn-123",
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("signed-jws-receipt", "ios");
+      expect(result.valid).toBe(true);
+      expect(result.purchasedAt?.getTime()).toBe(purchaseDate);
+    });
+
+    it("leaves purchasedAt undefined when the payload has no purchaseDate", async () => {
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        productId: "premium_monthly",
+        expiresDate: FUTURE_EXPIRY,
+        originalTransactionId: "txn-123",
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("signed-jws-receipt", "ios");
+      expect(result.valid).toBe(true);
+      expect(result.purchasedAt).toBeUndefined();
     });
 
     it("rejects expired receipt", async () => {
@@ -405,6 +460,86 @@ describe("Receipt Validation", () => {
       fetchSpy.mockRestore();
     });
 
+    it("accepts a CANCELED subscription still paid through a future expiry", async () => {
+      const { validate, fetchSpy } = await setupGoogleTest({
+        subscriptionState: "SUBSCRIPTION_STATE_CANCELED",
+        lineItems: [
+          {
+            productId: "premium_monthly",
+            expiryTime: new Date(FUTURE_EXPIRY).toISOString(),
+          },
+        ],
+      });
+
+      const result = await validate("purchase-token-123", "android");
+      expect(result.valid).toBe(true);
+      expect(result.expiresAt?.getTime()).toBe(FUTURE_EXPIRY);
+      expect(result.originalTransactionId).toBe("purchase-token-123");
+
+      fetchSpy.mockRestore();
+    });
+
+    it("rejects a CANCELED subscription whose expiry has passed", async () => {
+      const { validate, fetchSpy } = await setupGoogleTest({
+        subscriptionState: "SUBSCRIPTION_STATE_CANCELED",
+        lineItems: [
+          {
+            productId: "premium_monthly",
+            expiryTime: new Date(PAST_EXPIRY).toISOString(),
+          },
+        ],
+      });
+
+      const result = await validate("purchase-token-123", "android");
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("SUBSCRIPTION_EXPIRED");
+
+      fetchSpy.mockRestore();
+    });
+
+    it.each([
+      ["no expiry", { productId: "premium_monthly" }],
+      [
+        "an unparseable expiry",
+        { productId: "premium_monthly", expiryTime: "soon" },
+      ],
+    ])(
+      "rejects a CANCELED subscription with %s (fails closed)",
+      async (_label, lineItem) => {
+        const { validate, fetchSpy } = await setupGoogleTest({
+          subscriptionState: "SUBSCRIPTION_STATE_CANCELED",
+          lineItems: [lineItem],
+        });
+
+        const result = await validate("purchase-token-123", "android");
+        expect(result.valid).toBe(false);
+        expect(result.errorCode).toBe("PURCHASE_NOT_ACTIVE");
+
+        fetchSpy.mockRestore();
+      },
+    );
+
+    it.each(["SUBSCRIPTION_STATE_ON_HOLD", "SUBSCRIPTION_STATE_PAUSED"])(
+      "still rejects %s even with a future expiry",
+      async (subscriptionState) => {
+        const { validate, fetchSpy } = await setupGoogleTest({
+          subscriptionState,
+          lineItems: [
+            {
+              productId: "premium_monthly",
+              expiryTime: new Date(FUTURE_EXPIRY).toISOString(),
+            },
+          ],
+        });
+
+        const result = await validate("purchase-token-123", "android");
+        expect(result.valid).toBe(false);
+        expect(result.errorCode).toBe("PURCHASE_NOT_ACTIVE");
+
+        fetchSpy.mockRestore();
+      },
+    );
+
     it("rejects product mismatch on Google", async () => {
       const { validate, fetchSpy } = await setupGoogleTest({
         subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
@@ -436,7 +571,7 @@ describe("Receipt Validation", () => {
         .spyOn(global, "fetch")
         .mockImplementation(async (url) => {
           const urlStr = typeof url === "string" ? url : url.toString();
-          if (urlStr.includes("oauth2.googleapis.com")) {
+          if (new URL(urlStr).hostname === "oauth2.googleapis.com") {
             return new Response(
               JSON.stringify({
                 access_token: "mock-access-token",
@@ -445,7 +580,7 @@ describe("Receipt Validation", () => {
               { status: 200 },
             );
           }
-          if (urlStr.includes("androidpublisher.googleapis.com")) {
+          if (new URL(urlStr).hostname === "androidpublisher.googleapis.com") {
             return new Response("Internal Server Error", { status: 500 });
           }
           throw new Error(`Unexpected fetch to ${urlStr}`);
@@ -453,6 +588,76 @@ describe("Receipt Validation", () => {
 
       const result = await mod.validateReceipt("purchase-token-123", "android");
       expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("STORE_API_ERROR");
+
+      fetchSpy.mockRestore();
+    });
+
+    async function validateWithPlayStatus(status: number) {
+      vi.resetModules();
+      const mod = await import("../receipt-validation");
+      mod.resetGoogleTokenCache();
+      const fetchSpy = vi
+        .spyOn(global, "fetch")
+        .mockImplementation(async (url) => {
+          const urlStr = typeof url === "string" ? url : url.toString();
+          if (new URL(urlStr).hostname === "oauth2.googleapis.com") {
+            return new Response(
+              JSON.stringify({
+                access_token: "mock-access-token",
+                expires_in: 3600,
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response("error", { status });
+        });
+      try {
+        return await mod.validateReceipt("purchase-token-123", "android");
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    }
+
+    it.each([400, 404, 410])(
+      "maps a permanent Play %i (unknown / invalid token) to PURCHASE_TOKEN_INVALID",
+      async (status) => {
+        const result = await validateWithPlayStatus(status);
+        expect(result.valid).toBe(false);
+        expect(result.errorCode).toBe("PURCHASE_TOKEN_INVALID");
+      },
+    );
+
+    it.each([401, 403, 429, 500, 503])(
+      "keeps a transient Play %i as STORE_API_ERROR",
+      async (status) => {
+        const result = await validateWithPlayStatus(status);
+        expect(result.valid).toBe(false);
+        expect(result.errorCode).toBe("STORE_API_ERROR");
+      },
+    );
+
+    it("returns STORE_API_ERROR when the Play request itself fails (network / timeout)", async () => {
+      vi.resetModules();
+      const mod = await import("../receipt-validation");
+      mod.resetGoogleTokenCache();
+      const fetchSpy = vi
+        .spyOn(global, "fetch")
+        .mockImplementation(async (url) => {
+          const urlStr = typeof url === "string" ? url : url.toString();
+          if (new URL(urlStr).hostname === "oauth2.googleapis.com") {
+            return new Response(
+              JSON.stringify({
+                access_token: "mock-access-token",
+                expires_in: 3600,
+              }),
+              { status: 200 },
+            );
+          }
+          throw new TypeError("fetch failed");
+        });
+
+      const result = await mod.validateReceipt("purchase-token-123", "android");
       expect(result.errorCode).toBe("STORE_API_ERROR");
 
       fetchSpy.mockRestore();
@@ -472,8 +677,121 @@ describe("Receipt Validation", () => {
       const result = await mod.validateReceipt("purchase-token-123", "android");
       expect(result.valid).toBe(false);
       expect(result.errorCode).toBe("STORE_API_ERROR");
+      // A config fault (bad PEM/email) or OAuth outage must not be silent.
+      expect(mockLog.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error) }),
+        "Google access token fetch failed",
+      );
+      expect(mockReportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "google-access-token",
+      );
 
       fetchSpy.mockRestore();
+    });
+  });
+
+  describe("verifyAppleNotification", () => {
+    beforeEach(() => {
+      process.env.APPLE_ISSUER_ID = "test-issuer";
+      process.env.APPLE_KEY_ID = "test-key-id";
+      process.env.APPLE_PRIVATE_KEY = "test-private-key";
+      process.env.APPLE_BUNDLE_ID = "com.ocrecipes.app";
+    });
+
+    async function verify() {
+      vi.resetModules();
+      const mod = await import("../receipt-validation");
+      mod.resetAppleVerifier();
+      return mod.verifyAppleNotification("signed-payload");
+    }
+
+    it("carries the renewal transaction's expiry, purchase date and revocation", async () => {
+      const purchaseDate = Date.now() - 60_000;
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "DID_RENEW",
+        notificationUUID: "uuid-1",
+        data: { signedTransactionInfo: "signed-txn" },
+      });
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        originalTransactionId: "orig-1",
+        expiresDate: FUTURE_EXPIRY,
+        purchaseDate,
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      const n = await verify();
+
+      expect(mockVerifyAndDecodeTransaction).toHaveBeenCalledWith("signed-txn");
+      expect(n).toMatchObject({
+        notificationType: "DID_RENEW",
+        originalTransactionId: "orig-1",
+        revoked: false,
+      });
+      expect(n.expiresAt?.getTime()).toBe(FUTURE_EXPIRY);
+      expect(n.purchasedAt?.getTime()).toBe(purchaseDate);
+    });
+
+    it("flags a transaction that carries a revocationDate", async () => {
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "DID_RENEW",
+        data: { signedTransactionInfo: "signed-txn" },
+      });
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        originalTransactionId: "orig-1",
+        expiresDate: FUTURE_EXPIRY,
+        revocationDate: Date.now(),
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      const n = await verify();
+
+      expect(n.revoked).toBe(true);
+    });
+
+    it("carries the store's revocationDate and the notification's signedDate", async () => {
+      const revocationDate = Date.now() - 5 * 60_000;
+      const signedDate = Date.now() - 60_000;
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "REFUND",
+        signedDate,
+        data: { signedTransactionInfo: "signed-txn" },
+      });
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        originalTransactionId: "orig-1",
+        revocationDate,
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      const n = await verify();
+
+      expect(n.revokedAt?.getTime()).toBe(revocationDate);
+      expect(n.signedAt?.getTime()).toBe(signedDate);
+    });
+
+    it("leaves revokedAt unset for an unrevoked transaction", async () => {
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "DID_RENEW",
+        data: { signedTransactionInfo: "signed-txn" },
+      });
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
+        originalTransactionId: "orig-1",
+        expiresDate: FUTURE_EXPIRY,
+      } satisfies Partial<JWSTransactionDecodedPayload>);
+
+      const n = await verify();
+
+      expect(n.revokedAt).toBeUndefined();
+      expect(n.signedAt).toBeUndefined();
+    });
+
+    it("leaves the renewal fields unset when there is no signed transaction", async () => {
+      mockVerifyAndDecodeNotification.mockResolvedValue({
+        notificationType: "TEST",
+      });
+
+      const n = await verify();
+
+      expect(n.originalTransactionId).toBeUndefined();
+      expect(n.expiresAt).toBeUndefined();
+      expect(n.purchasedAt).toBeUndefined();
     });
   });
 

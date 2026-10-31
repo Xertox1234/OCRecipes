@@ -72,9 +72,24 @@ export class HttpFailure extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    options?: { cause?: unknown },
   ) {
-    super(message);
+    super(message, options);
   }
+}
+
+/**
+ * "Name: message" for each error in `err`'s cause chain — for logs only.
+ * Provider/jose error messages carry no token material.
+ */
+function describeCauses(err: unknown): string | undefined {
+  const parts: string[] = [];
+  let cur: unknown = err instanceof Error ? err.cause : undefined;
+  while (cur instanceof Error && parts.length < 5) {
+    parts.push(`${cur.name}: ${cur.message}`);
+    cur = cur.cause;
+  }
+  return parts.length > 0 ? parts.join(" <- ") : undefined;
 }
 
 function fail(res: Response, f: HttpFailure) {
@@ -111,6 +126,7 @@ export async function verifyProviderToken(
         401,
         ErrorCode.INVALID_PROVIDER_TOKEN,
         "Sign-in could not be verified",
+        { cause: err },
       );
     }
     throw err;
@@ -212,7 +228,18 @@ export async function reauthenticate(
       proof.idToken,
       proof.nonce,
     );
-  } catch {
+  } catch (err) {
+    // Still one generic false. The cause chain (TokenVerificationError <- the
+    // jose / JWKS-fetch error) tells a provider outage apart from a bad token.
+    // Never log the token itself.
+    logger.warn(
+      {
+        err: toError(err),
+        cause: describeCauses(err),
+        provider: proof.provider,
+      },
+      "reauth provider token verification failed",
+    );
     return false;
   }
   const nonceOk = await storage.consumeNonce(proof.nonce, "reauth", userId);

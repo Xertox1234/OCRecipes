@@ -79,7 +79,24 @@ async function applyValidatedReceipt(
     },
     "premium",
     expiresAt,
+    validation.purchasedAt ?? null,
   );
+
+  // The transaction was refunded/revoked and this receipt predates that — a
+  // replayed snapshot must not re-grant premium. Declined like an invalid
+  // receipt (200 + success:false) so the client leaves it unfinished.
+  if (result.status === "revoked") {
+    log.warn(
+      { userId, platform },
+      "subscription claim refused: transaction was refunded or revoked",
+    );
+    res.json({
+      success: false,
+      error: "This subscription was refunded or revoked.",
+      code: ErrorCode.TRANSACTION_REVOKED,
+    });
+    return;
+  }
 
   if (result.status === "conflict") {
     log.warn(

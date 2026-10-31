@@ -7,6 +7,7 @@ import {
 import {
   apiRequest,
   getApiUrl,
+  notifyIfStreamSessionExpired,
   type QueryErrorMeta,
   type MutationErrorMeta,
 } from "@/lib/query-client";
@@ -624,6 +625,13 @@ export function useSendMessage(
           (outcome.kind === "load" || outcome.kind === "http-error") &&
           (outcome.status < 200 || outcome.status >= 300)
         ) {
+          // This raw XHR bypasses the apiRequest 401 interceptor; a dead
+          // token must still end the session (with the toast).
+          void notifyIfStreamSessionExpired(
+            outcome.status,
+            outcome.responseText,
+            token,
+          );
           let errorMsg = "Something went wrong. Please try again.";
           try {
             const parsed = JSON.parse(outcome.responseText);
