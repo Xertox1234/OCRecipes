@@ -627,7 +627,7 @@ describe("CookbookCreateWizard — forward jumps keep the step rules", () => {
     typeName("");
     vi.mocked(Haptics.notificationAsync).mockClear();
 
-    fireEvent.click(screen.getByLabelText("Go back to Review"));
+    fireEvent.click(screen.getByLabelText("Go to Review"));
 
     expect(screen.getByText("Name your cookbook")).toBeTruthy();
     expect(screen.getByText("Enter a name for your cookbook.")).toBeTruthy();
@@ -648,7 +648,7 @@ describe("CookbookCreateWizard — forward jumps keep the step rules", () => {
     fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
     vi.mocked(Haptics.notificationAsync).mockClear();
 
-    fireEvent.click(screen.getByLabelText("Go back to Review"));
+    fireEvent.click(screen.getByLabelText("Go to Review"));
 
     expect(screen.getByText("Choose your recipes")).toBeTruthy();
     expect(screen.getByText("Pick at least one recipe.")).toBeTruthy();
@@ -673,7 +673,7 @@ describe("CookbookCreateWizard — forward jumps keep the step rules", () => {
     typeName("");
     // Simulate a path past the step rules, so only Create's own check stands.
     vi.mocked(stepBlocker).mockReturnValue(null);
-    fireEvent.click(screen.getByLabelText("Go back to Review"));
+    fireEvent.click(screen.getByLabelText("Go to Review"));
     expect(screen.getByText("Review & create")).toBeTruthy();
     vi.mocked(stepBlocker).mockImplementation(actualStepBlocker);
 
@@ -696,7 +696,7 @@ describe("CookbookCreateWizard — refused jumps (round 2)", () => {
     expect(screen.getByText("Design your cover")).toBeTruthy();
     mockAnnounce.mockClear();
 
-    fireEvent.click(screen.getByLabelText("Go back to Review"));
+    fireEvent.click(screen.getByLabelText("Go to Review"));
 
     expect(screen.getByText("Choose your recipes")).toBeTruthy();
     expect(screen.getByText("Pick at least one recipe.")).toBeTruthy();
@@ -715,6 +715,7 @@ describe("CookbookCreateWizard — refused jumps (round 2)", () => {
     expect(mockAnnounce).toHaveBeenCalledWith("Step 2 of 4, Cover");
   });
 
+  // Pins a defensive branch: production can't return availability to unknown once the sources settle.
   it("won't jump ahead out of Recipes while availability is unknown", () => {
     renderComponent(<CookbookCreateWizard />);
     walkToReview();
@@ -722,7 +723,7 @@ describe("CookbookCreateWizard — refused jumps (round 2)", () => {
     fireEvent.click(screen.getByLabelText("Edit Recipes"));
     vi.mocked(Haptics.notificationAsync).mockClear();
 
-    fireEvent.click(screen.getByLabelText("Go back to Review"));
+    fireEvent.click(screen.getByLabelText("Go to Review"));
 
     expect(screen.getByText("Choose your recipes")).toBeTruthy();
     expect(screen.queryByText("Pick at least one recipe.")).toBeNull();

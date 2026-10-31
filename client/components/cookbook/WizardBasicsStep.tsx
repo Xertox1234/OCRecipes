@@ -27,7 +27,7 @@ interface WizardBasicsStepProps {
   onNameFocus?: () => void;
   onNameBlur?: () => void;
   /** Called with each name edit, so the screen's validation sees it too. */
-  onNameChange?: (text: string) => void;
+  onNameChange: (text: string) => void;
 }
 
 /**
@@ -77,7 +77,7 @@ export function WizardBasicsStep({
           onChangeText={(text) => {
             const value = text.slice(0, NAME_MAX);
             dispatch({ type: "setName", value });
-            onNameChange?.(value);
+            onNameChange(value);
           }}
           onFocus={() => {
             setFocused("name");

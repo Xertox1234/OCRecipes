@@ -51,14 +51,14 @@ project "AI-Powered Cookbook Creator", scoped to what today's server can do. Lef
 cover studio, Pages, "What's it for", and the AI suggestion chips. Edit mode keeps the single-page
 form (`CookbookEditForm`).
 
-| Part                | Look                                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| Step bar segments   | `link` for every step reached so far, `backgroundTertiary` for the rest; the fill colour fades in       |
-| Step bar labels     | Uppercase. The current step is `link` in semibold, the others `textSecondary`                           |
-| Finished steps      | Tappable ("Go back to Cover"). Each label cell is at least 44pt tall                                    |
-| Cover cards         | Unselected: `border` outline on `surface`. Selected: `link` outline, `link` at 8% fill, tinted icon     |
-| Bottom bar          | Back (steps 2 to 4) beside one primary button, on `backgroundRoot` with a `border` top line             |
-| Primary button text | Continue; "Continue · N recipes" once some are picked; "Skip for now" with none; "Create Cookbook" last |
+| Part                | Look                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Step bar segments   | `link` for every step reached so far, `backgroundTertiary` for the rest; the fill colour fades in                               |
+| Step bar labels     | Uppercase. The current step is `link` in semibold, the others `textSecondary`                                                   |
+| Reached steps       | Tappable: behind the current step "Go back to Cover", reached ahead of it "Go to Review". Each label cell is at least 44pt tall |
+| Cover cards         | Unselected: `border` outline on `surface`. Selected: `link` outline, `link` at 8% fill, tinted icon                             |
+| Bottom bar          | Back (steps 2 to 4) beside one primary button, on `backgroundRoot` with a `border` top line                                     |
+| Primary button text | Continue; "Continue · N recipes" once some are picked; "Skip for now" with none; "Create Cookbook" last                         |
 
 Rules:
 

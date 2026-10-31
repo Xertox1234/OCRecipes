@@ -38,8 +38,10 @@ interface WizardStepBarProps {
 
 /**
  * The New Cookbook wizard's progress: four segments with their labels under
- * them. Steps already reached (other than the current one) are buttons that
- * jump back; steps ahead are plain text until the user gets there.
+ * them. Steps already reached (other than the current one) are buttons —
+ * behind the current step they jump back, and steps reached earlier but
+ * ahead of it (after an Edit from Review) jump forward. Steps never reached
+ * are plain text until the user gets there.
  *
  * The segments row carries the progressbar semantics on its own, apart from
  * the labels row — a progressbar wrapping buttons would collapse them into
@@ -104,7 +106,9 @@ export function WizardStepBar({
                 shape="chip"
                 onPress={() => onSelect(s)}
                 accessibilityRole="button"
-                accessibilityLabel={`Go back to ${label}`}
+                accessibilityLabel={
+                  i < currentIndex ? `Go back to ${label}` : `Go to ${label}`
+                }
                 style={styles.cell}
               >
                 {text}
