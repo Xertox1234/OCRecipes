@@ -8,6 +8,8 @@ import { TextInput } from "@/components/TextInput";
 import { Chip } from "@/components/Chip";
 import { SelectableTile } from "@/components/SelectableTile";
 import { EmptyState } from "@/components/EmptyState";
+import { InlineError } from "@/components/InlineError";
+import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useFavouriteRecipes } from "@/hooks/useFavouriteRecipes";
 import { useUnifiedRecipes } from "@/hooks/useMealPlanRecipes";
@@ -58,9 +60,11 @@ export function WizardRecipesStep({
 
   const favouritesQuery = useFavouriteRecipes();
   const unifiedQuery = useUnifiedRecipes();
-  // An errored query settles with no data, so it reads as "no recipes"
-  // rather than an endless spinner.
+  // A failed source settles with no data. It shows a load error with a
+  // retry (above any rows the other source loaded) — never the "no saved
+  // recipes" empty state, which would claim a false cause.
   const settled = !favouritesQuery.isPending && !unifiedQuery.isPending;
+  const loadFailed = favouritesQuery.isError || unifiedQuery.isError;
   const all = mergeRecipeSources(
     favouritesQuery.data ?? [],
     unifiedQuery.data?.personal ?? [],
@@ -68,10 +72,31 @@ export function WizardRecipesStep({
   // Availability follows the full library, never the filtered view — a
   // search with no match must not make the step skippable.
   const hasAnyRecipes = all.length > 0;
+  // A load error reports none, so the step stays skippable and the user is
+  // never stranded behind a source that won't load.
+  const available = hasAnyRecipes && !loadFailed;
 
   useEffect(() => {
-    if (settled) onAvailability(hasAnyRecipes);
-  }, [settled, hasAnyRecipes, onAvailability]);
+    if (settled) onAvailability(available);
+  }, [settled, available, onAvailability]);
+
+  const retry = () => {
+    if (favouritesQuery.isError) void favouritesQuery.refetch();
+    if (unifiedQuery.isError) void unifiedQuery.refetch();
+  };
+
+  const errorBlock = loadFailed ? (
+    <View style={styles.errorBlock}>
+      <InlineError message="Couldn't load your recipes. Try again, or skip and add them later." />
+      <Button
+        variant="outline"
+        onPress={retry}
+        accessibilityLabel="Try loading your recipes again"
+      >
+        Try again
+      </Button>
+    </View>
+  ) : null;
 
   const pickedKeys = new Set(state.recipes.map(recipeKey));
   const visible = filterRecipes(all, filter, query);
@@ -86,6 +111,8 @@ export function WizardRecipesStep({
         />
       </View>
     );
+  } else if (!hasAnyRecipes && loadFailed) {
+    body = errorBlock;
   } else if (!hasAnyRecipes) {
     body = (
       <EmptyState
@@ -98,6 +125,7 @@ export function WizardRecipesStep({
   } else {
     body = (
       <>
+        {errorBlock}
         <TextInput
           placeholder="Search your recipes"
           accessibilityLabel="Search your recipes"
@@ -256,6 +284,9 @@ const styles = StyleSheet.create({
   loading: {
     paddingVertical: Spacing["3xl"],
     alignItems: "center",
+  },
+  errorBlock: {
+    gap: Spacing.sm,
   },
   filters: {
     flexDirection: "row",

@@ -11,14 +11,19 @@ import {
   type WizardState,
 } from "../cookbook-wizard-utils";
 
-const { mockSelection, sources } = vi.hoisted(() => ({
-  mockSelection: vi.fn(),
-  sources: {
-    favourites: [] as unknown[],
-    personal: [] as unknown[],
-    loading: false,
-  },
-}));
+const { mockSelection, sources, refetchFavourites, refetchPersonal } =
+  vi.hoisted(() => ({
+    mockSelection: vi.fn(),
+    refetchFavourites: vi.fn(),
+    refetchPersonal: vi.fn(),
+    sources: {
+      favourites: [] as unknown[],
+      personal: [] as unknown[],
+      loading: false,
+      favouritesError: false,
+      personalError: false,
+    },
+  }));
 
 vi.mock("expo-image", () => ({
   Image: () => null,
@@ -36,18 +41,39 @@ vi.mock("@/hooks/useHaptics", () => ({
 vi.mock("@/hooks/useFavouriteRecipes", () => ({
   useFavouriteRecipes: () =>
     sources.loading
-      ? { data: undefined, isPending: true }
-      : { data: sources.favourites, isPending: false },
+      ? { data: undefined, isPending: true, isError: false }
+      : sources.favouritesError
+        ? {
+            data: undefined,
+            isPending: false,
+            isError: true,
+            refetch: refetchFavourites,
+          }
+        : {
+            data: sources.favourites,
+            isPending: false,
+            isError: false,
+            refetch: refetchFavourites,
+          },
 }));
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({
   useUnifiedRecipes: () =>
     sources.loading
-      ? { data: undefined, isPending: true }
-      : {
-          data: { community: [], personal: sources.personal, frequent: [] },
-          isPending: false,
-        },
+      ? { data: undefined, isPending: true, isError: false }
+      : sources.personalError
+        ? {
+            data: undefined,
+            isPending: false,
+            isError: true,
+            refetch: refetchPersonal,
+          }
+        : {
+            data: { community: [], personal: sources.personal, frequent: [] },
+            isPending: false,
+            isError: false,
+            refetch: refetchPersonal,
+          },
 }));
 
 const dispatch = vi.fn();
@@ -83,7 +109,12 @@ beforeEach(() => {
   sources.favourites = [chicken];
   sources.personal = [stew];
   sources.loading = false;
+  sources.favouritesError = false;
+  sources.personalError = false;
 });
+
+const ERROR_COPY =
+  "Couldn't load your recipes. Try again, or skip and add them later.";
 
 describe("WizardRecipesStep", () => {
   it("dispatches toggleRecipe with the tapped recipe", () => {
@@ -172,5 +203,35 @@ describe("WizardRecipesStep", () => {
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getByText("No recipes match")).toBeTruthy();
     expect(onAvailability).not.toHaveBeenCalledWith(false);
+  });
+
+  it("shows the load error, not the empty state, when a source fails", () => {
+    sources.favouritesError = true;
+    sources.personal = [];
+    renderStep();
+    expect(screen.getByText(ERROR_COPY)).toBeTruthy();
+    expect(screen.queryByText("No saved recipes yet")).toBeNull();
+    expect(onAvailability).toHaveBeenCalledWith(false);
+    expect(onAvailability).not.toHaveBeenCalledWith(true);
+  });
+
+  it("retries only the source that failed", () => {
+    sources.favouritesError = true;
+    renderStep();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Try loading your recipes again" }),
+    );
+    expect(refetchFavourites).toHaveBeenCalledTimes(1);
+    expect(refetchPersonal).not.toHaveBeenCalled();
+  });
+
+  it("keeps the rows that loaded alongside the error", () => {
+    sources.personalError = true;
+    renderStep();
+    expect(screen.getByText(ERROR_COPY)).toBeTruthy();
+    expect(
+      screen.getByRole("checkbox", { name: "Garlic Lemon Chicken" }),
+    ).toBeTruthy();
+    expect(onAvailability).toHaveBeenCalledWith(false);
   });
 });
