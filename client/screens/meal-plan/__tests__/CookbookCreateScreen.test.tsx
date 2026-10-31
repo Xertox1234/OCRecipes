@@ -65,6 +65,9 @@ vi.mock("@react-navigation/native", () => ({
     setOptions: mockSetOptions,
     setParams: mockSetParams,
     dispatch: vi.fn(),
+    // The wizard listens for focus to finish a close it had to defer.
+    addListener: () => () => {},
+    isFocused: () => true,
     getParent: () => ({ navigate: mockParentNavigate }),
   }),
   useRoute: () => ({ params: mockRouteParams() }),

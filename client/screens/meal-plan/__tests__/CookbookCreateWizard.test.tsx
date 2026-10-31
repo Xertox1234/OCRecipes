@@ -25,6 +25,7 @@ const {
   mockGetState,
   mockSetOptions,
   mockIsFocused,
+  mockAddListener,
   mockRouteParams,
   mockCreate,
   mockUploadCover,
@@ -43,6 +44,7 @@ const {
   mockGetState: vi.fn(),
   mockSetOptions: vi.fn(),
   mockIsFocused: vi.fn(),
+  mockAddListener: vi.fn(),
   mockRouteParams: vi.fn(),
   mockCreate: vi.fn(),
   mockUploadCover: vi.fn(),
@@ -73,6 +75,7 @@ vi.mock("@react-navigation/native", () => ({
     getState: mockGetState,
     setOptions: mockSetOptions,
     isFocused: mockIsFocused,
+    addListener: mockAddListener,
     setParams: vi.fn(),
     dispatch: vi.fn(),
     getParent: () => ({ navigate: vi.fn() }),
@@ -204,6 +207,7 @@ beforeEach(() => {
   mockRouteParams.mockReturnValue(undefined);
   mockCanGoBack.mockReturnValue(true);
   mockIsFocused.mockReturnValue(true);
+  mockAddListener.mockImplementation(() => vi.fn());
   // Pushed onto MealPlanHome, so dismiss() is a plain goBack().
   mockGetState.mockReturnValue({
     index: 1,
@@ -672,6 +676,15 @@ describe("CookbookCreateWizard — closing mid-save", () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(mockGoBack).not.toHaveBeenCalled();
     expect(mockPopTo).not.toHaveBeenCalled();
+
+    // Coming back must not find a saved, locked wizard with no way out:
+    // the skipped close runs on return.
+    const onFocus = mockAddListener.mock.calls
+      .filter(([event]) => event === "focus")
+      .at(-1)?.[1] as () => void;
+    mockIsFocused.mockReturnValue(true);
+    act(() => onFocus());
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
   });
 });
 

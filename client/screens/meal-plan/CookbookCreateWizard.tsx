@@ -156,9 +156,22 @@ export default function CookbookCreateWizard() {
   );
   // Leaves once the create has settled — unless the user already left this
   // screen another way (e.g. a tab switch), when closing would yank them.
+  // Then the close waits for their return: the saved wizard is locked, so
+  // it must not be left on screen with no way out.
+  const pendingDismiss = useRef(false);
   const closeIfFocused = () => {
     if (navigation.isFocused()) dismiss();
+    else pendingDismiss.current = true;
   };
+  useEffect(
+    () =>
+      navigation.addListener("focus", () => {
+        if (!pendingDismiss.current) return;
+        pendingDismiss.current = false;
+        dismiss();
+      }),
+    [navigation, dismiss],
+  );
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
