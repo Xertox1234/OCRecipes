@@ -181,7 +181,7 @@ export default function CookbookListScreen() {
         </Animated.View>
       );
     },
-    [theme, haptics, navigation, handleDelete, reducedMotion],
+    [theme, isDark, haptics, navigation, handleDelete, reducedMotion],
   );
 
   if (isLoading) {
