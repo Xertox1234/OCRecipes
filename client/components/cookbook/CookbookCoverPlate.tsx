@@ -193,162 +193,174 @@ export function CookbookCoverPlate({
   }, [celebrateKey, reducedMotion, scale]);
 
   return (
-    <AnimatedPressable
-      onPress={interactive ? onPress : undefined}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      disabled={!interactive}
-      style={[styles.plate, animatedSize, animatedPress]}
+    // The fade-in lives on this wrapper: an `entering` animation drives
+    // opacity, which would fight the press dim on the pressable below.
+    <Animated.View
+      style={styles.plate}
       entering={reducedMotion ? undefined : FadeIn.duration(280)}
-      accessible={false}
       importantForAccessibility="no-hide-descendants"
       accessibilityElementsHidden
     >
-      {/* Page block: the paper edge showing past the cover on the right. */}
-      <View
-        style={[
-          styles.pages,
-          { backgroundColor: theme.surface, borderColor: theme.border },
-        ]}
+      <AnimatedPressable
+        onPress={interactive ? onPress : undefined}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={!interactive}
+        style={[animatedSize, animatedPress]}
+        accessible={false}
       >
+        {/* Page block: the paper edge showing past the cover on the right. */}
         <View
-          style={[styles.pageLine, { right: 2, backgroundColor: theme.border }]}
-        />
-        <View
-          style={[styles.pageLine, { right: 4, backgroundColor: theme.border }]}
-        />
-      </View>
-
-      {/* Board: carries the shadow. Kept separate from the clipping layer
-          below — on iOS `overflow: hidden` clips a view's own shadow, which
-          left the old plate sitting flat on the page. */}
-      <View
-        style={[
-          styles.board,
-          {
-            backgroundColor: artUri
-              ? theme.backgroundSecondary
-              : theme.accentSolid,
-            shadowOpacity: isDark ? 0.5 : 0.22,
-          },
-        ]}
-      >
-        <View style={styles.clip}>
-          {artUri ? (
-            <Image
-              source={{ uri: artUri }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={reducedMotion ? 0 : 220}
-            />
-          ) : (
-            // Cloth: light catching the top of the board, falling off to
-            // the bottom edge, so the terracotta reads as bound cloth rather
-            // than a flat fill.
-            <LinearGradient
-              colors={[
-                withOpacity(cream, 0.16),
-                "transparent",
-                "rgba(0,0,0,0.18)",
-              ]}
-              locations={[0, 0.45, 1]}
-              style={StyleSheet.absoluteFill}
-            />
-          )}
-
-          {/* Scrim under the title — only needed over art, where the
-              underlying image is arbitrary and the title would otherwise be
-              unreadable. */}
-          {artUri ? (
-            <LinearGradient
-              colors={["transparent", "rgba(0,0,0,0.15)", "rgba(0,0,0,0.62)"]}
-              locations={[0.35, 0.62, 1]}
-              style={StyleSheet.absoluteFill}
-            />
-          ) : null}
-
-          {/* Spine: a darker band where the board hinges, with a highlight
-              along the crease. The single cheapest cue that this is a book
-              and not a card. */}
-          <View style={styles.spine} />
+          style={[
+            styles.pages,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
           <View
             style={[
-              styles.spineCrease,
-              { backgroundColor: withOpacity(cream, 0.28) },
+              styles.pageLine,
+              { right: 2, backgroundColor: theme.border },
             ]}
           />
-
-          {/* Keyline: the debossed border a hardback cover is stamped with. */}
           <View
-            style={[styles.keyline, { borderColor: withOpacity(ink, 0.55) }]}
+            style={[
+              styles.pageLine,
+              { right: 4, backgroundColor: theme.border },
+            ]}
           />
+        </View>
 
-          {generateArmed && !artUri ? (
+        {/* Board: carries the shadow. Kept separate from the clipping layer
+          below — on iOS `overflow: hidden` clips a view's own shadow, which
+          left the old plate sitting flat on the page. */}
+        <View
+          style={[
+            styles.board,
+            {
+              backgroundColor: artUri
+                ? theme.backgroundSecondary
+                : theme.accentSolid,
+              shadowOpacity: isDark ? 0.5 : 0.22,
+            },
+          ]}
+        >
+          <View style={styles.clip}>
+            {artUri ? (
+              <Image
+                source={{ uri: artUri }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                transition={reducedMotion ? 0 : 220}
+              />
+            ) : (
+              // Cloth: light catching the top of the board, falling off to
+              // the bottom edge, so the terracotta reads as bound cloth rather
+              // than a flat fill.
+              <LinearGradient
+                colors={[
+                  withOpacity(cream, 0.16),
+                  "transparent",
+                  "rgba(0,0,0,0.18)",
+                ]}
+                locations={[0, 0.45, 1]}
+                style={StyleSheet.absoluteFill}
+              />
+            )}
+
+            {/* Scrim under the title — only needed over art, where the
+              underlying image is arbitrary and the title would otherwise be
+              unreadable. */}
+            {artUri ? (
+              <LinearGradient
+                colors={["transparent", "rgba(0,0,0,0.15)", "rgba(0,0,0,0.62)"]}
+                locations={[0.35, 0.62, 1]}
+                style={StyleSheet.absoluteFill}
+              />
+            ) : null}
+
+            {/* Spine: a darker band where the board hinges, with a highlight
+              along the crease. The single cheapest cue that this is a book
+              and not a card. */}
+            <View style={styles.spine} />
             <View
               style={[
-                styles.armedBadge,
-                { backgroundColor: withOpacity(cream, 0.2) },
+                styles.spineCrease,
+                { backgroundColor: withOpacity(cream, 0.28) },
               ]}
-            >
-              <Feather name="feather" size={12} color={cream} />
-            </View>
-          ) : null}
+            />
 
-          <View style={styles.titleWrap}>
-            {/* Animated.Text, not ThemedText: the font size is animated in
+            {/* Keyline: the debossed border a hardback cover is stamped with. */}
+            <View
+              style={[styles.keyline, { borderColor: withOpacity(ink, 0.55) }]}
+            />
+
+            {generateArmed && !artUri ? (
+              <View
+                style={[
+                  styles.armedBadge,
+                  { backgroundColor: withOpacity(cream, 0.2) },
+                ]}
+              >
+                <Feather name="feather" size={12} color={cream} />
+              </View>
+            ) : null}
+
+            <View style={styles.titleWrap}>
+              {/* Animated.Text, not ThemedText: the font size is animated in
                 step with the plate, and ThemedText is a plain wrapper with no
                 ref forwarding so it can't be wrapped by
                 createAnimatedComponent. Every style ThemedText would
                 contribute is set explicitly below; the Dynamic Type cap
                 replaces its `maxScale` handling, and is needed because the
                 plate is a fixed-ratio box with a 3-line title. */}
-            <Animated.Text
-              numberOfLines={3}
-              maxFontSizeMultiplier={MAX_FONT_SCALE_CONSTRAINED}
-              style={[
-                styles.title,
-                { color: isPlaceholder ? withOpacity(ink, 0.6) : ink },
-                animatedTitle,
-              ]}
-            >
-              {title}
-            </Animated.Text>
-            {subtitle ? (
               <Animated.Text
-                numberOfLines={2}
+                numberOfLines={3}
                 maxFontSizeMultiplier={MAX_FONT_SCALE_CONSTRAINED}
                 style={[
-                  styles.subtitle,
-                  { color: withOpacity(ink, 0.85) },
-                  animatedSubtitle,
+                  styles.title,
+                  { color: isPlaceholder ? withOpacity(ink, 0.6) : ink },
+                  animatedTitle,
                 ]}
               >
-                {subtitle}
+                {title}
               </Animated.Text>
-            ) : null}
-          </View>
-
-          {busy ? (
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                styles.busyOverlay,
-                { backgroundColor: withOpacity(theme.backgroundRoot, 0.72) },
-              ]}
-            >
-              <ActivityIndicator size="small" color={theme.link} />
-              {busyLabel ? (
-                <ThemedText
-                  style={[styles.busyLabel, { color: theme.textSecondary }]}
+              {subtitle ? (
+                <Animated.Text
+                  numberOfLines={2}
+                  maxFontSizeMultiplier={MAX_FONT_SCALE_CONSTRAINED}
+                  style={[
+                    styles.subtitle,
+                    { color: withOpacity(ink, 0.85) },
+                    animatedSubtitle,
+                  ]}
                 >
-                  {busyLabel}
-                </ThemedText>
+                  {subtitle}
+                </Animated.Text>
               ) : null}
             </View>
-          ) : null}
+
+            {busy ? (
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  styles.busyOverlay,
+                  { backgroundColor: withOpacity(theme.backgroundRoot, 0.72) },
+                ]}
+              >
+                <ActivityIndicator size="small" color={theme.link} />
+                {busyLabel ? (
+                  <ThemedText
+                    style={[styles.busyLabel, { color: theme.textSecondary }]}
+                  >
+                    {busyLabel}
+                  </ThemedText>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
         </View>
-      </View>
-    </AnimatedPressable>
+      </AnimatedPressable>
+    </Animated.View>
   );
 }
 
