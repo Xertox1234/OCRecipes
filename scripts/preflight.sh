@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Local pre-push / pre-PR gate. Two modes, plus a scope modifier:
 #   scripts/preflight.sh --fast   → fast subset (WIP pushes): tsc + changed-file
-#                                   type-aware lint + cheap pattern checks + related tests.
+#                                   type-aware lint + CI's cheap pattern checks (each gated
+#                                   on the paths it covers) + related tests + repo-walk
+#                                   guard tests; whole-repo lint/format when their config
+#                                   or dependencies change.
 #   scripts/preflight.sh          → full CI parity (PR-branch pushes + before gh pr create);
 #                                   writes a HEAD-keyed pass-stamp on success.
 #   --fast --uncommitted         → scope --fast's changed-file set off the working tree
@@ -99,12 +102,92 @@ if [ "$MODE" = "fast" ]; then
       < <(git ls-files --others --exclude-standard -- '.claude/hooks/' '.husky/' 'scripts/*.sh' 2>/dev/null)
   fi
 
+  # Every changed path, any type — gates the CI pattern-check twins below. ACMR like CHANGED:
+  # each consumer is either a whole-tree check (only needs "did anything here change") or
+  # prettier, which can't take a deleted path.
+  ALL_CHANGED=()
+  while IFS= read -r f; do [ -n "$f" ] && ALL_CHANGED+=("$f"); done \
+    < <(git diff --name-only --diff-filter=ACMR "${DIFF_BASE_ARGS[@]}" 2>/dev/null)
+  if [ "$UNCOMMITTED" -eq 1 ]; then
+    while IFS= read -r f; do [ -n "$f" ] && ALL_CHANGED+=("$f"); done \
+      < <(git ls-files --others --exclude-standard 2>/dev/null)
+  fi
+  # changed_match <case-pattern> [<exclude-pattern>] → 0 if any changed path matches.
+  # case's `*` crosses `/`, so client/*.tsx means client/**/*.tsx.
+  changed_match() {
+    local f
+    for f in ${ALL_CHANGED[@]+"${ALL_CHANGED[@]}"}; do
+      # shellcheck disable=SC2254 # unquoted on purpose: the argument IS the pattern
+      case "$f" in
+        $1)
+          if [ -n "${2:-}" ]; then case "$f" in $2) continue ;; esac; fi
+          return 0 ;;
+      esac
+    done
+    return 1
+  }
+  # Lines a branch changed in the dependency manifests (diff headers excluded).
+  DEP_DIFF=$(git diff "${DIFF_BASE_ARGS[@]}" -- package.json package-lock.json 2>/dev/null | grep -E '^[+-][^+-]' || true)
+  # Whole-repo lint when the lint rules themselves may have changed: an eslint dependency
+  # bump turns rules on in files nobody touched (#1546: react-hooks 5.2→7.1, 65 files).
+  # Limit: this lints with the LOCAL node_modules — a bump not yet installed is not seen.
+  LINT_ALL=0
+  if changed_match 'eslint.config.*' || changed_match 'eslint-plugin-ocrecipes/*' \
+    || grep -qE 'eslint|react-hooks|react-compiler' <<<"$DEP_DIFF"; then
+    LINT_ALL=1
+  fi
+  FORMAT_ALL=0
+  if changed_match '.prettierignore' || changed_match '.prettierrc*' || changed_match 'prettier.config.*' \
+    || grep -qE 'prettier' <<<"$DEP_DIFF"; then
+    FORMAT_ALL=1
+  fi
+
   # Cheap, deterministic, no-DB pattern checks first (fail fast).
   run npm run build:copilot-instructions:check || exit 1
 
-  # Type-aware lint on changed files only (ESLINT_NO_TYPE_AWARE= enables type-aware, matching CI).
-  if [ "${#CHANGED[@]}" -gt 0 ]; then
+  # Type-aware lint (ESLINT_NO_TYPE_AWARE= enables type-aware, matching CI): changed files
+  # only, or CI's whole-repo `npm run lint` (which includes the bailout ratchet) on a trigger.
+  if [ "$LINT_ALL" -eq 1 ]; then
+    run npm run lint || exit 1
+  elif [ "${#CHANGED[@]}" -gt 0 ]; then
     run env ESLINT_NO_TYPE_AWARE= npx eslint "${CHANGED[@]}" || exit 1
+  fi
+
+  # CI's pattern checks, each gated on the paths it covers (the lint-staged globs) and run
+  # whole-tree exactly as CI invokes them. lint-staged already runs them per commit, but not
+  # when husky didn't fire (#1357, #1370: worktree hooksPath) or under --no-verify — this is
+  # the last local stop before CI. Each is ~0.1s; the bailout ratchet is ~7s (whole client
+  # tree through babel), so it only runs when client source changed.
+  if changed_match 'client/*.tsx'; then
+    run node scripts/check-accessibility.js || exit 1
+    run node scripts/check-hardcoded-colors.js || exit 1
+    run node scripts/check-bottomsheet-backhandler.js || exit 1
+  fi
+  if [ "$LINT_ALL" -eq 0 ] && changed_match 'client/*.ts*' '*__tests__/*'; then
+    run node scripts/check-react-compiler-bailouts.js || exit 1
+  fi
+  if changed_match 'client/components/*__tests__/*.test.tsx'; then
+    run node scripts/check-jsdom-pragma.js || exit 1
+  fi
+  if changed_match 'server/storage/*.ts'; then
+    run node scripts/check-idor-storage.js || exit 1
+  fi
+  if changed_match 'docs/solutions/*.md'; then
+    run node scripts/check-solution-frontmatter.js || exit 1
+  fi
+
+  # Formatting. Changed TS is already gated by eslint's prettier/prettier rule (error), so
+  # only the other check:format types need prettier here; whole-repo when prettier changed.
+  if [ "$FORMAT_ALL" -eq 1 ]; then
+    run npm run check:format || exit 1
+  else
+    FORMAT_FILES=()
+    for f in ${ALL_CHANGED[@]+"${ALL_CHANGED[@]}"}; do
+      case "$f" in *.js|*.css|*.json) FORMAT_FILES+=("$f") ;; esac
+    done
+    if [ "${#FORMAT_FILES[@]}" -gt 0 ]; then
+      run npx prettier --check "${FORMAT_FILES[@]}" || exit 1
+    fi
   fi
 
   # Rules-file size guard on changed rules files. Run STREAMED (not via run(), which is quiet
@@ -139,6 +222,16 @@ if [ "$MODE" = "fast" ]; then
   if [ "${#CHANGED[@]}" -gt 0 ]; then
     if pg_isready -q 2>/dev/null; then
       run npx vitest related --run "${CHANGED[@]}" || exit 1
+      # Repo-walk guard tests read the tree instead of importing a changed file, so
+      # `vitest related` never selects them (#1429: contract-coverage guard, CI-only).
+      # ~1s. Keep this list in step with any new tree-walking guard test.
+      run npx vitest run \
+        scripts/__tests__/contract-coverage-guard.test.ts \
+        scripts/__tests__/fast-check-property-seed-guard.test.ts \
+        scripts/__tests__/worklet-directive-guard.test.ts \
+        server/lib/__tests__/bcrypt-hash-facade.test.ts \
+        server/routes/__tests__/auth-route-wiring.test.ts \
+        server/services/notifications/__tests__/facade-only.test.ts || exit 1
     else
       echo "⚠ Postgres not reachable — related tests SKIPPED; NOT writing a pass-stamp."
       echo "  (lint + tsc passed; PR creation stays blocked until a run that executes tests — or SKIP_PR_PREFLIGHT=1.)"
@@ -172,8 +265,11 @@ run npm run check:types || exit 1
 run npm run build:copilot-instructions:check || exit 1
 run node scripts/check-accessibility.js || exit 1
 run node scripts/check-hardcoded-colors.js || exit 1
+run node scripts/check-bottomsheet-backhandler.js || exit 1
 run node scripts/check-idor-storage.js || exit 1
 run node scripts/check-jsdom-pragma.js || exit 1
+run node scripts/check-rules-file-size.js || exit 1
+run node scripts/check-solution-frontmatter.js || exit 1
 
 # Hook unit tests. The full mechanism — the `.claude/hooks/test-*.sh` glob loop, the inherited
 # git-env strip (so a test's `git -C <tmp>` can't be hijacked onto the real repo), per-test
