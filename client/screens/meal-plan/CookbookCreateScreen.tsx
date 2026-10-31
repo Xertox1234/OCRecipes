@@ -14,7 +14,6 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { NotificationFeedbackType } from "expo-haptics";
 
-import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { FieldCounter } from "@/components/FieldCounter";
@@ -39,17 +38,17 @@ import { ApiError } from "@/lib/api-error";
 import { logger } from "@/lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
-  useCreateCookbook,
   useCookbookDetail,
   useUpdateCookbook,
   useUploadCookbookCover,
   useGenerateCookbookCover,
 } from "@/hooks/useCookbooks";
-import { Spacing, FontFamily } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 import type { CookbookCreateScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 import { useHeaderCloseButton } from "@/hooks/useHeaderCloseButton";
+import CookbookCreateWizard from "./CookbookCreateWizard";
 
 const NAME_MAX = 100;
 const DESCRIPTION_MAX = 500;
@@ -57,12 +56,25 @@ const SCREEN_PADDING = Spacing.lg;
 /** Long enough for the cover's success pop to land before the screen closes. */
 const SUCCESS_SETTLE_MS = 450;
 
+/**
+ * The CookbookCreate route: a new cookbook is made step by step in the
+ * wizard; an existing one is edited in the single-page form.
+ */
 export default function CookbookCreateScreen() {
+  const route = useRoute<RouteProp<MealPlanStackParamList, "CookbookCreate">>();
+  return route.params?.cookbookId ? (
+    <CookbookEditForm />
+  ) : (
+    <CookbookCreateWizard />
+  );
+}
+
+function CookbookEditForm() {
   const navigation = useNavigation<CookbookCreateScreenNavigationProp>();
   const route = useRoute<RouteProp<MealPlanStackParamList, "CookbookCreate">>();
-  const cookbookId = route.params?.cookbookId;
+  // Only rendered with an id — see the switch above.
+  const cookbookId = route.params?.cookbookId ?? 0;
   const fromHome = route.params?.fromHome;
-  const isEditMode = !!cookbookId;
   useFromHomeBackRedirect(navigation, fromHome);
 
   const headerHeight = useHeaderHeight();
@@ -74,7 +86,6 @@ export default function CookbookCreateScreen() {
   const toast = useToast();
   const canGenerateCover = usePremiumFeature("cookbookCoverGeneration");
 
-  const createMutation = useCreateCookbook();
   const updateMutation = useUpdateCookbook();
   const uploadCoverMutation = useUploadCookbookCover();
   const generateCoverMutation = useGenerateCookbookCover();
@@ -83,16 +94,14 @@ export default function CookbookCreateScreen() {
     isError: loadError,
     isLoading: loadingExisting,
     refetch: refetchExisting,
-  } = useCookbookDetail(cookbookId ?? 0);
+  } = useCookbookDetail(cookbookId);
 
-  const mutation = isEditMode ? updateMutation : createMutation;
+  // The form is pre-populated from the fetched cookbook. If that fetch failed
+  // (or hasn't resolved), the form is empty — submitting would overwrite the
+  // cookbook with blank values, so block submit until it loads.
+  const editLoadBlocked = loadError || !existingCookbook;
 
-  // In edit mode, the form is pre-populated from the fetched cookbook. If that
-  // fetch failed (or hasn't resolved), the form is empty — submitting would
-  // overwrite the cookbook with blank values, so block submit until it loads.
-  const editLoadBlocked = isEditMode && (loadError || !existingCookbook);
-
-  // Create stays pressable with an empty name; pressing it names the field
+  // Save stays pressable with an empty name; pressing it names the field
   // (form-fields spec §5.1).
   const nameField = useFieldValidation((value) =>
     value.trim() === "" ? "Enter a name for your cookbook." : null,
@@ -131,11 +140,8 @@ export default function CookbookCreateScreen() {
   }, []);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  // Create mode has no cookbook id yet, so a chosen cover can't be attached
-  // until after the create call. Both cover paths are therefore deferred:
-  // a picked photo is held here, and "generate" is armed as an intent.
+  // A picked photo shows on the plate while it uploads.
   const [pendingCoverUri, setPendingCoverUri] = useState<string | null>(null);
-  const [generateOnCreate, setGenerateOnCreate] = useState(false);
   // Which cover step is running, if any. A discriminated kind rather than the
   // label alone: the buttons key their spinners off `kind`, so re-wording the
   // copy can't silently detach them.
@@ -155,20 +161,20 @@ export default function CookbookCreateScreen() {
     [],
   );
 
-  // Pre-populate form when editing
+  // Pre-populate the form once the cookbook loads.
   useEffect(() => {
-    if (isEditMode && existingCookbook && !initialized) {
+    if (existingCookbook && !initialized) {
       setName(existingCookbook.name);
       setDescription(existingCookbook.description || "");
       setInitialized(true);
     }
-  }, [isEditMode, existingCookbook, initialized, setName]);
+  }, [existingCookbook, initialized, setName]);
 
   const trimmedName = name.trim();
   // The name is not in here: an empty name is a press that says what's
   // missing, not a disabled button.
   const canSubmit =
-    !mutation.isPending &&
+    !updateMutation.isPending &&
     !editLoadBlocked &&
     // An in-flight cover step owns the screen — submitting under it would
     // race a second mutation against the same cookbook.
@@ -176,7 +182,7 @@ export default function CookbookCreateScreen() {
     !saved;
   // Fields stop taking edits while a save is running or has landed — an edit
   // typed then would be silently dropped.
-  const formLocked = mutation.isPending || coverBusy !== null || saved;
+  const formLocked = updateMutation.isPending || coverBusy !== null || saved;
 
   const storedCoverUrl = existingCookbook?.coverImageUrl ?? null;
   const hasCover = !!(pendingCoverUri ?? storedCoverUrl);
@@ -219,13 +225,6 @@ export default function CookbookCreateScreen() {
 
       const uri = result.assets[0].uri;
 
-      if (!isEditMode) {
-        // Deferred: shown on the plate now, uploaded once the cookbook exists.
-        setPendingCoverUri(uri);
-        setGenerateOnCreate(false);
-        return;
-      }
-
       setPendingCoverUri(uri);
       setCoverBusy({ kind: "upload", label: "Uploading…" });
       try {
@@ -243,14 +242,7 @@ export default function CookbookCreateScreen() {
       logger.error("Cookbook cover picker failed:", err);
       toast.error("Couldn't open your photo library.");
     }
-  }, [
-    haptics,
-    isEditMode,
-    cookbookId,
-    uploadCoverMutation,
-    toast,
-    describeCoverError,
-  ]);
+  }, [haptics, cookbookId, uploadCoverMutation, toast, describeCoverError]);
 
   const handleGenerateCover = useCallback(async () => {
     if (!canGenerateCover) {
@@ -259,15 +251,6 @@ export default function CookbookCreateScreen() {
       return;
     }
     haptics.selection();
-
-    if (!isEditMode) {
-      // Armed as an intent — the generator needs a cookbook id, which only
-      // exists after create. Choosing this clears a previously picked photo:
-      // a cookbook has one cover, so the two actions are mutually exclusive.
-      setGenerateOnCreate((prev) => !prev);
-      setPendingCoverUri(null);
-      return;
-    }
 
     setCoverBusy({ kind: "generate", label: "Generating…" });
     try {
@@ -294,7 +277,6 @@ export default function CookbookCreateScreen() {
   }, [
     canGenerateCover,
     haptics,
-    isEditMode,
     cookbookId,
     generateCoverMutation,
     toast,
@@ -306,20 +288,17 @@ export default function CookbookCreateScreen() {
    * `apiRequest` throws `ApiError("<status>: <body>")`, so the message is the
    * raw server response.
    */
-  const describeError = useCallback(
-    (err: unknown): string => {
-      if (err instanceof ApiError) {
-        if (err.code === ErrorCode.VALIDATION_ERROR) {
-          return "Please check the name and try again.";
-        }
-        if (err.code === ErrorCode.RATE_LIMITED) {
-          return "Too many requests. Please wait a moment and try again.";
-        }
+  const describeError = useCallback((err: unknown): string => {
+    if (err instanceof ApiError) {
+      if (err.code === ErrorCode.VALIDATION_ERROR) {
+        return "Please check the name and try again.";
       }
-      return `Couldn't ${isEditMode ? "update" : "create"} this cookbook. Please try again.`;
-    },
-    [isEditMode],
-  );
+      if (err.code === ErrorCode.RATE_LIMITED) {
+        return "Too many requests. Please wait a moment and try again.";
+      }
+    }
+    return "Couldn't update this cookbook. Please try again.";
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     setError(null);
@@ -328,109 +307,33 @@ export default function CookbookCreateScreen() {
       return;
     }
 
-    if (isEditMode && cookbookId) {
-      try {
-        await updateMutation.mutateAsync({
-          id: cookbookId,
-          name: trimmedName,
-          description: description.trim() || null,
-        });
-        haptics.notification(NotificationFeedbackType.Success);
-        // The toast is this branch's one announcer (iOS announce + Android
-        // live region); its own haptic is off — the line above already fired.
-        toast.success("Changes saved", { haptic: false });
-        setCelebrateKey((k) => k + 1);
-        if (reducedMotion) dismiss();
-        else closeTimer.current = setTimeout(dismiss, SUCCESS_SETTLE_MS);
-      } catch (err) {
-        haptics.notification(NotificationFeedbackType.Error);
-        const msg = describeError(err);
-        setError(msg);
-        // InlineError announces the message itself — announcing here too
-        // would say it twice on iOS.
-      }
-      return;
-    }
-
-    let created;
     try {
-      created = await createMutation.mutateAsync({
+      await updateMutation.mutateAsync({
+        id: cookbookId,
         name: trimmedName,
-        description: description.trim() || undefined,
+        description: description.trim() || null,
       });
+      haptics.notification(NotificationFeedbackType.Success);
+      // The toast is this branch's one announcer (iOS announce + Android
+      // live region); its own haptic is off — the line above already fired.
+      toast.success("Changes saved", { haptic: false });
+      setCelebrateKey((k) => k + 1);
+      if (reducedMotion) dismiss();
+      else closeTimer.current = setTimeout(dismiss, SUCCESS_SETTLE_MS);
     } catch (err) {
       haptics.notification(NotificationFeedbackType.Error);
       setError(describeError(err));
-      return;
+      // InlineError announces the message itself — announcing here too
+      // would say it twice on iOS.
     }
-
-    // The cookbook now exists. A cover failure from here on must not read as
-    // "creation failed" — the book is saved either way, so the cover step
-    // reports separately and the flow still completes.
-    let coverFailed = false;
-    if (pendingCoverUri) {
-      setCoverBusy({ kind: "upload", label: "Adding your cover…" });
-      try {
-        await uploadCoverMutation.mutateAsync({
-          cookbookId: created.id,
-          uri: pendingCoverUri,
-        });
-      } catch (err) {
-        logger.error("Cookbook cover upload failed after create:", err);
-        coverFailed = true;
-      } finally {
-        setCoverBusy(null);
-      }
-    } else if (generateOnCreate) {
-      setCoverBusy({ kind: "generate", label: "Generating your cover…" });
-      try {
-        await generateCoverMutation.mutateAsync(created.id);
-      } catch (err) {
-        logger.error("Cookbook cover generation failed after create:", err);
-        coverFailed = true;
-      } finally {
-        setCoverBusy(null);
-      }
-    }
-
-    haptics.notification(
-      coverFailed
-        ? NotificationFeedbackType.Warning
-        : NotificationFeedbackType.Success,
-    );
-    // Exactly ONE announcer per branch. Toast is itself an announcer (an
-    // iOS-gated announceForAccessibility PLUS an Android polite live region),
-    // so announcing here as well would drop one message on iOS — where
-    // announcements don't queue — and double-speak on TalkBack. The haptic
-    // above already marks the outcome, so neither toast fires its own.
-    if (coverFailed) {
-      toast.error(
-        "Cookbook created, but the cover couldn't be added. You can add one by editing the cookbook.",
-        { haptic: false },
-      );
-      dismiss();
-      return;
-    }
-    toast.success("Cookbook created", { haptic: false });
-    // The full success gets its moment: the cover pops, then the screen
-    // closes once it has landed.
-    setCelebrateKey((k) => k + 1);
-    if (reducedMotion) dismiss();
-    else closeTimer.current = setTimeout(dismiss, SUCCESS_SETTLE_MS);
   }, [
     nameField,
     trimmedName,
     description,
-    isEditMode,
     cookbookId,
     haptics,
     toast,
-    createMutation,
     updateMutation,
-    uploadCoverMutation,
-    generateCoverMutation,
-    pendingCoverUri,
-    generateOnCreate,
     describeError,
     dismiss,
     reducedMotion,
@@ -445,7 +348,6 @@ export default function CookbookCreateScreen() {
   );
 
   const isCoverBusy = coverBusy !== null;
-  const submitLabel = isEditMode ? "Save Changes" : "Create Cookbook";
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
@@ -470,7 +372,6 @@ export default function CookbookCreateScreen() {
           width={coverWidth}
           busy={isCoverBusy}
           busyLabel={coverBusy?.label}
-          generateArmed={!isEditMode && generateOnCreate}
           onPress={() => void handlePickPhoto()}
           // Same guards as the "Add photo" button it stands in for.
           disabled={formLocked || editLoadBlocked}
@@ -484,7 +385,6 @@ export default function CookbookCreateScreen() {
             onPress={() => void handlePickPhoto()}
             accessibilityLabel={coverPhotoActionLabel(hasCover)}
             accessibilityHint="Choose a cover image from your photo library"
-            selected={!isEditMode && !!pendingCoverUri}
             loading={coverBusy?.kind === "upload"}
             // `editLoadBlocked` gates these for the same reason it gates
             // submit: with the fetch failed, `storedCoverUrl` is null, so
@@ -507,7 +407,6 @@ export default function CookbookCreateScreen() {
                 ? "Create cover art from this cookbook's name and description"
                 : "Upgrade to generate cover art"
             }
-            selected={!isEditMode && generateOnCreate}
             locked={!canGenerateCover}
             loading={coverBusy?.kind === "generate"}
             // Same guard as the photo button above — generating also replaces
@@ -515,12 +414,6 @@ export default function CookbookCreateScreen() {
             disabled={formLocked || editLoadBlocked}
           />
         </View>
-
-        {!isEditMode && generateOnCreate ? (
-          <ThemedText style={[styles.hint, { color: theme.textSecondary }]}>
-            Your cover is created from the name and description when you save.
-          </ThemedText>
-        ) : null}
 
         <View>
           <TextInput
@@ -586,7 +479,7 @@ export default function CookbookCreateScreen() {
 
         <InlineError message={error} />
 
-        {isEditMode && loadError && !loadingExisting ? (
+        {loadError && !loadingExisting ? (
           <View style={styles.loadErrorRow}>
             <InlineError message="Couldn't load this cookbook to edit. Saving is disabled until it loads." />
             <Button
@@ -605,11 +498,11 @@ export default function CookbookCreateScreen() {
         <Button
           onPress={() => void handleSubmit()}
           disabled={!canSubmit}
-          loading={mutation.isPending || isCoverBusy}
-          loadingText={isEditMode ? "Saving…" : "Creating…"}
-          accessibilityLabel={isEditMode ? "Save changes" : "Create cookbook"}
+          loading={updateMutation.isPending || isCoverBusy}
+          loadingText="Saving…"
+          accessibilityLabel="Save changes"
         >
-          {submitLabel}
+          Save Changes
         </Button>
       </KeyboardAwareScrollViewCompat>
 
@@ -628,12 +521,6 @@ const styles = StyleSheet.create({
   coverActions: {
     flexDirection: "row",
     gap: Spacing.sm,
-  },
-  hint: {
-    fontSize: 13,
-    fontFamily: FontFamily.regular,
-    textAlign: "center",
-    marginTop: -Spacing.sm,
   },
   multilineInput: {
     minHeight: 92,
