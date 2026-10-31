@@ -18,6 +18,8 @@ interface WizardReviewStepProps {
   state: WizardState;
   /** Jumps back to a step the user has already reached. */
   onEdit: (step: WizardStep) => void;
+  /** Bumped once the book is created, so the cover plays its success pop. */
+  celebrateKey?: number;
 }
 
 function coverLabel(cover: WizardCover): string {
@@ -35,7 +37,11 @@ function coverLabel(cover: WizardCover): string {
  * Wizard step 4: the book as it will be created, with an Edit link back to
  * each earlier step.
  */
-export function WizardReviewStep({ state, onEdit }: WizardReviewStepProps) {
+export function WizardReviewStep({
+  state,
+  onEdit,
+  celebrateKey,
+}: WizardReviewStepProps) {
   const { theme } = useTheme();
   const count = state.recipes.length;
   const { cover } = state;
@@ -58,6 +64,7 @@ export function WizardReviewStep({ state, onEdit }: WizardReviewStepProps) {
           previewUri={cover.kind === "photo" ? cover.uri : null}
           generateArmed={cover.kind === "generate"}
           width={PLATE_WIDTH}
+          celebrateKey={celebrateKey}
         />
         <ThemedText
           type="caption"

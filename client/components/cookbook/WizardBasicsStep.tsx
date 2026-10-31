@@ -26,6 +26,8 @@ interface WizardBasicsStepProps {
   nameShakeKey: number;
   onNameFocus?: () => void;
   onNameBlur?: () => void;
+  /** Called with each name edit, so the screen's validation sees it too. */
+  onNameChange?: (text: string) => void;
 }
 
 /**
@@ -40,6 +42,7 @@ export function WizardBasicsStep({
   nameShakeKey,
   onNameFocus,
   onNameBlur,
+  onNameChange,
 }: WizardBasicsStepProps) {
   const { theme } = useTheme();
   const descriptionRef = useRef<RNTextInput>(null);
@@ -71,9 +74,11 @@ export function WizardBasicsStep({
           label="Cookbook name"
           placeholder="e.g. Sunday Suppers"
           value={state.name}
-          onChangeText={(text) =>
-            dispatch({ type: "setName", value: text.slice(0, NAME_MAX) })
-          }
+          onChangeText={(text) => {
+            const value = text.slice(0, NAME_MAX);
+            dispatch({ type: "setName", value });
+            onNameChange?.(value);
+          }}
           onFocus={() => {
             setFocused("name");
             onNameFocus?.();

@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
 //
-// Net-new coverage for the cookbook cover experience. The two behaviours worth
-// pinning are (a) the screen can always be left, and leaving REMOVES it — it
-// is reachable from Home as the only route in the Plan stack, where goBack()
-// bubbles to the tab navigator and leaves the form behind — and (b) a
-// cover failure after the cookbook row is committed must not read as "creation
-// failed".
+// The CookbookCreate route. Two behaviours worth pinning here: (a) the screen
+// can always be left, and leaving REMOVES it — it is reachable from Home as
+// the only route in the Plan stack, where goBack() bubbles to the tab
+// navigator and leaves the form behind — and (b) edit mode's load guard.
+// Create mode is the step-by-step wizard: CookbookCreateWizard.test.tsx.
 import React from "react";
 import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AccessibilityInfo } from "react-native";
-import * as Haptics from "expo-haptics";
 
 import { renderComponent } from "../../../../test/utils/render-component";
 import { reactProps } from "../../../../test/utils/react-props";
@@ -132,6 +130,8 @@ vi.mock("@/hooks/useCookbooks", () => ({
     mutateAsync: mockGenerateCover,
     isPending: false,
   }),
+  // Create mode renders the wizard, which takes this hook up front.
+  useAddRecipeToCookbook: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 const idleDetail = {
@@ -159,6 +159,8 @@ beforeEach(() => {
   vi.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(
     mockAnnounce,
   );
+  // jsdom has no Element.scrollTo; the wizard scrolls to the top on mount.
+  HTMLElement.prototype.scrollTo = vi.fn();
 });
 
 /** A Plan-stack state with `n` routes (1-3), CookbookCreate on top. */
@@ -271,23 +273,7 @@ describe("CookbookCreateScreen — leaving the screen", () => {
   });
 });
 
-describe("CookbookCreateScreen — cover generation gating", () => {
-  it("opens the upgrade modal for a free user and never arms generation", () => {
-    mockPremiumFeature.mockReturnValue(false);
-    renderComponent(<CookbookCreateScreen />);
-
-    fireEvent.click(screen.getByLabelText("Generate a cover, premium feature"));
-
-    expect(screen.getByText("UPGRADE_MODAL")).toBeTruthy();
-    expect(mockGenerateCover).not.toHaveBeenCalled();
-  });
-
-  it("labels the action without the premium suffix for an entitled user", () => {
-    renderComponent(<CookbookCreateScreen />);
-
-    expect(screen.getByLabelText("Generate a cover")).toBeTruthy();
-  });
-
+describe("CookbookCreateScreen — edit-mode cover", () => {
   it("generates immediately in edit mode", async () => {
     mockRouteParams.mockReturnValue({ cookbookId: 3 });
     mockCookbookDetail.mockReturnValue({
@@ -304,102 +290,6 @@ describe("CookbookCreateScreen — cover generation gating", () => {
     fireEvent.click(screen.getByLabelText("Generate a cover"));
 
     await waitFor(() => expect(mockGenerateCover).toHaveBeenCalledWith(3));
-  });
-});
-
-describe("CookbookCreateScreen — create then attach", () => {
-  it("creates the cookbook, then generates the armed cover", async () => {
-    renderComponent(<CookbookCreateScreen />);
-    typeName("Weeknight Dinners");
-
-    fireEvent.click(screen.getByLabelText("Generate a cover"));
-    fireEvent.click(screen.getByLabelText("Create cookbook"));
-
-    await waitFor(() =>
-      expect(mockCreate).toHaveBeenCalledWith({
-        name: "Weeknight Dinners",
-        description: undefined,
-      }),
-    );
-    // Generation targets the id the create call returned.
-    await waitFor(() => expect(mockGenerateCover).toHaveBeenCalledWith(7));
-    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
-  });
-
-  it("uploads a picked photo against the newly created id", async () => {
-    mockLaunchImageLibrary.mockResolvedValue({
-      canceled: false,
-      assets: [{ uri: "file:///picked.jpg" }],
-    });
-    renderComponent(<CookbookCreateScreen />);
-    typeName("Weeknight Dinners");
-
-    fireEvent.click(screen.getByLabelText("Add cover photo"));
-    await waitFor(() => expect(mockLaunchImageLibrary).toHaveBeenCalled());
-
-    fireEvent.click(screen.getByLabelText("Create cookbook"));
-
-    await waitFor(() =>
-      expect(mockUploadCover).toHaveBeenCalledWith({
-        cookbookId: 7,
-        uri: "file:///picked.jpg",
-      }),
-    );
-    expect(mockGenerateCover).not.toHaveBeenCalled();
-  });
-
-  it("still completes when the cover step fails after the cookbook is saved", async () => {
-    mockGenerateCover.mockRejectedValue(new Error("provider down"));
-    renderComponent(<CookbookCreateScreen />);
-    typeName("Weeknight Dinners");
-
-    fireEvent.click(screen.getByLabelText("Generate a cover"));
-    fireEvent.click(screen.getByLabelText("Create cookbook"));
-
-    // The row is committed — the failure is reported as a cover problem, and
-    // the flow completes rather than stranding the user on the form.
-    await waitFor(() =>
-      expect(mockToastError).toHaveBeenCalledWith(
-        expect.stringContaining("Cookbook created, but the cover couldn't"),
-        { haptic: false },
-      ),
-    );
-    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
-    // Toast is itself an announcer (iOS imperative + Android live region), so
-    // the screen must NOT announce here too: iOS announcements don't queue,
-    // and TalkBack would speak it twice.
-    expect(mockAnnounce).not.toHaveBeenCalled();
-  });
-
-  it("announces creation exactly once on the happy path", async () => {
-    // The success toast is the one announcer (iOS imperative + Android live
-    // region); a second announceForAccessibility would collide with it on
-    // iOS. Its haptic is off because the screen already fired one.
-    renderComponent(<CookbookCreateScreen />);
-    typeName("Weeknight Dinners");
-
-    fireEvent.click(screen.getByLabelText("Create cookbook"));
-
-    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
-    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
-    expect(mockToastSuccess).toHaveBeenCalledWith("Cookbook created", {
-      haptic: false,
-    });
-    expect(mockAnnounce).not.toHaveBeenCalled();
-  });
-
-  it("lets the cover's success pop land before closing", async () => {
-    renderComponent(<CookbookCreateScreen />);
-    typeName("Weeknight Dinners");
-
-    fireEvent.click(screen.getByLabelText("Create cookbook"));
-
-    // The toast and the close timer are set in the same step, so the screen
-    // is still open the moment the toast fires…
-    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalled());
-    expect(mockGoBack).not.toHaveBeenCalled();
-    // …and closes once the settle has passed.
-    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 });
 
@@ -492,6 +382,16 @@ describe("CookbookCreateScreen — edit-mode load guard", () => {
 // Spec §5.6: Name's Next moves on to the description.
 describe("CookbookCreateScreen — Return keys", () => {
   it("Next on Name focuses the description", () => {
+    mockRouteParams.mockReturnValue({ cookbookId: 3 });
+    mockCookbookDetail.mockReturnValue({
+      ...idleDetail,
+      data: {
+        id: 3,
+        name: "Sunday Bakes",
+        description: null,
+        coverImageUrl: null,
+      },
+    });
     renderComponent(<CookbookCreateScreen />);
     const name = screen.getByLabelText("Name");
     expect(reactProps(name).returnKeyType).toBe("next");
@@ -504,29 +404,10 @@ describe("CookbookCreateScreen — Return keys", () => {
   });
 });
 
-// Spec §5.1: the main button is pressable while the name is empty; pressing
-// it names the missing field instead of doing nothing.
-describe("CookbookCreateScreen — empty name", () => {
-  it("Create with no name flags and focuses Name, buzzes, and never creates", () => {
+describe("CookbookCreateScreen — route switch", () => {
+  it("opens the step-by-step wizard when there is no cookbook id", () => {
     renderComponent(<CookbookCreateScreen />);
-    const button = screen.getByLabelText("Create cookbook");
-    expect(button.getAttribute("aria-disabled")).not.toBe("true");
-    fireEvent.click(button);
-
-    const name = screen.getByLabelText("Name");
-    expect(screen.getByText("Enter a name for your cookbook.")).toBeTruthy();
-    expect(name.getAttribute("aria-invalid")).toBe("true");
-    expect(document.activeElement).toBe(name);
-    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
-      Haptics.NotificationFeedbackType.Error,
-    );
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
-  it("typing a name clears the message", () => {
-    renderComponent(<CookbookCreateScreen />);
-    fireEvent.click(screen.getByLabelText("Create cookbook"));
-    typeName("Weeknight Dinners");
-    expect(screen.queryByText("Enter a name for your cookbook.")).toBeNull();
+    expect(screen.getByText("Name your cookbook")).toBeTruthy();
+    expect(screen.queryByLabelText("Save changes")).toBeNull();
   });
 });
