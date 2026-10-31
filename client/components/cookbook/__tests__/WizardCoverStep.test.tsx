@@ -86,6 +86,19 @@ describe("WizardCoverStep", () => {
     expect(onRequestUpgrade).not.toHaveBeenCalled();
   });
 
+  it("turns generate off when the armed card is tapped again", () => {
+    renderStep({ cover: { kind: "generate" }, canGenerate: true });
+    fireEvent.click(screen.getByRole("radio", { name: "Generate with AI" }));
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setCover",
+      cover: { kind: "none" },
+    });
+    expect(dispatch).not.toHaveBeenCalledWith({
+      type: "setCover",
+      cover: { kind: "generate" },
+    });
+  });
+
   it("marks the generate card selected when generate is armed", () => {
     renderStep({ cover: { kind: "generate" } });
     expect(

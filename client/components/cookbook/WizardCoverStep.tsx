@@ -48,7 +48,11 @@ export function WizardCoverStep({
       onRequestUpgrade();
       return;
     }
-    dispatch({ type: "setCover", cover: { kind: "generate" } });
+    // Tapping the armed card again turns generate off.
+    dispatch({
+      type: "setCover",
+      cover: generateArmed ? { kind: "none" } : { kind: "generate" },
+    });
   };
 
   return (
@@ -58,7 +62,8 @@ export function WizardCoverStep({
           Design your cover
         </ThemedText>
         <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          Use a photo of your own, or let AI create one.
+          Use a photo of your own, or let AI create one from your
+          cookbook&apos;s name.
         </ThemedText>
       </View>
 
@@ -74,7 +79,7 @@ export function WizardCoverStep({
         <CoverChoiceCard
           icon="feather"
           title="Generate with AI"
-          sub="From the name and description"
+          sub="Made from your name and description"
           selected={generateArmed}
           locked={!canGenerate}
           onPress={handleGenerate}

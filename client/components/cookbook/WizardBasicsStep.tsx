@@ -68,7 +68,7 @@ export function WizardBasicsStep({
       <View>
         <TextInput
           ref={nameRef}
-          label="Name"
+          label="Cookbook name"
           placeholder="e.g. Sunday Suppers"
           value={state.name}
           onChangeText={(text) =>

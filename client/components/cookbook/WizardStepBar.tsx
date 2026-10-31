@@ -22,8 +22,12 @@ const STEP_LABELS: Record<WizardStep, string> = {
 
 const SEGMENT_HEIGHT = 4;
 const SEGMENT_GAP = 6;
-/** Stretches each "go back" label's hit area up over its segment, to 44pt. */
-const LABEL_HIT_SLOP = { top: 14, bottom: 10, left: 0, right: 0 };
+/**
+ * Each label cell is a full 44pt touch target in its own right — RN clips
+ * hitSlop to the parent's bounds, so a short cell can't borrow height. The
+ * label sits at the cell's top so it still reads tight under its segment.
+ */
+const LABEL_CELL_MIN_HEIGHT = 44;
 
 interface WizardStepBarProps {
   step: WizardStep;
@@ -101,7 +105,6 @@ export function WizardStepBar({
                 onPress={() => onSelect(s)}
                 accessibilityRole="button"
                 accessibilityLabel={`Go back to ${label}`}
-                hitSlop={LABEL_HIT_SLOP}
                 style={styles.cell}
               >
                 {text}
@@ -155,7 +158,7 @@ function StepSegment({
 
 const styles = StyleSheet.create({
   container: {
-    gap: Spacing.xs,
+    gap: Spacing.xs / 2,
   },
   row: {
     flexDirection: "row",
@@ -168,8 +171,9 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    minHeight: 20,
-    justifyContent: "center",
+    minHeight: LABEL_CELL_MIN_HEIGHT,
+    justifyContent: "flex-start",
+    paddingTop: Spacing.xs,
   },
   label: {
     fontSize: 11,
