@@ -38,8 +38,8 @@ dry_out() {
   rm -rf "$d"
 }
 
-has()  { if grep -qE "$3" <<<"$2"; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (missing /$3/)"; FAIL=$((FAIL+1)); fi; }
-lacks() { if grep -qE "$3" <<<"$2"; then echo "FAIL: $1 (unexpected /$3/)"; FAIL=$((FAIL+1)); else echo "PASS: $1"; PASS=$((PASS+1)); fi; }
+has()  { if grep -qE -- "$3" <<<"$2"; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (missing /$3/)"; FAIL=$((FAIL+1)); fi; }
+lacks() { if grep -qE -- "$3" <<<"$2"; then echo "FAIL: $1 (unexpected /$3/)"; FAIL=$((FAIL+1)); else echo "PASS: $1"; PASS=$((PASS+1)); fi; }
 
 O=$(dry_out client/components/Foo.tsx)
 has   "client tsx → accessibility"       "$O" 'check-accessibility\.js'
