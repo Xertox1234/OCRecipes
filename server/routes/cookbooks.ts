@@ -1,4 +1,5 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -12,10 +13,10 @@ import {
   parseQueryInt,
 } from "./_helpers";
 import {
-  cookbookCoverCandidatesRateLimit,
   cookbookCoverGenerateRateLimit,
   cookbookCoverUploadRateLimit,
   crudRateLimit,
+  ipKeyGenerator,
 } from "./_rate-limiters";
 import { createImageUpload } from "./_upload";
 import { deleteImage, saveCookbookCover } from "../lib/image-store";
@@ -447,7 +448,24 @@ export function register(app: Express): void {
   app.post(
     "/api/cookbook-covers/candidates",
     requireAuth,
-    cookbookCoverCandidatesRateLimit,
+    // Limiter inlined here (rather than a _rate-limiters factory const) so
+    // CodeQL's js/missing-rate-limiting query can trace it — the
+    // createRateLimiter indirection is invisible to its dataflow (see the
+    // same pattern on /api/photos/structure-recipe). One set is four paid
+    // image calls plus an LLM call, so the cap is per SET: 2/min, user-keyed
+    // with the Railway-aware IP fallback. The daily cap is in the database
+    // (a MemoryStore limiter resets on every deploy) — see the handler.
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: 2,
+      message: {
+        error: "Too many cover sets. Please wait a moment.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = coverCandidatesSchema.safeParse(req.body);

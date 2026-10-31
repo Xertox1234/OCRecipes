@@ -435,15 +435,6 @@ export const cookbookCoverGenerateRateLimit = createRateLimiter({
   message: "Too many cover generation requests. Please wait.",
 });
 
-// One cover-studio set is four paid image calls plus an LLM call — capped per
-// SET, not per image. The daily cap lives in the database (a MemoryStore
-// limiter resets on every deploy); see the candidates route.
-export const cookbookCoverCandidatesRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 2,
-  message: "Too many cover sets. Please wait a moment.",
-});
-
 export const urlImportRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 5,
