@@ -12,7 +12,6 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { CookbookCoverPlate } from "./CookbookCoverPlate";
-import { coverGenerateActionLabel } from "./cookbook-cover-utils";
 import type { WizardAction, WizardState } from "./cookbook-wizard-utils";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
@@ -103,12 +102,14 @@ export function WizardCoverStep({
           selected={generateArmed}
           locked={!canGenerate}
           onPress={handleGenerate}
-          // Spoken rather than the title, so a locked card says it is a
-          // premium feature — the lock badge alone is silent.
-          accessibilityLabel={coverGenerateActionLabel(
-            cover.kind !== "none",
-            canGenerate,
-          )}
+          // Starts with the visible title (label-in-name, for Voice
+          // Control); a locked card adds that it is a premium feature —
+          // the lock badge alone is silent.
+          accessibilityLabel={
+            canGenerate
+              ? "Generate with AI"
+              : "Generate with AI, premium feature"
+          }
           accessibilityHint={
             canGenerate
               ? "Creates cover art from the name and description"

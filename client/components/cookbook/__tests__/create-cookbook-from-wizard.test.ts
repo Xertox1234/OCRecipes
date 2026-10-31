@@ -9,6 +9,7 @@ import {
   type WizardRecipe,
   type WizardState,
 } from "../cookbook-wizard-utils";
+import { logger } from "@/lib/logger";
 
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }));
 
@@ -154,18 +155,31 @@ describe("createCookbookFromWizard", () => {
     expect(result.coverFailed).toBe(true);
   });
 
-  it("lets a throwing onCoverStart propagate instead of reading as a cover failure", async () => {
-    deps.onCoverStart.mockImplementation(() => {
-      throw new Error("ui callback broke");
-    });
-    await expect(
-      createCookbookFromWizard(
-        stateWith({ cover: { kind: "generate" } }),
+  it.each([
+    [{ kind: "generate" } as const, "generateCover"],
+    [{ kind: "photo", uri: "file:///c.jpg" } as const, "uploadCover"],
+  ] as const)(
+    "a throwing onCoverStart is logged and the %o cover still runs",
+    async (cover, call) => {
+      deps.onCoverStart.mockImplementation(() => {
+        throw new Error("ui callback broke");
+      });
+      const result = await createCookbookFromWizard(
+        stateWith({ cover, recipes: [recipe(1)] }),
         deps,
-      ),
-    ).rejects.toThrow("ui callback broke");
-    expect(deps.generateCover).not.toHaveBeenCalled();
-  });
+      );
+      expect(deps[call]).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        cookbookId: 42,
+        coverFailed: false,
+        recipesFailed: 0,
+      });
+      expect(logger.error).toHaveBeenCalledWith(
+        "Cover progress callback failed:",
+        expect.any(Error),
+      );
+    },
+  );
 
   it("counts a failed add and keeps going", async () => {
     deps.addRecipe

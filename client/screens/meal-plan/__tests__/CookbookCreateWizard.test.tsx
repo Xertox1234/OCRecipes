@@ -405,7 +405,7 @@ describe("CookbookCreateWizard — cover", () => {
     typeName("Weeknight Dinners");
     pressContinue();
 
-    fireEvent.click(screen.getByLabelText("Generate a cover, premium feature"));
+    fireEvent.click(screen.getByLabelText("Generate with AI, premium feature"));
 
     expect(screen.getByText("UPGRADE_MODAL")).toBeTruthy();
     pressContinue();
@@ -534,7 +534,7 @@ describe("CookbookCreateWizard — create", () => {
     renderComponent(<CookbookCreateWizard />);
     typeName("Weeknight Dinners");
     pressContinue();
-    fireEvent.click(screen.getByLabelText("Generate a cover"));
+    fireEvent.click(screen.getByLabelText("Generate with AI"));
     pressContinue();
     fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
     pressContinue();
@@ -553,7 +553,7 @@ describe("CookbookCreateWizard — create", () => {
     renderComponent(<CookbookCreateWizard />);
     typeName("Weeknight Dinners");
     pressContinue();
-    fireEvent.click(screen.getByLabelText("Generate a cover"));
+    fireEvent.click(screen.getByLabelText("Generate with AI"));
     pressContinue();
     fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
     pressContinue();
@@ -593,7 +593,7 @@ describe("CookbookCreateWizard — create", () => {
     renderComponent(<CookbookCreateWizard />);
     typeName("Weeknight Dinners");
     pressContinue();
-    fireEvent.click(screen.getByLabelText("Generate a cover"));
+    fireEvent.click(screen.getByLabelText("Generate with AI"));
     pressContinue();
     fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
     pressContinue();

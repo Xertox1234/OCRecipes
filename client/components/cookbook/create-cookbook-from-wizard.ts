@@ -27,7 +27,10 @@ export interface WizardOutcome {
   recipesFailed: number;
 }
 
-/** Throws only when `create` throws; cover and recipe failures are reported. */
+/**
+ * Throws only when `create` throws; cover and recipe failures are reported,
+ * and a throwing `onCoverStart` is logged and ignored.
+ */
 export async function createCookbookFromWizard(
   state: WizardState,
   deps: CreateCookbookDeps,
@@ -41,11 +44,18 @@ export async function createCookbookFromWizard(
   let coverFailed = false;
   const { cover } = state;
   if (cover.kind !== "none") {
-    // Outside the try: a throwing UI callback is a bug to surface, not a
-    // cover that failed to attach.
-    deps.onCoverStart?.(
-      cover.kind === "photo" ? "Adding your cover…" : "Generating your cover…",
-    );
+    // Its own try, apart from the cover's: a throwing progress callback is
+    // logged and skipped — neither a cover failure nor a thrown create (the
+    // book already exists, so throwing would invite a duplicate on retry).
+    try {
+      deps.onCoverStart?.(
+        cover.kind === "photo"
+          ? "Adding your cover…"
+          : "Generating your cover…",
+      );
+    } catch (err) {
+      logger.error("Cover progress callback failed:", err);
+    }
     try {
       if (cover.kind === "photo") {
         await deps.uploadCover({ cookbookId, uri: cover.uri });

@@ -72,7 +72,7 @@ describe("WizardCoverStep", () => {
   it("asks to upgrade, without arming generate, when the user can't generate", () => {
     renderStep({ canGenerate: false });
     fireEvent.click(
-      screen.getByRole("radio", { name: "Generate a cover, premium feature" }),
+      screen.getByRole("radio", { name: "Generate with AI, premium feature" }),
     );
     expect(onRequestUpgrade).toHaveBeenCalledTimes(1);
     expect(dispatch).not.toHaveBeenCalled();
@@ -80,7 +80,7 @@ describe("WizardCoverStep", () => {
 
   it("arms generate when the user can generate", () => {
     renderStep({ canGenerate: true });
-    fireEvent.click(screen.getByRole("radio", { name: "Generate a cover" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Generate with AI" }));
     expect(dispatch).toHaveBeenCalledWith({
       type: "setCover",
       cover: { kind: "generate" },
@@ -90,9 +90,7 @@ describe("WizardCoverStep", () => {
 
   it("turns generate off when the armed card is tapped again", () => {
     renderStep({ cover: { kind: "generate" }, canGenerate: true });
-    fireEvent.click(
-      screen.getByRole("radio", { name: "Generate a new cover" }),
-    );
+    fireEvent.click(screen.getByRole("radio", { name: "Generate with AI" }));
     expect(dispatch).toHaveBeenCalledWith({
       type: "setCover",
       cover: { kind: "none" },
@@ -107,7 +105,7 @@ describe("WizardCoverStep", () => {
     renderStep({ cover: { kind: "generate" } });
     expect(
       screen
-        .getByRole("radio", { name: "Generate a new cover" })
+        .getByRole("radio", { name: "Generate with AI" })
         .getAttribute("aria-selected"),
     ).toBe("true");
     expect(
@@ -136,10 +134,18 @@ describe("WizardCoverStep", () => {
     ).toBeNull();
   });
 
-  it("speaks the premium status on the locked generate card", () => {
+  it("speaks the premium status on the locked generate card, title first", () => {
     renderStep({ canGenerate: false });
-    const card = screen.getByRole("radio", { name: /^Generate a cover/ });
-    expect(card.getAttribute("aria-label")).toContain("premium feature");
+    const card = screen.getByRole("radio", { name: /^Generate with AI/ });
+    expect(card.getAttribute("aria-label")).toBe(
+      "Generate with AI, premium feature",
+    );
+  });
+
+  it("speaks exactly the title on the generate card when the user can generate", () => {
+    renderStep({ canGenerate: true, cover: { kind: "generate" } });
+    const card = screen.getByRole("radio", { name: /^Generate with AI/ });
+    expect(card.getAttribute("aria-label")).toBe("Generate with AI");
   });
 
   it("names the cover choices as a group", () => {
