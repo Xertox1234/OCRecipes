@@ -12,6 +12,7 @@ import {
   parseQueryInt,
 } from "./_helpers";
 import {
+  cookbookCoverCandidatesRateLimit,
   cookbookCoverGenerateRateLimit,
   cookbookCoverUploadRateLimit,
   crudRateLimit,
@@ -20,7 +21,17 @@ import { createImageUpload } from "./_upload";
 import { deleteImage, saveCookbookCover } from "../lib/image-store";
 import { detectImageMimeType } from "../lib/image-mime";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { generateCookbookCover } from "../services/cookbook-cover";
+import {
+  CoverPrePassError,
+  generateCookbookCover,
+  generateCoverCandidates,
+} from "../services/cookbook-cover";
+import { isArtDirectorLLMEnabled } from "../services/image-art-direction";
+import { isRunwareConfigured } from "../lib/runware";
+import {
+  COOKBOOK_COVER_PROMPT_MAX,
+  COOKBOOK_COVER_STYLES,
+} from "@shared/constants/cookbook-cover-styles";
 import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("cookbooks-routes");
@@ -52,6 +63,25 @@ const updateCookbookSchema = createCookbookSchema
     message: "At least one field must be provided for update",
   });
 
+const coverCandidatesSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    description: z.string().max(1000).optional().nullable(),
+    coverPrompt: z.string().max(COOKBOOK_COVER_PROMPT_MAX).optional(),
+    style: z.enum(COOKBOOK_COVER_STYLES),
+  })
+  .strict();
+
+// An id, never a URL — see the comment above createCookbookSchema.
+const attachCandidateSchema = z
+  .object({ candidateId: z.string().uuid() })
+  .strict();
+
+/** Stored cover-studio sets a user may make in any rolling 24 hours. */
+const COVER_SETS_PER_DAY = 15;
+/** Fewer images than this don't replace the user's current set. */
+const MIN_COVER_CANDIDATES = 2;
+
 const addRecipeSchema = z.object({
   recipeId: z.number().int().positive(),
   recipeType: z.enum(["mealPlan", "community"]).default("mealPlan"),
@@ -68,7 +98,7 @@ const addRecipeSchema = z.object({
 async function rollbackStoredCover(
   url: string,
   cookbookId: number,
-  source: "upload" | "generate",
+  source: "upload" | "generate" | "candidate",
 ): Promise<void> {
   try {
     await deleteImage(url, "cookbook");
@@ -364,9 +394,10 @@ export function register(app: Express): void {
           return;
         }
 
-        // The prompt is built from the cookbook's OWN stored name and
-        // description, never from the request body — the client cannot steer
-        // the image prompt beyond what it already saved.
+        // The prompt is derived from the cookbook's stored name and
+        // description, never the request body. Both are still user text: what
+        // keeps them off the image model is the pre-pass and its output gates
+        // in `deriveCoverSubject`, not the fact they were saved first.
         const coverImageUrl = await generateCookbookCover(
           existing.name,
           existing.description,
@@ -405,6 +436,204 @@ export function register(app: Express): void {
         );
       } catch (error) {
         handleRouteError(res, error, "generate cookbook cover");
+      }
+    },
+  );
+
+  // POST /api/cookbook-covers/candidates — the cover studio: generate a set of
+  // candidate covers before the cookbook exists (premium). The user's
+  // `coverPrompt` reaches the image model only through the gated pre-pass in
+  // `generateCoverCandidates`.
+  app.post(
+    "/api/cookbook-covers/candidates",
+    requireAuth,
+    cookbookCoverCandidatesRateLimit,
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+      try {
+        const parsed = coverCandidatesSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "cookbookCoverGeneration",
+          "Cover generation",
+        );
+        if (!features) return;
+
+        // With the pre-pass off, the studio would pay for four generic covers
+        // that ignore what the user asked for — refuse instead.
+        if (!isRunwareConfigured || !isArtDirectorLLMEnabled()) {
+          sendError(
+            res,
+            503,
+            "Cover generation isn't available right now.",
+            ErrorCode.AI_NOT_CONFIGURED,
+          );
+          return;
+        }
+
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        if (
+          (await storage.countCoverSetsSince(req.userId, since)) >=
+          COVER_SETS_PER_DAY
+        ) {
+          sendError(
+            res,
+            429,
+            "You've made a lot of covers today. Try again tomorrow.",
+            ErrorCode.DAILY_LIMIT_REACHED,
+          );
+          return;
+        }
+
+        let generated: Awaited<ReturnType<typeof generateCoverCandidates>>;
+        try {
+          generated = await generateCoverCandidates({
+            name: parsed.data.name,
+            description: parsed.data.description,
+            coverPrompt: parsed.data.coverPrompt,
+            style: parsed.data.style,
+          });
+        } catch (error) {
+          if (error instanceof CoverPrePassError) {
+            sendError(
+              res,
+              503,
+              "Couldn't make covers right now. Please try again.",
+              ErrorCode.AI_UNAVAILABLE,
+            );
+            return;
+          }
+          throw error;
+        }
+
+        if (generated.buffers.length < MIN_COVER_CANDIDATES) {
+          sendError(
+            res,
+            503,
+            "Couldn't make covers right now. Please try again.",
+            ErrorCode.IMAGE_GENERATION_FAILED,
+          );
+          return;
+        }
+
+        // Saved one at a time so a failed save leaves a known list to remove:
+        // until the set is stored, no row points at these objects and the
+        // purge would never find them.
+        const savedUrls: string[] = [];
+        let stored: Awaited<ReturnType<typeof storage.storeCoverCandidateSet>>;
+        try {
+          for (const buffer of generated.buffers) {
+            savedUrls.push(await saveCookbookCover(buffer, "jpg"));
+          }
+          stored = await storage.storeCoverCandidateSet(req.userId, savedUrls);
+        } catch (error) {
+          for (const url of savedUrls) {
+            fireAndForget(
+              "cookbook-cover-candidates-save-cleanup",
+              deleteImage(url, "cookbook"),
+            );
+          }
+          throw error;
+        }
+
+        res.json({
+          candidates: stored.candidates,
+          expiresAt: stored.expiresAt,
+          promptIgnored: generated.promptIgnored,
+        });
+
+        for (const url of stored.replacedUrls) {
+          fireAndForget(
+            "cookbook-cover-candidates-replace-cleanup",
+            deleteImage(url, "cookbook"),
+          );
+        }
+      } catch (error) {
+        handleRouteError(res, error, "generate cookbook cover candidates");
+      }
+    },
+  );
+
+  // POST /api/cookbooks/:id/cover/candidate — attach a picked studio cover.
+  // Not premium-gated: a candidate only exists if the premium gate passed in
+  // its 2-hour life, and attaching spends nothing.
+  app.post(
+    "/api/cookbooks/:id/cover/candidate",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id) {
+          sendError(
+            res,
+            400,
+            "Invalid cookbook ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        const parsed = attachCandidateSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        const existing = await storage.getCookbook(id, req.userId);
+        if (!existing) {
+          sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
+          return;
+        }
+
+        // The same answer for an expired id, an unknown id, and another
+        // user's id — the claim is scoped to req.userId in its own SQL.
+        const coverImageUrl = await storage.claimCoverCandidate(
+          parsed.data.candidateId,
+          req.userId,
+        );
+        if (!coverImageUrl) {
+          sendError(
+            res,
+            410,
+            "That cover has expired. Generate a new one.",
+            ErrorCode.COVER_CANDIDATE_EXPIRED,
+          );
+          return;
+        }
+
+        const updated = await storage.updateCookbook(id, req.userId, {
+          coverImageUrl,
+        });
+        if (!updated) {
+          await rollbackStoredCover(coverImageUrl, id, "candidate");
+          sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
+          return;
+        }
+
+        res.json(updated);
+
+        fireAndForget(
+          "cookbook-cover-candidate-cleanup",
+          deleteImage(existing.coverImageUrl, "cookbook"),
+        );
+      } catch (error) {
+        handleRouteError(res, error, "attach cookbook cover candidate");
       }
     },
   );
