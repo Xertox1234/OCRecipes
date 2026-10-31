@@ -154,6 +154,19 @@ describe("createCookbookFromWizard", () => {
     expect(result.coverFailed).toBe(true);
   });
 
+  it("lets a throwing onCoverStart propagate instead of reading as a cover failure", async () => {
+    deps.onCoverStart.mockImplementation(() => {
+      throw new Error("ui callback broke");
+    });
+    await expect(
+      createCookbookFromWizard(
+        stateWith({ cover: { kind: "generate" } }),
+        deps,
+      ),
+    ).rejects.toThrow("ui callback broke");
+    expect(deps.generateCover).not.toHaveBeenCalled();
+  });
+
   it("counts a failed add and keeps going", async () => {
     deps.addRecipe
       .mockResolvedValueOnce(undefined)

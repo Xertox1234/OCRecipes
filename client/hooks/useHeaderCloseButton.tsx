@@ -33,11 +33,15 @@ type PlanStackNavigation = Pick<
  * `useFromHomeBackRedirect` re-dispatches it unchanged — and a Home visit then
  * shows Home. `headerBackVisible: false` keeps the native chevron from
  * doubling up when there IS a route beneath.
+ *
+ * `disabled` re-registers the control as disabled (e.g. while a save runs),
+ * so it can't leave mid-request.
  */
 export function useHeaderCloseButton(
   navigation: PlanStackNavigation,
   fromHome: boolean | undefined,
   accessibilityLabel: string,
+  disabled = false,
 ) {
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -60,16 +64,29 @@ export function useHeaderCloseButton(
             haptics.selection();
             dismiss();
           }}
+          disabled={disabled}
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel={accessibilityLabel}
           style={{ marginLeft: Spacing.xs }}
         >
-          <Feather name="x" size={24} color={theme.text} />
+          <Feather
+            name="x"
+            size={24}
+            color={disabled ? theme.textSecondary : theme.text}
+          />
         </Pressable>
       ),
     });
-  }, [navigation, dismiss, haptics, theme.text, accessibilityLabel]);
+  }, [
+    navigation,
+    dismiss,
+    haptics,
+    theme.text,
+    theme.textSecondary,
+    accessibilityLabel,
+    disabled,
+  ]);
 
   return dismiss;
 }

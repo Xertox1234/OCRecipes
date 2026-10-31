@@ -41,12 +41,15 @@ export async function createCookbookFromWizard(
   let coverFailed = false;
   const { cover } = state;
   if (cover.kind !== "none") {
+    // Outside the try: a throwing UI callback is a bug to surface, not a
+    // cover that failed to attach.
+    deps.onCoverStart?.(
+      cover.kind === "photo" ? "Adding your cover…" : "Generating your cover…",
+    );
     try {
       if (cover.kind === "photo") {
-        deps.onCoverStart?.("Adding your cover…");
         await deps.uploadCover({ cookbookId, uri: cover.uri });
       } else {
-        deps.onCoverStart?.("Generating your cover…");
         await deps.generateCover(cookbookId);
       }
     } catch (err) {

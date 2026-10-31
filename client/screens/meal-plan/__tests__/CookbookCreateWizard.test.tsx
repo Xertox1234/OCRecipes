@@ -24,6 +24,7 @@ const {
   mockPopTo,
   mockGetState,
   mockSetOptions,
+  mockIsFocused,
   mockRouteParams,
   mockCreate,
   mockUploadCover,
@@ -41,6 +42,7 @@ const {
   mockPopTo: vi.fn(),
   mockGetState: vi.fn(),
   mockSetOptions: vi.fn(),
+  mockIsFocused: vi.fn(),
   mockRouteParams: vi.fn(),
   mockCreate: vi.fn(),
   mockUploadCover: vi.fn(),
@@ -70,6 +72,7 @@ vi.mock("@react-navigation/native", () => ({
     popTo: mockPopTo,
     getState: mockGetState,
     setOptions: mockSetOptions,
+    isFocused: mockIsFocused,
     setParams: vi.fn(),
     dispatch: vi.fn(),
     getParent: () => ({ navigate: vi.fn() }),
@@ -200,6 +203,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockRouteParams.mockReturnValue(undefined);
   mockCanGoBack.mockReturnValue(true);
+  mockIsFocused.mockReturnValue(true);
   // Pushed onto MealPlanHome, so dismiss() is a plain goBack().
   mockGetState.mockReturnValue({
     index: 1,
@@ -507,10 +511,16 @@ describe("CookbookCreateWizard — create", () => {
   it("creates only once when Create is pressed twice", async () => {
     renderComponent(<CookbookCreateWizard />);
     walkToReview();
-    const create = screen.getByRole("button", { name: "Create Cookbook" });
+    // Both presses land in ONE act, before React re-renders the button as
+    // loading — only the ref guard can drop the second.
+    const press = reactProps(
+      screen.getByRole("button", { name: "Create Cookbook" }),
+    ).onClick as () => void;
 
-    fireEvent.click(create);
-    fireEvent.click(create);
+    act(() => {
+      press();
+      press();
+    });
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
     expect(mockCreate).toHaveBeenCalledTimes(1);
@@ -528,6 +538,27 @@ describe("CookbookCreateWizard — create", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
 
     await waitFor(() => expect(mockGenerateCover).toHaveBeenCalledWith(7));
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  });
+
+  it("says the cover is generating while that slow step runs", async () => {
+    let finishGenerate: (v: unknown) => void = () => {};
+    mockGenerateCover.mockImplementation(
+      () => new Promise((resolve) => (finishGenerate = resolve)),
+    );
+    renderComponent(<CookbookCreateWizard />);
+    typeName("Weeknight Dinners");
+    pressContinue();
+    fireEvent.click(screen.getByLabelText("Generate a cover"));
+    pressContinue();
+    fireEvent.click(screen.getByLabelText("Garlic Lemon Chicken"));
+    pressContinue();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
+
+    expect(await screen.findByText("Generating your cover…")).toBeTruthy();
+    expect(screen.queryByText("Creating…")).toBeNull();
+    await act(async () => finishGenerate({ id: 7 }));
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 
@@ -597,6 +628,50 @@ describe("CookbookCreateWizard — create", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
     expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** The header close control as last registered, rendered on its own. */
+function renderHeaderClose() {
+  const options = mockSetOptions.mock.calls.at(-1)?.[0] as {
+    headerLeft: () => React.ReactElement;
+  };
+  renderComponent(options.headerLeft());
+  return screen.getByLabelText("Close without saving");
+}
+
+describe("CookbookCreateWizard — closing mid-save", () => {
+  it("ignores the header close while Create is pending", async () => {
+    let finishCreate: (v: unknown) => void = () => {};
+    mockCreate.mockImplementation(
+      () => new Promise((resolve) => (finishCreate = resolve)),
+    );
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+    fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
+    await screen.findByText("Creating…");
+
+    const close = renderHeaderClose();
+    expect((close as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(close);
+
+    expect(mockGoBack).not.toHaveBeenCalled();
+    expect(mockPopTo).not.toHaveBeenCalled();
+    await act(async () => finishCreate({ id: 7, name: "Weeknight Dinners" }));
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
+  });
+
+  it("doesn't close after the settle if the screen already lost focus", async () => {
+    renderComponent(<CookbookCreateWizard />);
+    walkToReview();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Cookbook" }));
+    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalled());
+    mockIsFocused.mockReturnValue(false);
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(mockGoBack).not.toHaveBeenCalled();
+    expect(mockPopTo).not.toHaveBeenCalled();
   });
 });
 

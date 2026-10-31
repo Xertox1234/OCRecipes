@@ -96,13 +96,6 @@ export default function CookbookCreateWizard() {
   const route = useRoute<RouteProp<MealPlanStackParamList, "CookbookCreate">>();
   const fromHome = route.params?.fromHome;
   useFromHomeBackRedirect(navigation, fromHome);
-  // Close control + `dismiss` that removes this route — see the hook for why
-  // `canGoBack()` and a plain `goBack()` both get the one-route case wrong.
-  const dismiss = useHeaderCloseButton(
-    navigation,
-    fromHome,
-    "Close without saving",
-  );
 
   const headerInset = useHeaderContentInset();
   const tabBarHeight = useBottomTabBarHeight();
@@ -144,11 +137,28 @@ export default function CookbookCreateWizard() {
   // dropped before React re-renders the button as loading.
   const submittingRef = useRef(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // The primary button's progress line: "Creating…" until the slow cover
+  // step starts, then the runner's label for it.
+  const [createLoadingText, setCreateLoadingText] = useState("Creating…");
   // Bumped once the create lands: the cover plays its success pop, and the
   // flow stays locked through the short settle before the screen closes.
   const [celebrateKey, setCelebrateKey] = useState(0);
   const saved = celebrateKey > 0;
   const locked = submitting || saved;
+  // Close control + `dismiss` that removes this route — see the hook for why
+  // `canGoBack()` and a plain `goBack()` both get the one-route case wrong.
+  // Disabled while locked: leaving mid-save would strand the request.
+  const dismiss = useHeaderCloseButton(
+    navigation,
+    fromHome,
+    "Close without saving",
+    locked,
+  );
+  // Leaves once the create has settled — unless the user already left this
+  // screen another way (e.g. a tab switch), when closing would yank them.
+  const closeIfFocused = () => {
+    if (navigation.isFocused()) dismiss();
+  };
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -285,6 +295,7 @@ export default function CookbookCreateWizard() {
     submittingRef.current = true;
     setSubmitting(true);
     setCreateError(null);
+    setCreateLoadingText("Creating…");
 
     let outcome: WizardOutcome;
     try {
@@ -293,6 +304,7 @@ export default function CookbookCreateWizard() {
         uploadCover: uploadCoverMutation.mutateAsync,
         generateCover: generateCoverMutation.mutateAsync,
         addRecipe: addRecipeMutation.mutateAsync,
+        onCoverStart: setCreateLoadingText,
       });
     } catch (err) {
       // Nothing was created: keep everything the user chose, and let them
@@ -315,7 +327,7 @@ export default function CookbookCreateWizard() {
     if (partial) {
       haptics.notification(NotificationFeedbackType.Warning);
       toast.error(partial, { haptic: false });
-      dismiss();
+      closeIfFocused();
       return;
     }
     haptics.notification(NotificationFeedbackType.Success);
@@ -323,8 +335,8 @@ export default function CookbookCreateWizard() {
     // The full success gets its moment: the cover pops, then the screen
     // closes once it has landed.
     setCelebrateKey((k) => k + 1);
-    if (reducedMotion) dismiss();
-    else closeTimer.current = setTimeout(dismiss, SUCCESS_SETTLE_MS);
+    if (reducedMotion) closeIfFocused();
+    else closeTimer.current = setTimeout(closeIfFocused, SUCCESS_SETTLE_MS);
   };
 
   let body: React.ReactNode;
@@ -445,7 +457,7 @@ export default function CookbookCreateWizard() {
           <Button
             onPress={isReview ? () => void handleCreate() : handleContinue}
             loading={isReview && submitting}
-            loadingText="Creating…"
+            loadingText={createLoadingText}
             disabled={saved}
             style={styles.primaryButton}
           >
