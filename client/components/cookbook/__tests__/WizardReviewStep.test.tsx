@@ -69,7 +69,10 @@ describe("WizardReviewStep", () => {
   });
 
   it("reads back an AI cover and several recipes", () => {
-    renderStep({ cover: { kind: "generate" }, recipes: [stew, chicken] });
+    renderStep({
+      cover: { kind: "candidate", candidateId: "c-1", imageUrl: "u" },
+      recipes: [stew, chicken],
+    });
     expect(screen.getByText("AI generated")).toBeTruthy();
     expect(screen.getByText("2 selected")).toBeTruthy();
     expect(screen.getByText("2 recipes")).toBeTruthy();

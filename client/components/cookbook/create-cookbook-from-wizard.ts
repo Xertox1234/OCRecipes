@@ -12,7 +12,11 @@ export interface CreateCookbookDeps {
     description?: string;
   }): Promise<{ id: number }>;
   uploadCover(input: { cookbookId: number; uri: string }): Promise<unknown>;
-  generateCover(cookbookId: number): Promise<unknown>;
+  /** Attach a picked cover-studio candidate (by id, never by URL). */
+  attachCandidate(input: {
+    cookbookId: number;
+    candidateId: string;
+  }): Promise<unknown>;
   addRecipe(input: {
     cookbookId: number;
     recipeId: number;
@@ -48,11 +52,7 @@ export async function createCookbookFromWizard(
     // logged and skipped — neither a cover failure nor a thrown create (the
     // book already exists, so throwing would invite a duplicate on retry).
     try {
-      deps.onCoverStart?.(
-        cover.kind === "photo"
-          ? "Adding your cover…"
-          : "Generating your cover…",
-      );
+      deps.onCoverStart?.("Adding your cover…");
     } catch (err) {
       logger.error("Cover progress callback failed:", err);
     }
@@ -60,7 +60,10 @@ export async function createCookbookFromWizard(
       if (cover.kind === "photo") {
         await deps.uploadCover({ cookbookId, uri: cover.uri });
       } else {
-        await deps.generateCover(cookbookId);
+        await deps.attachCandidate({
+          cookbookId,
+          candidateId: cover.candidateId,
+        });
       }
     } catch (err) {
       coverFailed = true;

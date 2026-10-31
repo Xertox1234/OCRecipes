@@ -12,6 +12,10 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { CookbookCoverPlate } from "./CookbookCoverPlate";
+import {
+  WizardCoverStudio,
+  type CoverStudioControls,
+} from "./WizardCoverStudio";
 import type { WizardAction, WizardState } from "./cookbook-wizard-utils";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
@@ -25,11 +29,13 @@ interface WizardCoverStepProps {
   /** Opens the photo library; the screen dispatches the chosen photo. */
   onPickPhoto: () => void;
   coverWidth: number;
+  /** The cover studio's request state, owned by the screen. */
+  studioControls: CoverStudioControls;
 }
 
 /**
- * Wizard step 2: choose how the cover is made — a photo of your own, or AI
- * art generated from the name and description once the book is created.
+ * Wizard step 2: choose how the cover is made — a photo of your own, or the
+ * AI cover studio (describe it, pick a style, generate four, pick one).
  */
 export function WizardCoverStep({
   state,
@@ -38,11 +44,13 @@ export function WizardCoverStep({
   onRequestUpgrade,
   onPickPhoto,
   coverWidth,
+  studioControls,
 }: WizardCoverStepProps) {
   const { theme } = useTheme();
-  const { cover } = state;
-  const generateArmed = cover.kind === "generate";
+  const { cover, studio } = state;
+  const studioOpen = studio.open;
   const hasPhoto = cover.kind === "photo";
+  const pickedId = cover.kind === "candidate" ? cover.candidateId : null;
 
   const handleUpload = () => {
     // Tapping the selected card again drops the photo, back to the plain
@@ -59,11 +67,8 @@ export function WizardCoverStep({
       onRequestUpgrade();
       return;
     }
-    // Tapping the armed card again turns generate off.
-    dispatch({
-      type: "setCover",
-      cover: generateArmed ? { kind: "none" } : { kind: "generate" },
-    });
+    // Tapping the selected card again closes the studio — mirrors upload.
+    dispatch({ type: studioOpen ? "closeStudio" : "openStudio" });
   };
 
   return (
@@ -73,8 +78,7 @@ export function WizardCoverStep({
           Design your cover
         </ThemedText>
         <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          Use a photo of your own, or let AI create one from your
-          cookbook&apos;s name.
+          Use a photo of your own, or describe one and let AI create it.
         </ThemedText>
       </View>
 
@@ -98,8 +102,8 @@ export function WizardCoverStep({
         <CoverChoiceCard
           icon="feather"
           title="Generate with AI"
-          sub="Made from your name and description"
-          selected={generateArmed}
+          sub="Describe it, pick a style"
+          selected={studioOpen}
           locked={!canGenerate}
           onPress={handleGenerate}
           // Starts with the visible title (label-in-name, for Voice
@@ -112,7 +116,7 @@ export function WizardCoverStep({
           }
           accessibilityHint={
             canGenerate
-              ? "Creates cover art from the name and description"
+              ? "Opens the cover studio"
               : "Premium feature. Opens upgrade options"
           }
         />
@@ -122,21 +126,31 @@ export function WizardCoverStep({
         name={state.name}
         description={state.description}
         previewUri={hasPhoto ? cover.uri : null}
+        coverImageUrl={cover.kind === "candidate" ? cover.imageUrl : null}
         width={coverWidth}
-        generateArmed={generateArmed}
+        generateArmed={studioOpen}
         // Tapping the cover is a shortcut to the photo picker — except while
-        // generate is armed, when a tap would silently swap the choice.
-        onPress={generateArmed ? undefined : onPickPhoto}
+        // the studio is open, when a tap would silently swap the choice.
+        onPress={studioOpen ? undefined : onPickPhoto}
       />
 
-      {generateArmed ? (
-        <ThemedText
-          type="small"
-          style={[styles.hint, { color: theme.textSecondary }]}
-        >
-          Your cover is made from the name and description when you create the
-          book.
-        </ThemedText>
+      {studioOpen ? (
+        <>
+          {pickedId ? null : (
+            <ThemedText
+              type="small"
+              style={[styles.hint, { color: theme.textSecondary }]}
+            >
+              Pick a cover, or continue with a plain one.
+            </ThemedText>
+          )}
+          <WizardCoverStudio
+            studio={studio}
+            pickedId={pickedId}
+            dispatch={dispatch}
+            controls={studioControls}
+          />
+        </>
       ) : null}
     </View>
   );

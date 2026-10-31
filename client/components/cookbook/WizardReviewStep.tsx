@@ -26,7 +26,7 @@ function coverLabel(cover: WizardCover): string {
   switch (cover.kind) {
     case "photo":
       return "Your photo";
-    case "generate":
+    case "candidate":
       return "AI generated";
     case "none":
       return "Plain cloth";
@@ -62,7 +62,7 @@ export function WizardReviewStep({
           name={state.name}
           description={state.description}
           previewUri={cover.kind === "photo" ? cover.uri : null}
-          generateArmed={cover.kind === "generate"}
+          coverImageUrl={cover.kind === "candidate" ? cover.imageUrl : null}
           width={PLATE_WIDTH}
           celebrateKey={celebrateKey}
         />

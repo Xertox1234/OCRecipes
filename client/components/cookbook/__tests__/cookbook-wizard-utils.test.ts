@@ -9,6 +9,12 @@ import {
   type WizardState,
 } from "../cookbook-wizard-utils";
 
+const picked = {
+  kind: "candidate" as const,
+  candidateId: "c-1",
+  imageUrl: "https://cdn.test/c1.jpg",
+};
+
 const named = (name: string): WizardState => ({
   ...initialWizardState,
   name,
@@ -95,9 +101,7 @@ describe("stepBlocker", () => {
         true,
       ),
     ).toBeNull();
-    expect(
-      stepBlocker({ ...base, cover: { kind: "generate" } }, "cover", true),
-    ).toBeNull();
+    expect(stepBlocker({ ...base, cover: picked }, "cover", true)).toBeNull();
   });
 
   it("asks for a recipe when some exist but none are picked", () => {
@@ -149,19 +153,109 @@ describe("wizardReducer field updates", () => {
     expect(s.recipes.map(recipeKey)).toEqual(["mealPlan:3", "community:3"]);
   });
 
-  it("setCover swaps photo and generate", () => {
+  it("setCover swaps photos", () => {
     let s = wizardReducer(initialWizardState, {
       type: "setCover",
       cover: { kind: "photo", uri: "file:///a.jpg" },
     });
     expect(s.cover).toEqual({ kind: "photo", uri: "file:///a.jpg" });
-    s = wizardReducer(s, { type: "setCover", cover: { kind: "generate" } });
-    expect(s.cover).toEqual({ kind: "generate" });
     s = wizardReducer(s, {
       type: "setCover",
       cover: { kind: "photo", uri: "file:///b.jpg" },
     });
     expect(s.cover).toEqual({ kind: "photo", uri: "file:///b.jpg" });
+  });
+});
+
+describe("wizardReducer cover studio", () => {
+  const c = (id: string) => ({ id, imageUrl: `https://cdn.test/${id}.jpg` });
+
+  it("starts closed, empty, on the default style", () => {
+    expect(initialWizardState.studio).toEqual({
+      open: false,
+      prompt: "",
+      style: "rustic-terracotta",
+      candidates: [],
+    });
+  });
+
+  it("opening the studio drops a photo, so only one card reads selected", () => {
+    const withPhoto = wizardReducer(initialWizardState, {
+      type: "setCover",
+      cover: { kind: "photo", uri: "file:///a.jpg" },
+    });
+    const s = wizardReducer(withPhoto, { type: "openStudio" });
+    expect(s.studio.open).toBe(true);
+    expect(s.cover).toEqual({ kind: "none" });
+  });
+
+  it("choosing a photo closes the studio but keeps its work", () => {
+    let s = wizardReducer(initialWizardState, { type: "openStudio" });
+    s = wizardReducer(s, { type: "setCoverPrompt", value: "pasta" });
+    s = wizardReducer(s, { type: "setCandidates", candidates: [c("a")] });
+    s = wizardReducer(s, { type: "pickCandidate", candidate: c("a") });
+    s = wizardReducer(s, {
+      type: "setCover",
+      cover: { kind: "photo", uri: "file:///a.jpg" },
+    });
+    expect(s.studio.open).toBe(false);
+    expect(s.studio.prompt).toBe("pasta");
+    expect(s.studio.candidates).toEqual([c("a")]);
+    expect(s.cover.kind).toBe("photo");
+  });
+
+  it("closing the studio drops a picked candidate", () => {
+    let s = wizardReducer(initialWizardState, { type: "openStudio" });
+    s = wizardReducer(s, { type: "setCandidates", candidates: [c("a")] });
+    s = wizardReducer(s, { type: "pickCandidate", candidate: c("a") });
+    s = wizardReducer(s, { type: "closeStudio" });
+    expect(s.studio.open).toBe(false);
+    expect(s.cover).toEqual({ kind: "none" });
+  });
+
+  it("sets the prompt and style", () => {
+    let s = wizardReducer(initialWizardState, {
+      type: "setCoverPrompt",
+      value: "bread",
+    });
+    s = wizardReducer(s, { type: "setCoverStyle", style: "golden-hour" });
+    expect(s.studio.prompt).toBe("bread");
+    expect(s.studio.style).toBe("golden-hour");
+  });
+
+  it("picking a candidate makes it the cover", () => {
+    let s = wizardReducer(initialWizardState, { type: "openStudio" });
+    s = wizardReducer(s, {
+      type: "setCandidates",
+      candidates: [c("a"), c("b")],
+    });
+    s = wizardReducer(s, { type: "pickCandidate", candidate: c("b") });
+    expect(s.cover).toEqual({
+      kind: "candidate",
+      candidateId: "b",
+      imageUrl: "https://cdn.test/b.jpg",
+    });
+  });
+
+  it("a new set replaces the grid and clears a pick that is no longer in it", () => {
+    let s = wizardReducer(initialWizardState, { type: "openStudio" });
+    s = wizardReducer(s, { type: "setCandidates", candidates: [c("a")] });
+    s = wizardReducer(s, { type: "pickCandidate", candidate: c("a") });
+    s = wizardReducer(s, {
+      type: "setCandidates",
+      candidates: [c("b"), c("c")],
+    });
+    expect(s.studio.candidates).toEqual([c("b"), c("c")]);
+    expect(s.cover).toEqual({ kind: "none" });
+  });
+
+  it("a new set keeps a photo cover untouched", () => {
+    let s = wizardReducer(initialWizardState, {
+      type: "setCover",
+      cover: { kind: "photo", uri: "file:///a.jpg" },
+    });
+    s = wizardReducer(s, { type: "setCandidates", candidates: [c("b")] });
+    expect(s.cover.kind).toBe("photo");
   });
 });
 
@@ -171,7 +265,8 @@ describe("wizardReducer navigation", () => {
     furthest: 3,
     name: "Sunday Suppers",
     description: "Slow food",
-    cover: { kind: "generate" },
+    cover: picked,
+    studio: { ...initialWizardState.studio, open: true },
     recipes: [recipe(1)],
   };
 
@@ -180,7 +275,7 @@ describe("wizardReducer navigation", () => {
     expect(s.step).toBe("recipes");
     expect(s.name).toBe("Sunday Suppers");
     expect(s.description).toBe("Slow food");
-    expect(s.cover).toEqual({ kind: "generate" });
+    expect(s.cover).toEqual(picked);
     expect(s.recipes).toEqual([recipe(1)]);
   });
 

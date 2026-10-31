@@ -42,6 +42,8 @@ interface ChipProps {
   accessibilityLabel?: string;
   /** Override the default accessibility role (defaults to "button") */
   accessibilityRole?: "button" | "tab" | "radio";
+  /** Decorative content before the label (e.g. a colour swatch). */
+  leading?: React.ReactNode;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -55,6 +57,7 @@ export function Chip({
   style,
   accessibilityLabel,
   accessibilityRole,
+  leading,
 }: ChipProps) {
   const selected = selectedProp ?? false;
   const selectable = selectedProp !== undefined;
@@ -172,6 +175,7 @@ export function Chip({
   const chipStyles = [
     styles.chip,
     getChipSizeStyle(),
+    leading ? styles.chipWithLeading : null,
     {
       backgroundColor: variantStyles.backgroundColor,
       borderWidth: variantStyles.borderWidth,
@@ -195,6 +199,7 @@ export function Chip({
         accessibilityState={{ selected }}
         style={[chipStyles, animatedChipStyle, animatedStyle]}
       >
+        {leading}
         <AnimatedThemedText
           maxScale={MAX_FONT_SCALE_CONSTRAINED}
           style={[textStyles, animatedTextStyle]}
@@ -218,6 +223,7 @@ export function Chip({
 
   return (
     <Animated.View style={chipStyles} {...staticA11y}>
+      {leading}
       <ThemedText maxScale={MAX_FONT_SCALE_CONSTRAINED} style={textStyles}>
         {label}
       </ThemedText>
@@ -229,6 +235,10 @@ const styles = StyleSheet.create({
   chip: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  chipWithLeading: {
+    flexDirection: "row",
+    gap: Spacing.xs,
   },
   chipOutline: {
     paddingHorizontal: Spacing.lg,

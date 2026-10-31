@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { uploadCookbookCover } from "@/lib/cookbook-cover-upload";
+import type { CookbookCoverStyle } from "@shared/constants/cookbook-cover-styles";
 import type {
   Cookbook,
   CookbookWithCount,
@@ -132,6 +133,84 @@ export function useGenerateCookbookCover() {
     },
     // Its one call site (CookbookCreateScreen) already shows a visible
     // toast.error / upgrade-modal on failure.
+    meta: { silentError: true },
+  });
+}
+
+/** One set from the cover studio (`POST /api/cookbook-covers/candidates`). */
+export interface CoverCandidateSet {
+  candidates: { id: string; imageUrl: string }[];
+  expiresAt: string;
+  /** The user asked for something and every candidate fell back to food. */
+  promptIgnored: boolean;
+}
+
+/**
+ * The server's own bound is ~60 s (a 15 s pre-pass, then four images in
+ * parallel at 45 s each); this leaves headroom past the default deadline.
+ */
+const COVER_SET_DEADLINE_MS = 75_000;
+
+/**
+ * Generate a set of four candidate covers before the cookbook exists.
+ * Premium-only (403 `PREMIUM_REQUIRED`); 429 `DAILY_LIMIT_REACHED` at the
+ * daily cap; 503 when no set could be made.
+ */
+export function useGenerateCoverCandidates() {
+  return useMutation({
+    mutationFn: async (input: {
+      name: string;
+      description?: string;
+      coverPrompt?: string;
+      style: CookbookCoverStyle;
+    }): Promise<CoverCandidateSet> => {
+      // Own signal, so apiRequest's shorter default deadline doesn't apply.
+      // AbortController + setTimeout: Hermes has no AbortSignal.timeout.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), COVER_SET_DEADLINE_MS);
+      try {
+        const res = await apiRequest(
+          "POST",
+          "/api/cookbook-covers/candidates",
+          input,
+          { signal: controller.signal },
+        );
+        return await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    // The studio shows its own inline error.
+    meta: { silentError: true },
+  });
+}
+
+/** Attach a picked studio cover to a cookbook, by candidate id. */
+export function useAttachCoverCandidate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      cookbookId,
+      candidateId,
+    }: {
+      cookbookId: number;
+      candidateId: string;
+    }): Promise<Cookbook> => {
+      const res = await apiRequest(
+        "POST",
+        `/api/cookbooks/${cookbookId}/cover/candidate`,
+        { candidateId },
+      );
+      return res.json();
+    },
+    onSuccess: (_data, { cookbookId }) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/cookbooks", cookbookId],
+      });
+    },
+    // Its call site reports a failed cover through the create flow's outcome.
     meta: { silentError: true },
   });
 }
