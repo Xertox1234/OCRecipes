@@ -182,6 +182,21 @@ function deriveAggregate(matchingNutrition: VerificationNutrition[]): {
 }
 
 /**
+ * Take the per-barcode advisory locks `submitVerification` uses, in sorted
+ * order. Re-taking a lock the transaction already holds is a no-op, so callers
+ * that must lock BEFORE a user-row delete (a concurrent submit holds the lock
+ * and then needs a key-share on that user row) can lock early and recompute
+ * later without deadlocking.
+ */
+export async function lockBarcodes(tx: Tx, barcodes: string[]): Promise<void> {
+  for (const barcode of [...new Set(barcodes)].sort()) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${barcode}, 0))`,
+    );
+  }
+}
+
+/**
  * Recompute the stored aggregate for each barcode from the matching
  * `verification_history` rows that remain. Used after a user's history cascades
  * away on account deletion, so their vote stops counting toward the level,
@@ -193,10 +208,8 @@ export async function recomputeAggregatesForBarcodes(
   tx: Tx,
   barcodes: string[],
 ): Promise<void> {
+  await lockBarcodes(tx, barcodes);
   for (const barcode of [...new Set(barcodes)].sort()) {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${barcode}, 0))`,
-    );
     const rows = await tx
       .select({ extractedNutrition: verificationHistory.extractedNutrition })
       .from(verificationHistory)

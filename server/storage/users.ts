@@ -37,7 +37,7 @@ import {
 import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
 import { deleteAllPushTokensForUser } from "./push-tokens";
-import { recomputeAggregatesForBarcodes } from "./verification";
+import { lockBarcodes, recomputeAggregatesForBarcodes } from "./verification";
 
 // ============================================================================
 // USER CRUD
@@ -555,6 +555,10 @@ export async function deleteUser(id: string): Promise<boolean> {
         .from(verificationHistory)
         .where(eq(verificationHistory.userId, id))
     ).map((r) => r.barcode);
+
+    // Lock before the user-row delete: a concurrent submitVerification holds
+    // this lock and then needs a key-share on the user row we are deleting.
+    await lockBarcodes(tx, votedBarcodes);
 
     const result = await tx
       .delete(users)
