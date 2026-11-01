@@ -1,0 +1,6 @@
+{
+  "name": "nightly-band",
+  "version": "0.1.0",
+  "description": "Shows a red nightly E2E run above the prompt and tells the agent at session start",
+  "types": "./types/index.d.ts"
+}
