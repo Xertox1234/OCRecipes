@@ -42,6 +42,8 @@ interface ChatSseEvent {
   imageUrl?: string;
   imageUnavailable?: boolean;
   content?: string;
+  /** Server screened the reply as unsafe: replace everything streamed so far. */
+  safety_override?: string;
   done?: boolean;
   error?: unknown;
 }
@@ -537,6 +539,15 @@ export function useSendMessage(
                 pendingFlush = false;
               }, 16);
             }
+          }
+          if (typeof data.safety_override === "string") {
+            // The ref is assigned first, so a pending 16 ms flush can only
+            // publish the override, never the unsafe text it replaces.
+            streamingContentRef.current = data.safety_override;
+            streamingRecipeRef.current = null;
+            setStreamingContent(data.safety_override);
+            setStreamingRecipe(null);
+            setAllergenWarning(null);
           }
           if (data.done) {
             receivedDone = true;

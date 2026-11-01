@@ -440,6 +440,26 @@ async function streamRecipeTurn(ctx: TurnContext): Promise<void> {
     }
   }
 
+  // Output safety screen (same check the coach runs). Recipe chat streams
+  // progressively, so a hit can only REPLACE what was already shown: tell
+  // the client to swap it out, and persist the standard message with no
+  // recipe card or title.
+  const unsafeReply =
+    !state.aborted &&
+    fullTextResponse !== "" &&
+    containsUnsafeCoachAdvice(fullTextResponse);
+  if (unsafeReply) {
+    sink.sendRaw(JSON.stringify({ safety_override: STANDARD_SAFETY_MESSAGE }));
+    await storage.createChatMessage(
+      id,
+      req.userId,
+      "assistant",
+      STANDARD_SAFETY_MESSAGE,
+      null,
+    );
+    return;
+  }
+
   // Save the assistant message with the recipe in metadata. A disconnect
   // does not skip this (recipe/remix finish-and-save policy, P2-2026-09-24).
   if (!state.aborted && (fullTextResponse || recipeData)) {
