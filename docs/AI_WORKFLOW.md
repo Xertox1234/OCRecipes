@@ -125,9 +125,12 @@ merges `origin/main` first when main has changed a file the branch also changes 
 
 Three mechanics make this cheap and correct, all read out of the hook rather than inferred:
 
-- **One reviewer is enough.** The gate's record loop never filters `agent_type` and sets its match
-  on any single record whose verdict is clean (or advisory) and whose digest matches. The confirmation pass is
-  not a second roster dispatch.
+- **One reviewer is enough — and it must be `code-reviewer`.** The gate's record loop reads every
+  record's verdict first (a `findings` record from ANY reviewer denies), then sets its match only on
+  a record with `agent_type: code-reviewer` whose verdict is clean (or advisory) and whose digest
+  matches. A clean domain-reviewer record alone is denied, with the recovery step: dispatch
+  `code-reviewer` at the final head with `pr=<N>`. The confirmation pass is not a second roster
+  dispatch.
 - **The file list must come from the gate's own command** — `gh pr diff <N> --name-only` — and
   be **re-derived after every push, before every dispatch**. An archive move whose body was
   rewritten is a delete **plus** an add, so a hand-assembled list is one path short and the
