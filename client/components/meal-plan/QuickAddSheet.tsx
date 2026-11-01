@@ -138,16 +138,20 @@ function QuickAddSheetContentInner(
     }
   }, [haptics, isListening, startListening, stopListening]);
 
-  // Reset search state whenever the sheet is opened for a meal type, and stop
-  // any in-progress voice capture when it closes.
+  // Reset search state whenever the sheet is opened for a meal type. Keyed on
+  // mealType only: depending on isListening here would re-run it when
+  // recognition starts and wipe the dictation.
   useEffect(() => {
     voiceActiveRef.current = false;
     if (mealType) {
       setSearchQuery("");
       setDebouncedQuery("");
-    } else if (isListening) {
-      stopListening();
     }
+  }, [mealType]);
+
+  // Stop any in-progress voice capture when the sheet closes.
+  useEffect(() => {
+    if (!mealType && isListening) stopListening();
   }, [mealType, isListening, stopListening]);
 
   const queryParams = useMemo(() => {
