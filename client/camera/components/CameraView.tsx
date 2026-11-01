@@ -118,8 +118,12 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     const cameraErrorReportedRef = useRef(false);
     const cameraCancelWarnedRef = useRef(false);
     const scannerErrorReportedRef = useRef(false);
-    const interruptionStartedReportedRef = useRef(false);
-    const interruptionEndedReportedRef = useRef(false);
+    // Interruptions latch PER REASON, and each reported start gets exactly one
+    // end report — same as CameraView.ios.tsx. CameraX only reports `unknown`
+    // today, but a library version that forwards a real reason must not have
+    // its first (routine) one hide a later, diagnostic one.
+    const reportedInterruptionReasonsRef = useRef(new Set<string>());
+    const awaitingInterruptionEndRef = useRef(false);
 
     const { reducedMotion } = useAccessibility();
     const { focusPoint, zoomLabel, tapGesture, pinchGesture } =
@@ -239,15 +243,19 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
               logger.error("[CameraView] Camera error", error);
             }}
             onInterruptionStarted={(reason) => {
-              if (interruptionStartedReportedRef.current) return;
-              interruptionStartedReportedRef.current = true;
+              // Backgrounding the app mid-scan is routine, not a failure.
+              if (reason === "video-device-not-available-in-background") return;
+              const reported = reportedInterruptionReasonsRef.current;
+              if (reported.has(reason)) return;
+              reported.add(reason);
+              awaitingInterruptionEndRef.current = true;
               logger.error(
                 `[CameraView] Camera session interrupted (${reason})`,
               );
             }}
             onInterruptionEnded={() => {
-              if (interruptionEndedReportedRef.current) return;
-              interruptionEndedReportedRef.current = true;
+              if (!awaitingInterruptionEndRef.current) return;
+              awaitingInterruptionEndRef.current = false;
               logger.error("[CameraView] Camera session interruption ended");
             }}
           />

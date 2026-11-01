@@ -3,7 +3,6 @@ import {
   StyleSheet,
   View,
   Pressable,
-  Platform,
   Linking,
   Image,
   ScrollView,
@@ -99,10 +98,7 @@ export default function ReceiptCaptureScreen() {
 
     try {
       if (!cameraRef.current) return;
-      const photo = await cameraRef.current.takePicture({
-        quality: 0.85,
-        skipProcessing: Platform.OS === "android",
-      });
+      const photo = await cameraRef.current.takePicture();
       if (photo?.uri) {
         pendingCaptureRef.current = photo.uri;
         // OCR failure here is non-fatal — the capture succeeded and the
