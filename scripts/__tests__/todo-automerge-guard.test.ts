@@ -40,6 +40,9 @@ if [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
   fi
   if [ -n "\${FAKE_GH_PR_DIFF_EMPTY:-}" ]; then exit 0; fi
   if [ -n "\${FAKE_GH_PR_DIFF:-}" ]; then printf '%s\\n' "$FAKE_GH_PR_DIFF"; exit 0; fi
+  # Rows that supply files through FAKE_GH_PR_FILES_JSON leave FAKE_GH_DIFF_FILES empty; they still
+  # get a non-empty, out-of-scope diff, since an EMPTY one is (correctly) an ERROR.
+  printf 'diff --git a/README.md b/README.md\\n'
   printf '%s\\n' "$FAKE_GH_DIFF_FILES" | sed -e '/^$/d' | while IFS= read -r f; do
     printf 'diff --git a/%s b/%s\\n' "$f" "$f"
   done
