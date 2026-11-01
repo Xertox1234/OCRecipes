@@ -304,7 +304,6 @@ export default function CookSessionReviewScreen() {
                 style={styles.nutritionRetry}
                 accessibilityRole="button"
                 accessibilityLabel="Retry nutrition calculation"
-                hitSlop={8}
               >
                 <Feather
                   name="refresh-cw"
@@ -641,6 +640,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     paddingVertical: Spacing.xs,
     paddingHorizontal: Spacing.sm,
+    minHeight: 44,
   },
   actionHub: {
     position: "absolute",

@@ -1,9 +1,9 @@
 ---
 title: "Bring the remaining small icon buttons to a 44pt tap area without overlapping neighbours"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-11-01
 assignee:
 labels: [deferred, accessibility]
 github_issue:
@@ -41,3 +41,8 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-11-01
+
+- All listed sites moved from hitSlop={8} to a real 44pt box (or, where the control was already min 44pt tall/wide, the redundant slop was dropped). Chips in MealPlanHome and ParsedFoodPreview already had minHeight/minWidth 44. BatchSummary steppers keep their 28pt bordered glyph inside a 44pt box. No site was left as-is.
+- Not done here (needs a phone): the iOS + Android VoiceOver/TalkBack check from the third acceptance criterion.

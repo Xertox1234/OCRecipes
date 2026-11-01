@@ -102,7 +102,6 @@ export function ChatBubble({
               isSpeaking ? "Stop reading aloud" : "Read aloud"
             }
             accessibilityState={{ selected: isSpeaking }}
-            hitSlop={8}
           >
             <Ionicons
               name={isSpeaking ? "stop-circle" : "volume-high"}
@@ -160,9 +159,16 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
   },
   // Shared
+  // A real 44pt box (not hitSlop, which Android clips to the parent). The
+  // icon stays top-right where it sat before; the box grows downward only,
+  // so it never reaches up into the message text.
   speakButton: {
     alignSelf: "flex-end",
-    marginTop: Spacing.xs,
-    padding: 2,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
+    paddingTop: Spacing.xs + 2,
+    paddingRight: 2,
   },
 });

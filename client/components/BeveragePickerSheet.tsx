@@ -382,7 +382,6 @@ export function BeveragePickerSheet({
                 onPress={handleBack}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
-                hitSlop={8}
                 style={styles.backButton}
               >
                 <Feather name="arrow-left" size={20} color={theme.text} />
@@ -682,13 +681,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   backButton: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
   backPlaceholder: {
-    width: 32,
+    width: 44,
   },
   title: {
     flex: 1,

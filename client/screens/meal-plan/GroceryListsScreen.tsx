@@ -315,9 +315,11 @@ export default function GroceryListsScreen() {
           </ThemedText>
         </View>
         <Pressable
-          style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+          style={({ pressed }) => [
+            styles.deleteButton,
+            pressed && { opacity: 0.7 },
+          ]}
           onPress={() => handleDelete(item.id)}
-          hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={`Delete ${formatGroceryListTitle(item.title)}`}
         >
@@ -523,6 +525,14 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderRadius: BorderRadius.card,
     marginBottom: Spacing.md,
+  },
+  // 44pt box, not hitSlop: the row is tappable itself, so a slop would bleed
+  // into the row's own press area (and Android clips it to the parent).
+  deleteButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   listItemContent: {
     flex: 1,

@@ -119,7 +119,6 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
           onPress={() => generate(text)}
           accessibilityRole="button"
           accessibilityLabel="Generate recipe"
-          hitSlop={8}
           style={({ pressed }) => [
             styles.goButton,
             { opacity: pressed ? 0.7 : 1 },
@@ -182,9 +181,9 @@ const styles = StyleSheet.create({
     ...LABELLED_INPUT_TEXT,
   },
   goButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
   },

@@ -669,7 +669,7 @@ export default function GroceryListScreen() {
           </Pressable>
           <Pressable
             onPress={handleDismissPantryPrompt}
-            hitSlop={8}
+            style={styles.pantrySnackbarDismiss}
             accessibilityRole="button"
             accessibilityLabel="Dismiss"
           >
@@ -817,6 +817,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.xs,
+  },
+  // 44pt box, not hitSlop (it would overlap the Yes button). Negative vertical
+  // margin keeps the snackbar's height; the box still fits inside it.
+  pantrySnackbarDismiss: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -Spacing.sm,
+    marginRight: -Spacing.sm,
   },
   pantrySnackbarBtnText: {
     fontSize: 13,

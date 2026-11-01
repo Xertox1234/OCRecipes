@@ -209,7 +209,6 @@ export default function ProfileScreen() {
               { backgroundColor: withOpacity(theme.textSecondary, 0.08) },
               pressed && { opacity: 0.7 },
             ]}
-            hitSlop={8}
           >
             <Feather name="settings" size={16} color={theme.textSecondary} />
           </Pressable>
@@ -388,7 +387,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+    // 4pt, so the 44pt gear still fits the 52pt bar (barHeight above is
+    // PROFILE_HEADER_COLLAPSED; a taller bar would peek out when hidden).
+    paddingVertical: Spacing.xs,
     minHeight: PROFILE_HEADER_COLLAPSED,
     gap: Spacing.sm,
   },
@@ -410,9 +411,9 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.medium,
   },
   collapsedGear: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
   },

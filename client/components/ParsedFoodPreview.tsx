@@ -59,7 +59,6 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
             onPress={() => onRemoveItem(index)}
             accessibilityLabel={`Remove ${item.name}`}
             accessibilityRole="button"
-            hitSlop={8}
             style={styles.removeButton}
           >
             <Feather name="x" size={18} color={theme.textSecondary} />
