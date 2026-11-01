@@ -48,6 +48,10 @@ const dailyLogDefaults: DailyLog = {
   source: "scan",
   servings: "1",
   mealType: null,
+  calories: null,
+  protein: null,
+  carbs: null,
+  fat: null,
   loggedAt: new Date("2024-01-01"),
 };
 

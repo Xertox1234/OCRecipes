@@ -547,6 +547,14 @@ export const dailyLogs = pgTable(
     source: text("source").notNull().default("scan"),
     servings: decimal("servings", { precision: 5, scale: 2 }).default("1"),
     mealType: text("meal_type"),
+    // Recipe logs only: the recipe's per-serving nutrition copied at log time
+    // (UNSCALED — readers multiply by `servings`), so editing the recipe later
+    // never rewrites past days. Written by `createDailyLog`, never by callers.
+    // Null = not snapshotted: a scan log, or a row from before migration 0033.
+    calories: decimal("calories", { precision: 10, scale: 2 }),
+    protein: decimal("protein", { precision: 10, scale: 2 }),
+    carbs: decimal("carbs", { precision: 10, scale: 2 }),
+    fat: decimal("fat", { precision: 10, scale: 2 }),
     loggedAt: timestamp("logged_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -565,6 +573,10 @@ export const dailyLogs = pgTable(
       sql`scanned_item_id IS NOT NULL OR recipe_id IS NOT NULL`,
     ),
     check("daily_logs_servings_gt0", sql`${table.servings} > 0`),
+    check("daily_logs_calories_gte0", sql`${table.calories} >= 0`),
+    check("daily_logs_protein_gte0", sql`${table.protein} >= 0`),
+    check("daily_logs_carbs_gte0", sql`${table.carbs} >= 0`),
+    check("daily_logs_fat_gte0", sql`${table.fat} >= 0`),
   ],
 );
 
@@ -1569,6 +1581,11 @@ export const insertScannedItemSchema = createInsertSchema(scannedItems).omit({
 export const insertDailyLogSchema = createInsertSchema(dailyLogs).omit({
   id: true,
   loggedAt: true,
+  // The recipe snapshot is copied by `createDailyLog`, never supplied.
+  calories: true,
+  protein: true,
+  carbs: true,
+  fat: true,
 });
 
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
