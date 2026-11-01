@@ -19,6 +19,7 @@ vi.mock("../../storage", () => ({
 
 // Configurable tier for the mock
 let mockTier = "free";
+let requireApiKeyCalls = 0;
 
 vi.mock("../../middleware/api-key-auth", () => ({
   requireApiKey: (
@@ -26,6 +27,7 @@ vi.mock("../../middleware/api-key-auth", () => ({
     _res: express.Response,
     next: express.NextFunction,
   ) => {
+    requireApiKeyCalls++;
     req.apiKeyId = 1;
     req.apiKeyTier = mockTier;
     next();
@@ -45,6 +47,26 @@ function createApp(tier = "free") {
 
 describe("Public API Routes", () => {
   let app: express.Express;
+
+  describe("per-IP limiter before the API-key check", () => {
+    it("returns 429 on request 61 without reaching the key lookup", async () => {
+      vi.mocked(storage.getBarcodeNutrition).mockResolvedValue(null);
+      vi.mocked(storage.getVerificationByBarcodes).mockResolvedValue(null);
+      const limited = createApp();
+      requireApiKeyCalls = 0;
+
+      for (let i = 0; i < 60; i++) {
+        const ok = await request(limited).get("/api/v1/products/012345678901");
+        expect(ok.status).not.toBe(429);
+      }
+      expect(requireApiKeyCalls).toBe(60);
+
+      const res = await request(limited).get("/api/v1/products/012345678901");
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("RATE_LIMITED");
+      expect(requireApiKeyCalls).toBe(60);
+    });
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();

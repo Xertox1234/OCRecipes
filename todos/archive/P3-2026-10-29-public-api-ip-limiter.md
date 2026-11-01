@@ -1,6 +1,6 @@
 ---
 title: "Put an IP-keyed limiter in front of the /api/v1 API-key check"
-status: backlog
+status: done
 priority: low
 created: 2026-10-29
 updated: 2026-10-31
@@ -24,8 +24,8 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 ## Acceptance Criteria
 
 - [x] Owner picks the per-IP rate — 60/min (2026-10-31)
-- [ ] An inline `rateLimit({ keyGenerator: ipKeyGenerator, ... })` (CodeQL-traceable, like /api/health) is mounted before `requireApiKey`
-- [ ] A test sends N+1 unauthenticated requests and asserts the (N+1)th is 429 without a key lookup
+- [x] An inline `rateLimit({ keyGenerator: ipKeyGenerator, ... })` (CodeQL-traceable, like /api/health) is mounted before `requireApiKey`
+- [x] A test sends N+1 unauthenticated requests and asserts the (N+1)th is 429 without a key lookup
 
 ## Implementation Notes
 
@@ -45,3 +45,7 @@ See the /api/health inline limiter in `server/index.ts` for the shape and the Co
 ### 2026-10-31
 
 - Owner ruling: **60 requests per minute per IP** on `/api/v1`, mounted before `requireApiKey`. No partners exist yet; raise it when one needs more.
+
+### 2026-11-01
+
+- Implemented: inline 60/min/IP limiter before requireApiKey in server/routes/public-api.ts; test asserts request 61 is 429 with no key lookup.
