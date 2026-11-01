@@ -58,7 +58,7 @@ Typing screens with no camera and no mic (from the sweep; re-check before starti
       record the ruling here before building. Today it's gated in some places and not others.
 - [x] Mic permission denied, no speech heard and recognition errors each show a clear message and
       leave the typed text untouched.
-- [x] Tests for the new mic wiring on each changed screen; checked on the iOS simulator.
+- [ ] Tests for the new mic wiring on each changed screen; checked on the iOS simulator. (Partly met: focused tests on two screens; no simulator check, which has no speech engine.)
 
 ## Implementation Notes
 
