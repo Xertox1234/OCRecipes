@@ -14,6 +14,8 @@ import {
 } from "react-native";
 import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
@@ -106,8 +108,48 @@ function QuickAddSheetContentInner(
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Reset search state whenever the sheet is opened for a meal type
+  // Voice input REPLACES the search text with the dictated words.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  // false once the sheet closes, so a late final result cannot refill.
+  const voiceActiveRef = useRef(false);
   useEffect(() => {
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      setSearchQuery(transcript);
+    }
+  }, [isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceActiveRef.current = true;
+      void startListening();
+    }
+  }, [haptics, isListening, startListening, stopListening]);
+
+  // Stop voice capture THIS sheet started when it closes. Declared before the
+  // reset below so it still sees voiceActiveRef; it never stops a session
+  // another mounted screen started.
+  useEffect(() => {
+    if (!mealType && voiceActiveRef.current && isListening) stopListening();
+  }, [mealType, isListening, stopListening]);
+
+  // Reset search state whenever the sheet is opened for a meal type. Keyed on
+  // mealType only: depending on isListening here would re-run it when
+  // recognition starts and wipe the dictation.
+  useEffect(() => {
+    voiceActiveRef.current = false;
     if (mealType) {
       setSearchQuery("");
       setDebouncedQuery("");
@@ -439,6 +481,11 @@ function QuickAddSheetContentInner(
             value={searchQuery}
             onChangeText={setSearchQuery}
             accessibilityLabel={SEARCH_LABEL}
+          />
+          <InlineMicButton
+            isListening={isListening}
+            volume={volume}
+            onPress={handleVoicePress}
           />
         </FocusField>
       </View>

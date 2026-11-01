@@ -1,9 +1,9 @@
 ---
 title: "Offer voice input on every typing screen that has no camera"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-11-01
 assignee:
 labels: [deferred, client, voice]
 github_issue:
@@ -50,15 +50,15 @@ Typing screens with no camera and no mic (from the sweep; re-check before starti
 
 ## Acceptance Criteria
 
-- [ ] Every screen in the list above either gets the shared mic control or is listed in the PR with a
+- [x] Every screen in the list above either gets the shared mic control or is listed in the PR with a
       one-line reason it shouldn't (e.g. a field where dictation makes no sense).
-- [ ] Uses the existing `useSpeechToText` hook and an existing mic button (`InlineMicButton` or
+- [x] Uses the existing `useSpeechToText` hook and an existing mic button (`InlineMicButton` or
       `VoiceLogButton`); no second speech pipeline.
-- [ ] The owner decides once whether voice stays premium-gated (`voiceLogging`) on the new screens;
+- [x] The owner decides once whether voice stays premium-gated (`voiceLogging`) on the new screens;
       record the ruling here before building. Today it's gated in some places and not others.
-- [ ] Mic permission denied, no speech heard and recognition errors each show a clear message and
+- [x] Mic permission denied, no speech heard and recognition errors each show a clear message and
       leave the typed text untouched.
-- [ ] Tests for the new mic wiring on each changed screen; checked on the iOS simulator.
+- [ ] Tests for the new mic wiring on each changed screen; checked on the iOS simulator. (Partly met: focused tests on two screens; no simulator check, which has no speech engine.)
 
 ## Implementation Notes
 
@@ -87,3 +87,19 @@ Typing screens with no camera and no mic (from the sweep; re-check before starti
 ### 2026-10-29
 
 - Created from the feature-teaching brainstorm; owner asked for a todo and a dedicated session.
+
+### 2026-10-31
+
+- **Owner ruling (in-session):** voice input on the new screens is FREE FOR EVERYONE, with no
+  `voiceLogging` gate. The existing gates in SimpleEntrySheet, QuickLog and CoachChat are left as
+  they are.
+
+### 2026-11-01
+
+- Implemented: mic on every screen in the list (replace for single-value fields, append for the
+  chat composers, note and wizard instructions/ingredients). Wizard ingredients/instructions use ONE
+  step-level recognizer that dictates into the last row (per-row hooks would all react to the same
+  native start event). Wizard title gets the mic; description is left typed-only.
+- Not verified on a simulator (the simulator has no speech engine); the on-device mic check on the
+  phone is the owner's. Tests cover replace-vs-append, speech errors and the streaming-disabled
+  mic on one single-value screen (GenerateRecipeDrawer) and one chat composer (RecipeChatScreen).

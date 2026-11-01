@@ -1,7 +1,17 @@
-import React, { useRef, useState } from "react";
-import { StyleSheet, ScrollView, type TextInputInstance } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  StyleSheet,
+  ScrollView,
+  View,
+  type TextInputInstance,
+} from "react-native";
+import * as Haptics from "expo-haptics";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FieldCounter } from "@/components/FieldCounter";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { InlineError } from "@/components/InlineError";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Spacing,
@@ -29,6 +39,34 @@ export default function TitleStep({
     "title" | "description" | null
   >(null);
   const descriptionRef = useRef<TextInputInstance>(null);
+  const haptics = useHaptics();
+
+  // Voice input REPLACES the title with the dictated words.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  // false once the title is submitted, so a late final result cannot refill.
+  const voiceActiveRef = useRef(false);
+  useEffect(() => {
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      setTitle(transcript.slice(0, TITLE_MAX_LENGTH));
+    }
+  }, [isListening, isFinal, transcript, setTitle]);
+  const handleVoicePress = () => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceActiveRef.current = true;
+      void startListening();
+    }
+  };
 
   return (
     <ScrollView
@@ -55,7 +93,11 @@ export default function TitleStep({
         returnKeyType="next"
         // Keep the keyboard up while focus moves on to the description.
         submitBehavior="submit"
-        onSubmitEditing={() => descriptionRef.current?.focus()}
+        onSubmitEditing={() => {
+          voiceActiveRef.current = false;
+          if (isListening) stopListening();
+          descriptionRef.current?.focus();
+        }}
         maxLength={TITLE_MAX_LENGTH}
         onFocus={() => setFocusedField("title")}
         onBlur={() => setFocusedField(null)}
@@ -66,6 +108,14 @@ export default function TitleStep({
         max={TITLE_MAX_LENGTH}
         visible={focusedField === "title"}
       />
+      <View style={styles.micRow}>
+        <InlineMicButton
+          isListening={isListening}
+          volume={volume}
+          onPress={handleVoicePress}
+        />
+      </View>
+      <InlineError message={speechError} />
 
       <FocusTextInput
         ref={descriptionRef}
@@ -101,6 +151,13 @@ export default function TitleStep({
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingBottom: Spacing.xl },
+  micRow: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
   input: {
     height: 48,
     borderWidth: 1,

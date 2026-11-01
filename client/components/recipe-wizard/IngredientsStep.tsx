@@ -1,13 +1,17 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Text,
   Pressable,
   FlatList,
   StyleSheet,
   AccessibilityInfo,
+  View,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { InlineError } from "@/components/InlineError";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
@@ -131,6 +135,41 @@ export default function IngredientsStep({
     [removeIngredient, haptics],
   );
 
+  // Voice input APPENDS to the LAST ingredient row as it stood when the mic
+  // was tapped. One recognizer lives here at the step level, not per row:
+  // every useSpeechToText instance reacts to the same native "start" event,
+  // so per-row hooks would all show "listening" at once.
+  const voiceTargetRef = useRef<{ key: string; base: string } | null>(null);
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    const target = voiceTargetRef.current;
+    if (target && transcript && (isListening || isFinal)) {
+      updateIngredient(
+        target.key,
+        target.base ? `${target.base} ${transcript}` : transcript,
+      );
+    }
+  }, [isListening, isFinal, transcript, updateIngredient]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    const last = ingredients[ingredients.length - 1];
+    if (!last) return;
+    voiceTargetRef.current = { key: last.key, base: last.text.trim() };
+    void startListening();
+  }, [haptics, isListening, ingredients, startListening, stopListening]);
+
   // `showDelete` is the only row-level prop that depends on siblings; derive
   // it once here and pass as a primitive prop so rows stay pure.
   const showDelete = useMemo(
@@ -152,23 +191,33 @@ export default function IngredientsStep({
   );
 
   const ListFooterComponent = (
-    <Pressable
-      onPress={handleAdd}
-      style={[
-        styles.addRow,
-        {
-          borderColor: withOpacity(theme.link, 0.4),
-          backgroundColor: withOpacity(theme.link, 0.04),
-        },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel="Add ingredient"
-    >
-      <Feather name="plus" size={16} color={theme.link} />
-      <Text style={[styles.addText, { color: theme.link }]}>
-        Add ingredient…
-      </Text>
-    </Pressable>
+    <>
+      <View style={styles.footerRow}>
+        <Pressable
+          onPress={handleAdd}
+          style={[
+            styles.addRow,
+            {
+              borderColor: withOpacity(theme.link, 0.4),
+              backgroundColor: withOpacity(theme.link, 0.04),
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Add ingredient"
+        >
+          <Feather name="plus" size={16} color={theme.link} />
+          <Text style={[styles.addText, { color: theme.link }]}>
+            Add ingredient…
+          </Text>
+        </Pressable>
+        <InlineMicButton
+          isListening={isListening}
+          volume={volume}
+          onPress={handleVoicePress}
+        />
+      </View>
+      <InlineError message={speechError} />
+    </>
   );
 
   return (
@@ -211,7 +260,14 @@ const styles = StyleSheet.create({
     paddingLeft: Spacing.sm,
     paddingVertical: Spacing.xs,
   },
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 44,
+    gap: Spacing.sm,
+  },
   addRow: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1.5,

@@ -1349,3 +1349,95 @@ describe("RecipeChatScreen — recipe finder", () => {
     });
   });
 });
+
+// --- Voice input on the composer -------------------------------------------
+// useSpeechToText is mocked with a mutable state object so a test can play
+// the recognizer's side: tap the mic (startListening), then push transcript
+// updates and re-render. Voice APPENDS to what was typed and never sends.
+const { mockSpeech, mockStartListening, mockStopListening } = vi.hoisted(
+  () => ({
+    mockSpeech: {
+      value: {
+        isListening: false,
+        transcript: "",
+        isFinal: false,
+        volume: 0,
+        error: null as string | null,
+      },
+    },
+    mockStartListening: vi.fn(),
+    mockStopListening: vi.fn(),
+  }),
+);
+
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    ...mockSpeech.value,
+    startListening: mockStartListening,
+    stopListening: mockStopListening,
+  }),
+}));
+
+describe("RecipeChatScreen — voice input", () => {
+  beforeEach(() => {
+    mockSpeech.value = {
+      isListening: false,
+      transcript: "",
+      isFinal: false,
+      volume: 0,
+      error: null,
+    };
+  });
+
+  it("appends the dictation to the typed text and does not send", () => {
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+    fireEvent.change(screen.getByLabelText("Recipe request"), {
+      target: { value: "a pasta dish" },
+    });
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+    expect(mockStartListening).toHaveBeenCalledOnce();
+
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "with garlic",
+    };
+    rerender(<RecipeChatScreen />);
+
+    expect(
+      (screen.getByLabelText("Recipe request") as HTMLInputElement).value,
+    ).toBe("a pasta dish with garlic");
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("shows a speech error as a toast and leaves the typed text alone", () => {
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+    fireEvent.change(screen.getByLabelText("Recipe request"), {
+      target: { value: "keep me" },
+    });
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      error: "No speech detected. Please try again.",
+    };
+    rerender(<RecipeChatScreen />);
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      "No speech detected. Please try again.",
+    );
+    expect(
+      (screen.getByLabelText("Recipe request") as HTMLInputElement).value,
+    ).toBe("keep me");
+  });
+
+  it("disables the mic while a reply is streaming", () => {
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      isStreaming: true,
+    };
+    renderComponent(<RecipeChatScreen />);
+    expect(
+      (screen.getByLabelText("Start voice input") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+});

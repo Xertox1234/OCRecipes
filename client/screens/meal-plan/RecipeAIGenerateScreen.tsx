@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -15,6 +15,8 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle, NotificationFeedbackType } from "expo-haptics";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -93,6 +95,34 @@ export default function RecipeAIGenerateScreen() {
   // The counter shows only while the prompt is focused.
   const [promptFocused, setPromptFocused] = useState(false);
 
+  // Voice input REPLACES the prompt with the dictated words (capped at the
+  // field's length).
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  // false once submitted/closed, so a late final result cannot refill.
+  const voiceActiveRef = useRef(false);
+  useEffect(() => {
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      setPrompt(transcript.slice(0, PROMPT_MAX_LENGTH));
+    }
+  }, [isListening, isFinal, transcript, setPrompt]);
+  const handleVoicePress = () => {
+    haptics.impact(ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceActiveRef.current = true;
+      void startListening();
+    }
+  };
+
   const handleChipPress = (chip: string) => {
     haptics.impact(ImpactFeedbackStyle.Light);
     setPrompt(chip);
@@ -112,6 +142,8 @@ export default function RecipeAIGenerateScreen() {
     });
 
     haptics.selection();
+    voiceActiveRef.current = false;
+    if (isListening) stopListening();
     start(trimmed, returnToMealPlan);
     navigation.goBack();
   };
@@ -212,7 +244,16 @@ export default function RecipeAIGenerateScreen() {
           max={PROMPT_MAX_LENGTH}
           visible={promptFocused}
         />
+        <View style={styles.micRow}>
+          <InlineMicButton
+            isListening={isListening}
+            volume={volume}
+            onPress={handleVoicePress}
+            disabled={isDisabled}
+          />
+        </View>
         <InlineError message={promptField.error} style={styles.promptError} />
+        <InlineError message={speechError} style={styles.promptError} />
 
         {/* Suggestion chips */}
         <ThemedText style={[styles.chipLabel, { color: theme.textSecondary }]}>
@@ -284,6 +325,13 @@ const styles = StyleSheet.create({
   },
   promptError: {
     marginTop: Spacing.sm,
+  },
+  micRow: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
   scrollContent: {
     flexGrow: 1,

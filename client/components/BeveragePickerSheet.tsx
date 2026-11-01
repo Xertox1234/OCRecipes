@@ -13,6 +13,8 @@ import {
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -80,6 +82,50 @@ export function BeveragePickerSheet({
   const [isLogging, setIsLogging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isActioning = useRef(false);
+
+  // Voice input REPLACES the custom drink field with the dictated words. Its
+  // errors use the sheet's own error surface below.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  // True only while THIS sheet started the session (the shared recognizer is
+  // visible to every mounted instance of the hook).
+  const voiceActiveRef = useRef(false);
+  useEffect(() => {
+    if (
+      step === "custom" &&
+      voiceActiveRef.current &&
+      transcript &&
+      (isListening || isFinal)
+    ) {
+      setCustomInput(transcript.slice(0, MAX_CUSTOM_NAME_LENGTH));
+    }
+  }, [step, isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) setError(speechError);
+  }, [speechError]);
+  // Leaving the custom step (Next, Back, close/reset) ends any capture.
+  useEffect(() => {
+    if (step !== "custom") {
+      if (voiceActiveRef.current && isListening) stopListening();
+      voiceActiveRef.current = false;
+    }
+  }, [step, isListening, stopListening]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceActiveRef.current = true;
+      void startListening();
+    }
+  }, [haptics, isListening, startListening, stopListening]);
 
   // iOS only — Android gets the announcement via accessibilityLiveRegion="assertive" on the error View
   useEffect(() => {
@@ -554,6 +600,14 @@ export function BeveragePickerSheet({
               >
                 Enter a beverage name or calorie amount
               </ThemedText>
+              <View style={styles.customMicRow}>
+                <InlineMicButton
+                  isListening={isListening}
+                  volume={volume}
+                  onPress={handleVoicePress}
+                  disabled={isLogging}
+                />
+              </View>
               <FocusBottomSheetTextInput
                 label="Drink or calories"
                 value={customInput}
@@ -725,6 +779,12 @@ const styles = StyleSheet.create({
   // Custom input
   customContainer: {
     gap: Spacing.md,
+  },
+  customMicRow: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: Spacing.sm,
   },
   customHint: {
     fontSize: 13,

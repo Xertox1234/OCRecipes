@@ -39,6 +39,8 @@ import { EmptyState, OfflineEmptyState } from "@/components/EmptyState";
 import { isPausedWithoutData } from "@/components/empty-state-utils";
 import { TypingDots } from "@/components/TypingDots";
 import { SendButton } from "@/components/SendButton";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -415,6 +417,49 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInputInstance>(null);
   const composerFocus = useFieldFocus();
+
+  // Voice input APPENDS to whatever was typed before the mic was tapped and
+  // never sends — the user reviews the dictation and taps Send themselves.
+  // null = no dictation in progress (a late final result must not refill).
+  const voiceBaseRef = useRef<string | null>(null);
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    const base = voiceBaseRef.current;
+    if (base !== null && transcript && (isListening || isFinal)) {
+      setInputText(
+        (base ? `${base} ${transcript}` : transcript).slice(
+          0,
+          CHAT_MESSAGE_MAX_LENGTH,
+        ),
+      );
+    }
+  }, [isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  // A reply that starts streaming locks the composer; end any capture too.
+  useEffect(() => {
+    if (isStreaming && isListening && voiceBaseRef.current !== null) {
+      stopListening();
+    }
+  }, [isStreaming, isListening, stopListening]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceBaseRef.current = inputText.trim();
+      void startListening();
+    }
+  }, [haptics, isListening, inputText, startListening, stopListening]);
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
@@ -561,6 +606,8 @@ export default function ChatScreen() {
       if (!content || isStreaming || isMalformedId) return;
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      voiceBaseRef.current = null;
+      if (isListening) stopListening();
       setInputText("");
       setPendingUser({
         content,
@@ -615,6 +662,8 @@ export default function ChatScreen() {
     },
     [
       inputText,
+      isListening,
+      stopListening,
       isStreaming,
       isMalformedId,
       haptics,
@@ -822,6 +871,12 @@ export default function ChatScreen() {
             editable={!isStreaming}
             accessibilityLabel="Message input"
             accessibilityHint="Type your question for NutriCoach"
+          />
+          <InlineMicButton
+            isListening={isListening}
+            volume={volume}
+            onPress={handleVoicePress}
+            disabled={isStreaming}
           />
           <SendButton
             onPress={() => handleSend()}
