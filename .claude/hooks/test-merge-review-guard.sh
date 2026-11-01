@@ -642,6 +642,35 @@ out=$(mcp_payload 938 | run)
 denied "$out" && ok "control: an unknown verdict with no unresolved entries still denies" \
               || bad "control: an unknown verdict with no unresolved entries still denies" "$out"
 
+# 9c. code-reviewer requirement (todo 2026-10-31). The gate's allow match needs a record from
+#     code-reviewer. 9c-1 is the allow control; 9c-2 FAILS against the old any-reviewer gate;
+#     9c-3 is a findings code-reviewer beside a clean domain record (the findings must win);
+#     9c-4 confirms domain + code-reviewer clean together still allows.
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
+out=$(mcp_payload 938 | run)
+assert_allowed "9c-1 control: code-reviewer clean alone allows" "$out"
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" clean security-auditor
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "9c-2 domain-reviewer clean alone denies" \
+              || bad "9c-2 domain-reviewer clean alone denies" "$out"
+r=$(reason "$out")
+grep -q 'code-reviewer' <<<"$r" && grep -q 'pr=938' <<<"$r" \
+  && ok "9c-2b deny names the missing code-reviewer record and the recovery (pr=<N>)" \
+  || bad "9c-2b deny names the missing code-reviewer record and the recovery (pr=<N>)" "$r"
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" findings code-reviewer 'server/x.ts:1 — CRITICAL — open'
+stamp "$SHA" "$DIGEST_TWO" clean security-auditor
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "9c-3 code-reviewer findings beside domain clean denies" \
+              || bad "9c-3 code-reviewer findings beside domain clean denies" "$out"
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
+stamp "$SHA" "$DIGEST_TWO" clean security-auditor
+out=$(mcp_payload 938 | run)
+assert_allowed "9c-4 code-reviewer clean plus domain clean allows" "$out"
+
 # 10. DENY. Mis-scoped review: the record describes ONE file, the PR changes TWO. Same
 #     SHA, same reviewer, clean verdict — only the scope is wrong.
 clear_stamps
@@ -1632,7 +1661,8 @@ unset _mrgcloser_hits _mrgcloser_prose
 # blank flipped main-DENY -> head-ALLOW, 2 controls, and the anchor's cost pinned KNOWN-WRONG.
 # 199 -> 201 (2026-09-22, advisory verdict): +2 = advisory allows (9a) and its unknown-verdict control (9b).
 # 201 -> 202 (2026-09-22, review round 1): +1, case 7 asserts the advisory literal survives the deny string.
-EXPECTED_TOTAL=202
+# 202 -> 207 (2026-11-01, code-reviewer record required): +5 rows (9c-1, 9c-2, 9c-2b, 9c-3, 9c-4).
+EXPECTED_TOTAL=207
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

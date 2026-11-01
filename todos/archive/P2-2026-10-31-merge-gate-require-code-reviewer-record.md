@@ -1,6 +1,6 @@
 ---
 title: "Merge review gate: require a clean code-reviewer record, not just any clean record"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-31
 updated: 2026-10-31
@@ -27,11 +27,11 @@ github_issue:
 
 ## Acceptance Criteria
 
-- [ ] The guard allows a merge only when a record that is digest-matching, clean or advisory, and has `unresolved` empty **also** has `agent_type: code-reviewer`.
-- [ ] A digest-matching clean record from a domain reviewer alone is **denied**. The deny message names the missing `code-reviewer` record and how to recover: dispatch `code-reviewer` at the final head with `pr=<N>`.
-- [ ] Tests in `.claude/hooks/test-merge-review-guard.sh` cover: code-reviewer clean → allow; domain-only clean → deny; code-reviewer `findings` plus domain clean → deny. Each case gets a control, so the new deny case fails against the old guard.
-- [ ] `docs/AI_WORKFLOW.md` → "Confirmation pass" ("One reviewer is enough… never filters `agent_type`") and the `land` skill's review-gate text are updated to say the record must be `code-reviewer`'s.
-- [ ] Run once against the real `review_stamp_dir` of a recently merged PR, to show an existing `code-reviewer` record still passes.
+- [x] The guard allows a merge only when a record that is digest-matching, clean or advisory, and has `unresolved` empty **also** has `agent_type: code-reviewer`.
+- [x] A digest-matching clean record from a domain reviewer alone is **denied**. The deny message names the missing `code-reviewer` record and how to recover: dispatch `code-reviewer` at the final head with `pr=<N>`.
+- [x] Tests in `.claude/hooks/test-merge-review-guard.sh` cover: code-reviewer clean → allow; domain-only clean → deny; code-reviewer `findings` plus domain clean → deny. Each case gets a control, so the new deny case fails against the old guard.
+- [x] `docs/AI_WORKFLOW.md` → "Confirmation pass" ("One reviewer is enough… never filters `agent_type`") and the `land` skill's review-gate text are updated to say the record must be `code-reviewer`'s.
+- [x] Run once against the real `review_stamp_dir` of a recently merged PR, to show an existing `code-reviewer` record still passes.
 
 ## Implementation Notes
 
@@ -59,3 +59,7 @@ github_issue:
 ### 2026-10-31
 
 - Initial creation, from the N4 known gap (PR #1644), at the owner's request.
+
+### 2026-11-01
+
+- Implemented: `merge-review-guard.sh` now matches only on a digest-matching, clean/advisory `code-reviewer` record; a domain-only match denies with the `pr=<N>` recovery. Findings from any reviewer still deny first. Tests 9c-1..9c-4 added (old guard fails 9c-2/9c-2b). Docs: AI_WORKFLOW Confirmation pass + land skill. Real-record check: latest `code-reviewer.json` under the live stamp dir carries `agent_type: code-reviewer`, verdict advisory, unresolved empty (the predicate passes it).
