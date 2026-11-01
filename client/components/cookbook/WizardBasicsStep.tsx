@@ -1,5 +1,5 @@
 import React, { useRef, useState, type Dispatch, type RefObject } from "react";
-import { StyleSheet, View, type TextInput as RNTextInput } from "react-native";
+import { StyleSheet, View, type TextInputInstance } from "react-native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
@@ -20,7 +20,7 @@ interface WizardBasicsStepProps {
   state: WizardState;
   dispatch: Dispatch<WizardAction>;
   /** The name field's ref from the screen's `useFieldValidation`. */
-  nameRef: RefObject<RNTextInput | null>;
+  nameRef: RefObject<TextInputInstance | null>;
   nameError: string | null;
   /** Bumped on each rejected Continue so the error shakes. */
   nameShakeKey: number;
@@ -45,7 +45,7 @@ export function WizardBasicsStep({
   onNameChange,
 }: WizardBasicsStepProps) {
   const { theme } = useTheme();
-  const descriptionRef = useRef<RNTextInput>(null);
+  const descriptionRef = useRef<TextInputInstance>(null);
   // Tracked by field identity, not one boolean: moving Name → Description
   // fires blur and focus as separate events, and a shared flag would flash
   // "nothing focused" in between (see CookbookCreateScreen).
