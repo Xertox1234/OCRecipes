@@ -156,6 +156,39 @@ export const register: Register = (on) => {
     };
     const template = async (wt: string) =>
       extractTemplate(await $.fs.read(`${wt}/docs/AI_WORKFLOW.md`));
+    // Harness diagnosis N3: a branch that main has overtaken on one of its own files gets a
+    // merge of main after review (pr-preflight-guard.sh refuses the PR until it does), and
+    // that merge needs a second review. Merging first makes the one review count. Same
+    // comparison as that guard; a failed fetch or diff skips it, as the guard does.
+    const refuseOverlap = async (wt: string, base: string, mine: string[]) => {
+      if (!base.startsWith("origin/")) return;
+      const branch = base.slice("origin/".length);
+      const fetched = await $.process.run(
+        [
+          "git",
+          "-C",
+          wt,
+          "fetch",
+          "-q",
+          "origin",
+          `refs/heads/${branch}:refs/remotes/${base}`,
+        ],
+        { cwd: wt },
+      );
+      if (fetched.exitCode !== 0) return;
+      const missed = await $.process.run(
+        ["git", "-C", wt, "diff", "--name-only", `HEAD...${base}`],
+        { cwd: wt },
+      );
+      if (missed.exitCode !== 0) return;
+      const first = missed.stdout
+        .split("\n")
+        .find((f) => f && mine.includes(f));
+      if (first)
+        throw new Refusal(
+          `${first} changed on ${base} since this branch forked, and this branch changes it too — merge it first (\`git -C ${wt} merge ${base}\`), then dispatch again; a review now would need a second one after that merge`,
+        );
+    };
 
     // Read before any await, so the pending entry exists before a sibling call checks.
     const wtEarly =
@@ -203,6 +236,8 @@ export const register: Register = (on) => {
           const files = d.files ?? changed;
           if (files.length === 0)
             throw new Refusal(`no changed files in ${wt} — wrong base or tree`);
+          if (agent === BASELINE && !d.pr && !d.uncommitted)
+            await refuseOverlap(wt, d.base, changed);
           exempt = d.uncommitted;
           prompt = fill(await template(wt), {
             "<WORKTREE>": wt,
