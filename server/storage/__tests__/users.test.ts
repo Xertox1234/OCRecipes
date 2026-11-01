@@ -25,6 +25,8 @@ import {
   communityRecipes,
   savedItems,
   recipeDismissals,
+  barcodeVerifications,
+  verificationHistory,
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import {
@@ -1286,6 +1288,119 @@ describe("users storage", () => {
         .where(eq(recipeDismissals.userId, testUser.id));
       expect(saved).toHaveLength(0);
       expect(dismissed).toHaveLength(0);
+    });
+  });
+  describe("deleteUser — barcode verification aggregates", () => {
+    // verification_history cascades with the user, but the barcode's stored
+    // level/count/consensus used to keep counting the deleted user's vote
+    // (audit 2026-10-29 L-data-9). Deleting a user recomputes them.
+    const nutrition = {
+      calories: 100,
+      protein: 5,
+      totalCarbs: 10,
+      totalFat: 2,
+    };
+    let seq = 0;
+    const newBarcode = () =>
+      `98${Date.now() % 100_000_000}${++seq}`.slice(0, 13);
+
+    async function seedVerified(barcode: string, voters: string[]) {
+      await tx.insert(barcodeVerifications).values({
+        barcode,
+        verificationLevel: "verified",
+        verificationCount: voters.length,
+        consensusNutritionData: {
+          calories: 100,
+          protein: 5,
+          carbs: 10,
+          fat: 2,
+        },
+      });
+      for (const userId of voters) {
+        await tx.insert(verificationHistory).values({
+          barcode,
+          userId,
+          extractedNutrition: nutrition,
+          ocrConfidence: "0.90",
+          isMatch: true,
+        });
+      }
+    }
+
+    it("drops the deleted voter from the count and demotes the level when consensus is lost", async () => {
+      const [a, b, c] = [
+        await createTestUser(tx),
+        await createTestUser(tx),
+        await createTestUser(tx),
+      ];
+      const barcode = newBarcode();
+      await seedVerified(barcode, [a.id, b.id, c.id]);
+
+      expect(await deleteUser(a.id)).toBe(true);
+
+      const [row] = await tx
+        .select()
+        .from(barcodeVerifications)
+        .where(eq(barcodeVerifications.barcode, barcode));
+      expect(row.verificationCount).toBe(2);
+      expect(row.verificationLevel).toBe("single_verified");
+      expect(row.consensusNutritionData).toBeNull();
+    });
+
+    it("keeps a barcode verified when enough other voters remain", async () => {
+      const voters = [
+        await createTestUser(tx),
+        await createTestUser(tx),
+        await createTestUser(tx),
+        await createTestUser(tx),
+      ];
+      const barcode = newBarcode();
+      await seedVerified(
+        barcode,
+        voters.map((v) => v.id),
+      );
+
+      expect(await deleteUser(voters[0].id)).toBe(true);
+
+      const [row] = await tx
+        .select()
+        .from(barcodeVerifications)
+        .where(eq(barcodeVerifications.barcode, barcode));
+      expect(row.verificationCount).toBe(3);
+      expect(row.verificationLevel).toBe("verified");
+      expect(row.consensusNutritionData).not.toBeNull();
+    });
+
+    it("resets a barcode to unverified when the deleted user was the only voter", async () => {
+      const only = await createTestUser(tx);
+      const barcode = newBarcode();
+      await seedVerified(barcode, [only.id]);
+
+      expect(await deleteUser(only.id)).toBe(true);
+
+      const [row] = await tx
+        .select()
+        .from(barcodeVerifications)
+        .where(eq(barcodeVerifications.barcode, barcode));
+      expect(row.verificationCount).toBe(0);
+      expect(row.verificationLevel).toBe("unverified");
+      expect(row.consensusNutritionData).toBeNull();
+    });
+
+    it("leaves barcodes the user never voted on untouched", async () => {
+      const voter = await createTestUser(tx);
+      const other = await createTestUser(tx);
+      const barcode = newBarcode();
+      await seedVerified(barcode, [voter.id]);
+
+      expect(await deleteUser(other.id)).toBe(true);
+
+      const [row] = await tx
+        .select()
+        .from(barcodeVerifications)
+        .where(eq(barcodeVerifications.barcode, barcode));
+      expect(row.verificationCount).toBe(1);
+      expect(row.verificationLevel).toBe("verified");
     });
   });
 });

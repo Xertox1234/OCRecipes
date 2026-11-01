@@ -38,6 +38,8 @@ import pLimit from "p-limit";
 import { db, pool } from "../db";
 import { users, userProfiles, communityRecipes } from "@shared/schema";
 import { eq, ilike } from "drizzle-orm";
+import { z } from "zod";
+import { validateAiResponse } from "../lib/ai-safety";
 import { storage } from "../storage";
 import {
   generateRecipeContent,
@@ -52,6 +54,14 @@ import {
   evaluateProdSeedGuard,
   resolveDemoPassword,
 } from "./seed-recipes-utils";
+
+/** The AI's per-serving macro estimate: finite, non-negative numbers. */
+const macroEstimateSchema = z.object({
+  calories: z.coerce.number().finite().min(0),
+  protein: z.coerce.number().finite().min(0),
+  carbs: z.coerce.number().finite().min(0),
+  fat: z.coerce.number().finite().min(0),
+});
 
 const MIN_INGREDIENTS = 4;
 const MIN_INSTRUCTIONS = 4;
@@ -366,29 +376,17 @@ async function estimateMacros(
       },
       { timeout: 15_000 },
     );
-    const raw = JSON.parse(response.choices[0]?.message?.content ?? "{}");
-    const cal = Math.round(Number(raw.calories));
-    const protein = Math.round(Number(raw.protein));
-    const carbs = Math.round(Number(raw.carbs));
-    const fat = Math.round(Number(raw.fat));
-    if (
-      Number.isFinite(cal) &&
-      cal >= 0 &&
-      Number.isFinite(protein) &&
-      protein >= 0 &&
-      Number.isFinite(carbs) &&
-      carbs >= 0 &&
-      Number.isFinite(fat) &&
-      fat >= 0
-    ) {
-      return {
-        caloriesPerServing: String(cal),
-        proteinPerServing: String(protein),
-        carbsPerServing: String(carbs),
-        fatPerServing: String(fat),
-      };
-    }
-    return null;
+    const parsed = validateAiResponse(
+      JSON.parse(response.choices[0]?.message?.content ?? "{}"),
+      macroEstimateSchema,
+    );
+    if (!parsed) return null;
+    return {
+      caloriesPerServing: String(Math.round(parsed.calories)),
+      proteinPerServing: String(Math.round(parsed.protein)),
+      carbsPerServing: String(Math.round(parsed.carbs)),
+      fatPerServing: String(Math.round(parsed.fat)),
+    };
   } catch {
     return null;
   }

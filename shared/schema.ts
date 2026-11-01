@@ -518,6 +518,9 @@ export const scannedItems = pgTable(
     check("scanned_items_protein_gte0", sql`${table.protein} >= 0`),
     check("scanned_items_carbs_gte0", sql`${table.carbs} >= 0`),
     check("scanned_items_fat_gte0", sql`${table.fat} >= 0`),
+    check("scanned_items_fiber_gte0", sql`${table.fiber} >= 0`),
+    check("scanned_items_sugar_gte0", sql`${table.sugar} >= 0`),
+    check("scanned_items_sodium_gte0", sql`${table.sodium} >= 0`),
     uniqueIndex("scanned_items_idempotency_key_idx")
       .on(table.userId, table.idempotencyKey)
       .where(sql`idempotency_key IS NOT NULL`),

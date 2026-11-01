@@ -1,8 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import { MulterError } from "multer";
-import { logger, toError } from "./lib/logger";
-import { reportError } from "./lib/error-reporter";
 import { register as registerAuth } from "./routes/auth";
 import { register as registerAuthSocial } from "./routes/auth-social";
 import { register as registerAuthMfa } from "./routes/auth-mfa";
@@ -52,8 +50,6 @@ import { register as registerCoachCommitments } from "./routes/coach-commitments
 import { register as registerTastePicks } from "./routes/taste-picks";
 import { register as registerExport } from "./routes/export";
 import { register as registerStoreWebhooks } from "./routes/store-webhooks";
-import { initSearchIndex } from "./services/recipe-search";
-import { startNotificationScheduler } from "./services/notification-scheduler";
 
 export function registerRoutes(app: Express): Server {
   // Public API (separate namespace, registered first to avoid auth conflicts)
@@ -113,15 +109,6 @@ export function registerRoutes(app: Express): Server {
   registerCoachCommitments(app);
   registerTastePicks(app);
   registerExport(app);
-
-  // Initialize search index (non-blocking — server starts even if index fails)
-  initSearchIndex().catch((err) => {
-    logger.error({ err: toError(err) }, "Failed to initialize search index");
-    reportError(err, "search index init");
-  });
-
-  // Start push notification scheduler (daily 09:00 commitment reminders)
-  startNotificationScheduler();
 
   // Multer error handler - returns 400 for file validation errors instead of 500
   app.use(

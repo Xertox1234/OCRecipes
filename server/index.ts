@@ -19,6 +19,11 @@ import { sampleStoredAppleTokens } from "./storage/identities";
 import { runIdentityKeyBootCheck } from "./lib/social-identity/key-check";
 import { fireAndForget } from "./lib/fire-and-forget";
 import { startPromotionJob } from "./services/canonical-promotion";
+import { initSearchIndex } from "./services/recipe-search";
+import {
+  startNotificationScheduler,
+  stopNotificationScheduler,
+} from "./services/notification-scheduler";
 import { logger, rootLogger, toError } from "./lib/logger";
 import {
   attachExpressErrorReporter,
@@ -329,6 +334,18 @@ function startServer() {
 
   const server = registerRoutes(app);
 
+  // Background work lives here, not in registerRoutes, so a test or script that
+  // registers routes does not start the search index or the cron jobs.
+  // Search index: non-blocking — the server starts even if the index fails.
+  initSearchIndex().catch((err) => {
+    logger.error({ err: toError(err) }, "Failed to initialize search index");
+    reportError(err, "search index init");
+  });
+
+  // Push notification scheduler (daily 09:00 commitment reminders and the
+  // hourly local-time reminders). Stopped in shutdown() below.
+  startNotificationScheduler();
+
   // Sentry's Express error handler must sit after all routes and before our
   // JSON error handler. It captures only 5xx by default, tags events with
   // the ALS requestId (via beforeSend), and always forwards to the next
@@ -423,6 +440,7 @@ function startServer() {
     clearInterval(cacheCleanupInterval);
     clearInterval(coverCandidatePurgeInterval);
     clearInterval(promotionInterval);
+    stopNotificationScheduler();
     if (retentionCleanupTask) {
       void retentionCleanupTask.stop();
     }
