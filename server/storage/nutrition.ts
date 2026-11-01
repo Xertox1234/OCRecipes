@@ -371,8 +371,30 @@ export async function getMostEatenFoods(
     .limit(limit);
 }
 
+/**
+ * A recipe log copies the recipe's per-serving nutrition onto the row, so a
+ * later recipe edit never rewrites the day it was eaten (`getDailySummary`
+ * reads the copy first). A missing recipe value is copied as 0 — null on the
+ * row means "not snapshotted", never "the recipe had no value".
+ */
 export async function createDailyLog(log: InsertDailyLog): Promise<DailyLog> {
-  const [dailyLog] = await db.insert(dailyLogs).values(log).returning();
+  let snapshot = {};
+  if (log.recipeId) {
+    const [recipe] = await db
+      .select({
+        calories: sql<string>`COALESCE(${mealPlanRecipes.caloriesPerServing}, 0)`,
+        protein: sql<string>`COALESCE(${mealPlanRecipes.proteinPerServing}, 0)`,
+        carbs: sql<string>`COALESCE(${mealPlanRecipes.carbsPerServing}, 0)`,
+        fat: sql<string>`COALESCE(${mealPlanRecipes.fatPerServing}, 0)`,
+      })
+      .from(mealPlanRecipes)
+      .where(eq(mealPlanRecipes.id, log.recipeId));
+    if (recipe) snapshot = recipe;
+  }
+  const [dailyLog] = await db
+    .insert(dailyLogs)
+    .values({ ...log, ...snapshot })
+    .returning();
   return dailyLog;
 }
 
@@ -453,19 +475,19 @@ export async function getDailySummary(
   const result = await db
     .select({
       totalCalories: sql<number>`COALESCE(SUM(
-        COALESCE(CAST(${scannedItems.calories} AS DECIMAL), CAST(${mealPlanRecipes.caloriesPerServing} AS DECIMAL), 0)
+        COALESCE(CAST(${scannedItems.calories} AS DECIMAL), CAST(${dailyLogs.calories} AS DECIMAL), CAST(${mealPlanRecipes.caloriesPerServing} AS DECIMAL), 0)
         * COALESCE(CAST(${dailyLogs.servings} AS DECIMAL), 1)
       ), 0)`,
       totalProtein: sql<number>`COALESCE(SUM(
-        COALESCE(CAST(${scannedItems.protein} AS DECIMAL), CAST(${mealPlanRecipes.proteinPerServing} AS DECIMAL), 0)
+        COALESCE(CAST(${scannedItems.protein} AS DECIMAL), CAST(${dailyLogs.protein} AS DECIMAL), CAST(${mealPlanRecipes.proteinPerServing} AS DECIMAL), 0)
         * COALESCE(CAST(${dailyLogs.servings} AS DECIMAL), 1)
       ), 0)`,
       totalCarbs: sql<number>`COALESCE(SUM(
-        COALESCE(CAST(${scannedItems.carbs} AS DECIMAL), CAST(${mealPlanRecipes.carbsPerServing} AS DECIMAL), 0)
+        COALESCE(CAST(${scannedItems.carbs} AS DECIMAL), CAST(${dailyLogs.carbs} AS DECIMAL), CAST(${mealPlanRecipes.carbsPerServing} AS DECIMAL), 0)
         * COALESCE(CAST(${dailyLogs.servings} AS DECIMAL), 1)
       ), 0)`,
       totalFat: sql<number>`COALESCE(SUM(
-        COALESCE(CAST(${scannedItems.fat} AS DECIMAL), CAST(${mealPlanRecipes.fatPerServing} AS DECIMAL), 0)
+        COALESCE(CAST(${scannedItems.fat} AS DECIMAL), CAST(${dailyLogs.fat} AS DECIMAL), CAST(${mealPlanRecipes.fatPerServing} AS DECIMAL), 0)
         * COALESCE(CAST(${dailyLogs.servings} AS DECIMAL), 1)
       ), 0)`,
       itemCount: sql<number>`COUNT(${dailyLogs.id})`,
