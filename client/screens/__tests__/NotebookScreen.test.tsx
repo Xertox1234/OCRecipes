@@ -57,4 +57,21 @@ describe("NotebookScreen", () => {
     fireEvent.click(screen.getByText("Try Again"));
     expect(mockRefetch).toHaveBeenCalled();
   });
+
+  // Offline cold start: the query is paused (not loading, not errored, no data)
+  // and used to read as "No entries yet" (audit 2026-10-29 M-crel-5).
+  it("shows an offline state when the entries query is paused", () => {
+    mockUseNotebookEntries.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "paused",
+      refetch: mockRefetch,
+    });
+
+    renderComponent(<NotebookScreen />);
+
+    expect(screen.queryByText("No entries yet")).toBeNull();
+    expect(screen.getByText("You're offline")).toBeDefined();
+  });
 });

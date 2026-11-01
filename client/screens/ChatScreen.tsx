@@ -35,7 +35,8 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ChatBubble } from "@/components/ChatBubble";
 import { ThemedText } from "@/components/ThemedText";
-import { EmptyState } from "@/components/EmptyState";
+import { EmptyState, OfflineEmptyState } from "@/components/EmptyState";
+import { isPausedWithoutData } from "@/components/empty-state-utils";
 import { TypingDots } from "@/components/TypingDots";
 import { SendButton } from "@/components/SendButton";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
@@ -370,6 +371,7 @@ export default function ChatScreen() {
     data: messages,
     isLoading,
     isError: messagesError,
+    fetchStatus: messagesFetchStatus,
     refetch: refetchMessages,
   } = useChatMessages(validConversationId);
   const {
@@ -699,6 +701,13 @@ export default function ChatScreen() {
     !isStreaming &&
     !showPendingUser;
 
+  // Offline cold start: the messages query is paused (not loading, no error).
+  const loadPaused =
+    validConversationId !== null &&
+    isPausedWithoutData(messagesFetchStatus, !!messages?.length) &&
+    !isStreaming &&
+    !showPendingUser;
+
   const isEmpty =
     !isLoading &&
     (!messages || messages.length === 0) &&
@@ -724,6 +733,10 @@ export default function ChatScreen() {
               void refetchMessages();
             }}
           />
+        </View>
+      ) : loadPaused ? (
+        <View style={[styles.emptyContent, { paddingTop: headerInset }]}>
+          <OfflineEmptyState what="conversation" />
         </View>
       ) : isEmpty ? (
         <FlatList

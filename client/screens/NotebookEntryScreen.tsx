@@ -30,6 +30,7 @@ import {
 } from "@/hooks/useNotebook";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
+import { isPausedWithoutData } from "@/components/empty-state-utils";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import {
   addDaysToISO,
@@ -95,6 +96,7 @@ export default function NotebookEntryScreen() {
     data: allEntries = [],
     isLoading,
     isError,
+    fetchStatus,
     refetch,
   } = useNotebookEntries();
   const entry: NotebookEntry | undefined = allEntries.find(
@@ -306,7 +308,9 @@ export default function NotebookEntryScreen() {
         >
           {isError
             ? "Couldn't load this entry. Check your connection and try again."
-            : "This entry couldn't be found. It may have been deleted."}
+            : isPausedWithoutData(fetchStatus, allEntries.length > 0)
+              ? "You're offline. This entry will load when you're back online."
+              : "This entry couldn't be found. It may have been deleted."}
         </ThemedText>
         {isError ? (
           <Pressable

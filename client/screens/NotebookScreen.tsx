@@ -21,7 +21,8 @@ import {
   type NotebookEntry,
 } from "@/hooks/useNotebook";
 import { ThemedText } from "@/components/ThemedText";
-import { EmptyState } from "@/components/EmptyState";
+import { EmptyState, OfflineEmptyState } from "@/components/EmptyState";
+import { isPausedWithoutData } from "@/components/empty-state-utils";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { toSecondPerson } from "@/components/coach/notebook-text-utils";
@@ -57,6 +58,7 @@ export default function NotebookScreen() {
     data: entries = [],
     isLoading,
     isError,
+    fetchStatus,
     refetch,
   } = useNotebookEntries(queryOpts);
   const { mutate: updateEntryMutate } = useUpdateNotebookEntry();
@@ -291,6 +293,8 @@ export default function NotebookScreen() {
                   void refetch();
                 }}
               />
+            ) : isPausedWithoutData(fetchStatus, entries.length > 0) ? (
+              <OfflineEmptyState what="notebook" />
             ) : (
               <ThemedText
                 type="small"
