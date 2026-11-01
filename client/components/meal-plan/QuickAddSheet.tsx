@@ -14,6 +14,8 @@ import {
 } from "react-native";
 import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
@@ -106,13 +108,41 @@ function QuickAddSheetContentInner(
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Reset search state whenever the sheet is opened for a meal type
+  // Voice input REPLACES the search text with the dictated words.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    if (transcript && (isListening || isFinal)) setSearchQuery(transcript);
+  }, [isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      void startListening();
+    }
+  }, [haptics, isListening, startListening, stopListening]);
+
+  // Reset search state whenever the sheet is opened for a meal type, and stop
+  // any in-progress voice capture when it closes.
   useEffect(() => {
     if (mealType) {
       setSearchQuery("");
       setDebouncedQuery("");
+    } else if (isListening) {
+      stopListening();
     }
-  }, [mealType]);
+  }, [mealType, isListening, stopListening]);
 
   const queryParams = useMemo(() => {
     const p: Record<string, string> = {};
@@ -439,6 +469,11 @@ function QuickAddSheetContentInner(
             value={searchQuery}
             onChangeText={setSearchQuery}
             accessibilityLabel={SEARCH_LABEL}
+          />
+          <InlineMicButton
+            isListening={isListening}
+            volume={volume}
+            onPress={handleVoicePress}
           />
         </FocusField>
       </View>

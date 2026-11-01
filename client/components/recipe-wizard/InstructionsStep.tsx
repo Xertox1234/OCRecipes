@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -9,6 +15,9 @@ import {
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { InlineError } from "@/components/InlineError";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
@@ -223,6 +232,41 @@ export default function InstructionsStep({
     [moveStep, haptics],
   );
 
+  // Voice input APPENDS to the LAST step as it stood when the mic was tapped.
+  // One recognizer lives here at the step level, not per row: every
+  // useSpeechToText instance reacts to the same native "start" event, so
+  // per-row hooks would all show "listening" at once.
+  const voiceTargetRef = useRef<{ key: string; base: string } | null>(null);
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    const target = voiceTargetRef.current;
+    if (target && transcript && (isListening || isFinal)) {
+      updateStep(
+        target.key,
+        target.base ? `${target.base} ${transcript}` : transcript,
+      );
+    }
+  }, [isListening, isFinal, transcript, updateStep]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    const last = steps[steps.length - 1];
+    if (!last) return;
+    voiceTargetRef.current = { key: last.key, base: last.text.trim() };
+    void startListening();
+  }, [haptics, isListening, steps, startListening, stopListening]);
+
   const stepCount = steps.length;
   const showDelete = useMemo(
     () => shouldShowStepDelete(stepCount),
@@ -263,23 +307,35 @@ export default function InstructionsStep({
 
   const ListFooterComponent = useMemo(
     () => (
-      <Pressable
-        onPress={handleAdd}
-        style={[
-          styles.addRow,
-          {
-            borderColor: withOpacity(theme.link, 0.4),
-            backgroundColor: withOpacity(theme.link, 0.04),
-          },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Add step"
-      >
-        <Feather name="plus" size={16} color={theme.link} />
-        <Text style={[styles.addText, { color: theme.link }]}>Add step…</Text>
-      </Pressable>
+      <>
+        <View style={styles.footerRow}>
+          <Pressable
+            onPress={handleAdd}
+            style={[
+              styles.addRow,
+              {
+                borderColor: withOpacity(theme.link, 0.4),
+                backgroundColor: withOpacity(theme.link, 0.04),
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Add step"
+          >
+            <Feather name="plus" size={16} color={theme.link} />
+            <Text style={[styles.addText, { color: theme.link }]}>
+              Add step…
+            </Text>
+          </Pressable>
+          <InlineMicButton
+            isListening={isListening}
+            volume={volume}
+            onPress={handleVoicePress}
+          />
+        </View>
+        <InlineError message={speechError} />
+      </>
     ),
-    [handleAdd, theme.link],
+    [handleAdd, theme.link, isListening, volume, handleVoicePress, speechError],
   );
 
   return (
@@ -350,7 +406,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
   addRow: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1.5,

@@ -216,6 +216,10 @@ export default defineConfig({
         import.meta.dirname,
         "./test/mocks/sentry-node.ts",
       ),
+      "expo-speech-recognition": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/expo-speech-recognition.ts",
+      ),
       "expo-blur": path.resolve(
         import.meta.dirname,
         "./test/mocks/expo-blur.ts",

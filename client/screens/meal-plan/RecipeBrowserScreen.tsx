@@ -7,7 +7,10 @@ import {
   Pressable,
   ActivityIndicator,
 } from "react-native";
+import * as Haptics from "expo-haptics";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
@@ -194,6 +197,32 @@ export default function RecipeBrowserScreen() {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     setDebouncedQuery(searchText.trim());
   }, [searchText]);
+
+  // Voice input REPLACES the search text with the dictated words and runs the
+  // same debounced search as typing.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    if (transcript && (isListening || isFinal)) handleSearchChange(transcript);
+  }, [isListening, isFinal, transcript, handleSearchChange]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      void startListening();
+    }
+  }, [haptics, isListening, startListening, stopListening]);
 
   // Cleanup debounce timer on unmount
   React.useEffect(() => {
@@ -597,6 +626,11 @@ export default function RecipeBrowserScreen() {
               <Feather name="x" size={16} color={theme.textSecondary} />
             </Pressable>
           )}
+          <InlineMicButton
+            isListening={isListening}
+            volume={volume}
+            onPress={handleVoicePress}
+          />
         </FocusField>
       </View>
       <Animated.View

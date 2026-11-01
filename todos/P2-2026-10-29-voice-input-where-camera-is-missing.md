@@ -1,9 +1,9 @@
 ---
 title: "Offer voice input on every typing screen that has no camera"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-11-01
 assignee:
 labels: [deferred, client, voice]
 github_issue:
@@ -87,3 +87,16 @@ Typing screens with no camera and no mic (from the sweep; re-check before starti
 ### 2026-10-29
 
 - Created from the feature-teaching brainstorm; owner asked for a todo and a dedicated session.
+
+### 2026-10-31
+
+- **Owner ruling (in-session):** voice input on the new screens is FREE FOR EVERYONE, with no
+  `voiceLogging` gate. The existing gates in SimpleEntrySheet, QuickLog and CoachChat are left as
+  they are.
+
+### 2026-11-01
+
+- Implemented: mic on every screen in the list (replace for single-value fields, append for the
+  chat composers, note and wizard instructions/ingredients). Wizard ingredients/instructions use ONE
+  step-level recognizer that dictates into the last row (per-row hooks would all react to the same
+  native start event). Wizard title gets the mic; description is left typed-only.

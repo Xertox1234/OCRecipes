@@ -1,6 +1,10 @@
 // client/components/home/RecipeSearchDrawer.tsx
 import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { InlineError } from "@/components/InlineError";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
@@ -76,14 +80,37 @@ export function RecipeSearchDrawer({
   const [recent, setRecent] = useState<string[]>(getRecentSearches);
   const searchFocus = useFieldFocus();
 
+  // Voice input REPLACES the field with the dictated words.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    if (transcript && (isListening || isFinal)) setText(transcript);
+  }, [isListening, isFinal, transcript]);
+  const handleVoicePress = () => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      void startListening();
+    }
+  };
+
   // Refresh recent list whenever the drawer opens
   useEffect(() => {
     if (isOpen) {
       setRecent(getRecentSearches());
     } else {
       setText("");
+      if (isListening) stopListening();
     }
-  }, [isOpen]);
+  }, [isOpen, isListening, stopListening]);
 
   const trending = useTrendingSearches(isOpen);
   const resolved = resolveTrendingSource(
@@ -140,7 +167,13 @@ export function RecipeSearchDrawer({
           accessibilityLabel={SEARCH_LABEL}
           // No auto-focus: keep chips/trending visible until the user taps in.
         />
+        <InlineMicButton
+          isListening={isListening}
+          volume={volume}
+          onPress={handleVoicePress}
+        />
       </FocusField>
+      <InlineError message={speechError} />
 
       {recent.length > 0 && (
         <View style={styles.section}>

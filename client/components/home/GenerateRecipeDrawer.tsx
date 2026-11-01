@@ -1,6 +1,10 @@
 // client/components/home/GenerateRecipeDrawer.tsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { InlineError } from "@/components/InlineError";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
@@ -37,10 +41,33 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
   const [text, setText] = useState("");
   const promptFocus = useFieldFocus();
 
+  // Voice input REPLACES the field with the dictated words.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    if (transcript && (isListening || isFinal)) setText(transcript);
+  }, [isListening, isFinal, transcript]);
+  const handleVoicePress = () => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      void startListening();
+    }
+  };
+
   const generate = (prompt: string) => {
     const p = prompt.trim();
     if (!p) return;
     haptics.selection();
+    if (isListening) stopListening();
     onUsed();
     navigation.navigate("RecipeChat", { initialMessage: p });
   };
@@ -77,6 +104,11 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
           returnKeyType="go"
           accessibilityLabel={PROMPT_LABEL}
         />
+        <InlineMicButton
+          isListening={isListening}
+          volume={volume}
+          onPress={handleVoicePress}
+        />
         <Pressable
           onPress={() => generate(text)}
           accessibilityRole="button"
@@ -95,6 +127,7 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
           />
         </Pressable>
       </FocusField>
+      <InlineError message={speechError} />
 
       <View style={styles.chipsWrap}>
         {GENERATE_IDEA_CHIPS.map((idea) => (

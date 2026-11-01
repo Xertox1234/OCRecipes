@@ -11,6 +11,8 @@ import {
   type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useHeaderHeight } from "@react-navigation/elements";
 import {
   useNavigation,
@@ -258,6 +260,32 @@ export default function GroceryListScreen() {
   );
 
   const [newItemName, setNewItemName] = useState("");
+
+  // Voice input REPLACES the single-value field with the dictated words.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    if (transcript && (isListening || isFinal)) setNewItemName(transcript);
+  }, [isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      void startListening();
+    }
+  }, [haptics, isListening, startListening, stopListening]);
+
   const [pantryPromptItem, setPantryPromptItem] =
     useState<GroceryListItem | null>(null);
 
@@ -273,11 +301,19 @@ export default function GroceryListScreen() {
     const name = newItemName.trim();
     if (!name) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    if (isListening) stopListening();
     addItemMutation.mutate(
       { listId, name },
       { onSuccess: () => setNewItemName("") },
     );
-  }, [haptics, addItemMutation, listId, newItemName]);
+  }, [
+    haptics,
+    addItemMutation,
+    listId,
+    newItemName,
+    isListening,
+    stopListening,
+  ]);
 
   const handleItemChecked = useCallback(
     (item: GroceryListItem) => {
@@ -544,6 +580,12 @@ export default function GroceryListScreen() {
                 placeholderTextColor={theme.textSecondary}
                 returnKeyType="done"
                 onSubmitEditing={handleAddItem}
+              />
+              <InlineMicButton
+                isListening={isListening}
+                volume={volume}
+                onPress={handleVoicePress}
+                disabled={addItemMutation.isPending}
               />
               <Pressable
                 onPress={handleAddItem}

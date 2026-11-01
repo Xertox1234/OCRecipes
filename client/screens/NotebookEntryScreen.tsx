@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Pressable,
@@ -10,6 +10,8 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { FieldCounter } from "@/components/FieldCounter";
 import { InlineError } from "@/components/InlineError";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -117,6 +119,39 @@ export default function NotebookEntryScreen() {
   const setContent = contentField.setValue;
   const haptics = useHaptics();
   const [contentFocused, setContentFocused] = useState(false);
+
+  // Voice input APPENDS to the note as it stood when the mic was tapped.
+  // null = no dictation in progress (a late final result must not refill).
+  const voiceBaseRef = useRef<string | null>(null);
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    const base = voiceBaseRef.current;
+    if (base !== null && transcript && (isListening || isFinal)) {
+      setContent(
+        (base ? `${base} ${transcript}` : transcript).slice(0, NOTE_MAX_LENGTH),
+      );
+    }
+  }, [isListening, isFinal, transcript, setContent]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceBaseRef.current = content.trim();
+      void startListening();
+    }
+  }, [haptics, isListening, content, startListening, stopListening]);
   const [followUpDate, setFollowUpDate] = useState<string | null>(
     entry?.followUpDate
       ? toLocalDateString(new Date(entry.followUpDate))
@@ -160,6 +195,8 @@ export default function NotebookEntryScreen() {
   const canSave = !isSaving && (isDirty || content.trim().length === 0);
 
   const handleSave = useCallback(async () => {
+    voiceBaseRef.current = null;
+    if (isListening) stopListening();
     if (!focusFirstInvalid([contentField])) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
@@ -218,6 +255,8 @@ export default function NotebookEntryScreen() {
     cancelCommitmentReminder,
     goBack,
     toast,
+    isListening,
+    stopListening,
   ]);
 
   const handleMarkComplete = useCallback(() => {
@@ -466,6 +505,14 @@ export default function NotebookEntryScreen() {
             message={contentField.error}
             shakeKey={contentField.shakeKey}
           />
+          <View style={styles.micRow}>
+            <InlineMicButton
+              isListening={isListening}
+              volume={volume}
+              onPress={handleVoicePress}
+              disabled={isSaving}
+            />
+          </View>
         </View>
 
         {type === "commitment" && (
@@ -611,6 +658,10 @@ export default function NotebookEntryScreen() {
 }
 
 const styles = StyleSheet.create({
+  micRow: {
+    alignItems: "flex-end",
+    marginTop: Spacing.sm,
+  },
   container: { flex: 1 },
   notFound: {
     flex: 1,
