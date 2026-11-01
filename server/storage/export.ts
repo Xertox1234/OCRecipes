@@ -79,6 +79,8 @@ export interface UserDataExport {
   nutritionLogs: Record<string, unknown>[];
   mealPlans: {
     recipes: Record<string, unknown>[];
+    /** Soft-deleted recipes — still held because past daily logs point at them. */
+    deletedRecipes: Record<string, unknown>[];
     items: Record<string, unknown>[];
   };
   recipes: Record<string, unknown>[];
@@ -333,7 +335,8 @@ export async function getUserDataExport(
     scannedItems: scannedRows,
     nutritionLogs: dailyLogRows,
     mealPlans: {
-      recipes: mealPlanRecipesWithIngredients,
+      recipes: mealPlanRecipesWithIngredients.filter((r) => !r.deletedAt),
+      deletedRecipes: mealPlanRecipesWithIngredients.filter((r) => r.deletedAt),
       items: mealPlanItemRows,
     },
     recipes: userRecipeRows,
