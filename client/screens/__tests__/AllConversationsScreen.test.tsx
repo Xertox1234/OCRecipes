@@ -335,3 +335,22 @@ describe("AllConversationsScreen — load failure", () => {
     expect(mockRefetch).toHaveBeenCalled();
   });
 });
+
+// Offline cold start: the query is paused (not loading, not errored, no data)
+// and used to read as "No conversations found" (audit 2026-10-29 M-crel-5).
+describe("AllConversationsScreen — paused (offline cold start)", () => {
+  it("shows an offline state instead of the empty message", () => {
+    mockUseChatConversations.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "paused",
+      refetch: mockRefetch,
+    });
+
+    renderComponent(<AllConversationsScreen />);
+
+    expect(screen.queryByText("No conversations found")).toBeNull();
+    expect(screen.getByText("You're offline")).toBeDefined();
+  });
+});

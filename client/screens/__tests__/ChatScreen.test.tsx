@@ -930,3 +930,22 @@ describe("ChatScreen — messages load failure", () => {
     expect(mockRefetchMessages).toHaveBeenCalled();
   });
 });
+
+// Offline cold start: the messages query is paused (not loading, not errored,
+// no data) and used to render the blank new-chat screen (audit M-crel-5).
+describe("ChatScreen — messages query paused offline", () => {
+  it("shows an offline state instead of a blank new chat", () => {
+    mockRouteParams.value = { conversationId: 7 };
+    mockUseChatMessages.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "paused",
+      refetch: vi.fn(),
+    });
+
+    renderComponent(<ChatScreen />);
+
+    expect(screen.getByText("You're offline")).toBeDefined();
+  });
+});

@@ -33,7 +33,8 @@ import {
   useRefreshOnFocus,
 } from "@/hooks/useRefreshOnFocus";
 import { ThemedText } from "@/components/ThemedText";
-import { EmptyState } from "@/components/EmptyState";
+import { EmptyState, OfflineEmptyState } from "@/components/EmptyState";
+import { isPausedWithoutData } from "@/components/empty-state-utils";
 import {
   Spacing,
   BorderRadius,
@@ -85,6 +86,7 @@ export default function AllConversationsScreen() {
     data: conversations = [],
     isLoading,
     isError,
+    fetchStatus,
     refetch,
   } = useChatConversations(activeSegment, {
     search: debouncedSearch || undefined,
@@ -408,6 +410,8 @@ export default function AllConversationsScreen() {
                 void refetch();
               }}
             />
+          ) : isPausedWithoutData(fetchStatus, conversations.length > 0) ? (
+            <OfflineEmptyState what="conversations" />
           ) : (
             conversations.length === 0 && (
               <ThemedText

@@ -1,6 +1,6 @@
 ---
 title: "Show an offline state for paused queries instead of an empty list or "not found""
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
 updated: 2026-10-29
