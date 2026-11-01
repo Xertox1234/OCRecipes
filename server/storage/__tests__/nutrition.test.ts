@@ -1389,4 +1389,39 @@ describe("nutrition storage", () => {
       expect(result[0]).toEqual({ name: "Food 6", timesLogged: 9 });
     });
   });
+  describe("scanned_items non-negative CHECKs", () => {
+    // calories/protein/carbs/fat had `>= 0` CHECKs; fiber/sugar/sodium did not
+    // (audit 2026-10-29 L-data-9, migration 0036).
+    it.each(["fiber", "sugar", "sodium"] as const)(
+      "rejects a negative %s",
+      async (column) => {
+        await expect(
+          // A savepoint, so the rejected insert does not abort the test tx.
+          tx.transaction(async (inner) =>
+            inner.insert(scannedItems).values({
+              userId: testUser.id,
+              productName: "Negative test",
+              [column]: "-1",
+            }),
+          ),
+        ).rejects.toMatchObject({
+          cause: { constraint: `scanned_items_${column}_gte0` },
+        });
+      },
+    );
+
+    it("still accepts null and zero", async () => {
+      const [row] = await tx
+        .insert(scannedItems)
+        .values({
+          userId: testUser.id,
+          productName: "Zero test",
+          fiber: "0",
+          sugar: null,
+        })
+        .returning();
+      expect(row.fiber).toBe("0.00");
+      expect(row.sugar).toBeNull();
+    });
+  });
 });

@@ -156,6 +156,72 @@ export async function getUserVerificationStats(userId: string): Promise<{
   return { count, frontLabelCount, compositeScore, streak };
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Level + consensus for a barcode from its matching verifications. */
+function deriveAggregate(matchingNutrition: VerificationNutrition[]): {
+  newLevel: string;
+  consensusData: ConsensusNutritionData | null;
+} {
+  const matchingCount = matchingNutrition.length;
+  let newLevel: string;
+  if (matchingCount >= CONSENSUS_THRESHOLD) {
+    newLevel = "verified";
+  } else if (matchingCount >= 1) {
+    newLevel = "single_verified";
+  } else {
+    newLevel = "unverified";
+  }
+  return {
+    newLevel,
+    consensusData:
+      matchingCount >= CONSENSUS_THRESHOLD
+        ? computeConsensus(matchingNutrition)
+        : null,
+  };
+}
+
+/**
+ * Recompute the stored aggregate for each barcode from the matching
+ * `verification_history` rows that remain. Used after a user's history cascades
+ * away on account deletion, so their vote stops counting toward the level,
+ * count and consensus. Takes the same per-barcode advisory lock as
+ * `submitVerification`, in sorted barcode order so concurrent callers cannot
+ * deadlock. Must run inside the caller's transaction.
+ */
+export async function recomputeAggregatesForBarcodes(
+  tx: Tx,
+  barcodes: string[],
+): Promise<void> {
+  for (const barcode of [...new Set(barcodes)].sort()) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${barcode}, 0))`,
+    );
+    const rows = await tx
+      .select({ extractedNutrition: verificationHistory.extractedNutrition })
+      .from(verificationHistory)
+      .where(
+        and(
+          eq(verificationHistory.barcode, barcode),
+          sql`${verificationHistory.isMatch} IS NOT FALSE`,
+        ),
+      );
+    const matching = rows.map((r) =>
+      parseHistoryNutrition(r.extractedNutrition),
+    );
+    const { newLevel, consensusData } = deriveAggregate(matching);
+    await tx
+      .update(barcodeVerifications)
+      .set({
+        verificationLevel: newLevel,
+        verificationCount: matching.length,
+        consensusNutritionData: consensusData,
+        updatedAt: new Date(),
+      })
+      .where(eq(barcodeVerifications.barcode, barcode));
+  }
+}
+
 /** Result of a verification submission — the authoritative aggregate state. */
 export interface SubmitVerificationResult {
   verificationLevel: string;
@@ -299,19 +365,7 @@ export async function submitVerification(
       : existingMatchingNutrition;
     const matchingCount = matchingNutrition.length;
 
-    let newLevel: string;
-    if (matchingCount >= CONSENSUS_THRESHOLD) {
-      newLevel = "verified";
-    } else if (matchingCount >= 1) {
-      newLevel = "single_verified";
-    } else {
-      newLevel = "unverified";
-    }
-
-    const consensusData =
-      matchingCount >= CONSENSUS_THRESHOLD
-        ? computeConsensus(matchingNutrition)
-        : null;
+    const { newLevel, consensusData } = deriveAggregate(matchingNutrition);
 
     // Write the recomputed aggregate. Runs only after a new history row
     // exists; duplicate submissions return early above and never reach here.

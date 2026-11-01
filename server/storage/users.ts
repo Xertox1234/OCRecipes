@@ -13,6 +13,7 @@ import {
   favouriteRecipes,
   savedItems,
   recipeDismissals,
+  verificationHistory,
 } from "@shared/schema";
 import {
   isValidSubscriptionTier,
@@ -36,6 +37,7 @@ import {
 import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
 import { deleteAllPushTokensForUser } from "./push-tokens";
+import { recomputeAggregatesForBarcodes } from "./verification";
 
 // ============================================================================
 // USER CRUD
@@ -545,10 +547,22 @@ export async function deleteUser(id: string): Promise<boolean> {
         .where(eq(communityRecipes.authorId, id));
     }
 
+    // verification_history cascades with the user; remember which barcodes
+    // that touches so their stored aggregates can be recomputed after.
+    const votedBarcodes = (
+      await tx
+        .select({ barcode: verificationHistory.barcode })
+        .from(verificationHistory)
+        .where(eq(verificationHistory.userId, id))
+    ).map((r) => r.barcode);
+
     const result = await tx
       .delete(users)
       .where(eq(users.id, id))
       .returning({ id: users.id });
+    if (result.length > 0 && votedBarcodes.length > 0) {
+      await recomputeAggregatesForBarcodes(tx, votedBarcodes);
+    }
     return result.length > 0;
   });
 
