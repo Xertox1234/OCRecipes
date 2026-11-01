@@ -583,6 +583,7 @@ function defaultDeps(): AiChatDeps {
           apiKey: key,
           baseURL: OPENROUTER_BASE_URL,
           defaultHeaders: { "X-Title": "OCRecipes" },
+          maxRetries: 0, // the fallback provider is the retry
         }) as unknown as AiChatClient)
       : null,
     vertex: createVertexClient(),
