@@ -136,6 +136,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: Spacing.lg,
+    // Same height with or without the 44pt See all button (no layout jump).
+    minHeight: 44,
   },
   header: { fontFamily: FontFamily.semiBold, fontSize: 17 },
   // 44pt box, not hitSlop (clipped to the header row on Android).
