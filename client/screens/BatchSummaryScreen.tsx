@@ -20,7 +20,10 @@ import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { formatBatchSaveSuccess } from "@/lib/log-success";
+import {
+  formatBatchSaveSuccess,
+  formatPantryFullSkipped,
+} from "@/lib/log-success";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -169,20 +172,24 @@ export default function BatchSummaryScreen() {
 
     setSaving(true);
     try {
-      await batchConfirm.mutateAsync({
+      const result = await batchConfirm.mutateAsync({
         items: resolvedItems,
         destination,
       });
 
       // The toast is the announcer (iOS announce + Android live region) and
       // fires the Success haptic — no separate announceForAccessibility.
-      toast.success(
-        formatBatchSaveSuccess(
-          resolvedItems,
-          destination,
-          getDestinationLabel(destination),
-        ),
-      );
+      if (result.skipped && result.skipped > 0) {
+        toast.info(formatPantryFullSkipped(result.skipped));
+      } else {
+        toast.success(
+          formatBatchSaveSuccess(
+            resolvedItems,
+            destination,
+            getDestinationLabel(destination),
+          ),
+        );
+      }
 
       clearSession();
       navigation.popToTop();

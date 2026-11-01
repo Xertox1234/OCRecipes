@@ -1,9 +1,9 @@
 ---
 title: "Enforce the 500-item pantry cap atomically on every insert path"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-11-01
 assignee:
 labels: [deferred, data-integrity]
 github_issue:
@@ -23,10 +23,10 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] One storage function inserts pantry items under the cap inside a transaction with an advisory lock (pattern: `createGroceryListWithLimitCheck` + `docs/solutions/design-patterns/recompute-aggregate-under-lock-2026-05-17.md`)
-- [ ] All four insert paths use it
-- [ ] Owner picks reject-whole vs add-what-fits for batches
-- [ ] Real-DB tests: the cap holds for single, batch and concurrent inserts
+- [x] One storage function inserts pantry items under the cap inside a transaction with an advisory lock (pattern: `createGroceryListWithLimitCheck` + `docs/solutions/design-patterns/recompute-aggregate-under-lock-2026-05-17.md`)
+- [x] All four insert paths use it
+- [x] Owner picks reject-whole vs add-what-fits for batches (owner: add what fits, 2026-10-31)
+- [x] Real-DB tests: the cap holds for single, batch and concurrent inserts
 
 ## Implementation Notes
 
@@ -42,3 +42,12 @@ Also consider the grocery-list count cap (`server/storage/grocery-lists.ts` ~100
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Owner decision: ADD WHAT FITS. A batch that would push the pantry past 500 items adds items up to the cap, and the response reports how many were left out (`skipped`). Reject-whole is not implemented.
+
+### 2026-11-01
+
+- Implemented: `createPantryItemsUnderCap` / `insertPantryItemsUnderCap` in `server/storage/pantry.ts` (advisory lock `pantry:<userId>`, count, insert what fits). Single add, receipt confirm, batch scan and grocery-to-pantry all use it. Concurrency test: `server/storage/__tests__/pantry.concurrent.test.ts`.
+- Not done: grocery-list count cap lock (outside the acceptance criteria); client does not yet show `skipped`.

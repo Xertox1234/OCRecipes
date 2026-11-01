@@ -36,6 +36,8 @@ import { useTheme } from "@/hooks/useTheme";
 import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { ApiError } from "@/lib/api-error";
+import { useToast } from "@/context/ToastContext";
+import { formatPantryFullSkipped } from "@/lib/log-success";
 import { formatGroceryListTitle } from "@/lib/format";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
@@ -238,6 +240,22 @@ export default function GroceryListScreen() {
     isError && error instanceof ApiError && error.code === "NOT_FOUND";
   const addItemMutation = useAddManualGroceryItem();
   const addToPantryMutation = useAddGroceryItemToPantry();
+  const toast = useToast();
+  const addToPantry = useCallback(
+    (itemId: number) => {
+      addToPantryMutation.mutate(
+        { listId, itemId },
+        {
+          onError: (err) => {
+            if (err instanceof ApiError && err.code === "LIMIT_REACHED") {
+              toast.info(formatPantryFullSkipped(1));
+            }
+          },
+        },
+      );
+    },
+    [addToPantryMutation, listId, toast],
+  );
 
   const [newItemName, setNewItemName] = useState("");
   const [pantryPromptItem, setPantryPromptItem] =
@@ -272,12 +290,9 @@ export default function GroceryListScreen() {
   const handleAddToPantry = useCallback(() => {
     if (!pantryPromptItem) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    addToPantryMutation.mutate({
-      listId,
-      itemId: pantryPromptItem.id,
-    });
+    addToPantry(pantryPromptItem.id);
     setPantryPromptItem(null);
-  }, [haptics, addToPantryMutation, listId, pantryPromptItem]);
+  }, [haptics, addToPantry, pantryPromptItem]);
 
   const handleDismissPantryPrompt = useCallback(() => {
     setPantryPromptItem(null);
@@ -431,7 +446,7 @@ export default function GroceryListScreen() {
                     label: "Pantry",
                     backgroundColor: theme.success,
                     onAction: () => {
-                      addToPantryMutation.mutate({ listId, itemId: item.id });
+                      addToPantry(item.id);
                     },
                   }
                 : undefined

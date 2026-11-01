@@ -5,10 +5,10 @@
 import { eq, and, sql } from "drizzle-orm";
 import { civilDateString } from "../lib/civil-date";
 import { db } from "../db";
+import { insertPantryItemsUnderCap } from "./pantry";
 import {
   scannedItems,
   dailyLogs,
-  pantryItems,
   groceryLists,
   groceryListItems,
 } from "@shared/schema";
@@ -77,22 +77,20 @@ export async function batchCreateScannedItemsWithLogs(
 export async function batchCreatePantryItems(
   items: ResolvedBatchItem[],
   userId: string,
-): Promise<{ count: number }> {
+): Promise<{ count: number; skipped: number }> {
   return db.transaction(async (tx) => {
-    const rows = await tx
-      .insert(pantryItems)
-      .values(
-        items.map((item) => ({
-          userId,
-          name: item.productName,
-          quantity: item.quantity.toString(),
-          unit: item.servingSize ?? null,
-          category: "other" as const,
-        })),
-      )
-      .returning({ id: pantryItems.id });
-
-    return { count: rows.length };
+    const { created, skipped } = await insertPantryItemsUnderCap(
+      tx,
+      userId,
+      items.map((item) => ({
+        userId,
+        name: item.productName,
+        quantity: item.quantity.toString(),
+        unit: item.servingSize ?? null,
+        category: "other" as const,
+      })),
+    );
+    return { count: created.length, skipped };
   });
 }
 

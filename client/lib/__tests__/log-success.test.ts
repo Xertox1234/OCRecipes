@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 
-import { formatBatchSaveSuccess, formatLogSuccess } from "../log-success";
+import {
+  formatBatchSaveSuccess,
+  formatLogSuccess,
+  formatPantryFullSkipped,
+} from "../log-success";
 
 describe("formatLogSuccess", () => {
   it("names the calories that were logged", () => {
@@ -42,5 +46,17 @@ describe("formatBatchSaveSuccess", () => {
     expect(
       formatBatchSaveSuccess([items[0]], "grocery_list", "Grocery List"),
     ).toBe("1 item added to Grocery List");
+  });
+});
+
+describe("formatPantryFullSkipped", () => {
+  it("says how many items were left out", () => {
+    expect(formatPantryFullSkipped(3)).toBe(
+      "Pantry full: 3 items weren't added",
+    );
+  });
+
+  it("uses the singular for one item", () => {
+    expect(formatPantryFullSkipped(1)).toBe("Pantry full: 1 item wasn't added");
   });
 });

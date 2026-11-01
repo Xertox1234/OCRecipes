@@ -29,7 +29,8 @@ vi.mock("../../db", () => ({
 const {
   getPantryItems,
   getPantryItem,
-  createPantryItem,
+  createPantryItemsUnderCap,
+  MAX_PANTRY_ITEMS,
   updatePantryItem,
   deletePantryItem,
   getExpiringPantryItems,
@@ -38,6 +39,33 @@ const {
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
+
+/** Fixture insert that bypasses the cap (only for seeding rows). */
+async function createPantryItem(
+  values: schema.InsertPantryItem,
+): Promise<schema.PantryItem> {
+  const [row] = await tx.insert(schema.pantryItems).values(values).returning();
+  return row;
+}
+
+/** Seed `n` pantry rows directly (one bulk insert). */
+async function seedPantry(userId: string, n: number): Promise<void> {
+  await tx.insert(schema.pantryItems).values(
+    Array.from({ length: n }, (_, i) => ({
+      userId,
+      name: `Seed ${i}`,
+      quantity: "1",
+    })),
+  );
+}
+
+async function pantryCount(userId: string): Promise<number> {
+  const rows = await tx
+    .select({ id: schema.pantryItems.id })
+    .from(schema.pantryItems)
+    .where(eq(schema.pantryItems.userId, userId));
+  return rows.length;
+}
 
 describe("pantry storage", () => {
   beforeEach(async () => {
@@ -57,7 +85,60 @@ describe("pantry storage", () => {
   // PANTRY ITEMS
   // ==========================================================================
 
-  describe("createPantryItem", () => {
+  describe("createPantryItemsUnderCap", () => {
+    const row = (name: string): schema.InsertPantryItem => ({
+      userId: testUser.id,
+      name,
+      quantity: "1",
+    });
+
+    it("inserts everything when it fits", async () => {
+      const { created, skipped } = await createPantryItemsUnderCap(
+        testUser.id,
+        [row("A"), row("B")],
+      );
+      expect(created).toHaveLength(2);
+      expect(skipped).toBe(0);
+    });
+
+    it("returns nothing for an empty batch", async () => {
+      const result = await createPantryItemsUnderCap(testUser.id, []);
+      expect(result).toEqual({ created: [], skipped: 0 });
+    });
+
+    it("rejects a single insert once the pantry is full", async () => {
+      await seedPantry(testUser.id, MAX_PANTRY_ITEMS);
+      const { created, skipped } = await createPantryItemsUnderCap(
+        testUser.id,
+        [row("Over")],
+      );
+      expect(created).toHaveLength(0);
+      expect(skipped).toBe(1);
+      expect(await pantryCount(testUser.id)).toBe(MAX_PANTRY_ITEMS);
+    });
+
+    it("adds what fits when a batch crosses the cap, in order", async () => {
+      await seedPantry(testUser.id, MAX_PANTRY_ITEMS - 2);
+      const { created, skipped } = await createPantryItemsUnderCap(
+        testUser.id,
+        [row("First"), row("Second"), row("Third"), row("Fourth")],
+      );
+      expect(created.map((c) => c.name)).toEqual(["First", "Second"]);
+      expect(skipped).toBe(2);
+      expect(await pantryCount(testUser.id)).toBe(MAX_PANTRY_ITEMS);
+    });
+
+    it("counts only the calling user's items", async () => {
+      const other = await createTestUser(tx);
+      await seedPantry(other.id, MAX_PANTRY_ITEMS);
+      const { created } = await createPantryItemsUnderCap(testUser.id, [
+        row("Mine"),
+      ]);
+      expect(created).toHaveLength(1);
+    });
+  });
+
+  describe("createPantryItem fixture", () => {
     it("creates a pantry item and returns it", async () => {
       const item = await createPantryItem({
         userId: testUser.id,
@@ -300,12 +381,31 @@ describe("pantry storage", () => {
         listId,
       );
 
-      expect(created?.name).toBe("Rice");
+      expect(created).toMatchObject({ name: "Rice" });
       const [item] = await tx
         .select()
         .from(schema.groceryListItems)
         .where(eq(schema.groceryListItems.id, itemId));
       expect(item.addedToPantry).toBe(true);
+    });
+
+    it("refuses a full pantry and leaves the grocery item unflagged", async () => {
+      const { listId, itemId } = await makeGroceryItem();
+      await seedPantry(testUser.id, MAX_PANTRY_ITEMS);
+
+      const result = await addGroceryItemToPantryAtomically(
+        pantryFields(),
+        itemId,
+        listId,
+      );
+
+      expect(result).toBe("limit_reached");
+      expect(await pantryCount(testUser.id)).toBe(MAX_PANTRY_ITEMS);
+      const [item] = await tx
+        .select()
+        .from(schema.groceryListItems)
+        .where(eq(schema.groceryListItems.id, itemId));
+      expect(item.addedToPantry).not.toBe(true);
     });
 
     // A double tap or a retried request must not add the item twice
