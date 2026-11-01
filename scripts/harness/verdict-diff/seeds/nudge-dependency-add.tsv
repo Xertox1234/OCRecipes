@@ -1,0 +1,12 @@
+# Seeds for nudge-dependency-add.sh (advisory: T = must add its nudge, N = must stay silent).
+# <expect><TAB><cwd><TAB><command>. Every T row must fire at head, unvaried (the positive control).
+T	MAIN	npm install lodash
+T	MAIN	npm i lodash
+T	MAIN	yarn add lodash
+T	MAIN	npx expo install expo-camera
+T	MAIN	pnpm add zod
+N	MAIN	npm install
+N	MAIN	npm ci
+N	MAIN	npm install -g typescript
+N	MAIN	npm run test
+N	MAIN	npx expo install --fix

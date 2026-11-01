@@ -189,6 +189,54 @@ if [ -z "$HEAD" ] || [ "$STAMP" != "$HEAD" ]; then
   exit 0
 fi
 
+# --- Verdict-diff stamp for guard and keyword changes (harness diagnosis N7, 2026-11-01) --------
+# Fix chains (1552→1554, 1476→1479, 1545→1548, 1491→1499) were each a form the first PR's tests
+# never varied; the follow-ups ran generated sets only after review found the gap. A PR whose
+# changes touch a path in scripts/harness/verdict-diff/targets.tsv therefore needs that tool's stamp
+# for the SAME commit the preflight stamp just covered ($HEAD, the named head if any). The registry
+# is read from this hook's tree ($ROOT) and the changed files from origin/main...$HEAD, locally (no
+# fetch: the drift check below owns the network). Unreadable registry or no origin/main → deny, the
+# preflight stamp's direction. Escape: SKIP_VERDICT_DIFF=1 in Claude Code's launch environment.
+if [ -z "${SKIP_VERDICT_DIFF:-}" ]; then
+  VD_REG="$ROOT/scripts/harness/verdict-diff/targets.tsv"
+  VD_REASON="" VD_HIT=""
+  if [ ! -r "$VD_REG" ]; then
+    VD_REASON="cannot read the verdict-diff registry ${VD_REG}"
+  elif ! VD_CHANGED=$(git diff --name-only "origin/main...${HEAD}" 2>/dev/null); then
+    VD_REASON="cannot list this PR's changed files (git diff origin/main...${HEAD:0:7} failed — no origin/main?)"
+  else
+    while IFS=$'\t' read -r VD_GLOB _; do
+      case "$VD_GLOB" in '' | '#'*) continue ;; esac
+      while IFS= read -r VD_F; do
+        # shellcheck disable=SC2053  # the registry column is a glob on purpose
+        if [ -n "$VD_F" ] && [[ "$VD_F" == $VD_GLOB ]]; then VD_HIT="$VD_F"; break 2; fi
+      done <<< "$VD_CHANGED"
+    done < "$VD_REG"
+    if [ -n "$VD_HIT" ]; then
+      VD_DIR=""
+      if [ -f "$ROOT/scripts/lib/verdict-diff-stamp-path.sh" ]; then
+        # shellcheck source=scripts/lib/verdict-diff-stamp-path.sh
+        . "$ROOT/scripts/lib/verdict-diff-stamp-path.sh"
+        VD_DIR=$(verdict_diff_stamp_dir 2>/dev/null || echo "")
+      fi
+      if [ -z "$VD_DIR" ] || [ ! -f "$VD_DIR/$HEAD" ]; then
+        VD_REASON="this PR changes '${VD_HIT}' (a guard or keyword file) and HEAD ${HEAD:0:7} has no verdict-diff stamp"
+      fi
+    fi
+  fi
+  if [ -n "$VD_REASON" ]; then
+    REASON="Blocked: ${VD_REASON}. Run \`bash scripts/harness/verdict-diff.sh\` in the PR's tree: it compares the base and head versions over a generated set and stamps HEAD. Paste its CHANGED/GAPS lists into the PR body under '## Verdict changes', saying for each whether it is intended, then retry. Emergency bypass: SKIP_VERDICT_DIFF=1 in the environment Claude Code was launched from (a prefix on the command does not reach this hook)."
+    jq -n --arg r "$REASON" '{
+      "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": $r
+      }
+    }'
+    exit 0
+  fi
+fi
+
 # --- Base-branch drift/overlap check (2026-08-28) ------------------------------
 # Stamp is fresh for HEAD. Separately: has the base branch advanced, on a file this PR
 # ALSO changed, since this branch forked? That's the 2026-08-28 incident replayed —
