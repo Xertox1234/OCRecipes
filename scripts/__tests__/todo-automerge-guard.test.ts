@@ -38,6 +38,7 @@ if [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
     echo "fake-gh: simulated pr diff failure" >&2
     exit "$FAKE_GH_PR_DIFF_EXIT"
   fi
+  if [ -n "\${FAKE_GH_PR_DIFF_EMPTY:-}" ]; then exit 0; fi
   if [ -n "\${FAKE_GH_PR_DIFF:-}" ]; then printf '%s\\n' "$FAKE_GH_PR_DIFF"; exit 0; fi
   printf '%s\\n' "$FAKE_GH_DIFF_FILES" | sed -e '/^$/d' | while IFS= read -r f; do
     printf 'diff --git a/%s b/%s\\n' "$f" "$f"
@@ -1639,6 +1640,16 @@ describe("todo-automerge-guard.sh (platform scope, harness N6: an upload change 
     });
     expect(status).toBe(0);
     expect(stdout).toContain("guard: OK");
+  });
+
+  it("an empty diff from a successful gh is an ERROR, never OK", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_DIFF_FILES: files,
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+      FAKE_GH_PR_DIFF_EMPTY: "1",
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("platform-scope");
   });
 
   it("an unreadable diff is an ERROR, never OK", () => {

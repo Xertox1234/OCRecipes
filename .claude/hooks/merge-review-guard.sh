@@ -641,7 +641,7 @@ PSCOPE="$ROOT/scripts/harness/platform-scope.sh"
 PDIFF=$(gh pr diff "$PR" 2>/dev/null) \
   || deny "Blocked: could not read PR #$PR's diff for the real-platform check (gh error, or a diff too large for gh). Fail-closed. $BYPASS"
 P_RC=0
-P_WHY=$(printf '%s\n' "$PDIFF" | bash "$PSCOPE") || P_RC=$?
+P_WHY=$(printf '%s' "$PDIFF" | bash "$PSCOPE") || P_RC=$?
 case "$P_RC" in
   0)
     P_WHY_ONE=$(printf '%s\n' "$P_WHY" | head -3 | tr '\n' ';' | sed 's/;$//; s/;/; /g')

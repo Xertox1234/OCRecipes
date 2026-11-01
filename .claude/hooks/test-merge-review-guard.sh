@@ -96,6 +96,7 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
       printf '%s\n' "${FAKE_FILES}"; exit 0 ;;
   esac
   [ -n "${FAKE_PR_DIFF_FAIL:-}" ] && exit 1
+  [ -n "${FAKE_PR_DIFF_EMPTY:-}" ] && exit 0
   if [ -n "${FAKE_PR_DIFF:-}" ]; then printf '%s\n' "$FAKE_PR_DIFF"; exit 0; fi
   printf '%s\n' "${FAKE_FILES}" | sed '/^$/d' | while IFS= read -r f; do printf 'diff --git a/%s b/%s\n' "$f" "$f"; done
   exit 0
@@ -1326,6 +1327,12 @@ out=$(mcp_payload 938 | run FAKE_PR_DIFF_FAIL=1)
 denied "$out" && reason "$out" | grep -q 'diff for the real-platform check' \
   && ok "platform: unreadable diff denies" || bad "platform: unreadable diff denies" "$out"
 
+# P8b. DENY: gh exits 0 but prints no diff. Empty input is "could not read", never "not in scope"
+#      (the callers once piped through printf '%s\n', which turned empty into one blank line).
+out=$(mcp_payload 938 | run FAKE_PR_DIFF_EMPTY=1)
+denied "$out" && reason "$out" | grep -q 'scope check could not read' \
+  && ok "platform: an empty diff from a successful gh denies" || bad "platform: an empty diff from a successful gh denies" "$out"
+
 # P9. ALLOW CONTROL: the same PR without an upload change never looks up runs.
 : > "$GH_LOG"
 out=$(mcp_payload 938 | run FAKE_RUN="" FAKE_BODY="")
@@ -1722,8 +1729,8 @@ unset _mrgcloser_hits _mrgcloser_prose
 # blank flipped main-DENY -> head-ALLOW, 2 controls, and the anchor's cost pinned KNOWN-WRONG.
 # 199 -> 201 (2026-09-22, advisory verdict): +2 = advisory allows (9a) and its unknown-verdict control (9b).
 # 201 -> 202 (2026-09-22, review round 1): +1, case 7 asserts the advisory literal survives the deny string.
-# 202 -> 213 (2026-11-01, harness N6 real-platform check): +11 = rows P1-P10 (P9 asserts twice).
-EXPECTED_TOTAL=213
+# 202 -> 214 (2026-11-01, harness N6 real-platform check): +12 = rows P1-P10 and P8b (P9 asserts twice).
+EXPECTED_TOTAL=214
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

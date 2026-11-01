@@ -567,7 +567,7 @@ pr_diff="$(gh pr diff "$PR" 2>&1)" || {
   exit 2
 }
 scope_rc=0
-scope_out="$(printf '%s\n' "$pr_diff" | bash "$(dirname "$0")/harness/platform-scope.sh")" || scope_rc=$?
+scope_out="$(printf '%s' "$pr_diff" | bash "$(dirname "$0")/harness/platform-scope.sh")" || scope_rc=$?
 case "$scope_rc" in
   0)
     echo "guard: HOLD PR #$PR — changes how the app builds or uploads, so it needs a real-platform check before merge:"
