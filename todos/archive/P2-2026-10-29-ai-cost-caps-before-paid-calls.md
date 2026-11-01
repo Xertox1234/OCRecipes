@@ -1,9 +1,9 @@
 ---
 title: "Cap paid AI calls in the database before they run — recipe auto-images, front-label vision, premium AI endpoints"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-11-01
 assignee:
 labels: [deferred, security, ai]
 github_issue:
@@ -23,10 +23,10 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] Owner picks the free-tier policy for recipe auto-images (premium-only, a daily count, or a placeholder) and the daily caps per premium feature
-- [ ] Each listed call checks a DB-backed per-user count BEFORE the paid call, and counts the call atomically (pattern: `getDailyRecipeGenerationCount` / `logRecipeGenerationWithLimitCheck`)
-- [ ] front-label checks its cap (or the shared daily scan count) before `analyzeFrontLabel`
-- [ ] Route tests call each endpoint N+1 times and assert the (N+1)th is refused without calling the AI service
+- [x] Owner picks the free-tier policy for recipe auto-images (premium-only, a daily count, or a placeholder) and the daily caps per premium feature
+- [x] Each listed call checks a DB-backed per-user count BEFORE the paid call, and counts the call atomically (pattern: `getDailyRecipeGenerationCount` / `logRecipeGenerationWithLimitCheck`)
+- [x] front-label checks its cap (or the shared daily scan count) before `analyzeFrontLabel`
+- [x] Route tests call each endpoint N+1 times and assert the (N+1)th is refused without calling the AI service
 
 ## Implementation Notes
 
@@ -42,3 +42,13 @@ Follow `docs/solutions/conventions/security-caps-must-be-durable-and-say-which-w
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Owner decision (given to the orchestrator in-session): recipe auto-images are PREMIUM ONLY. Free users keep the existing placeholder and no `generateRecipeImage` call is made for them. Satisfies the first Acceptance Criterion. Daily caps per premium feature: proposed values in `AI_DAILY_CAPS` (`shared/types/premium.ts`), for the owner to adjust.
+
+### 2026-11-01
+
+- Implemented. `recipe_generation_log` gained a `kind` column (migration `0034_ai_call_log_kind.sql`, prod apply required BEFORE merge); `storage.claimDailyAiCall` takes a per-user/kind advisory lock, counts today's rows and inserts in one transaction, BEFORE each paid call.
+- Capped: meal-plan auto-image (premium only), front-label, menu scan, voice transcription, cookbook cover generate, recipe-chat upload-image, item suggestions + instructions (cache misses only).
+- Not covered: `server/routes/recipe-import.ts` also calls `generateRecipeImage` (premium url import, not on this todo's file list).

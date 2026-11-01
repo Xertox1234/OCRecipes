@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import express from "express";
 import request from "supertest";
 
@@ -14,6 +15,7 @@ import {
 
 vi.mock("../../storage", () => ({
   storage: {
+    claimDailyAiCall: vi.fn(),
     getChatConversation: vi.fn(),
     getChatMessageById: vi.fn().mockResolvedValue(undefined),
     saveRecipeFromChat: vi.fn(),
@@ -92,6 +94,7 @@ describe("Recipe Chat Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     mockFile.current = VALID_JPEG_HEADER;
     vi.mocked(inferMealTypes).mockReturnValue([]);
@@ -418,6 +421,39 @@ describe("Recipe Chat Routes", () => {
         .attach("photo", Buffer.alloc(200), "ingredients.jpg");
 
       expect(res.status).toBe(403);
+    });
+
+    it("refuses the (N+1)th upload with 429 before calling the vision service", async () => {
+      mockFile.current = Buffer.concat([VALID_JPEG_HEADER, Buffer.alloc(200)]);
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 2,
+      );
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation({ id: 5 }),
+      );
+      vi.mocked(analyzeImageForRecipe).mockResolvedValue("tomatoes");
+      vi.mocked(storage.createChatMessage).mockResolvedValue(
+        createMockChatMessage({ id: 77, role: "user" }),
+      );
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const res = await request(app)
+          .post("/api/chat/conversations/5/upload-image")
+          .set("Authorization", "Bearer token")
+          .attach("photo", Buffer.alloc(200), "ingredients.jpg");
+        statuses.push(res.status);
+      }
+
+      expect(statuses).toEqual([201, 201, 429]);
+      expect(analyzeImageForRecipe).toHaveBeenCalledTimes(2);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "recipeChatImage",
+        AI_DAILY_CAPS.recipeChatImage,
+        expect.any(String),
+      );
     });
 
     it("analyzes the image and creates a user message on success", async () => {

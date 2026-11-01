@@ -30,6 +30,8 @@ vi.mock("../../db", () => ({
 const {
   getDailyRecipeGenerationCount,
   logRecipeGeneration,
+  logRecipeGenerationWithLimitCheck,
+  claimDailyAiCall,
   getCommunityRecipes,
   createCommunityRecipe,
   createRecipeWithLimitCheck,
@@ -126,6 +128,44 @@ describe("community storage", () => {
         new Date(),
       );
       expect(count).toBe(1);
+    });
+  });
+
+  // claimDailyAiCall
+  // --------------------------------------------------------------------------
+  describe("claimDailyAiCall", () => {
+    it("allows exactly `limit` claims, then refuses", async () => {
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 2)).toBe(true);
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 2)).toBe(true);
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 2)).toBe(false);
+    });
+
+    it("keeps each kind in its own bucket", async () => {
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 1)).toBe(true);
+      // CONTROL: the other kind is untouched by the exhausted one.
+      expect(await claimDailyAiCall(testUser.id, "frontLabel", 1)).toBe(true);
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 1)).toBe(false);
+    });
+
+    it("does not count another user's claims", async () => {
+      const other = await createTestUser(tx);
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 1)).toBe(true);
+      expect(await claimDailyAiCall(other.id, "menuScan", 1)).toBe(true);
+    });
+
+    it("never spends or consumes the recipe generation quota", async () => {
+      await claimDailyAiCall(testUser.id, "menuScan", 5);
+      expect(await getDailyRecipeGenerationCount(testUser.id, new Date())).toBe(
+        0,
+      );
+      // CONTROL: a recipe generation still counts, and still caps at 1.
+      expect(
+        await logRecipeGenerationWithLimitCheck(testUser.id, 1, null),
+      ).toBe(true);
+      expect(
+        await logRecipeGenerationWithLimitCheck(testUser.id, 1, null),
+      ).toBe(false);
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 6)).toBe(true);
     });
   });
 

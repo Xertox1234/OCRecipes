@@ -8,6 +8,7 @@ import {
   handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
+  claimAiCallOrReject,
 } from "./_helpers";
 import { foodParseRateLimit } from "./_rate-limiters";
 import { parseNaturalLanguageFood } from "../services/food-nlp";
@@ -84,6 +85,16 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "voiceTranscription",
+            "voice transcription",
+          ))
+        )
+          return;
 
         const transcription = await transcribeAudio(
           req.file.buffer,

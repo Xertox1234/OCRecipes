@@ -138,6 +138,7 @@ const recipeGenerationLogDefaults: RecipeGenerationLog = {
   id: 1,
   userId: "1",
   recipeId: null,
+  kind: "recipe",
   generatedAt: new Date("2024-01-01"),
 };
 

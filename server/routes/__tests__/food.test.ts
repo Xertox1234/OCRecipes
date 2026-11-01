@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import express from "express";
 import request from "supertest";
 
@@ -12,6 +13,7 @@ import { storage } from "../../storage";
 
 vi.mock("../../storage", () => ({
   storage: {
+    claimDailyAiCall: vi.fn(),
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
   },
@@ -72,6 +74,7 @@ describe("Food Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
     // Default to premium so existing assertions exercise the happy path;
@@ -182,6 +185,37 @@ describe("Food Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("No audio file provided");
+    });
+
+    it("refuses the (N+1)th transcription with 429 before calling the AI service", async () => {
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 2,
+      );
+      vi.mocked(transcribeAudio).mockResolvedValue("chicken breast and rice");
+      vi.mocked(parseNaturalLanguageFood).mockResolvedValue(mockParsedItems);
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const res = await request(app)
+          .post("/api/food/transcribe")
+          .set("Authorization", "Bearer token")
+          .attach("audio", VALID_M4A_HEADER, {
+            filename: "test.m4a",
+            contentType: "audio/m4a",
+          });
+        statuses.push(res.status);
+      }
+
+      expect(statuses).toEqual([200, 200, 429]);
+      expect(transcribeAudio).toHaveBeenCalledTimes(2);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "voiceTranscription",
+        AI_DAILY_CAPS.voiceTranscription,
+        expect.any(String),
+      );
     });
 
     it("transcribes and parses audio for premium users", async () => {
