@@ -118,7 +118,7 @@ export function ServingStepperChip({
         >
           <Pressable
             onPress={handleDecrement}
-            hitSlop={8}
+            style={styles.stepButton}
             accessibilityLabel="Decrease servings"
             accessibilityRole="button"
           >
@@ -147,6 +147,7 @@ export function ServingStepperChip({
           ) : (
             <Pressable
               onPress={handleNumberPress}
+              style={styles.stepButton}
               accessibilityLabel="Edit serving count"
               accessibilityRole="button"
             >
@@ -170,7 +171,7 @@ export function ServingStepperChip({
 
           <Pressable
             onPress={handleIncrement}
-            hitSlop={8}
+            style={styles.stepButton}
             accessibilityLabel="Increase servings"
             accessibilityRole="button"
           >
@@ -194,9 +195,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
+    // The 44pt step buttons supply the chip's height and its end padding.
+    paddingHorizontal: 0,
+    paddingVertical: 0,
     borderRadius: BorderRadius.chip,
+  },
+  // A real 44pt box, not hitSlop: the chip is only ~28pt tall, so Android
+  // would clip the slop to the chip's bounds. Neighbouring buttons abut
+  // without overlapping.
+  stepButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   countText: {
     fontSize: 12,

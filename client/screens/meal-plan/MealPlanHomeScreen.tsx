@@ -735,7 +735,6 @@ export default function MealPlanHomeScreen() {
               scaleTo={0.95}
               key={action.id}
               onPress={action.onPress}
-              hitSlop={8}
               style={[
                 styles.groceryButton,
                 { backgroundColor: withOpacity(theme.link, 0.1) },

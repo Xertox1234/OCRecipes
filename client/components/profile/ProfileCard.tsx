@@ -62,7 +62,6 @@ export const ProfileCard = React.memo(function ProfileCard({
           },
           pressed && { opacity: 0.7 },
         ]}
-        hitSlop={8}
       >
         <Feather name="settings" size={20} color={theme.textSecondary} />
       </Pressable>
@@ -133,9 +132,9 @@ const styles = StyleSheet.create({
   gearButton: {
     position: "absolute",
     right: Spacing.lg,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
     zIndex: 1,

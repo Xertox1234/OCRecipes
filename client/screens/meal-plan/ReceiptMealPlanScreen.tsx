@@ -464,9 +464,11 @@ function MealCard({
             {Math.round(meal.caloriesPerServing)} cal
           </ThemedText>
           <Pressable
-            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.removeButton,
+              pressed && { opacity: 0.7 },
+            ]}
             onPress={onRemove}
-            hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={`Remove ${meal.title}`}
           >
@@ -731,6 +733,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FontFamily.medium,
     marginTop: 2,
+  },
+  // 44pt box, not hitSlop: the card header is tappable itself, so a slop would
+  // bleed into the card's own press area.
+  removeButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   mealCardRight: {
     flexDirection: "row",

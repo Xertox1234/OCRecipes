@@ -163,9 +163,11 @@ export default function CookbookListScreen() {
             </View>
             <View style={styles.listItemActions}>
               <Pressable
-                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.deleteButton,
+                  pressed && { opacity: 0.7 },
+                ]}
                 onPress={() => handleDelete(item.id, item.name)}
-                hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={`Delete ${item.name}`}
               >
@@ -378,6 +380,14 @@ const styles = StyleSheet.create({
   },
   listItemMeta: {
     fontSize: 13,
+  },
+  // 44pt box, not hitSlop: the row is tappable itself, so a slop would bleed
+  // into the row's own press area (and Android clips it to the parent).
+  deleteButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   listItemActions: {
     flexDirection: "row",
