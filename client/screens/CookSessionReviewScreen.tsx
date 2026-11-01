@@ -339,7 +339,8 @@ export default function CookSessionReviewScreen() {
         <Pressable
           style={[styles.actionButton, { backgroundColor: theme.success }]}
           onPress={handleLogMeal}
-          disabled={isActionLoading || ingredients.length === 0}
+          // Not before the summary loads: it is what names missed ingredients.
+          disabled={isActionLoading || ingredients.length === 0 || !nutrition}
           accessibilityLabel="Log meal"
           accessibilityRole="button"
         >
