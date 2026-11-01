@@ -26,6 +26,7 @@ import {
   reportError,
 } from "./lib/error-reporter";
 import { requestContextMiddleware } from "./lib/request-context";
+import { bodyShapeBudget } from "./middleware/body-shape-budget";
 import { installContractSnapshotMiddleware } from "./lib/contract-snapshot";
 import { UUID_RE } from "./lib/identifier-patterns";
 import {
@@ -172,6 +173,7 @@ function setupBodyParsing(app: express.Application) {
   );
 
   app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+  app.use(bodyShapeBudget);
 }
 
 function setupRequestLogging(app: express.Application) {
