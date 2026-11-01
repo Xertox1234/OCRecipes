@@ -11,12 +11,60 @@ import { eq, and, or, isNull, lte, gte, sql } from "drizzle-orm";
 // PANTRY ITEMS
 // ============================================================================
 
-export async function getPantryItemCount(userId: string): Promise<number> {
-  const [result] = await db
+/** Hard cap on pantry rows per user, enforced on every insert path. */
+export const MAX_PANTRY_ITEMS = 500;
+
+export type PantryTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Take the per-user pantry lock (released at commit) and return how many more
+ * items fit under the cap. The lock key is feature-scoped so pantry inserts do
+ * not queue behind unrelated per-user locks. Must be the first statement of the
+ * transaction that goes on to insert.
+ */
+async function lockPantryAndGetRoom(
+  tx: PantryTx,
+  userId: string,
+): Promise<number> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${"pantry:" + userId}, 0))`,
+  );
+  const [result] = await tx
     .select({ count: sql<number>`count(*)::int` })
     .from(pantryItems)
     .where(eq(pantryItems.userId, userId));
-  return result?.count ?? 0;
+  return Math.max(0, MAX_PANTRY_ITEMS - (result?.count ?? 0));
+}
+
+/**
+ * Insert pantry items under the cap, inside the caller's transaction. Adds as
+ * many as fit (in order) and reports how many were left out. The single cap
+ * check behind every pantry insert path: single add, receipt confirm and batch
+ * scan all go through it.
+ */
+export async function insertPantryItemsUnderCap(
+  tx: PantryTx,
+  userId: string,
+  items: InsertPantryItem[],
+): Promise<{ created: PantryItem[]; skipped: number }> {
+  const room = await lockPantryAndGetRoom(tx, userId);
+  const fitting = items.slice(0, room);
+  const created =
+    fitting.length > 0
+      ? await tx
+          .insert(pantryItems)
+          .values(fitting.map((item) => ({ ...item, userId })))
+          .returning()
+      : [];
+  return { created, skipped: items.length - created.length };
+}
+
+/** Insert pantry items under the cap in a fresh transaction. */
+export async function createPantryItemsUnderCap(
+  userId: string,
+  items: InsertPantryItem[],
+): Promise<{ created: PantryItem[]; skipped: number }> {
+  return db.transaction((tx) => insertPantryItemsUnderCap(tx, userId, items));
 }
 
 export async function getPantryItems(
@@ -42,26 +90,23 @@ export async function getPantryItem(
   return item || undefined;
 }
 
-export async function createPantryItem(
-  item: InsertPantryItem,
-): Promise<PantryItem> {
-  const [created] = await db.insert(pantryItems).values(item).returning();
-  return created;
-}
-
 /**
  * Atomically create a pantry item from a grocery item and flag it as added.
  *
- * The flag is claimed first, and only while it is still false — so a double
- * tap or a retried request adds the item once. Returns `undefined` when the
- * item was already added (or is not in that list).
+ * The cap is checked first, under the pantry lock, so a full pantry leaves the
+ * grocery item unflagged. The flag is then claimed only while it is still
+ * false, so a double tap or a retried request adds the item once.
+ * Returns `undefined` when the item was already added (or is not in that list)
+ * and `"limit_reached"` when the pantry is full.
  */
 export async function addGroceryItemToPantryAtomically(
   item: InsertPantryItem,
   groceryItemId: number,
   groceryListId: number,
-): Promise<PantryItem | undefined> {
+): Promise<PantryItem | undefined | "limit_reached"> {
   return db.transaction(async (tx) => {
+    const room = await lockPantryAndGetRoom(tx, item.userId);
+    if (room < 1) return "limit_reached";
     const [claimed] = await tx
       .update(groceryListItems)
       .set({ addedToPantry: true })
@@ -81,16 +126,6 @@ export async function addGroceryItemToPantryAtomically(
     const [created] = await tx.insert(pantryItems).values(item).returning();
     return created;
   });
-}
-
-/**
- * Batch insert pantry items (used by receipt scanner).
- */
-export async function createPantryItems(
-  items: InsertPantryItem[],
-): Promise<PantryItem[]> {
-  if (items.length === 0) return [];
-  return db.insert(pantryItems).values(items).returning();
 }
 
 export type PantryItemUpdates = Partial<

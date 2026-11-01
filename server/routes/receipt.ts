@@ -171,9 +171,13 @@ export function register(app: Express): void {
           };
         });
 
-        const created = await storage.createPantryItems(pantryItems);
+        // Adds what fits under the 500-item pantry cap; `skipped` is the rest.
+        const { created, skipped } = await storage.createPantryItemsUnderCap(
+          req.userId,
+          pantryItems,
+        );
 
-        res.json({ added: created.length, items: created });
+        res.json({ added: created.length, skipped, items: created });
       } catch (error) {
         handleRouteError(res, error, "receipt confirm");
       }

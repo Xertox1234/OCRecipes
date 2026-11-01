@@ -88,6 +88,7 @@ describe("Batch Scan Routes", () => {
     it("saves to pantry destination", async () => {
       vi.mocked(storage.batchCreatePantryItems).mockResolvedValue({
         count: 1,
+        skipped: 0,
       });
 
       const res = await request(app)
@@ -103,6 +104,7 @@ describe("Batch Scan Routes", () => {
         success: true,
         destination: "pantry",
         created: 1,
+        skipped: 0,
       });
       expect(storage.batchCreatePantryItems).toHaveBeenCalledWith(
         [validItem],

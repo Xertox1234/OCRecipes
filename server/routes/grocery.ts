@@ -395,6 +395,15 @@ export function register(app: Express): void {
           itemId,
           listId,
         );
+        if (pantryItem === "limit_reached") {
+          sendError(
+            res,
+            400,
+            "Maximum of 500 pantry items reached",
+            ErrorCode.LIMIT_REACHED,
+          );
+          return;
+        }
         if (!pantryItem) {
           sendError(res, 409, "Already added to pantry", ErrorCode.CONFLICT);
           return;

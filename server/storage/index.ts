@@ -199,9 +199,7 @@ export const storage = {
   // Pantry
   getPantryItems: pantry.getPantryItems,
   getPantryItem: pantry.getPantryItem,
-  getPantryItemCount: pantry.getPantryItemCount,
-  createPantryItem: pantry.createPantryItem,
-  createPantryItems: pantry.createPantryItems,
+  createPantryItemsUnderCap: pantry.createPantryItemsUnderCap,
   addGroceryItemToPantryAtomically: pantry.addGroceryItemToPantryAtomically,
   updatePantryItem: pantry.updatePantryItem,
   deletePantryItem: pantry.deletePantryItem,
