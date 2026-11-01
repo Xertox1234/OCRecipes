@@ -194,14 +194,23 @@ describe("community storage", () => {
     it("treats a row from before local midnight as yesterday for a stored-tz user", async () => {
       await setStoredTz("Pacific/Kiritimati");
       const start = await localMidnight("Pacific/Kiritimati");
-      await tx.insert(recipeGenerationLog).values({
-        userId: testUser.id,
-        kind: "menuScan",
-        generatedAt: new Date(start.getTime() - 60 * 1000),
-      });
-      expect(await claimDailyAiCall(testUser.id, "menuScan", 1)).toBe(true);
+      // One row either side of local midnight: only the one after counts.
+      // Bucketing in UTC instead gives a different count at any wall-clock time.
+      await tx.insert(recipeGenerationLog).values([
+        {
+          userId: testUser.id,
+          kind: "menuScan",
+          generatedAt: new Date(start.getTime() - 60 * 1000),
+        },
+        {
+          userId: testUser.id,
+          kind: "menuScan",
+          generatedAt: new Date(start.getTime() + 60 * 1000),
+        },
+      ]);
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 2)).toBe(true);
       // CONTROL: the claim just made is today, so the cap now holds.
-      expect(await claimDailyAiCall(testUser.id, "menuScan", 1)).toBe(false);
+      expect(await claimDailyAiCall(testUser.id, "menuScan", 2)).toBe(false);
     });
 
     it("uses UTC when no timezone is stored", async () => {
