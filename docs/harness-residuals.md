@@ -340,3 +340,12 @@ Code 2.1.312) with a readable transcript holding 0 hand-backs and `last_assistan
 and the hand-back was present 3 s later. The writer now polls for the hand-back for up to 5 s
 (`REVIEW_STAMP_HANDBACK_WAIT_SECS`, capped at 8 inside the 10 s hook timeout); cases 78-80 in
 `test-review-stamp-writer.sh` pin it.
+
+### Constructed 2026-11-01 — the real-platform scope check misreads a git-quoted path (#1678, review)
+
+`scripts/harness/platform-scope.sh` (read by `merge-review-guard.sh`'s platform check and by
+`todo-automerge-guard.sh`) takes the file path from `diff --git a/<old> b/<new>` by field. Git quotes
+a path with spaces or non-ASCII bytes (`diff --git "a/client/a b.ts" "b/client/a b.ts"`), the fields
+split inside the quotes, and an upload change in such a file reads as not in scope (reviewer measured
+rc 1). No such path exists under `client/`, `patches/`, `plugins/` or `modules/` today. First check if
+reopened: read the path from the `+++ b/…` line (or `git diff --no-prefix -z`) instead of the header.
