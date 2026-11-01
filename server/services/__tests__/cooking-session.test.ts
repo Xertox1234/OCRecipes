@@ -636,5 +636,29 @@ describe("calculateSessionNutrition", () => {
     expect(result.items[1].calories).toBe(0);
     expect(result.items[1].servingSize).toBe("150 g");
     expect(result.total.calories).toBe(330);
+    expect(result.items[0].lookupMissed).toBe(false);
+    expect(result.items[1].lookupMissed).toBe(true);
+    expect(result.missedLookups).toEqual(["white rice"]);
+  });
+
+  it("flags every ingredient when all lookups miss", async () => {
+    mockLookups({});
+
+    const result = await calculateSessionNutrition([chicken, rice]);
+
+    expect(result.total.calories).toBe(0);
+    expect(result.items.every((i) => i.lookupMissed)).toBe(true);
+    expect(result.missedLookups).toEqual(["chicken breast", "white rice"]);
+  });
+
+  it("reports no misses when every lookup hits", async () => {
+    mockLookups({
+      "chicken breast": chickenPer100g,
+      "white rice": ricePer100g,
+    });
+
+    const result = await calculateSessionNutrition([chicken, rice]);
+
+    expect(result.missedLookups).toEqual([]);
   });
 });

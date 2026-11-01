@@ -921,6 +921,75 @@ describe("Cooking Routes", () => {
       expect(res.status).toBe(404);
     });
 
+    describe("missed nutrition lookups", () => {
+      const addSession = (id: string, names: string[]) => {
+        cookingSessionStore._internals.store.set(id, {
+          id,
+          userId: "1",
+          ingredients: names.map((name, n) => ({
+            ...mockIngredient,
+            id: `ing-${n}`,
+            name,
+          })),
+          photos: [],
+          createdAt: Date.now(),
+        });
+      };
+
+      it("asks for confirmation and logs nothing when every lookup missed", async () => {
+        addSession("all-miss", ["mystery a", "mystery b"]);
+        vi.mocked(batchNutritionLookup).mockResolvedValue(
+          new Map<string, NutritionData | null>(),
+        );
+
+        const res = await request(app)
+          .post("/api/cooking/sessions/all-miss/log")
+          .set("Authorization", "Bearer token")
+          .send({});
+
+        expect(res.status).toBe(409);
+        expect(res.body.missedLookups).toEqual(["mystery a", "mystery b"]);
+        expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+        expect(cookingSessionStore._internals.store.has("all-miss")).toBe(true);
+      });
+
+      it("names only the missed ingredient on a partial miss", async () => {
+        addSession("partial-miss", ["chicken breast", "mystery"]);
+        vi.mocked(batchNutritionLookup).mockResolvedValue(
+          new Map<string, NutritionData | null>([
+            ["chicken breast", createMockNutritionData({ calories: 165 })],
+          ]),
+        );
+
+        const res = await request(app)
+          .post("/api/cooking/sessions/partial-miss/log")
+          .set("Authorization", "Bearer token")
+          .send({});
+
+        expect(res.status).toBe(409);
+        expect(res.body.missedLookups).toEqual(["mystery"]);
+        expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+      });
+
+      it("logs once the user confirmed the missed ingredients", async () => {
+        addSession("confirmed-miss", ["mystery"]);
+        vi.mocked(batchNutritionLookup).mockResolvedValue(
+          new Map<string, NutritionData | null>(),
+        );
+        vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+          createMockScannedItem(),
+        );
+
+        const res = await request(app)
+          .post("/api/cooking/sessions/confirmed-miss/log")
+          .set("Authorization", "Bearer token")
+          .send({ confirmMissedLookups: true });
+
+        expect(res.status).toBe(201);
+        expect(storage.createScannedItemWithLog).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it("returns 500 when database transaction fails", async () => {
       const sessionId = "log-error-session";
       cookingSessionStore._internals.store.set(sessionId, {
@@ -941,7 +1010,7 @@ describe("Cooking Routes", () => {
       const res = await request(app)
         .post(`/api/cooking/sessions/${sessionId}/log`)
         .set("Authorization", "Bearer token")
-        .send({});
+        .send({ confirmMissedLookups: true });
 
       expect(res.status).toBe(500);
     });
@@ -1254,7 +1323,7 @@ describe("Cooking Routes", () => {
       await request(app)
         .post(`/api/cooking/sessions/${result.id}/log`)
         .set("Authorization", "Bearer token")
-        .send({ mealType: "dinner" });
+        .send({ mealType: "dinner", confirmMissedLookups: true });
 
       expect(vi.mocked(storage.incrementRecipePopularity)).toHaveBeenCalledWith(
         55,
@@ -1280,7 +1349,7 @@ describe("Cooking Routes", () => {
       await request(app)
         .post(`/api/cooking/sessions/${result.id}/log`)
         .set("Authorization", "Bearer token")
-        .send({ mealType: "dinner" });
+        .send({ mealType: "dinner", confirmMissedLookups: true });
 
       expect(
         vi.mocked(storage.incrementRecipePopularity),

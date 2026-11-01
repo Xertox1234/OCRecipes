@@ -193,7 +193,11 @@ export function useCookNutrition(sessionId: string | null) {
 
 export function useLogCookSession(sessionId: string | null) {
   const queryClient = useQueryClient();
-  return useMutation<unknown, Error, { mealType?: string; date?: string }>({
+  return useMutation<
+    unknown,
+    Error,
+    { mealType?: string; date?: string; confirmMissedLookups?: boolean }
+  >({
     mutationFn: async (data) => {
       if (!sessionId) throw new Error("No active session");
       const res = await apiRequest(

@@ -197,6 +197,8 @@ interface IngredientPortion {
   servingSize: string;
   /** Raw per-100 g values and weight for the cooking adjustment; null when the source can't be weighed. */
   cookable: { per100g: Nutrients; grams: number } | null;
+  /** True when the lookup found nothing, so the values are zeros rather than measurements. */
+  lookupMissed: boolean;
 }
 
 /**
@@ -212,7 +214,12 @@ function ingredientPortion(
 ): IngredientPortion {
   const label = `${ingredient.quantity} ${ingredient.unit}`;
   if (!nutrition) {
-    return { nutrients: ZERO_NUTRIENTS, servingSize: label, cookable: null };
+    return {
+      nutrients: ZERO_NUTRIENTS,
+      servingSize: label,
+      cookable: null,
+      lookupMissed: true,
+    };
   }
 
   const per100g = scaleToGrams(nutrition, 100);
@@ -221,6 +228,7 @@ function ingredientPortion(
       nutrients: orZero(nutrientValues(nutrition)),
       servingSize: nutrition.servingSize || label,
       cookable: null,
+      lookupMissed: false,
     };
   }
 
@@ -231,12 +239,14 @@ function ingredientPortion(
       nutrients: orZero(per100g),
       servingSize: "100 g (portion unknown)",
       cookable: { per100g: orZero(per100g), grams: 100 },
+      lookupMissed: false,
     };
   }
   return {
     nutrients: orZero(portion),
     servingSize: label,
     cookable: { per100g: orZero(per100g), grams },
+    lookupMissed: false,
   };
 }
 
@@ -330,6 +340,7 @@ export async function calculateSessionNutrition(
       ...finalNutrition,
       servingSize: portion.servingSize,
       cookingMethodApplied: appliedMethod,
+      lookupMissed: portion.lookupMissed,
     };
     items.push(item);
 
@@ -351,5 +362,9 @@ export async function calculateSessionNutrition(
   total.sugar = roundToOneDecimal(total.sugar);
   total.sodium = Math.round(total.sodium);
 
-  return { total, items };
+  const missedLookups = [
+    ...new Set(items.filter((i) => i.lookupMissed).map((i) => i.name)),
+  ];
+
+  return { total, items, missedLookups };
 }
