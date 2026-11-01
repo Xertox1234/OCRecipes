@@ -57,6 +57,11 @@ describe("createVertexClient", () => {
     expect(OpenAICtor).not.toHaveBeenCalled();
   });
 
+  it("disables SDK retries (the fallback provider is the retry)", () => {
+    createVertexClient(FULL);
+    expect(OpenAICtor.mock.calls[0][0]).toMatchObject({ maxRetries: 0 });
+  });
+
   it("never reads the Play IAP service account", () => {
     expect(
       createVertexClient({

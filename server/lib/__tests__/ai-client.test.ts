@@ -1222,3 +1222,32 @@ describe("aiChat (Vertex-first rows)", () => {
     neverOpenAI();
   });
 });
+
+describe("default OpenRouter client construction", () => {
+  afterEach(() => {
+    vi.doUnmock("openai");
+    vi.resetModules();
+    vi.unstubAllEnvs();
+  });
+
+  it("disables SDK retries (the fallback provider is the retry)", async () => {
+    const ctorOpts: Record<string, unknown>[] = [];
+    vi.resetModules();
+    vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+    vi.doMock("openai", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("openai")>();
+      class Spy extends actual.default {
+        constructor(opts: ConstructorParameters<typeof actual.default>[0]) {
+          super(opts);
+          ctorOpts.push(opts as Record<string, unknown>);
+        }
+      }
+      return { ...actual, default: Spy };
+    });
+    await import("../ai-client");
+    const openrouter = ctorOpts.find(
+      (o) => o.baseURL === "https://openrouter.ai/api/v1",
+    );
+    expect(openrouter).toMatchObject({ maxRetries: 0 });
+  });
+});

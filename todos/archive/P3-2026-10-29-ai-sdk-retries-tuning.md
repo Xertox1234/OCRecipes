@@ -1,6 +1,6 @@
 ---
 title: "Decide the OpenAI SDK retry count for OpenRouter and Vertex clients"
-status: backlog
+status: done
 priority: low
 created: 2026-10-29
 updated: 2026-10-31
@@ -24,7 +24,7 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 ## Acceptance Criteria
 
 - [x] Owner picks maxRetries (0 or 1) per client — 0 for both (2026-10-31)
-- [ ] Both client constructors set it; a test asserts the option
+- [x] Both client constructors set it; a test asserts the option
 
 ## Implementation Notes
 

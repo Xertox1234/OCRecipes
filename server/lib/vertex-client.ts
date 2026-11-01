@@ -41,6 +41,7 @@ export function createVertexClient(
   // AiChatClient takes the adapted Record body — same cast as ai-client.ts.
   return new OpenAI({
     baseURL: vertexBaseUrl(project),
+    maxRetries: 0, // the fallback provider is the retry
     apiKey: async () => {
       let token: string | null | undefined;
       try {
