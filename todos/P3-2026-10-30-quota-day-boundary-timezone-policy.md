@@ -3,7 +3,7 @@ title: "Decide and unify the day boundary for daily quotas (UTC vs user-local)"
 status: backlog
 priority: low
 created: 2026-10-30
-updated: 2026-10-30
+updated: 2026-10-31
 assignee:
 labels: [deferred, reliability, server]
 github_issue:
@@ -58,3 +58,7 @@ quota, with a cap on how often it can change.
 ### 2026-10-30
 
 - Initial creation (reliability audit R35 deferral).
+
+### 2026-10-31
+
+- Owner ruling: **option (b)** — every daily quota resets at midnight in the user's STORED profile timezone (`users.timezone`, as the scheduler reads it via `storage.getUserTimezones`), never the `x-timezone` header, so switching timezones cannot earn extra resets. Implementer: check how the stored tz gets updated; if the client can change it freely, cap how often it can change (per the Background), and record the rule in `docs/rules/` (server).

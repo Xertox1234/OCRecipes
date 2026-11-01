@@ -3,7 +3,7 @@ title: "Camera leftovers: takePicture options ignored; Android interruption logg
 status: backlog
 priority: low
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-10-31
 assignee:
 labels: [deferred, camera]
 github_issue:
@@ -41,3 +41,8 @@ Read the VisionCamera patch notes before changing CameraView.
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Decision: REMOVE the unused `takePicture` options from the call sites (`ReceiptCaptureScreen`, `CookSessionCaptureScreen`) rather than implement them — receipt and cook-session photos are already compressed before upload (`useReceiptScan`, `useCookSession` via `client/lib/image-compression.ts`), so there is no user-visible change. `CookSessionCaptureScreen.tsx` joins the files in scope for that.
+- Owner ruling 2026-10-31: the Android device checks for the P3 todos run as ONE owner phone session after the camera and gesture-handler PRs merge (agent drives adb; owner holds the phone, scans a barcode, listens to TalkBack). The executor ships the code and leaves the device-check AC open for that session.

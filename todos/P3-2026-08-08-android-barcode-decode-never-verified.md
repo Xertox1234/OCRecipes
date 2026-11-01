@@ -3,7 +3,7 @@ title: "Verify a barcode actually DECODES on Android (VisionCamera 5.1.1 + MLKit
 status: backlog
 priority: low
 created: 2026-08-08
-updated: 2026-08-08
+updated: 2026-10-31
 assignee:
 labels: [camera, barcode, android, verification, deferred]
 github_issue:
@@ -103,3 +103,7 @@ so an iOS pass says nothing about this.
 ### 2026-09-25
 
 - **User decision:** keep it parked, gated. The user has Apple hardware only; this waits for an Android phone or tester. Do not re-ask in decision sweeps.
+
+### 2026-10-31
+
+- The owner has an Android phone (Samsung Galaxy A37) since 2026-10-27. Owner ruling 2026-10-31: the Android device checks for the P3 todos run as ONE owner phone session after the camera and gesture-handler PRs merge (agent drives adb; owner holds the phone, scans a barcode, listens to TalkBack). Still human-led; gate fields unchanged.
