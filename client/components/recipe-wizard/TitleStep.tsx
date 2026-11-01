@@ -51,8 +51,10 @@ export default function TitleStep({
     startListening,
     stopListening,
   } = useSpeechToText();
+  // false once the title is submitted, so a late final result cannot refill.
+  const voiceActiveRef = useRef(false);
   useEffect(() => {
-    if (transcript && (isListening || isFinal)) {
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
       setTitle(transcript.slice(0, TITLE_MAX_LENGTH));
     }
   }, [isListening, isFinal, transcript, setTitle]);
@@ -61,6 +63,7 @@ export default function TitleStep({
     if (isListening) {
       stopListening();
     } else {
+      voiceActiveRef.current = true;
       void startListening();
     }
   };
@@ -90,7 +93,11 @@ export default function TitleStep({
         returnKeyType="next"
         // Keep the keyboard up while focus moves on to the description.
         submitBehavior="submit"
-        onSubmitEditing={() => descriptionRef.current?.focus()}
+        onSubmitEditing={() => {
+          voiceActiveRef.current = false;
+          if (isListening) stopListening();
+          descriptionRef.current?.focus();
+        }}
         maxLength={TITLE_MAX_LENGTH}
         onFocus={() => setFocusedField("title")}
         onBlur={() => setFocusedField(null)}

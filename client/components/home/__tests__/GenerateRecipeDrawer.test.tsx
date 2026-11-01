@@ -98,6 +98,38 @@ describe("GenerateRecipeDrawer", () => {
       ).toBe("a quick curry");
     });
 
+    it("ignores a late final result after the idea was submitted", () => {
+      const { rerender } = renderComponent(
+        <GenerateRecipeDrawer onUsed={vi.fn()} />,
+      );
+      fireEvent.click(screen.getByLabelText("Start voice input"));
+      mockSpeech.value = {
+        ...mockSpeech.value,
+        isListening: true,
+        transcript: "a quick curry",
+      };
+      rerender(<GenerateRecipeDrawer onUsed={vi.fn()} />);
+      const input = screen.getByLabelText("Recipe idea");
+      expect((input as HTMLInputElement).value).toBe("a quick curry");
+
+      act(() => {
+        (reactProps(input).onSubmitEditing as () => void)();
+      });
+      // Recognition ends and its final result lands after the submit.
+      fireEvent.change(input, { target: { value: "typed after" } });
+      mockSpeech.value = {
+        ...mockSpeech.value,
+        isListening: false,
+        isFinal: true,
+        transcript: "a quick curry now final",
+      };
+      rerender(<GenerateRecipeDrawer onUsed={vi.fn()} />);
+
+      expect(
+        (screen.getByLabelText("Recipe idea") as HTMLInputElement).value,
+      ).toBe("typed after");
+    });
+
     it("shows a speech error and leaves the typed text untouched", () => {
       const { rerender } = renderComponent(
         <GenerateRecipeDrawer onUsed={vi.fn()} />,

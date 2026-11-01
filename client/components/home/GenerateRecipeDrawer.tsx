@@ -1,5 +1,5 @@
 // client/components/home/GenerateRecipeDrawer.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { InlineMicButton } from "@/components/InlineMicButton";
@@ -51,14 +51,19 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
     startListening,
     stopListening,
   } = useSpeechToText();
+  // false once submitted/closed, so a late final result cannot refill.
+  const voiceActiveRef = useRef(false);
   useEffect(() => {
-    if (transcript && (isListening || isFinal)) setText(transcript);
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      setText(transcript);
+    }
   }, [isListening, isFinal, transcript]);
   const handleVoicePress = () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     if (isListening) {
       stopListening();
     } else {
+      voiceActiveRef.current = true;
       void startListening();
     }
   };
@@ -67,6 +72,7 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
     const p = prompt.trim();
     if (!p) return;
     haptics.selection();
+    voiceActiveRef.current = false;
     if (isListening) stopListening();
     onUsed();
     navigation.navigate("RecipeChat", { initialMessage: p });

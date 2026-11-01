@@ -190,14 +190,6 @@ export default function RecipeBrowserScreen() {
     }, 300);
   }, []);
 
-  // Flush the debounce immediately when the user presses the keyboard's
-  // "Search" key. Without this, returnKeyType="search" is a no-op and the
-  // query only commits 300ms after the last keystroke.
-  const handleSubmitSearch = useCallback(() => {
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    setDebouncedQuery(searchText.trim());
-  }, [searchText]);
-
   // Voice input REPLACES the search text with the dictated words and runs the
   // same debounced search as typing.
   const {
@@ -209,8 +201,12 @@ export default function RecipeBrowserScreen() {
     startListening,
     stopListening,
   } = useSpeechToText();
+  // false once submitted/closed, so a late final result cannot refill.
+  const voiceActiveRef = React.useRef(false);
   useEffect(() => {
-    if (transcript && (isListening || isFinal)) handleSearchChange(transcript);
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      handleSearchChange(transcript);
+    }
   }, [isListening, isFinal, transcript, handleSearchChange]);
   useEffect(() => {
     if (speechError) toast.error(speechError);
@@ -220,9 +216,20 @@ export default function RecipeBrowserScreen() {
     if (isListening) {
       stopListening();
     } else {
+      voiceActiveRef.current = true;
       void startListening();
     }
   }, [haptics, isListening, startListening, stopListening]);
+
+  // Flush the debounce immediately when the user presses the keyboard's
+  // "Search" key. Without this, returnKeyType="search" is a no-op and the
+  // query only commits 300ms after the last keystroke.
+  const handleSubmitSearch = useCallback(() => {
+    voiceActiveRef.current = false;
+    if (isListening) stopListening();
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    setDebouncedQuery(searchText.trim());
+  }, [searchText, isListening, stopListening]);
 
   // Cleanup debounce timer on unmount
   React.useEffect(() => {
@@ -506,6 +513,7 @@ export default function RecipeBrowserScreen() {
 
   const handleClearFilters = useCallback(() => {
     haptics.selection();
+    voiceActiveRef.current = false;
     setSearchText("");
     setDebouncedQuery("");
     setFilters(DEFAULT_FILTERS);
@@ -613,6 +621,7 @@ export default function RecipeBrowserScreen() {
           {searchText.length > 0 && (
             <Pressable
               onPress={() => {
+                voiceActiveRef.current = false;
                 setSearchText("");
                 setDebouncedQuery("");
               }}

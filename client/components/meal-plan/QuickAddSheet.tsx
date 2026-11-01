@@ -118,8 +118,12 @@ function QuickAddSheetContentInner(
     startListening,
     stopListening,
   } = useSpeechToText();
+  // false once the sheet closes, so a late final result cannot refill.
+  const voiceActiveRef = useRef(false);
   useEffect(() => {
-    if (transcript && (isListening || isFinal)) setSearchQuery(transcript);
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      setSearchQuery(transcript);
+    }
   }, [isListening, isFinal, transcript]);
   useEffect(() => {
     if (speechError) toast.error(speechError);
@@ -129,6 +133,7 @@ function QuickAddSheetContentInner(
     if (isListening) {
       stopListening();
     } else {
+      voiceActiveRef.current = true;
       void startListening();
     }
   }, [haptics, isListening, startListening, stopListening]);
@@ -136,6 +141,7 @@ function QuickAddSheetContentInner(
   // Reset search state whenever the sheet is opened for a meal type, and stop
   // any in-progress voice capture when it closes.
   useEffect(() => {
+    voiceActiveRef.current = false;
     if (mealType) {
       setSearchQuery("");
       setDebouncedQuery("");

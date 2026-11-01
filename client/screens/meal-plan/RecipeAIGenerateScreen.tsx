@@ -106,8 +106,10 @@ export default function RecipeAIGenerateScreen() {
     startListening,
     stopListening,
   } = useSpeechToText();
+  // false once submitted/closed, so a late final result cannot refill.
+  const voiceActiveRef = useRef(false);
   useEffect(() => {
-    if (transcript && (isListening || isFinal)) {
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
       setPrompt(transcript.slice(0, PROMPT_MAX_LENGTH));
     }
   }, [isListening, isFinal, transcript, setPrompt]);
@@ -116,6 +118,7 @@ export default function RecipeAIGenerateScreen() {
     if (isListening) {
       stopListening();
     } else {
+      voiceActiveRef.current = true;
       void startListening();
     }
   };
@@ -139,6 +142,7 @@ export default function RecipeAIGenerateScreen() {
     });
 
     haptics.selection();
+    voiceActiveRef.current = false;
     if (isListening) stopListening();
     start(trimmed, returnToMealPlan);
     navigation.goBack();
