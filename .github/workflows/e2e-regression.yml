@@ -366,7 +366,8 @@ jobs:
       # fail-loud register/login/profile-update contract and why `|| true`
       # only covers an idempotent re-run within the same job).
       - name: Seed E2E test user
-        run: bash scripts/ci/seed-e2e-user.sh
+        # Second account: the premium one e2e/flows/plan/receipt-upload.yaml signs in as.
+        run: bash scripts/ci/seed-e2e-user.sh && USERNAME=e2epremium PREMIUM=1 bash scripts/ci/seed-e2e-user.sh
 
       # The debug build is a dev client that loads its JS bundle from Metro, so
       # Metro must be running for the app to render anything Maestro can drive.
@@ -682,7 +683,8 @@ jobs:
       # Shared with the iOS job: scripts/ci/seed-e2e-user.sh (see that file
       # for the fail-loud register/login/profile-update contract).
       - name: Seed E2E test user
-        run: bash scripts/ci/seed-e2e-user.sh
+        # Second account: the premium one e2e/flows/plan/receipt-upload.yaml signs in as.
+        run: bash scripts/ci/seed-e2e-user.sh && USERNAME=e2epremium PREMIUM=1 bash scripts/ci/seed-e2e-user.sh
 
       # See the iOS job's Metro note. On Android the emulator's localhost is the
       # emulator itself, so `adb reverse` (below) tunnels the app's

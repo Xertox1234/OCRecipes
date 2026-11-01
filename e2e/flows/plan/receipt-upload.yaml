@@ -5,8 +5,16 @@ tags:
   - plan
   - upload
 env:
-  USERNAME: ${USERNAME}
+  # Its own premium account, seeded by e2e-regression.yml (seed-e2e-user.sh with PREMIUM=1). The
+  # shared USERNAME account stays free: premium changes the Coach tab's first screen, which the
+  # chat and tab flows assert.
+  PREMIUM_USERNAME: e2epremium
   PASSWORD: ${PASSWORD}
+# Sign the premium account out however the flow ended (pass or fail), so the flows after this one
+# sign in as the shared free account. The relaunch first leaves any picker or capture screen.
+onFlowComplete:
+  - runFlow: ../../helpers/launch-app.yaml
+  - runFlow: ../../helpers/ensure-logged-out.yaml
 ---
 # Harness diagnosis N6, part B: a real photo upload every night, on both platforms. The SDK 57
 # upgrade (#1549) broke the FormData uploads (receipt, menu, cook photo) on both platforms for 4
@@ -14,8 +22,8 @@ env:
 # flow uploaded anything. This one picks a photo from the gallery and sends it through the receipt
 # scan, the same FormData path.
 #
-# Needs (set up by e2e-regression.yml): the test user is premium (scripts/ci/seed-e2e-user.sh;
-# the receipt scanner is a premium feature), and the server's OpenAI base URL points at
+# Needs (set up by e2e-regression.yml): a premium account (scripts/ci/seed-e2e-user.sh; the
+# receipt scanner is a premium feature), and the server's OpenAI base URL points at
 # scripts/ci/stub-openai.mjs, which answers the receipt request with one item, "E2E Avocado
 # Nine". That name appearing on the review screen means the photo left the phone, reached the
 # server and came back analysed. A broken upload ends on the review screen's "Try again" state
@@ -24,10 +32,12 @@ env:
 # The flow stops at the review screen without adding the item, so the pantry stays empty for the
 # per-flow retry.
 - runFlow: ../../helpers/launch-app.yaml
+# An earlier flow may have left the shared account signed in.
+- runFlow: ../../helpers/ensure-logged-out.yaml
 - runFlow:
     file: ../../helpers/login.yaml
     env:
-      USERNAME: ${USERNAME}
+      USERNAME: ${PREMIUM_USERNAME}
       PASSWORD: ${PASSWORD}
 
 - addMedia:
@@ -63,32 +73,31 @@ env:
     timeout: 15000
 - tapOn: "Pick from gallery"
 
-# The system photo picker. iOS runs it out of process, so Maestro cannot see its elements: tap the
-# first grid cell (newest first, so the photo added above) and then the check button, by position
-# (measured on an iPhone 17 Pro simulator, iOS 26). Any selected photo still exercises the upload.
+# The system photo picker; both platforms expose it to Maestro (labels from the CI dumps of run
+# 41339379416). iOS labels each cell "Photo, <date>, <time>" and gives only photos from this year
+# no year, so the full-match regex picks the photo added above and not the simulator's stock ones
+# (nor the grid, whose label joins them all). iOS puts a narrow no-break space before AM/PM, hence
+# the "." there. The check button is "Done".
 - runFlow:
     when:
       platform: iOS
     commands:
-      - waitForAnimationToEnd
-      - tapOn:
-          point: "16%,43%"
-      - waitForAnimationToEnd
-      - tapOn:
-          point: "90%,12%"
-# Android's photo picker is a normal activity Maestro can read: the first photo, then the add
-# button (its label carries the selection count on some versions).
+      - extendedWaitUntil:
+          visible: 'Photo, \w+ \d{2}, \d{1,2}:\d{2}.[AP]M'
+          timeout: 15000
+      - tapOn: 'Photo, \w+ \d{2}, \d{1,2}:\d{2}.[AP]M'
+      - tapOn: "Done"
+# Android labels the cell "Photo taken on <date>" (the "Photos" tab above it must not match), and
+# a multi-select picker confirms with an add button that carries the count.
 - runFlow:
     when:
       platform: Android
     commands:
       - extendedWaitUntil:
-          visible: "Photo taken on.*|Photo.*"
+          visible: "Photo taken on .*"
           timeout: 15000
-      - tapOn:
-          text: "Photo taken on.*|Photo.*"
-          index: 0
-      - tapOn: "Add.*|Done"
+      - tapOn: "Photo taken on .*"
+      - tapOn: "Add.*"
 
 - extendedWaitUntil:
     visible: "Done with 1 photo"
