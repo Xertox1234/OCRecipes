@@ -153,7 +153,6 @@ describe("Suggestions Routes", () => {
         "1",
         "itemSuggestion",
         AI_DAILY_CAPS.itemSuggestion,
-        expect.any(String),
       );
     });
 

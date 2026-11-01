@@ -481,6 +481,37 @@ describe("cache storage", () => {
   });
 
   describe("getDailyMealSuggestionCount", () => {
+    it("buckets in the user's STORED timezone, not UTC", async () => {
+      const { eq } = await import("drizzle-orm");
+      await getTestTx()
+        .update(schema.users)
+        .set({ timezone: "Pacific/Kiritimati" })
+        .where(eq(schema.users.id, testUser.id));
+      const { getDayBounds } = await import("../helpers");
+      const { startOfDay } = getDayBounds(new Date(), "Pacific/Kiritimati");
+      await getTestTx()
+        .insert(schema.mealSuggestionCache)
+        .values([
+          {
+            cacheKey: "tz_before",
+            userId: testUser.id,
+            suggestions: [sampleMealSuggestion],
+            expiresAt: futureDate(),
+            createdAt: new Date(startOfDay.getTime() - 60 * 1000),
+          },
+          {
+            cacheKey: "tz_after",
+            userId: testUser.id,
+            suggestions: [sampleMealSuggestion],
+            expiresAt: futureDate(),
+            createdAt: new Date(startOfDay.getTime() + 60 * 1000),
+          },
+        ]);
+      expect(await getDailyMealSuggestionCount(testUser.id, new Date())).toBe(
+        1,
+      );
+    });
+
     it("counts entries created today for the user", async () => {
       const entry1 = await createMealSuggestionCache(
         "daily_1",

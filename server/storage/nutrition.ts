@@ -19,6 +19,7 @@ import { TIER_FEATURES } from "@shared/types/premium";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, lte, sql, isNull, inArray } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
+import { quotaDayBounds } from "./quota-day";
 import { isUniqueViolation } from "../lib/db-errors";
 import { getEffectiveTierForUser } from "./users";
 
@@ -520,7 +521,7 @@ export async function getDailyScanCount(
   userId: string,
   date: Date,
 ): Promise<number> {
-  const { startOfDay, endOfDay } = getDayBounds(date);
+  const { startOfDay, endOfDay } = await quotaDayBounds(db, userId, date);
 
   const result = await db
     .select({ count: sql<number>`count(*)` })

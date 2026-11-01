@@ -71,7 +71,7 @@ export interface PremiumFeatures {
  * gated by its own `TIER_FEATURES` flag first). Enforced in the database by
  * `storage.claimDailyAiCall` BEFORE the paid call, so they survive deploys.
  *
- * The window is a fixed calendar day in the caller's `x-timezone`, not a
+ * The window is a fixed calendar day in the user's STORED `users.timezone` (UTC until set; never the `x-timezone` header), not a
  * rolling 24 h. Each claim counts one paid call, whether or not it succeeds.
  *
  * PROPOSED VALUES (2026-10-31) — a pricing decision for the owner. This is the

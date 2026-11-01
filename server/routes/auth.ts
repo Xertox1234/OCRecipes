@@ -923,13 +923,26 @@ export function register(app: Express): void {
         if (validated.measurementUnit !== undefined)
           updates.measurementUnit = validated.measurementUnit;
 
+        // Write-once: stored only while unset, so switching zones can never
+        // earn an extra daily-quota reset (a later value is ignored).
+        if (validated.timezone !== undefined) {
+          await storage.setUserTimezoneIfUnset(req.userId, validated.timezone);
+        }
+
         if (Object.keys(updates).length === 0) {
-          return sendError(
-            res,
-            400,
-            "No valid fields to update",
-            ErrorCode.VALIDATION_ERROR,
-          );
+          if (validated.timezone === undefined) {
+            return sendError(
+              res,
+              400,
+              "No valid fields to update",
+              ErrorCode.VALIDATION_ERROR,
+            );
+          }
+          const current = await storage.getUser(req.userId);
+          if (!current) {
+            return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+          }
+          return res.json(serializeUser(current));
         }
 
         const user = await storage.updateUser(req.userId, updates);

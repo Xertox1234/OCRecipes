@@ -383,7 +383,6 @@ describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
         "1",
         "recipeAutoImage",
         AI_DAILY_CAPS.recipeAutoImage,
-        expect.any(String),
       );
     });
 

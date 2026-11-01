@@ -681,7 +681,6 @@ describe("Cookbook Routes", () => {
         "1",
         "cookbookCover",
         AI_DAILY_CAPS.cookbookCover,
-        expect.any(String),
       );
     });
 

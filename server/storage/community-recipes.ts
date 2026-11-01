@@ -22,7 +22,8 @@ import {
   inArray,
   isNull,
 } from "drizzle-orm";
-import { escapeLike, getDayBounds } from "./helpers";
+import { escapeLike } from "./helpers";
+import { quotaDayBounds } from "./quota-day";
 import {
   addToIndex,
   removeFromIndex,
@@ -103,7 +104,6 @@ export async function createRecipeWithLimitCheck(
   userId: string,
   dailyLimit: number,
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
-  tz: string = "UTC",
 ): Promise<CommunityRecipe | null> {
   const normalized = normalizeRecipeFields({
     title: data.title,
@@ -138,7 +138,7 @@ export async function createRecipeWithLimitCheck(
 
   const recipe = await db.transaction(async (tx) => {
     // Check daily limit inside transaction
-    const { startOfDay, endOfDay } = getDayBounds(new Date(), tz);
+    const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
     const result = await tx
       .select({ count: sql<number>`count(*)` })
       .from(recipeGenerationLog)

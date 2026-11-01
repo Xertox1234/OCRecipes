@@ -24,7 +24,6 @@ import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 import { reportError } from "../lib/error-reporter";
 import { isValidCalendarDate } from "../utils/date-validation";
-import { parseTimezone } from "../lib/civil-date";
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -101,7 +100,6 @@ export async function claimAiCallOrReject(
     req.userId,
     kind,
     AI_DAILY_CAPS[kind],
-    parseTimezone(req.headers["x-timezone"]),
   );
   if (!claimed) {
     sendError(

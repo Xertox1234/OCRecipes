@@ -75,6 +75,7 @@ vi.mock("../../storage", () => ({
     createUser: vi.fn(),
     getUser: vi.fn(),
     updateUser: vi.fn(),
+    setUserTimezoneIfUnset: vi.fn(),
     updateUserEmail: vi.fn(),
     stagePendingEmail: vi.fn(),
     incrementTokenVersion: vi.fn(),
@@ -1596,6 +1597,46 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("No valid fields to update");
+    });
+
+    it("stores a valid timezone once and answers with the current user", async () => {
+      vi.mocked(storage.setUserTimezoneIfUnset).mockResolvedValue(true);
+      vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
+
+      const res = await request(app)
+        .put("/api/auth/profile")
+        .set("Authorization", "Bearer mock-token")
+        .send({ timezone: "America/Los_Angeles" });
+
+      expect(res.status).toBe(200);
+      expect(storage.setUserTimezoneIfUnset).toHaveBeenCalledWith(
+        "1",
+        "America/Los_Angeles",
+      );
+      expect(storage.updateUser).not.toHaveBeenCalled();
+    });
+
+    it("answers 200 and changes nothing when a timezone is already set", async () => {
+      vi.mocked(storage.setUserTimezoneIfUnset).mockResolvedValue(false);
+      vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
+
+      const res = await request(app)
+        .put("/api/auth/profile")
+        .set("Authorization", "Bearer mock-token")
+        .send({ timezone: "Pacific/Kiritimati" });
+
+      expect(res.status).toBe(200);
+      expect(storage.updateUser).not.toHaveBeenCalled();
+    });
+
+    it("rejects an invalid timezone", async () => {
+      const res = await request(app)
+        .put("/api/auth/profile")
+        .set("Authorization", "Bearer mock-token")
+        .send({ timezone: "Mars/Olympus_Mons" });
+
+      expect(res.status).toBe(400);
+      expect(storage.setUserTimezoneIfUnset).not.toHaveBeenCalled();
     });
 
     it("returns 400 for invalid calorie goal", async () => {

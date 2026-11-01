@@ -16,7 +16,6 @@ import {
   checkAiConfigured,
   handleRouteError,
   parseStringParam,
-  parseTimezone,
   requireValidImage,
 } from "./_helpers";
 import {
@@ -526,11 +525,9 @@ export function register(app: Express): void {
         if (!features) return;
 
         // Early limit check (non-transactional fast path)
-        const tz = parseTimezone(req.headers["x-timezone"]);
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
           new Date(),
-          tz,
         );
         if (generationsToday >= features.dailyRecipeGenerations) {
           sendError(
@@ -577,7 +574,6 @@ export function register(app: Express): void {
           req.userId,
           features.dailyRecipeGenerations,
           null,
-          tz,
         );
         if (!allowed) {
           sendError(
