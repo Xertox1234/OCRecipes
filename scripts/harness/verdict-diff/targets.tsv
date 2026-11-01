@@ -1,0 +1,11 @@
+# verdict-diff registry: which changed files need a base-vs-head comparison before a PR opens.
+# Read by scripts/harness/verdict-diff.sh (what to compare) and .claude/hooks/pr-preflight-guard.sh
+# (whether to demand a stamp). One row: <path glob><TAB><runner><TAB><target>; target * = every
+# target of that runner. A guard target <t> is .claude/hooks/<t>.sh with seeds in seeds/<t>.tsv.
+# Add a row when a guard or keyword file joins; a chain on an unlisted file is a reason to add it.
+.claude/hooks/git-safety.sh	guard	git-safety
+.claude/hooks/guard-outward-cli.sh	guard	guard-outward-cli
+.claude/hooks/nudge-dependency-add.sh	guard	nudge-dependency-add
+.claude/hooks/lib/*	guard	*
+shared/constants/diet-conflicts.ts	keywords	diet
+shared/constants/allergens.ts	keywords	*

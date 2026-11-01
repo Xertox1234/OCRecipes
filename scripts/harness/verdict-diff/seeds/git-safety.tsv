@@ -1,0 +1,21 @@
+# Seeds for git-safety.sh. <expect><TAB><cwd><TAB><command>. expect T = must deny, N = must not.
+# cwd MAIN or WT. Placeholders: {MAIN} {WT} (a registered worktree contract exists for WT).
+# \n in a command is a newline. Every T row must deny at head, unvaried (the run's positive control).
+T	MAIN	git commit -m x
+T	MAIN	git mv a.ts b.ts
+T	WT	git -C {MAIN} commit -m x
+T	MAIN	git reset --hard
+T	MAIN	git checkout -- file.ts
+T	MAIN	git stash
+T	WT	echo x > {MAIN}/a.txt
+T	WT	rm {MAIN}/a.txt
+T	WT	cp a.txt {MAIN}/b.txt
+T	MAIN	git stash list --output {MAIN}/x
+N	MAIN	git status
+N	MAIN	git diff HEAD
+N	MAIN	git log --oneline -3
+N	MAIN	git -C {WT} commit -m x
+N	WT	git commit -m x
+N	MAIN	echo x > /tmp/n7-verdict-diff.txt
+N	MAIN	git stash list
+N	MAIN	git stash show stash@{0}
