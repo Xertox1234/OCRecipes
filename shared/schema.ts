@@ -2447,3 +2447,26 @@ export const notificationSends = pgTable(
 
 export type NotificationSend = typeof notificationSends.$inferSelect;
 export type InsertNotificationSend = typeof notificationSends.$inferInsert;
+
+/**
+ * Scheduler run claims — one row per (job, run slot) that some server instance
+ * has taken. The unique index is the claim: `INSERT ... ON CONFLICT DO NOTHING
+ * RETURNING` returns a row for exactly one instance, so a cron tick that fires
+ * on several instances runs once. See server/storage/scheduler-runs.ts.
+ */
+export const schedulerRuns = pgTable(
+  "scheduler_runs",
+  {
+    id: serial("id").primaryKey(),
+    jobName: text("job_name").notNull(),
+    runSlot: text("run_slot").notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("scheduler_runs_job_slot_idx").on(table.jobName, table.runSlot),
+  ],
+);
+
+export type SchedulerRun = typeof schedulerRuns.$inferSelect;
