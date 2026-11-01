@@ -1,6 +1,6 @@
 ---
 title: "Screen RecipeChef replies for unsafe dietary advice, as the coach already does"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
 updated: 2026-10-29
