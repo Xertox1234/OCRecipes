@@ -123,6 +123,7 @@ export const storage = {
   filterUnreferencedImageUrls: accountImages.filterUnreferencedImageUrls,
   createUser: users.createUser,
   updateUser: users.updateUser,
+  setUserTimezoneIfUnset: users.setUserTimezoneIfUnset,
   updateUserEmail: users.updateUserEmail,
   stagePendingEmail: users.stagePendingEmail,
   applyEmailVerification: users.applyEmailVerification,

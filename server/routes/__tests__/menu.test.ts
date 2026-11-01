@@ -116,7 +116,6 @@ describe("Menu Routes", () => {
         "1",
         "menuScan",
         AI_DAILY_CAPS.menuScan,
-        expect.any(String),
       );
     });
 

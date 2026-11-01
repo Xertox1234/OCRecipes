@@ -24,6 +24,7 @@ import {
   favouriteScannedItems,
   mealPlanItems,
   mealPlanRecipes,
+  users,
 } from "@shared/schema";
 
 vi.mock("../../db", () => ({
@@ -680,6 +681,23 @@ describe("nutrition storage", () => {
   });
 
   describe("getDailyScanCount", () => {
+    it("buckets in the user's STORED timezone, not UTC", async () => {
+      await getTestTx()
+        .update(users)
+        .set({ timezone: "Pacific/Kiritimati" })
+        .where(eq(users.id, testUser.id));
+      const { getDayBounds } = await import("../helpers");
+      const { startOfDay } = getDayBounds(new Date(), "Pacific/Kiritimati");
+      // One minute before local midnight = yesterday there, whatever the UTC date.
+      await insertScannedItem(testUser.id, {
+        scannedAt: new Date(startOfDay.getTime() - 60 * 1000),
+      });
+      await insertScannedItem(testUser.id, {
+        scannedAt: new Date(startOfDay.getTime() + 60 * 1000),
+      });
+      expect(await getDailyScanCount(testUser.id, new Date())).toBe(1);
+    });
+
     it("counts scanned items for the given user and date", async () => {
       await insertScannedItem(testUser.id);
       await insertScannedItem(testUser.id);

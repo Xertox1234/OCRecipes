@@ -2,7 +2,7 @@ import { recipeGenerationLog } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, gte, lt, sql } from "drizzle-orm";
 import type { AiCallKind } from "@shared/types/premium";
-import { getDayBounds } from "./helpers";
+import { quotaDayBounds } from "./quota-day";
 
 // ============================================================================
 // RECIPE GENERATION LOG (daily quota tracking)
@@ -11,9 +11,8 @@ import { getDayBounds } from "./helpers";
 export async function getDailyRecipeGenerationCount(
   userId: string,
   date: Date,
-  tz: string = "UTC",
 ): Promise<number> {
-  const { startOfDay, endOfDay } = getDayBounds(date, tz);
+  const { startOfDay, endOfDay } = await quotaDayBounds(db, userId, date);
 
   const result = await db
     .select({ count: sql<number>`count(*)` })
@@ -51,10 +50,9 @@ export async function logRecipeGenerationWithLimitCheck(
   userId: string,
   dailyLimit: number,
   recipeId: number | null = null,
-  tz: string = "UTC",
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    const { startOfDay, endOfDay } = getDayBounds(new Date(), tz);
+    const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
     const result = await tx
       .select({ count: sql<number>`count(*)` })
       .from(recipeGenerationLog)
@@ -78,20 +76,19 @@ export async function logRecipeGenerationWithLimitCheck(
  * false when the user is already at `dailyLimit` (the caller answers 429 and
  * must not call the AI service). The per-user/kind advisory lock serializes
  * concurrent claims, so N parallel requests can never overshoot the cap.
- * Fixed calendar day in `tz`, not a rolling 24 h. A claim is spent even if the
+ * Fixed calendar day in the user's STORED timezone (`quotaDayBounds`), not a rolling 24 h. A claim is spent even if the
  * paid call then fails: the cap bounds spend, so it errs toward counting.
  */
 export async function claimDailyAiCall(
   userId: string,
   kind: AiCallKind,
   dailyLimit: number,
-  tz: string = "UTC",
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${userId}:${kind}`}, 0))`,
     );
-    const { startOfDay, endOfDay } = getDayBounds(new Date(), tz);
+    const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
     const result = await tx
       .select({ count: sql<number>`count(*)` })
       .from(recipeGenerationLog)

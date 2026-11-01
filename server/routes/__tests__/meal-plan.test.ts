@@ -187,7 +187,6 @@ describe("Meal Plan Routes", () => {
         "1",
         "recipeAutoImage",
         AI_DAILY_CAPS.recipeAutoImage,
-        expect.any(String),
       );
     });
 

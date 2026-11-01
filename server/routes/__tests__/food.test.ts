@@ -214,7 +214,6 @@ describe("Food Routes", () => {
         "1",
         "voiceTranscription",
         AI_DAILY_CAPS.voiceTranscription,
-        expect.any(String),
       );
     });
 

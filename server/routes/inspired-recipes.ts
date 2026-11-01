@@ -25,7 +25,6 @@ import {
   formatZodError,
   handleRouteError,
   parsePositiveIntParam,
-  parseTimezone,
 } from "./_helpers";
 import {
   createListingBodySchema,
@@ -187,11 +186,9 @@ export function register(app: Express): void {
         }
 
         // Early limit check (non-transactional fast path to avoid the AI call)
-        const tz = parseTimezone(req.headers["x-timezone"]);
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
           new Date(),
-          tz,
         );
         if (generationsToday >= features.dailyRecipeGenerations) {
           sendError(
@@ -267,7 +264,6 @@ export function register(app: Express): void {
               imageUrl: null,
               isPublic: false,
             },
-            tz,
           );
           if (!recipe) {
             sendError(

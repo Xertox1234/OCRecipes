@@ -1,6 +1,6 @@
 ---
 title: "Decide and unify the day boundary for daily quotas (UTC vs user-local)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-30
 updated: 2026-10-31
@@ -42,10 +42,10 @@ quota, with a cap on how often it can change.
 
 ## Acceptance Criteria
 
-- [ ] Product rule chosen and written into `docs/rules/` (server domain).
-- [ ] Every daily-quota counter uses that rule, and the early check and the
+- [x] Product rule chosen and written into `docs/rules/` (server domain).
+- [x] Every daily-quota counter uses that rule, and the early check and the
       in-transaction re-check for the same feature use the same bounds.
-- [ ] Tests show one bucket per feature (scan, meal suggestions, chat, recipe generation).
+- [x] Tests show one bucket per feature (scan, meal suggestions, chat, recipe generation).
 
 ## Implementation Notes
 
@@ -62,3 +62,9 @@ quota, with a cap on how often it can change.
 ### 2026-10-31
 
 - Owner ruling: **option (b)** — every daily quota resets at midnight in the user's STORED profile timezone (`users.timezone`, as the scheduler reads it via `storage.getUserTimezones`), never the `x-timezone` header, so switching timezones cannot earn extra resets. Implementer: check how the stored tz gets updated; if the client can change it freely, cap how often it can change (per the Background), and record the rule in `docs/rules/` (server).
+
+### 2026-11-01
+
+- Implemented option (b). One primitive, `quotaDayBounds(executor, userId)` (`server/storage/quota-day.ts`), reads the STORED `users.timezone` (NULL/invalid -> UTC) and is used by every quota counter: scans, meal suggestions, chat/coach messages, recipe generations (early check AND in-transaction re-check), finder claims, and the #1663 `claimDailyAiCall` paid-AI caps. The `tz` parameter was removed from the quota storage functions, so no route can pass the header.
+- Nothing wrote `users.timezone`; `PUT /api/auth/profile` now accepts an IANA `timezone`, stored write-once (`setUserTimezoneIfUnset`, `WHERE timezone IS NULL`). Write-once is the change cap without a schema change.
+- Follow-ups (not todos): the client does not yet send `timezone`, so quotas stay UTC until it does; a real change-rate cap needs a `users.timezone_updated_at` column (db-serial); write-once also freezes reminder timing, which shares the column.

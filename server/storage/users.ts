@@ -31,6 +31,7 @@ import {
   gt,
   asc,
   isNotNull,
+  isNull,
 } from "drizzle-orm";
 import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
@@ -210,8 +211,28 @@ export type UpdatableUserFields = Pick<
   | "goalsCalculatedAt"
   | "onboardingCompleted"
   | "measurementUnit"
-  | "timezone"
 >;
+
+/**
+ * Store the user's quota timezone, ONCE. The conditional `timezone IS NULL`
+ * write is the cap: every daily quota resets at midnight in this zone
+ * (`quotaDayBounds`), so a freely rewritable value would let a client earn an
+ * extra reset by switching zones. Deliberately not part of `UpdatableUserFields`
+ * (that spread would overwrite). Returns true when this call stored it, false
+ * when a timezone was already set (no change). Callers pass an IANA name
+ * validated at the route boundary.
+ */
+export async function setUserTimezoneIfUnset(
+  userId: string,
+  timezone: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(users)
+    .set({ timezone })
+    .where(and(eq(users.id, userId), isNull(users.timezone)))
+    .returning({ id: users.id });
+  return rows.length > 0;
+}
 
 export async function updateUser(
   id: string,

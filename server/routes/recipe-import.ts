@@ -12,7 +12,6 @@ import { normalizeRecipeFields } from "../lib/recipe-normalization";
 import { urlImportRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
-  parseTimezone,
   formatZodError,
   handleRouteError,
 } from "./_helpers";
@@ -197,7 +196,6 @@ export function register(app: Express): void {
         // Shares the meal-plan auto-image daily cap, claimed BEFORE the paid
         // call; a refused claim only skips the image, the import succeeds.
         if (!recipe.imageUrl) {
-          const tz = parseTimezone(req.headers["x-timezone"]);
           fireAndForget(
             "recipe-image-gen",
             (async () => {
@@ -205,7 +203,6 @@ export function register(app: Express): void {
                 req.userId,
                 "recipeAutoImage",
                 AI_DAILY_CAPS.recipeAutoImage,
-                tz,
               );
               if (!claimed) return;
               const imageUrl = await generateRecipeImage({

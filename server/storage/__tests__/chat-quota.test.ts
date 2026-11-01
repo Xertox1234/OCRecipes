@@ -57,6 +57,36 @@ describe("chat quota — recipe finder generation quota and Spoonacular cap", ()
     await closeTestPool();
   });
 
+  it("the daily limit resets at midnight in the STORED timezone, not UTC", async () => {
+    const { users, chatMessages } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const { getDayBounds } = await import("../helpers");
+    await getTestTx()
+      .update(users)
+      .set({ timezone: "Pacific/Kiritimati" })
+      .where(eq(users.id, testUser.id));
+    const { startOfDay } = getDayBounds(new Date(), "Pacific/Kiritimati");
+    const conv = await createChatConversation(testUser.id, "Coach", "coach");
+    // A typed row one minute before local midnight = yesterday there.
+    await getTestTx()
+      .insert(chatMessages)
+      .values({
+        conversationId: conv.id,
+        role: "user",
+        content: "old",
+        createdAt: new Date(startOfDay.getTime() - 60 * 1000),
+      });
+    const first = await createFinderUserMessage(conv.id, testUser.id, "a", {
+      coachDailyLimit: 1,
+    });
+    expect(first.status).toBe("created");
+    // CONTROL: that row is today, so the limit now holds.
+    const second = await createFinderUserMessage(conv.id, testUser.id, "b", {
+      coachDailyLimit: 1,
+    });
+    expect(second.status).toBe("limit_reached");
+  });
+
   it("finder-step rows in a recipe conversation never count as generations", async () => {
     const conv = await createChatConversation(testUser.id, "Recipe", "recipe");
     for (const text of ["Mediterranean", "None of these", "Under 20 minutes"]) {

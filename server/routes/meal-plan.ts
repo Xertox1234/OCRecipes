@@ -76,7 +76,6 @@ function fireRecipeImageGen(
   req: AuthenticatedRequest,
 ): void {
   const userId = req.userId;
-  const tz = parseTimezone(req.headers["x-timezone"]);
   fireAndForget(
     "recipe-image-gen",
     (async () => {
@@ -86,7 +85,6 @@ function fireRecipeImageGen(
         userId,
         "recipeAutoImage",
         AI_DAILY_CAPS.recipeAutoImage,
-        tz,
       );
       if (!claimed) return;
       const imageUrl = await generateRecipeImage({

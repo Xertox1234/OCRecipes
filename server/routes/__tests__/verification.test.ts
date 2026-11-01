@@ -156,7 +156,6 @@ describe("Verification Routes", () => {
         "1",
         "frontLabel",
         AI_DAILY_CAPS.frontLabel,
-        expect.any(String),
       );
     });
 

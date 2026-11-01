@@ -452,7 +452,6 @@ describe("Recipe Chat Routes", () => {
         "1",
         "recipeChatImage",
         AI_DAILY_CAPS.recipeChatImage,
-        expect.any(String),
       );
     });
 

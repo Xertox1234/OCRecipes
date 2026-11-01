@@ -44,6 +44,7 @@ const {
   getUserByEmail,
   createUser,
   updateUser,
+  setUserTimezoneIfUnset,
   updateUserEmail,
   stagePendingEmail,
   applyEmailVerification,
@@ -504,9 +505,28 @@ describe("users storage", () => {
     });
   });
 
+  describe("setUserTimezoneIfUnset", () => {
+    it("stores the timezone when none is set", async () => {
+      expect(await setUserTimezoneIfUnset(testUser.id, "Asia/Tokyo")).toBe(
+        true,
+      );
+      const result = await getUserTimezones([testUser.id]);
+      expect(result.get(testUser.id)).toBe("Asia/Tokyo");
+    });
+
+    it("never overwrites a stored timezone (write-once cap)", async () => {
+      await setUserTimezoneIfUnset(testUser.id, "Asia/Tokyo");
+      expect(
+        await setUserTimezoneIfUnset(testUser.id, "Pacific/Kiritimati"),
+      ).toBe(false);
+      const result = await getUserTimezones([testUser.id]);
+      expect(result.get(testUser.id)).toBe("Asia/Tokyo");
+    });
+  });
+
   describe("getUserTimezones", () => {
     it("returns the stored timezone for a user who has one set", async () => {
-      await updateUser(testUser.id, { timezone: "America/Los_Angeles" });
+      await setUserTimezoneIfUnset(testUser.id, "America/Los_Angeles");
       const result = await getUserTimezones([testUser.id]);
       expect(result.get(testUser.id)).toBe("America/Los_Angeles");
     });
@@ -519,7 +539,7 @@ describe("users storage", () => {
 
     it("batches multiple users in one query, keyed by id", async () => {
       const second = await createTestUser(tx);
-      await updateUser(testUser.id, { timezone: "Europe/London" });
+      await setUserTimezoneIfUnset(testUser.id, "Europe/London");
       const result = await getUserTimezones([testUser.id, second.id]);
       expect(result.get(testUser.id)).toBe("Europe/London");
       expect(result.get(second.id)).toBeNull();

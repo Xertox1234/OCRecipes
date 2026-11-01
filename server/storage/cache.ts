@@ -13,7 +13,7 @@ import { db } from "../db";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { logger, toError } from "../lib/logger";
 import { eq, and, gte, gt, lt, lte, sql, inArray } from "drizzle-orm";
-import { getDayBounds } from "./helpers";
+import { quotaDayBounds } from "./quota-day";
 
 // ============================================================================
 // SUGGESTION CACHE
@@ -199,7 +199,7 @@ export async function createMealSuggestionCacheWithLimitCheck(
   dailyLimit: number,
 ): Promise<MealSuggestionCacheEntry | null> {
   return db.transaction(async (tx) => {
-    const { startOfDay, endOfDay } = getDayBounds(new Date());
+    const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
 
     const countResult = await tx
       .select({ count: sql<number>`count(*)` })
@@ -238,7 +238,7 @@ export async function getDailyMealSuggestionCount(
   userId: string,
   date: Date,
 ): Promise<number> {
-  const { startOfDay, endOfDay } = getDayBounds(date);
+  const { startOfDay, endOfDay } = await quotaDayBounds(db, userId, date);
 
   const result = await db
     .select({ count: sql<number>`count(*)` })
