@@ -18,9 +18,19 @@ git rev-parse --show-toplevel
 
 - If `pwd` is **not** inside a `.claude/worktrees/agent-*` directory, report `blocked` with reason `"not running in an isolated worktree — pwd is <pwd>"` and stop. Do not edit files.
 - Every `Edit`, `Write`, and `MultiEdit` path must resolve **inside this worktree** (the directory `pwd` reported). When a todo's Implementation Notes reference a file like `server/routes/foo.ts`, that path is relative to your worktree root — never expand it to an absolute path under the main checkout (a `/Users/.../OCRecipes/...` path with no `.claude/worktrees/agent-*` segment). A `PreToolUse` guardrail will deny any edit that targets the main checkout from inside a worktree; if you hit that denial, you used a main-rooted path — re-issue the edit against your worktree.
-- **Declare your worktree contract** so the PreToolUse guards enforce your isolation mechanically (not just by convention): `bash scripts/declare-worktree.sh "$(git rev-parse --show-toplevel)"`. This registers your worktree in the session's contract registry; entries from parallel executors coexist. You release it in Step 11 (`--remove`), and the orchestrator runs `--clear` as a crash backstop.
+- **Declare your worktree contract** so the PreToolUse guards enforce your isolation mechanically (not just by convention): `bash scripts/declare-worktree.sh <worktree path>`, with the absolute path `pwd` printed typed in literally. This registers your worktree in the session's contract registry; entries from parallel executors coexist. You release it in Step 11 (`--remove`), and the orchestrator runs `--clear` as a crash backstop.
 - **Self-heal dependency provisioning**: run `bash .claude/hooks/worktree-deps.sh` once, now — before trusting any `npm run test:run`/`check:types`/`lint` output later. The `PostToolUse:EnterWorktree` trigger that normally symlinks `node_modules` into a fresh worktree has been observed not to fire for `Agent(isolation:"worktree")` dispatches (a `.vite`-cache-only `node_modules` then fails one seemingly unrelated test with a misleading ENOENT). The hook is idempotent and near-instant, so running it unconditionally costs nothing (docs/solutions/conventions/adhoc-worktree-missing-node-modules-symlink-2026-07-06.md, fourth counter-case).
 - **Provision `.env`**: run `sh .husky/post-checkout 0 0 1` once, now, from the worktree root. `Agent(isolation:"worktree")` creates the worktree without firing git's `post-checkout` hook, so the `.env*` (and `docs/LEARNINGS.md`) symlinks a plain `git worktree add` gets are missing, and every DB suite fails on an absent `DATABASE_URL` — which also fails the pre-push `preflight:fast` gate. The script is idempotent and only creates symlinks to the main checkout's files. Do not hand-roll an `ln -s` instead. If the call is denied, do not work around it: continue, and put `DB tests unverified locally — .env provisioning denied` in your Step 11 report.
+
+### Command forms that worktree isolation accepts
+
+Claude Code refuses a command from an isolated agent when it can't prove from the text that the command stays in the worktree. Measured in an isolated agent on 2026-10-31 (harness diagnosis item 2; 452 refusals in the 20 days before):
+
+- **Runs:** plain git, alone or joined with `;`, `&&` or `|` (`git rev-parse HEAD && git status`); `cd <literal path> && git …`; `git -C <literal path> …`; `/usr/bin/git …`; `bash <script file>`. The contents of a script file are not inspected.
+- **Refused:** any `$` value anywhere in a command that names git, even one unrelated to git: `$?`, `$(git …)`, `$VAR` (`git rev-parse HEAD; X=1; echo $X` is refused). Also refused: `bash -c '…'`, sourcing a file (`. lib.sh`), and `sed` with a `$` in its program.
+- **Still fine:** a quoted heredoc as a value (`git commit -m "$(cat <<'EOF' … EOF )"`), and `$` values in commands that don't name git.
+
+So run each git command on its own and type its output back literally where a later command needs it. Never append `echo $?`, because the Bash tool already reports the exit code. Put anything that needs variables or loops in a script file and run it with `bash <file>`. The snippets in this file follow these rules, and `.claude/hooks/test-executor-isolation-forms.sh` keeps them that way.
 
 ### LSP warm-up (mandatory)
 
@@ -65,7 +75,7 @@ Check whether this todo is eligible for execution:
 2. **Dependency check**: If the Dependencies section lists other todo files, check whether each specific dependency filename exists as a file at `todos/<dependency-filename>.md`. If it exists (not moved to `todos/archive/`), the dependency is still pending — report `blocked` with the list of blocking todo filenames and stop.
    - Dependencies that reference external services, APIs, or non-todo items are not blocking.
 3. **Legacy delegation gate**: If the todo has a `github_issue` frontmatter value, it predates the removal of the Copilot delegation pipeline (deleted 2026-07). Report `skipped` with reason `legacy github_issue todo: <url> — needs manual triage` unless the orchestrator explicitly tells you this is a manual takeover.
-4. **Remote-branch probe** — a ~1s collision pre-check that catches an already-implemented todo BEFORE the researcher/implementation/preflight pipeline runs instead of at Step 10 push time. Run `git ls-remote --heads origin todo/<todo-slug>` (`<todo-slug>` = the todo filename minus `.md`, exactly as Step 10 defines it). This uses git transport, not the `gh` API, so it works precisely in the degraded case where Phase 2's awaiting-batch-merge skip was bypassed. Read the result by output AND exit code: **no output with exit code 0** → the branch doesn't exist → proceed. **Non-zero exit** (network/auth failure — `git ls-remote` also prints nothing then) → the probe is INCONCLUSIVE, not a green light — proceed, but note the failed probe; Step 10's push-collision triage remains the backstop. **Any output** → the branch exists: run Step 10's collision triage NOW (`gh pr list --head todo/<todo-slug> --state all --json number,url,state` and the same five outcomes with the same `REASON_CODE`s — open PR → `skipped` OPEN_PR_COLLISION, all PRs MERGED → `skipped` STALE_BRANCH_MERGED, a PR closed without merging → `blocked` PR_CLOSED_UNMERGED reason verbatim, no PR → `blocked` orphan reason verbatim, check failed → `blocked` unknown-state reason verbatim) and stop before doing any work. Probe-context wording (no push was attempted here, so "at a diverged commit"/"Cannot fast-forward" would be unverified claims — keep every ACTION NEEDED tail verbatim): in the orphan reason, replace "already exists at a diverged commit with NO PR — an orphan from an interrupted run. Cannot fast-forward, and" with "already exists with NO PR — an orphan from an interrupted run (found by the pre-work probe), and"; in the unknown-state reason, replace "already exists at a diverged commit and the PR check itself failed — open-PR state UNKNOWN. Cannot fast-forward, and" with "already exists (found by the pre-work probe) and the PR check itself failed — open-PR state UNKNOWN, and". Step 10's handler remains the backstop for a branch that appears mid-run.
+4. **Remote-branch probe** — a ~1s collision pre-check that catches an already-implemented todo BEFORE the researcher/implementation/preflight pipeline runs instead of at Step 10 push time. Run `git ls-remote --heads origin todo/<todo-slug>` as its own command. The Bash tool reports its exit code, so don't append `echo $?`: worktree isolation refuses that form. (`<todo-slug>` = the todo filename minus `.md`, exactly as Step 10 defines it). This uses git transport, not the `gh` API, so it works precisely in the degraded case where Phase 2's awaiting-batch-merge skip was bypassed. Read the result by output AND exit code: **no output with exit code 0** → the branch doesn't exist → proceed. **Non-zero exit** (network/auth failure — `git ls-remote` also prints nothing then) → the probe is INCONCLUSIVE, not a green light — proceed, but note the failed probe; Step 10's push-collision triage remains the backstop. **Any output** → the branch exists: run Step 10's collision triage NOW (`gh pr list --head todo/<todo-slug> --state all --json number,url,state` and the same five outcomes with the same `REASON_CODE`s — open PR → `skipped` OPEN_PR_COLLISION, all PRs MERGED → `skipped` STALE_BRANCH_MERGED, a PR closed without merging → `blocked` PR_CLOSED_UNMERGED reason verbatim, no PR → `blocked` orphan reason verbatim, check failed → `blocked` unknown-state reason verbatim) and stop before doing any work. Probe-context wording (no push was attempted here, so "at a diverged commit"/"Cannot fast-forward" would be unverified claims — keep every ACTION NEEDED tail verbatim): in the orphan reason, replace "already exists at a diverged commit with NO PR — an orphan from an interrupted run. Cannot fast-forward, and" with "already exists with NO PR — an orphan from an interrupted run (found by the pre-work probe), and"; in the unknown-state reason, replace "already exists at a diverged commit and the PR check itself failed — open-PR state UNKNOWN. Cannot fast-forward, and" with "already exists (found by the pre-work probe) and the PR check itself failed — open-PR state UNKNOWN, and". Step 10's handler remains the backstop for a branch that appears mid-run.
 
 ---
 
@@ -322,24 +332,25 @@ Review the working-tree changes using the **orchestrator-dispatched, domain-sele
 Capture the diff **and the worktree coordinates** in your own (correct) cwd — you run inside the todo worktree; a dispatched reviewer subagent does **not** inherit that cwd (see Review Policy → "Working-tree safety"):
 
 ```bash
-BASE=$(git merge-base origin/<base branch from your spawn prompt> HEAD)
-DIFF=$(git diff "$BASE"...HEAD -- .)
-WORKTREE=$(git rev-parse --show-toplevel)      # absolute path of THIS worktree
-BRANCH=$(git branch --show-current)            # the todo/<slug> branch
-HEAD_SHORT=$(git rev-parse --short HEAD)
-git diff "$BASE"...HEAD --name-only             # the changed-file list to hand each reviewer
+git merge-base origin/<base branch from your spawn prompt> HEAD   # BASE
+git rev-parse --show-toplevel                                     # WORKTREE: absolute path of THIS worktree
+git branch --show-current                                         # BRANCH: the todo/<slug> branch
+git rev-parse --short HEAD                                        # HEAD_SHORT
+git diff <BASE>...HEAD --name-only                                # the changed-file list to hand each reviewer
 ```
+
+Run each line as its own command and type its output back literally where this step and later ones say `$BASE`, `$WORKTREE`, `$BRANCH` or `$HEAD_SHORT` (see Step 0, "Command forms that worktree isolation accepts"). `git diff <BASE>...HEAD -- .` shows the diff itself when you need it.
 
 This is a **branch** review (`$BASE...HEAD`), not a working-tree one, because the commit gate already
 committed the implementation — `git diff HEAD` would now be empty and every reviewer would
 correctly return "No findings." on a diff of nothing. The Review Policy's dispatch prompt already
 carries the branch-review spelling; use it.
 
-If `$DIFF` is empty, skip and set `review_output=""`.
+If the diff is empty (the `--name-only` list printed nothing), skip and set `review_output=""`.
 
 Otherwise:
 
-1. **Inspect the diff** (`git diff "$BASE"...HEAD -- .`) — file paths **and** content.
+1. **Inspect the diff** (`git diff <BASE>...HEAD -- .`) — file paths **and** content.
 2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain reviewers** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match reviewers by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a route, Drizzle query, or service-layering change → add `server-reviewer`; a screen, camera, accessibility, or client-perf change → add `mobile-reviewer`; an AI-service or nutrition-calculation change → add `ai-reviewer`; `any`/Zod/testing changes are already the `code-reviewer` baseline's lens). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
 3. **Dispatch the selected reviewers in parallel** (one Agent call each, **each with `run_in_background: false`**, in a single message — a backgrounded reviewer strands you, see Step 5b), using the **short form** from `docs/AI_WORKFLOW.md` → Review Policy: the prompt is `REVIEW-DISPATCH worktree=<literal $WORKTREE path> base=origin/<base branch from your spawn prompt>` plus that section's "If you can read this line" sentence, and the `review-dispatch` mod fills in the contract (branch, HEAD, file list). List `code-reviewer` first — the mod refuses a domain reviewer dispatched before it. Use `todo: <todo title>` as the Agent description. Only if a reviewer replies "review-dispatch mod not loaded", re-dispatch with the full template from that file, substituting the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT` and the changed-file list. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why. If the todo carries a **Scope Contract** section, paste it verbatim into every reviewer prompt (below the `REVIEW-DISPATCH` line — the mod passes those lines on), along with your Step 4 tracked list of any out-of-contract files and their AC-tied reasons (empty if none), appending: "Diff every added mechanism/file against this Scope Contract. An out-of-contract file is a CRITICAL finding UNLESS it appears in the out-of-contract list above with a reason tied to a specific acceptance criterion — verify that reason actually holds (the file is genuinely needed for that AC), not just that it's listed; a listed-but-unnecessary file is still CRITICAL."
 
@@ -667,32 +678,25 @@ Todo: `todos/<filename>.md` (archived in this commit)
    short — the record then passes on verdict and fails on scope
    (`docs/solutions/code-quality/an-archive-move-git-reads-as-delete-plus-add-mis-scopes-the-review-stamp-2026-09-17.md`).
 
-   ```bash
-   PR=<pr-number>
-   HEAD_SHA=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
-   CHANGED=$(gh pr diff "$PR" --name-only | sed '/^$/d' | sort -u)
-   WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum | cut -c1-16)
-   ```
-
-   **Check first — does a record already bind this head?** Run step c's `$MATCH` command now, and
-   list the records at this head that would block the merge, by the gate's own rule (any record
-   for this head that is unreadable or not clean/advisory with an empty `unresolved` denies,
-   whatever else is recorded):
+   One script does steps a and c with the gate's own commands and rules. Run it from the worktree
+   root, as its own command:
 
    ```bash
-   DIR=$( cd "$WORKTREE" && . .claude/hooks/lib/review-stamp-path.sh && review_stamp_dir "$HEAD_SHA" )
-   OBJECTING=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null | while IFS= read -r f; do
-     # unreadable, or no head_sha: the gate denies on it, so name it by its file
-     jq -e '(.head_sha // "") != ""' "$f" >/dev/null 2>&1 || { basename "$f" .json; continue; }
-     jq -r --arg s "$HEAD_SHA" 'select(.head_sha == $s and
-       ((.verdict == "clean" or .verdict == "advisory") and ((.unresolved // []) | length) == 0 | not))
-       | .agent_type // "unknown"' "$f"
-   done)
+   bash scripts/review-record-status.sh <pr-number>
    ```
 
-   - `$MATCH` set and `$OBJECTING` empty → the Step 6 record binds the head. Skip b–d and report
-     `REVIEW_STAMP: <verdict from $MATCH> (Step 6 record, head unchanged)`.
-   - `$OBJECTING` names a reviewer → its Step 6 record blocks this head (a CRITICAL is Step 7's
+   It prints `head_sha=` (from `gh pr view`), `digest=` (`gh pr diff --name-only | sed '/^$/d' |
+sort -u | shasum | cut -c1-16`), `match=` (`<verdict> <agent_type>` of a record for this head
+   that is clean or advisory, has an empty `unresolved`, and carries that digest) and `objecting=`
+   (each record for this head that would deny the merge by the gate's own rule: not
+   clean/advisory, or something unresolved. An unreadable record is named by its file). Exit 3
+   means `gh` could not answer: re-run once, then treat it as a miss (step d). Below, `$HEAD_SHA`,
+   `$MATCH` and `$OBJECTING` mean those printed values.
+
+   **Check first — does a record already bind this head?** Run the script now, before step b:
+   - `match=` set and `objecting=` empty → the Step 6 record binds the head. Skip b–d and report
+     `REVIEW_STAMP: <verdict from match=> (Step 6 record, head unchanged)`.
+   - `objecting=` names a reviewer → its Step 6 record blocks this head (a CRITICAL is Step 7's
      Failure Path, so this is a deferred finding recorded as `findings`). A confirmation by
      anyone else cannot clear it. In step b, dispatch **that reviewer** instead of
      `code-reviewer`: the writer keeps one file per reviewer per head, so its fresh record
@@ -704,7 +708,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
    short form `REVIEW-DISPATCH worktree=<worktree path> base=origin/<base branch> pr=<pr-number>`
    (plus the "If you can read this line" sentence) — `pr=` makes the mod take the file list from
    `gh pr diff`, the gate's own command. Only if it replies "review-dispatch mod not loaded", use
-   the full dispatch prompt from `docs/AI_WORKFLOW.md` → Review Policy, with `$CHANGED` verbatim as the changed-file list and
+   the full dispatch prompt from `docs/AI_WORKFLOW.md` → Review Policy, with the list `gh pr diff <pr-number> --name-only` prints, verbatim, as the changed-file list and
    `git -C "<worktree path>" diff origin/<base branch from your spawn prompt>...HEAD -- <those files>`
    as the diff command, with both values written out literally: the reviewer cannot expand your
    shell variables, and `$BASE` from Step 6 does not survive into this step's shell (the three-dot
@@ -721,19 +725,13 @@ Todo: `todos/<filename>.md` (archived in this commit)
 
    c. **Verify the record landed — measure the property, never assume it.**
 
-   ```bash
-   DIR=$( cd "$WORKTREE" && . .claude/hooks/lib/review-stamp-path.sh && review_stamp_dir "$HEAD_SHA" )
-   MATCH=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null -exec jq -r \
-     --arg d "$WANT_DIGEST" --arg s "$HEAD_SHA" \
-     'select(.head_sha==$s and (.verdict=="clean" or .verdict=="advisory") and ((.unresolved//[])|length)==0 and .reviewed_files_digest==$d) | "\(.verdict) \(.agent_type)"' \
-     {} + 2>/dev/null | head -1)
-   ```
+   Run `bash scripts/review-record-status.sh <pr-number>` again and read `match=`.
 
-   The verdict set here must equal the gate's own set, the `VERDICT` test in
+   The script's verdict set must equal the gate's own set, the `VERDICT` test in
    `merge-review-guard.sh`. A narrower check fails confidently: on an advisory-only review it
    returns empty, spends the step-d re-dispatch for nothing, and reports `none at` for a PR the
-   gate would have let through. If the gate's verdict set ever changes, change this line in the
-   same PR.
+   gate would have let through. If the gate's verdict set ever changes, change the script in the
+   same PR (`.claude/hooks/test-review-record-status.sh` covers both verdicts).
 
    **This check is the regression check for Steps 6–10's ordering.** It asserts the property the
    merge gate actually keys on rather than the position of a heading, so it survives any rewording
@@ -778,9 +776,11 @@ Todo: `todos/<filename>.md` (archived in this commit)
 Before composing the report, capture your worktree path and release your worktree contract:
 
 ```
-WORKTREE=$(git rev-parse --show-toplevel)
-bash scripts/declare-worktree.sh --remove "$WORKTREE"
+pwd                                                     # WORKTREE: your worktree root
+bash scripts/declare-worktree.sh --remove <worktree path>
 ```
+
+Run them as two commands, with the path `pwd` printed typed in literally (see Step 0, "Command forms that worktree isolation accepts").
 
 Report `$WORKTREE` verbatim as `WORKTREE` in every report shape below (success, failure, and skip/block alike — `Agent(isolation:"worktree")` creates your worktree before your first step runs, so even an instant Step-2 skip still occupies one). Under `/todo`'s rolling dispatch (SKILL.md Phase 4), this lets the orchestrator remove each todo's worktree immediately on completion rather than waiting for the whole run to end — with several executors live at once, it can no longer infer which `agent-*` directory just finished from context alone. (`/todo`'s Phase 5 sweep remains as a crash backstop if you exit before this line. `/todo-fast` reads it the same way: it dispatches one executor and removes the reported worktree in its own Step 3.)
 
@@ -862,8 +862,8 @@ are trying to discard. Measured: after a commit-gate commit, `git checkout -- im
 first:
 
 ```bash
-BASE=$(git merge-base origin/<base branch from your spawn prompt> HEAD)
-git reset --mixed "$BASE"            # NEVER --hard; the project forbids it (CLAUDE.md)
+git merge-base origin/<base branch from your spawn prompt> HEAD   # prints BASE
+git reset --mixed <BASE>             # NEVER --hard; the project forbids it (CLAUDE.md)
 ```
 
 `--mixed` moves the branch back to its base and leaves your edits in the working tree — but in
@@ -879,29 +879,28 @@ is the common case, not the corner.
 
 Revert by existence at `$BASE`, not with one blanket command:
 
+For each file you modified (the Step 4 tracked list), one command at a time with the values
+typed in literally (a loop over `$f` is refused by worktree isolation; see Step 0):
+
 ```bash
-for f in <files you modified — the Step 4 tracked list>; do
-  if git cat-file -e "$BASE:$f" 2>/dev/null; then
-    git checkout -- "$f"     # existed at base — restore it
-  else
-    rm -f "$f"               # your attempt created it — remove that ONE named path
-  fi
-done
+git cat-file -e <BASE>:<file>   # exit 0: it existed at base. Non-zero: your attempt created it
+git checkout -- <file>          # existed at base: restore it
+rm -f <file>                    # created by your attempt: remove that ONE named path
 ```
 
-`rm -f "$f"` is a single named path — never `rm -rf`, never a glob; the project forbids the former
+`rm -f <file>` is a single named path — never `rm -rf`, never a glob; the project forbids the former
 outright. If nothing was committed yet, the reset is a harmless no-op and this loop still does the
 right thing. Do not skip either half, and do not substitute `--hard`.
 
 ### First failure
 
-1. **Unwind, then revert only files you modified**: run the `git reset --mixed "$BASE"` above, then the existence-split loop above over the list tracked in Step 4 (which must include `todos/<filename>.md`, since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes. Without the reset, attempt 2 starts on top of attempt 1: any file attempt 2 does not revisit silently keeps attempt 1's committed content and rides into the PR.
+1. **Unwind, then revert only files you modified**: run the `git reset --mixed <BASE>` above, then the existence check above, file by file, over the list tracked in Step 4 (which must include `todos/<filename>.md`, since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes. Without the reset, attempt 2 starts on top of attempt 1: any file attempt 2 does not revisit silently keeps attempt 1's committed content and rides into the PR.
 2. **Analyze** what went wrong. Re-read the error output, the todo, and the relevant source files.
 3. **Retry** with a different approach — go back to Step 4 with the new understanding. This is attempt 2.
 
 ### Second failure
 
-1. **Unwind, then revert only files you modified**: run the same `git reset --mixed "$BASE"` and the same existence-split loop as above, over the list tracked in Step 4 (which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes. The reset is what makes step 3's "commit only the status update" true — without it the branch still carries both failed attempts' commits.
+1. **Unwind, then revert only files you modified**: run the same `git reset --mixed <BASE>` and the same file-by-file existence check as above, over the list tracked in Step 4 (which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes. The reset is what makes step 3's "commit only the status update" true — without it the branch still carries both failed attempts' commits.
 2. **Update the todo** status to `blocked` and add a dated Updates entry explaining the failure:
 
 ```yaml
