@@ -3,7 +3,7 @@ title: "Move the 6 Gesture.* builder calls to gesture-handler 3's hook API"
 status: backlog
 priority: low
 created: 2026-10-30
-updated: 2026-10-30
+updated: 2026-10-31
 assignee:
 labels: [deferred, client]
 github_issue:
@@ -55,3 +55,7 @@ Callbacks that run as worklets need the guard update in the same PR, otherwise t
 ### 2026-10-30
 
 - Filed by the SDK 58 upgrade (runbook step 4, task 7)
+
+### 2026-10-31
+
+- Owner ruling 2026-10-31: the Android device checks for the P3 todos run as ONE owner phone session after the camera and gesture-handler PRs merge (agent drives adb; owner holds the phone, scans a barcode, listens to TalkBack). The executor ships the code and leaves the device-check AC open for that session (iPhone checks for the camera gestures go in the same session).

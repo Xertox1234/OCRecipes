@@ -3,7 +3,7 @@ title: "Make idempotent offline mutations survive an app restart (setMutationDef
 status: backlog
 priority: low
 created: 2026-10-30
-updated: 2026-10-30
+updated: 2026-10-31
 assignee:
 labels: [deferred, reliability, client-state]
 github_issue:
@@ -59,3 +59,7 @@ TanStack Query v5 docs, guides/mutations.md, "Persist mutations": "we need a def
 ### 2026-10-30
 
 - Initial creation (deferred remainder of reliability audit R19)
+
+### 2026-10-31
+
+- Owner ruling (the product call this todo depended on): **only on/off toggles** survive a restart — grocery check-offs, favourites and similar idempotent / last-write-wins toggles. Creates (duplicate risk), edits, reorders and deletes stay in-memory-paused (documented), not replayed.

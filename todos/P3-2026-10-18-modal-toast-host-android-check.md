@@ -3,7 +3,7 @@ title: "Verify the modal toast host on Android (toast over an open RN Modal shee
 status: backlog
 priority: low
 created: 2026-10-18
-updated: 2026-10-28
+updated: 2026-10-31
 assignee:
 labels: [deferred, mobile, android, verification, toast]
 github_issue:
@@ -67,3 +67,7 @@ On iOS the root toast host lives in a `FullWindowOverlay`, which sits below an R
 - RecipeGenerationModal could not be opened on the phone: it lives only on `PhotoAnalysis` with `intent: "recipe"`, and no app path reaches that with a photo (filed `todos/P2-2026-10-28-photo-intent-choice-dropped-without-photo.md`). Its `<Modal>` uses the same `animationType="slide"` + `presentationStyle="pageSheet"` as the two verified sheets and renders the same `<ModalToastHost />` as its last child, so the two Android passes cover its toast placement. Tapping "Recipe ready" itself was not run on Android.
 - Left: TalkBack announces the toast exactly once — needs the owner's hands (adb taps do not drive TalkBack).
 - TalkBack run PARKED by the owner 2026-10-28 (set up, not run). Recipe that works with the server frozen: load `ocrecipes://recipe/269574` once unfrozen (caches the recipe + cookbooks), then `ocrecipes://chat/113450` → type → `kill -STOP` → send → `ocrecipes://recipe/269574` → "Save to cookbook" → owner turns TalkBack on → `kill -CONT` → owner counts announcements.
+
+### 2026-10-31
+
+- Owner ruling 2026-10-31: the Android device checks for the P3 todos run as ONE owner phone session after the camera and gesture-handler PRs merge (agent drives adb; owner holds the phone, scans a barcode, listens to TalkBack). The TalkBack count (last open AC) runs there. Still human-led; gate fields unchanged.

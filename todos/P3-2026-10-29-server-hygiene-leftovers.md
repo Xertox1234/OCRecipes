@@ -3,7 +3,7 @@ title: "Server leftovers: background work in registerRoutes, verification aggreg
 status: backlog
 priority: low
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-10-31
 assignee:
 labels: [deferred, server]
 github_issue:
@@ -42,3 +42,7 @@ The CHECK constraints need a migration — verify on prod before merge.
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Decision: RECOMPUTE the `barcode_verifications` aggregates on user deletion (not accept-and-document).

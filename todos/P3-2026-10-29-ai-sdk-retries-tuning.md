@@ -3,7 +3,7 @@ title: "Decide the OpenAI SDK retry count for OpenRouter and Vertex clients"
 status: backlog
 priority: low
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-10-31
 assignee:
 labels: [deferred, ai]
 github_issue:
@@ -23,7 +23,7 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] Owner picks maxRetries (0 or 1) per client
+- [x] Owner picks maxRetries (0 or 1) per client — 0 for both (2026-10-31)
 - [ ] Both client constructors set it; a test asserts the option
 
 ## Implementation Notes
@@ -40,3 +40,7 @@ Per-request `maxRetries` overrides the client value if a row needs more.
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Owner ruling: `maxRetries: 0` on BOTH clients (OpenRouter `ai-client.ts` and Vertex `vertex-client.ts`). The fallback provider is the retry; no per-row overrides unless a row is shown to need one.

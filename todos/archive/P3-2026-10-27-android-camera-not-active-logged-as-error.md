@@ -1,9 +1,9 @@
 ---
 title: "Android: CameraX 'Camera is not active' at scan-screen start is logged as an error (Sentry noise)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-27
-updated: 2026-10-27
+updated: 2026-10-31
 assignee:
 labels: [deferred, camera, android]
 github_issue:
@@ -21,7 +21,7 @@ Seen on a Samsung Galaxy A37, Android 16, dev build, 2026-10-27. `dumpsys media.
 
 ## Acceptance Criteria
 
-- [ ] Find which call raises it on start (torch updater, focus, zoom) — logcat with the full stack (`adb logcat | grep -i camerax`).
+- [x] (dropped by owner 2026-10-31) Find which call raises it on start (torch updater, focus, zoom) — logcat with the full stack (`adb logcat | grep -i camerax`).
 - [x] A CameraX `OperationCanceledException` / "Camera is not active" is logged at `warn`, not `error` (no Sentry event, no LogBox overlay); other camera errors still go to `logger.error`.
 - [x] Test covers both branches of the `onError` classification.
 
@@ -45,3 +45,7 @@ Seen on a Samsung Galaxy A37, Android 16, dev build, 2026-10-27. `dumpsys media.
 
 - Implemented AC #2 and #3: `isBenignCameraCancel` in `CameraView.tsx` routes `OperationCanceledException` / "Camera is not active" to `logger.warn` (own once-per-mount latch; the error latch is untouched). Two tests added.
 - AC #1 (which call raises it, via `adb logcat` stack) NOT done: the phone was in use by another agent. The fix classifies by exception class/message, so it does not depend on the answer. Todo kept open (not archived) for the logcat check.
+
+### 2026-10-31
+
+- Owner ruling: AC #1 (which CameraX call raises it) DROPPED — the fix classifies by exception class/message, so it does not depend on the answer. Archived.
