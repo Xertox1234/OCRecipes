@@ -52,4 +52,22 @@ if [ "$PROF_CODE" != "200" ]; then
   exit 1
 fi
 
-echo "seeded $USERNAME (onboardingCompleted=true)"
+# PREMIUM=1: also make the account premium. The nightly receipt-upload flow signs in as a
+# second account seeded this way (e2epremium; harness diagnosis N6): the receipt scanner is a
+# premium feature, and the shared test account must stay free, because premium changes the
+# Coach tab's first screen (client/navigation/coachInitialRoute.ts) that other flows assert.
+# No expiry = active (shared/types/premium.ts resolveEffectiveTier). Straight to the run's own
+# throwaway Postgres: there is no API that grants premium without a store receipt. The row is
+# read back so a silent no-op fails here.
+TIER_NOTE=""
+if [ "${PREMIUM:-}" = "1" ]; then
+  TIER=$(psql "${DATABASE_URL:?DATABASE_URL is required to grant premium}" -tAc \
+    "UPDATE users SET subscription_tier = 'premium', subscription_expires_at = NULL WHERE username = '$USERNAME' RETURNING subscription_tier;" 2>&1)
+  if [ "$(printf '%s' "$TIER" | head -1)" != "premium" ]; then
+    echo "::error::Seed premium grant for $USERNAME did not take effect: $TIER"
+    exit 1
+  fi
+  TIER_NOTE=", premium"
+fi
+
+echo "seeded $USERNAME (onboardingCompleted=true$TIER_NOTE)"

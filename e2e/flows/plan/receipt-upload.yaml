@@ -1,0 +1,110 @@
+appId: com.ocrecipes.app
+name: "Plan - Receipt photo upload reaches the server"
+tags:
+  - regression
+  - plan
+  - upload
+env:
+  # Its own premium account, seeded by e2e-regression.yml (seed-e2e-user.sh with PREMIUM=1). The
+  # shared USERNAME account stays free: premium changes the Coach tab's first screen, which the
+  # chat and tab flows assert.
+  PREMIUM_USERNAME: e2epremium
+  PASSWORD: ${PASSWORD}
+# Sign the premium account out however the flow ended (pass or fail), so the flows after this one
+# sign in as the shared free account. The relaunch first leaves any picker or capture screen.
+onFlowComplete:
+  - runFlow: ../../helpers/launch-app.yaml
+  - runFlow: ../../helpers/ensure-logged-out.yaml
+---
+# Harness diagnosis N6, part B: a real photo upload every night, on both platforms. The SDK 57
+# upgrade (#1549) broke the FormData uploads (receipt, menu, cook photo) on both platforms for 4
+# days: the new global fetch threw on the file part before any request left the phone, and no
+# flow uploaded anything. This one picks a photo from the gallery and sends it through the receipt
+# scan, the same FormData path.
+#
+# Needs (set up by e2e-regression.yml): a premium account (scripts/ci/seed-e2e-user.sh; the
+# receipt scanner is a premium feature), and the server's OpenAI base URL points at
+# scripts/ci/stub-openai.mjs, which answers the receipt request with one item, "E2E Avocado
+# Nine". That name appearing on the review screen means the photo left the phone, reached the
+# server and came back analysed. A broken upload ends on the review screen's "Try again" state
+# instead, and stub-openai.log (in the job's logs artifact) shows no receipt request.
+#
+# The flow stops at the review screen without adding the item, so the pantry stays empty for the
+# per-flow retry.
+- runFlow: ../../helpers/launch-app.yaml
+# An earlier flow may have left the shared account signed in.
+- runFlow: ../../helpers/ensure-logged-out.yaml
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${PREMIUM_USERNAME}
+      PASSWORD: ${PASSWORD}
+
+- addMedia:
+    - "../../assets/receipt.jpg"
+
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-plan"
+# The Pantry row's a11y label grows a suffix when items are near expiry (see meal-plan-home.yaml).
+- extendedWaitUntil:
+    visible: 'Pantry(, \d+ expiring)?'
+    timeout: 15000
+- tapOn: 'Pantry(, \d+ expiring)?'
+
+# An empty pantry offers "Scan a Receipt"; a non-empty one has the header button instead.
+- extendedWaitUntil:
+    visible: "Scan a Receipt|Scan receipt to add items"
+    timeout: 15000
+- tapOn: "Scan a Receipt|Scan receipt to add items"
+
+# The gallery button exists only once camera permission is granted (ReceiptCaptureScreen). On a
+# fresh simulator the screen first offers "Grant camera permission"; the system dialog's wording
+# differs by platform and OS version.
+- tapOn:
+    text: "Grant camera permission"
+    optional: true
+- tapOn:
+    text: "Allow|OK|While using the app|Only this time"
+    optional: true
+- extendedWaitUntil:
+    visible: "Pick from gallery"
+    timeout: 15000
+- tapOn: "Pick from gallery"
+
+# The system photo picker; both platforms expose it to Maestro (labels from the CI dumps of run
+# 41339379416). iOS labels each cell "Photo, <date>, <time>" and gives only photos from this year
+# no year, so the full-match regex picks the photo added above and not the simulator's stock ones
+# (nor the grid, whose label joins them all). iOS puts a narrow no-break space before AM/PM, hence
+# the "." there. The check button is "Done".
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible: 'Photo, \w+ \d{2}, \d{1,2}:\d{2}.[AP]M'
+          timeout: 15000
+      - tapOn: 'Photo, \w+ \d{2}, \d{1,2}:\d{2}.[AP]M'
+      - tapOn: "Done"
+# Android labels the cell "Photo taken on <date>" (the "Photos" tab above it must not match), and
+# a multi-select picker confirms with an add button that carries the count.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          visible: "Photo taken on .*"
+          timeout: 15000
+      - tapOn: "Photo taken on .*"
+      - tapOn: "Add.*"
+
+- extendedWaitUntil:
+    visible: "Done with 1 photo"
+    timeout: 15000
+- tapOn: "Done with 1 photo"
+
+# Upload + the stand-in's answer + navigation. Generous: CI runners are slow.
+- extendedWaitUntil:
+    visible: "Item name: E2E Avocado Nine"
+    timeout: 90000
