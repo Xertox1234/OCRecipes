@@ -678,6 +678,7 @@ WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum 2>/dev/null | cut -c1-16)
   || deny "Blocked: could not compute the changed-file digest for PR #$PR (shasum unavailable). Fail-closed. $BYPASS"
 
 MATCHED=""
+SCOPED_OTHER=""   # a clean in-scope record exists, but not from code-reviewer (set -u safe)
 while IFS= read -r rec; do
   [ -z "$rec" ] && continue
   # AN UNREADABLE RECORD IS NOT AN ABSENT ONE. This test used to be a bare `continue`, which
@@ -752,8 +753,21 @@ while IFS= read -r rec; do
   # Scope decides only whether this record SATISFIES the requirement — reached only after
   # the objection test above, so a mismatch can never skip a findings record.
   [ "$(jq -r '.reviewed_files_digest // empty' "$rec" 2>/dev/null)" = "$WANT_DIGEST" ] || continue
-  MATCHED=1
+
+  # Only a code-reviewer record SATISFIES the requirement (todo 2026-10-31). A clean,
+  # digest-matching record from a domain reviewer alone is not enough: the review set may have
+  # left out the baseline. This sits AFTER the objection and scope tests on purpose, so a
+  # findings record from ANY reviewer has already denied above — agent_type never skips a record
+  # before its verdict is read. A missing/unreadable agent_type is not code-reviewer.
+  if [ "$(jq -r '.agent_type // empty' "$rec" 2>/dev/null)" = "code-reviewer" ]; then
+    MATCHED=1
+  else
+    SCOPED_OTHER=1
+  fi
 done <<< "$RECORDS"
+
+[ -z "$MATCHED" ] && [ -n "$SCOPED_OTHER" ] \
+  && deny "Blocked: PR #$PR has a clean review record for head ${HEAD_SHA:0:7} scoped to its changed files, but none from code-reviewer — the baseline reviewer. A domain reviewer's record alone does not satisfy the gate. Dispatch code-reviewer against this exact commit (head ${HEAD_SHA:0:7}) with pr=$PR and the PR's gh pr diff $PR --name-only list; its report must carry the full 40-character REVIEWED-SHA and a REVIEWED-FILES block. $BYPASS"
 
 [ -n "$MATCHED" ] \
   || deny "Blocked: $(printf '%s\n' "$RECORDS" | wc -l | tr -d ' ') review record(s) exist for head ${HEAD_SHA:0:7}, but none was scoped to PR #$PR's changed files (this diff's digest over $(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ') file(s) is ${WANT_DIGEST}). The recorded review covered a different file set, so its verdict says nothing about this diff. Re-review this commit's actual changed files. $BYPASS"
