@@ -610,10 +610,14 @@ fi
 # #504): the call is spawned and the script moves on immediately without waiting on it.
 # PATTERN_INJECT_NO_LOG=1 is a hard kill switch (skips even spawning the subprocess).
 # stdout/stderr are redirected away so a logging failure can never surface in hook output.
+# The redirect sits on the GROUP, not the inner command: a backgrounded `{ …; }` is a subshell
+# that keeps its own copy of the hook's stdout until the log write ends, and Claude Code then
+# refuses this injecting hook ("stdio went quiet before end-of-stream") — measured 6.4s held
+# open against an unreachable lab DB (harness diagnosis item 3).
 if [ "${PATTERN_INJECT_NO_LOG:-0}" != "1" ] && [ -n "$LOG_TSV" ]; then
   LOG_SCRIPT="$PROJECT_ROOT/scripts/pg-lab/log-injection.sh"
   if [ -f "$LOG_SCRIPT" ]; then
-    { printf '%s' "$LOG_TSV" | bash "$LOG_SCRIPT" >/dev/null 2>&1; } &
+    { printf '%s' "$LOG_TSV" | bash "$LOG_SCRIPT"; } >/dev/null 2>&1 </dev/null &
     disown 2>/dev/null || true
   fi
 fi
