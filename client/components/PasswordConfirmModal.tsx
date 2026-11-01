@@ -1,14 +1,7 @@
 import React, { useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-} from "react-native";
+import { StyleSheet, View } from "react-native";
 
-import { ThemedText } from "@/components/ThemedText";
+import { CenteredDialog } from "@/components/CenteredDialog";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
@@ -18,8 +11,7 @@ import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import { useHaptics } from "@/hooks/useHaptics";
 import { ENTER_PASSWORD, ENTER_TWO_STEP_CODE } from "@/lib/second-factor-utils";
 import type { SecondFactorInput } from "@shared/types/auth";
-import { useTheme } from "@/hooks/useTheme";
-import { AbsoluteFill, BorderRadius, Spacing } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 
 interface PasswordConfirmModalProps {
   visible: boolean;
@@ -52,7 +44,6 @@ export function PasswordConfirmModal({
   askCode = false,
 }: PasswordConfirmModalProps) {
   const twoStepEmail = useSignedInEmailCode();
-  const { theme } = useTheme();
   const haptics = useHaptics();
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -92,110 +83,65 @@ export function PasswordConfirmModal({
   };
 
   return (
-    <Modal
+    <CenteredDialog
       visible={visible}
-      transparent
-      animationType="fade"
       onRequestClose={cancel}
+      backdropTestID="password-confirm-backdrop"
+      title={title}
+      message={message}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.kav}
-      >
-        <Pressable
-          // hardcoded — modal backdrops use a fixed dim regardless of theme
-          style={[styles.backdrop, { backgroundColor: "rgba(0,0,0,0.55)" }]}
-          onPress={cancel}
-          testID="password-confirm-backdrop"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
+      <View style={styles.fields}>
+        <TextInput
+          leftIcon="lock"
+          rightIcon={showPassword ? "eye-off" : "eye"}
+          rightIconAccessibilityLabel={
+            showPassword ? "Hide password" : "Show password"
+          }
+          onRightIconPress={() => setShowPassword((s) => !s)}
+          label="Password"
+          value={password}
+          onChangeText={(text) => {
+            setPassword(text);
+            setRejectError(null);
+          }}
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
+          autoComplete="current-password"
+          textContentType="password"
+          returnKeyType="go"
+          onSubmitEditing={submit}
+          editable={!busy}
+          error={!!error || rejectError === ENTER_PASSWORD}
         />
-        <View style={styles.center} pointerEvents="box-none">
-          <View
-            accessibilityViewIsModal
-            style={[
-              styles.card,
-              {
-                backgroundColor: theme.backgroundDefault,
-                borderColor: theme.border,
-              },
-            ]}
+        {askCode ? (
+          <SecondFactorField
+            onChange={setFactor}
+            busy={busy}
+            autoFocus={false}
+            emailCode={twoStepEmail}
+          />
+        ) : null}
+        <InlineError message={rejectError ?? error} shakeKey={shakeKey} />
+        <View style={styles.buttons}>
+          <Button
+            variant="secondary"
+            onPress={cancel}
+            disabled={busy}
+            style={styles.flex}
           >
-            <ThemedText type="h4" accessibilityRole="header">
-              {title}
-            </ThemedText>
-            <ThemedText
-              type="body"
-              style={[styles.message, { color: theme.textSecondary }]}
-            >
-              {message}
-            </ThemedText>
-            <TextInput
-              leftIcon="lock"
-              rightIcon={showPassword ? "eye-off" : "eye"}
-              rightIconAccessibilityLabel={
-                showPassword ? "Hide password" : "Show password"
-              }
-              onRightIconPress={() => setShowPassword((s) => !s)}
-              label="Password"
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                setRejectError(null);
-              }}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              autoComplete="current-password"
-              textContentType="password"
-              returnKeyType="go"
-              onSubmitEditing={submit}
-              editable={!busy}
-              error={!!error || rejectError === ENTER_PASSWORD}
-            />
-            {askCode ? (
-              <SecondFactorField
-                onChange={setFactor}
-                busy={busy}
-                autoFocus={false}
-                emailCode={twoStepEmail}
-              />
-            ) : null}
-            <InlineError message={rejectError ?? error} shakeKey={shakeKey} />
-            <View style={styles.buttons}>
-              <Button
-                variant="secondary"
-                onPress={cancel}
-                disabled={busy}
-                style={styles.flex}
-              >
-                Cancel
-              </Button>
-              <Button onPress={submit} loading={busy} style={styles.flex}>
-                Continue
-              </Button>
-            </View>
-          </View>
+            Cancel
+          </Button>
+          <Button onPress={submit} loading={busy} style={styles.flex}>
+            Continue
+          </Button>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </View>
+    </CenteredDialog>
   );
 }
 
 const styles = StyleSheet.create({
-  kav: { flex: 1 },
-  backdrop: { ...AbsoluteFill },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: Spacing.lg,
-  },
-  card: {
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    padding: Spacing.lg,
-    gap: Spacing.md,
-  },
-  message: { lineHeight: 20 },
+  fields: { gap: Spacing.md },
   buttons: { flexDirection: "row", gap: Spacing.md },
   flex: { flex: 1 },
 });
