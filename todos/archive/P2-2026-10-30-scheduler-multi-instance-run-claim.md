@@ -1,6 +1,6 @@
 ---
 title: "Notification scheduler: claim each run so multiple server instances cannot double-send"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-30
 updated: 2026-10-30
@@ -51,3 +51,7 @@ with a timing-sensitive advisory lock.
 ### 2026-10-30
 
 - Initial creation (reliability audit N5 residual).
+
+### 2026-11-01
+
+- Implemented: `scheduler_runs` table (migration 0035) + `claimSchedulerRun`; both cron jobs claim (job, nearest-UTC-hour slot) before sending. A failed claim skips the run (fails closed).

@@ -40,6 +40,7 @@ import * as recipeFromChat from "./recipe-from-chat";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
 import * as notificationSendsStorage from "./notification-sends";
+import * as schedulerRunsStorage from "./scheduler-runs";
 import * as canonicalRecipesStorage from "./canonical-recipes";
 import * as tastePicksStorage from "./taste-picks";
 import * as recipeTriesStorage from "./recipe-tries";
@@ -393,6 +394,9 @@ export const storage = {
   // Notification governance ledger
   recordNotificationSend: notificationSendsStorage.recordNotificationSend,
   getLastNotificationSend: notificationSendsStorage.getLastNotificationSend,
+
+  // Scheduler run claims (multi-instance cron dedup)
+  claimSchedulerRun: schedulerRunsStorage.claimSchedulerRun,
 
   // Pending reminders
   createPendingReminder: remindersStorage.createPendingReminder,
