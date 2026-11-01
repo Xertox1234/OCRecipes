@@ -455,9 +455,20 @@ export function register(app: Express): void {
 
         // The same totals the nutrition summary showed — including each
         // ingredient's preparation method — not the raw sum.
-        const { total: totals } = await calculateSessionNutrition(
-          session.ingredients,
-        );
+        const { total: totals, missedLookups } =
+          await calculateSessionNutrition(session.ingredients);
+
+        // Ingredients with no nutrition data count as 0. The user is told
+        // which ones and must agree before the meal is stored.
+        if (missedLookups.length > 0 && !parsed.data.confirmMissedLookups) {
+          return sendError(
+            res,
+            409,
+            "Some ingredients have no nutrition data and would be logged as 0",
+            ErrorCode.CONFLICT,
+            { missedLookups },
+          );
+        }
 
         // Composite product name (like photos.ts line 430)
         const productName = session.ingredients.map((i) => i.name).join(", ");

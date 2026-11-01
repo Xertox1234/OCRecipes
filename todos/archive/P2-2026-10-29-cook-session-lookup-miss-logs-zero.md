@@ -1,9 +1,9 @@
 ---
 title: "A cook session whose nutrition lookups miss logs 0 kcal silently"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-11-01
 assignee:
 labels: [deferred, nutrition, data-integrity]
 github_issue:
@@ -23,9 +23,9 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] The nutrition summary flags ingredients whose lookup missed
-- [ ] Logging a session with missed lookups either asks for confirmation or marks the stored item as partial (owner picks)
-- [ ] Tests cover an all-miss and a partial-miss session
+- [x] The nutrition summary flags ingredients whose lookup missed
+- [x] Logging a session with missed lookups either asks for confirmation or marks the stored item as partial (owner picked: ask first)
+- [x] Tests cover an all-miss and a partial-miss session
 
 ## Implementation Notes
 
@@ -41,3 +41,11 @@ Since commit d3ffa08a, /log stores `calculateSessionNutrition(...).total`, so th
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Owner decision (given to the orchestrator in-session): ASK FIRST. Before a cook session with missed nutrition lookups is logged, the user is told which ingredients were not found and must confirm. The "mark as partial" alternative is not implemented.
+
+### 2026-11-01
+
+- Implemented: the summary carries `lookupMissed` per item and `missedLookups` names; `/log` returns 409 with `missedLookups` unless `confirmMissedLookups: true`; the review screen shows the missing names and asks "Log anyway?" before logging.
