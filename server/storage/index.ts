@@ -261,6 +261,7 @@ export const storage = {
   logRecipeGeneration: community.logRecipeGeneration,
   logRecipeGenerationWithLimitCheck:
     community.logRecipeGenerationWithLimitCheck,
+  claimDailyAiCall: community.claimDailyAiCall,
   getCommunityRecipes: community.getCommunityRecipes,
   createCommunityRecipe: community.createCommunityRecipe,
   createRecipeWithLimitCheck: community.createRecipeWithLimitCheck,

@@ -145,6 +145,7 @@ export async function createRecipeWithLimitCheck(
       .where(
         and(
           eq(recipeGenerationLog.userId, userId),
+          eq(recipeGenerationLog.kind, "recipe"),
           gte(recipeGenerationLog.generatedAt, startOfDay),
           lt(recipeGenerationLog.generatedAt, endOfDay),
         ),

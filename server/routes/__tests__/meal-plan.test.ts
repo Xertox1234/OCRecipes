@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
+import { generateRecipeImage } from "../../services/recipe-generation";
 import express from "express";
 import request from "supertest";
 
@@ -19,6 +21,7 @@ import {
 
 vi.mock("../../storage", () => ({
   storage: {
+    claimDailyAiCall: vi.fn(),
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     getUserMealPlanRecipes: vi.fn(),
@@ -97,6 +100,7 @@ describe("Meal Plan Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
@@ -155,6 +159,56 @@ describe("Meal Plan Routes", () => {
   });
 
   describe("POST /api/meal-plan/recipes", () => {
+    it("generates an auto-image for a premium user only until the daily cap is claimed", async () => {
+      mockPremium();
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 2,
+      );
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
+
+      for (let i = 0; i < 3; i++) {
+        const res = await request(app)
+          .post("/api/meal-plan/recipes")
+          .set("Authorization", "Bearer token")
+          .send({
+            title: "Chicken Salad",
+            ingredients: [{ name: "Chicken", quantity: "200", unit: "g" }],
+          });
+        // The save itself is never refused by the image cap.
+        expect(res.status).toBe(201);
+      }
+
+      await vi.waitFor(() => {
+        expect(storage.claimDailyAiCall).toHaveBeenCalledTimes(3);
+      });
+      expect(generateRecipeImage).toHaveBeenCalledTimes(2);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "recipeAutoImage",
+        AI_DAILY_CAPS.recipeAutoImage,
+        expect.any(String),
+      );
+    });
+
+    it("makes no image call and claims nothing for a free user", async () => {
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Chicken Salad",
+          ingredients: [{ name: "Chicken", quantity: "200", unit: "g" }],
+        });
+      expect(res.status).toBe(201);
+
+      // Let the fire-and-forget body settle before asserting a non-event.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
+      expect(generateRecipeImage).not.toHaveBeenCalled();
+    });
+
     it("creates a recipe", async () => {
       vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
 

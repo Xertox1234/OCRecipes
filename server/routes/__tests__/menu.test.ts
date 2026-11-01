@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import express from "express";
 import request from "supertest";
 
@@ -11,6 +12,7 @@ import { installContractSnapshotMiddleware } from "../../lib/contract-snapshot";
 
 vi.mock("../../storage", () => ({
   storage: {
+    claimDailyAiCall: vi.fn(),
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     createMenuScan: vi.fn(),
@@ -82,12 +84,42 @@ describe("Menu Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     simulateNoFile = false;
     app = createApp();
   });
 
   describe("POST /api/menu/scan", () => {
+    it("refuses the (N+1)th scan with 429 before calling the AI service", async () => {
+      mockPremium();
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 2,
+      );
+      vi.mocked(analyzeMenuPhoto).mockResolvedValue({ menuItems: [] });
+      vi.mocked(storage.createMenuScan).mockResolvedValue(
+        createMockMenuScan({ id: 1 }),
+      );
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const res = await request(app)
+          .post("/api/menu/scan")
+          .set("Authorization", "Bearer token");
+        statuses.push(res.status);
+      }
+
+      expect(statuses).toEqual([200, 200, 429]);
+      expect(analyzeMenuPhoto).toHaveBeenCalledTimes(2);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "menuScan",
+        AI_DAILY_CAPS.menuScan,
+        expect.any(String),
+      );
+    });
+
     it("analyzes menu photo and returns result", async () => {
       mockPremium();
       const mockResult: MenuAnalysisResult = {

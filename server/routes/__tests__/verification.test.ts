@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
+import { analyzeFrontLabel } from "../../services/front-label-analysis";
 import express from "express";
 import request from "supertest";
 import { storage } from "../../storage";
@@ -8,6 +10,7 @@ vi.mock("../../storage", async () => {
   const sessions = await import("../../storage/sessions");
   return {
     storage: {
+      claimDailyAiCall: vi.fn(),
       hasUserVerified: vi.fn(),
       getVerification: vi.fn(),
       getVerificationHistory: vi.fn(),
@@ -101,6 +104,7 @@ describe("Verification Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     _testInternals.frontLabelSessionStore.clear();
     // Set mock user "1" as admin for reformulation endpoint tests
     process.env.ADMIN_USER_IDS = "1";
@@ -128,6 +132,32 @@ describe("Verification Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("verify the nutrition label");
+    });
+
+    it("refuses the (N+1)th scan with 429 before calling the vision service", async () => {
+      vi.mocked(storage.hasUserVerified).mockResolvedValue(true);
+      // Cap of 1: the in-memory session store allows 3 per user across this file.
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 1,
+      );
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 2; i++) {
+        const res = await request(app)
+          .post("/api/verification/front-label")
+          .send({ barcode: "1234567890" });
+        statuses.push(res.status);
+      }
+
+      expect(statuses).toEqual([200, 429]);
+      expect(analyzeFrontLabel).toHaveBeenCalledTimes(1);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "frontLabel",
+        AI_DAILY_CAPS.frontLabel,
+        expect.any(String),
+      );
     });
 
     it("returns sessionId and extracted data on success", async () => {

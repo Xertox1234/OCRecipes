@@ -19,6 +19,7 @@ import {
   parseQueryInt,
   parseQueryString,
   parseStringParam,
+  claimAiCallOrReject,
 } from "./_helpers";
 import { crudRateLimit, createRateLimiter } from "./_rate-limiters";
 import { createImageUpload } from "./_upload";
@@ -287,6 +288,18 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
+
+        // Claim BEFORE the vision call: a request refused after the paid call
+        // (the in-memory session cap below) has already cost money.
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "frontLabel",
+            "front-label scan",
+          ))
+        )
+          return;
 
         const imageBase64 = req.file.buffer.toString("base64");
         const data = await analyzeFrontLabel(imageBase64);

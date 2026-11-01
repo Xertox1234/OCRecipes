@@ -11,6 +11,7 @@ import {
   handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
+  claimAiCallOrReject,
 } from "./_helpers";
 import {
   cookbookCoverGenerateRateLimit,
@@ -394,6 +395,16 @@ export function register(app: Express): void {
           sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
           return;
         }
+
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "cookbookCover",
+            "cover generation",
+          ))
+        )
+          return;
 
         // The prompt is derived from the cookbook's stored name and
         // description, never the request body. Both are still user text: what

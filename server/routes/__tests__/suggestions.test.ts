@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import express from "express";
 import request from "supertest";
 
@@ -17,6 +18,7 @@ import {
 
 vi.mock("../../storage", () => ({
   storage: {
+    claimDailyAiCall: vi.fn(),
     getScannedItem: vi.fn(),
     getUserProfile: vi.fn(),
     getSuggestionCache: vi.fn(),
@@ -66,6 +68,7 @@ describe("Suggestions Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
     // Default to premium so existing assertions exercise the happy path;
@@ -119,6 +122,55 @@ describe("Suggestions Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.suggestions).toHaveLength(1);
       expect(res.body.cacheId).toBe(10);
+    });
+
+    it("refuses the (N+1)th cache-miss with 429 before calling the AI service", async () => {
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 2,
+      );
+      vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getSuggestionCache).mockResolvedValue(undefined);
+      vi.mocked(generateSuggestions).mockResolvedValue([
+        { type: "recipe", title: "Yogurt Bowl", description: "" },
+      ]);
+      vi.mocked(storage.createSuggestionCache).mockResolvedValue(
+        createMockSuggestionCache({ id: 11 }),
+      );
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const res = await request(app)
+          .post("/api/items/1/suggestions")
+          .set("Authorization", "Bearer token");
+        statuses.push(res.status);
+      }
+
+      expect(statuses).toEqual([200, 200, 429]);
+      expect(generateSuggestions).toHaveBeenCalledTimes(2);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "itemSuggestion",
+        AI_DAILY_CAPS.itemSuggestion,
+        expect.any(String),
+      );
+    });
+
+    it("does not claim a call when the suggestions come from cache", async () => {
+      vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getSuggestionCache).mockResolvedValue(
+        createMockSuggestionCache({ id: 11 }),
+      );
+
+      const res = await request(app)
+        .post("/api/items/1/suggestions")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(storage.claimDailyAiCall).not.toHaveBeenCalled();
+      expect(generateSuggestions).not.toHaveBeenCalled();
     });
 
     it("generates suggestions on cache miss", async () => {
@@ -215,6 +267,34 @@ describe("Suggestions Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.instructions).toContain("Mix yogurt");
+    });
+
+    it("refuses the (N+1)th instruction generation with 429 before calling the AI service", async () => {
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 2,
+      );
+      vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
+      vi.mocked(storage.getInstructionCache).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(generateInstructions).mockResolvedValue("Step 1: Mix...");
+      vi.mocked(storage.createInstructionCache).mockResolvedValue(undefined);
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const res = await request(app)
+          .post("/api/items/1/suggestions/0/instructions")
+          .set("Authorization", "Bearer token")
+          .send({
+            suggestionTitle: "Yogurt Bowl",
+            suggestionType: "recipe",
+            cacheId: 10,
+          });
+        statuses.push(res.status);
+      }
+
+      expect(statuses).toEqual([200, 200, 429]);
+      expect(generateInstructions).toHaveBeenCalledTimes(2);
     });
 
     it("generates instructions on cache miss", async () => {
