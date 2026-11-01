@@ -21,6 +21,10 @@
 #   went unnoticed for a month under that assumption) — a failed run instead
 #   files/updates a GitHub Issue labelled `e2e-regression-failure` via the
 #   `notify-on-failure` job below, so a red night is visible in the Issues tab.
+#   That issue alone did not get read either (#1041 collected 36 comments; 9 red
+#   nights 10-19 → 10-27 went unseen), so the `nightly-band` mod
+#   (.claude/mods/nightly-band/) also shows a red scheduled run on main above the
+#   Claude Code prompt and tells the agent at session start.
 #
 #   Cost note: the repo is public, so standard GitHub-hosted runners — including
 #   macOS — are free; the previous "manual-only to save paid macOS minutes"
