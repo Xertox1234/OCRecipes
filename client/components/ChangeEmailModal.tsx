@@ -1,17 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Modal,
-  StyleSheet,
-  View,
-  Pressable,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  AccessibilityInfo,
-} from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { StyleSheet, View, Platform, AccessibilityInfo } from "react-native";
 import * as Haptics from "expo-haptics";
 
+import { CenteredDialog } from "@/components/CenteredDialog";
 import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
@@ -19,22 +10,12 @@ import { InlineError } from "@/components/InlineError";
 import { SecondFactorField } from "@/components/SecondFactorField";
 import { useSignedInEmailCode } from "@/hooks/useSignInMethods";
 import type { SecondFactorInput } from "@shared/types/auth";
-import {
-  isSecondFactorRequired,
-  isTwoStepCheckError,
-  secondFactorErrorMessage,
-} from "@/lib/second-factor-utils";
+import { mapReauthError } from "@/lib/second-factor-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
-import {
-  AbsoluteFill,
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 
 interface ChangeEmailModalProps {
   visible: boolean;
@@ -184,28 +165,22 @@ export function ChangeEmailModal({
     } catch (err) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setIsSubmitting(false);
-      if (isSecondFactorRequired(err)) {
+      const mapped = mapReauthError(err);
+      if (mapped) {
         // Right password on a 2FA account: keep it, ask for the code too.
-        setNeedsCode(true);
-        setError("Enter the code we email you.");
+        if (mapped.needsCode) setNeedsCode(true);
+        setError(mapped.message);
+        // A wrong password marks the fields; code prompts and failures do not.
+        if (mapped.wrongPassword) setServerRefused(true);
         return;
       }
-      if (isTwoStepCheckError(err)) {
-        setError(secondFactorErrorMessage(err).message);
-        return;
-      }
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Could not change your email. Please try again.";
+      const message = err instanceof Error ? err.message : "";
       // Map the API's "<status>: <text>" errors to friendlier copy.
-      const friendly = /Invalid credentials/i.test(message)
-        ? "Incorrect password. Please try again."
-        : /already registered|already in use/i.test(message)
-          ? "That email address is already in use."
-          : /^429:/.test(message)
-            ? "Too many attempts. Please wait a while and try again."
-            : "Could not change your email. Please try again.";
+      const friendly = /already registered|already in use/i.test(message)
+        ? "That email address is already in use."
+        : /^429:/.test(message)
+          ? "Too many attempts. Please wait a while and try again."
+          : "Could not change your email. Please try again.";
       // A server error: Error haptic (above), no shake (the input wasn't rejected).
       setError(friendly);
       setServerRefused(true);
@@ -218,269 +193,163 @@ export function ChangeEmailModal({
   }, [isSubmitting, onClose]);
 
   return (
-    <Modal
+    <CenteredDialog
       visible={visible}
-      transparent
-      animationType="fade"
       onRequestClose={handleCancel}
+      backdropLabel="Close change email dialog"
+      dialogLabel="Change email"
+      icon="mail"
+      title="Change email"
+      message="Enter your new email address and your current password. We will send a verification link to the new address."
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.kav}
-      >
-        <Pressable
-          style={[
-            styles.backdrop,
-            // hardcoded — modal backdrops use a fixed dim regardless of theme
-            { backgroundColor: "rgba(0,0,0,0.55)" },
-          ]}
-          onPress={handleCancel}
-          accessibilityLabel="Close change email dialog"
-          accessibilityRole="button"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
+      {currentEmail ? (
+        <ThemedText
+          type="small"
+          style={[styles.currentEmail, { color: theme.textSecondary }]}
+        >
+          Current: {currentEmail}
+        </ThemedText>
+      ) : null}
+
+      {/* The house gap between fields (as on Change password). */}
+      <View style={styles.fields}>
+        <TextInput
+          leftIcon="mail"
+          label="New email"
+          placeholder="you@example.com"
+          ref={newEmailRef}
+          value={newEmail}
+          onChangeText={(text) => {
+            newEmailField.onChangeText(text);
+            if (error) setError(null);
+          }}
+          onBlur={newEmailField.onBlur}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          editable={!isSubmitting}
+          accessibilityLabel="New email address"
+          error={!!newEmailField.error || fieldsRefused}
+          returnKeyType="next"
+          // Keep the keyboard up while focus moves on (spec §5.6).
+          submitBehavior="submit"
+          onSubmitEditing={() => confirmEmailRef.current?.focus()}
+          testID="change-email-new-email-input"
         />
-        <View style={styles.centerWrap} pointerEvents="box-none">
-          <View
-            accessibilityViewIsModal
-            accessibilityLabel="Change email"
-            style={[
-              styles.card,
-              {
-                backgroundColor: theme.backgroundDefault,
-                borderColor: theme.border,
-              },
-            ]}
-          >
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.scrollContent}
-            >
-              <View style={styles.iconContainer}>
-                <View
-                  style={[
-                    styles.iconCircle,
-                    { backgroundColor: withOpacity(theme.link, 0.12) },
-                  ]}
-                >
-                  <Feather name="mail" size={28} color={theme.link} />
-                </View>
-              </View>
+        <InlineError
+          message={newEmailField.error}
+          shakeKey={newEmailField.shakeKey}
+        />
 
-              <ThemedText
-                type="h4"
-                accessibilityRole="header"
-                style={styles.title}
-              >
-                Change email
-              </ThemedText>
+        <TextInput
+          leftIcon="mail"
+          label="Confirm new email"
+          placeholder="you@example.com"
+          ref={confirmEmailRef}
+          value={confirmEmailField.value}
+          onChangeText={(text) => {
+            confirmEmailField.onChangeText(text);
+            if (error) setError(null);
+          }}
+          onBlur={confirmEmailField.onBlur}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          editable={!isSubmitting}
+          accessibilityLabel="Confirm new email address"
+          error={!!confirmEmailField.error || fieldsRefused}
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          testID="change-email-confirm-email-input"
+        />
+        <InlineError
+          message={confirmEmailField.error}
+          shakeKey={confirmEmailField.shakeKey}
+        />
 
-              <ThemedText
-                type="body"
-                style={[styles.message, { color: theme.textSecondary }]}
-              >
-                Enter your new email address and your current password. We will
-                send a verification link to the new address.
-              </ThemedText>
+        <TextInput
+          leftIcon="lock"
+          rightIcon={showPassword ? "eye-off" : "eye"}
+          rightIconAccessibilityLabel={
+            showPassword ? "Hide password" : "Show password"
+          }
+          onRightIconPress={() => setShowPassword((s) => !s)}
+          label="Password"
+          ref={passwordRef}
+          value={password}
+          onChangeText={(text) => {
+            passwordField.onChangeText(text);
+            if (error) setError(null);
+          }}
+          onBlur={passwordField.onBlur}
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
+          autoComplete="current-password"
+          textContentType="password"
+          editable={!isSubmitting}
+          accessibilityLabel="Current password"
+          accessibilityHint="Enter your current password to confirm the email change"
+          error={!!passwordField.error || fieldsRefused}
+          returnKeyType="go"
+          onSubmitEditing={() => void handleConfirm()}
+          testID="change-email-password-input"
+        />
+        <InlineError
+          message={passwordField.error}
+          shakeKey={passwordField.shakeKey}
+        />
+      </View>
 
-              {currentEmail ? (
-                <ThemedText
-                  type="small"
-                  style={[styles.currentEmail, { color: theme.textSecondary }]}
-                >
-                  Current: {currentEmail}
-                </ThemedText>
-              ) : null}
+      {needsCode ? (
+        <ThemedText
+          type="small"
+          style={[styles.label, { color: theme.textSecondary }]}
+        >
+          Two-step verification code
+        </ThemedText>
+      ) : null}
+      {needsCode ? (
+        <SecondFactorField
+          onChange={setFactor}
+          busy={isSubmitting}
+          autoFocus={!askCode}
+          emailCode={twoStepEmail}
+        />
+      ) : null}
 
-              {/* The house gap between fields (as on Change password). */}
-              <View style={styles.fields}>
-                <TextInput
-                  leftIcon="mail"
-                  label="New email"
-                  placeholder="you@example.com"
-                  ref={newEmailRef}
-                  value={newEmail}
-                  onChangeText={(text) => {
-                    newEmailField.onChangeText(text);
-                    if (error) setError(null);
-                  }}
-                  onBlur={newEmailField.onBlur}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="email"
-                  textContentType="emailAddress"
-                  editable={!isSubmitting}
-                  accessibilityLabel="New email address"
-                  error={!!newEmailField.error || fieldsRefused}
-                  returnKeyType="next"
-                  // Keep the keyboard up while focus moves on (spec §5.6).
-                  submitBehavior="submit"
-                  onSubmitEditing={() => confirmEmailRef.current?.focus()}
-                  testID="change-email-new-email-input"
-                />
-                <InlineError
-                  message={newEmailField.error}
-                  shakeKey={newEmailField.shakeKey}
-                />
+      <InlineError message={error} shakeKey={shakeKey} />
 
-                <TextInput
-                  leftIcon="mail"
-                  label="Confirm new email"
-                  placeholder="you@example.com"
-                  ref={confirmEmailRef}
-                  value={confirmEmailField.value}
-                  onChangeText={(text) => {
-                    confirmEmailField.onChangeText(text);
-                    if (error) setError(null);
-                  }}
-                  onBlur={confirmEmailField.onBlur}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="email"
-                  textContentType="emailAddress"
-                  editable={!isSubmitting}
-                  accessibilityLabel="Confirm new email address"
-                  error={!!confirmEmailField.error || fieldsRefused}
-                  returnKeyType="next"
-                  submitBehavior="submit"
-                  onSubmitEditing={() => passwordRef.current?.focus()}
-                  testID="change-email-confirm-email-input"
-                />
-                <InlineError
-                  message={confirmEmailField.error}
-                  shakeKey={confirmEmailField.shakeKey}
-                />
-
-                <TextInput
-                  leftIcon="lock"
-                  rightIcon={showPassword ? "eye-off" : "eye"}
-                  rightIconAccessibilityLabel={
-                    showPassword ? "Hide password" : "Show password"
-                  }
-                  onRightIconPress={() => setShowPassword((s) => !s)}
-                  label="Password"
-                  ref={passwordRef}
-                  value={password}
-                  onChangeText={(text) => {
-                    passwordField.onChangeText(text);
-                    if (error) setError(null);
-                  }}
-                  onBlur={passwordField.onBlur}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoComplete="current-password"
-                  textContentType="password"
-                  editable={!isSubmitting}
-                  accessibilityLabel="Current password"
-                  accessibilityHint="Enter your current password to confirm the email change"
-                  error={!!passwordField.error || fieldsRefused}
-                  returnKeyType="go"
-                  onSubmitEditing={() => void handleConfirm()}
-                  testID="change-email-password-input"
-                />
-                <InlineError
-                  message={passwordField.error}
-                  shakeKey={passwordField.shakeKey}
-                />
-              </View>
-
-              {needsCode ? (
-                <ThemedText
-                  type="small"
-                  style={[styles.label, { color: theme.textSecondary }]}
-                >
-                  Two-step verification code
-                </ThemedText>
-              ) : null}
-              {needsCode ? (
-                <SecondFactorField
-                  onChange={setFactor}
-                  busy={isSubmitting}
-                  autoFocus={!askCode}
-                  emailCode={twoStepEmail}
-                />
-              ) : null}
-
-              <InlineError message={error} shakeKey={shakeKey} />
-
-              <View style={styles.buttonRow}>
-                <Button
-                  onPress={handleCancel}
-                  variant="secondary"
-                  disabled={isSubmitting}
-                  style={styles.flexButton}
-                  accessibilityLabel="Cancel"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onPress={handleConfirm}
-                  loading={isSubmitting}
-                  loadingText="Updating..."
-                  disabled={isSubmitting}
-                  style={styles.flexButton}
-                  accessibilityLabel={
-                    isSubmitting ? "Updating email" : "Update email"
-                  }
-                >
-                  Update email
-                </Button>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      <View style={styles.buttonRow}>
+        <Button
+          onPress={handleCancel}
+          variant="secondary"
+          disabled={isSubmitting}
+          style={styles.flexButton}
+          accessibilityLabel="Cancel"
+        >
+          Cancel
+        </Button>
+        <Button
+          onPress={handleConfirm}
+          loading={isSubmitting}
+          loadingText="Updating..."
+          disabled={isSubmitting}
+          style={styles.flexButton}
+          accessibilityLabel={isSubmitting ? "Updating email" : "Update email"}
+        >
+          Update email
+        </Button>
+      </View>
+    </CenteredDialog>
   );
 }
 
 const styles = StyleSheet.create({
-  kav: {
-    flex: 1,
-  },
-  backdrop: {
-    ...AbsoluteFill,
-  },
-  centerWrap: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 420,
-    maxHeight: "90%",
-    borderRadius: BorderRadius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: "hidden",
-  },
-  scrollContent: {
-    padding: Spacing.xl,
-  },
-  iconContainer: {
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  title: {
-    textAlign: "center",
-    fontFamily: FontFamily.semiBold,
-    marginBottom: Spacing.sm,
-  },
-  message: {
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: Spacing.md,
-  },
   currentEmail: {
     textAlign: "center",
     marginBottom: Spacing.lg,

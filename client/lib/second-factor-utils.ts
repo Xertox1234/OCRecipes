@@ -93,6 +93,39 @@ export function secondFactorErrorMessage(err: unknown): {
   };
 }
 
+/**
+ * How a re-authentication dialog (change email, delete account) words the
+ * failures they share: the second-factor branch and a wrong password. Returns
+ * null for any other error, which the dialog words itself.
+ * `needsCode` — right password on a 2FA account: keep it and ask for the code.
+ */
+export function mapReauthError(
+  err: unknown,
+): { message: string; needsCode: boolean; wrongPassword: boolean } | null {
+  if (isSecondFactorRequired(err)) {
+    return {
+      message: "Enter the code we email you.",
+      needsCode: true,
+      wrongPassword: false,
+    };
+  }
+  if (isTwoStepCheckError(err)) {
+    return {
+      message: secondFactorErrorMessage(err).message,
+      needsCode: false,
+      wrongPassword: false,
+    };
+  }
+  if (err instanceof Error && /Invalid credentials/i.test(err.message)) {
+    return {
+      message: "Incorrect password. Please try again.",
+      needsCode: false,
+      wrongPassword: true,
+    };
+  }
+  return null;
+}
+
 /** The "Email me a code" button on an email two-step account. */
 export function emailCodeButtonLabel(
   sent: boolean,

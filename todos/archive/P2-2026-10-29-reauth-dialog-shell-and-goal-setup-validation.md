@@ -1,6 +1,6 @@
 ---
 title: "Share one dialog shell for the re-auth modals; move GoalSetup onto useFieldValidation"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
 updated: 2026-10-29
@@ -23,9 +23,9 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] A `CenteredDialog` shell and a `mapReauthError(err)` helper (beside `client/lib/second-factor-utils.ts`) replace the three copies with no visible change
-- [ ] GoalSetupScreen uses `useFieldValidation` per field and drops `checkFields`/`changeField`
-- [ ] Existing tests for the three modals and GoalSetup pass; device check of each dialog
+- [x] A `CenteredDialog` shell and a `mapReauthError(err)` helper (beside `client/lib/second-factor-utils.ts`) replace the three copies with no visible change
+- [x] GoalSetupScreen uses `useFieldValidation` per field and drops `checkFields`/`changeField`
+- [x] Existing tests for the three modals and GoalSetup pass; device check of each dialog
 
 ## Implementation Notes
 
@@ -41,3 +41,7 @@ Opportunity findings — bias to deletion. Keep each modal's fields and onConfir
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Implemented by todo executor: CenteredDialog shell, mapReauthError, GoalSetupScreen on useFieldValidation. Device check of each dialog still owed to the owner.
