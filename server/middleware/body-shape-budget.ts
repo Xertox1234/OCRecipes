@@ -7,8 +7,10 @@ import { ErrorCode } from "@shared/constants/error-codes";
  * body may hold. The 2 MB size limit alone still admits ~1,000,000 one-character
  * array elements, and zod (3.x, and 4.x for arrays without `.max()`) builds one
  * issue object per failing element — ~350 MB of heap for a single request
- * (GHSA-mrhx-c7xc-m3w5). Real bodies are far smaller: the largest array any route
- * accepts is capped at 500.
+ * (GHSA-mrhx-c7xc-m3w5). Real bodies are far smaller. The largest is a generated
+ * meal plan (`/api/meal-plan/save-generated`, ≤50 meals): ~4,000 values with typical
+ * recipes, ~13,000 with every capped list full and 30 ingredients per meal (its
+ * ingredient list has no cap).
  */
 export const MAX_BODY_VALUES = 20_000;
 
