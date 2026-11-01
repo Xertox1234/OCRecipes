@@ -30,6 +30,8 @@ import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useToast } from "@/context/ToastContext";
+import { ApiError } from "@/lib/api-error";
+import { formatPantryFullSkipped } from "@/lib/log-success";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -233,8 +235,12 @@ export default function PantryScreen() {
       { name },
       {
         onSuccess: () => setNewItemName(""),
-        onError: () => {
-          toast.error("Couldn't add the item. Please try again.");
+        onError: (error) => {
+          if (error instanceof ApiError && error.code === "LIMIT_REACHED") {
+            toast.info(formatPantryFullSkipped(1));
+          } else {
+            toast.error("Couldn't add the item. Please try again.");
+          }
         },
       },
     );

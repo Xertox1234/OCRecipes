@@ -36,6 +36,10 @@ vi.mock("@/hooks/useGroceryList", () => ({
   useAddGroceryItemToPantry: () => ({ mutate: vi.fn() }),
 }));
 
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }),
+}));
+
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
     impact: vi.fn(),
