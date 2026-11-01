@@ -10,6 +10,11 @@ import {
   type QueryErrorMeta,
   type MutationErrorMeta,
 } from "@/lib/query-client";
+import {
+  PIN_CONVERSATION_KEY,
+  pinConversationFn,
+  settlePinConversation,
+} from "@/lib/mutation-defaults";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { streamSse, type SseOutcome } from "@/lib/sse-xhr";
@@ -756,19 +761,11 @@ export function useDeleteChatMessageForRetry() {
 export function usePinConversation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
-      const res = await apiRequest(
-        "PATCH",
-        `/api/chat/conversations/${id}/pin`,
-        { isPinned },
-      );
-      return (await res.json()) as ChatConversation;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["/api/chat/conversations"],
-      });
-    },
+    // Durable across a restart: the key + mutationFn are registered in
+    // client/lib/mutation-defaults.ts.
+    mutationKey: PIN_CONVERSATION_KEY,
+    mutationFn: pinConversationFn,
+    onSuccess: () => settlePinConversation(queryClient),
     // Its one call site (AllConversationsScreen) already toasts on failure.
     meta: { silentError: true },
   });
