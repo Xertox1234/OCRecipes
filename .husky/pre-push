@@ -42,14 +42,14 @@ fi
 # Resolve the stamp via the SAME helper the writer/guard use. A missing helper or empty stamp
 # fails toward RUNNING the gate (verify), never toward a false skip.
 HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
-STAMP=""
+STAMPED=0
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
 if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
   # shellcheck source=scripts/lib/preflight-stamp-path.sh
   . "$ROOT/scripts/lib/preflight-stamp-path.sh"
-  STAMP=$(cat "$(preflight_stamp_path)" 2>/dev/null || echo "")
+  if [ -n "$HEAD_SHA" ] && preflight_stamp_has "$HEAD_SHA"; then STAMPED=1; fi
 fi
-if [ -n "$HEAD_SHA" ] && [ "$STAMP" = "$HEAD_SHA" ]; then
+if [ "$STAMPED" -eq 1 ]; then
   echo "[pre-push] HEAD $(git rev-parse --short HEAD 2>/dev/null) already verified (fresh pass-stamp) — skipping gate."
   exit 0
 fi

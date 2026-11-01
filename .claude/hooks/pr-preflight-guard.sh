@@ -154,11 +154,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # looks for a path the writer never wrote — "my preflight passed but PR-create is blocked".
 # That is the fail-closed direction, so it is confusing rather than dangerous; change both
 # copies together. The `[ -n "$ROOT" ]` below stays load-bearing: a `cd` that fails leaves
-# ROOT empty, and STAMP must then remain empty so the gate denies.
+# ROOT empty, and STAMPED must then stay 0 so the gate denies.
+# STAMPED: HEAD's own per-commit stamp (or the single slot) says it passed. STAMP is only the
+# newest pass, named in the deny message.
+STAMPED=0
 if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
   # shellcheck source=scripts/lib/preflight-stamp-path.sh
   . "$ROOT/scripts/lib/preflight-stamp-path.sh"
   STAMP=$(cat "$(preflight_stamp_path)" 2>/dev/null || echo "")
+  if [ -n "$HEAD" ] && preflight_stamp_has "$HEAD"; then STAMPED=1; fi
 fi
 
 # Read by the agent, which acts on it: a prefix on the command never reaches this hook (it
@@ -166,7 +170,7 @@ fi
 # that tried one.
 BYPASS_HINT="Emergency bypass: SKIP_PR_PREFLIGHT=1 in the environment Claude Code was launched from (a prefix on the command does not reach this hook)."
 
-if [ -z "$HEAD" ] || [ "$STAMP" != "$HEAD" ]; then
+if [ -z "$HEAD" ] || [ "$STAMPED" -ne 1 ]; then
   FOUND="${STAMP:0:7}"; [ -z "$FOUND" ] && FOUND="none"
   # Message only, never acceptance: when git can run no pre-push hook in this tree, "push
   # first" cannot produce a stamp. A relative core.hooksPath (husky's default) resolves per
