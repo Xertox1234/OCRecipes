@@ -23,7 +23,7 @@ function buildExport() {
     profile: { account: { id: "1", username: "demo" }, dietary: null },
     scannedItems: [],
     nutritionLogs: [],
-    mealPlans: { recipes: [], items: [] },
+    mealPlans: { recipes: [], deletedRecipes: [], items: [] },
     recipes: [],
     chatHistory: { conversations: [], messages: [] },
     groceryLists: { lists: [], items: [] },
