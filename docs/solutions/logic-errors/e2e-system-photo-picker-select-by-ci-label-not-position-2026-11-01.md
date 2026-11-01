@@ -43,7 +43,8 @@ platforms, and no photo was sent in any job. There were three causes, none of th
   `ensure-logged-out` before signing in, and its `onFlowComplete` (launch-app, then
   ensure-logged-out) runs pass or fail, so the flows after it sign in as the shared account again.
 - When a flow is meant to prove that a request arrived, log the request on the server side (here,
-  `scripts/ci/stub-openai.log`). A red flow by itself can't tell "the upload broke" from "the flow
+  `stub-openai.log` at the repo root, written by `scripts/ci/stub-openai.mjs` and uploaded in the
+  job's logs artifact). A red flow by itself can't tell "the upload broke" from "the flow
   never got to the upload". The log can: 0 requests in every job of this first run, 1 per platform
   once the flow was fixed, and 0 on the control branch that had the pre-#1592 upload code.
 
