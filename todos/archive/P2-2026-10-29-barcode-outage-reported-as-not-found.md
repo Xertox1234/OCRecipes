@@ -1,9 +1,9 @@
 ---
 title: "A barcode lookup outage is shown as "Product not found""
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-10-31
 assignee:
 labels: [deferred, reliability]
 github_issue:
@@ -23,9 +23,9 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] The lookup distinguishes "every source errored" from "no source had data"
-- [ ] The error case returns 503 with a retryable `ErrorCode`; the client shows retry copy instead of the unknown-product flow
-- [ ] Tests cover outage vs genuine miss for GET and POST barcode routes
+- [x] The lookup distinguishes "every source errored" from "no source had data"
+- [x] The error case returns 503 with a retryable `ErrorCode`; the client shows retry copy instead of the unknown-product flow
+- [x] Tests cover outage vs genuine miss for GET and POST barcode routes
 
 ## Implementation Notes
 
@@ -41,3 +41,7 @@ Check the client barcode flow (`client/hooks/useNutritionLookup.ts`, `nutrition-
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Implemented: `lookupUSDAByUPC` and `lookupBarcode` throw `UpstreamUnavailableError` when nothing was found and every OFF and USDA attempt errored; both barcode routes answer 503 `NUTRITION_LOOKUP_FAILED`; the client shows retry copy after a server 503. A mixed case (one source errored, the other said "no match") stays a 404 per the acceptance criteria.

@@ -8,7 +8,7 @@ import {
   _resetCNFCacheForTesting,
   fuzzyMatchCNF,
 } from "../nutrition-lookup";
-import { lookupBarcode } from "../barcode-lookup";
+import { lookupBarcode, UpstreamUnavailableError } from "../barcode-lookup";
 
 // `mockInsertValues` is hoisted so tests can assert on the args passed to
 // `db.insert(...).values(...)` — see the USDA-real-serving-size test below,
@@ -831,16 +831,18 @@ describe("lookupBarcode", () => {
     expect(result!.per100g.calories).toBeUndefined();
   });
 
-  it("handles fetch errors for OFF gracefully", async () => {
+  it("reports an outage (not a miss) when every OFF and USDA attempt errors", async () => {
     setupFetchMock({
       "openfoodfacts.org": () => Promise.reject(new Error("network error")),
       "food/?lang=en": emptyCNFEN,
       "food/?lang=fr": emptyCNFFR,
     });
 
-    const result = await lookupBarcode("0000000000001");
-    // All OFF variants fail, no USDA data either → null
-    expect(result).toBeNull();
+    // All OFF variants fail and USDA's default mock response is non-OK too →
+    // every source errored → outage, not "no data".
+    await expect(lookupBarcode("0000000000001")).rejects.toBeInstanceOf(
+      UpstreamUnavailableError,
+    );
   });
 
   it("parses a valid OFF product correctly (regression: schema must not drop real data)", async () => {
