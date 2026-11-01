@@ -85,6 +85,9 @@ env:
   JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
   LOG_LEVEL: silent
   AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
+  # The OpenAI stand-in started beside the backend (scripts/ci/stub-openai.mjs): it answers
+  # the receipt-upload flow's AI step and gives every other call sk-stub's usual 401.
+  AI_INTEGRATIONS_OPENAI_BASE_URL: http://127.0.0.1:4010/v1
   USDA_API_KEY: stub
   API_NINJAS_KEY: stub
   RECEIPT_VALIDATION_STUB: "true"
@@ -340,8 +343,16 @@ jobs:
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
 
       # Start the backend the flows talk to; keep it running for the rest of the job.
+      # The OpenAI stand-in answers the receipt-upload flow's AI step (scripts/ci/stub-openai.mjs);
+      # every other AI call gets the same 401 sk-stub got from the real API.
       - name: Start backend
         run: |
+          node scripts/ci/stub-openai.mjs &
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1 || { echo "::error::OpenAI stand-in did not start"; cat stub-openai.log; exit 1; }
           npm run server:dev > server.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
@@ -573,6 +584,7 @@ jobs:
           name: logs-ios
           path: |
             server.log
+            stub-openai.log
             metro.log
             metro-probe.log
             e2e/maestro-output/
@@ -650,8 +662,16 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The OpenAI stand-in answers the receipt-upload flow's AI step (scripts/ci/stub-openai.mjs);
+      # every other AI call gets the same 401 sk-stub got from the real API.
       - name: Start backend
         run: |
+          node scripts/ci/stub-openai.mjs &
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1 || { echo "::error::OpenAI stand-in did not start"; cat stub-openai.log; exit 1; }
           npm run server:dev > server.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
@@ -714,6 +734,7 @@ jobs:
           name: logs-android
           path: |
             server.log
+            stub-openai.log
             metro.log
             e2e/maestro-output/
           if-no-files-found: warn

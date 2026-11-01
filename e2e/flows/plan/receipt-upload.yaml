@@ -1,0 +1,101 @@
+appId: com.ocrecipes.app
+name: "Plan - Receipt photo upload reaches the server"
+tags:
+  - regression
+  - plan
+  - upload
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Harness diagnosis N6, part B: a real photo upload every night, on both platforms. The SDK 57
+# upgrade (#1549) broke the FormData uploads (receipt, menu, cook photo) on both platforms for 4
+# days: the new global fetch threw on the file part before any request left the phone, and no
+# flow uploaded anything. This one picks a photo from the gallery and sends it through the receipt
+# scan, the same FormData path.
+#
+# Needs (set up by e2e-regression.yml): the test user is premium (scripts/ci/seed-e2e-user.sh;
+# the receipt scanner is a premium feature), and the server's OpenAI base URL points at
+# scripts/ci/stub-openai.mjs, which answers the receipt request with one item, "E2E Avocado
+# Nine". That name appearing on the review screen means the photo left the phone, reached the
+# server and came back analysed. A broken upload ends on the review screen's "Try again" state
+# instead, and stub-openai.log (in the job's logs artifact) shows no receipt request.
+#
+# The flow stops at the review screen without adding the item, so the pantry stays empty for the
+# per-flow retry.
+- runFlow: ../../helpers/launch-app.yaml
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+- addMedia:
+    - "../../assets/receipt.jpg"
+
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-plan"
+# The Pantry row's a11y label grows a suffix when items are near expiry (see meal-plan-home.yaml).
+- extendedWaitUntil:
+    visible: 'Pantry(, \d+ expiring)?'
+    timeout: 15000
+- tapOn: 'Pantry(, \d+ expiring)?'
+
+# An empty pantry offers "Scan a Receipt"; a non-empty one has the header button instead.
+- extendedWaitUntil:
+    visible: "Scan a Receipt|Scan receipt to add items"
+    timeout: 15000
+- tapOn: "Scan a Receipt|Scan receipt to add items"
+
+# The gallery button exists only once camera permission is granted (ReceiptCaptureScreen). On a
+# fresh simulator the screen first offers "Grant camera permission"; the system dialog's wording
+# differs by platform and OS version.
+- tapOn:
+    text: "Grant camera permission"
+    optional: true
+- tapOn:
+    text: "Allow|OK|While using the app|Only this time"
+    optional: true
+- extendedWaitUntil:
+    visible: "Pick from gallery"
+    timeout: 15000
+- tapOn: "Pick from gallery"
+
+# The system photo picker. iOS runs it out of process, so Maestro cannot see its elements: tap the
+# first grid cell (newest first, so the photo added above) and then the check button, by position
+# (measured on an iPhone 17 Pro simulator, iOS 26). Any selected photo still exercises the upload.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - waitForAnimationToEnd
+      - tapOn:
+          point: "16%,43%"
+      - waitForAnimationToEnd
+      - tapOn:
+          point: "90%,12%"
+# Android's photo picker is a normal activity Maestro can read: the first photo, then the add
+# button (its label carries the selection count on some versions).
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          visible: "Photo taken on.*|Photo.*"
+          timeout: 15000
+      - tapOn:
+          text: "Photo taken on.*|Photo.*"
+          index: 0
+      - tapOn: "Add.*|Done"
+
+- extendedWaitUntil:
+    visible: "Done with 1 photo"
+    timeout: 15000
+- tapOn: "Done with 1 photo"
+
+# Upload + the stand-in's answer + navigation. Generous: CI runners are slow.
+- extendedWaitUntil:
+    visible: "Item name: E2E Avocado Nine"
+    timeout: 90000

@@ -52,4 +52,15 @@ if [ "$PROF_CODE" != "200" ]; then
   exit 1
 fi
 
-echo "seeded $USERNAME (onboardingCompleted=true)"
+# Premium, so the nightly receipt-upload flow can reach the receipt scanner (a premium
+# feature; harness diagnosis N6). No expiry = active (shared/types/premium.ts
+# resolveEffectiveTier). Straight to the run's own throwaway Postgres: there is no API that
+# grants premium without a store receipt. The row is read back so a silent no-op fails here.
+TIER=$(psql "${DATABASE_URL:?DATABASE_URL is required to grant premium}" -tAc \
+  "UPDATE users SET subscription_tier = 'premium', subscription_expires_at = NULL WHERE username = '$USERNAME' RETURNING subscription_tier;" 2>&1)
+if [ "$(printf '%s' "$TIER" | head -1)" != "premium" ]; then
+  echo "::error::Seed premium grant for $USERNAME did not take effect: $TIER"
+  exit 1
+fi
+
+echo "seeded $USERNAME (onboardingCompleted=true, premium)"
