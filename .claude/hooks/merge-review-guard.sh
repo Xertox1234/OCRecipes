@@ -4,6 +4,8 @@
 # unprotected file at a derivable path (spec §6.2, corrected 2026-09-10), so what this gate
 # catches is a review OMITTED, stale or mis-scoped — not one deliberately fabricated.
 # Design: docs/superpowers/specs/2026-09-08-merge-review-gate-design.md
+# Also (harness N6, 2026-11-01): a PR in real-platform scope needs a completed E2E run on its
+# head and a '## Platform check' body section — see the PLATFORM CHECK block below.
 #
 # Escape (emergencies): SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code.
 # It is read from THIS PROCESS'S ENVIRONMENT ONLY and never parsed out of the command
@@ -622,6 +624,49 @@ BRANCH=$(printf '%s' "$VIEW" | jq -r '.headRefName // empty' 2>/dev/null)
 HEAD_SHA=$(printf '%s' "$VIEW" | jq -r '.headRefOid // empty' 2>/dev/null)
 [ -n "$HEAD_SHA" ] \
   || deny "Blocked: PR #$PR has no resolvable head sha, so no review can be bound to it. Fail-closed. $BYPASS"
+
+# ── PLATFORM CHECK (harness diagnosis N6) ─────────────────────────────────────
+# The SDK 57 upgrade (#1549) broke three photo uploads on both platforms for 4 days: mocked tests
+# cannot see how a file leaves the phone. A PR that changes the native build, an SDK or native
+# dependency, or upload code (scripts/harness/platform-scope.sh) needs, on THIS head commit:
+#   1. a completed e2e-regression.yml run started by hand (both the iOS and Android jobs), and
+#   2. a "## Platform check" section in the PR body naming that run's id (plus the real
+#      simulator upload done), and, when the run is red, a line "Already failing on main: …".
+# Runs before stage 1 so neither early allow below can skip it. GitHub's run list is read by
+# commit, so a run on an older commit or on main cannot count. The body text is checked for
+# presence only: whether the explanation is true is for review and the owner.
+PSCOPE="$ROOT/scripts/harness/platform-scope.sh"
+[ -f "$PSCOPE" ] \
+  || deny "Blocked: merge-review-guard could not locate scripts/harness/platform-scope.sh, so it cannot tell whether PR #$PR needs a real-platform check. Fail-closed. $BYPASS"
+PDIFF=$(gh pr diff "$PR" 2>/dev/null) \
+  || deny "Blocked: could not read PR #$PR's diff for the real-platform check (gh error, or a diff too large for gh). Fail-closed. $BYPASS"
+P_RC=0
+P_WHY=$(printf '%s\n' "$PDIFF" | bash "$PSCOPE") || P_RC=$?
+case "$P_RC" in
+  0)
+    P_WHY_ONE=$(printf '%s\n' "$P_WHY" | head -3 | tr '\n' ';' | sed 's/;$//; s/;/; /g')
+    P_RUN=$(gh api "repos/{owner}/{repo}/actions/workflows/e2e-regression.yml/runs?head_sha=$HEAD_SHA&event=workflow_dispatch&status=completed&per_page=20" \
+      --jq "[.workflow_runs[] | select(.head_sha == \"$HEAD_SHA\")] | sort_by(.created_at) | last | if . == null then \"\" else \"\(.id) \(.conclusion)\" end" 2>/dev/null) \
+      || deny "Blocked: PR #$PR needs a real-platform check ($P_WHY_ONE) and merge-review-guard could not read its E2E runs from GitHub. Fail-closed. $BYPASS"
+    [ -n "$P_RUN" ] \
+      || deny "Blocked: PR #$PR changes how the app builds or uploads ($P_WHY_ONE), and no completed E2E run exists for head ${HEAD_SHA:0:7}. Start one on this exact commit: ALLOW_OUTWARD_CLI=1 gh workflow run e2e-regression.yml --ref $BRANCH — wait for both jobs, then record the run id and the real simulator upload under '## Platform check' in the PR body. A push after the run needs a new run. $BYPASS"
+    P_ID=${P_RUN%% *}
+    P_CONC=${P_RUN#* }
+    P_BODY=$(gh pr view "$PR" --json body --jq '.body // ""' 2>/dev/null) \
+      || deny "Blocked: could not read PR #$PR's body for the real-platform check. Fail-closed. $BYPASS"
+    P_SECTION=$(printf '%s\n' "$P_BODY" | awk '/^## /{on = ($0 ~ /^## Platform check[[:space:]]*$/); next} on')
+    [ -n "$P_SECTION" ] \
+      || deny "Blocked: PR #$PR needs a real-platform check ($P_WHY_ONE). E2E run $P_ID on head ${HEAD_SHA:0:7} finished ($P_CONC), but the PR body has no '## Platform check' section. Add one naming run $P_ID and the real simulator upload you did (which upload, and the server's 2xx line). $BYPASS"
+    printf '%s\n' "$P_SECTION" | grep -qw "$P_ID" \
+      || deny "Blocked: PR #$PR's '## Platform check' section does not name E2E run $P_ID, the newest completed run on head ${HEAD_SHA:0:7} ($P_CONC). Record that run, not an earlier one. $BYPASS"
+    if [ "$P_CONC" != "success" ]; then
+      printf '%s\n' "$P_SECTION" | grep -q '^Already failing on main:' \
+        || deny "Blocked: E2E run $P_ID on head ${HEAD_SHA:0:7} is $P_CONC. PR #$PR may merge only if every failed flow also failed on main's latest nightly: list them in '## Platform check' on a line starting 'Already failing on main:' with that nightly's run id. Otherwise fix the failure, push, and run E2E again. $BYPASS"
+    fi
+    ;;
+  1) ;;
+  *) deny "Blocked: the real-platform scope check could not read PR #$PR's diff (rc $P_RC). Fail-closed. $BYPASS" ;;
+esac
 
 # ── STAGE 1 — source type ─────────────────────────────────────────────────────
 # `todo/<slug>` is an enforced invariant (.claude/agents/todo-executor.md:474), already

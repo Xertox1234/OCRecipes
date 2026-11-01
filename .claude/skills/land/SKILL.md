@@ -13,7 +13,7 @@ Merging is the irreversible step: squash-merge to protected `main` auto-deploys 
 
 ## The Ritual (in order)
 
-1. **Review gate** — see below. No merge without a review verdict on the PR's final commits.
+1. **Review gate** — see below. No merge without a review verdict on the PR's final commits. A PR that changes the native build, an SDK or native dependency, or upload code also needs a completed E2E run on its final head and a `## Platform check` body section (`docs/AI_WORKFLOW.md` → Review Policy → Real-platform check); the merge guard says when.
 2. **Clean tree** — `git status --porcelain`. Anything dirty that isn't this PR's work: `git stash push -m "..." -- <paths>` before the merge, `git stash pop` after. A dirty tree at `gh pr merge --squash` sweeps the user's parallel IDE edits into the squash commit (PR #320 incident).
 3. **CI truth** — read the checks **of the head SHA**, so the answer cannot be about a superseded commit:
 

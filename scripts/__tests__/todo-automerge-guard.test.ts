@@ -31,6 +31,19 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
   printf '%s\\n' "\${FAKE_GH_CHANGED_FILES:-$(printf '%s\\n' "$FAKE_GH_DIFF_FILES" | grep -c . || true)}"
   exit 0
 fi
+if [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
+  # The platform-scope check reads the unified diff. Default: one header per changed file and no
+  # hunks, which is never in scope, so rows written before that check keep their verdicts.
+  if [ "\${FAKE_GH_PR_DIFF_EXIT:-0}" != "0" ]; then
+    echo "fake-gh: simulated pr diff failure" >&2
+    exit "$FAKE_GH_PR_DIFF_EXIT"
+  fi
+  if [ -n "\${FAKE_GH_PR_DIFF:-}" ]; then printf '%s\\n' "$FAKE_GH_PR_DIFF"; exit 0; fi
+  printf '%s\\n' "$FAKE_GH_DIFF_FILES" | sed -e '/^$/d' | while IFS= read -r f; do
+    printf 'diff --git a/%s b/%s\\n' "$f" "$f"
+  done
+  exit 0
+fi
 if [ "$1" = "api" ]; then
   # The guard now reads its file list from pulls/{n}/files (so a rename's previous_filename is
   # gated too), which is also a \`gh api\` call — so this stub must dispatch on the endpoint or
@@ -1591,5 +1604,50 @@ describe("todo-automerge-guard.sh (a duplicate destination cannot MASK a truncat
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).not.toBe(2);
+  });
+});
+
+describe("todo-automerge-guard.sh (platform scope, harness N6: an upload change cannot auto-merge past the E2E check)", () => {
+  const helper = "client/lib/new-upload-helper.ts";
+  const files = [ARCHIVE_PATH, helper].join("\n");
+  const diff = (line: string) =>
+    [
+      `diff --git a/${ARCHIVE_PATH} b/${ARCHIVE_PATH}`,
+      `diff --git a/${helper} b/${helper}`,
+      `--- a/${helper}`,
+      `+++ b/${helper}`,
+      "@@ -1,1 +1,2 @@",
+      line,
+    ].join("\n");
+
+  it("HOLDs an allowlisted client file whose diff adds a FormData upload", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_DIFF_FILES: files,
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+      FAKE_GH_PR_DIFF: diff("+  const body = new FormData();"),
+    });
+    expect(status).toBe(1);
+    expect(stdout).toContain("real-platform check");
+    expect(stdout).toContain(`upload ${helper}`);
+  });
+
+  it("control: the same file with an unrelated change is still OK", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_DIFF_FILES: files,
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+      FAKE_GH_PR_DIFF: diff("+  const label = 'Upload';"),
+    });
+    expect(status).toBe(0);
+    expect(stdout).toContain("guard: OK");
+  });
+
+  it("an unreadable diff is an ERROR, never OK", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_DIFF_FILES: files,
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+      FAKE_GH_PR_DIFF_EXIT: "1",
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("platform-scope");
   });
 });

@@ -77,15 +77,37 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
         printf '%s\n' "${FAKE_CHANGED_FILES:-$(printf '%s\n' "${FAKE_FILES}" | grep -c . || true)}"
         exit 0
         ;;
+      body)
+        # the platform check reads the PR body with --jq '.body'; answer with the text itself
+        printf '%s\n' "${FAKE_BODY:-}"
+        exit 0
+        ;;
     esac
   done
   printf '%s\n' "${FAKE_VIEW_JSON}"; exit 0
 fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
-  [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
-  printf '%s\n' "${FAKE_FILES}"; exit 0
+  # --name-only is stage 3's changed-file read (FAKE_DIFF_FAIL); the full diff is the platform
+  # check's (FAKE_PR_DIFF_FAIL). Kept apart so the stage-3 fail-closed rows still reach stage 3.
+  # The full diff defaults to one header per file and no hunks: never in platform scope.
+  case " $* " in
+    *" --name-only "*)
+      [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
+      printf '%s\n' "${FAKE_FILES}"; exit 0 ;;
+  esac
+  [ -n "${FAKE_PR_DIFF_FAIL:-}" ] && exit 1
+  if [ -n "${FAKE_PR_DIFF:-}" ]; then printf '%s\n' "$FAKE_PR_DIFF"; exit 0; fi
+  printf '%s\n' "${FAKE_FILES}" | sed '/^$/d' | while IFS= read -r f; do printf 'diff --git a/%s b/%s\n' "$f" "$f"; done
+  exit 0
 fi
 if [ "${1:-}" = "api" ]; then
+  # The platform check's run lookup. FAKE_RUN is what the guard's --jq would print:
+  # "<run id> <conclusion>", or empty for no completed run on the head.
+  case "$*" in
+    *actions/workflows/e2e-regression.yml/runs*)
+      [ -n "${FAKE_RUNS_FAIL:-}" ] && exit 1
+      printf '%s\n' "${FAKE_RUN:-}"; exit 0 ;;
+  esac
   # todo-automerge-guard.sh reads its file list from pulls/{n}/files so that a rename SOURCE
   # path (previous_filename) is gated and not just the destination. That is also a `gh api`
   # call, so this stub must dispatch on the ENDPOINT: without the case below, the file-list
@@ -1253,6 +1275,74 @@ case "$SELF_NWO" in
 esac
 export FAKE_FILES="$FILES_ONE"
 
+# ── Real-platform check (harness diagnosis N6) ───────────────────────────────
+# A PR whose diff changes upload code (here: FormData in a client file) needs a completed
+# hand-started E2E run on its head AND a '## Platform check' body section naming that run.
+# Every row carries a VALID clean review record, so a deny can only come from this check.
+P_DIFF=$'diff --git a/client/hooks/useNutritionLookup.ts b/client/hooks/useNutritionLookup.ts\n--- a/client/hooks/useNutritionLookup.ts\n+++ b/client/hooks/useNutritionLookup.ts\n@@ -1 +1,2 @@\n+  const body = new FormData();'
+P_BODY_OK=$'## Summary\nx\n\n## Platform check\nE2E run 777 green on both jobs. Simulator upload: cook photo, POST /api/cooking/sessions/1/photos 200.\n\n## Review\ny'
+stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
+
+# P1. DENY: in scope, no completed run on the head; the message says how to start one.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="")
+denied "$out" && reason "$out" | grep -q 'no completed E2E run' && reason "$out" | grep -q 'gh workflow run e2e-regression.yml --ref fix/thing' \
+  && ok "platform: in-scope PR with no E2E run on the head denies, naming the dispatch command" \
+  || bad "platform: in-scope PR with no E2E run on the head denies, naming the dispatch command" "$out"
+
+# P2. DENY: green run, but the body has no '## Platform check' section.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 success" FAKE_BODY=$'## Summary\nrun 777')
+denied "$out" && reason "$out" | grep -q "no '## Platform check' section" \
+  && ok "platform: green run without a Platform check section denies (a mention elsewhere does not count)" \
+  || bad "platform: green run without a Platform check section denies (a mention elsewhere does not count)" "$out"
+
+# P3. DENY: the section names an earlier run, not the newest one on this head.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="888 success" FAKE_BODY="$P_BODY_OK")
+denied "$out" && reason "$out" | grep -q 'does not name E2E run 888' \
+  && ok "platform: a section naming a different run denies" \
+  || bad "platform: a section naming a different run denies" "$out"
+
+# P4. ALLOW: green run, section names it.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 success" FAKE_BODY="$P_BODY_OK")
+assert_allowed "platform: green run named in the Platform check section allows" "$out"
+
+# P5. DENY: red run with no 'Already failing on main:' line.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 failure" FAKE_BODY="$P_BODY_OK")
+denied "$out" && reason "$out" | grep -q 'Already failing on main:' \
+  && ok "platform: red run without an already-failing-on-main line denies" \
+  || bad "platform: red run without an already-failing-on-main line denies" "$out"
+
+# P6. ALLOW: red run explained as already failing on main.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 failure" \
+  FAKE_BODY=$'## Platform check\nE2E run 777: iOS onboarding failed.\nAlready failing on main: complete-onboarding (nightly 41288476343)\n')
+assert_allowed "platform: red run explained as already failing on main allows" "$out"
+
+# P7. DENY: the run list cannot be read (fail-closed).
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUNS_FAIL=1)
+denied "$out" && reason "$out" | grep -q 'could not read its E2E runs' \
+  && ok "platform: unreadable run list denies" || bad "platform: unreadable run list denies" "$out"
+
+# P8. DENY: the full diff cannot be read (fail-closed, not 'not in scope').
+out=$(mcp_payload 938 | run FAKE_PR_DIFF_FAIL=1)
+denied "$out" && reason "$out" | grep -q 'diff for the real-platform check' \
+  && ok "platform: unreadable diff denies" || bad "platform: unreadable diff denies" "$out"
+
+# P9. ALLOW CONTROL: the same PR without an upload change never looks up runs.
+: > "$GH_LOG"
+out=$(mcp_payload 938 | run FAKE_RUN="" FAKE_BODY="")
+assert_allowed "platform: out-of-scope PR is not asked for an E2E run" "$out"
+grep -q 'actions/workflows' "$GH_LOG" \
+  && bad "platform: out-of-scope PR makes no run lookup" "$(cat "$GH_LOG")" \
+  || ok "platform: out-of-scope PR makes no run lookup"
+
+# P10. DENY: the check runs BEFORE stage 2's allowlist early allow — a docs-path PR whose diff is
+#      in scope (a native folder) still needs the run.
+out=$(mcp_payload 938 | run FAKE_FILES="$FILES_SAFE" \
+  FAKE_PR_DIFF=$'diff --git a/patches/x.patch b/patches/x.patch' FAKE_RUN="")
+denied "$out" && reason "$out" | grep -q 'native patches/x.patch' \
+  && ok "platform: check runs before the allowlist early allow" \
+  || bad "platform: check runs before the allowlist early allow" "$out"
+clear_stamps
+
 # ── Fail-closed on tooling ───────────────────────────────────────────────────
 
 # 34. DENY. Stage 2 tooling error (exit 2) requires a stamp, not an allow. A gh whose
@@ -1632,7 +1722,8 @@ unset _mrgcloser_hits _mrgcloser_prose
 # blank flipped main-DENY -> head-ALLOW, 2 controls, and the anchor's cost pinned KNOWN-WRONG.
 # 199 -> 201 (2026-09-22, advisory verdict): +2 = advisory allows (9a) and its unknown-verdict control (9b).
 # 201 -> 202 (2026-09-22, review round 1): +1, case 7 asserts the advisory literal survives the deny string.
-EXPECTED_TOTAL=202
+# 202 -> 213 (2026-11-01, harness N6 real-platform check): +11 = rows P1-P10 (P9 asserts twice).
+EXPECTED_TOTAL=213
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

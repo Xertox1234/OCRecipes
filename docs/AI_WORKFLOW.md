@@ -42,6 +42,15 @@ rule (the tier list below, `todo-executor.md` Step 7, the audit skill, CLAUDE.md
 - A review whose only findings are WARNINGs or SUGGESTIONs ends with `No blocking findings.`, which records
   `verdict: advisory`. The merge gate accepts it, so a review whose WARNINGs were all deferred
   still lands without a second pass.
+- **Real-platform check (harness N6, owner ruling 2026-11-01).** A PR that changes the native
+  build, an SDK or native dependency, or how a file is uploaded (`scripts/harness/platform-scope.sh`
+  decides) cannot merge until the E2E suite has run on its final head, on both platforms, and the
+  PR body has a `## Platform check` section naming that run and the real simulator upload done.
+  `merge-review-guard.sh` enforces it, and `todo-automerge-guard.sh` HOLDs such PRs. Order:
+  review → fix → push the final head → start E2E (`ALLOW_OUTWARD_CLI=1 gh workflow run
+e2e-regression.yml --ref <branch>`) and the confirmation pass on that head together. Any later
+  push needs a new run. A red run may merge only with a line `Already failing on main: <flows>
+(nightly <run id>)`.
 
 **Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo at **`code-reviewer` + 1–2 domain reviewers (≤3 total)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (`code-reviewer` + 2–3 domain reviewers) because it is not itself nested in a parallel batch.
 
