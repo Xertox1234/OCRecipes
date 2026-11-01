@@ -94,8 +94,16 @@ export function BeveragePickerSheet({
     startListening,
     stopListening,
   } = useSpeechToText();
+  // True only while THIS sheet started the session (the shared recognizer is
+  // visible to every mounted instance of the hook).
+  const voiceActiveRef = useRef(false);
   useEffect(() => {
-    if (step === "custom" && transcript && (isListening || isFinal)) {
+    if (
+      step === "custom" &&
+      voiceActiveRef.current &&
+      transcript &&
+      (isListening || isFinal)
+    ) {
       setCustomInput(transcript.slice(0, MAX_CUSTOM_NAME_LENGTH));
     }
   }, [step, isListening, isFinal, transcript]);
@@ -104,13 +112,17 @@ export function BeveragePickerSheet({
   }, [speechError]);
   // Leaving the custom step (Next, Back, close/reset) ends any capture.
   useEffect(() => {
-    if (step !== "custom" && isListening) stopListening();
+    if (step !== "custom") {
+      if (voiceActiveRef.current && isListening) stopListening();
+      voiceActiveRef.current = false;
+    }
   }, [step, isListening, stopListening]);
   const handleVoicePress = useCallback(() => {
     haptics.impact(ImpactFeedbackStyle.Medium);
     if (isListening) {
       stopListening();
     } else {
+      voiceActiveRef.current = true;
       void startListening();
     }
   }, [haptics, isListening, startListening, stopListening]);

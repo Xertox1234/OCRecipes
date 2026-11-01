@@ -499,7 +499,9 @@ export default function RecipeChatScreen() {
   }, [speechError, toast]);
   // A reply that starts streaming locks the composer; end any capture too.
   useEffect(() => {
-    if (isStreaming && isListening) stopListening();
+    if (isStreaming && isListening && voiceBaseRef.current !== null) {
+      stopListening();
+    }
   }, [isStreaming, isListening, stopListening]);
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);

@@ -138,6 +138,13 @@ function QuickAddSheetContentInner(
     }
   }, [haptics, isListening, startListening, stopListening]);
 
+  // Stop voice capture THIS sheet started when it closes. Declared before the
+  // reset below so it still sees voiceActiveRef; it never stops a session
+  // another mounted screen started.
+  useEffect(() => {
+    if (!mealType && voiceActiveRef.current && isListening) stopListening();
+  }, [mealType, isListening, stopListening]);
+
   // Reset search state whenever the sheet is opened for a meal type. Keyed on
   // mealType only: depending on isListening here would re-run it when
   // recognition starts and wipe the dictation.
@@ -148,11 +155,6 @@ function QuickAddSheetContentInner(
       setDebouncedQuery("");
     }
   }, [mealType]);
-
-  // Stop any in-progress voice capture when the sheet closes.
-  useEffect(() => {
-    if (!mealType && isListening) stopListening();
-  }, [mealType, isListening, stopListening]);
 
   const queryParams = useMemo(() => {
     const p: Record<string, string> = {};

@@ -1,5 +1,5 @@
 // client/components/home/RecipeSearchDrawer.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { InlineMicButton } from "@/components/InlineMicButton";
@@ -90,14 +90,27 @@ export function RecipeSearchDrawer({
     startListening,
     stopListening,
   } = useSpeechToText();
+  // True only while THIS drawer started the session. Every mounted instance
+  // of the hook sees the shared recognizer, and the drawers stay mounted
+  // when closed, so a hidden drawer must never stop or take a session that
+  // another drawer started.
+  const voiceActiveRef = useRef(false);
   useEffect(() => {
-    if (isOpen && transcript && (isListening || isFinal)) setText(transcript);
+    if (
+      isOpen &&
+      voiceActiveRef.current &&
+      transcript &&
+      (isListening || isFinal)
+    ) {
+      setText(transcript);
+    }
   }, [isOpen, isListening, isFinal, transcript]);
   const handleVoicePress = () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     if (isListening) {
       stopListening();
     } else {
+      voiceActiveRef.current = true;
       void startListening();
     }
   };
@@ -108,7 +121,8 @@ export function RecipeSearchDrawer({
       setRecent(getRecentSearches());
     } else {
       setText("");
-      if (isListening) stopListening();
+      if (voiceActiveRef.current && isListening) stopListening();
+      voiceActiveRef.current = false;
     }
   }, [isOpen, isListening, stopListening]);
 
