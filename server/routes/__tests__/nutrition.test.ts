@@ -4,7 +4,10 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { lookupNutrition } from "../../services/nutrition-lookup";
-import { lookupBarcode } from "../../services/barcode-lookup";
+import {
+  lookupBarcode,
+  UpstreamUnavailableError,
+} from "../../services/barcode-lookup";
 import type { BarcodeLookupResult } from "../../services/barcode-lookup";
 import { register } from "../nutrition";
 import {
@@ -318,6 +321,19 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe("NOT_FOUND");
+    });
+
+    it("returns a retryable 503 (not 404) when every upstream source errored", async () => {
+      vi.mocked(lookupBarcode).mockRejectedValue(
+        new UpstreamUnavailableError(),
+      );
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/9999999999")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
     });
   });
 
@@ -1171,6 +1187,36 @@ describe("Nutrition Routes", () => {
   });
 
   describe("POST /api/nutrition/barcode/:code (label override)", () => {
+    const labelBody = {
+      labelNutrition: {
+        calories: 150,
+        totalSugars: 39,
+        totalFat: 0,
+        saturatedFat: null,
+        servingSize: "355 mL",
+      },
+    };
+
+    it("returns 404 on a genuine miss", async () => {
+      mockLookup.mockResolvedValue(null);
+      const res = await authedPost(
+        "/api/nutrition/barcode/06772408",
+        labelBody,
+      );
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("NOT_FOUND");
+    });
+
+    it("returns a retryable 503 when every upstream source errored", async () => {
+      mockLookup.mockRejectedValue(new UpstreamUnavailableError());
+      const res = await authedPost(
+        "/api/nutrition/barcode/06772408",
+        labelBody,
+      );
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
+    });
+
     it("returns a conflict with a label result whose flags include High-in-Sugar", async () => {
       mockLookup.mockResolvedValue(cherryCokeDbResult()); // per-100 11.11 kcal / 3.09 sugar, nova 4, en:colas
       const res = await authedPost("/api/nutrition/barcode/06772408", {

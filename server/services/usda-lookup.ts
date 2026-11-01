@@ -15,6 +15,19 @@ import {
 
 const log = createServiceLogger("nutrition-lookup");
 
+/**
+ * Thrown when a barcode lookup found no data AND every source it asked
+ * errored (HTTP failure, rate limit, timeout, network) rather than answering
+ * "no such product". Callers must not present this as "product not found" —
+ * the right answer is a retryable 503.
+ */
+export class UpstreamUnavailableError extends Error {
+  constructor(message = "Barcode lookup sources are unavailable") {
+    super(message);
+    this.name = "UpstreamUnavailableError";
+  }
+}
+
 // Zod schema for USDA API response
 const usdaFoodSchema = z.object({
   // Tolerate a missing/null description: the array is parsed as a whole but a
@@ -267,6 +280,11 @@ function usdaLabelServingSize(food: {
  * Search USDA FoodData Central for a branded product by its UPC/GTIN barcode.
  * Tries multiple padding variants (raw, UPC-A with check digit, EAN-13).
  * Returns the product name + NutritionData if found.
+ *
+ * Returns null on a genuine miss (USDA answered, no matching product). Throws
+ * `UpstreamUnavailableError` when nothing matched and EVERY variant attempt
+ * failed (non-OK HTTP, rate limit, timeout, network) — an outage, not a miss.
+ * A malformed 200 is treated as a miss, as before.
  */
 export async function lookupUSDAByUPC(code: string): Promise<{
   product: NutritionData;
@@ -274,6 +292,7 @@ export async function lookupUSDAByUPC(code: string): Promise<{
   labelServingSize?: string;
 } | null> {
   const variants = barcodeVariants(code);
+  let answered = false;
 
   for (const variant of variants) {
     try {
@@ -293,6 +312,7 @@ export async function lookupUSDAByUPC(code: string): Promise<{
       );
 
       if (!response.ok) continue;
+      answered = true;
       const parsed = usdaUpcResponseSchema.safeParse(await response.json());
       if (!parsed.success || parsed.data.foods.length === 0) continue;
 
@@ -316,5 +336,9 @@ export async function lookupUSDAByUPC(code: string): Promise<{
     }
   }
 
+  // No variant matched. If none even got an answer, that is an outage.
+  if (!answered) {
+    throw new UpstreamUnavailableError("USDA UPC lookup unavailable");
+  }
   return null;
 }
