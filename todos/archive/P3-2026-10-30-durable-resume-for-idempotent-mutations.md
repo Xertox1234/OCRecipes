@@ -1,6 +1,6 @@
 ---
 title: "Make idempotent offline mutations survive an app restart (setMutationDefaults)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-30
 updated: 2026-10-31
@@ -28,10 +28,10 @@ TanStack Query v5 docs, guides/mutations.md, "Persist mutations": "we need a def
 
 ## Acceptance Criteria
 
-- [ ] Inventory the non-queue-backed `useMutation` sites and classify each one as replay-safe (idempotent or last-write-wins) or not
-- [ ] For each replay-safe mutation: give it a stable `mutationKey` and register `queryClient.setMutationDefaults(key, { mutationFn })` at module scope, before the persister restores (for example in a `client/lib/mutation-defaults.ts` imported by `query-client.ts`). The `mutationFn` must take only serializable variables
-- [ ] Replay-unsafe mutations either opt out with `networkMode: "always"` plus an offline guard, or stay in-memory-paused (documented)
-- [ ] Tests: a paused, keyed mutation is dehydrated; after a simulated restore plus `resumePausedMutations` it runs its default `mutationFn`
+- [x] Inventory the non-queue-backed `useMutation` sites and classify each one as replay-safe (idempotent or last-write-wins) or not
+- [x] For each replay-safe mutation: give it a stable `mutationKey` and register `queryClient.setMutationDefaults(key, { mutationFn })` at module scope, before the persister restores (for example in a `client/lib/mutation-defaults.ts` imported by `query-client.ts`). The `mutationFn` must take only serializable variables
+- [x] Replay-unsafe mutations either opt out with `networkMode: "always"` plus an offline guard, or stay in-memory-paused (documented)
+- [x] Tests: a paused, keyed mutation is dehydrated; after a simulated restore plus `resumePausedMutations` it runs its default `mutationFn`
 
 ## Implementation Notes
 
@@ -63,3 +63,7 @@ TanStack Query v5 docs, guides/mutations.md, "Persist mutations": "we need a def
 ### 2026-10-31
 
 - Owner ruling (the product call this todo depended on): **only on/off toggles** survive a restart — grocery check-offs, favourites and similar idempotent / last-write-wins toggles. Creates (duplicate risk), edits, reorders and deletes stay in-memory-paused (documented), not replayed.
+
+### 2026-11-01
+
+- Done. Four on/off toggles are durable (grocery check-off, recipe favourite, scanned-item favourite, conversation pin), registered in `client/lib/mutation-defaults.ts` and loaded from `query-client-persistence.ts` (a one-way import; `query-client.ts` importing it would be circular). The full `useMutation` classification is the header comment of that file. `useSetRecipeTried` is an explicit-state toggle left in-memory: its recipe id lives only in the key, so it needs its variables reshaped first. `queryClient.clear()` clears the mutation cache, so the auth-teardown sweep already drops persisted paused mutations; covered by a test.
