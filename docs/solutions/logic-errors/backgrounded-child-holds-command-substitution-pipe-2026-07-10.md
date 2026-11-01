@@ -73,6 +73,11 @@ for a `{ …; } &` group that means after the closing brace, never only inside i
 brace-group trap above passed the old wording of this rule). The repo's
 consult/attribute-drift paths were fixed at all four call sites in one pass.
 
+For `.claude/hooks/` this rule is now **enforced**, not just written:
+`.claude/hooks/test-hook-background-detach.sh` (run by `scripts/run-hook-tests.sh` in CI and
+preflight) fails when a non-test hook backgrounds a job without redirecting stdout on the
+backgrounded unit. Its controls include the exact pre-#1650 line.
+
 Test it by timing `$(hook)` with a slow stand-in for the background work: command
 substitution waits for EOF, not the hook's exit, so it measures what Claude Code sees.
 `test-inject-patterns.sh` and `test-session-recent-issues.sh` do this in their "slow lab
