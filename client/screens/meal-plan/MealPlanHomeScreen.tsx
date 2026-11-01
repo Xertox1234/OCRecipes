@@ -14,7 +14,7 @@ import {
   ScrollView,
   RefreshControl,
 } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -590,33 +590,23 @@ export default function MealPlanHomeScreen() {
   }, [queryClient, haptics]);
 
   // Date strip swipe gesture
-  const dateStripPanGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .activeOffsetX([-20, 20])
-        .onUpdate((e) => {
-          if (!reducedMotion) {
-            // Clamp visual feedback to +/-30px
-            dateStripTranslateX.value = Math.max(
-              -30,
-              Math.min(30, e.translationX),
-            );
-          }
-        })
-        .onEnd((e) => {
-          if (e.translationX < -dateStripSwipeThreshold) {
-            scheduleOnRN(handleNextWeek);
-          } else if (e.translationX > dateStripSwipeThreshold) {
-            scheduleOnRN(handlePrevWeek);
-          }
-          dateStripTranslateX.value = withSpring(
-            0,
-            dateStripSnapBackSpringConfig,
-          );
-        }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dateStripTranslateX is a stable shared value ref
-    [reducedMotion, handleNextWeek, handlePrevWeek],
-  );
+  const dateStripPanGesture = usePanGesture({
+    activeOffsetX: [-20, 20],
+    onUpdate: (e) => {
+      if (!reducedMotion) {
+        // Clamp visual feedback to +/-30px
+        dateStripTranslateX.value = Math.max(-30, Math.min(30, e.translationX));
+      }
+    },
+    onDeactivate: (e) => {
+      if (e.translationX < -dateStripSwipeThreshold) {
+        scheduleOnRN(handleNextWeek);
+      } else if (e.translationX > dateStripSwipeThreshold) {
+        scheduleOnRN(handlePrevWeek);
+      }
+      dateStripTranslateX.value = withSpring(0, dateStripSnapBackSpringConfig);
+    },
+  });
 
   const dateStripAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: dateStripTranslateX.value }],

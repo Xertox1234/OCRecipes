@@ -1,6 +1,6 @@
 ---
 title: "Move the 6 Gesture.* builder calls to gesture-handler 3's hook API"
-status: backlog
+status: done
 priority: low
 created: 2026-10-30
 updated: 2026-10-31
@@ -21,8 +21,8 @@ Deferred on purpose by the SDK upgrade runbook (step 4, task 7). In 3.3, `Gestur
 
 ## Acceptance Criteria
 
-- [ ] The 6 builder calls use the v3 hooks (`useTapGesture`, `usePinchGesture`, `usePanGesture`, and the v3 way of running gestures together in place of `Gesture.Simultaneous`)
-- [ ] `useTapGesture`, `usePanGesture` and `usePinchGesture` are added to `WORKLET_CALLBACK_HOOKS` in `scripts/worklet-directive-guard.ts`, with a guard test showing a hook callback is checked
+- [x] The 6 builder calls use the v3 hooks (`useTapGesture`, `usePinchGesture`, `usePanGesture`, and the v3 way of running gestures together in place of `Gesture.Simultaneous`)
+- [x] `useTapGesture`, `usePanGesture` and `usePinchGesture` are added to `WORKLET_CALLBACK_HOOKS` in `scripts/worklet-directive-guard.ts`, with a guard test showing a hook callback is checked
 - [ ] Camera tap-to-focus and pinch-zoom, the meal-plan swipe and the toast swipe-to-dismiss still work on a device
 
 ## Implementation Notes
@@ -59,3 +59,8 @@ Callbacks that run as worklets need the guard update in the same PR, otherwise t
 ### 2026-10-31
 
 - Owner ruling 2026-10-31: the Android device checks for the P3 todos run as ONE owner phone session after the camera and gesture-handler PRs merge (agent drives adb; owner holds the phone, scans a barcode, listens to TalkBack). The executor ships the code and leaves the device-check AC open for that session (iPhone checks for the camera gestures go in the same session).
+
+### 2026-11-01
+
+- Executed: the 6 builder calls now use `useTapGesture`, `usePinchGesture`, `usePanGesture` and `useSimultaneousGestures` (v3 callbacks `onActivate`/`onDeactivate` replace `onStart`/`onEnd`); the guard covers the three new hooks. Test mocks (`test/mocks/react-native-gesture-handler.ts`, `useCameraFocusAndZoom.test.ts`, `ScanScreen.test.tsx`) updated for the hook API.
+- The device-check AC stays open for the single owner phone session (Android via adb + iPhone camera gestures).
