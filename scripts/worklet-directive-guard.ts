@@ -81,6 +81,14 @@ const WORKLET_CALLBACK_HOOKS = new Set([
   "useAnimatedGestureHandler",
   "useAnimatedReaction",
   "useDerivedValue",
+  // react-native-gesture-handler 3 hook API: the callbacks (onBegin,
+  // onActivate, onUpdate, onDeactivate, onFinalize, ...) are properties of the
+  // config object passed as the first argument, and the worklets Babel plugin
+  // auto-workletizes them (gestureHandlerObjectHooks). The object-literal form
+  // in addCallbackArg already scans each callback body.
+  "useTapGesture",
+  "usePanGesture",
+  "usePinchGesture",
 ]);
 
 const GESTURE_CALLBACK_METHODS = new Set([

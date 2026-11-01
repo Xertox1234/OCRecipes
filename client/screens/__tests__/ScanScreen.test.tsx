@@ -142,15 +142,9 @@ vi.mock("react-native-vision-camera-barcode-scanner", () => ({
 }));
 vi.mock("react-native-gesture-handler", () => ({
   GestureDetector: ({ children }: { children: React.ReactNode }) => children,
-  Gesture: {
-    Tap: () => ({ onEnd: () => ({}) }),
-    Pinch: () => ({
-      onBegin: () => ({
-        onStart: () => ({ onUpdate: () => ({ onFinalize: () => ({}) }) }),
-      }),
-    }),
-    Simultaneous: () => ({}),
-  },
+  useTapGesture: () => ({}),
+  usePinchGesture: () => ({}),
+  useSimultaneousGestures: () => ({}),
 }));
 vi.mock("@/camera/hooks/useCameraPermissions", () => ({
   useCameraPermissions: () => ({

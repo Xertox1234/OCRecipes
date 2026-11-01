@@ -8,7 +8,7 @@ import { useCameraFocusAndZoom } from "../useCameraFocusAndZoom";
 import { logger } from "@/lib/logger";
 
 // The shared RNGH mock (test/mocks/react-native-gesture-handler.ts) throws away
-// handler callbacks — its `onEnd()`/`onUpdate()` just return `this`. These
+// handler callbacks — its builder methods just return `this` and it has no gesture hooks. These
 // tests need to *drive* the tap and pinch, so they supply a capturing stub
 // instead. vi.hoisted() is required: vi.mock factories are hoisted above
 // module-scope declarations.
@@ -20,35 +20,26 @@ const captured = vi.hoisted(() => ({
   pinchFinalize: undefined as (() => void) | undefined,
 }));
 
-vi.mock("react-native-gesture-handler", () => {
-  class TapMock {
-    onEnd(cb: (e: { x: number; y: number }) => void) {
-      captured.tapEnd = cb;
-      return this;
-    }
-  }
-  class PinchMock {
-    onBegin(cb: () => void) {
-      captured.pinchBegin = cb;
-      return this;
-    }
-    onStart(cb: () => void) {
-      captured.pinchStart = cb;
-      return this;
-    }
-    onUpdate(cb: (e: { scale: number }) => void) {
-      captured.pinchUpdate = cb;
-      return this;
-    }
-    onFinalize(cb: () => void) {
-      captured.pinchFinalize = cb;
-      return this;
-    }
-  }
-  return {
-    Gesture: { Tap: () => new TapMock(), Pinch: () => new PinchMock() },
-  };
-});
+vi.mock("react-native-gesture-handler", () => ({
+  useTapGesture: (config: {
+    onDeactivate: (e: { x: number; y: number }) => void;
+  }) => {
+    captured.tapEnd = config.onDeactivate;
+    return {};
+  },
+  usePinchGesture: (config: {
+    onBegin: () => void;
+    onActivate: () => void;
+    onUpdate: (e: { scale: number }) => void;
+    onFinalize: () => void;
+  }) => {
+    captured.pinchBegin = config.onBegin;
+    captured.pinchStart = config.onActivate;
+    captured.pinchUpdate = config.onUpdate;
+    captured.pinchFinalize = config.onFinalize;
+    return {};
+  },
+}));
 
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },

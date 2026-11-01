@@ -7,7 +7,10 @@ import React, {
 } from "react";
 import { StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { GestureDetector, Gesture } from "react-native-gesture-handler";
+import {
+  GestureDetector,
+  useSimultaneousGestures,
+} from "react-native-gesture-handler";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -128,7 +131,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     const { reducedMotion } = useAccessibility();
     const { focusPoint, zoomLabel, tapGesture, pinchGesture } =
       useCameraFocusAndZoom({ cameraRef, device });
-    const composedGesture = Gesture.Simultaneous(tapGesture, pinchGesture);
+    const composedGesture = useSimultaneousGestures(tapGesture, pinchGesture);
 
     const photoOutput = usePhotoOutput({
       qualityPrioritization: mapQualityPrioritization(photoQuality),

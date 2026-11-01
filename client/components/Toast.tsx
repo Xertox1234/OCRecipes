@@ -9,7 +9,7 @@ import Animated, {
   SlideInUp,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -105,13 +105,13 @@ export function Toast({
     return () => clearTimeout(timer);
   }, [onDismiss, opacity, reducedMotion, dismissMs, createdAt]);
 
-  const swipeGesture = Gesture.Pan()
-    .onUpdate((e) => {
+  const swipeGesture = usePanGesture({
+    onUpdate: (e) => {
       if (e.translationY < 0) {
         translateY.value = e.translationY;
       }
-    })
-    .onEnd((e) => {
+    },
+    onDeactivate: (e) => {
       if (e.translationY < SWIPE_DISMISS_THRESHOLD) {
         translateY.value = withTiming(-200, toastExitTimingConfig);
         opacity.value = withTiming(0, toastExitTimingConfig, (finished) => {
@@ -120,7 +120,8 @@ export function Toast({
       } else {
         translateY.value = withSpring(0, toastSpringConfig);
       }
-    });
+    },
+  });
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
