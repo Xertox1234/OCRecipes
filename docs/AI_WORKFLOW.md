@@ -101,10 +101,18 @@ Agent({
 
 `merge-review-guard.sh` is fail-closed and keys a review record to a PR's **exact head SHA and a
 digest over its whole changed-file list**. Any pipeline that commits after its review — `/todo`
-archives the todo at Step 8 and codifies at Step 9 — therefore arrives at the merge with a head no
-record covers, and is denied on a flawless run. Such a pipeline dispatches **one** `code-reviewer`
-at the final head as a confirmation pass (`todo-executor.md` Step 10 step 7), and then _measures_
-that the record landed rather than assuming it.
+codifies at Step 9 — therefore arrives at the merge with a head no record covers, and is denied on
+a flawless run. Such a pipeline dispatches **one** `code-reviewer` at the final head as a
+confirmation pass (`todo-executor.md` Step 10 step 7), and then _measures_ that the record landed
+rather than assuming it.
+
+**Move the head before review, not after (harness diagnosis N3).** Commits that do not depend on
+the review's outcome belong before it: `/todo` archives the todo and merges the base branch in its
+commit gate, so a run with nothing to fix or codify needs no confirmation pass. Step 10 step 7
+checks for a binding record first and dispatches only when none exists. Every review on a branch
+merges `origin/main` first when main has changed a file the branch also changes — otherwise
+`pr-preflight-guard.sh` refuses the PR until it does, and that merge needs a second review. The
+`review-dispatch` mod refuses such a `code-reviewer` dispatch with the merge command.
 
 Three mechanics make this cheap and correct, all read out of the hook rather than inferred:
 

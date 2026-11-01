@@ -21,17 +21,31 @@ const GIT: Record<string, string> = {
   "rev-parse --short HEAD": "abc1234",
   "diff --name-only origin/main...HEAD": "a.ts\nb.ts\n",
   "diff --name-only HEAD": "u.ts\n",
+  "diff --name-only HEAD^...HEAD": "a.ts\n",
+  "fetch -q origin refs/heads/main:refs/remotes/origin/main": "",
+  // what origin/main changed since the branch forked: nothing, unless a test says so
+  "diff --name-only HEAD...origin/main": "",
 };
 
 type On = Parameters<TestBody>[1];
 
 // Stands in for the engine: git/gh answers, the doc, and the Agent tool itself, which
 // records the prompt it was finally given.
-function world(on: On, opts: { files?: string; gitThrows?: boolean } = {}) {
+function world(
+  on: On,
+  opts: {
+    files?: string;
+    gitThrows?: boolean;
+    missed?: string;
+    fetchFails?: boolean;
+    log?: string[];
+  } = {},
+) {
   const seen: string[] = [];
   on("process.run", (_, e) => {
     if (opts.gitThrows) throw new Error("spawn failed");
     const argv = e.argv.join(" ");
+    opts.log?.push(argv);
     if (argv === "gh pr diff 42 --name-only")
       return {
         value: {
@@ -44,9 +58,15 @@ function world(on: On, opts: { files?: string; gitThrows?: boolean } = {}) {
       };
     const key = e.argv.slice(3).join(" ");
     const out =
-      key.startsWith("diff") && opts.files !== undefined
-        ? opts.files
-        : GIT[key];
+      key === "diff --name-only HEAD...origin/main" && opts.missed !== undefined
+        ? opts.missed
+        : key.startsWith("fetch") && opts.fetchFails
+          ? undefined
+          : key.startsWith("diff") &&
+              !key.includes("HEAD...") &&
+              opts.files !== undefined
+            ? opts.files
+            : GIT[key];
     return out === undefined
       ? {
           value: {
@@ -256,4 +276,49 @@ test("code-reviewer in the same message counts, whichever call is checked first"
   expect(refused(base)).toBe(false);
   expect(refused(domain)).toBe(false);
   expect(seen).toHaveLength(2);
+});
+
+test("code-reviewer is refused while origin/main changed a file the branch also changes", async ($, on) => {
+  const log: string[] = [];
+  const seen = world(on, { missed: "z.ts\nb.ts\n", log });
+  const r = await $.tool.call(agent("code-reviewer", DIRECTIVE));
+  expect(refused(r)).toBe(true);
+  expect(text(r)).toMatch(
+    /b\.ts changed on origin\/main since this branch forked/,
+  );
+  expect(text(r)).toContain(`git -C ${WT} merge origin/main`);
+  expect(seen).toHaveLength(0);
+  // it compared against a freshly fetched main
+  expect(log).toContain(
+    `git -C ${WT} fetch -q origin refs/heads/main:refs/remotes/origin/main`,
+  );
+});
+
+test("no overlap, or no fresh main, lets the review through", async ($, on) => {
+  const seen = world(on, { missed: "z.ts\n" });
+  expect(refused(await $.tool.call(agent("code-reviewer", DIRECTIVE)))).toBe(
+    false,
+  );
+  expect(seen).toHaveLength(1);
+});
+
+test("a failed fetch skips the overlap check (hygiene, not safety)", async ($, on) => {
+  const seen = world(on, { missed: "b.ts\n", fetchFails: true });
+  expect(refused(await $.tool.call(agent("code-reviewer", DIRECTIVE)))).toBe(
+    false,
+  );
+  expect(seen).toHaveLength(1);
+});
+
+test("pr=, uncommitted and non-origin bases skip the overlap check", async ($, on) => {
+  const log: string[] = [];
+  const seen = world(on, { missed: "a.ts\np.ts\nu.ts\n", log });
+  for (const d of [
+    `REVIEW-DISPATCH worktree=${WT} base=origin/main pr=42`,
+    `REVIEW-DISPATCH worktree=${WT} mode=uncommitted`,
+    `REVIEW-DISPATCH worktree=${WT} base=HEAD^`,
+  ])
+    expect(refused(await $.tool.call(agent("code-reviewer", d)))).toBe(false);
+  expect(seen).toHaveLength(3);
+  expect(log.some((a) => a.includes(" fetch "))).toBe(false);
 });
