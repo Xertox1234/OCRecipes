@@ -88,14 +88,26 @@ for v in base:$BASE_SHA head:$HEAD_SHA; do
 done
 
 # ---- guards ----------------------------------------------------------------------------------
+# Two checkouts, as in test-git-safety.sh. {MAIN}/{WT}: fake paths outside any temp folder, for git
+# verbs (git-safety allows git in a temp-folder scratch repo, so a temp fixture would leave those
+# seeds silent). {RMAIN}/{RWT}: a real repo and linked worktree, for write-shaped commands
+# (redirects, rm, cp), which git-safety resolves through git. pwd -P: macOS's /var → /private/var.
 MAIN='/Users/x/projects/OCRecipes'
 WT="$MAIN/.claude/worktrees/agent-verdictdiff"
+FIX=$(cd "$T" && pwd -P)/fixture
+( unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+  git init -q "$FIX/main" && git -C "$FIX/main" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init &&
+  git -C "$FIX/main" worktree add -q "$FIX/main/.claude/worktrees/agent-verdictdiff" ) >/dev/null 2>&1 \
+  || { echo "verdict-diff: could not build the git fixture" >&2; exit 2; }
+RMAIN="$FIX/main"
+RWT="$RMAIN/.claude/worktrees/agent-verdictdiff"
 MISSING="$T/missing-folder"
 NOEXEC="$T/noexec-folder"
 PRESERVING=" id ws tab wrap prefix cdfail quote braceopt "   # families that keep the command's meaning
 
 mkdir -p "$NOEXEC" "$T/bin" "$REG" && chmod 000 "$NOEXEC"
 printf '%s' "$WT" > "$REG/aaaa000000000001"
+printf '%s' "$RWT" > "$REG/aaaa000000000002"
 # git-safety asks gh about PR state; a stand-in keeps the run offline and deterministic
 cat > "$T/bin/gh" <<'EOF'
 #!/bin/sh
@@ -125,8 +137,9 @@ for t in $GUARDS; do
   while IFS=$'\t' read -r EXPECT cwdkey raw; do
     case "$EXPECT" in T | N) ;; *) continue ;; esac
     seedno=$((seedno+1))
-    cmd=${raw//\{MAIN\}/$MAIN}; cmd=${cmd//\{WT\}/$WT}; cmd=${cmd//\\n/$'\n'}
-    if [ "$cwdkey" = WT ]; then CWD=$WT; else CWD=$MAIN; fi
+    cmd=${raw//\{RMAIN\}/$RMAIN}; cmd=${cmd//\{RWT\}/$RWT}
+    cmd=${cmd//\{MAIN\}/$MAIN}; cmd=${cmd//\{WT\}/$WT}; cmd=${cmd//\\n/$'\n'}
+    case "$cwdkey" in WT) CWD=$WT ;; RWT) CWD=$RWT ;; RMAIN) CWD=$RMAIN ;; *) CWD=$MAIN ;; esac
     printf '%s\t%s\n' "$EXPECT" "${cmd%%$'\n'*}" > "$R/seed-$seedno"
     w1=${cmd%%[ $'\n']*}; rest=${cmd#"$w1"}
     emit id "$cmd"
@@ -189,6 +202,24 @@ for t in $GUARDS; do
     done
     say "CHANGED (base vs head): $NCH of $N rows. '!' = a variation that changes the command's meaning"
     say "  (redefines the interpreter, enters a folder, moves an option): check it should follow the seed."
+    [ -n "$SECTION" ] && say "${SECTION%$'\n'}"
+    # Still open, on the seeds this change touched: a must-trigger seed with any changed row is the
+    # area being worked on, so its meaning-keeping variations that stay silent at head are listed
+    # (#1553 → #1554: the brace-built --output and the unenterable cd were silent at both commits).
+    NO=0 SECTION=""
+    for ((sn = 1; sn <= seedno; sn++)); do
+      [ "$(cut -f1 "$R/seed-$sn")" = T ] || continue
+      touched=$(awk -F'\t' -v s="$sn" '$2==s {print $1}' "$R/meta" | while read -r kk; do
+        [ "$(cat "$R/base/$kk")" = "$(cat "$R/head/$kk")" ] || { echo y; break; }; done)
+      [ -n "$touched" ] || continue
+      lines=$(awk -F'\t' -v s="$sn" '$2==s {print $1"\t"$3}' "$R/meta" | while IFS=$'\t' read -r kk fam; do
+        [[ "$PRESERVING" == *" $fam "* ]] || continue
+        [ "$(cat "$R/head/$kk")" = ALLOW ] && printf '    %-9s %q\n' "$fam" "$(cat "$R/$kk.cmd")"; done)
+      [ -n "$lines" ] || continue
+      n=$(printf '%s\n' "$lines" | wc -l | tr -d ' '); NO=$((NO+n))
+      SECTION+="  seed #$sn $(cut -f2 "$R/seed-$sn")  ($n silent)"$'\n'"$lines"$'\n'
+    done
+    say "STILL OPEN on must-trigger seeds this change touched (meaning-keeping variations silent at head): $NO"
     [ -n "$SECTION" ] && say "${SECTION%$'\n'}"
   else
     say "New at head (no base version): GAPS = must-trigger seeds whose meaning-keeping variations stay silent"

@@ -30,6 +30,10 @@ export PREFLIGHT_STAMP_FILE="$STAMP_FILE"
 # ALSO fire a REAL network fetch against the real GitHub remote. Blanket-skip it here;
 # the new hermetic section near the end unsets this for its own scope.
 export SKIP_PR_DRIFT_CHECK=1
+# Same reason for the verdict-diff check (harness N7): on a branch that changes a guard or keyword
+# file, every "fresh stamp allows" test above would deny for want of a verdict-diff stamp. The
+# hermetic section 17 near the end re-enables it for its own scope.
+export SKIP_VERDICT_DIFF=1
 # Covers the two mktemp -d fixtures too: their inline `rm -rf`s only run on the happy path,
 # so an interrupted run (Ctrl-C / SIGTERM — bash runs the EXIT trap for both) leaked them.
 trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}"' EXIT
@@ -528,5 +532,72 @@ OUT=$(run_in "$HWT/wt")
 assert_empty "worktree with no hooks but a fresh stamp for its HEAD still allows" "" "$OUT"
 rm -f "$STAMP_FILE"
 rm -rf "$HWT"
+
+# 17. Verdict-diff stamp (harness N7, 2026-11-01): a PR whose branch changes a path listed in
+# scripts/harness/verdict-diff/targets.tsv (read from the hook's own tree) needs
+# <stamp dir>/<head sha>, written by scripts/harness/verdict-diff.sh. Hermetic: a temp repo with a
+# hand-set refs/remotes/origin/main, so origin/main...HEAD is exactly the files committed here.
+VREPO=$(mktemp -d); VSTAMPS=$(mktemp -d)
+vgit() { hgit -C "$VREPO" "$@"; }
+vrun() { # $1 = optional MCP head branch → stdout of the hook, run inside $VREPO, check enabled
+  local in='{"tool_name":"mcp__github__create_pull_request","tool_input":{"title":"x","body":"y"}}'
+  [ -n "${1:-}" ] && in=$(jq -cn --arg h "$1" '{tool_name:"mcp__github__create_pull_request",tool_input:{title:"x",body:"y",head:$h}}')
+  (cd "$VREPO" && printf '%s' "$in" | env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u SKIP_VERDICT_DIFF \
+    VERDICT_DIFF_STAMP_DIR="$VSTAMPS" bash "$HOOK")
+}
+vbranch() { # $1 = branch, $2 = file to change → leaves HEAD on the branch, preflight stamp = its sha
+  vgit switch -q main; vgit switch -q -c "$1"
+  mkdir -p "$VREPO/$(dirname "$2")"; echo "$1" >> "$VREPO/$2"
+  vgit add -A; vgit commit -q -m "$1"; vgit rev-parse HEAD > "$STAMP_FILE"
+}
+vgit init -q --initial-branch=main
+vgit commit -q --allow-empty -m init
+vgit update-ref refs/remotes/origin/main "$(vgit rev-parse HEAD)"
+
+vbranch g1 .claude/hooks/git-safety.sh
+OUT=$(vrun)
+assert_contains "verdict: guard changed, no verdict stamp → deny" '"permissionDecision": "deny"' "$OUT"
+assert_contains "verdict: the deny names the tool to run" 'scripts/harness/verdict-diff.sh' "$OUT"
+assert_contains "verdict: the deny names the changed file" '.claude/hooks/git-safety.sh' "$OUT"
+touch "$VSTAMPS/$(vgit rev-parse HEAD)"
+OUT=$(vrun)
+assert_empty "verdict: guard changed, stamp for this head → allow" "" "$OUT"
+rm -f "$VSTAMPS"/*
+touch "$VSTAMPS/0000000000000000000000000000000000000000"
+OUT=$(vrun)
+assert_contains "verdict: stamp for another sha → deny" '"permissionDecision": "deny"' "$OUT"
+OUT=$(SKIP_VERDICT_DIFF=1 bash -c 'cd "$1" && printf %s "{\"tool_name\":\"mcp__github__create_pull_request\",\"tool_input\":{}}" | env -u GIT_DIR -u GIT_WORK_TREE bash "$2"' _ "$VREPO" "$HOOK")
+assert_empty "verdict: SKIP_VERDICT_DIFF=1 in the hook's environment → allow" "" "$OUT"
+
+vbranch d1 docs/notes.md
+OUT=$(vrun)
+assert_empty "verdict: no registry path changed → allow without a verdict stamp" "" "$OUT"
+
+vbranch l1 .claude/hooks/lib/cmd-detect.sh
+OUT=$(vrun)
+assert_contains "verdict: a lib/* glob row matches → deny" '"permissionDecision": "deny"' "$OUT"
+
+vbranch k1 shared/constants/allergens.ts
+OUT=$(vrun)
+assert_contains "verdict: keyword file changed → deny" '"permissionDecision": "deny"' "$OUT"
+
+# The named MCP head is the commit judged (same rule as the preflight stamp): cwd on main.
+vbranch g2 .claude/hooks/guard-outward-cli.sh
+G2=$(vgit rev-parse HEAD); vgit switch -q main
+echo "$G2" > "$STAMP_FILE"
+OUT=$(vrun g2)
+assert_contains "verdict: named head g2 changed a guard, no stamp → deny" '"permissionDecision": "deny"' "$OUT"
+touch "$VSTAMPS/$G2"
+OUT=$(vrun g2)
+assert_empty "verdict: named head g2 with its stamp → allow" "" "$OUT"
+
+# Fail closed when the changed files cannot be computed.
+vbranch g3 .claude/hooks/git-safety.sh
+vgit update-ref -d refs/remotes/origin/main
+OUT=$(vrun)
+assert_contains "verdict: no origin/main to diff against → deny" '"permissionDecision": "deny"' "$OUT"
+assert_contains "verdict: that deny names the bypass" 'SKIP_VERDICT_DIFF=1' "$OUT"
+rm -f "$STAMP_FILE"
+rm -rf "$VREPO" "$VSTAMPS"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

@@ -341,6 +341,22 @@ git diff <BASE>...HEAD --name-only                                # the changed-
 
 Run each line as its own command and type its output back literally where this step and later ones say `$BASE`, `$WORKTREE`, `$BRANCH` or `$HEAD_SHORT` (see Step 0, "Command forms that worktree isolation accepts"). `git diff <BASE>...HEAD -- .` shows the diff itself when you need it.
 
+**Guard or keyword file in the list? Run the verdict comparison first.** If any changed file matches
+a path in `scripts/harness/verdict-diff/targets.tsv` (the bash guards under `.claude/hooks/`, their
+`lib/`, `shared/constants/diet-conflicts.ts`, `shared/constants/allergens.ts`), run
+
+```bash
+bash scripts/harness/verdict-diff.sh
+```
+
+from the worktree root. It judges the base and head versions over a generated set, prints every
+changed verdict (CHANGED) and, for a rule new on this branch, every row that should trigger and
+doesn't (GAPS), then stamps HEAD. Decide for each listed row whether it is intended; fix the ones
+that aren't before review. Hand reviewers the report path it prints, and paste its lists into the PR
+body under `## Verdict changes` (Step 10). The stamp covers ONE commit: after any later commit, run
+it again, or the PR gate refuses the PR. A failed control (exit 1) means a must-trigger seed no
+longer triggers: if that is intended, change the seed in `scripts/harness/verdict-diff/seeds/`.
+
 This is a **branch** review (`$BASE...HEAD`), not a working-tree one, because the commit gate already
 committed the implementation — `git diff HEAD` would now be empty and every reviewer would
 correctly return "No findings." on a diff of nothing. The Review Policy's dispatch prompt already
@@ -622,6 +638,9 @@ remote branch todo/<todo-slug> already exists at a diverged commit and the PR ch
 
 ## Out of contract
 <Only when the todo has a Scope Contract AND at least one tracked file fell outside it: one bullet per such file — "`path` — reason (needed for AC #n)". Omit this entire heading when there is no Scope Contract or every touched file is within it.>
+
+## Verdict changes
+<Only when Step 6 ran scripts/harness/verdict-diff.sh: its CHANGED and GAPS lists, each row marked intended or not. Omit this heading otherwise.>
 
 ## Resolves
 Todo: `todos/<filename>.md` (archived in this commit)

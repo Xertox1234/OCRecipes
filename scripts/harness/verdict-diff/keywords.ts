@@ -224,8 +224,17 @@ function report(
     });
     return [...g.entries()];
   };
+  const isNew = (r: Row) => newKw[r.m].includes(r.kw);
+  // A new keyword's rows all change by design; they are counted here and judged in GAPS below.
+  const newChanged = rows.filter(
+    (r, i) => !r.bare && isNew(r) && base[i] !== head[i],
+  ).length;
+  if (newChanged)
+    console.log(
+      `${newChanged} rows changed because their keyword is new at head (not listed; see GAPS)`,
+    );
   const changed = group((r, i) =>
-    base[i] === head[i]
+    isNew(r) || base[i] === head[i]
       ? null
       : `${JSON.stringify(r.t).padEnd(30)} [${base[i]}]→[${head[i]}]`,
   );
@@ -236,7 +245,6 @@ function report(
     console.log(`  ${k} (${lines.length})`);
     for (const l of lines) console.log(`    ${l}`);
   }
-  const isNew = (r: Row) => newKw[r.m].includes(r.kw);
   const gaps = group((r, i) =>
     isNew(r) && !head[i] ? JSON.stringify(r.t) : null,
   );
@@ -253,7 +261,12 @@ function report(
 
 const [mode, a, b, c, d] = process.argv.slice(2);
 if (mode === "plan") plan(a, b, c);
-else if (mode === "eval") await evaluate(a, b, c, d === "--sample");
+else if (mode === "eval")
+  // no top-level await: the repo's TS runs as CommonJS under tsx
+  evaluate(a, b, c, d === "--sample").catch((e: unknown) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
 else if (mode === "report") process.exitCode = report(a, b, c, d);
 else {
   console.error("usage: keywords.ts plan|eval|report …");
