@@ -95,6 +95,7 @@ done
 # --- The real hooks. ---
 SCANNED=0 LINES=0
 for f in "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/hooks/lib/*.sh; do
+  [ -f "$f" ] || continue   # an unmatched glob stays literal
   case "${f##*/}" in test-*|repro-*) continue ;; esac
   SCANNED=$((SCANNED + 1))
   BG=$(grep -cE '(^|[^&<>|])&([[:space:]]*$|[[:space:]]*[;#]|[[:space:]]+[a-z])' "$f")
@@ -103,7 +104,8 @@ for f in "$ROOT"/.claude/hooks/*.sh "$ROOT"/.claude/hooks/lib/*.sh; do
   [ -z "$HIT" ] || fail "${f#"$ROOT"/} backgrounds a job that keeps the hook's stdout open — put the redirect on the backgrounded unit (\`{ …; } >/dev/null 2>&1 </dev/null &\`):
 $HIT"
 done
-[ "$SCANNED" -gt 0 ] && pass "scanned $SCANNED hook files, $LINES candidate background lines" \
-  || fail "no hook files scanned"
+# 31 hooks on 2026-10-31; a scan that finds a handful means the glob or ROOT is wrong.
+[ "$SCANNED" -ge 20 ] && pass "scanned $SCANNED hook files, $LINES candidate background lines" \
+  || fail "scanned only $SCANNED hook files under $ROOT/.claude/hooks — wrong root?"
 
 [ "$FAIL" = 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
