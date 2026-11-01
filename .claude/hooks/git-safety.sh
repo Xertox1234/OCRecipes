@@ -92,6 +92,16 @@ lex_collapse() {
 case "${BASH_SOURCE[0]}" in */*) _WT_HERE="${BASH_SOURCE[0]%/*}" ;; *) _WT_HERE=. ;; esac
 _WT_OK=$( { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1; declare -F emit_write_targets >/dev/null && echo ok )
 [ "$_WT_OK" = ok ] && { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1
+# own_agent_root (lib/own-agent-worktree.sh, harness item 8): a subagent's OWN isolation worktree
+# passes the contract check (in_registered below), keyed on the hook input's agent_id plus a cwd
+# inside agent-<agent_id>. Probed the same way; a lib that fails to load means no exception.
+_OA_OK=$( { . "$_WT_HERE/lib/own-agent-worktree.sh"; } >/dev/null 2>&1; declare -F own_agent_root >/dev/null && echo ok )
+[ "$_OA_OK" = ok ] && { . "$_WT_HERE/lib/own-agent-worktree.sh"; } >/dev/null 2>&1
+OWN_ROOT=""
+if [ "$_OA_OK" = ok ]; then
+  AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || echo "")
+  [ -n "$AGENT_ID" ] && OWN_ROOT=$(own_agent_root "$CWD" "$AGENT_ID" 2>/dev/null || echo "")
+fi
 # git_c_target: read ONE shell segment (already matched MUTATING_GIT_SEG_RE) on STDIN and emit the
 # repo-redirect COMPONENTS present, one per TAGGED line, for the caller to reconstruct git's TWO
 # INDEPENDENT write targets from (see emit_effective + the caller loop):
@@ -493,6 +503,9 @@ allowlisted() {
 in_registered() {
   local p="$1" entry wt
   has_dot_segments "$p" && return 1
+  if [ -n "$OWN_ROOT" ]; then
+    case "$p" in "$OWN_ROOT"|"$OWN_ROOT"/*) return 0 ;; esac
+  fi
   for entry in "$REG_DIR"/*; do
     wt=$(cat "$entry" 2>/dev/null || echo "")
     [ -n "$wt" ] || continue
