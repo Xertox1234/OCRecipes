@@ -12,13 +12,19 @@ import type { AuthenticatedRequest } from "../middleware/auth";
 import { ZodError } from "zod";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import { TIER_FEATURES, type PremiumFeatures } from "@shared/types/premium";
+import {
+  AI_DAILY_CAPS,
+  TIER_FEATURES,
+  type AiCallKind,
+  type PremiumFeatures,
+} from "@shared/types/premium";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { isAiConfigured } from "../lib/openai";
 import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 import { reportError } from "../lib/error-reporter";
 import { isValidCalendarDate } from "../utils/date-validation";
+import { parseTimezone } from "../lib/civil-date";
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -76,6 +82,36 @@ export async function checkPremiumFeature(
     return null;
   }
   return features;
+}
+
+/**
+ * Claim one paid AI call of `kind` against the user's DB-backed daily cap
+ * (`AI_DAILY_CAPS`), BEFORE the paid call. Returns true when the call may
+ * proceed; otherwise sends 429 DAILY_LIMIT_REACHED and returns false, and the
+ * caller must return without touching the AI service. Counts the call
+ * atomically - see `storage.claimDailyAiCall`.
+ */
+export async function claimAiCallOrReject(
+  req: AuthenticatedRequest,
+  res: Response,
+  kind: AiCallKind,
+  featureLabel: string,
+): Promise<boolean> {
+  const claimed = await storage.claimDailyAiCall(
+    req.userId,
+    kind,
+    AI_DAILY_CAPS[kind],
+    parseTimezone(req.headers["x-timezone"]),
+  );
+  if (!claimed) {
+    sendError(
+      res,
+      429,
+      `Daily ${featureLabel} limit reached`,
+      ErrorCode.DAILY_LIMIT_REACHED,
+    );
+  }
+  return claimed;
 }
 
 /**

@@ -22,6 +22,7 @@ import { register } from "../recipe-import";
 import { importRecipeFromUrl } from "../../services/recipe-import";
 import { generateRecipeImage } from "../../services/recipe-generation";
 import { storage } from "../../storage";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { createMockMealPlanRecipe } from "../../__tests__/factories";
 
 vi.mock("../../services/recipe-import", () => ({
@@ -42,6 +43,7 @@ vi.mock("../../storage", () => ({
     getEffectiveTierForUser: vi.fn(),
     createMealPlanRecipe: vi.fn(),
     updateMealPlanRecipe: vi.fn(),
+    claimDailyAiCall: vi.fn(),
   },
 }));
 
@@ -210,6 +212,7 @@ describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
       expiresAt: null,
     });
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     app = createApp();
   });
 
@@ -347,6 +350,41 @@ describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
       expect(storage.updateMealPlanRecipe).toHaveBeenCalledWith(5, "1", {
         imageUrl: "https://gen.example.com/img.jpg",
       });
+    });
+
+    it("skips only the image once the daily cap is claimed, import still succeeds", async () => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: true,
+        data: buildImportedData({ imageUrl: null }),
+      });
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({ id: 8, title: "No Image", imageUrl: null }),
+      );
+      vi.mocked(generateRecipeImage).mockResolvedValue(null);
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 2,
+      );
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const res = await request(app)
+          .post("/api/meal-plan/recipes/import-url")
+          .set("Authorization", "Bearer token")
+          .send({ url: "https://example.com/recipe" });
+        statuses.push(res.status);
+      }
+      await new Promise((r) => setImmediate(r));
+
+      expect(statuses).toEqual([201, 201, 201]);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledTimes(3);
+      expect(generateRecipeImage).toHaveBeenCalledTimes(2);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "recipeAutoImage",
+        AI_DAILY_CAPS.recipeAutoImage,
+        expect.any(String),
+      );
     });
 
     it("does not patch the recipe when generation returns null", async () => {

@@ -1,8 +1,10 @@
 import type { Express } from "express";
 import { Router } from "express";
 import cors from "cors";
+import { rateLimit } from "express-rate-limit";
 import { requireApiKey } from "../middleware/api-key-auth";
 import { apiRateLimiter } from "../middleware/api-rate-limit";
+import { ipKeyGenerator } from "./_rate-limiters";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -141,6 +143,23 @@ export function register(app: Express): void {
     res.setHeader("X-API-Status", "beta");
     next();
   });
+
+  // Per-IP cap BEFORE the key check: any X-API-Key value otherwise costs a DB
+  // lookup (and a bcrypt compare on a prefix match) before a limiter runs.
+  // Inline (not a shared limiter) so CodeQL can trace it, like /api/health.
+  router.use(
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: 60,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: ipKeyGenerator,
+      message: {
+        error: "Too many requests. Please wait.",
+        code: "RATE_LIMITED",
+      },
+    }),
+  );
 
   // Auth + rate limiting
   router.use(requireApiKey);

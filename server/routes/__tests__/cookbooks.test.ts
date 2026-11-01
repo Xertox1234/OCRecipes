@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import express from "express";
 import request from "supertest";
 
@@ -14,6 +15,7 @@ import { isArtDirectorLLMEnabled } from "../../services/image-art-direction";
 
 vi.mock("../../storage", () => ({
   storage: {
+    claimDailyAiCall: vi.fn(),
     getUserCookbooks: vi.fn(),
     createCookbook: vi.fn(),
     getCookbook: vi.fn(),
@@ -101,6 +103,7 @@ describe("Cookbook Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.claimDailyAiCall).mockResolvedValue(true);
     app = createApp();
   });
 
@@ -651,6 +654,37 @@ describe("Cookbook Routes", () => {
   });
 
   describe("POST /api/cookbooks/:id/cover/generate", () => {
+    it("refuses the (N+1)th generation with 429 before calling the generator", async () => {
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      let used = 0;
+      vi.mocked(storage.claimDailyAiCall).mockImplementation(
+        async () => ++used <= 2,
+      );
+      vi.mocked(storage.getCookbook).mockResolvedValue(mockCookbook);
+      vi.mocked(generateCookbookCover).mockResolvedValue(
+        "https://cdn.test/cookbook-covers/ai.png",
+      );
+      vi.mocked(storage.updateCookbook).mockResolvedValue({
+        ...mockCookbook,
+        coverImageUrl: "https://cdn.test/cookbook-covers/ai.png",
+      });
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const res = await request(app).post("/api/cookbooks/1/cover/generate");
+        statuses.push(res.status);
+      }
+
+      expect(statuses).toEqual([200, 200, 429]);
+      expect(vi.mocked(generateCookbookCover)).toHaveBeenCalledTimes(2);
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "cookbookCover",
+        AI_DAILY_CAPS.cookbookCover,
+        expect.any(String),
+      );
+    });
+
     it("generates a cover for a premium user", async () => {
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getCookbook).mockResolvedValue(mockCookbook);

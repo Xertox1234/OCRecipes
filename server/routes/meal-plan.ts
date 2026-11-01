@@ -7,6 +7,7 @@ import { fireAndForget } from "../lib/fire-and-forget";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { isValidCalendarDate } from "../utils/date-validation";
 import {
   mealPlanRateLimit,
@@ -18,6 +19,7 @@ import {
   checkAiConfigured,
   checkPremiumFeature,
   formatZodError,
+  getPremiumFeatures,
   handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
@@ -58,7 +60,12 @@ function inferRecipeMealTypes(
   );
 }
 
-/** Auto-generate a hero image for a recipe saved without one (non-blocking). */
+/**
+ * Auto-generate a hero image for a recipe saved without one (non-blocking).
+ * Premium only: free users keep the placeholder and no image call is made.
+ * Premium users are bounded by a DB-backed daily cap claimed BEFORE the paid
+ * call; a refused claim just skips the image (the save already succeeded).
+ */
 function fireRecipeImageGen(
   recipe: {
     id: number;
@@ -66,11 +73,22 @@ function fireRecipeImageGen(
     cuisine: string | null;
     mealTypes: string[] | null;
   },
-  userId: string,
+  req: AuthenticatedRequest,
 ): void {
+  const userId = req.userId;
+  const tz = parseTimezone(req.headers["x-timezone"]);
   fireAndForget(
     "recipe-image-gen",
     (async () => {
+      const features = await getPremiumFeatures(req);
+      if (!features.recipeAutoImages) return;
+      const claimed = await storage.claimDailyAiCall(
+        userId,
+        "recipeAutoImage",
+        AI_DAILY_CAPS.recipeAutoImage,
+        tz,
+      );
+      if (!claimed) return;
       const imageUrl = await generateRecipeImage({
         title: recipe.title,
         cuisine: recipe.cuisine,
@@ -190,7 +208,7 @@ export function register(app: Express): void {
         }
 
         // Auto-generate image if none provided (async, non-blocking)
-        if (!recipe.imageUrl) fireRecipeImageGen(recipe, req.userId);
+        if (!recipe.imageUrl) fireRecipeImageGen(recipe, req);
 
         res.status(201).json(recipe);
       } catch (error) {
@@ -387,7 +405,7 @@ export function register(app: Express): void {
                 cuisine: recipeData.cuisine ?? null,
                 mealTypes,
               },
-              req.userId,
+              req,
             );
           }
           res.status(201).json({

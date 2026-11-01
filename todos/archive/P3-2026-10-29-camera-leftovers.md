@@ -1,6 +1,6 @@
 ---
 title: "Camera leftovers: takePicture options ignored; Android interruption logging"
-status: backlog
+status: done
 priority: low
 created: 2026-10-29
 updated: 2026-10-31
@@ -23,8 +23,8 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] takePicture honours its options or the options are removed from call sites
-- [ ] Android interruption handling matches iOS (skip routine background, latch per reason)
+- [x] takePicture honours its options or the options are removed from call sites
+- [x] Android interruption handling matches iOS (skip routine background, latch per reason)
 - [ ] Device check on Android
 
 ## Implementation Notes
@@ -46,3 +46,8 @@ Read the VisionCamera patch notes before changing CameraView.
 
 - Decision: REMOVE the unused `takePicture` options from the call sites (`ReceiptCaptureScreen`, `CookSessionCaptureScreen`) rather than implement them — receipt and cook-session photos are already compressed before upload (`useReceiptScan`, `useCookSession` via `client/lib/image-compression.ts`), so there is no user-visible change. `CookSessionCaptureScreen.tsx` joins the files in scope for that.
 - Owner ruling 2026-10-31: the Android device checks for the P3 todos run as ONE owner phone session after the camera and gesture-handler PRs merge (agent drives adb; owner holds the phone, scans a barcode, listens to TalkBack). The executor ships the code and leaves the device-check AC open for that session.
+
+### 2026-11-01
+
+- Removed the dead `takePicture` options from `ReceiptCaptureScreen` and `CookSessionCaptureScreen`; Android `CameraView` interruption handling now mirrors iOS (background reason skipped, per-reason latch, end paired with a reported start). Source check: CameraX only raises `unknown` interruptions (RECOVERABLE errors), so the Android behaviour change is defensive parity, not a live-noise fix.
+- Device check on Android stays open for the owner's single phone session (see 2026-10-31 ruling).

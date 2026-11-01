@@ -57,7 +57,44 @@ export interface PremiumFeatures {
    * nothing to serve and matches how avatar upload already works.
    */
   cookbookCoverGeneration: boolean;
+  /**
+   * Auto-generate a hero image (paid Runware + art-director LLM call) for a
+   * recipe saved without one. Free users keep the placeholder — no image call
+   * is made for them (owner decision 2026-10-31).
+   */
+  recipeAutoImages: boolean;
 }
+
+/**
+ * Daily caps for paid AI calls that have no tier-specific quota of their own.
+ * Applied per user, to free and premium alike (a feature a tier cannot reach is
+ * gated by its own `TIER_FEATURES` flag first). Enforced in the database by
+ * `storage.claimDailyAiCall` BEFORE the paid call, so they survive deploys.
+ *
+ * The window is a fixed calendar day in the caller's `x-timezone`, not a
+ * rolling 24 h. Each claim counts one paid call, whether or not it succeeds.
+ *
+ * PROPOSED VALUES (2026-10-31) — a pricing decision for the owner. This is the
+ * one place to change them; no migration is needed.
+ */
+export const AI_DAILY_CAPS = {
+  /** Premium recipe hero images generated on save (meal-plan routes). */
+  recipeAutoImage: 30,
+  /** Front-of-pack label vision analyses (free and premium). */
+  frontLabel: 30,
+  /** Premium menu photo scans. */
+  menuScan: 10,
+  /** Premium voice-log transcriptions. */
+  voiceTranscription: 50,
+  /** Premium single cookbook cover generations (the cover studio has its own cap). */
+  cookbookCover: 10,
+  /** Premium recipe-chat photo analyses. */
+  recipeChatImage: 20,
+  /** Premium item suggestions + instructions, cache misses only. */
+  itemSuggestion: 40,
+} as const;
+
+export type AiCallKind = keyof typeof AI_DAILY_CAPS;
 
 /** Represents effectively unlimited scans (JSON-safe alternative to Infinity). */
 export const UNLIMITED_SCANS = 999999;
@@ -96,6 +133,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     textFoodParsing: false,
     itemSuggestions: false,
     cookbookCoverGeneration: false,
+    recipeAutoImages: false,
   },
   premium: {
     maxDailyScans: UNLIMITED_SCANS,
@@ -130,6 +168,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     textFoodParsing: true,
     itemSuggestions: true,
     cookbookCoverGeneration: true,
+    recipeAutoImages: true,
   },
 };
 

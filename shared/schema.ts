@@ -1038,6 +1038,12 @@ export const recipeGenerationLog = pgTable(
     recipeId: integer("recipe_id").references(() => communityRecipes.id, {
       onDelete: "set null",
     }),
+    /**
+     * Which daily quota this row counts against. "recipe" is the recipe
+     * generation quota; every other value is a paid-AI-call cap (see
+     * `AI_DAILY_CAPS` in shared/types/premium.ts). Kinds never share a bucket.
+     */
+    kind: text("kind").default("recipe").notNull(),
     generatedAt: timestamp("generated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),

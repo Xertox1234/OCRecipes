@@ -12,6 +12,7 @@ import {
   checkAiConfigured,
   checkPremiumFeature,
   handleRouteError,
+  claimAiCallOrReject,
 } from "./_helpers";
 import {
   generateSuggestions,
@@ -82,6 +83,16 @@ export function register(app: Express): void {
 
         // Cache miss — need AI to generate suggestions
         if (!checkAiConfigured(res)) return;
+
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "itemSuggestion",
+            "item suggestion",
+          ))
+        )
+          return;
 
         const suggestions = await generateSuggestions({
           productName: item.productName || "",
@@ -188,6 +199,16 @@ export function register(app: Express): void {
 
         // Cache miss — need AI to generate instructions
         if (!checkAiConfigured(res)) return;
+
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "itemSuggestion",
+            "item suggestion",
+          ))
+        )
+          return;
 
         const userProfile = await storage.getUserProfile(req.userId);
 
