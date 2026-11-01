@@ -84,7 +84,9 @@ if [ "${PATTERN_INJECT_NO_LOG:-0}" != "1" ]; then
     # always empty too: SessionStart is definitionally always the top-level context (a
     # subagent dispatch never fires its own SessionStart), so there is nothing to extract.
     LOG_LINE=$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SID" "SessionStart" "" "" "injected" "$(( $(printf '%s' "$DIGEST" | wc -c) ))" "$DOC_PATHS" "")
-    { printf '%s\n' "$LOG_LINE" | bash "$LOG_SCRIPT" >/dev/null 2>&1; } &
+    # Redirect on the GROUP: a backgrounded `{ …; }` subshell otherwise holds this hook's
+    # stdout open until the log write ends (see inject-patterns.sh's telemetry tail).
+    { printf '%s\n' "$LOG_LINE" | bash "$LOG_SCRIPT"; } >/dev/null 2>&1 </dev/null &
     disown 2>/dev/null || true
   fi
 fi

@@ -94,7 +94,24 @@ fi
 # developer's real telemetry ledger.
 LOG_SESS='{"session_id":"srt-log-itest"}'
 OUT_OFF=$(echo "$LOG_SESS" | RECENT_SOLUTIONS_DIR="$FIX" PATTERN_INJECT_NO_LOG=1 bash "$HOOK")
-OUT_DBDOWN=$(echo "$LOG_SESS" | RECENT_SOLUTIONS_DIR="$FIX" LAB_DATABASE_URL="postgresql://localhost/pg_lab_does_not_exist_$$" bash "$HOOK")
+# The DB-down run also stands in a SLOW lab DB (fake psql: marker, then sleep 5). The
+# background log write must not hold the hook's stdout open past its JSON (harness diagnosis
+# item 3); $(...) waits for EOF, and SECONDS reads 0-2 when fixed, >= 5 when held open.
+SLOW_PSQL_DIR=$(mktemp -d)
+printf '#!/bin/sh\n: > "%s/ran"\nsleep 5\n' "$SLOW_PSQL_DIR" > "$SLOW_PSQL_DIR/psql"
+chmod +x "$SLOW_PSQL_DIR/psql"
+SECONDS=0
+OUT_DBDOWN=$(echo "$LOG_SESS" | PATH="$SLOW_PSQL_DIR:$PATH" RECENT_SOLUTIONS_DIR="$FIX" LAB_DATABASE_URL="postgresql://localhost/pg_lab_does_not_exist_$$" bash "$HOOK")
+SLOW_EOF=$SECONDS
+for _ in $(seq 1 20); do [ -f "$SLOW_PSQL_DIR/ran" ] && break; sleep 0.1; done
+if [ ! -f "$SLOW_PSQL_DIR/ran" ]; then
+  echo "FAIL: slow lab DB — the stand-in psql never ran, so the timing proves nothing"; FAIL=1
+elif [ "$SLOW_EOF" -le 2 ]; then
+  echo "ok: slow lab DB — hook stdout closed in ${SLOW_EOF}s"
+else
+  echo "FAIL: slow lab DB — hook stdout stayed open ${SLOW_EOF}s (background log write holds it)"; FAIL=1
+fi
+rm -f "$SLOW_PSQL_DIR/psql" "$SLOW_PSQL_DIR/ran"; rmdir "$SLOW_PSQL_DIR" 2>/dev/null || true
 
 LOG_TEST_DB="pg_lab_srt_itest_$$"
 LOG_TEST_URL="postgresql://localhost/$LOG_TEST_DB"
