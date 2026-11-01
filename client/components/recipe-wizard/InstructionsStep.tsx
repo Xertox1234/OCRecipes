@@ -409,6 +409,7 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: "row",
     alignItems: "center",
+    minHeight: 44,
     gap: Spacing.sm,
   },
   addRow: {

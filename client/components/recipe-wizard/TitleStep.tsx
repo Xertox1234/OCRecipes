@@ -144,7 +144,13 @@ export default function TitleStep({
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingBottom: Spacing.xl },
-  micRow: { alignItems: "flex-end", marginTop: Spacing.sm },
+  micRow: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
   input: {
     height: 48,
     borderWidth: 1,

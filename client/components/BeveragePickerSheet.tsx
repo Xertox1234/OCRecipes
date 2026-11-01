@@ -95,10 +95,10 @@ export function BeveragePickerSheet({
     stopListening,
   } = useSpeechToText();
   useEffect(() => {
-    if (transcript && (isListening || isFinal)) {
+    if (step === "custom" && transcript && (isListening || isFinal)) {
       setCustomInput(transcript.slice(0, MAX_CUSTOM_NAME_LENGTH));
     }
-  }, [isListening, isFinal, transcript]);
+  }, [step, isListening, isFinal, transcript]);
   useEffect(() => {
     if (speechError) setError(speechError);
   }, [speechError]);
@@ -770,6 +770,9 @@ const styles = StyleSheet.create({
   },
   customMicRow: {
     alignItems: "flex-end",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: Spacing.sm,
   },
   customHint: {
     fontSize: 13,

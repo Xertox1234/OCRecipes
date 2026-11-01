@@ -660,6 +660,9 @@ export default function NotebookEntryScreen() {
 const styles = StyleSheet.create({
   micRow: {
     alignItems: "flex-end",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: Spacing.sm,
     marginTop: Spacing.sm,
   },
   container: { flex: 1 },

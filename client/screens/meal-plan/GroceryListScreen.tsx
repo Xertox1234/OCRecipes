@@ -271,8 +271,13 @@ export default function GroceryListScreen() {
     startListening,
     stopListening,
   } = useSpeechToText();
+  // false once the item is added, so a late final result cannot refill the
+  // field with the item just added.
+  const voiceActiveRef = useRef(false);
   useEffect(() => {
-    if (transcript && (isListening || isFinal)) setNewItemName(transcript);
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      setNewItemName(transcript);
+    }
   }, [isListening, isFinal, transcript]);
   useEffect(() => {
     if (speechError) toast.error(speechError);
@@ -282,6 +287,7 @@ export default function GroceryListScreen() {
     if (isListening) {
       stopListening();
     } else {
+      voiceActiveRef.current = true;
       void startListening();
     }
   }, [haptics, isListening, startListening, stopListening]);
@@ -301,6 +307,7 @@ export default function GroceryListScreen() {
     const name = newItemName.trim();
     if (!name) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    voiceActiveRef.current = false;
     if (isListening) stopListening();
     addItemMutation.mutate(
       { listId, name },

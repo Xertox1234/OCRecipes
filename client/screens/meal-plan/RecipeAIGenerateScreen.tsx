@@ -324,6 +324,9 @@ const styles = StyleSheet.create({
   },
   micRow: {
     alignItems: "flex-end",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: Spacing.sm,
     marginBottom: Spacing.sm,
   },
   scrollContent: {

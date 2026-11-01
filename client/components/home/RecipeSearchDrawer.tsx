@@ -91,8 +91,8 @@ export function RecipeSearchDrawer({
     stopListening,
   } = useSpeechToText();
   useEffect(() => {
-    if (transcript && (isListening || isFinal)) setText(transcript);
-  }, [isListening, isFinal, transcript]);
+    if (isOpen && transcript && (isListening || isFinal)) setText(transcript);
+  }, [isOpen, isListening, isFinal, transcript]);
   const handleVoicePress = () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     if (isListening) {
