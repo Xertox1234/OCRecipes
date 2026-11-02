@@ -11,6 +11,7 @@
 // applied (e.g. a version bump made patch-package skip it).
 import Module, { createRequire } from "node:module";
 import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
 const cliRoot = path.dirname(
