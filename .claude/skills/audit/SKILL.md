@@ -302,7 +302,7 @@ For **each** finding the user wants fixed:
 
    Reviewers have full tool access (LSP, file reads). Scope to the single fix so each finding is verified before you move on. Per-fix review uses the **domain reviewer only** — the always-on `code-reviewer` cross-cutting baseline runs in **Phase 6** over the whole multi-file diff, not once per finding (that would spawn it dozens of times). If multiple domain reviewers are selected for one fix, merge their findings before applying the tier rule.
 
-   Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
+   Response handling (project convention — see `docs/AI_WORKFLOW.md` → Review Policy):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
    - **WARNING finding**: judgment call. **Fix inline** when the change is small and in scope (a few lines, in files the diff already touches, with no new architectural decision) — then re-run steps 4–7 once as the confirmation pass; that pass never reopens review, so its own non-CRITICAL findings go to the Deferred Items table (rule: `docs/AI_WORKFLOW.md` → **One review pass plus at most one confirmation pass per PR**). Otherwise **record it in the manifest's Deferred Items table** as a surfaced WARNING and continue — do NOT auto-create a todo. The user reviews the manifest at close (Phase 5) and decides which deferred items become todos. WARNING is not a mandatory blocker.
    - **SUGGESTION**: proceed — note in manifest Verification column if worth tracking for codification.

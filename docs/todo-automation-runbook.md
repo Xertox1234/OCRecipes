@@ -30,8 +30,8 @@ only through the guard, never unconditionally. The filters:
 
 1. **Merges are guard-gated, not human-gated** — a PR only auto-merges if it is
    `low` priority, non-`security`, and every changed file is on the guard's
-   safe-path allowlist. `medium` was carved out of auto-merge because CLAUDE.md's
-   Deferred Item Todos auto-file tier now includes medium-severity findings —
+   safe-path allowlist. `medium` was carved out of auto-merge because the
+   deferred-findings auto-file tier (`todos/README.md`) now includes medium-severity findings —
    unattended merge access should track scrutiny at file-time, not at
    discovery-time. Anything else — `medium`/`high`/`critical`, `security`-labelled,
    guard HOLD, or guard-unknown — is structurally incapable of auto-merging and sits open for

@@ -28,8 +28,8 @@ rule (the tier list below, `todo-executor.md` Step 7, the audit skill, CLAUDE.md
 - **CRITICAL** → fix it on the branch.
 - **Small, in-scope WARNING** → fix it on the branch too. _Small_ means a few lines, in files
   the diff already touches, with no new architectural decision.
-- **Any other WARNING** → do not fix it on the branch. File it as a todo per the CLAUDE.md tier
-  rule (for `.claude/hooks/**`, add it to `docs/harness-residuals.md`), or fix it in a
+- **Any other WARNING** → do not fix it on the branch. File it as a todo per the tier
+  rule in `todos/README.md` → Deferred findings (for `.claude/hooks/**`, add it to `docs/harness-residuals.md`), or fix it in a
   **follow-up PR**. A `todo-executor` never files: it reports the finding under
   `DEFERRED_WARNINGS` and the orchestrator/user decides (`todo-executor.md` Step 7).
 - **SUGGESTION** → apply only if trivial and in scope; otherwise ignore.
@@ -200,9 +200,21 @@ Do not paste full workflow logs into Claude. Failed-step logs are the useful sig
 
 The hook does **not** run `tsc` or `npm test` — CI owns those.
 
+### Local gates (pre-push, PR guard)
+
+Moved from CLAUDE.md (harness item 7, 2026-11-02); CLAUDE.md keeps only the commands.
+
+- **Commits** run lint-staged only: fix/format plus cheap pattern checks, no semantic gate.
+- **Every push** runs `preflight:fast`: type-aware lint on changed files, whole-program `tsc`, related tests, and CI's cheap pattern checks gated on the paths they cover (whole-repo lint when the ESLint config or its deps change). When the gate completes it writes a pass-stamp for HEAD (`scripts/lib/preflight-stamp-path.sh`, one file per passed commit). A docs-only push with no changed TS/hook files stamps having run no tests, by design. No stamp is written when related tests were skipped for an unreachable Postgres, or in `--uncommitted` mode.
+- A push is **skipped when HEAD is already stamped**, so the same commit is never verified twice.
+- `npm run preflight` (full CI parity, including coverage) is on demand only.
+- **PR creation** (`gh pr create` or `mcp__github__create_pull_request`) is gated by `.claude/hooks/pr-preflight-guard.sh`. It accepts any stamp matching the PR's head commit (the fast gate's stamp is enough; coverage is CI's job). When the PR changes a guard or keyword file listed in `scripts/harness/verdict-diff/targets.tsv`, it also requires a verdict-diff stamp for that commit: run `bash scripts/harness/verdict-diff.sh`, which lists every verdict that changed between base and head over a generated set, and paste the lists into the PR body under `## Verdict changes` (bypass `SKIP_VERDICT_DIFF=1`).
+- Bypasses: `git commit/push --no-verify`, `SKIP_PR_PREFLIGHT=1`.
+- Output is quiet on success: one `▶`/`✔` line per step, full output only on failure. `PREFLIGHT_VERBOSE=1` streams it live.
+
 ### CLAUDE.md
 
-`CLAUDE.md` is **gitignored intentionally**. It is an AI instruction file, not project source. Checking it in would expose internal agent directives, bloat the repo, and make it harder to evolve AI-specific guidance independently from the codebase.
+`CLAUDE.md` is tracked (since #1427; the repo is public, so it holds no secrets). It loads in full into every session, so it keeps only what Claude can't read from the repo. The admission test is an HTML comment at the top of the file (comments are stripped before Claude sees it); evidence is in `docs/harness/2026-11-01-claude-md-research.md`. `server/CLAUDE.md` holds the environment variables and loads when Claude works in `server/`. `scripts/check-claude-md-budget.js` (lint-staged) warns when a CLAUDE.md passes 10 KB, comments excluded.
 
 ---
 
@@ -288,11 +300,10 @@ The brief is advisory — read the cited lines before relying on any claim. The 
 
 ## Token-Saving Conventions
 
-| Convention                                                                       | Reason                                                                               |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| code-reviewer + domain-reviewer subagents for audits                             | Higher token cost, but better for deep cross-file reasoning and audit-style reviews  |
-| iOS/device setup in `docs/DEV_SETUP.md`                                          | Keeps CLAUDE.md short; agents reference the doc, not inline instructions             |
-| Durable architecture facts in auto-memory (`MEMORY.md` → Key Architecture Notes) | Schema, nav, services, stack facts persist across sessions without re-reading source |
+| Convention                                           | Reason                                                                              |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| code-reviewer + domain-reviewer subagents for audits | Higher token cost, but better for deep cross-file reasoning and audit-style reviews |
+| iOS/device setup in `docs/DEV_SETUP.md`              | Keeps CLAUDE.md short; agents reference the doc, not inline instructions            |
 
 ## Drift Checklist
 

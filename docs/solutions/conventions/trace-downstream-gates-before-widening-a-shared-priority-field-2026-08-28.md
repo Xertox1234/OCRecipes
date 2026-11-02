@@ -20,7 +20,7 @@ decision with a different consequence.
 
 ## Why
 
-`CLAUDE.md`'s "Deferred Item Todos" rule decides which severities get auto-filed as a todo
+The deferred-findings rule (`todos/README.md` → "Deferred findings"; in `CLAUDE.md` until 2026-11-02) decides which severities get auto-filed as a todo
 (previously Low only; a pending change proposed widening it to Medium+Low, moving the
 human-prompt gate to High/Critical). That reads like a pure documentation change — it
 governs what an agent writes to `todos/`, nothing else.
@@ -66,7 +66,7 @@ criteria did flag the auto-merge guard as worth checking, which is what prompted
 
 ## Related Files
 
-- `CLAUDE.md` → "Deferred Item Todos"
+- `todos/README.md` → "Deferred findings" (moved from `CLAUDE.md` → "Deferred Item Todos", 2026-11-02)
 - `scripts/todo-automerge-guard.sh` (the `case "$prio" in low) : ;;` gate)
 - `.claude/agents/todo-executor.md` (Step 10's routing bullets)
 - `.claude/skills/todo/SKILL.md` (the `MERGE_ELIGIBLE` reporting enum)
