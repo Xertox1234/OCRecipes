@@ -600,7 +600,7 @@ case "$PR" in
   ''|*[!0-9]*)
     # Cause order is deliberate. The overwhelmingly common one is NO PR NUMBER AT ALL:
     # `gh pr merge --auto --squash --delete-branch` is legal, documented usage
-    # (todo-executor.md:564 minus the number) and guard-outward-cli.sh ALLOWS it — measured,
+    # (todo-executor.md Step 10's auto-merge command, minus the number) and guard-outward-cli.sh ALLOWS it — measured,
     # it denies only the non---auto form — so it arrives here and is denied unconditionally,
     # before any risk classification, even on a docs-only PR. A human who reads
     # "obfuscated or --repo" first has to guess that "the ref is missing" is their case.
@@ -684,7 +684,7 @@ case "$P_RC" in
 esac
 
 # ── STAGE 1 — source type ─────────────────────────────────────────────────────
-# `todo/<slug>` is an enforced invariant (.claude/agents/todo-executor.md:474), already
+# `todo/<slug>` is an enforced invariant (.claude/agents/todo-executor.md, Step 10 "Determine the todo slug"), already
 # load-bearing for the executor's batch-merge skip. The NAME selects the policy; the full
 # guard ENFORCES it — a todo/* branch touching sensitive paths must not shortcut (#821),
 # and a non-todo branch that merely CARRIES a todos/archive file must not be mistaken for

@@ -1018,7 +1018,7 @@ out=$(bash_payload 'gh pr merge 4$(echo 9)2 --auto' | run)
 denied "$out" && ok "substitution-obfuscated ref fails closed" || bad "substitution-obfuscated ref fails closed" "$out"
 
 # 31. DENY, and the message must name the MISSING-NUMBER cause FIRST. `gh pr merge --auto
-#     --squash --delete-branch` is legal, documented usage (todo-executor.md:564 minus the
+#     --squash --delete-branch` is legal, documented usage (todo-executor.md Step 10's auto-merge command, minus the
 #     number) and guard-outward-cli.sh ALLOWS it — measured, that guard denies only the
 #     non---auto form — so it arrives here and is denied unconditionally, before any risk
 #     classification, even on a docs-only PR. Recovery is SKIP_MERGE_REVIEW=1, the pressure
