@@ -36,7 +36,7 @@ export SKIP_PR_DRIFT_CHECK=1
 export SKIP_VERDICT_DIFF=1
 # Covers the two mktemp -d fixtures too: their inline `rm -rf`s only run on the happy path,
 # so an interrupted run (Ctrl-C / SIGTERM — bash runs the EXIT trap for both) leaked them.
-trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}"' EXIT
+trap 'rm -rf "$STAMP_FILE" "$STAMP_FILE.d" "$STAMP_FILE.out" "${HELPER_T:-}" "${NOLIB:-}"' EXIT
 
 # 1. Non-create gh commands pass through (no deny).
 OUT=$(run_hook "gh pr view 42")
@@ -58,6 +58,31 @@ echo "0000000000000000000000000000000000000000" > "$STAMP_FILE"
 OUT=$(run_hook "gh pr create --title x --body y")
 assert_contains "stale stamp (wrong sha) denies" '"permissionDecision": "deny"' "$OUT"
 rm -f "$STAMP_FILE"
+
+# 3c. Per-commit stamps (item 8, 2026-11-01): HEAD passed, then a parallel session's push on
+# another branch rewrote the single slot. HEAD's own pass must still count — all 6 stale-stamp
+# denials in 10-30..11-01 were this.
+OTHER=1111111111111111111111111111111111111111
+( . "$(dirname "$HOOK")/../../scripts/lib/preflight-stamp-path.sh"
+  preflight_stamp_write "$HEAD" && preflight_stamp_write "$OTHER" )
+OUT=$(run_hook "gh pr create --title x --body y")
+assert_empty "HEAD's pass survives another branch's later stamp" "" "$OUT"
+# The single slot names the newest pass, so the deny below can say what it found.
+assert_contains "single slot holds the newest pass" "$OTHER" "$(cat "$STAMP_FILE")"
+rm -rf "$STAMP_FILE" "$STAMP_FILE.d"
+
+# 3d. Only ANOTHER commit has passed → still deny; the message names what it found.
+( . "$(dirname "$HOOK")/../../scripts/lib/preflight-stamp-path.sh"; preflight_stamp_write "$OTHER" )
+OUT=$(run_hook "gh pr create --title x --body y")
+assert_contains "another commit's pass alone denies" '"permissionDecision": "deny"' "$OUT"
+assert_contains "deny names the newest pass" "found: 1111111" "$OUT"
+rm -rf "$STAMP_FILE" "$STAMP_FILE.d"
+
+# 3e. A name that is not a sha is never written and never matches (the stamp dir is in /tmp).
+( . "$(dirname "$HOOK")/../../scripts/lib/preflight-stamp-path.sh"
+  preflight_stamp_write "../escape" ; preflight_stamp_has "../escape" && echo MATCHED ) > "$STAMP_FILE.out" 2>&1
+assert_empty "non-sha stamp name refused" "" "$(cat "$STAMP_FILE.out"; ls "$STAMP_FILE.d" 2>/dev/null)"
+rm -rf "$STAMP_FILE" "$STAMP_FILE.d" "$STAMP_FILE.out"
 
 # 4. Bypass env → allow.
 OUT=$(SKIP_PR_PREFLIGHT=1 run_hook "gh pr create --title x --body y")

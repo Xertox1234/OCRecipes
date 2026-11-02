@@ -267,6 +267,13 @@ if grep -qi "behind" <<<"$OUT"; then
 else
   echo "FAIL: deny message should mention being behind"; FAIL=$((FAIL+1))
 fi
+# The check runs before any of the command does, so a command that pulls and then branches
+# is denied too (harness item 8: 2 of 31 denials, 10-30..11-01). The message says so.
+if grep -q "own command first" <<<"$OUT"; then
+  echo "PASS: deny message says to fast-forward in its own command first"; PASS=$((PASS+1))
+else
+  echo "FAIL: deny message should say to fast-forward in its own command first"; FAIL=$((FAIL+1))
+fi
 
 # Test 13: the internal fetch does not self-heal — still denies until an actual merge.
 OUT=$(run_hook "git switch -c feature/three")

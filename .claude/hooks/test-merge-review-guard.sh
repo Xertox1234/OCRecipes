@@ -186,6 +186,21 @@ assert_allowed() {  # assert_allowed <label> <captured-output>
     bad "$label" "out=[$out] rc=[${rc:-<unrecorded>}]"
   fi
 }
+# An exempt merge (stage 1 or 2) allows exactly as a silent exit did — rc 0 and NO
+# permissionDecision of any kind (an explicit "allow" would skip the owner's permission
+# prompts) — and now names why in systemMessage + additionalContext (harness N8).
+assert_exempt() {  # assert_exempt <label> <captured-output> <expected-route-text>
+  local label="$1" out="${2:-}" want="$3" rc
+  rc=$(cat "$RC_FILE" 2>/dev/null)
+  if [ "$rc" = "0" ] \
+     && jq -e --arg w "$want" '(has("hookSpecificOutput") and (.hookSpecificOutput | has("permissionDecision") | not))
+          and (.systemMessage | contains("needs no review record") and contains($w))
+          and (.hookSpecificOutput.additionalContext == .systemMessage)' <<<"$out" >/dev/null 2>&1; then
+    ok "$label"
+  else
+    bad "$label" "out=[$out] rc=[${rc:-<unrecorded>}]"
+  fi
+}
 mcp_payload()  { jq -n --arg n "$1" '{tool_name:"mcp__github__merge_pull_request", tool_input:{pullNumber:($n|tonumber)}}'; }
 # The same tool call WITH its owner/repo. Kept separate from mcp_payload on purpose: every
 # other MCP assertion in this file omits owner/repo, and those payloads are the evidence
@@ -511,7 +526,7 @@ MRG_PIGGY_FILES_SAVE="$FAKE_FILES"
 export FAKE_FILES="$FILES_SAFE"
 
 out=$(bash_payload 'gh pr merge 938 --auto --squash' | run)
-assert_allowed "CONTROL: the leading pr-merge clause alone allows on a safe diff" "$out"
+assert_exempt "CONTROL: the leading pr-merge clause alone allows on a safe diff" "$out" "--paths-only"
 
 out=$(bash_payload 'gh pr merge 938 --auto --squash; gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge' | run)
 denied "$out" && ok "a gh-api merge piggybacked after pr merge (;) still denies" \
@@ -610,12 +625,12 @@ denied "$out" && ok "trailing redirect glued to the value still denies" \
 # 4. ALLOW. Safe paths need no stamp.
 export FAKE_FILES="$FILES_SAFE"
 out=$(mcp_payload 938 | run)
-assert_allowed "safe paths allow without a stamp" "$out"
+assert_exempt "safe paths allow without a stamp" "$out" "--paths-only"
 
 # 5. ALLOW, Bash path. The `--auto` arming call is the form that survives
 #    guard-outward-cli.sh, so it must be able to reach stage 2 and be ALLOWED there.
 out=$(bash_payload "gh pr merge 938 --auto --squash --delete-branch" | run)
-assert_allowed "Bash --auto arming with safe paths allows" "$out"
+assert_exempt "Bash --auto arming with safe paths allows" "$out" "--paths-only"
 
 # 6. DENY. Sensitive paths, no record at all.
 export FAKE_FILES="$FILES_ONE"
@@ -936,7 +951,8 @@ fi
 export FAKE_VIEW_JSON="{\"headRefName\":\"todo/P3-2026-01-01-x\",\"headRefOid\":\"$SHA\"}"
 export FAKE_FILES="$FILES_TODO_SAFE"
 out=$(mcp_payload 938 | run)
-assert_allowed "todo/* with safe paths is exempt" "$out"
+# The API reads fail here, so the full guard fails and stage 2's allowlist exempts it.
+assert_exempt "todo/* with safe paths is exempt" "$out" "--paths-only"
 
 # 24. STAGE 1 MECHANISM. The branch name — not the file list — selects whether the FULL
 #     guard runs. The full guard's TODO GATE reads the archived todo through the API's
@@ -947,9 +963,10 @@ assert_allowed "todo/* with safe paths is exempt" "$out"
 #     did so a rename SOURCE path is gated, not just the destination). Match contents.
 export FAKE_API_FAIL=""
 : > "$GH_LOG"
-mcp_payload 938 | run >/dev/null
+out=$(mcp_payload 938 | run)
 grep -q '^api .*/contents/' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fires)" \
                           || bad "todo/* branch runs the FULL guard (stage 1 fires)" "$(cat "$GH_LOG")"
+assert_exempt "stage 1's exemption names the todo/* route" "$out" "a todo/* branch"
 
 # 25. …and the SAME file list on a non-todo branch does NOT run it. This is the #938
 #     shape: an interactive PR that happens to carry a todos/archive file. A stage 1 keyed
@@ -1300,7 +1317,7 @@ case "$SELF_NWO" in
     out=$(mcp_payload_repo 938 \
             "$(printf '%s' "${SELF_NWO%%/*}" | tr '[:lower:]' '[:upper:]')" \
             "$(printf '%s' "${SELF_NWO##*/}" | tr '[:lower:]' '[:upper:]')" | run)
-    assert_allowed "MCP merge naming THIS repository (case-folded) is unaffected" "$out" ;;
+    assert_exempt "MCP merge naming THIS repository (case-folded) is unaffected" "$out" "--paths-only" ;;
   *) bad "MCP owner/repo control fixture is usable" "unparseable remote.origin.url [$SELF_URL]" ;;
 esac
 export FAKE_FILES="$FILES_ONE"
@@ -1451,7 +1468,7 @@ denied "$out" && ok "denies identically from a foreign cwd" || bad "denies ident
 #     alone proves nothing. Only a hook that anchored itself to the project root allows.
 export FAKE_FILES="$FILES_SAFE"
 out=$( cd / && bash_payload "gh pr merge 938 --auto" | run )
-assert_allowed "allows identically from a foreign cwd" "$out"
+assert_exempt "allows identically from a foreign cwd" "$out" "--paths-only"
 unset FAKE_PIN_PWD
 
 # ── Missing jq: a BLOCKING guard must fail CLOSED ────────────────────────────
@@ -1760,7 +1777,8 @@ unset _mrgcloser_hits _mrgcloser_prose
 # 201 -> 202 (2026-09-22, review round 1): +1, case 7 asserts the advisory literal survives the deny string.
 # 202 -> 207 (2026-11-01, code-reviewer record required): +5 rows (9c-1, 9c-2, 9c-2b, 9c-3, 9c-4).
 # 207 -> 219 (2026-11-01, harness N6 real-platform check): +12 = rows P1-P10 and P8b (P9 asserts twice).
-EXPECTED_TOTAL=219
+# 219 -> 220 (2026-11-01, harness N8 exemption note): +1 = stage 1's exemption names the todo/* route.
+EXPECTED_TOTAL=220
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

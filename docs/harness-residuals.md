@@ -266,6 +266,12 @@ reboot (missing stamp root) or the hand-back delivery path is the trigger. First
 reviewer, then `ls` the stamp dir; then pipe a `merge_pull_request` payload for an open, unreviewed PR into the
 guard by hand and read its decision.
 
+**Resolved 2026-11-01 (harness diagnosis §2.3, item 8 + N8):** the allow was correct. All of #1535's files
+are on the safe-path allowlist (`todo-automerge-guard.sh --paths-only 1535` returns 0), so no record was
+needed. The guard said nothing when it exempted the PR, and that silence was misread as a miss. An exempt merge
+now prints `merge-review-guard: PR #N needs no review record — …` to both the owner and the agent. The missing
+record itself was the SubagentStop race, fixed separately on 10-29.
+
 ### HIT IN REAL USE 2026-10-23 — `code-reviewer` hand-backs write no review record; `mobile-reviewer` does (#1541)
 
 Observed, not constructed; root cause not investigated (harness frozen). Three background reviewers were

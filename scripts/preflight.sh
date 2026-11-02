@@ -17,11 +17,10 @@
 # Thin wrapper over the SAME npm scripts CI runs (no drift). Exit non-zero on any failure.
 set -uo pipefail
 
-# Pass-stamp path — single source of truth shared with the PR-create guard
+# Pass-stamp writer — single source of truth shared with the PR-create guard
 # (.claude/hooks/pr-preflight-guard.sh) so the writer and reader never drift.
 # shellcheck source=scripts/lib/preflight-stamp-path.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/preflight-stamp-path.sh"
-STAMP_FILE="$(preflight_stamp_path)"
 MODE="full"
 UNCOMMITTED=0
 for arg in "$@"; do
@@ -249,7 +248,7 @@ if [ "$MODE" = "fast" ]; then
   # nothing withheld), not an oversight; see .claude/hooks/test-preflight-fast-stamp.sh's
   # "docs-only → stamp" case.
   if [ "$tests_skipped" -eq 0 ] && [ "$UNCOMMITTED" -eq 0 ]; then
-    git rev-parse HEAD > "$STAMP_FILE" 2>/dev/null || true
+    preflight_stamp_write "$(git rev-parse HEAD 2>/dev/null)" || true
     echo "✔ pass-stamp written for $(git rev-parse --short HEAD 2>/dev/null)"
   elif [ "$tests_skipped" -eq 0 ]; then
     echo "✔ scoped check passed (--uncommitted mode — no pass-stamp; HEAD hasn't received these changes yet)"
@@ -288,6 +287,6 @@ fi
 run npm run test:coverage:ci || exit 1
 
 # Record a fresh pass for THIS commit so the PR-creation guard (Task 3) can verify it.
-git rev-parse HEAD > "$STAMP_FILE" 2>/dev/null || true
+preflight_stamp_write "$(git rev-parse HEAD 2>/dev/null)" || true
 echo "✅ preflight passed — stamp written for $(git rev-parse --short HEAD 2>/dev/null)"
 exit 0

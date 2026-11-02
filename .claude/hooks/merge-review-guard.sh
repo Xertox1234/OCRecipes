@@ -85,6 +85,21 @@ deny() {
   exit 0
 }
 
+# An exempt merge says so (harness N8, 2026-11-01): a silent exit here was read as "merged with
+# no review" (the #1535 residual). Context only — no permissionDecision, so permission handling
+# is exactly what a silent exit 0 gave. systemMessage reaches the owner, additionalContext the agent.
+exempt() {
+  local m="merge-review-guard: PR #$PR needs no review record — $1"
+  jq -n --arg m "$m" '{
+    "systemMessage": $m,
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "additionalContext": $m
+    }
+  }'
+  exit 0
+}
+
 PR=""
 case "$TOOL" in
   Bash)
@@ -683,7 +698,9 @@ esac
 # merges. Do not infer from "it never flips a verdict" that the branch name is unused.
 case "$BRANCH" in
   todo/*)
-    if bash "$GUARD" "$PR" >/dev/null 2>&1; then exit 0; fi
+    if bash "$GUARD" "$PR" >/dev/null 2>&1; then
+      exempt "a todo/* branch that passes todo-automerge-guard.sh (every changed file is on the safe-path allowlist)."
+    fi
     ;;
 esac
 
@@ -693,7 +710,7 @@ esac
 # unauthenticated gh must not read as "nothing risky here".
 GUARD_RC=0
 bash "$GUARD" --paths-only "$PR" >/dev/null 2>&1 || GUARD_RC=$?
-[ "$GUARD_RC" -eq 0 ] && exit 0
+[ "$GUARD_RC" -eq 0 ] && exempt "every changed file is on the safe-path allowlist (todo-automerge-guard.sh --paths-only)."
 
 # ── STAGE 3 — review record ───────────────────────────────────────────────────
 [ -f "$HERE/lib/review-stamp-path.sh" ] \
