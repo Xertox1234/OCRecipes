@@ -44,8 +44,14 @@ env:
 - assertVisible: "None of these"
 # One clarifying round.
 - tapOn: "None of these"
-- extendedWaitUntil:
-    visible: "Search with these"
+# The questions card is taller than the screen, so its button starts below the
+# fold. Android's accessibility tree omits off-screen list content (iOS keeps
+# it), so a plain wait never sees the button there — measured on a Galaxy
+# A37, 2026-11-02. scrollUntilVisible waits AND scrolls; on iOS it matches
+# without scrolling.
+- scrollUntilVisible:
+    element: "Search with these"
+    direction: DOWN
     timeout: 45000
 # Answer by typing (chips are AI-authored; typed answers are always valid).
 - tapOn: "Recipe request.*"
