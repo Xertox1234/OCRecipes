@@ -217,7 +217,9 @@ const CoachDashboard = React.memo(function CoachDashboard({
                   styles.insightRow,
                   pressed && { opacity: 0.7 },
                 ]}
-                onPress={() => onSuggestionPress(insight.content)}
+                onPress={() =>
+                  onSuggestionPress(toSecondPerson(insight.content))
+                }
                 accessibilityRole="button"
                 accessibilityLabel={`Discuss: ${toSecondPerson(insight.content)}`}
               >

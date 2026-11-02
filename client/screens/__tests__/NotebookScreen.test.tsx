@@ -41,6 +41,33 @@ describe("NotebookScreen", () => {
     expect(screen.getByText("No entries yet")).toBeDefined();
   });
 
+  // The row shows the note in second person; its screen-reader label must say
+  // the same thing, not the model's raw "The user has…" text (2026-11-02).
+  it("labels an entry with the text it shows", () => {
+    mockUseNotebookEntries.mockReturnValue({
+      data: [
+        {
+          id: 1,
+          type: "insight",
+          status: "active",
+          content: "The user has logged 0.7g of protein today",
+          followUpDate: null,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    renderComponent(<NotebookScreen />);
+
+    expect(
+      screen.getByRole("button", {
+        name: "insight: You have logged 0.7g of protein today",
+      }),
+    ).toBeDefined();
+  });
+
   // A failed load used to render "No entries yet" with no retry
   // (audit 2026-10-29 M-crel-2).
   it("shows an error with a retry when the entries fail to load", () => {
