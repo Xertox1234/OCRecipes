@@ -83,6 +83,25 @@ describe("check-claude-md-budget.js", () => {
     expect(r.out).toContain("over the 10240 B budget");
   });
 
+  it("warns, but still exits 0, for an agent definition over the agent budget", () => {
+    const root = makeRepo({
+      ".claude/agents/code-reviewer.md": "a".repeat(72_000),
+    });
+    const r = run(root, [".claude/agents/code-reviewer.md"]);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(".claude/agents/code-reviewer.md");
+    expect(r.out).toContain("over the 71680 B budget");
+  });
+
+  it("holds an agent definition to the agent budget, not the CLAUDE.md one", () => {
+    const root = makeRepo({
+      ".claude/agents/code-reviewer.md": "a".repeat(30_000),
+    });
+    const r = run(root, [".claude/agents/code-reviewer.md"]);
+    expect(r.status).toBe(0);
+    expect(r.out).not.toContain("over the");
+  });
+
   it("ignores files that are not named CLAUDE.md", () => {
     const root = makeRepo({ "docs/notes.md": "z".repeat(20_000) });
     const r = run(root, ["docs/notes.md"]);

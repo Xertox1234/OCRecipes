@@ -161,6 +161,8 @@ For each codification candidate, classify by **nature of the finding**, not by r
 
 **Agent update target** (self-improvement — only when the finding reveals a reusable review rule). A single candidate may update a solution file and one agent.
 
+**Shape rule:** in the agent file the rule is its check — what to look for and what to demand, in one to three sentences — plus the solution file's path. The incident story, measurements and PR numbers go in the solution file only: an agent file is a reviewer's system prompt on every turn, and `check-claude-md-budget.js` warns past 70 KB (harness items 4/5, 2026-11-02).
+
 **Single-write rule:** a review rule lands in exactly **ONE** owning reviewer file — never dual-written into a second agent. If a finding spans two domains, pick the row matching its root cause. (This table is the canonical routing home — see the Step 2 note.)
 
 | Finding domain                        | Owning agent file                    |
