@@ -278,7 +278,7 @@ Counts by primary cause; MIXED records are split by their primary.
 >
 > - Build rank 3 (N4) and rank 9 (N5) as mods, and move N5 up to follow rank 4.
 > - Collect item 1 (metrics) with a mod.
-> - New N9 (compact and continue) waits for the owner's yes.
+> - New N9 (compact and continue): approved 2026-11-02 as a `/cc` command (`.claude/mods/compact-continue/`). About 140 of 158 manual `/compact`s in the window were followed by "please continue"; automatic continuing after every `/compact` was declined.
 
 Each item gets spec → execute → compact → next. The ranking weighs evidence strength, then cost (smallest first), then risk.
 
