@@ -989,7 +989,9 @@ describe("todo-automerge-guard.sh (markdown-exemption bypass closed: .claude/age
       join(REPO_ROOT, ".claude/hooks/merge-review-guard.sh"),
       "utf-8",
     );
-    expect(hookText).toContain('[ "$GUARD_RC" -eq 0 ] && exit 0');
+    // Only rc 0 takes the early exit; since harness N8 that exit names the exemption instead of
+    // exiting silently (it still emits no permissionDecision).
+    expect(hookText).toContain('[ "$GUARD_RC" -eq 0 ] && exempt "');
   });
 });
 
