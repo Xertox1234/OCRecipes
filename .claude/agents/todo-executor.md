@@ -376,7 +376,7 @@ Otherwise:
 
 ## Step 7 — Address Feedback
 
-Process the code review findings. The project convention (see `CLAUDE.md` and `docs/AI_WORKFLOW.md` → Review Policy, **One review pass plus at most one confirmation pass per PR**) is that **only CRITICAL blocks**; WARNING surfaces a real issue but is judgment-based, and SUGGESTION is informational.
+Process the code review findings. The project convention (see `docs/AI_WORKFLOW.md` → Review Policy, **One review pass plus at most one confirmation pass per PR**) is that **only CRITICAL blocks**; WARNING surfaces a real issue but is judgment-based, and SUGGESTION is informational.
 
 **The no-filing rule below is global, not scoped to code review.** Whatever the source — a review WARNING, an advisor YELLOW, or anything else out of this todo's scope that you notice mid-run — the executor never creates a todo file for it. Every such side problem goes into the Step 11 report under `DEFERRED_WARNINGS`; the user decides what, if anything, becomes a todo.
 
@@ -957,7 +957,7 @@ EOF
 - `docs/legacy-patterns/*.md` — Pattern documentation (read during research)
 - `docs/LEARNINGS.md` — Bug post-mortems and gotchas (grep during research)
 - `.claude/agents/todo-researcher.md` — Research subagent (invoked in Step 3)
-- `CLAUDE.md` — Project overview, commands, architecture reference
+- `CLAUDE.md` — project rules, checks and command footguns
 
 ---
 

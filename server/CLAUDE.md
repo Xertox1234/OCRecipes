@@ -1,0 +1,15 @@
+# server/CLAUDE.md
+
+<!-- Moved from the root CLAUDE.md (harness item 7, 2026-11-02). Claude Code loads this file the first time Claude reads or edits a file under server/. No .env.example exists (.gitignore ignores .env.*), so this list is where the variables are documented. -->
+
+## Environment variables
+
+**Core:** `DATABASE_URL`, `JWT_SECRET`, `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL`, `RUNWARE_API_KEY` (image gen, falls back to DALL-E), `SPOONACULAR_API_KEY`, `USDA_API_KEY`, `API_NINJAS_KEY`, `ADMIN_USER_IDS`, `LOG_LEVEL`, `R2_PUBLIC_BASE_URL` (CDN base for stored images; also gates the backfill's "ours" image classification), `IMAGE_ART_DIRECTOR_LLM` (set to `off` to disable the per-image LLM art-director pre-pass — defaults on when OpenAI is configured; the deterministic style library still runs), `GOOGLE_VERTEX_PROJECT`, `GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY` (PEM, `\n` for newlines — Vertex AI direct for the vision rows marked `primary: "vertex"`; a dedicated service account, never the Play IAP one; unset = those rows start at OpenRouter, and they never fall back to OpenAI), `SENTRY_DSN` (server-side Sentry error tracking — 5xx + crash capture, requestId-tagged; only active in `NODE_ENV=production`; distinct from the client's `EXPO_PUBLIC_SENTRY_DSN`)
+
+**Expo push:** `EXPO_PUBLIC_DOMAIN` (API domain for client), `EXPO_ACCESS_TOKEN` (server-side; omit to disable server-driven push), `EXPO_PUBLIC_PROJECT_ID` (required alongside `EXPO_ACCESS_TOKEN`)
+
+**Apple IAP:** `APPLE_ISSUER_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (PEM), `APPLE_BUNDLE_ID`, `APPLE_ENVIRONMENT` (sandbox/production), `APPLE_APP_ID` (numeric, required for prod JWS), `APPLE_ROOT_CA_DIR` (defaults to `server/certs/`), `RECEIPT_VALIDATION_STUB` (`"true"` for dev stub mode)
+
+**Google IAP:** `GOOGLE_PACKAGE_NAME`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_KEY` (PEM, `\n` for newlines)
+
+**Evals (not used in production):** `OPENROUTER_API_KEY` (REQUIRED — eval generation runs through OpenRouter with the fallback off; also the preferred judge backend), `ANTHROPIC_API_KEY` (judge via Anthropic direct when no OpenRouter key), `EVAL_JUDGE_MODEL` (default `anthropic/claude-sonnet-4.6` via OpenRouter, `claude-sonnet-4-6` via Anthropic direct; used as given), `--candidate "feature=provider/model[;k=v]"` + `npm run eval:paired -- --baseline-file A --candidate-file B` for model switches, `EVAL_SAMPLES_PER_CASE` (1-10, default 1), `EVAL_PARALLELISM` (1-10, default 1). Runner refuses `NODE_ENV=production` without `--allow-prod`.

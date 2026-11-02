@@ -261,6 +261,9 @@
     ".claude/skills/**/SKILL.md": [
       "node scripts/check-skill-positional-params.js"
     ],
+    "CLAUDE.md": [
+      "node scripts/check-claude-md-budget.js"
+    ],
     "{.claude/hooks/**/*.sh,todos/**/*.md}": [
       "node scripts/check-claim-staleness.js"
     ],

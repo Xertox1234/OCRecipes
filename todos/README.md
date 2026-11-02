@@ -84,3 +84,23 @@ human_led: true
 - Update `status` as work progresses
 - Add notes in the Updates section with date
 - Link to relevant PRs or commits when done
+
+## Deferred findings
+
+Moved from CLAUDE.md (harness item 7, 2026-11-02); CLAUDE.md keeps a three-line summary. Most things noticed mid-session must NOT become a todo: the old "file everything deferred" rule buried the backlog and made finishing one todo spawn three.
+
+- **Defect, regression or blocker of High or Critical severity:** never auto-file; always ask first. This gates who decides, not whether it can ever become a todo.
+  - In scope of the current task: fix it now.
+  - Out of scope: one line in the reply (severity, file path) and let the user decide. Never file it silently.
+- **Defect, regression, blocker or minor follow-up of Medium or Low severity:** the only tier that auto-files, with no "want a todo?" question.
+  - In scope: fix it now.
+  - Otherwise auto-file it immediately (flow below).
+
+Auto-file flow (run right after identifying the item):
+
+1. Create `todos/P{n}-YYYY-MM-DD-[slug].md` from `TEMPLATE.md`, where `P{n}` and `priority:` match the severity you assessed: `P2`/`priority: medium` for medium, `P3`/`priority: low` for low (see Priority Levels). Never hardcode `P3`/`low`. Set `status: backlog` and `labels: [deferred, <domain>]`. Fill **Background** (why it was deferred), **Acceptance Criteria** (checkboxes) and **Implementation Notes** (technical details and explicit file paths in scope).
+2. Name the new todo path in the reply.
+
+**Guard-eligible PRs auto-merge; everything else waits for individual review.** A `low`-priority, non-`security` todo whose PR passes `scripts/todo-automerge-guard.sh` (safe-path allowlist) gets `gh pr merge --auto --squash --delete-branch` armed by the executor right after PR creation, and lands when CI goes green. `medium`/`high`/`critical` todos, any `security`-labelled todo, and any PR the guard HOLDs or can't evaluate are surfaced for human review, never auto-merged. The executor never force-pushes or deletes a remote branch. Branch protection rejects direct pushes to `main`.
+
+Exempt from this bar: pattern codification (`docs/solutions/`, `docs/rules/`) writes docs, not todos. Findings against `.claude/hooks/**` go to `docs/harness-residuals.md`, never a todo (user ruling 2026-09-22). Review rounds per PR: `docs/AI_WORKFLOW.md` → Review Policy. Backlog todos are picked up later with `/todo`.
