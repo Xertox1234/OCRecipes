@@ -9,6 +9,20 @@ vi.mock("@/lib/feature-tips-storage", () => ({
   hasUsedFeature: () => true,
 }));
 
+const { mockKeyboardDismiss } = vi.hoisted(() => ({
+  mockKeyboardDismiss: vi.fn(),
+}));
+
+// The shared react-native mock has no Keyboard; Expand-while-typing closes it.
+vi.mock("react-native", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  Keyboard: { dismiss: mockKeyboardDismiss },
+}));
+
+beforeEach(() => {
+  mockKeyboardDismiss.mockClear();
+});
+
 type NotebookEntry = CoachContextData["notebook"][number];
 
 const context: CoachContextData = {
@@ -75,6 +89,85 @@ describe("CoachDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Collapse dashboard" }));
     fireEvent.click(screen.getByRole("button", { name: "Open notebook" }));
     expect(onNotebookPress).toHaveBeenCalledTimes(1);
+  });
+
+  // While typing, the keyboard and the open dashboard together leave the chat
+  // input no room (Galaxy A37: 453 + ~358 of 832 dp), so it folds — measured
+  // 2026-11-02, the input sat under the keyboard.
+  describe("while the keyboard is up (forceCollapsed)", () => {
+    function renderTyping(forceCollapsed: boolean) {
+      return renderComponent(
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={vi.fn()}
+          onNotebookPress={vi.fn()}
+          forceCollapsed={forceCollapsed}
+        />,
+      );
+    }
+
+    it("folds to the top row", () => {
+      renderTyping(true);
+      expect(screen.queryByText("Calories")).toBeNull();
+      expect(screen.queryByText("Pumpkin seeds add iron")).toBeNull();
+      expect(screen.getByText("420 / 1,949 cal")).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Expand dashboard" }),
+      ).toBeTruthy();
+    });
+
+    it("reopens when the keyboard goes, if the user had it open", () => {
+      const { rerender } = renderTyping(true);
+      rerender(
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={vi.fn()}
+          onNotebookPress={vi.fn()}
+          forceCollapsed={false}
+        />,
+      );
+      expect(screen.getByText("Calories")).toBeTruthy();
+    });
+
+    it("stays folded when the keyboard goes, if the user had folded it", () => {
+      const { rerender } = renderTyping(false);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Collapse dashboard" }),
+      );
+      rerender(
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={vi.fn()}
+          onNotebookPress={vi.fn()}
+          forceCollapsed={true}
+        />,
+      );
+      rerender(
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={vi.fn()}
+          onNotebookPress={vi.fn()}
+          forceCollapsed={false}
+        />,
+      );
+      expect(screen.queryByText("Calories")).toBeNull();
+    });
+
+    // "Expand" must never be a dead button: it closes the keyboard, which
+    // lifts the fold and shows the dashboard.
+    it("tapping Expand closes the keyboard", () => {
+      renderTyping(true);
+      fireEvent.click(screen.getByRole("button", { name: "Expand dashboard" }));
+      expect(mockKeyboardDismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it("a normal fold toggle does not touch the keyboard", () => {
+      renderTyping(false);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Collapse dashboard" }),
+      );
+      expect(mockKeyboardDismiss).not.toHaveBeenCalled();
+    });
   });
 
   it("with no goals set, the top row shows calories alone", () => {

@@ -1141,7 +1141,6 @@ export default function CoachChat({
       multilineInput
       submitOnReturn
       inputBarAlign="flex-end"
-      keyboardVerticalOffset={90}
       streamingError={streamingError}
       inlineBanner={limitBanner}
       inputBarStyle={inputBarStyle}

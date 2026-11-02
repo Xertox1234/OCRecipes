@@ -42,6 +42,7 @@ import {
 } from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 import { logger } from "@/lib/logger";
 import type { CoachChatNavigationProp } from "@/types/navigation";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
@@ -51,6 +52,11 @@ export default function CoachProScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
+  // While typing, the open dashboard plus the keyboard leave the chat input no
+  // room on a small screen (Galaxy A37: 453 + ~358 of 832 dp put it under the
+  // keyboard). The dashboard folds, and the input drops the tab-bar padding —
+  // the keyboard covers the tab bar then.
+  const keyboardVisible = useKeyboardVisible();
   const { isLoading: isPremiumLoading } = usePremiumContext();
   const isCoachPro = usePremiumFeature("coachPro");
   // Enable context fetch when premium is confirmed OR while premium status is still loading
@@ -242,6 +248,7 @@ export default function CoachProScreen() {
           context={context}
           onSuggestionPress={handleSuggestionPress}
           onNotebookPress={() => navigation.navigate("NotebookScreen")}
+          forceCollapsed={keyboardVisible}
         />
       )}
       <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
@@ -366,7 +373,9 @@ export default function CoachProScreen() {
         initialMessage={pendingSuggestion}
         onInitialMessageSent={() => setPendingSuggestion(null)}
         onMessageSent={handleMessageSent}
-        inputBarStyle={{ paddingBottom: tabBarHeight }}
+        inputBarStyle={{
+          paddingBottom: keyboardVisible ? Spacing.sm : tabBarHeight,
+        }}
       />
     </View>
   );
