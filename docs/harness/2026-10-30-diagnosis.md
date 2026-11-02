@@ -160,12 +160,12 @@ Four read-only agents classified about 206 incidents with evidence. The record f
 
 **Errored tool calls:** 2,673 of 67,246.
 
-| Cause    | Errors    | Biggest contributors                                                                                                                                                                                                        |
-| -------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Benign   | about 860 | Compound commands whose last `grep` found nothing, so the command exited 1                                                                                                                                                  |
-| EXTERNAL | about 888 | Claude Code's built-in worktree isolation 516, sim/device 249 (188 from one QA sweep), auto-mode classifier 79                                                                                                              |
-| HARNESS  | about 415 | Our guards and hooks (this row also holds 112 permission denials from Claude Code's own permission system, 72 of them in background subagents; strictly those are platform behaviour, though the conclusion doesn't change) |
-| AGENT    | about 412 | zsh glob/syntax 148, Edit before Read 84, wrong path 76, inline python 38, foreground sleep 31                                                                                                                              |
+| Cause    | Errors    | Biggest contributors                                                                                                                                                                                                                                                          |
+| -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Benign   | about 860 | Compound commands whose last `grep` found nothing, so the command exited 1                                                                                                                                                                                                    |
+| EXTERNAL | about 888 | Claude Code's built-in worktree isolation 516, sim/device 249 (188 from one QA sweep), auto-mode classifier 79                                                                                                                                                                |
+| HARNESS  | about 415 | Our guards and hooks (this row also holds 112 permission denials from Claude Code's own permission system, about 40 of them in background subagents (first counted as 72; recounted 2026-11-02); strictly those are platform behaviour, though the conclusion doesn't change) |
+| AGENT    | about 412 | zsh glob/syntax 148, Edit before Read 84, wrong path 76, inline python 38, foreground sleep 31                                                                                                                                                                                |
 
 **Worktree isolation is the largest error bucket, and it is flat over time.**
 
@@ -204,7 +204,9 @@ Four read-only agents classified about 206 incidents with evidence. The record f
 - 7 of 74 todo-closing PRs added any new todo.
 - New todos now mostly come from audits and reviews, which is by design.
 
-**Background subagents hit permission denials:** 72 of 112 denials, because they can't prompt. Typical commands are `rm -rf` of scratch folders and commands that begin with a variable assignment.
+**Background subagents hit permission denials:** about 40 of 112 denials (first counted as 72; recounted 2026-11-02), because they can't prompt. Typical commands are `rm -rf` of scratch folders and commands that begin with a variable assignment.
+
+> **Recount (2026-11-02, item 10):** 41 subagent denials in 10-10 → 10-30, 36 of them `rm -r`. They are the owner's `Bash(rm -rf:*)` deny rule working as intended. 27 came from reviewers deleting their `probe-*` folders, because the dispatch prompt said "remove it when done". It now says to leave them in place.
 
 ## 3. Cause tally
 
@@ -238,7 +240,7 @@ Counts by primary cause; MIXED records are split by their primary.
 | 7   | Slim CLAUDE.md/MEMORY.md             | The stale "harness FROZEN" line misled agents; index near its cap         | Keep, medium                                  |
 | 8   | Hook `if:` / delete preference hooks | 72% guard friction; specific live false positives listed                  | Keep, reshape around the live false positives |
 | 9   | Memory → mechanisms                  | Strongly supported (every memory-ruled mistake repeated)                  | Raise                                         |
-| 10  | Sandbox / blockWrites                | 72 permission denials in background subagents                             | Keep, medium                                  |
+| 10  | Sandbox / blockWrites                | About 40 permission denials in background subagents (recounted)           | Keep, medium                                  |
 | 11  | Path-scoped rules pilot              | No evidence either way                                                    | Lower                                         |
 | 12  | Frontmatter pass                     | No evidence either way                                                    | Lower                                         |
 
@@ -280,25 +282,25 @@ Counts by primary cause; MIXED records are split by their primary.
 
 Each item gets spec → execute → compact → next. The ranking weighs evidence strength, then cost (smallest first), then risk.
 
-| Rank | Item                                                                                  | Why here                                                                           |
-| ---- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 0    | §5 `$0`/`$1` worktree hazard                                                          | High severity, confirmed live in the rendered text, small; **owner decides first** |
-| 1    | N1: one WARNING rule (owner picks (a) or (b))                                         | Direct cause of re-review rounds; a docs-only change                               |
-| 2    | N2: preflight:fast parity                                                             | 6 of 16 sampled units got a CI-only catch after review                             |
-| 3    | N4: dispatch helper (code-reviewer always, verbatim contract; audit too)              | Missed baseline, missing contracts, ad-hoc prompts                                 |
-| 4    | N3: avoidable head-movers (overlap check before review, merge main before review)     | Confirmation passes are clean and cheap; the remaining churn is small              |
-| 5    | Item 3: inject-patterns root cause                                                    | 25 blocked edits; small                                                            |
-| 6    | Item 2 (broadened): isolation-safe command forms + RTK skip in worktrees              | Largest error bucket, flat over time                                               |
-| 7    | Item 9: memory → mechanisms, starting with zsh glob, "denominator", "run it yourself" | Every memory-ruled mistake repeated                                                |
-| 8    | N7: generated test sets for regex and guard changes                                   | Stops fix chains                                                                   |
-| 9    | N5: visible nightly E2E red                                                           | Up to 7 nights unseen                                                              |
-| 10   | N6: real-platform checks for SDK/native/upload changes                                | 4 days of broken uploads                                                           |
-| 11   | Item 8 (reshaped) + N8: live guard false positives, exemption messages                | About 72% friction                                                                 |
-| 12   | Item 7: slim CLAUDE.md / MEMORY.md, remove stale lines                                | Misled agents; near the cap                                                        |
-| 13   | Item 10: sandbox / permissions for background subagents                               | 72 subagent denials                                                                |
-| 14   | Items 4/5: slim reviewer and executor definitions                                     | Cost, not quality                                                                  |
-| 15   | Items 6, 11, 12: skill split, rules pilot, frontmatter                                | Low evidence                                                                       |
-| —    | Item 1: metrics                                                                       | Save the diagnosis scripts with rank 1's PR; re-run after rank 4 and rank 6        |
+| Rank | Item                                                                                  | Why here                                                                             |
+| ---- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 0    | §5 `$0`/`$1` worktree hazard                                                          | High severity, confirmed live in the rendered text, small; **owner decides first**   |
+| 1    | N1: one WARNING rule (owner picks (a) or (b))                                         | Direct cause of re-review rounds; a docs-only change                                 |
+| 2    | N2: preflight:fast parity                                                             | 6 of 16 sampled units got a CI-only catch after review                               |
+| 3    | N4: dispatch helper (code-reviewer always, verbatim contract; audit too)              | Missed baseline, missing contracts, ad-hoc prompts                                   |
+| 4    | N3: avoidable head-movers (overlap check before review, merge main before review)     | Confirmation passes are clean and cheap; the remaining churn is small                |
+| 5    | Item 3: inject-patterns root cause                                                    | 25 blocked edits; small                                                              |
+| 6    | Item 2 (broadened): isolation-safe command forms + RTK skip in worktrees              | Largest error bucket, flat over time                                                 |
+| 7    | Item 9: memory → mechanisms, starting with zsh glob, "denominator", "run it yourself" | Every memory-ruled mistake repeated                                                  |
+| 8    | N7: generated test sets for regex and guard changes                                   | Stops fix chains                                                                     |
+| 9    | N5: visible nightly E2E red                                                           | Up to 7 nights unseen                                                                |
+| 10   | N6: real-platform checks for SDK/native/upload changes                                | 4 days of broken uploads                                                             |
+| 11   | Item 8 (reshaped) + N8: live guard false positives, exemption messages                | About 72% friction                                                                   |
+| 12   | Item 7: slim CLAUDE.md / MEMORY.md, remove stale lines                                | Misled agents; near the cap                                                          |
+| 13   | Item 10: sandbox / permissions for background subagents                               | About 40 subagent denials; reshaped to the probe-cleanup line, sandbox trial dropped |
+| 14   | Items 4/5: slim reviewer and executor definitions                                     | Cost, not quality                                                                    |
+| 15   | Items 6, 11, 12: skill split, rules pilot, frontmatter                                | Low evidence                                                                         |
+| —    | Item 1: metrics                                                                       | Save the diagnosis scripts with rank 1's PR; re-run after rank 4 and rank 6          |
 
 ### Baseline: the numbers every item is re-measured against (window 10-10 → 10-30)
 
