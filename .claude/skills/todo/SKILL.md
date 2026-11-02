@@ -1,6 +1,7 @@
 ---
 name: todo
 description: Use when you have todos in todos/ with status backlog or planned and want to implement them autonomously in parallel
+argument-hint: "Optional notes for this sweep (e.g. todo paths to focus on)"
 ---
 
 You are running the todo orchestrator. This workflow cleans up prior runs, triages the backlog, plans execution order, dispatches executor agents, and reports results. **Never skip phases.**

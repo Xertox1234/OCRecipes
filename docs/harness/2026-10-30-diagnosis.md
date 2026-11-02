@@ -282,25 +282,33 @@ Counts by primary cause; MIXED records are split by their primary.
 
 Each item gets spec → execute → compact → next. The ranking weighs evidence strength, then cost (smallest first), then risk.
 
-| Rank | Item                                                                                  | Why here                                                                             |
-| ---- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 0    | §5 `$0`/`$1` worktree hazard                                                          | High severity, confirmed live in the rendered text, small; **owner decides first**   |
-| 1    | N1: one WARNING rule (owner picks (a) or (b))                                         | Direct cause of re-review rounds; a docs-only change                                 |
-| 2    | N2: preflight:fast parity                                                             | 6 of 16 sampled units got a CI-only catch after review                               |
-| 3    | N4: dispatch helper (code-reviewer always, verbatim contract; audit too)              | Missed baseline, missing contracts, ad-hoc prompts                                   |
-| 4    | N3: avoidable head-movers (overlap check before review, merge main before review)     | Confirmation passes are clean and cheap; the remaining churn is small                |
-| 5    | Item 3: inject-patterns root cause                                                    | 25 blocked edits; small                                                              |
-| 6    | Item 2 (broadened): isolation-safe command forms + RTK skip in worktrees              | Largest error bucket, flat over time                                                 |
-| 7    | Item 9: memory → mechanisms, starting with zsh glob, "denominator", "run it yourself" | Every memory-ruled mistake repeated                                                  |
-| 8    | N7: generated test sets for regex and guard changes                                   | Stops fix chains                                                                     |
-| 9    | N5: visible nightly E2E red                                                           | Up to 7 nights unseen                                                                |
-| 10   | N6: real-platform checks for SDK/native/upload changes                                | 4 days of broken uploads                                                             |
-| 11   | Item 8 (reshaped) + N8: live guard false positives, exemption messages                | About 72% friction                                                                   |
-| 12   | Item 7: slim CLAUDE.md / MEMORY.md, remove stale lines                                | Misled agents; near the cap                                                          |
-| 13   | Item 10: sandbox / permissions for background subagents                               | About 40 subagent denials; reshaped to the probe-cleanup line, sandbox trial dropped |
-| 14   | Items 4/5: slim reviewer and executor definitions                                     | Cost, not quality                                                                    |
-| 15   | Items 6, 11, 12: skill split, rules pilot, frontmatter                                | Low evidence                                                                         |
-| —    | Item 1: metrics                                                                       | Save the diagnosis scripts with rank 1's PR; re-run after rank 4 and rank 6          |
+| Rank | Item                                                                                  | Why here                                                                               |
+| ---- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 0    | §5 `$0`/`$1` worktree hazard                                                          | High severity, confirmed live in the rendered text, small; **owner decides first**     |
+| 1    | N1: one WARNING rule (owner picks (a) or (b))                                         | Direct cause of re-review rounds; a docs-only change                                   |
+| 2    | N2: preflight:fast parity                                                             | 6 of 16 sampled units got a CI-only catch after review                                 |
+| 3    | N4: dispatch helper (code-reviewer always, verbatim contract; audit too)              | Missed baseline, missing contracts, ad-hoc prompts                                     |
+| 4    | N3: avoidable head-movers (overlap check before review, merge main before review)     | Confirmation passes are clean and cheap; the remaining churn is small                  |
+| 5    | Item 3: inject-patterns root cause                                                    | 25 blocked edits; small                                                                |
+| 6    | Item 2 (broadened): isolation-safe command forms + RTK skip in worktrees              | Largest error bucket, flat over time                                                   |
+| 7    | Item 9: memory → mechanisms, starting with zsh glob, "denominator", "run it yourself" | Every memory-ruled mistake repeated                                                    |
+| 8    | N7: generated test sets for regex and guard changes                                   | Stops fix chains                                                                       |
+| 9    | N5: visible nightly E2E red                                                           | Up to 7 nights unseen                                                                  |
+| 10   | N6: real-platform checks for SDK/native/upload changes                                | 4 days of broken uploads                                                               |
+| 11   | Item 8 (reshaped) + N8: live guard false positives, exemption messages                | About 72% friction                                                                     |
+| 12   | Item 7: slim CLAUDE.md / MEMORY.md, remove stale lines                                | Misled agents; near the cap                                                            |
+| 13   | Item 10: sandbox / permissions for background subagents                               | About 40 subagent denials; reshaped to the probe-cleanup line, sandbox trial dropped   |
+| 14   | Items 4/5: slim reviewer and executor definitions                                     | Cost, not quality                                                                      |
+| 15   | Items 6, 11, 12: skill split, rules pilot, frontmatter                                | Low evidence. **Closed 2026-11-02, not built** (see below); only `argument-hint` added |
+| —    | Item 1: metrics                                                                       | Save the diagnosis scripts with rank 1's PR; re-run after rank 4 and rank 6            |
+
+**Rank 15, closed 2026-11-02** (measured 10-10 → 11-02; owner approved closing it):
+
+- **Item 12, `disable-model-invocation` on the workflow skills: dropped.** The model started `todo` 34 times, `todo-fast` 18 and `audit` 2 itself, each right after consent or a continuation ("yes", "please continue", a task notification). The flag would block every one, including resuming after a compaction, and would break `/audit-security` and `/audit-maintainability`, whose first step invokes `audit` through the Skill tool. No unwanted start was found.
+- **Item 12, `maxTurns` backstops: dropped.** The longest reviewer runs were 141 turns (code-reviewer) and 145 (security-auditor); a cap that never fires adds nothing, and a tighter one cuts real reviews. The `/todo` executor runs as `general-purpose` (p95 178 turns), so a cap in `todo-executor.md` would not reach it.
+- **Item 12, kept:** `argument-hint` on `todo`, `todo-fast`, `audit` and its two aliases. Plugin-bundle pruning is user-level config; the project skills are not truncated in the listing.
+- **Item 6, skill split: dropped.** No step lost to compaction was found. The model-started runs above are mostly re-invocations after "please continue", which reload the whole skill. If a step is ever lost, move it forward.
+- **Item 11, native path-scoped rules: parked.** Item 3 fixed the injector's root cause. A move would re-point the generated domain map and the Copilot builder, and whether native rules load in subagents (the reviewers) is unverified.
 
 ### Baseline: the numbers every item is re-measured against (window 10-10 → 10-30)
 

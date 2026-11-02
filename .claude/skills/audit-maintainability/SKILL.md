@@ -1,6 +1,7 @@
 ---
 name: audit-maintainability
 description: Run a maintainability-scoped structural-quality audit (missed simplifications, 600-line files, spaghetti growth, thin wrappers) — single-command alias for /audit maintainability
+argument-hint: "[focus path]"
 ---
 
 This command is a pure routing alias for the `audit` skill with the `maintainability` scope. It contains no audit instructions of its own — the entire workflow lives in `.claude/skills/audit/SKILL.md` and must be loaded, not reconstructed.
