@@ -1,5 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { View, Pressable, ScrollView, StyleSheet } from "react-native";
+import {
+  View,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Keyboard,
+} from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
@@ -15,6 +21,12 @@ interface Props {
   context: CoachContextData;
   onSuggestionPress: (text: string) => void;
   onNotebookPress: () => void;
+  /**
+   * Fold to the top row regardless of the user's choice — set while the
+   * keyboard is up, when the open dashboard leaves the chat input no room.
+   * The user's own choice comes back when it clears.
+   */
+  forceCollapsed?: boolean;
 }
 
 /**
@@ -26,9 +38,19 @@ const CoachDashboard = React.memo(function CoachDashboard({
   context,
   onSuggestionPress,
   onNotebookPress,
+  forceCollapsed = false,
 }: Props) {
   const { theme } = useTheme();
-  const [expanded, setExpanded] = useState(true);
+  const [userExpanded, setUserExpanded] = useState(true);
+  const expanded = userExpanded && !forceCollapsed;
+  // While folded for the keyboard, Expand closes the keyboard (which lifts
+  // the fold) instead of being a dead button.
+  const onToggle = forceCollapsed
+    ? () => {
+        setUserExpanded(true);
+        Keyboard.dismiss();
+      }
+    : () => setUserExpanded((e) => !e);
 
   const {
     todayIntake,
@@ -56,7 +78,7 @@ const CoachDashboard = React.memo(function CoachDashboard({
     <View style={styles.container}>
       <View style={[styles.topRow, { borderBottomColor: theme.border }]}>
         <Pressable
-          onPress={() => setExpanded((e) => !e)}
+          onPress={onToggle}
           style={({ pressed }) => [styles.toggle, pressed && { opacity: 0.7 }]}
           hitSlop={{ top: 6, bottom: 6 }}
           accessibilityLabel={
