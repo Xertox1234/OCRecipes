@@ -150,6 +150,17 @@ assert_deny "registry: a subagent still cannot write into the main checkout" \
   "{\"session_id\":\"$SESSION\",\"agent_id\":\"ccc\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$MAIN/server/app.ts\"}}"
 assert_deny "registry: a non-alphanumeric agent_id gets no exception" \
   "{\"session_id\":\"$SESSION\",\"agent_id\":\"c*\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$WT_C/server/app.ts\"}}"
+# A present-but-broken helper (here it runs `exit 0`) must not end the hook with no decision:
+# the helper runs in a subshell, so the main checkout write is still denied.
+BROKEN_DIR=$(mktemp -d); mkdir -p "$BROKEN_DIR/lib"
+cp "$HOOK" "$BROKEN_DIR/guard-worktree-isolation.sh"; echo 'exit 0' > "$BROKEN_DIR/lib/own-agent-worktree.sh"
+OUT=$(echo "{\"session_id\":\"$SESSION\",\"agent_id\":\"ccc\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$MAIN/server/app.ts\"}}" | bash "$BROKEN_DIR/guard-worktree-isolation.sh" 2>/dev/null)
+if echo "$OUT" | grep -q '"permissionDecision": "deny"'; then
+  echo "PASS: registry: a broken own-worktree helper still denies"; PASS=$((PASS+1))
+else
+  echo "FAIL: registry: a broken own-worktree helper still denies"; echo "  got: $OUT"; FAIL=$((FAIL+1))
+fi
+rm -rf "$BROKEN_DIR"
 
 # Bypass.
 out=$(echo "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"file_path\":\"$MAIN/server/app.ts\"}}" \
