@@ -1,9 +1,9 @@
 ---
 title: "Accessibility, layout bugs and copy polish from the visual QA sweep"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-02
 assignee:
 labels: [qa-sweep, ui, accessibility]
 github_issue:
@@ -40,8 +40,8 @@ Report `docs/audits/2026-10-11-visual-qa-sweep.md` (gitignored, local), groups F
 
 ## Acceptance Criteria
 
-- [ ] Every sheet/modal listed in #32 hides the screen beneath from VoiceOver (_code sets `accessibilityViewIsModal` on all five; needs a device VoiceOver pass_); ~~RecipeChat chips individually reachable; ring icon not announced as a glyph~~ (_done in #1417_).
-- [ ] #39/#39b checked with VoiceOver on a device; fixed if real, closed if not (_device pass, owner_).
+- [x] Every sheet/modal listed in #32 hides the screen beneath from VoiceOver (_code sets `accessibilityViewIsModal` on all five; confirmed on the phone 2026-11-02_); ~~RecipeChat chips individually reachable; ring icon not announced as a glyph~~ (_done in #1417_).
+- [x] #39/#39b checked; not bugs (_simulator AXe 2026-10-23; phone pass 2026-11-02_).
 - [x] Medium layout bugs (#30, #26, #15, #68, #69, #70) fixed (_#1417, #1421_); Lows fixed or declined in the PR body with a reason (_#6, #8, #21, #22, #46, #64 fixed; #33, #25 and the chrome items moved to `todos/P3-2026-10-18-screen-chrome-consistency-followups-from-qa-sweep.md` at the owner's request; #23 not reproduced_).
 - [x] Copy items fixed or declined; British spelling ("Favourites") consistent (_polish PR, owner decisions 2026-10-18_).
 - [x] Re-checked light + dark (_simulator, 2026-10-18: Plan, Browse Recipes, Profile, Saved Items, discard sheet_).
@@ -129,3 +129,7 @@ Simulator checks on main (AXe `describe-ui`, which includes disabled and off-scr
 - Recipe detail: the whole page is in the tree, so the owner's "last item repeats, no scroll" (seen on old code) is not clipping. Side finding: ingredient checkmarks and the time/difficulty icons are focusable with empty labels.
 
 Still open here, human-led, after the SDK 58 upgrade lands: a phone VoiceOver pass on #32 (all five sheets, incl. the scan menu reaching "Close scan menu"), the recipe-detail scroll, swiping For You and Curated past card 10, and the empty-label icons.
+
+### 2026-11-02 — phone VoiceOver pass (owner), closed
+
+The owner ran the VoiceOver pass on the SDK 58 build (runtime 5.0.0). #32 (all five sheets, scan menu reaching "Close scan menu"), the recipe-detail scroll and swiping Curated past card 10 all passed. The only issue left was the empty-label stops on recipe detail, fixed in this PR: `IngredientIcon` (image and fallback circle) and the time/difficulty/servings icons in `RecipeMetaChips` are now hidden from VoiceOver and TalkBack (`accessibilityElementsHidden` + `importantForAccessibility="no-hide-descendants"`). `IngredientIcon` is also drawn beside the name on Grocery, Pantry, receipt meal plan and the import review card, so those rows lose the empty stop too.
