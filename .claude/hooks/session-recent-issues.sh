@@ -18,8 +18,9 @@ THRESHOLD=$(date -v-14d +%Y-%m-%d 2>/dev/null || date -d '14 days ago' +%Y-%m-%d
 
 # One awk pass over the corpus frontmatter → "bugflag<TAB>created<TAB>track<TAB>title<TAB>rel"
 # for every in-window solution. rel is stripped via substr (not regex — paths may contain
-# metacharacters). Sort: bug-track first, then created desc; cap 12 (mirrors the retired SQL
-# `ORDER BY (track='bug') DESC, created DESC LIMIT 12`). NOTE: no `|| exit 0` on this
+# metacharacters). Sort: bug-track first, then created desc; cap 5 (was 12, mirroring the retired SQL
+# `ORDER BY (track='bug') DESC, created DESC LIMIT 12`; cut to 5 title + path rows in harness
+# item 7, 2026-11-02, because SessionStart output is re-sent on every compaction). NOTE: no `|| exit 0` on this
 # pipeline — under pipefail a SIGPIPE from head would discard legitimate data (see
 # docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-2026-06-27.md);
 # the [ -n "$ROWS" ] guard below is the only emptiness check.
@@ -53,7 +54,7 @@ ROWS=$(find "$SOLUTIONS_DIR" -type f -name '*.md' \
       fm == 1 && /^track:/   { track = unq($0) }
       fm == 1 && /^title:/   { title = unq($0) }
     ' root="$SOLUTIONS_DIR/" {} + 2>/dev/null \
-  | sort -t$'\t' -k1,1nr -k2,2r | head -n 12)
+  | sort -t$'\t' -k1,1nr -k2,2r | head -n 5)
 [ -n "$ROWS" ] || exit 0
 
 DIGEST="[RECENT SOLUTIONS — codified in the last 14 days, bug-track first]"
@@ -63,8 +64,7 @@ DIGEST+=$'\n'"Pull more on demand: grep docs/solutions/ — e.g. \`grep -ril '^t
 DOC_PATHS=""
 while IFS=$'\t' read -r _bug created track title rel; do
   [ -n "$created" ] || continue
-  category="${rel%%/*}"
-  DIGEST+=$'\n'"- ${created} [${track}/${category}] ${title} — docs/solutions/${rel}"
+  DIGEST+=$'\n'"- ${title} — docs/solutions/${rel}"
   DOC_PATHS="${DOC_PATHS:+$DOC_PATHS,}docs/solutions/${rel}"
 done <<< "$ROWS"
 
