@@ -77,7 +77,9 @@ appId: com.ocrecipes.app
 #    final gate loudly. The iOS job also keeps Metro's manifest warm with a
 #    5s request loop (e2e-regression.yml, "Keep Metro manifest warm"),
 #    which took first-launch timeouts from 7/10 to 0/10; the loop is the
-#    backstop for the rest. Android's dev launcher has the same error screen
+#    backstop for the rest. Most slow manifests came from @expo/cli spawning
+#    a Node process per request; patches/expo++@expo+cli+*.patch caches that
+#    (2026-11-02). Android's dev launcher has the same error screen
 #    (ErrorScreen.kt) but has not been seen to show it on CI; if it does,
 #    the loop still relaunches there, and its stopApp is iOS-gated because
 #    the bundle id is iOS-only (see 3).

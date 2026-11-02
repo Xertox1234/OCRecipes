@@ -548,6 +548,9 @@ jobs:
       # the simulator. Do not renice Metro to fix that: run 40686366318 tried
       # `renice -n -10` and was worse at every load level (load 150-250: p90
       # 12.8s vs 5.0s) and the load median doubled (281 vs 142).
+      # Since 2026-11-02 patches/expo++@expo+cli+*.patch resolves the runtime
+      # version once per platform instead (after SDK 58, 15-20% of manifests
+      # passed 10s, nightlies 41288476343 and 41412869659).
       - name: Keep Metro manifest warm
         run: |
           nohup bash -c 'while true; do
