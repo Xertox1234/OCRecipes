@@ -117,7 +117,7 @@ export default function NotebookScreen() {
             navigation.navigate("NotebookEntry", { entryId: item.id })
           }
           accessibilityRole="button"
-          accessibilityLabel={`${item.type}: ${item.content.slice(0, 60)}`}
+          accessibilityLabel={`${item.type}: ${toSecondPerson(item.content).slice(0, 60)}`}
         >
           <View style={styles.entryRow}>
             <View style={[styles.typeDot, { backgroundColor: color }]} />

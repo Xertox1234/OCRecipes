@@ -64,6 +64,37 @@ describe("CoachDashboard", () => {
     expect(screen.getByText("How was my week?")).toBeTruthy();
   });
 
+  // Tapping a tip sends it as the user's first message, and the server titles
+  // a new thread from that message — the raw third-person note ("The user has
+  // logged…") became a thread title on the demo account, 2026-11-02.
+  it("tapping a tip sends the text the row shows, not the raw note", () => {
+    const onSuggestionPress = vi.fn();
+    renderComponent(
+      <CoachDashboard
+        context={{
+          ...context,
+          notebook: [
+            {
+              id: 2,
+              type: "insight",
+              content: "The user has logged 0.7g of protein today",
+            } as NotebookEntry,
+          ],
+        }}
+        onSuggestionPress={onSuggestionPress}
+        onNotebookPress={vi.fn()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Discuss: You have logged 0.7g of protein today",
+      }),
+    );
+    expect(onSuggestionPress).toHaveBeenCalledWith(
+      "You have logged 0.7g of protein today",
+    );
+  });
+
   it("the top row always carries today's calories against the goal", () => {
     renderDashboard();
     expect(screen.getByText("420 / 1,949 cal")).toBeTruthy();
