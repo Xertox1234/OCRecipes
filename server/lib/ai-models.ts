@@ -43,7 +43,19 @@ export const AI_FEATURES = {
   "coach-pro-chat": { ...LUNA, json: false, vision: false }, // nutrition-coach generateCoachProResponse (stream, tools)
   "coach-notebook-extract": { ...FAST, json: true, vision: false }, // notebook-extraction extractNotebookEntries
   // Recipe chat
-  "recipe-chat": { ...HEAVY, json: false, vision: false }, // recipe-chat generateRecipeChatResponse (stream)
+  // Gemini 3.8 Flash (owner-approved 2026-11-02, paired eval safety +0.96 vs
+  // gpt-4o, p50 5.9 s to the card vs Argon's 11.7 s; todo
+  // P2-2026-10-17-recipe-chat-row-model-eval-before-switch). Not gpt-6-luna as
+  // the fallback: this call sends temperature and adapt never reaches the
+  // OpenAI-direct attempt, so the fallback stays gpt-4o until nearer its
+  // 2027-01-14 retirement.
+  "recipe-chat": {
+    model: "google/gemini-3.8-flash",
+    fallback: "gpt-4o",
+    json: false,
+    vision: false,
+    adapt: { set: { reasoning_effort: "low" } },
+  }, // recipe-chat generateRecipeChatResponse (stream)
   "recipe-chat-image": { ...HEAVY, json: false, vision: true }, // recipe-chat analyzeImageForRecipe
   // Photo analysis (photo-analysis.ts)
   "photo-recipe": { ...HEAVY, json: true, vision: true }, // analyzeRecipePhoto
