@@ -277,7 +277,7 @@ Counts by primary cause; MIXED records are split by their primary.
 > **Mods addendum:** see [`2026-10-30-mods-addendum.md`](2026-10-30-mods-addendum.md).
 >
 > - Build rank 3 (N4) and rank 9 (N5) as mods, and move N5 up to follow rank 4.
-> - Collect item 1 (metrics) with a mod.
+> - Collect item 1 (metrics) with a mod. Dropped 2026-11-02: committed scans instead (§7).
 > - New N9 (compact and continue): approved 2026-11-02 as a `/cc` command (`.claude/mods/compact-continue/`). About 140 of 158 manual `/compact`s in the window were followed by "please continue"; automatic continuing after every `/compact` was declined.
 
 Each item gets spec → execute → compact → next. The ranking weighs evidence strength, then cost (smallest first), then risk.
@@ -300,7 +300,7 @@ Each item gets spec → execute → compact → next. The ranking weighs evidenc
 | 13   | Item 10: sandbox / permissions for background subagents                               | About 40 subagent denials; reshaped to the probe-cleanup line, sandbox trial dropped   |
 | 14   | Items 4/5: slim reviewer and executor definitions                                     | Cost, not quality                                                                      |
 | 15   | Items 6, 11, 12: skill split, rules pilot, frontmatter                                | Low evidence. **Closed 2026-11-02, not built** (see below); only `argument-hint` added |
-| —    | Item 1: metrics                                                                       | Save the diagnosis scripts with rank 1's PR; re-run after rank 4 and rank 6            |
+| —    | Item 1: metrics                                                                       | **Closed 2026-11-02**: scans committed (`rounds.py`, `stampscan.py`); no mod (see §7)  |
 
 **Rank 15, closed 2026-11-02** (measured 10-10 → 11-02; owner approved closing it):
 
@@ -340,5 +340,12 @@ Re-measure the relevant row after each item with the same window length. Keep an
 - **Not re-checked:** the other agents' counts, especially the friction categories (regex buckets), the rework escape rate (hand-filtered denominator) and the inject-patterns root cause (inferred).
 - **Raw records:** `diag-A-rounds.jsonl`, `diag-B-process.jsonl`, `diag-C-rework.jsonl`, `diag-D-friction.jsonl`, `reviews.jsonl`, `units_merged.json` and the scripts that built them are copied outside the repo to `~/.local/share/ocrecipes-harness-diagnosis/2026-10-30/`.
   - They are not committed: this is a public repo, and the records hold paraphrased owner messages and transcript paths.
-  - The extraction scripts are to be cleaned and committed with the metrics item.
-  - Re-measure scans committed so far, in `scripts/harness/`: `isoscan.py` (item 2), `zshscan.py` (item 9), `guardscan.py` (item 8: our guard denials), `permscan.py` (item 10: permission-system denials by source) and `agentcost.py` (items 4/5: subagent token use by agent type; re-measure with a `since` after 2026-11-02).
+  - Re-measure scans, in `scripts/harness/` (item 1, closed 2026-11-02):
+    - `rounds.py` (baseline row 1: review rounds; reproduces 288 units, 242 · 38 · 6 · 1 · 1 from the saved rows).
+    - `stampscan.py` (row 3: stamp misses by version; judges only the last 3 days, since /tmp thins out older stamps).
+    - `guardscan.py` (row 4 and item 8: our guard denials) and `isoscan.py` (row 5 and item 2).
+    - `zshscan.py` (item 9), `permscan.py` (item 10: permission-system denials by source), `agentcost.py` (items 4/5: subagent token use by agent type).
+  - Row 2, the follow-up PR rate, has no scan: agent C judged 278 commit bodies by hand. Re-measure it by hand, or not at all.
+  - Transcripts older than about three weeks are deleted (on 11-02 the oldest reviewer run was from 10-11), so the 10-10 → 10-30 window can't be re-run in full. Compare equal-length recent windows.
+  - Not committed: `usage.py` (replaced by `agentcost.py`), `denyscan.py` (replaced by `guardscan.py`), `scan.py` (compactions, corrections, error buckets; no baseline row uses it), agent A's drill-down helpers and the hand-judged records.
+  - Item 1 was to be collected by a mod (mods addendum). Dropped: the transcripts already hold every number and the scans read them in seconds, while a mod would count from zero with its own definitions and not line up with the baseline.
