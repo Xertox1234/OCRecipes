@@ -333,3 +333,4 @@ Re-measure the relevant row after each item with the same window length. Keep an
 - **Raw records:** `diag-A-rounds.jsonl`, `diag-B-process.jsonl`, `diag-C-rework.jsonl`, `diag-D-friction.jsonl`, `reviews.jsonl`, `units_merged.json` and the scripts that built them are copied outside the repo to `~/.local/share/ocrecipes-harness-diagnosis/2026-10-30/`.
   - They are not committed: this is a public repo, and the records hold paraphrased owner messages and transcript paths.
   - The extraction scripts are to be cleaned and committed with the metrics item.
+  - Re-measure scans committed so far, in `scripts/harness/`: `isoscan.py` (item 2), `zshscan.py` (item 9), `guardscan.py` (item 8: our guard denials) and `permscan.py` (item 10: permission-system denials by source).
