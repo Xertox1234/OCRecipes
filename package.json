@@ -264,6 +264,9 @@
     "CLAUDE.md": [
       "node scripts/check-claude-md-budget.js"
     ],
+    ".claude/agents/*.md": [
+      "node scripts/check-claude-md-budget.js"
+    ],
     "{.claude/hooks/**/*.sh,todos/**/*.md}": [
       "node scripts/check-claim-staleness.js"
     ],
