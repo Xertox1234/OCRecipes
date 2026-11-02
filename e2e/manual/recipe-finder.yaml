@@ -96,6 +96,15 @@ env:
     visible: "Start a new coach conversation"
     timeout: 20000
 - tapOn: "Start a new coach conversation"
+# Fold the dashboard so the chat list fills the screen. Maestro's scrolls swipe
+# through the middle of the screen; with the dashboard open that is the
+# dashboard, not the list, and nothing scrolls (Galaxy A37, 2026-11-02). The
+# fold is the user's choice, so it stays folded after the keyboard closes.
+- runFlow:
+    when:
+      visible: "Collapse dashboard"
+    commands:
+      - tapOn: "Collapse dashboard"
 # iOS reads the input as its label plus placeholder; Maestro text is a
 # full-string regex.
 - tapOn: "Message your nutrition coach.*"
@@ -104,23 +113,48 @@ env:
 - extendedWaitUntil:
     visible: "(From the community|No community recipes matched\\.)"
     timeout: 45000
-# Spoonacular list → open a preview (nothing saved) → back.
-- tapOn: "Search Spoonacular"
+# Ideas list → make one idea into a recipe → its detail screen → back.
+# "Get ideas for you" replaced "Search Spoonacular" in #1429 (AI-written ideas;
+# an idea has no preview, only "Make this mine", which generates and saves the
+# recipe, then opens it). The list's buttons render below its rows, and the
+# Coach chat area is short with the dashboard open: Android's accessibility
+# tree omits them until scrolled into view (Galaxy A37, 2026-11-02: 0 matches
+# before one swipe, 2 after), so each one is reached with scrollUntilVisible.
+- scrollUntilVisible:
+    element:
+      text: "Get ideas for you"
+      enabled: true
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    text: "Get ideas for you"
+    enabled: true
 - extendedWaitUntil:
-    visible: "(From Spoonacular|Spoonacular isn't available right now.*|Spoonacular had no matches\\.)"
-    timeout: 45000
+    visible: "(Ideas for you|No ideas came up\\.|Ideas aren't available right now.*)"
+    timeout: 60000
 - runFlow:
     when:
-      visible: "From Spoonacular"
+      visible: "Ideas for you"
     commands:
+      - scrollUntilVisible:
+          element: "Make .* mine"
+          direction: DOWN
+          timeout: 20000
       - tapOn:
-          text: ".*Opens recipe\\."
+          text: "Make .* mine"
           index: 0
       - extendedWaitUntil:
-          visible: "Save .* to your recipes"
-          timeout: 30000
+          visible: "Close recipe"
+          timeout: 120000
       - tapOn: "Close recipe"
-# Generate in Coach → RecipeChef's card with Save.
+# Generate in Coach → RecipeChef's card with Save. Older lists keep their
+# Generate disabled, so only the newest list's button matches.
+- scrollUntilVisible:
+    element:
+      text: "Generate"
+      enabled: true
+    direction: DOWN
+    timeout: 20000
 - tapOn:
     text: "Generate"
     enabled: true
