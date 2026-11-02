@@ -61,6 +61,15 @@ describe("AI_FEATURES table", () => {
       vision: true,
       adapt: { set: { reasoning_effort: "low" } },
     },
+    // Owner-approved 2026-11-02 after a paired eval (todo
+    // P2-2026-10-17-recipe-chat-row-model-eval-before-switch, Updates).
+    "recipe-chat": {
+      model: "google/gemini-3.8-flash",
+      fallback: "gpt-4o",
+      json: false,
+      vision: false,
+      adapt: { set: { reasoning_effort: "low" } },
+    },
   };
 
   it("switched rows are exactly the approved ones", () => {
