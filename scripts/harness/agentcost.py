@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Token usage of subagent runs, by agent type, plus /todo executor runs.
 
-Usage: python3 scripts/harness/agentcost.py <since YYYY-MM-DD>
+Usage: python3 scripts/harness/agentcost.py <since YYYY-MM-DD> [<to YYYY-MM-DD>]  (<to> exclusive)
 Scans subagent transcripts under the OCRecipes project dir (agent type from each run's
 .meta.json). Per type: runs, turns per run, first-turn context (system prompt + dispatch,
 which is where an agent definition's size shows), and total cache reads/writes and output.
 /todo and /todo-fast executors are general-purpose runs that read todo-executor.md; they
-get their own line. Harness items 4/5 baseline (10-10 -> 11-02): code-reviewer 395 runs,
-9.8 turns/run, first-turn context ~72K; executor 61 runs, ~102 turns/run. Re-measure target
-after #1689/#1690: code-reviewer first-turn context ~53K.
+get their own line. Harness items 4/5 baseline (`2026-10-10 2026-11-02`): code-reviewer
+386 runs, 9.9 turns/run, first-turn context 71.8K; executor 60 runs, 102.9 turns/run.
+Re-measure (since 2026-11-03) target after #1689/#1690: code-reviewer first-turn ~53K.
 """
 import json, os, sys, glob, collections, time
 
 since = sys.argv[1]
+until = sys.argv[2] if len(sys.argv) > 2 else "9999"
 root = os.path.expanduser("~/.claude/projects/-Users-williamtower-projects-OCRecipes")
 cut = time.mktime(time.strptime(since, "%Y-%m-%d"))
 S = collections.defaultdict(collections.Counter)
@@ -33,7 +34,7 @@ for meta in glob.glob(root + "/**/subagents/*.meta.json", recursive=True):
             o = json.loads(ln)
         except ValueError:
             continue
-        if o.get("timestamp", "") < since or o.get("type") != "assistant":
+        if not since <= o.get("timestamp", "") < until or o.get("type") != "assistant":
             continue
         u = (o.get("message") or {}).get("usage")
         if not u:
@@ -53,7 +54,7 @@ for meta in glob.glob(root + "/**/subagents/*.meta.json", recursive=True):
     s["out"] += out
     s["first"] += sum(first.get(k, 0) for k in ("cache_read_input_tokens", "cache_creation_input_tokens", "input_tokens"))
 
-print(f"since {since}")
+print(f"since {since}" + (f" until {until}" if until != "9999" else ""))
 print(f"{'agent':34}{'runs':>6}{'turns/run':>10}{'1st ctx':>9}{'cread M':>9}{'cwrite M':>9}{'out M':>7}")
 for a, s in sorted(S.items(), key=lambda x: -x[1]["cread"]):
     r = s["runs"]
