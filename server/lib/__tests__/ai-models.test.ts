@@ -17,16 +17,14 @@ describe("AI_FEATURES table", () => {
     expect(rows).toHaveLength(34);
   });
 
-  it("every model has a provider/ prefix and no fallback does", () => {
+  it("every model has a provider/ prefix", () => {
     for (const [name, row] of rows) {
       expect(row.model, name).toMatch(/^[a-z0-9-]+\/[^/]+$/);
-      if (row.fallback !== undefined)
-        expect(row.fallback, name).not.toContain("/");
     }
   });
 
   // Owner-approved switches (spec §6 step 5). Every other row still runs
-  // today's model: its fallback with the openai/ prefix and no adapt.
+  // gpt-4o or gpt-4o-mini with no adapt.
   const SWITCHED: Record<string, AiFeatureConfig> = {
     "coach-chat": {
       model: "openai/gpt-6-luna",
@@ -86,8 +84,6 @@ describe("AI_FEATURES table", () => {
         row.model,
       );
       expect(row.adapt, name).toBeUndefined();
-      if (row.fallback !== undefined)
-        expect(row.model, name).toBe(`openai/${row.fallback}`);
     }
   });
 
@@ -97,26 +93,37 @@ describe("AI_FEATURES table", () => {
     }
   });
 
-  it("a Vertex-first row has no OpenAI fallback; every other row has one", () => {
+  it("a Vertex-first row runs a Google model", () => {
     for (const [name, row] of rows) {
-      if (row.primary === "vertex") {
-        expect(row.fallback, name).toBeUndefined();
+      if (row.primary === "vertex")
         expect(row.model, name).toMatch(/^google\//);
-      } else if (row.vertexBackup === undefined) {
-        expect(typeof row.fallback, name).toBe("string");
-      }
     }
   });
 
-  it("each row has exactly one backup kind: fallback, vertexBackup or primary vertex", () => {
-    for (const [name, row] of rows) {
-      const kinds = [
-        row.fallback !== undefined,
-        row.vertexBackup !== undefined,
-        row.primary === "vertex",
-      ].filter(Boolean);
-      expect(kinds.length, name).toBe(1);
-    }
+  // OpenAI direct shuts gpt-4o/mini down on 2027-01-14: the OpenAI-direct
+  // `fallback` route is gone, and only a Vertex-first row may lack the backup.
+  it("the row type has no OpenAI fallback and requires a backup", () => {
+    const withFallback: AiFeatureConfig = {
+      model: "openai/gpt-4o",
+      // @ts-expect-error — no OpenAI-direct fallback route any more
+      fallback: "gpt-4o",
+      vertexBackup: VERTEX_BACKUP,
+      json: true,
+      vision: false,
+    };
+    // @ts-expect-error — an OpenRouter-primary row needs the Vertex backup
+    const noBackup: AiFeatureConfig = {
+      model: "openai/gpt-4o",
+      json: true,
+      vision: false,
+    };
+    const vertexFirst: AiFeatureConfig = {
+      model: "google/gemini-3.8-flash",
+      primary: "vertex",
+      json: true,
+      vision: true,
+    };
+    expect([withFallback, noBackup, vertexFirst]).toHaveLength(3);
   });
 
   // Rollout complete (spec 2026-11-02-vertex-backup-route-design; owner
@@ -125,7 +132,6 @@ describe("AI_FEATURES table", () => {
   it("every row backs up to Vertex, never OpenAI", () => {
     for (const [name, row] of rows) {
       expect(row.vertexBackup, name).toBe(VERTEX_BACKUP);
-      expect(row.fallback, name).toBeUndefined();
     }
   });
 

@@ -586,7 +586,7 @@ export async function runEvalSuite(
       ];
       moderationBlocked.push({ testCaseId: c.testCaseId, features });
       console.warn(
-        `  ⚠ ${c.testCaseId}: blocked by provider moderation (${features.join(", ")}) — not scored; production answers it via the OpenAI fallback`,
+        `  ⚠ ${c.testCaseId}: blocked by provider moderation (${features.join(", ")}) — not scored; production answers it via the Vertex backup`,
       );
     } else {
       scored.push(c);

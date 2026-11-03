@@ -136,7 +136,7 @@ async function main(): Promise<void> {
   }
   if (!smokeKeysPresent(process.env)) {
     console.error(
-      "ai:smoke needs GOOGLE_VERTEX_* (all three) or OPENROUTER_API_KEY (it never uses the OpenAI fallback).",
+      "ai:smoke needs GOOGLE_VERTEX_* (all three) or OPENROUTER_API_KEY.",
     );
     process.exit(2);
   }
