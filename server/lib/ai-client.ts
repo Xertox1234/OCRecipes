@@ -130,6 +130,14 @@ async function closeQuietly(
   }
 }
 
+/**
+ * OpenRouter's in-stream error shape: a chunk with `error` and/or
+ * `finish_reason: "error"`. Vertex's OpenAI-compatible endpoint has no
+ * documented chunk-level error; whatever it sends as an SSE `error` event or
+ * a `data:` payload with `error` is raised by the openai SDK itself as an
+ * APIError from `next()` (node_modules/openai/core/streaming.js, v6.39), so
+ * both routes end a failed stream with a throw, never a silent truncation.
+ */
 function isErrorChunk(chunk: unknown): boolean {
   const c = chunk as {
     error?: unknown;
@@ -353,7 +361,17 @@ export function createAiChat(deps: AiChatDeps): AiChat {
 
     try {
       if (streaming) {
-        return await openStream(feature, requestedModel, body, options, record);
+        return await openStream(
+          deps.openrouter,
+          deps.breaker,
+          "openrouter",
+          feature,
+          requestedModel,
+          body,
+          options,
+          record,
+          false,
+        );
       }
       const res = await deps.openrouter.chat.completions.create(body, options);
       deps.breaker.recordSuccess();
@@ -487,6 +505,19 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     );
     const body = buildVertexBody(params, backup.adapt, backup.model);
     try {
+      if (params.stream === true) {
+        return await openStream(
+          deps.vertex,
+          deps.vertexBreaker,
+          "vertex",
+          feature,
+          backup.model,
+          body,
+          options,
+          record,
+          true,
+        );
+      }
       const res = await deps.vertex.chat.completions.create(body, options);
       deps.vertexBreaker.recordSuccess();
       const model = answeredModel(res);
@@ -696,7 +727,15 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     );
   }
 
+  /**
+   * Open a stream and peek its first event; a failure up to and including
+   * that event throws to the caller's catch (which may switch routes). After
+   * it, failures reach the stream's consumer (spec §3.5 / 2026-11-02 §3.3).
+   */
   async function openStream(
+    client: AiChatClient,
+    breaker: CircuitBreaker,
+    provider: "openrouter" | "vertex",
     feature: AiFeature,
     requestedModel: string,
     body: Record<string, unknown>,
@@ -706,8 +745,9 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       provider: string | null,
       fellBack: boolean,
     ) => void,
+    fellBack: boolean,
   ): Promise<AsyncIterable<ChatCompletionChunk>> {
-    const source = (await deps.openrouter!.chat.completions.create(
+    const source = (await client.chat.completions.create(
       body,
       options,
     )) as AsyncIterable<ChatCompletionChunk>;
@@ -719,11 +759,14 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       await closeQuietly(iterator);
       throw new InStreamError(first.value);
     }
-    deps.breaker.recordSuccess();
+    breaker.recordSuccess();
     return wrapStream(iterator, first, (summary) => {
-      record(summary.answeredModel, summary.answeredProvider, false);
+      // Vertex chunks carry no `provider` field: the route is the answer.
+      const answered =
+        provider === "vertex" ? "vertex" : summary.answeredProvider;
+      record(summary.answeredModel, answered, fellBack);
       deps.log.info(
-        { feature, provider: "openrouter", requestedModel, ...summary },
+        { feature, provider, requestedModel, fellBack, ...summary },
         "ai stream",
       );
     });

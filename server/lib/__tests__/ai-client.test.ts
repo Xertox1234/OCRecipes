@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import OpenAI from "openai";
 import { createAiChat, withAiCallContext } from "../ai-client";
 import type { AiChatDeps } from "../ai-client";
-import { CircuitBreaker, VertexAuthError } from "../ai-failure";
+import { CircuitBreaker, InStreamError, VertexAuthError } from "../ai-failure";
 import type { AiCallContext } from "../ai-call-context";
 import { AI_FEATURES } from "../ai-models";
 import type { AiFeature } from "../ai-models";
@@ -1509,6 +1509,122 @@ describe("aiChat (vertexBackup rows)", () => {
       }),
       "ai call using fallback",
     );
+  });
+});
+
+describe("aiChat (vertexBackup rows, streaming)", () => {
+  const B = "test-backup-row" as unknown as AiFeature;
+  const FLASH = "google/gemini-3.8-flash";
+  const sparams = { ...params, stream: true as const };
+  const client = () => ({ chat: { completions: { create: vi.fn() } } });
+  const errChunk = () => ({
+    ...chunk(""),
+    error: { code: "server_error" },
+    choices: [{ index: 0, delta: { content: "" }, finish_reason: "error" }],
+  });
+  const vchunk = (content: string) => ({
+    ...chunk(content),
+    model: FLASH,
+    provider: undefined,
+  });
+  let deps: AiChatDeps;
+  beforeEach(() => {
+    deps = makeDeps({ vertex: client() });
+  });
+  const neverOpenAI = () =>
+    expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
+  const vertexStream = (items: (object | Error)[]) =>
+    vi
+      .mocked(deps.vertex!.chat.completions.create)
+      .mockResolvedValue(fakeStream(items).iterable);
+
+  it("OpenRouter create rejects → the Vertex stream, recorded as vertex", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vertexStream([vchunk("Hel"), vchunk("lo")]);
+    const ctx: AiCallContext = { overrides: {}, fallback: "on", calls: [] };
+    const text = await withAiCallContext(ctx, async () =>
+      collect(await createAiChat(deps)(B, sparams)),
+    );
+    expect(text).toBe("Hello");
+    const [body] = vi.mocked(deps.vertex!.chat.completions.create).mock
+      .calls[0];
+    expect(body).toMatchObject({ stream: true, model: FLASH });
+    expect(ctx.calls.at(-1)).toMatchObject({
+      answeredProvider: "vertex",
+      fellBack: true,
+    });
+    neverOpenAI();
+  });
+
+  it("OpenRouter's first event is an error chunk → the Vertex stream", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      fakeStream([errChunk()]).iterable,
+    );
+    vertexStream([vchunk("ok")]);
+    expect(await collect(await createAiChat(deps)(B, sparams))).toBe("ok");
+    neverOpenAI();
+  });
+
+  it("OpenRouter fails after its first chunk → caller gets the error, no switch", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      fakeStream([chunk("a"), new Error("mid-stream")]).iterable,
+    );
+    const stream = await createAiChat(deps)(B, sparams);
+    await expect(collect(stream)).rejects.toThrow("mid-stream");
+    expect(deps.vertex!.chat.completions.create).not.toHaveBeenCalled();
+    neverOpenAI();
+  });
+
+  it.each([
+    ["an error chunk", errChunk()],
+    ["a thrown SDK error", apiError(500, "vertex sse error")],
+  ])(
+    "the Vertex stream's first event is %s → the call rejects, vertexBreaker counted",
+    async (_label, first) => {
+      vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+        apiError(503),
+      );
+      vertexStream([first]);
+      const spy = vi.spyOn(deps.vertexBreaker, "recordFailure");
+      await expect(createAiChat(deps)(B, sparams)).rejects.toBeDefined();
+      expect(spy).toHaveBeenCalledTimes(1);
+      neverOpenAI();
+    },
+  );
+
+  it("the Vertex stream fails mid-way → the caller gets the error", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vertexStream([vchunk("a"), errChunk()]);
+    const stream = await createAiChat(deps)(B, sparams);
+    await expect(collect(stream)).rejects.toBeInstanceOf(InStreamError);
+    neverOpenAI();
+  });
+
+  it("OpenRouter breaker open → the Vertex stream directly", async () => {
+    for (let i = 0; i < 5; i++) deps.breaker.recordFailure();
+    vertexStream([vchunk("ok")]);
+    expect(await collect(await createAiChat(deps)(B, sparams))).toBe("ok");
+    expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
+    neverOpenAI();
+  });
+
+  it("forceBackup with stream: true → the Vertex stream", async () => {
+    vertexStream([vchunk("ok")]);
+    const ctx: AiCallContext = {
+      overrides: {},
+      fallback: "off",
+      calls: [],
+      forceBackup: true,
+    };
+    const text = await withAiCallContext(ctx, async () =>
+      collect(await createAiChat(deps)(B, sparams)),
+    );
+    expect(text).toBe("ok");
+    expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
   });
 });
 
