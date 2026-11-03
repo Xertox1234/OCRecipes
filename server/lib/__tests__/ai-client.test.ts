@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import {
   createAiChat,
   fillThoughtSignatures,
+  VERTEX_BUSY_RETRY_MS,
   withAiCallContext,
 } from "../ai-client";
 import type { AiChatDeps, AiChatParams } from "../ai-client";
@@ -92,6 +93,7 @@ function makeDeps(overrides: Partial<AiChatDeps> = {}) {
     vertexBreaker: new CircuitBreaker(),
     report: vi.fn(),
     log: { info: vi.fn(), warn: vi.fn() },
+    sleep: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
   return deps;
@@ -1443,6 +1445,53 @@ describe("aiChat (vertexBackup rows)", () => {
     neverOpenAI();
   });
 
+  // Owner 2026-11-03: Vertex's shared capacity answered 429 on 2 of 84
+  // calls in the PR 3 gate. One retry after ~1 s; never on a timeout.
+  it("a Vertex 429 is retried once after VERTEX_BUSY_RETRY_MS, then answers", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create)
+      .mockRejectedValueOnce(apiError(429))
+      .mockResolvedValueOnce(completion(FLASH));
+    const ctx = ctxWith();
+    const res = await withAiCallContext(ctx, () =>
+      createAiChat(deps)(B, params),
+    );
+    expect(res.model).toBe(FLASH);
+    expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(2);
+    expect(deps.sleep).toHaveBeenCalledWith(VERTEX_BUSY_RETRY_MS);
+    expect(ctx.calls.at(-1)).toMatchObject({ answeredProvider: "vertex" });
+    neverOpenAI();
+  });
+
+  it("a second Vertex 429 is thrown; there is no third try", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      apiError(429),
+    );
+    await expect(createAiChat(deps)(B, params)).rejects.toMatchObject({
+      status: 429,
+    });
+    expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(2);
+    neverOpenAI();
+  });
+
+  it("a Vertex timeout or 500 is not retried", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    for (const err of [new OpenAI.APIConnectionTimeoutError(), apiError(500)]) {
+      vi.mocked(deps.vertex!.chat.completions.create).mockReset();
+      vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(err);
+      await expect(createAiChat(deps)(B, params)).rejects.toBe(err);
+      expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(1);
+    }
+    expect(deps.sleep).not.toHaveBeenCalled();
+  });
+
   it("both fail → throws the Vertex error; a 500 counts on vertexBreaker", async () => {
     vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
       apiError(503),
@@ -1638,6 +1687,21 @@ describe("aiChat (vertexBackup rows, streaming)", () => {
     vi
       .mocked(deps.vertex!.chat.completions.create)
       .mockResolvedValue(fakeStream(items).iterable);
+
+  it("a Vertex 429 on opening the stream is retried once", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create)
+      .mockRejectedValueOnce(apiError(429))
+      .mockResolvedValueOnce(fakeStream([vchunk("hi")]).iterable);
+    const stream = await createAiChat(deps)(B, sparams);
+    const got: string[] = [];
+    for await (const c of stream) got.push(c.choices[0]?.delta?.content ?? "");
+    expect(got.join("")).toBe("hi");
+    expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(2);
+    neverOpenAI();
+  });
 
   it("OpenRouter create rejects → the Vertex stream, recorded as vertex", async () => {
     vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(

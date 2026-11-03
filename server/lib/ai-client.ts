@@ -89,7 +89,16 @@ export interface AiChatDeps {
     warn(obj: object, msg: string): void;
   };
   now?: () => number;
+  /** Injected so tests skip the wait before a Vertex 429 retry. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/**
+ * The wait before the Vertex backup's one retry after a 429 (owner
+ * 2026-11-03: Vertex's shared capacity answered 429 on 2 of 84 gate calls).
+ * Timeouts are never retried: that would double the user's wait.
+ */
+export const VERTEX_BUSY_RETRY_MS = 1000;
 
 export interface AiChat {
   (
@@ -541,6 +550,28 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     }
   }
 
+  /** `client`, but a 429 is retried once after VERTEX_BUSY_RETRY_MS. */
+  function retryOnceWhenBusy(client: AiChatClient): AiChatClient {
+    const sleep =
+      deps.sleep ??
+      ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    return {
+      chat: {
+        completions: {
+          create: async (body, options) => {
+            try {
+              return await client.chat.completions.create(body, options);
+            } catch (err) {
+              if (statusOf(err) !== 429 || options?.signal?.aborted) throw err;
+              await sleep(VERTEX_BUSY_RETRY_MS);
+              return client.chat.completions.create(body, options);
+            }
+          },
+        },
+      },
+    };
+  }
+
   /** The backup body with VERTEX_BACKUP_REASONING_HEADROOM on its cap. */
   function withThinkingRoom(
     body: Record<string, unknown>,
@@ -621,10 +652,11 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     const body = withThinkingRoom(
       buildVertexBody(params, backup.adapt, backup.model),
     );
+    const vertex = retryOnceWhenBusy(deps.vertex);
     try {
       if (params.stream === true) {
         return await openStream(
-          deps.vertex,
+          vertex,
           deps.vertexBreaker,
           "vertex",
           feature,
@@ -635,7 +667,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           true,
         );
       }
-      const res = await deps.vertex.chat.completions.create(body, options);
+      const res = await vertex.chat.completions.create(body, options);
       deps.vertexBreaker.recordSuccess();
       const model = answeredModel(res);
       record(model, "vertex", true, completionOutcome(res));
