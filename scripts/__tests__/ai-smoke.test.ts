@@ -20,6 +20,13 @@ vi.mock("../../server/lib/ai-models", async (importOriginal) => {
         vision: false,
         vertexBackup: real.VERTEX_BACKUP,
       },
+      // Synthetic OpenAI-direct fallback row: no real row has one any more.
+      "test-fallback-row": {
+        model: "openai/gpt-4o-mini",
+        fallback: "gpt-4o-mini",
+        json: true,
+        vision: true,
+      },
     },
   };
 });
@@ -170,9 +177,11 @@ describe("smoke with --backup", () => {
 
   it("a row with no vertexBackup fails without calling the model", async () => {
     const chat = vi.fn();
-    const r = await smokeRow("photo-classify", chat as unknown as AiChat, {
-      backup: true,
-    });
+    const r = await smokeRow(
+      "test-fallback-row" as unknown as AiFeature,
+      chat as unknown as AiChat,
+      { backup: true },
+    );
     expect(r).toMatchObject({
       ok: false,
       detail: "no vertexBackup on this row",
