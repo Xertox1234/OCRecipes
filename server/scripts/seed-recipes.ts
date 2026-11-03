@@ -345,7 +345,7 @@ interface RecipeMacros {
  * estimation fails — the recipe is still inserted without macros rather than
  * being skipped.
  */
-async function estimateMacros(
+export async function estimateMacros(
   title: string,
   ingredients: { name: string; quantity: string; unit: string }[],
   servings: number,
@@ -597,7 +597,10 @@ async function main() {
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  void pool.end().then(() => process.exit(1));
-});
+// Run only as a script: scripts/ai-backup-gate.ts imports the AI call above.
+if (process.argv[1] && /seed-recipes\.(ts|js)$/.test(process.argv[1])) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    void pool.end().then(() => process.exit(1));
+  });
+}

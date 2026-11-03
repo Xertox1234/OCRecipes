@@ -4,12 +4,13 @@ import OpenAI from "openai";
 import {
   createAiChat,
   fillThoughtSignatures,
+  VERTEX_BUSY_RETRY_MS,
   withAiCallContext,
 } from "../ai-client";
 import type { AiChatDeps, AiChatParams } from "../ai-client";
 import { CircuitBreaker, InStreamError, VertexAuthError } from "../ai-failure";
 import type { AiCallContext } from "../ai-call-context";
-import { AI_FEATURES } from "../ai-models";
+import { AI_FEATURES, VERTEX_BACKUP_REASONING_HEADROOM } from "../ai-models";
 import type { AiFeature } from "../ai-models";
 
 vi.mock("../logger", () => ({
@@ -24,6 +25,8 @@ vi.mock("../logger", () => ({
 vi.mock("../error-reporter", () => ({ reportError: vi.fn() }));
 vi.mock("../openai", () => ({
   openai: { chat: { completions: { create: vi.fn() } } },
+  OPENAI_TIMEOUT_FAST_MS: 15_000,
+  VERTEX_BACKUP_TIMEOUT_FAST_MS: 30_000,
 }));
 vi.mock("../ai-models", async (importOriginal) => {
   const real = await importOriginal<typeof import("../ai-models")>();
@@ -90,6 +93,7 @@ function makeDeps(overrides: Partial<AiChatDeps> = {}) {
     vertexBreaker: new CircuitBreaker(),
     report: vi.fn(),
     log: { info: vi.fn(), warn: vi.fn() },
+    sleep: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
   return deps;
@@ -113,7 +117,7 @@ describe("aiChat (non-streaming)", () => {
       completion("gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("coach-notebook-extract", params, { timeout: 15_000 });
+    await aiChat("photo-classify", params, { timeout: 15_000 });
     expect(deps.fallback.chat.completions.create).toHaveBeenCalledWith(
       { ...params, model: "gpt-4o-mini" },
       { timeout: 15_000 },
@@ -125,7 +129,7 @@ describe("aiChat (non-streaming)", () => {
       completion("openai/gpt-4o-mini", "Azure"),
     );
     const aiChat = createAiChat(deps);
-    const res = await aiChat("coach-notebook-extract", params);
+    const res = await aiChat("photo-classify", params);
     expect(res.model).toBe("openai/gpt-4o-mini");
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
       {
@@ -156,7 +160,7 @@ describe("aiChat (non-streaming)", () => {
       );
       const spy = vi.spyOn(deps.breaker, "recordFailure");
       const aiChat = createAiChat(deps);
-      await aiChat("coach-notebook-extract", params);
+      await aiChat("photo-classify", params);
       expect(deps.fallback.chat.completions.create).toHaveBeenCalledWith(
         { ...params, model: "gpt-4o-mini" },
         undefined,
@@ -164,7 +168,7 @@ describe("aiChat (non-streaming)", () => {
       expect(spy).toHaveBeenCalledTimes(counts ? 1 : 0);
       expect(deps.log.warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          feature: "coach-notebook-extract",
+          feature: "photo-classify",
           fallbackReason: kind,
         }),
         expect.any(String),
@@ -180,20 +184,20 @@ describe("aiChat (non-streaming)", () => {
     const create = vi.mocked(deps.openrouter!.chat.completions.create);
 
     create.mockRejectedValueOnce(apiError(402));
-    await aiChat("coach-notebook-extract", params);
+    await aiChat("photo-classify", params);
     expect(vi.mocked(deps.report).mock.calls.at(-1)![0].message).toMatch(
       /balance exhausted/i,
     );
 
     create.mockRejectedValueOnce(apiError(400, "unknown model"));
-    await aiChat("coach-notebook-extract", params);
+    await aiChat("photo-classify", params);
     expect(vi.mocked(deps.report).mock.calls.at(-1)![0].message).toMatch(
-      /AI config error: coach-notebook-extract/,
+      /AI config error: photo-classify/,
     );
 
     vi.mocked(deps.report).mockClear();
     create.mockRejectedValueOnce(apiError(400, "content_filter triggered"));
-    await aiChat("coach-notebook-extract", params);
+    await aiChat("photo-classify", params);
     expect(deps.report).not.toHaveBeenCalled();
   });
 
@@ -205,7 +209,7 @@ describe("aiChat (non-streaming)", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      aiChat("coach-notebook-extract", params, { signal: controller.signal }),
+      aiChat("photo-classify", params, { signal: controller.signal }),
     ).rejects.toBeInstanceOf(OpenAI.APIUserAbortError);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -229,7 +233,7 @@ describe("aiChat (non-streaming)", () => {
       const spy = vi.spyOn(deps.breaker, "recordFailure");
       const aiChat = createAiChat(deps);
       await expect(
-        aiChat("coach-notebook-extract", params, {
+        aiChat("photo-classify", params, {
           signal: abortSignal ? controller.signal : undefined,
         }),
       ).rejects.toBe(err);
@@ -247,7 +251,7 @@ describe("aiChat (non-streaming)", () => {
       completion("gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("coach-notebook-extract", params);
+    await aiChat("photo-classify", params);
     expect(deps.log.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         fallbackReason: "transport",
@@ -267,7 +271,7 @@ describe("aiChat (non-streaming)", () => {
     });
     const aiChat = createAiChat(deps);
     const c: AiCallContext = { overrides: {}, fallback: "on", calls: [] };
-    await withAiCallContext(c, () => aiChat("coach-notebook-extract", params));
+    await withAiCallContext(c, () => aiChat("photo-classify", params));
     expect(c.calls[0].answeredModel).toBeNull();
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({ answeredModel: null }),
@@ -285,7 +289,7 @@ describe("aiChat (non-streaming)", () => {
     });
     const aiChat = createAiChat(deps);
     const c: AiCallContext = { overrides: {}, fallback: "on", calls: [] };
-    await withAiCallContext(c, () => aiChat("coach-notebook-extract", params));
+    await withAiCallContext(c, () => aiChat("photo-classify", params));
     expect(c.calls[0]).toMatchObject({ answeredModel: null, fellBack: true });
   });
 
@@ -304,9 +308,9 @@ describe("aiChat (non-streaming)", () => {
 
     it("same feature inside the window → one report; every failure still falls back and warns", async () => {
       const aiChat = createAiChat(deps);
-      await aiChat("coach-notebook-extract", params);
+      await aiChat("photo-classify", params);
       clock = 9 * 60_000;
-      await aiChat("coach-notebook-extract", params);
+      await aiChat("photo-classify", params);
       expect(deps.report).toHaveBeenCalledTimes(1);
       expect(deps.fallback.chat.completions.create).toHaveBeenCalledTimes(2);
       expect(deps.log.warn).toHaveBeenCalledTimes(2);
@@ -314,16 +318,16 @@ describe("aiChat (non-streaming)", () => {
 
     it("same feature after the window → reported again", async () => {
       const aiChat = createAiChat(deps);
-      await aiChat("coach-notebook-extract", params);
+      await aiChat("photo-classify", params);
       clock = 10 * 60_000;
-      await aiChat("coach-notebook-extract", params);
+      await aiChat("photo-classify", params);
       expect(deps.report).toHaveBeenCalledTimes(2);
     });
 
     it("a different feature inside the window → still reported", async () => {
       const aiChat = createAiChat(deps);
-      await aiChat("coach-notebook-extract", params);
-      await aiChat("food-nlp-parse", params);
+      await aiChat("photo-classify", params);
+      await aiChat("receipt-scan", params);
       expect(deps.report).toHaveBeenCalledTimes(2);
     });
 
@@ -332,8 +336,8 @@ describe("aiChat (non-streaming)", () => {
         apiError(402),
       );
       const aiChat = createAiChat(deps);
-      await aiChat("coach-notebook-extract", params);
-      await aiChat("coach-notebook-extract", params);
+      await aiChat("photo-classify", params);
+      await aiChat("photo-classify", params);
       expect(deps.report).toHaveBeenCalledTimes(2);
     });
   });
@@ -344,7 +348,7 @@ describe("aiChat (non-streaming)", () => {
       completion("gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("coach-notebook-extract", params);
+    await aiChat("photo-classify", params);
     expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
     expect(deps.log.warn).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackReason: "circuit-open" }),
@@ -357,10 +361,10 @@ describe("aiChat (non-streaming)", () => {
       completion("openai/gpt-4o-mini", "Azure"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("coach-notebook-extract", params);
+    await aiChat("photo-classify", params);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "coach-notebook-extract",
+        feature: "photo-classify",
         provider: "openrouter",
         requestedModel: "openai/gpt-4o-mini",
         answeredModel: "openai/gpt-4o-mini",
@@ -388,13 +392,13 @@ describe("aiChat inside a call context", () => {
     const aiChat = createAiChat(deps);
     const c = ctx({
       overrides: {
-        "coach-notebook-extract": {
+        "photo-classify": {
           model: "openai/gpt-6-luna",
           set: { reasoning_effort: "low" },
         },
       },
     });
-    await withAiCallContext(c, () => aiChat("coach-notebook-extract", params));
+    await withAiCallContext(c, () => aiChat("photo-classify", params));
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "openai/gpt-6-luna",
@@ -404,7 +408,7 @@ describe("aiChat inside a call context", () => {
     );
     expect(c.calls).toEqual([
       {
-        feature: "coach-notebook-extract",
+        feature: "photo-classify",
         requestedModel: "openai/gpt-6-luna",
         answeredModel: "openai/gpt-6-luna",
         answeredProvider: "Azure",
@@ -420,11 +424,11 @@ describe("aiChat inside a call context", () => {
     const aiChat = createAiChat(deps);
     const c = ctx({
       overrides: {
-        "coach-notebook-extract": { model: "anthropic/claude-sonnet-4.6" },
+        "photo-classify": { model: "anthropic/claude-sonnet-4.6" },
       },
     });
     await expect(
-      withAiCallContext(c, () => aiChat("coach-notebook-extract", params)),
+      withAiCallContext(c, () => aiChat("photo-classify", params)),
     ).rejects.toThrow(
       /no pinned OpenRouter host for "anthropic\/claude-sonnet-4.6"/,
     );
@@ -439,7 +443,7 @@ describe("aiChat inside a call context", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      withAiCallContext(ctx(), () => aiChat("coach-notebook-extract", params)),
+      withAiCallContext(ctx(), () => aiChat("photo-classify", params)),
     ).rejects.toThrow();
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -452,12 +456,12 @@ describe("aiChat inside a call context", () => {
     const aiChat = createAiChat(deps);
     const c = ctx();
     await expect(
-      withAiCallContext(c, () => aiChat("coach-notebook-extract", params)),
+      withAiCallContext(c, () => aiChat("photo-classify", params)),
     ).rejects.toThrow(/requires moderation/);
     expect(c.calls).toEqual([
       {
-        feature: "coach-notebook-extract",
-        requestedModel: AI_FEATURES["coach-notebook-extract"].model,
+        feature: "photo-classify",
+        requestedModel: AI_FEATURES["photo-classify"].model,
         answeredModel: null,
         answeredProvider: null,
         fellBack: false,
@@ -478,7 +482,7 @@ describe("aiChat inside a call context", () => {
     const aiChat = createAiChat(deps);
     const c = ctx();
     await expect(
-      withAiCallContext(c, () => aiChat("coach-notebook-extract", params)),
+      withAiCallContext(c, () => aiChat("photo-classify", params)),
     ).rejects.toThrow();
     expect(c.calls).toHaveLength(1);
     expect(c.calls[0].error?.kind).toBe("transport");
@@ -499,7 +503,7 @@ describe("aiChat inside a call context", () => {
       const aiChat = createAiChat(deps);
       const c = ctx();
       await expect(
-        withAiCallContext(c, () => aiChat("coach-notebook-extract", params)),
+        withAiCallContext(c, () => aiChat("photo-classify", params)),
       ).rejects.toThrow();
       expect(c.calls[0].error).toMatchObject({
         kind: "transport",
@@ -521,7 +525,7 @@ describe("aiChat inside a call context", () => {
     const c = ctx();
     await expect(
       withAiCallContext(c, () =>
-        aiChat("coach-notebook-extract", params, { signal: ac.signal }),
+        aiChat("photo-classify", params, { signal: ac.signal }),
       ),
     ).rejects.toThrow();
     expect(c.calls).toEqual([]);
@@ -531,7 +535,7 @@ describe("aiChat inside a call context", () => {
     const deps = makeDeps({ openrouter: null });
     const aiChat = createAiChat(deps);
     await expect(
-      withAiCallContext(ctx(), () => aiChat("coach-notebook-extract", params)),
+      withAiCallContext(ctx(), () => aiChat("photo-classify", params)),
     ).rejects.toThrow(/OPENROUTER_API_KEY is required when fallback is off/);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -543,9 +547,7 @@ describe("aiChat inside a call context", () => {
       completion("openai/gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await withAiCallContext(ctx(), () =>
-      aiChat("coach-notebook-extract", params),
-    );
+    await withAiCallContext(ctx(), () => aiChat("photo-classify", params));
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalled();
   });
 
@@ -557,9 +559,9 @@ describe("aiChat inside a call context", () => {
     );
     const aiChat = createAiChat(deps);
     const c = ctx({
-      overrides: { "coach-notebook-extract": { model: "openai/gpt-6-luna" } },
+      overrides: { "photo-classify": { model: "openai/gpt-6-luna" } },
     });
-    await withAiCallContext(c, () => aiChat("coach-notebook-extract", params));
+    await withAiCallContext(c, () => aiChat("photo-classify", params));
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({ model: "openai/gpt-6-luna" }),
       undefined,
@@ -573,7 +575,7 @@ describe("aiChat inside a call context", () => {
       completion("openai/gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("coach-notebook-extract", params);
+    await aiChat("photo-classify", params);
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({ model: "openai/gpt-4o-mini" }),
       undefined,
@@ -644,7 +646,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+    expect(await collect(await aiChat("photo-classify", sparams))).toBe(
       "Hello",
     );
   });
@@ -660,7 +662,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    const stream = await aiChat("coach-notebook-extract", sparams);
+    const stream = await aiChat("photo-classify", sparams);
     await expect(collect(stream)).rejects.toThrow("mid-stream");
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -672,7 +674,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    const stream = await aiChat("coach-notebook-extract", sparams);
+    const stream = await aiChat("photo-classify", sparams);
     await expect(collect(stream)).rejects.toThrow("mid-stream");
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -687,7 +689,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+    expect(await collect(await aiChat("photo-classify", sparams))).toBe(
       "fallback",
     );
   });
@@ -709,9 +711,7 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
-      "ok",
-    );
+    expect(await collect(await aiChat("photo-classify", sparams))).toBe("ok");
   });
 
   it("the first next() throwing (SDK-raised SSE error) falls back", async () => {
@@ -725,9 +725,7 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
-      "ok",
-    );
+    expect(await collect(await aiChat("photo-classify", sparams))).toBe("ok");
   });
 
   it("an in-stream error AFTER the first chunk is thrown to the caller (no fallback)", async () => {
@@ -745,7 +743,7 @@ describe("aiChat (streaming)", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      collect(await aiChat("coach-notebook-extract", sparams)),
+      collect(await aiChat("photo-classify", sparams)),
     ).rejects.toThrow(/in-stream error/);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -762,7 +760,7 @@ describe("aiChat (streaming)", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      aiChat("coach-notebook-extract", sparams, { signal: controller.signal }),
+      aiChat("photo-classify", sparams, { signal: controller.signal }),
     ).rejects.toBeInstanceOf(OpenAI.APIUserAbortError);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -790,7 +788,7 @@ describe("aiChat (streaming)", () => {
       const spy = vi.spyOn(deps.breaker, "recordFailure");
       const aiChat = createAiChat(deps);
       await expect(
-        aiChat("coach-notebook-extract", sparams, {
+        aiChat("photo-classify", sparams, {
           signal: abortSignal ? controller.signal : undefined,
         }),
       ).rejects.toBe(err);
@@ -809,14 +807,12 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
-      "",
-    );
+    expect(await collect(await aiChat("photo-classify", sparams))).toBe("");
     expect(recordSuccess).toHaveBeenCalledTimes(1);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "coach-notebook-extract",
+        feature: "photo-classify",
         completed: true,
       }),
       expect.any(String),
@@ -833,11 +829,11 @@ describe("aiChat (streaming)", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      collect(await aiChat("coach-notebook-extract", sparams)),
+      collect(await aiChat("photo-classify", sparams)),
     ).rejects.toThrow("mid-stream");
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "coach-notebook-extract",
+        feature: "photo-classify",
         completed: false,
       }),
       expect.any(String),
@@ -853,12 +849,11 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    for await (const _c of await aiChat("coach-notebook-extract", sparams))
-      break;
+    for await (const _c of await aiChat("photo-classify", sparams)) break;
     expect(returned.value).toBe(true);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "coach-notebook-extract",
+        feature: "photo-classify",
         completed: false,
       }),
       expect.any(String),
@@ -887,9 +882,7 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
-      "ok",
-    );
+    expect(await collect(await aiChat("photo-classify", sparams))).toBe("ok");
     expect(deps.log.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         error: expect.objectContaining({
@@ -911,12 +904,11 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    for await (const _c of await aiChat("coach-notebook-extract", sparams))
-      break;
+    for await (const _c of await aiChat("photo-classify", sparams)) break;
     expect(returned.value).toBe(true);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "coach-notebook-extract",
+        feature: "photo-classify",
         completed: false,
       }),
       expect.any(String),
@@ -944,14 +936,14 @@ describe("aiChat (streaming)", () => {
     const aiChat = createAiChat(deps);
     const c: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
     await withAiCallContext(c, async () => {
-      const stream = await aiChat("coach-notebook-extract", sparams);
+      const stream = await aiChat("photo-classify", sparams);
       expect(c.calls).toHaveLength(0); // not yet — written at stream end
       await collect(stream);
     });
     expect(c.calls).toEqual([
       {
-        feature: "coach-notebook-extract",
-        requestedModel: "openai/gpt-4o-mini", // the coach-notebook-extract row
+        feature: "photo-classify",
+        requestedModel: "openai/gpt-4o-mini", // the photo-classify row
         answeredModel: "openai/gpt-4o-mini", // what the fake chunks report
         answeredProvider: "Azure",
         fellBack: false,
@@ -961,7 +953,7 @@ describe("aiChat (streaming)", () => {
     ]);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "coach-notebook-extract",
+        feature: "photo-classify",
         cost: 0.002,
         completed: true,
       }),
@@ -985,7 +977,7 @@ describe("aiChat default deps", () => {
         ReturnType<typeof openai.chat.completions.create>
       >,
     );
-    await mod.aiChat("coach-notebook-extract", params);
+    await mod.aiChat("photo-classify", params);
     expect(openai.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({ model: "gpt-4o-mini" }),
       undefined,
@@ -994,9 +986,7 @@ describe("aiChat default deps", () => {
     // so discriminate with fallback off: no client => the "key required" error.
     const c: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
     await expect(
-      mod.withAiCallContext(c, () =>
-        mod.aiChat("coach-notebook-extract", params),
-      ),
+      mod.withAiCallContext(c, () => mod.aiChat("photo-classify", params)),
     ).rejects.toThrow(/OPENROUTER_API_KEY is required when fallback is off/);
   });
 });
@@ -1163,7 +1153,7 @@ describe("aiChat (Vertex-first rows)", () => {
       completion("gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    for (let i = 0; i < 6; i++) await aiChat("coach-notebook-extract", params);
+    for (let i = 0; i < 6; i++) await aiChat("photo-classify", params);
     expect(deps.breaker.isOpen()).toBe(true);
     expect(deps.vertexBreaker.isOpen()).toBe(false);
   });
@@ -1318,8 +1308,10 @@ describe("aiChat (vertexBackup rows)", () => {
       const [body, opts] = vi.mocked(deps.vertex!.chat.completions.create).mock
         .calls[0];
       // temperature KEPT: the row's Luna adapt is not applied to the backup.
+      // The cap gains thinking room (owner 2026-11-03).
       expect(body).toEqual({
         ...params,
+        max_completion_tokens: 50 + VERTEX_BACKUP_REASONING_HEADROOM,
         model: FLASH,
         reasoning_effort: "low",
       });
@@ -1332,6 +1324,64 @@ describe("aiChat (vertexBackup rows)", () => {
       neverOpenAI();
     },
   );
+
+  // Owner 2026-11-03: a short caller deadline (finder-classify-turn 6 s) timed
+  // Vertex out in the PR 3 gate; the backup leg may be given longer.
+  it("backupTimeout replaces the timeout on the Vertex leg only, and no SDK call sees it", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion(FLASH),
+    );
+    await createAiChat(deps)(B, params, { timeout: 6, backupTimeout: 12 });
+    expect(
+      vi.mocked(deps.openrouter!.chat.completions.create).mock.calls[0][1],
+    ).toEqual({ timeout: 6 });
+    expect(
+      vi.mocked(deps.vertex!.chat.completions.create).mock.calls[0][1],
+    ).toEqual({ timeout: 12 });
+  });
+
+  // Owner 2026-11-03: Gemini 3.8 Flash cannot switch thinking off, and once
+  // spent 189 of a 200-token cap on it in the PR 3 gate.
+  it("a max_tokens cap also gains thinking room; a call with no cap gets none", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion(FLASH),
+    );
+    const { max_completion_tokens: _cap, ...uncapped } = params;
+    await createAiChat(deps)(B, { ...uncapped, max_tokens: 20 });
+    await createAiChat(deps)(B, uncapped);
+    const [[withCap], [noCap]] = vi.mocked(deps.vertex!.chat.completions.create)
+      .mock.calls;
+    expect(withCap.max_tokens).toBe(20 + VERTEX_BACKUP_REASONING_HEADROOM);
+    expect(noCap).not.toHaveProperty("max_tokens");
+    expect(noCap).not.toHaveProperty("max_completion_tokens");
+    expect(
+      vi.mocked(deps.openrouter!.chat.completions.create).mock.calls[0][0]
+        .max_tokens,
+    ).toBe(20);
+  });
+
+  // Owner 2026-11-03: every 15 s "fast" caller gets 30 s on the backup leg.
+  it("a 15 s fast-limit call gets 30 s on the Vertex leg; OpenRouter keeps 15 s", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion(FLASH),
+    );
+    await createAiChat(deps)(B, params, { timeout: 15_000 });
+    expect(
+      vi.mocked(deps.openrouter!.chat.completions.create).mock.calls[0][1],
+    ).toEqual({ timeout: 15_000 });
+    expect(
+      vi.mocked(deps.vertex!.chat.completions.create).mock.calls[0][1],
+    ).toEqual({ timeout: 30_000 });
+  });
 
   it("json response_format and image parts reach the Vertex body unchanged", async () => {
     vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
@@ -1393,6 +1443,53 @@ describe("aiChat (vertexBackup rows)", () => {
     );
     expect(deps.vertex!.chat.completions.create).not.toHaveBeenCalled();
     neverOpenAI();
+  });
+
+  // Owner 2026-11-03: Vertex's shared capacity answered 429 on 2 of 84
+  // calls in the PR 3 gate. One retry after ~1 s; never on a timeout.
+  it("a Vertex 429 is retried once after VERTEX_BUSY_RETRY_MS, then answers", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create)
+      .mockRejectedValueOnce(apiError(429))
+      .mockResolvedValueOnce(completion(FLASH));
+    const ctx = ctxWith();
+    const res = await withAiCallContext(ctx, () =>
+      createAiChat(deps)(B, params),
+    );
+    expect(res.model).toBe(FLASH);
+    expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(2);
+    expect(deps.sleep).toHaveBeenCalledWith(VERTEX_BUSY_RETRY_MS);
+    expect(ctx.calls.at(-1)).toMatchObject({ answeredProvider: "vertex" });
+    neverOpenAI();
+  });
+
+  it("a second Vertex 429 is thrown; there is no third try", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(
+      apiError(429),
+    );
+    await expect(createAiChat(deps)(B, params)).rejects.toMatchObject({
+      status: 429,
+    });
+    expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(2);
+    neverOpenAI();
+  });
+
+  it("a Vertex timeout or 500 is not retried", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    for (const err of [new OpenAI.APIConnectionTimeoutError(), apiError(500)]) {
+      vi.mocked(deps.vertex!.chat.completions.create).mockReset();
+      vi.mocked(deps.vertex!.chat.completions.create).mockRejectedValue(err);
+      await expect(createAiChat(deps)(B, params)).rejects.toBe(err);
+      expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(1);
+    }
+    expect(deps.sleep).not.toHaveBeenCalled();
   });
 
   it("both fail → throws the Vertex error; a 500 counts on vertexBreaker", async () => {
@@ -1508,7 +1605,7 @@ describe("aiChat (vertexBackup rows)", () => {
     const ctx = ctxWith({ forceBackup: true });
     await expect(
       withAiCallContext(ctx, () =>
-        createAiChat(deps)("coach-notebook-extract", params),
+        createAiChat(deps)("photo-classify", params),
       ),
     ).rejects.toThrow(/forceBackup on a row with no vertexBackup/);
     expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
@@ -1590,6 +1687,21 @@ describe("aiChat (vertexBackup rows, streaming)", () => {
     vi
       .mocked(deps.vertex!.chat.completions.create)
       .mockResolvedValue(fakeStream(items).iterable);
+
+  it("a Vertex 429 on opening the stream is retried once", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create)
+      .mockRejectedValueOnce(apiError(429))
+      .mockResolvedValueOnce(fakeStream([vchunk("hi")]).iterable);
+    const stream = await createAiChat(deps)(B, sparams);
+    const got: string[] = [];
+    for await (const c of stream) got.push(c.choices[0]?.delta?.content ?? "");
+    expect(got.join("")).toBe("hi");
+    expect(deps.vertex!.chat.completions.create).toHaveBeenCalledTimes(2);
+    neverOpenAI();
+  });
 
   it("OpenRouter create rejects → the Vertex stream, recorded as vertex", async () => {
     vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
@@ -1816,7 +1928,7 @@ describe("call records carry finish_reason and usage", () => {
     );
     const c = ctx();
     await withAiCallContext(c, () =>
-      createAiChat(deps)("coach-notebook-extract", params),
+      createAiChat(deps)("photo-classify", params),
     );
     expect(c.calls[0]).toMatchObject({
       finishReason: "stop",
@@ -1854,7 +1966,7 @@ describe("call records carry finish_reason and usage", () => {
     const c = ctx();
     await withAiCallContext(c, async () =>
       collect(
-        await createAiChat(deps)("coach-notebook-extract", {
+        await createAiChat(deps)("photo-classify", {
           ...params,
           stream: true as const,
         }),
@@ -1874,7 +1986,7 @@ describe("call records carry finish_reason and usage", () => {
     const c = ctx();
     await withAiCallContext(c, async () =>
       collect(
-        await createAiChat(deps)("coach-notebook-extract", {
+        await createAiChat(deps)("photo-classify", {
           ...params,
           stream: true as const,
         }),

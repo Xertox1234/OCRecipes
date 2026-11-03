@@ -15,7 +15,12 @@ import type {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
-import { AI_FEATURES, adaptParams, hostForModel } from "./ai-models";
+import {
+  AI_FEATURES,
+  adaptParams,
+  hostForModel,
+  VERTEX_BACKUP_REASONING_HEADROOM,
+} from "./ai-models";
 import type { AiAdapt, AiFeature, AiFeatureConfig } from "./ai-models";
 import { getAiCallContext, withAiCallContext } from "./ai-call-context";
 import type {
@@ -31,7 +36,11 @@ import {
   isModerationBlock,
 } from "./ai-failure";
 import type { AiFailureKind } from "./ai-failure";
-import { openai } from "./openai";
+import {
+  openai,
+  OPENAI_TIMEOUT_FAST_MS,
+  VERTEX_BACKUP_TIMEOUT_FAST_MS,
+} from "./openai";
 import { createVertexClient } from "./vertex-client";
 import { createServiceLogger } from "./logger";
 import { reportError } from "./error-reporter";
@@ -50,6 +59,8 @@ export type AiChatStreamParams = Omit<
 >;
 export interface AiChatOptions {
   timeout?: number;
+  /** The Vertex backup leg's timeout, when it needs longer than `timeout`. */
+  backupTimeout?: number;
   signal?: AbortSignal;
 }
 
@@ -78,7 +89,16 @@ export interface AiChatDeps {
     warn(obj: object, msg: string): void;
   };
   now?: () => number;
+  /** Injected so tests skip the wait before a Vertex 429 retry. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/**
+ * The wait before the Vertex backup's one retry after a 429 (owner
+ * 2026-11-03: Vertex's shared capacity answered 429 on 2 of 84 gate calls).
+ * Timeouts are never retried: that would double the user's wait.
+ */
+export const VERTEX_BUSY_RETRY_MS = 1000;
 
 export interface AiChat {
   (
@@ -282,8 +302,23 @@ export function createAiChat(deps: AiChatDeps): AiChat {
   async function run(
     feature: AiFeature,
     params: AiChatParams | AiChatStreamParams,
-    options?: AiChatOptions,
+    callerOptions?: AiChatOptions,
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
+    // `backupTimeout` is ours, never the SDK's: strip it, and give it to the
+    // Vertex backup leg as that leg's timeout. A 15 s "fast" caller gets 30 s
+    // there by default (owner 2026-11-03: Vertex timed out at 15 s in the
+    // PR 3 gate).
+    const { backupTimeout: explicit, ...sdkOptions } = callerOptions ?? {};
+    const backupTimeout =
+      explicit ??
+      (callerOptions?.timeout === OPENAI_TIMEOUT_FAST_MS
+        ? VERTEX_BACKUP_TIMEOUT_FAST_MS
+        : undefined);
+    const options = explicit === undefined ? callerOptions : sdkOptions;
+    const backupOptions =
+      backupTimeout === undefined
+        ? callerOptions
+        : { ...sdkOptions, timeout: backupTimeout };
     const row: AiFeatureConfig = AI_FEATURES[feature];
     const ctx: AiCallContext | undefined = getAiCallContext();
     const override = ctx?.overrides[feature];
@@ -318,7 +353,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         feature,
         row,
         params,
-        options,
+        backupOptions,
         undefined,
         "forced",
         record,
@@ -387,7 +422,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           feature,
           row,
           params,
-          options,
+          backupOptions,
           undefined,
           "config",
           record,
@@ -407,7 +442,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
             feature,
             row,
             params,
-            options,
+            backupOptions,
             undefined,
             "circuit-open",
             record,
@@ -502,9 +537,50 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         throw err;
       }
       return row.vertexBackup
-        ? callVertexBackup(feature, row, params, options, err, kind, record)
+        ? callVertexBackup(
+            feature,
+            row,
+            params,
+            backupOptions,
+            err,
+            kind,
+            record,
+          )
         : callFallback(kind, err);
     }
+  }
+
+  /** `client`, but a 429 is retried once after VERTEX_BUSY_RETRY_MS. */
+  function retryOnceWhenBusy(client: AiChatClient): AiChatClient {
+    const sleep =
+      deps.sleep ??
+      ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    return {
+      chat: {
+        completions: {
+          create: async (body, options) => {
+            try {
+              return await client.chat.completions.create(body, options);
+            } catch (err) {
+              if (statusOf(err) !== 429 || options?.signal?.aborted) throw err;
+              await sleep(VERTEX_BUSY_RETRY_MS);
+              return client.chat.completions.create(body, options);
+            }
+          },
+        },
+      },
+    };
+  }
+
+  /** The backup body with VERTEX_BACKUP_REASONING_HEADROOM on its cap. */
+  function withThinkingRoom(
+    body: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const out = { ...body };
+    for (const key of ["max_completion_tokens", "max_tokens"])
+      if (typeof out[key] === "number")
+        out[key] = (out[key] as number) + VERTEX_BACKUP_REASONING_HEADROOM;
+    return out;
   }
 
   /** The adapted body for a Vertex-direct call: no `provider` key. */
@@ -573,11 +649,14 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       },
       "ai call using fallback",
     );
-    const body = buildVertexBody(params, backup.adapt, backup.model);
+    const body = withThinkingRoom(
+      buildVertexBody(params, backup.adapt, backup.model),
+    );
+    const vertex = retryOnceWhenBusy(deps.vertex);
     try {
       if (params.stream === true) {
         return await openStream(
-          deps.vertex,
+          vertex,
           deps.vertexBreaker,
           "vertex",
           feature,
@@ -588,7 +667,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           true,
         );
       }
-      const res = await deps.vertex.chat.completions.create(body, options);
+      const res = await vertex.chat.completions.create(body, options);
       deps.vertexBreaker.recordSuccess();
       const model = answeredModel(res);
       record(model, "vertex", true, completionOutcome(res));

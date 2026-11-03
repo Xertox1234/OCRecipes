@@ -47,6 +47,14 @@ describe("gateProblems", () => {
     ).toContain("no AI call recorded");
   });
 
+  // 14 text rows catch a bad reply (e.g. JSON they cannot parse) and return a
+  // stand-in value; the call record looks clean, so the driver must say so.
+  it("reports a sample whose service returned its fallback value", () => {
+    expect(
+      gateProblems(sample({ degraded: "returned FALLBACK_QUESTIONS" })),
+    ).toContain("fallback value: returned FALLBACK_QUESTIONS");
+  });
+
   it("reports a recorded call error even when the service replied", () => {
     const failed = call({
       answeredModel: null,

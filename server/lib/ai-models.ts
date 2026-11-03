@@ -42,8 +42,25 @@ export const VERTEX_BACKUP = {
   adapt: { set: { reasoning_effort: "low" } },
 } as const;
 
-const FAST = { model: "openai/gpt-4o-mini", fallback: "gpt-4o-mini" } as const;
-const HEAVY = { model: "openai/gpt-4o", fallback: "gpt-4o" } as const;
+// Added to the row's token cap on the backup leg (owner 2026-11-03): Flash
+// counts thinking inside the cap and cannot switch it off ("none"/"minimal"
+// are rejected, thinking_budget 0 is ignored); one 200-cap call spent 189 on
+// it in the PR 3 gate.
+export const VERTEX_BACKUP_REASONING_HEADROOM = 1000;
+
+// Text rows back up to Vertex direct (Flash), never OpenAI (owner 2026-11-03;
+// spec 2026-11-02-vertex-backup-route-design).
+const FAST = {
+  model: "openai/gpt-4o-mini",
+  vertexBackup: VERTEX_BACKUP,
+} as const;
+const HEAVY = { model: "openai/gpt-4o", vertexBackup: VERTEX_BACKUP } as const;
+// Vision rows keep the OpenAI-direct fallback until their own PR (PR 4).
+const FAST_VISION = {
+  model: "openai/gpt-4o-mini",
+  fallback: "gpt-4o-mini",
+} as const;
+const HEAVY_VISION = { model: "openai/gpt-4o", fallback: "gpt-4o" } as const;
 // GPT-6 Luna (owner ruling 2026-10-06, both coach chats): no temperature
 // parameter; low reasoning effort keeps chat latency and cost down. Backup:
 // Vertex direct (Flash) — spec 2026-11-02-vertex-backup-route-design.
@@ -70,11 +87,11 @@ export const AI_FEATURES = {
     vision: false,
     adapt: { set: { reasoning_effort: "low" } },
   }, // recipe-chat generateRecipeChatResponse (stream)
-  "recipe-chat-image": { ...HEAVY, json: false, vision: true }, // recipe-chat analyzeImageForRecipe
+  "recipe-chat-image": { ...HEAVY_VISION, json: false, vision: true }, // recipe-chat analyzeImageForRecipe
   // Photo analysis (photo-analysis.ts)
-  "photo-recipe": { ...HEAVY, json: true, vision: true }, // analyzeRecipePhoto
+  "photo-recipe": { ...HEAVY_VISION, json: true, vision: true }, // analyzeRecipePhoto
   "photo-recipe-text": { ...FAST, json: true, vision: false }, // structureRecipeFromText
-  "photo-label": { ...HEAVY, json: true, vision: true }, // analyzeLabelPhoto
+  "photo-label": { ...HEAVY_VISION, json: true, vision: true }, // analyzeLabelPhoto
   // Gemini 3.8 Flash (owner-approved 2026-10-19, paired eval 7.76 vs gpt-4o
   // 6.90; todo P2-2026-10-18-camera-vision-features-to-gemini). Low reasoning
   // keeps the JSON reply inside its token cap. Backup: Vertex direct (Flash) —
@@ -87,12 +104,12 @@ export const AI_FEATURES = {
     adapt: { set: { reasoning_effort: "low" } },
   }, // analyzePhoto
   "photo-refine": { ...HEAVY, json: true, vision: false }, // refineAnalysis
-  "photo-classify": { ...FAST, json: true, vision: true }, // classifyAndAnalyze
+  "photo-classify": { ...FAST_VISION, json: true, vision: true }, // classifyAndAnalyze
   // Other vision services
-  "receipt-scan": { ...HEAVY, json: true, vision: true }, // receipt-analysis analyzeReceiptPhotos
-  "menu-scan": { ...HEAVY, json: true, vision: true }, // menu-analysis analyzeMenuPhoto
-  "front-label-scan": { ...HEAVY, json: true, vision: true }, // front-label-analysis analyzeFrontLabel
-  "cooking-ingredient-photo": { ...HEAVY, json: true, vision: true }, // cooking-session analyzeIngredientPhoto
+  "receipt-scan": { ...HEAVY_VISION, json: true, vision: true }, // receipt-analysis analyzeReceiptPhotos
+  "menu-scan": { ...HEAVY_VISION, json: true, vision: true }, // menu-analysis analyzeMenuPhoto
+  "front-label-scan": { ...HEAVY_VISION, json: true, vision: true }, // front-label-analysis analyzeFrontLabel
+  "cooking-ingredient-photo": { ...HEAVY_VISION, json: true, vision: true }, // cooking-session analyzeIngredientPhoto
   // Recipes & meals
   // Gemini 4 Argon (owner-approved 2026-10-17, paired eval +1.97 creativity vs
   // gpt-4o, 0/36 assertion failures; spec 2026-10-17-recipe-generate-argon-
