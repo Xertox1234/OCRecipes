@@ -7,6 +7,7 @@ tags: [ai-prompting, testing, vertex, gemini, token-budget]
 applies_to: [scripts/ai-smoke.ts, scripts/ai-backup-gate.ts, server/lib/ai-models.ts, server/services/**/*.ts]
 symptoms: ["A Vertex (Gemini) call returns an empty string while the same request on OpenRouter answers", "finish_reason is \"length\" and usage.completion_tokens equals the cap, with almost all of it in completion_tokens_details.reasoning_tokens", "A smoke or probe with a tiny cap (e.g. 20) passes on text rows and fails only on the image row"]
 created: '2026-11-03'
+last_updated: '2026-11-03'
 severity: medium
 ---
 
@@ -46,12 +47,27 @@ reasoning but does not turn it off, and the amount varies with the input.
 - `AiCallRecord` carries `finishReason` and `usage`, so the cause is visible in the record
   instead of only as an empty string.
 
+### Update (PR #1711): thinking cannot be turned off, and it varies per call
+
+- On Vertex, `gemini-3.8-flash` rejects `reasoning_effort: "none"` and `"minimal"` (400).
+  Google's `thinking_budget: 0` (nested in `extra_body.google.thinking_config` or top-level
+  `google`) is accepted but **ignored**: on a hard prompt it still spent 726–1167 thinking
+  tokens, the same as `low`. `low` is the floor.
+- Thinking is decided per call, not per prompt: a macro-estimate prompt used 0 thinking
+  tokens on 5 calls and 189 of its 200-token cap on the 6th (`finish: length`, 7 tokens of
+  answer). Three gate samples can miss it.
+- Fix: the backup body adds `VERTEX_BACKUP_REASONING_HEADROOM` (1000, `server/lib/ai-models.ts`)
+  to `max_completion_tokens` / `max_tokens` (`withThinkingRoom` in `ai-client.ts`); the
+  OpenRouter body keeps the row's own cap.
+
 ## Prevention
 
 - Before moving a row to a Gemini model (primary or `vertexBackup`), run its real service on
   the longest realistic input and read `finish_reason` and `reasoning_tokens` against the row's
   cap. Mocked tests cannot show this.
 - Never size a probe or smoke cap for the visible answer alone on a reasoning model.
+- A probe comparing reasoning settings needs a prompt that makes the control think; on an
+  easy prompt `low` also reads 0 and every setting looks equal.
 
 ## Related Files
 

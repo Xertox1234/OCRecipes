@@ -7,6 +7,7 @@ tags: [ai-prompting, testing, fail-open, evals]
 applies_to: [scripts/ai-backup-gate.ts, scripts/ai-smoke.ts, evals/**/*.ts, server/services/coach-pro-chat.ts, server/services/recipe-chat.ts]
 symptoms: ["A live gate or smoke reports every sample clean while the provider was failing", "Reply text is a friendly apology (\"Sorry, I couldn't…\") and the check counts it as an answer", "A sample whose AI calls all failed records zero calls and still passes"]
 created: '2026-11-03'
+last_updated: '2026-11-03'
 severity: medium
 ---
 
@@ -55,6 +56,16 @@ empty list.
 Three tests were written failing first (the apology sample, the zero-call sample, and the
 error-record route pair), then the checks were added.
 
+### Update (PR #1711): a clean call record is not a working feature
+
+14 of the 21 text rows catch a bad reply (unparseable JSON, a schema miss, a timeout) and
+return a stand-in value: `[]`, `null`, `FALLBACK_QUESTIONS`, the deterministic art
+direction, `previousResult`. When the reply arrived but failed validation, the call record
+is clean (`stop`, no `error`), so record checks pass. Each driver in
+`scripts/ai-backup-gate-text-rows.ts` compares the result with its service's stand-in and
+sets `degraded`, which `gateProblems` reports as `fallback value: …`. It caught art
+direction rejecting every Gemini answer (`too_big`) on records that looked perfect.
+
 ## Prevention
 
 - In any live check of AI behaviour that goes through a service: require at least one
@@ -62,6 +73,8 @@ error-record route pair), then the checks were added.
   when the list is empty.
 - A negated provider test (`provider !== "vertex"`) also matches `null`; require a
   non-null provider before reading which one it is.
+- For a service with a stand-in value, the check also compares the result with that
+  stand-in (reference equality or deep-equal), not only the call records.
 - Test the gate with a fabricated failing sample of each kind (apology text, no records,
   error records in the route pair), not only with real passing runs.
 
