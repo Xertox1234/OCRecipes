@@ -644,7 +644,9 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("Hello");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "Hello",
+    );
   });
 
   it("a role-only first chunk counts as received", async () => {
@@ -658,7 +660,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    const stream = await aiChat("coach-chat", sparams);
+    const stream = await aiChat("coach-notebook-extract", sparams);
     await expect(collect(stream)).rejects.toThrow("mid-stream");
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -670,7 +672,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    const stream = await aiChat("coach-chat", sparams);
+    const stream = await aiChat("coach-notebook-extract", sparams);
     await expect(collect(stream)).rejects.toThrow("mid-stream");
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -685,7 +687,9 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("fallback");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "fallback",
+    );
   });
 
   it("an in-stream error as the FIRST event falls back", async () => {
@@ -705,7 +709,9 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "ok",
+    );
   });
 
   it("the first next() throwing (SDK-raised SSE error) falls back", async () => {
@@ -719,7 +725,9 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "ok",
+    );
   });
 
   it("an in-stream error AFTER the first chunk is thrown to the caller (no fallback)", async () => {
@@ -736,9 +744,9 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    await expect(collect(await aiChat("coach-chat", sparams))).rejects.toThrow(
-      /in-stream error/,
-    );
+    await expect(
+      collect(await aiChat("coach-notebook-extract", sparams)),
+    ).rejects.toThrow(/in-stream error/);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
 
@@ -754,7 +762,7 @@ describe("aiChat (streaming)", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      aiChat("coach-chat", sparams, { signal: controller.signal }),
+      aiChat("coach-notebook-extract", sparams, { signal: controller.signal }),
     ).rejects.toBeInstanceOf(OpenAI.APIUserAbortError);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -782,7 +790,7 @@ describe("aiChat (streaming)", () => {
       const spy = vi.spyOn(deps.breaker, "recordFailure");
       const aiChat = createAiChat(deps);
       await expect(
-        aiChat("coach-chat", sparams, {
+        aiChat("coach-notebook-extract", sparams, {
           signal: abortSignal ? controller.signal : undefined,
         }),
       ).rejects.toBe(err);
@@ -801,11 +809,16 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "",
+    );
     expect(recordSuccess).toHaveBeenCalledTimes(1);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
     expect(deps.log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: "coach-chat", completed: true }),
+      expect.objectContaining({
+        feature: "coach-notebook-extract",
+        completed: true,
+      }),
       expect.any(String),
     );
   });
@@ -819,11 +832,14 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    await expect(collect(await aiChat("coach-chat", sparams))).rejects.toThrow(
-      "mid-stream",
-    );
+    await expect(
+      collect(await aiChat("coach-notebook-extract", sparams)),
+    ).rejects.toThrow("mid-stream");
     expect(deps.log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.objectContaining({
+        feature: "coach-notebook-extract",
+        completed: false,
+      }),
       expect.any(String),
     );
   });
@@ -837,10 +853,14 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    for await (const _c of await aiChat("coach-chat", sparams)) break;
+    for await (const _c of await aiChat("coach-notebook-extract", sparams))
+      break;
     expect(returned.value).toBe(true);
     expect(deps.log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.objectContaining({
+        feature: "coach-notebook-extract",
+        completed: false,
+      }),
       expect.any(String),
     );
   });
@@ -867,7 +887,9 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "ok",
+    );
     expect(deps.log.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         error: expect.objectContaining({
@@ -889,10 +911,14 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    for await (const _c of await aiChat("coach-chat", sparams)) break;
+    for await (const _c of await aiChat("coach-notebook-extract", sparams))
+      break;
     expect(returned.value).toBe(true);
     expect(deps.log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.objectContaining({
+        feature: "coach-notebook-extract",
+        completed: false,
+      }),
       expect.any(String),
     );
   });
@@ -918,14 +944,14 @@ describe("aiChat (streaming)", () => {
     const aiChat = createAiChat(deps);
     const c: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
     await withAiCallContext(c, async () => {
-      const stream = await aiChat("coach-chat", sparams);
+      const stream = await aiChat("coach-notebook-extract", sparams);
       expect(c.calls).toHaveLength(0); // not yet — written at stream end
       await collect(stream);
     });
     expect(c.calls).toEqual([
       {
-        feature: "coach-chat",
-        requestedModel: "openai/gpt-6-luna", // the coach-chat row
+        feature: "coach-notebook-extract",
+        requestedModel: "openai/gpt-4o-mini", // the coach-notebook-extract row
         answeredModel: "openai/gpt-4o-mini", // what the fake chunks report
         answeredProvider: "Azure",
         fellBack: false,
@@ -935,7 +961,7 @@ describe("aiChat (streaming)", () => {
     ]);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "coach-chat",
+        feature: "coach-notebook-extract",
         cost: 0.002,
         completed: true,
       }),
