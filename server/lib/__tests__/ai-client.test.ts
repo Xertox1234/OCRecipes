@@ -409,6 +409,8 @@ describe("aiChat inside a call context", () => {
         answeredModel: "openai/gpt-6-luna",
         answeredProvider: "Azure",
         fellBack: false,
+        finishReason: "stop",
+        usage: expect.objectContaining({ prompt_tokens: 1 }),
       },
     ]);
   });
@@ -927,6 +929,8 @@ describe("aiChat (streaming)", () => {
         answeredModel: "openai/gpt-4o-mini", // what the fake chunks report
         answeredProvider: "Azure",
         fellBack: false,
+        finishReason: null,
+        usage: expect.objectContaining({ completion_tokens: 1 }),
       },
     ]);
     expect(deps.log.info).toHaveBeenCalledWith(
@@ -1762,5 +1766,94 @@ describe("default OpenRouter client construction", () => {
       (o) => o.baseURL === "https://openrouter.ai/api/v1",
     );
     expect(openrouter).toMatchObject({ maxRetries: 0 });
+  });
+});
+
+describe("call records carry finish_reason and usage", () => {
+  const B = "test-backup-row" as unknown as AiFeature;
+  const FLASH = "google/gemini-3.8-flash";
+  const ctx = (over: Partial<AiCallContext> = {}): AiCallContext => ({
+    overrides: {},
+    fallback: "on",
+    calls: [],
+    ...over,
+  });
+  const finishing = (c: ReturnType<typeof chunk>, finish: string | null) => ({
+    ...c,
+    choices: [{ ...c.choices[0], finish_reason: finish }],
+  });
+
+  it("a non-stream record carries finish_reason and usage", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      completion("openai/gpt-4o-mini", "Azure"),
+    );
+    const c = ctx();
+    await withAiCallContext(c, () =>
+      createAiChat(deps)("coach-notebook-extract", params),
+    );
+    expect(c.calls[0]).toMatchObject({
+      finishReason: "stop",
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+  });
+
+  it("a Vertex-backup non-stream record carries finish_reason and usage", async () => {
+    const deps = makeDeps({
+      vertex: { chat: { completions: { create: vi.fn() } } },
+    });
+    const res = completion(FLASH);
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue({
+      ...res,
+      choices: [{ ...res.choices[0], finish_reason: "length" }],
+    });
+    const c = ctx({ forceBackup: true });
+    await withAiCallContext(c, () => createAiChat(deps)(B, params));
+    expect(c.calls[0]).toMatchObject({
+      answeredProvider: "vertex",
+      finishReason: "length",
+      usage: { completion_tokens: 1 },
+    });
+  });
+
+  it("a stream record carries the last finish_reason and usage", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      fakeStream([
+        chunk("a"),
+        finishing(chunk("b"), "stop"),
+        { ...chunk(""), choices: [], usage: { completion_tokens: 2 } },
+      ]).iterable,
+    );
+    const c = ctx();
+    await withAiCallContext(c, async () =>
+      collect(
+        await createAiChat(deps)("coach-notebook-extract", {
+          ...params,
+          stream: true as const,
+        }),
+      ),
+    );
+    expect(c.calls[0]).toMatchObject({
+      finishReason: "stop",
+      usage: { completion_tokens: 2 },
+    });
+  });
+
+  it("a stream with no finish_reason records null", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      fakeStream([chunk("a"), chunk("b")]).iterable,
+    );
+    const c = ctx();
+    await withAiCallContext(c, async () =>
+      collect(
+        await createAiChat(deps)("coach-notebook-extract", {
+          ...params,
+          stream: true as const,
+        }),
+      ),
+    );
+    expect(c.calls[0].finishReason).toBeNull();
   });
 });
