@@ -1,6 +1,6 @@
 # Vertex AI direct as the backup route for five AI features (no OpenAI)
 
-Date: 2026-11-02 · Status: design written from owner rulings; builder check pending
+Date: 2026-11-02 · Status: builder check done (no owner questions left); awaiting owner approval
 
 Builds on `2026-10-19-vision-rows-vertex-direct-design.md` (the Vertex client,
 `vertexBreaker` and the Vertex-first flow shipped as plumbing in #1518/#1519).
@@ -66,19 +66,24 @@ healthy; no row uses Vertex yet.
 Calls through the real `createVertexClient()` (`server/lib/vertex-client.ts`),
 model `google/gemini-3.8-flash`, `reasoning_effort: "low"`:
 
-| Check                                                                                                                        | Result                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Plain text, non-streamed                                                                                                     | 200, ~2.0 s, `model` echoes `google/gemini-3.8-flash`                                    |
-| Streamed, `temperature: 0.5`, `stream_options.include_usage`                                                                 | first chunk 1.7 s, total 2.0 s, standard `ChatCompletionChunk`s, usage on the last chunk |
-| `response_format: { type: "json_object" }`                                                                                   | 200, valid JSON, `finish_reason: stop`, 2.3 s                                            |
-| `image_url` data URL (512 px JPEG) + `detail: "low"` + JSON mode                                                             | 200, valid JSON (apple, 0.99), 2.3 s                                                     |
-| Same with `detail: "high"`                                                                                                   | 200, valid JSON                                                                          |
-| Tools, round 1 streamed                                                                                                      | tool call arrives with `extra_content.google.thought_signature`                          |
-| Tools, round 2 **with** that signature echoed back                                                                           | 200                                                                                      |
-| Tools, round 2 **without** it (what `nutrition-coach.ts` sends today)                                                        | **400**                                                                                  |
-| Tool history made by another model (no signature)                                                                            | **400**                                                                                  |
-| Same, with placeholder signature `skip_thought_signature_validator`                                                          | 200                                                                                      |
-| Reverse: `openai/gpt-6-luna` on OpenRouter (Azure, ZDR) given Gemini-made tool history (id `call_93516`, no `extra_content`) | 200                                                                                      |
+| Check                                                                                                                        | Result                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plain text, non-streamed                                                                                                     | 200, ~2.0 s, `model` echoes `google/gemini-3.8-flash`                                                                                                 |
+| Streamed, `temperature: 0.5`, `stream_options.include_usage`                                                                 | first chunk 1.7 s, total 2.0 s, standard `ChatCompletionChunk`s, usage on the last chunk                                                              |
+| `response_format: { type: "json_object" }`                                                                                   | 200, valid JSON, `finish_reason: stop`, 2.3 s                                                                                                         |
+| `image_url` data URL (512 px JPEG) + `detail: "low"` + JSON mode                                                             | 200, valid JSON (apple, 0.99), 2.3 s                                                                                                                  |
+| Same with `detail: "high"`                                                                                                   | 200, valid JSON                                                                                                                                       |
+| Tools, round 1 streamed                                                                                                      | tool call arrives with `extra_content.google.thought_signature`                                                                                       |
+| Tools, round 2 **with** that signature echoed back                                                                           | 200                                                                                                                                                   |
+| Tools, round 2 **without** it (what `nutrition-coach.ts` sends today)                                                        | **400**                                                                                                                                               |
+| Tool history made by another model (no signature)                                                                            | **400**                                                                                                                                               |
+| Same, with placeholder signature `skip_thought_signature_validator`                                                          | 200                                                                                                                                                   |
+| Reverse: `openai/gpt-6-luna` on OpenRouter (Azure, ZDR) given Gemini-made tool history (id `call_93516`, no `extra_content`) | 200                                                                                                                                                   |
+| Streamed round with two parallel tool calls (the shape `nutrition-coach.ts` parses)                                          | each delta has `index` (0, 1) and `id` on its first piece; the round ends with `finish_reason: "tool_calls"`; only the first call carries a signature |
+
+One run of the parallel-tool probe (a script with no timeout) hung for over two
+minutes before it was killed; the rerun finished in seconds. Production calls
+always carry a timeout (§3.5).
 
 So the backup needs **no** `drop`/`rename` for JSON mode, images, `detail` or
 `temperature`. Vertex replies carry no `usage.cost`; billing is read in Google
@@ -198,8 +203,15 @@ body has no `extra_content`.
 A failed OpenRouter attempt followed by a Vertex attempt can take up to two
 timeouts (e.g. `OPENAI_TIMEOUT_STREAM_MS` 30 s each for the coach). Today's
 OpenAI fallback has the same property; the open breaker makes later calls skip
-straight to Vertex. Accepted. The builder checks that the coach SSE route's own
-timeout does not cut the backup off first and reports what it found.
+straight to Vertex.
+
+Known edge: `recipe-chat` uses a 60 s per-attempt timeout and no abort signal,
+and `server/routes/chat-stream.ts` closes every SSE connection at
+`SSE_TIMEOUT_MS` (120 s). If OpenRouter **hangs** for the full 60 s, the backup
+has at most the remaining 60 s before the connection closes. Fast OpenRouter
+errors switch immediately, and repeated failures open the breaker. **Accepted
+(spec author's call):** no timeout changes; the PR 1 description states the
+edge with these numbers.
 
 ## 4. Privacy page (`site/privacy/index.html`)
 
@@ -217,7 +229,14 @@ existing plain style:
   request its automated safety systems flag may be kept for up to 90 days for
   review. **Re-check that number against Google's current data-governance page
   on the PR day** (the 2026-10-20 check found 90 days; the page's own text now
-  says "limited periods of time").
+  says "limited periods of time"). The abuse-monitoring exemption in step 3 of
+  the 2026-10-19 spec's setup does not exist for a self-serve account (checked
+  2026-10-20), so this sentence is required.
+- **Argon's 30-day "frontier" retention is a term of calling Google directly.**
+  Through OpenRouter, `provider.zdr: true` makes OpenRouter refuse any endpoint
+  without a zero-retention agreement, so the primary route stays as the
+  OpenRouter row describes. The backup never calls Argon (Flash only), so the
+  30-day term never applies and the page does not mention it.
 - **OpenAI row** (line ~70): drop recipe chat and recipe generation (on Gemini
   since #1496/#1700 — the page is already stale here); "also used directly as
   a backup" becomes "for some features".
@@ -237,12 +256,20 @@ existing plain style:
 2. **PR 2 — turn it on.** The five rows switch from `fallback` to
    `vertexBackup`; `LUNA` loses its fallback; the table test updates; the
    privacy page (§4).
-   - Gate before opening: `ai:smoke` on the backup route for all five rows,
-     each reporting `finish_reason` and token use. The coach-pro run does a
-     two-round tool exchange with the real coach tool set, twice: once with
-     both rounds on the backup, once with round 1 forced to the backup and
-     round 2 on OpenRouter. A `length` finish or a 400 on any row is reported
-     and stops the PR until the owner decides.
+   - Gate before opening: each of the five rows forced onto the backup route
+     and driven through its **real service function** (real prompt, token
+     cap and temperature — e.g. `recipe-generation.ts` at its 4000-token cap,
+     `generateCoachProResponse` with the real tool loop), 3 samples per row,
+     each reporting `finish_reason`, token use and latency. The tiny
+     `ai:smoke` request alone is not the gate.
+   - Coach-pro additionally runs the real tool loop across a route switch in
+     **both** directions: round 1 on OpenRouter (Luna) then round 2 on the
+     backup, and round 1 on the backup then round 2 on OpenRouter.
+   - A `length` finish, a 400, or a coach-pro reply that ends without text on
+     any row is reported and stops the PR until the owner decides. If the
+     Vertex stream shape ever differs from what `nutrition-coach.ts` parses,
+     the fix goes in the Vertex stream wrapper in `ai-client.ts`, never in
+     the coach service.
    - After deploy: nothing to see in normal logs (backup only runs on failure).
      The smoke results are the evidence.
 
@@ -299,3 +326,5 @@ existing plain style:
 - Placeholder signature instead of threading real signatures through
   `nutrition-coach.ts`.
 - Two PRs, privacy text in the second, todo rewrite in the first.
+- The PR 2 gate drives each row's real service function, 3 samples per row.
+- The `recipe-chat` 60 s + 60 s vs 120 s SSE edge (§3.5) is accepted, not fixed.
