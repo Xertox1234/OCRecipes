@@ -89,22 +89,32 @@ appId: com.ocrecipes.app
 #    failed to open exp+ocrecipes://... Operation timed out"
 #    (NSPOSIXErrorDomain 60). The link never reached the app, which sat on
 #    the dev launcher's home ("Searching for development servers..."), and
-#    the failed command ended the flow before any gate ran. Each launch
-#    (stopApp + openLink) is therefore wrapped in `retry`, so a failed
-#    openLink is re-run from a fresh cold start, at most twice. The gate
-#    does not look for the launcher home instead: that screen sits under
-#    every load in the tree (run 40604313571's error-screen dump contains
-#    "DEVELOPMENT SERVERS"), so it would match during a normal load.
+#    the failed command ended the flow before any gate ran. It happened
+#    again on nightly 41412869659 (grocery lists, re-run): the simulator
+#    log shows the stopped app's scene still being torn down 12s after
+#    stopApp returned (`simctl terminate` signals the app and does not
+#    wait for it to exit), then lsd "timeout waiting for launch". The app
+#    came up seconds later on the launcher home without the link.
+#    Nothing in this file can recover from it. `retry` and `optional:`
+#    handle only MaestroException (Orchestra.retryCommand and the subflow
+#    runner, Maestro 2.9.0 through 2.12.1). A failed openLink or stopApp
+#    throws a plain IllegalStateException from the driver, so both pass
+#    it straight through; the `retry` wrap added on 2026-10-28 never
+#    re-ran once and was removed. The backstop is
+#    scripts/ci/e2e-with-flow-retry.sh, which re-runs a failed flow once.
+#    Seen in 1 of ~54 flow runs over four saved nights; that night went
+#    red only because attempt 1 had already died of the manifest timeout
+#    in (5). The gate does not look for the launcher home either: that
+#    screen sits under every load in the tree (run 40604313571's
+#    error-screen dump contains "DEVELOPMENT SERVERS"), so it would match
+#    during a normal load.
 ---
-- retry:
-    maxRetries: 2
+- runFlow:
+    when:
+      platform: iOS
     commands:
-      - runFlow:
-          when:
-            platform: iOS
-          commands:
-            - stopApp: com.williamtower.ocrecipes
-      - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+      - stopApp: com.williamtower.ocrecipes
+- openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
 
 # Readiness gate — see header (1). Also matches two stranded states a
 # previous attempt's kill can leave behind: the Sign-Out confirmation sheet
@@ -132,15 +142,12 @@ appId: com.ocrecipes.app
     while:
       visible: "There was a problem loading the project.*"
     commands:
-      - retry:
-          maxRetries: 2
+      - runFlow:
+          when:
+            platform: iOS
           commands:
-            - runFlow:
-                when:
-                  platform: iOS
-                commands:
-                  - stopApp: com.williamtower.ocrecipes
-            - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+            - stopApp: com.williamtower.ocrecipes
+      - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
       - extendedWaitUntil:
           visible: "(Continue|Sign In|Hello.*|Not Now|Runtime version.*|Are you sure you want to sign out.*|Get Started|Go back|There was a problem loading the project.*)"
           timeout: 240000
