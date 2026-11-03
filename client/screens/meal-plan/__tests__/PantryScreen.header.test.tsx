@@ -17,6 +17,7 @@
 // custom close "X".
 import React from "react";
 import { fireEvent, screen } from "@testing-library/react";
+import { AccessibilityInfo } from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
 import PantryScreen from "../PantryScreen";
 
@@ -226,6 +227,22 @@ describe("PantryScreen -- premium gate", () => {
     expect(screen.getByText("Couldn't check your plan")).toBeDefined();
     fireEvent.click(screen.getByText("Try Again"));
     expect(plan.refreshSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces a plan check that fails while the screen is open, not on mount", () => {
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    plan.pantryTracking = false;
+    plan.resolved = false;
+    nav.routeName = "Pantry";
+    const { rerender } = renderComponent(<PantryScreen />);
+    expect(announce).not.toHaveBeenCalled();
+
+    plan.statusError = true;
+    rerender(<PantryScreen />);
+    expect(announce).toHaveBeenCalledWith("Couldn't check your plan.");
+    announce.mockRestore();
   });
 
   it("shows neither the wall nor the pantry while the plan is loading", () => {

@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   StyleSheet,
   View,
@@ -156,6 +157,16 @@ export default function PantryScreen() {
     isPremiumStatusError,
     refreshSubscription,
   } = usePremiumContext();
+  // Announce a failed plan check when it appears (not on mount — the error
+  // screen's own label is read when focus lands on it). Same as
+  // ReceiptCaptureScreen.
+  const statusErrorShownRef = useRef(isPremiumStatusError);
+  useEffect(() => {
+    if (isPremiumStatusError && !statusErrorShownRef.current) {
+      AccessibilityInfo.announceForAccessibility("Couldn't check your plan.");
+    }
+    statusErrorShownRef.current = isPremiumStatusError;
+  }, [isPremiumStatusError]);
   // Pro only: free users don't have the Scan Receipt button.
   const receiptTip = useFeatureTip("pantry-receipt", {
     feature: "receiptScan",
