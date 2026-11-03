@@ -3,7 +3,26 @@ import { describe, it, expect, vi } from "vitest";
 import type { AiChat } from "../../server/lib/ai-client";
 import { withAiCallContext } from "../../server/lib/ai-client";
 import type { AiCallContext } from "../../server/lib/ai-call-context";
+import type { AiFeature } from "../../server/lib/ai-models";
 import { buildSmokeRequest, smokeKeysPresent, smokeRow } from "../ai-smoke";
+
+vi.mock("../../server/lib/ai-models", async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import("../../server/lib/ai-models")>();
+  return {
+    ...real,
+    AI_FEATURES: {
+      ...real.AI_FEATURES,
+      // Synthetic vertexBackup row: no real row is flagged until PR 2.
+      "test-backup-row": {
+        model: "openai/gpt-6-luna",
+        json: false,
+        vision: false,
+        vertexBackup: real.VERTEX_BACKUP,
+      },
+    },
+  };
+});
 
 describe("buildSmokeRequest", () => {
   it("json rows ask for json_object and say JSON in the prompt", () => {
@@ -124,5 +143,44 @@ describe("smoke on the Vertex route", () => {
     expect(
       (await smokeRow("photo-analyze", chat as unknown as AiChat)).ok,
     ).toBe(false);
+  });
+});
+
+describe("smoke with --backup", () => {
+  const B = "test-backup-row" as unknown as AiFeature;
+  const reply = (model: string) => ({
+    model,
+    choices: [{ message: { content: "ok" } }],
+  });
+
+  it("expects the backup model, not the row model", async () => {
+    const chat = vi.fn().mockResolvedValue(reply("google/gemini-3.8-flash"));
+    const r = await smokeRow(B, chat as unknown as AiChat, { backup: true });
+    expect(r.ok).toBe(true);
+  });
+
+  it("an answer from the row model fails the backup smoke", async () => {
+    const chat = vi.fn().mockResolvedValue(reply("openai/gpt-6-luna"));
+    const r = await smokeRow(B, chat as unknown as AiChat, { backup: true });
+    expect(r).toMatchObject({
+      ok: false,
+      detail: "answered by openai/gpt-6-luna",
+    });
+  });
+
+  it("a row with no vertexBackup fails without calling the model", async () => {
+    const chat = vi.fn();
+    const r = await smokeRow(
+      "coach-notebook-extract",
+      chat as unknown as AiChat,
+      {
+        backup: true,
+      },
+    );
+    expect(r).toMatchObject({
+      ok: false,
+      detail: "no vertexBackup on this row",
+    });
+    expect(chat).not.toHaveBeenCalled();
   });
 });
