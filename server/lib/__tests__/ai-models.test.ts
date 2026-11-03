@@ -79,11 +79,15 @@ describe("AI_FEATURES table", () => {
     }
   });
 
-  it("every other row is its fallback with the openai/ prefix and no adapt", () => {
+  it("every other row is gpt-4o or gpt-4o-mini with no adapt", () => {
     for (const [name, row] of rows) {
       if (name in SWITCHED) continue;
-      expect(row.model, name).toBe(`openai/${row.fallback}`);
+      expect(["openai/gpt-4o", "openai/gpt-4o-mini"], name).toContain(
+        row.model,
+      );
       expect(row.adapt, name).toBeUndefined();
+      if (row.fallback !== undefined)
+        expect(row.model, name).toBe(`openai/${row.fallback}`);
     }
   });
 
@@ -115,28 +119,28 @@ describe("AI_FEATURES table", () => {
     }
   });
 
-  // Rollout allowlist (spec 2026-11-02-vertex-backup-route-design §5): the
-  // five rows of PR 2; the other 29 keep their OpenAI-direct fallback.
-  const VERTEX_BACKUP_ROWS = [
-    "coach-chat",
-    "coach-pro-chat",
-    "photo-analyze",
-    "recipe-chat",
-    "recipe-generate",
-  ];
-  it("vertexBackup rows are exactly the rolled-out ones", () => {
+  // Rollout (spec 2026-11-02-vertex-backup-route-design; owner 2026-11-03):
+  // every text row backs up to Vertex; of the vision rows only photo-analyze
+  // does so far — the other 8 keep their OpenAI-direct fallback until PR 4.
+  it("every text row backs up to Vertex, never OpenAI", () => {
+    for (const [name, row] of rows) {
+      if (row.vision) continue;
+      expect(row.vertexBackup, name).toBe(VERTEX_BACKUP);
+      expect(row.fallback, name).toBeUndefined();
+    }
+  });
+
+  it("vision vertexBackup rows are exactly the rolled-out ones", () => {
     const flagged = rows
-      .filter(([, row]) => row.vertexBackup !== undefined)
-      .map(([name]) => name)
-      .sort();
-    expect(flagged).toEqual([...VERTEX_BACKUP_ROWS].sort());
+      .filter(([, row]) => row.vision && row.vertexBackup !== undefined)
+      .map(([name]) => name);
+    expect(flagged).toEqual(["photo-analyze"]);
   });
 
   it("a vertexBackup row uses the shared VERTEX_BACKUP constant", () => {
-    for (const name of VERTEX_BACKUP_ROWS) {
-      const row: AiFeatureConfig =
-        AI_FEATURES[name as keyof typeof AI_FEATURES];
-      expect(row.vertexBackup, name).toBe(VERTEX_BACKUP);
+    for (const [name, row] of rows) {
+      if (row.vertexBackup !== undefined)
+        expect(row.vertexBackup, name).toBe(VERTEX_BACKUP);
     }
   });
 

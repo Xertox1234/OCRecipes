@@ -81,10 +81,7 @@ describe("smokeRow", () => {
     const chat = vi
       .fn()
       .mockRejectedValue(new Error("400 unsupported parameter"));
-    const r = await smokeRow(
-      "coach-notebook-extract",
-      chat as unknown as AiChat,
-    );
+    const r = await smokeRow("photo-classify", chat as unknown as AiChat);
     expect(r.ok).toBe(false);
     expect(r.detail).toMatch(/unsupported parameter/);
   });
@@ -173,13 +170,9 @@ describe("smoke with --backup", () => {
 
   it("a row with no vertexBackup fails without calling the model", async () => {
     const chat = vi.fn();
-    const r = await smokeRow(
-      "coach-notebook-extract",
-      chat as unknown as AiChat,
-      {
-        backup: true,
-      },
-    );
+    const r = await smokeRow("photo-classify", chat as unknown as AiChat, {
+      backup: true,
+    });
     expect(r).toMatchObject({
       ok: false,
       detail: "no vertexBackup on this row",
