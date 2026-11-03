@@ -85,6 +85,8 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 
 - [ ] Correct model choice: the call goes through `aiChat` with a feature whose `ai-models.ts` row has a tier that fits the task (the row's tier is the authority, not the modality — FAST suits simple parsing/classification even with an image; HEAVY suits generation and hard extraction) and accurate `json`/`vision` flags — using `gpt-4o` for simple text parsing wastes money
 - [ ] Appropriate `max_completion_tokens` — not excessively large (e.g. 16000 for a yes/no question)
+- [ ] A row, probe or smoke on a Gemini reasoning model (Vertex primary or `vertexBackup`) sizes its cap for reasoning plus answer — reasoning tokens count inside `max_completion_tokens`, and a tight cap returns empty text with finish `length`. Demand a live `finish_reason`/`reasoning_tokens` read on the longest real input (Ref: `docs/solutions/logic-errors/vertex-gemini-reasoning-tokens-count-against-completion-cap-2026-11-03.md`)
+- [ ] A live check (gate, smoke, eval) that runs a service which turns AI errors into user text judges success from the `withAiCallContext` records, never the reply text: require ≥1 record, no record with `error`, and a non-null provider before comparing it — "every call…" over an empty list and `provider !== "vertex"` on `null` both pass (Ref: `docs/solutions/logic-errors/live-ai-check-passes-on-reply-text-when-service-swallows-errors-2026-11-03.md`)
 - [ ] `temperature` set appropriately (low for extraction, higher for creative)
 - [ ] Timeout from the correct tier constant (`OPENAI_TIMEOUT_*_MS`)
 - [ ] `response_format: { type: "json_object" }` when expecting JSON
