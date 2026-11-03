@@ -38,7 +38,7 @@ interface RecipeMacros {
   fatPerServing: string;
 }
 
-async function estimateMacros(
+export async function estimateMacros(
   title: string,
   ingredients: { name: string; quantity: string; unit: string }[],
   servings: number,
@@ -150,7 +150,13 @@ async function main() {
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+// Run only as a script: scripts/ai-backup-gate.ts imports the AI call above.
+if (
+  process.argv[1] &&
+  /backfill-community-nutrition\.(ts|js)$/.test(process.argv[1])
+) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
+}

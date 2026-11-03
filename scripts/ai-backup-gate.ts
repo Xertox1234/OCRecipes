@@ -7,9 +7,12 @@
  * any problem (a length finish, an error such as a 400, an empty reply, a
  * sample off the intended route).
  *
- * `NODE_ENV=development npm run ai:backup-gate` — needs OPENROUTER_API_KEY,
- * the three GOOGLE_VERTEX_* vars and the local database (coach-pro tools).
- * Spends real money on OpenRouter and Vertex (21 samples).
+ * PR 3 adds the 21 text-only rows (drivers in ai-backup-gate-text-rows.ts).
+ *
+ * `NODE_ENV=development npm run ai:backup-gate [-- --only a,b]` — needs
+ * OPENROUTER_API_KEY, the three GOOGLE_VERTEX_* vars and the local database
+ * (coach-pro tools, notebook extraction). Spends real money on OpenRouter and
+ * Vertex (84 samples; food-nlp-parse also calls the nutrition lookups).
  */
 import { randomUUID } from "node:crypto";
 import type { AiFeature } from "../server/lib/ai-models";
@@ -31,6 +34,8 @@ export interface GateSample {
   toolRounds: number;
   latencyMs: number;
   error?: string;
+  /** Set by a driver whose service returned its stand-in for a bad reply. */
+  degraded?: string;
 }
 
 /**
@@ -41,6 +46,7 @@ export interface GateSample {
 export function gateProblems(s: GateSample): string[] {
   const problems: string[] = [];
   if (s.error !== undefined) problems.push(s.error);
+  if (s.degraded !== undefined) problems.push(`fallback value: ${s.degraded}`);
   for (const c of s.calls)
     if (c.error) problems.push(`call error: ${c.error.message}`);
   if (s.calls.some((c) => c.finishReason === "length"))
@@ -81,7 +87,7 @@ const COACH_PRO_PROMPT =
   "How much protein is in 150 g of grilled chicken breast? Please look it up.";
 
 type Dataset = Record<string, unknown>[];
-type Outcome = { text: string; toolRounds: number };
+type Outcome = { text: string; toolRounds: number; degraded?: string };
 
 /** The eval datasets' allergies are names; services take {name, severity}. */
 function toProfile(p: unknown): unknown {
@@ -209,15 +215,30 @@ async function main(): Promise<void> {
     },
   };
 
+  Object.assign(
+    run,
+    await (await import("./ai-backup-gate-text-rows")).textRowDrivers(),
+  );
+  const onlyArg = process.argv.indexOf("--only");
+  const only =
+    onlyArg === -1 ? null : new Set(process.argv[onlyArg + 1]?.split(","));
+  const unknown = [...(only ?? [])].filter((f) => !(f in run));
+  if (unknown.length) {
+    console.error(`ai:backup-gate: no driver for ${unknown.join(", ")}.`);
+    process.exit(2);
+  }
+
   const plan: {
     feature: AiFeature;
     mode: GateMode;
     force: AiCallContext["forceBackup"];
   }[] = [];
-  for (const feature of Object.keys(run) as AiFeature[])
+  for (const feature of Object.keys(run) as AiFeature[]) {
+    if (only && !only.has(feature)) continue;
     for (let i = 0; i < SAMPLES; i++)
       plan.push({ feature, mode: "backup", force: true });
-  for (let i = 0; i < SAMPLES; i++) {
+  }
+  for (let i = 0; i < SAMPLES && (!only || only.has("coach-pro-chat")); i++) {
     plan.push({
       feature: "coach-pro-chat",
       mode: "switch-or-then-vertex",
@@ -263,7 +284,7 @@ async function main(): Promise<void> {
     const problems = gateProblems(sample);
     if (problems.length) failed++;
     console.log(
-      `${problems.length ? "✘" : "✔"} ${p.feature.padEnd(16)} ${p.mode.padEnd(22)} ${String(sample.latencyMs).padStart(6)}ms tools=${sample.toolRounds} chars=${sample.text.length}`,
+      `${problems.length ? "✘" : "✔"} ${p.feature.padEnd(24)} ${p.mode.padEnd(22)} ${String(sample.latencyMs).padStart(6)}ms tools=${sample.toolRounds} chars=${sample.text.length}`,
     );
     for (const c of sample.calls) console.log(`    ${formatCall(c)}`);
     for (const problem of problems) console.log(`    PROBLEM: ${problem}`);

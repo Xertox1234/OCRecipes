@@ -41,7 +41,7 @@ import {
 
 const DRY_RUN = process.env.DRY_RUN === "1";
 
-async function askSpiceLevels(
+export async function askSpiceLevels(
   rows: SpiceRow[],
 ): Promise<Map<number, SpiceLevel>> {
   try {
@@ -165,7 +165,13 @@ async function main() {
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error("Backfill failed:", err);
-  process.exit(1);
-});
+// Run only as a script: scripts/ai-backup-gate.ts imports the AI call above.
+if (
+  process.argv[1] &&
+  /backfill-recipe-spice-level\.(ts|js)$/.test(process.argv[1])
+) {
+  main().catch((err) => {
+    console.error("Backfill failed:", err);
+    process.exit(1);
+  });
+}
