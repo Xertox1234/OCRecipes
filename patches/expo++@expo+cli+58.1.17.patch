@@ -1,0 +1,32 @@
+diff --git a/node_modules/expo/node_modules/@expo/cli/build/src/start/server/middleware/resolveRuntimeVersionWithExpoUpdatesAsync.js b/node_modules/expo/node_modules/@expo/cli/build/src/start/server/middleware/resolveRuntimeVersionWithExpoUpdatesAsync.js
+index 86ceb17..5501041 100644
+--- a/node_modules/expo/node_modules/@expo/cli/build/src/start/server/middleware/resolveRuntimeVersionWithExpoUpdatesAsync.js
++++ b/node_modules/expo/node_modules/@expo/cli/build/src/start/server/middleware/resolveRuntimeVersionWithExpoUpdatesAsync.js
+@@ -11,7 +11,26 @@ Object.defineProperty(exports, "resolveRuntimeVersionWithExpoUpdatesAsync", {
+ const _env = require("../../../utils/env");
+ const _expoUpdatesCli = require("../../../utils/expoUpdatesCli");
+ const _events = require("./events");
+-async function resolveRuntimeVersionWithExpoUpdatesAsync({ projectRoot, platform }) {
++// OCRecipes patch (patches/expo++@expo+cli+*.patch): resolve once per
++// platform per server instead of spawning a Node process on every manifest
++// request. Under CI load the spawn pushed iOS dev-client manifest fetches past
++// the launcher's fixed 10s timeout. A failure is not cached. Restart the dev
++// server after changing runtimeVersion.
++const _runtimeVersionCache = new Map();
++function resolveRuntimeVersionWithExpoUpdatesAsync({ projectRoot, platform }) {
++    const key = `${projectRoot}\0${platform}`;
++    let pending = _runtimeVersionCache.get(key);
++    if (!pending) {
++        pending = resolveRuntimeVersionUncachedAsync({
++            projectRoot,
++            platform
++        });
++        _runtimeVersionCache.set(key, pending);
++        pending.catch(()=>_runtimeVersionCache.delete(key));
++    }
++    return pending;
++}
++async function resolveRuntimeVersionUncachedAsync({ projectRoot, platform }) {
+     try {
+         const extraArgs = _env.env.EXPO_DEBUG ? [
+             '--debug'
