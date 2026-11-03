@@ -123,6 +123,13 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: (key: string) => mockPremiumFeature(key),
 }));
 
+const { mockPlanCheck } = vi.hoisted(() => ({
+  mockPlanCheck: { planUnknown: false, recheckPlan: vi.fn() },
+}));
+vi.mock("@/hooks/usePlanCheck", () => ({
+  usePlanCheck: () => mockPlanCheck,
+}));
+
 vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: ({ visible }: { visible: boolean }) =>
     visible ? React.createElement("div", null, "UPGRADE_MODAL") : null,
@@ -224,6 +231,7 @@ beforeEach(() => {
     ],
   });
   mockPremiumFeature.mockReturnValue(true);
+  mockPlanCheck.planUnknown = false;
   mockCreate.mockResolvedValue({ id: 7, name: "Weeknight Dinners" });
   mockUploadCover.mockResolvedValue({ id: 7 });
   mockGenerateCandidates.mockResolvedValue({
@@ -439,6 +447,25 @@ describe("CookbookCreateWizard — cover", () => {
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
     expect(mockGenerateCandidates).not.toHaveBeenCalled();
     expect(mockAttachCandidate).not.toHaveBeenCalled();
+  });
+
+  it("while the plan is unknown, shows no lock and re-checks the plan instead of generating", async () => {
+    // Unknown status falls back to free-tier features (owner ruling 2026-11-02).
+    mockPremiumFeature.mockReturnValue(false);
+    mockPlanCheck.planUnknown = true;
+    renderComponent(<CookbookCreateWizard />);
+    typeName("Weeknight Dinners");
+    pressContinue();
+
+    expect(
+      screen.queryByLabelText("Generate with AI, premium feature"),
+    ).toBeNull();
+    fireEvent.click(screen.getByLabelText("Generate with AI"));
+    expect(screen.queryByText("UPGRADE_MODAL")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Generate 4 covers" }));
+
+    expect(mockPlanCheck.recheckPlan).toHaveBeenCalledTimes(1);
+    expect(mockGenerateCandidates).not.toHaveBeenCalled();
   });
 
   it("uploads a picked photo against the newly created id", async () => {

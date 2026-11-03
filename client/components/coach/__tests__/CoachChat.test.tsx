@@ -109,6 +109,12 @@ vi.mock("@/hooks/useTTS", () => ({
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: () => false,
 }));
+vi.mock("@/hooks/usePlanCheck", () => {
+  // One object, like the real hook's memoised callback — a fresh function per
+  // render would churn every useCallback that lists recheckPlan.
+  const plan = { planUnknown: false, recheckPlan: () => {} };
+  return { usePlanCheck: () => plan };
+});
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),

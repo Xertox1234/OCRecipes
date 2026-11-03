@@ -71,10 +71,12 @@ import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMess
 import {
   finderBlockFromMessageMetadata,
   finderItemNavParams,
+  finderActionNeedsPlan,
   lockedFinderButtons,
 } from "@/components/recipe-finder/recipe-finder-utils";
 import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import type {
   FinderAction,
@@ -468,6 +470,9 @@ export default function RecipeChatScreen() {
   // is consumed so a free user keeps their typed prompt and no empty
   // "New Recipe Chat" is created (QA sweep #59).
   const canGenerate = usePremiumFeature("recipeGeneration");
+  // Unknown plan (loading/failed): no lock banner or finder locks; a premium
+  // tap re-checks the plan instead of upselling (owner ruling 2026-11-02).
+  const { planUnknown, recheckPlan } = usePlanCheck();
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   // Voice input APPENDS to whatever was typed before the mic was tapped and
@@ -517,6 +522,13 @@ export default function RecipeChatScreen() {
     async (text?: string) => {
       const content = (text || inputText).trim();
       if (!content || isStreaming) return;
+      if (planUnknown) {
+        // A prefilled (auto-sent) request isn't in the input yet — put it
+        // there so the retry is one tap, not a retype.
+        if (text) setInputText(content);
+        recheckPlan();
+        return;
+      }
       if (!canGenerate) {
         setShowUpgrade(true);
         return;
@@ -559,6 +571,8 @@ export default function RecipeChatScreen() {
       stopListening,
       isStreaming,
       canGenerate,
+      planUnknown,
+      recheckPlan,
       conversationId,
       createConversation,
       sendMessage,
@@ -570,8 +584,8 @@ export default function RecipeChatScreen() {
 
   const canSearchOnline = usePremiumFeature("catalogSave");
   const finderLocks = useMemo(
-    () => lockedFinderButtons({ canSearchOnline, canGenerate }),
-    [canSearchOnline, canGenerate],
+    () => lockedFinderButtons({ canSearchOnline, canGenerate, planUnknown }),
+    [canSearchOnline, canGenerate, planUnknown],
   );
 
   // The adjust card's choices by flowId: the card first renders in the
@@ -582,13 +596,24 @@ export default function RecipeChatScreen() {
   const handleFinderAction = useCallback(
     (action: FinderAction, label: string) => {
       if (!conversationId || isStreaming) return;
+      if (planUnknown && finderActionNeedsPlan(action.type)) {
+        recheckPlan();
+        return;
+      }
       setPendingUserMessage(label);
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       void sendMessage(label, undefined, conversationId, {
         finderAction: action,
       });
     },
-    [conversationId, isStreaming, sendMessage, haptics],
+    [
+      conversationId,
+      isStreaming,
+      planUnknown,
+      recheckPlan,
+      sendMessage,
+      haptics,
+    ],
   );
 
   const handleOpenFinderItem = useCallback(
@@ -1051,7 +1076,7 @@ export default function RecipeChatScreen() {
         />
       )}
 
-      {!canGenerate ? (
+      {!planUnknown && !canGenerate ? (
         <Pressable
           onPress={openUpgrade}
           accessibilityRole="button"

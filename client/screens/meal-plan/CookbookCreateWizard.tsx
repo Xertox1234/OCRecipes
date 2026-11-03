@@ -46,6 +46,7 @@ import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { focusFirstInvalid } from "@/lib/field-validation";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { ApiError } from "@/lib/api-error";
 import { logger } from "@/lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -107,6 +108,8 @@ export default function CookbookCreateWizard() {
   const { reducedMotion } = useAccessibility();
   const toast = useToast();
   const canGenerateCover = usePremiumFeature("cookbookCoverGeneration");
+  // Unknown plan: the studio opens with no lock; generating re-checks instead.
+  const { planUnknown, recheckPlan } = usePlanCheck();
 
   const createMutation = useCreateCookbook();
   const uploadCoverMutation = useUploadCookbookCover();
@@ -302,6 +305,10 @@ export default function CookbookCreateWizard() {
 
   const handleGenerateCovers = async () => {
     if (generatingCandidates) return;
+    if (planUnknown) {
+      recheckPlan();
+      return;
+    }
     setStudioError(null);
     const description = state.description.trim();
     const coverPrompt = state.studio.prompt.trim();
@@ -405,7 +412,7 @@ export default function CookbookCreateWizard() {
         <WizardCoverStep
           state={state}
           dispatch={dispatch}
-          canGenerate={canGenerateCover}
+          canGenerate={planUnknown || canGenerateCover}
           onRequestUpgrade={handleRequestUpgrade}
           onPickPhoto={() => void handlePickPhoto()}
           coverWidth={resolveCoverWidth(screenWidth, false, SCREEN_PADDING)}

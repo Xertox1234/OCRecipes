@@ -30,6 +30,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
 import { parseDecimalInput } from "@/lib/number-input";
@@ -241,6 +242,11 @@ export default function GoalSetupScreen() {
   const queryClient = useQueryClient();
   const { updateUser } = useAuthContext();
   const canSetMacros = usePremiumFeature("macroGoals");
+  // While the plan is unknown the fields stay read-only (a free user's typed
+  // macros would not save) but say nothing about Premium: the user may be
+  // paying (owner ruling 2026-11-03).
+  const { planUnknown } = usePlanCheck();
+  const macrosUpsell = !planUnknown && !canSetMacros;
   const unit = useMeasurementUnit();
 
   // Form state - these will be entered by the user
@@ -735,7 +741,7 @@ export default function GoalSetupScreen() {
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
-                        canSetMacros
+                        !macrosUpsell
                           ? "Daily protein target"
                           : "Daily protein target (Premium required)"
                       }
@@ -768,7 +774,7 @@ export default function GoalSetupScreen() {
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
-                        canSetMacros
+                        !macrosUpsell
                           ? "Daily carbs target"
                           : "Daily carbs target (Premium required)"
                       }
@@ -801,7 +807,7 @@ export default function GoalSetupScreen() {
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
-                        canSetMacros
+                        !macrosUpsell
                           ? "Daily fat target"
                           : "Daily fat target (Premium required)"
                       }
@@ -829,7 +835,7 @@ export default function GoalSetupScreen() {
                 />
               ))}
 
-              {!canSetMacros && (
+              {macrosUpsell && (
                 <View style={styles.premiumNote}>
                   <Feather
                     name="lock"

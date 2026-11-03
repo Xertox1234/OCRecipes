@@ -12,6 +12,7 @@ import {
   answersLabel,
   finderItemNavParams,
   finderBlockFromMessageMetadata,
+  finderActionNeedsPlan,
   lockedFinderButtons,
   resultsHeader,
 } from "../recipe-finder-utils";
@@ -150,5 +151,22 @@ describe("recipe-finder-utils", () => {
     expect(
       lockedFinderButtons({ canSearchOnline: true, canGenerate: true }),
     ).toEqual([]);
+  });
+
+  it("shows no locks while the plan is unknown (owner ruling 2026-11-02)", () => {
+    expect(
+      lockedFinderButtons({
+        canSearchOnline: false,
+        canGenerate: false,
+        planUnknown: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it("marks only the premium finder actions as needing a known plan", () => {
+    expect(finderActionNeedsPlan("search_online")).toBe(true);
+    expect(finderActionNeedsPlan("generate")).toBe(true);
+    expect(finderActionNeedsPlan("none_of_these")).toBe(false);
+    expect(finderActionNeedsPlan("answers")).toBe(false);
   });
 });
