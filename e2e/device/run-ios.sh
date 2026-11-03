@@ -24,8 +24,12 @@ fi
 # id is committed to this public repo. IOS_DEVICE overrides.
 DEVICE="${IOS_DEVICE:-}"
 if [ -z "$DEVICE" ]; then
-  DEVICE="$(idevice_id -l 2>/dev/null | head -1)"
-  [ -n "$DEVICE" ] || DEVICE="$(idevice_id -n 2>/dev/null | head -1)"
+  # Checked first: under set -e/pipefail a missing idevice_id would end the
+  # script silently inside the $(…) below.
+  command -v idevice_id >/dev/null ||
+    { echo "idevice_id not found (brew install libimobiledevice)" >&2; exit 1; }
+  DEVICE="$(idevice_id -l 2>/dev/null | head -1 || true)"
+  [ -n "$DEVICE" ] || DEVICE="$(idevice_id -n 2>/dev/null | head -1 || true)"
 fi
 if [ -z "$DEVICE" ]; then
   echo "No iPhone visible over usbmux. Unlock it and join the Mac's Wi-Fi;" >&2
@@ -41,10 +45,12 @@ mkdir -p "$OUT"
 
 if [ "$#" -gt 0 ]; then FLOWS=("$@"); else FLOWS=("$REPO/e2e/device/flows"); fi
 
-# maestro-runner sends telemetry by default; keep it off.
+# maestro-runner sends telemetry by default; keep it off. `|| status=$?`
+# keeps set -e from exiting on a failed run before the report path prints —
+# a failed run is when it is needed most.
+status=0
 MAESTRO_RUNNER_NO_TELEMETRY=1 DO_NOT_TRACK=1 \
   "$RUNNER" --platform ios --device "$DEVICE" --team-id "$TEAM_ID" \
-  test --output "$OUT" "${FLOWS[@]}"
-status=$?
+  test --output "$OUT" "${FLOWS[@]}" || status=$?
 echo "Report: $OUT"
 exit $status
