@@ -1,0 +1,46 @@
+appId: com.williamtower.ocrecipes
+name: "Device - Navigate between tabs"
+tags:
+  - device
+---
+# READ-ONLY: runs on the owner's real account on the live server. Taps
+# only navigate; nothing here creates, edits or deletes data or calls AI.
+- runFlow: ../helpers/launch-installed.yaml
+
+# Scan is a floating action button on root screens (absent on Coach).
+- assertVisible: "Open scan menu"
+
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-plan"
+- extendedWaitUntil:
+    visible: "Browse Recipes"
+    timeout: 15000
+
+# Coach lands on the chat list ("NutriCoach") for a free account and on
+# Coach Pro for a paying one; either proves the tab rendered. A text-free
+# spinner shows until the plan resolves, hence the margin.
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-coach"
+- extendedWaitUntil:
+    visible: "(NutriCoach|Coach Pro.*|Coach.*)"
+    timeout: 20000
+
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-profile"
+- extendedWaitUntil:
+    visible: "Profile photo. Tap to change"
+    timeout: 10000
+
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-home"
+- extendedWaitUntil:
+    visible: "Hello.*"
+    timeout: 10000

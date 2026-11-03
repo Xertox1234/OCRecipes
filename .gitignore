@@ -125,3 +125,6 @@ scratch/art-direction-preview/
 # Maestro E2E debug output (screenshots, view hierarchy, logs) — runtime only,
 # uploaded as a CI artifact on failure instead
 e2e/maestro-output/
+# maestro-runner's takeScreenshot also drops a copy beside the flow file.
+# Device flows run on the owner's real account — never commit those.
+e2e/device/**/*.png

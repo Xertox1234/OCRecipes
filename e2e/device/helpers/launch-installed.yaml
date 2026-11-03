@@ -1,0 +1,23 @@
+appId: com.williamtower.ocrecipes
+
+# Launch the app that is INSTALLED on the physical iPhone (a preview or
+# production build talking to the live server), already signed in.
+#
+# This replaces e2e/helpers/launch-app.yaml for device runs. That helper
+# opens the dev client against Metro on localhost:8081, which a store/preview
+# build does not have, and the CI flows then sign in with the shared test
+# account, which must never be used on the live server. Device flows start
+# from the owner's own signed-in session instead and never sign in or out.
+---
+- launchApp:
+    appId: com.williamtower.ocrecipes
+    stopApp: true
+# Home's greeting is "Hello <name>" (full-string regex match). "Sign In"
+# is listed so a signed-out phone fails fast at the assert below instead of
+# waiting out the whole timeout.
+- extendedWaitUntil:
+    visible: "(Hello.*|Sign In)"
+    timeout: 60000
+# Signed out? Sign in on the phone by hand, then re-run. Device flows never
+# type credentials.
+- assertVisible: "Hello.*"

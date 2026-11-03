@@ -30,6 +30,9 @@ npm run e2e:smoke       # Run smoke-tagged flows only (auth + navigation + onboa
 npm run e2e:regression  # Run regression-tagged flows (the critical-flow set CI runs nightly)
 ```
 
+Read-only flows for the owner's **physical iPhone** (installed build, live server,
+`maestro-runner`) live in `e2e/device/` — see `e2e/device/README.md`. CI never runs them.
+
 ## CI
 
 The `E2E Regression` workflow (`.github/workflows/e2e-regression.yml`) runs
