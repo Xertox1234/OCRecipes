@@ -1319,6 +1319,24 @@ describe("aiChat (vertexBackup rows)", () => {
     },
   );
 
+  // Owner 2026-11-03: a short caller deadline (finder-classify-turn 6 s) timed
+  // Vertex out in the PR 3 gate; the backup leg may be given longer.
+  it("backupTimeout replaces the timeout on the Vertex leg only, and no SDK call sees it", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion(FLASH),
+    );
+    await createAiChat(deps)(B, params, { timeout: 6, backupTimeout: 12 });
+    expect(
+      vi.mocked(deps.openrouter!.chat.completions.create).mock.calls[0][1],
+    ).toEqual({ timeout: 6 });
+    expect(
+      vi.mocked(deps.vertex!.chat.completions.create).mock.calls[0][1],
+    ).toEqual({ timeout: 12 });
+  });
+
   it("json response_format and image parts reach the Vertex body unchanged", async () => {
     vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
       apiError(503),

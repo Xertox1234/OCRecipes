@@ -11,6 +11,7 @@ import { createMockChatCompletion } from "../../../__tests__/factories";
 vi.mock("../../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../../lib/openai", () => ({
   OPENAI_TIMEOUT_FAST_MS: 15_000,
+  VERTEX_BACKUP_TIMEOUT_FAST_MS: 30_000,
 }));
 
 vi.mock("../../../lib/ai-safety", () => ({
@@ -133,6 +134,10 @@ describe("extractOfferDetails", () => {
       details: { servings: 8, ingredients: [], fromConversation: false },
     });
     expect(mockCreate.mock.calls[0][0]).toBe("finder-extract-offer");
+    // Owner 2026-11-03: the Vertex backup timed out at 15 s in the PR 3 gate.
+    expect(mockCreate.mock.calls[0][2]).toMatchObject({
+      backupTimeout: 30_000,
+    });
   });
 
   it("drops servings 99 but keeps the dish", async () => {

@@ -234,6 +234,36 @@ describe("Notebook Extraction", () => {
     expect(request.messages[0].content).toContain(SYSTEM_PROMPT_BOUNDARY);
   });
 
+  // Owner 2026-11-03: the Vertex backup rejects (400) a conversation whose
+  // last message is the coach's, which is how this runs after every reply —
+  // so the transcript goes in ONE user message, on both routes.
+  it("sends the transcript as one user message after the system prompt", async () => {
+    mockCreate.mockResolvedValue(
+      mockCompletion(JSON.stringify({ entries: [] })),
+    );
+
+    await extractNotebookEntries(
+      [
+        { role: "system", content: "coach system prompt" },
+        { role: "user", content: "I'll weigh in every Friday." },
+        { role: "assistant", content: "Great, Friday weigh-ins it is." },
+      ],
+      "user-1",
+      1,
+      { tz: "UTC" },
+    );
+
+    const { messages } = mockCreate.mock.calls[0][1];
+    expect(messages.map((m: { role: string }) => m.role)).toEqual([
+      "system",
+      "user",
+    ]);
+    const transcript = messages[1].content as string;
+    expect(transcript).toContain("User: I'll weigh in every Friday.");
+    expect(transcript).toContain("Coach: Great, Friday weigh-ins it is.");
+    expect(transcript).not.toContain("coach system prompt");
+  });
+
   it("filters unsafe extracted medical advice before persistence", async () => {
     mockCreate.mockResolvedValue(
       mockCompletion(

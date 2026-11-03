@@ -50,6 +50,8 @@ export type AiChatStreamParams = Omit<
 >;
 export interface AiChatOptions {
   timeout?: number;
+  /** The Vertex backup leg's timeout, when it needs longer than `timeout`. */
+  backupTimeout?: number;
   signal?: AbortSignal;
 }
 
@@ -282,8 +284,16 @@ export function createAiChat(deps: AiChatDeps): AiChat {
   async function run(
     feature: AiFeature,
     params: AiChatParams | AiChatStreamParams,
-    options?: AiChatOptions,
+    callerOptions?: AiChatOptions,
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
+    // `backupTimeout` is ours, never the SDK's: strip it, and give it to the
+    // Vertex backup leg as that leg's timeout.
+    const { backupTimeout, ...sdkOptions } = callerOptions ?? {};
+    const options = backupTimeout === undefined ? callerOptions : sdkOptions;
+    const backupOptions =
+      backupTimeout === undefined
+        ? callerOptions
+        : { ...sdkOptions, timeout: backupTimeout };
     const row: AiFeatureConfig = AI_FEATURES[feature];
     const ctx: AiCallContext | undefined = getAiCallContext();
     const override = ctx?.overrides[feature];
@@ -318,7 +328,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         feature,
         row,
         params,
-        options,
+        backupOptions,
         undefined,
         "forced",
         record,
@@ -387,7 +397,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           feature,
           row,
           params,
-          options,
+          backupOptions,
           undefined,
           "config",
           record,
@@ -407,7 +417,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
             feature,
             row,
             params,
-            options,
+            backupOptions,
             undefined,
             "circuit-open",
             record,
@@ -502,7 +512,15 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         throw err;
       }
       return row.vertexBackup
-        ? callVertexBackup(feature, row, params, options, err, kind, record)
+        ? callVertexBackup(
+            feature,
+            row,
+            params,
+            backupOptions,
+            err,
+            kind,
+            record,
+          )
         : callFallback(kind, err);
     }
   }

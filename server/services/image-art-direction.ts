@@ -3,7 +3,11 @@ import { aiChat } from "../lib/ai-client";
 import crypto from "node:crypto";
 import { z } from "zod";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
-import { isAiConfigured, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
+import {
+  isAiConfigured,
+  OPENAI_TIMEOUT_FAST_MS,
+  VERTEX_BACKUP_TIMEOUT_FAST_MS,
+} from "../lib/openai";
 import { createServiceLogger, toError } from "../lib/logger";
 
 export type ImageVariant = "hero" | "plated" | "ingredients";
@@ -401,15 +405,34 @@ export function composePrompt(subject: string, art: ArtDirection): string {
 
 const log = createServiceLogger("image-art-direction");
 
+/** Cut to `max` chars, at the last word boundary when there is one. */
+function clip(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return (space > 0 ? cut.slice(0, space) : cut).replace(/[\s,;]+$/, "");
+}
+
+// Over-long phrases are trimmed, not rejected (owner 2026-11-03): Gemini, the
+// Vertex backup, writes longer phrases than these caps.
+const capped = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .transform((s) => clip(s, max));
+
 const ArtDirectionLLMSchema = z.object({
-  angle: z.string().min(1).max(60),
-  surface: z.string().min(1).max(80),
-  background: z.string().min(1).max(80),
-  lighting: z.string().min(1).max(80),
-  palette: z.string().min(1).max(80),
-  props: z.string().min(1).max(100),
-  mood: z.string().min(1).max(60),
-  season: z.string().max(40).optional(),
+  angle: capped(60),
+  surface: capped(80),
+  background: capped(80),
+  lighting: capped(80),
+  palette: capped(80),
+  props: capped(100),
+  mood: capped(60),
+  season: z
+    .string()
+    .transform((s) => clip(s, 40))
+    .optional(),
 });
 
 function sanitizeField(s: string): string {
@@ -466,7 +489,10 @@ export async function resolveArtDirection(
         max_tokens: 300,
         response_format: { type: "json_object" },
       },
-      { timeout: OPENAI_TIMEOUT_FAST_MS },
+      {
+        timeout: OPENAI_TIMEOUT_FAST_MS,
+        backupTimeout: VERTEX_BACKUP_TIMEOUT_FAST_MS,
+      },
     );
 
     const raw = completion.choices[0]?.message?.content;
