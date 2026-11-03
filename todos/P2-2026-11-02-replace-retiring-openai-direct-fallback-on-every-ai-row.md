@@ -3,7 +3,7 @@ title: "Replace the retiring direct-OpenAI fallback on every AI_FEATURES row bef
 status: in-progress
 priority: medium
 created: 2026-11-02
-updated: 2026-11-02
+updated: 2026-11-03
 assignee:
 labels: [deferred, ai]
 github_issue:
@@ -28,8 +28,8 @@ The only OpenAI-free routing that exists is the `primary: "vertex"` path (Vertex
 ## Acceptance Criteria
 
 - [x] Design decided 2026-11-02: spec `docs/superpowers/specs/2026-11-02-vertex-backup-route-design.md` (OpenRouter primary → Vertex direct, Gemini 3.8 Flash at low reasoning; never OpenAI).
-- [ ] PR 1 plumbing merged (`vertexBackup` field, routing incl. streaming, thought-signature fill, `ai:smoke --backup`).
-- [ ] PR 2: the five rows (coach-chat, coach-pro-chat, recipe-chat, recipe-generate, photo-analyze) switched and the privacy page updated, after the live gate.
+- [x] PR 1 plumbing merged (#1703: `vertexBackup` field, routing incl. streaming, thought-signature fill, `ai:smoke --backup`).
+- [x] PR 2: the five rows (coach-chat, coach-pro-chat, recipe-chat, recipe-generate, photo-analyze) switched and the privacy page updated, after the live gate.
 - [ ] The other 29 rows: a decision per row before 2027-01-14.
 - [ ] No row's fallback names a model whose shutdown date is on or before the switch-over date, checked against OpenAI's deprecations page that day.
 - [ ] `server/lib/__tests__/ai-models.test.ts` pins the new rule.
@@ -50,6 +50,10 @@ The only OpenAI-free routing that exists is the `primary: "vertex"` path (Vertex
 - A design that adds a second Google route for streaming rows touches `aiChat`'s streaming path, which every coach and recipe-chat reply uses.
 
 ## Updates
+
+### 2026-11-03 (PR 2)
+
+- The five rows (coach-chat, coach-pro-chat, recipe-chat, recipe-generate, photo-analyze) now back up to Vertex direct (Flash, low reasoning), never OpenAI; privacy page updated. Live gate (`npm run ai:backup-gate`): 21/21 samples clean, 35 calls, no `length` finish, both coach-pro route-switch directions exercised. PR 1 (#1703) shipped the plumbing. Stays open for the other 29 rows, which still fall back to gpt-4o / gpt-4o-mini.
 
 ### 2026-11-02 (design)
 
