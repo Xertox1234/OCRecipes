@@ -6,6 +6,7 @@ module: client
 tags: [client-state, tanstack-query, navigation, premium-gate]
 applies_to: [client/context/**/*.tsx, client/navigation/**/*.tsx, client/hooks/**/*.ts]
 created: '2026-06-12'
+last_updated: '2026-11-03'
 ---
 
 # isLoading=false on query error does not mean data resolved — use a data-presence sentinel for mount-once gates
@@ -33,6 +34,7 @@ For React Navigation's `initialRouteName`, this is particularly harmful: the pro
 - `if (!isLoading) { /* use data ?? DEFAULT */ }` where the code path is irreversible (navigator mount, cached write, etc.)
 - `isLoading` exposed from context where the context also applies `?? DEFAULT` to the raw query data
 - A context's `isLoading` is a union of several queries (`isALoading || isBLoading`) — all sub-queries can be done but data for the critical one can be `undefined` (errored)
+- The same holds for a union `isError` (`isAError || isBError`): an error branch keyed on it fires for a failure of the *other* query. Key the branch on the critical query's own error (`isPremiumStatusError`).
 
 ## Examples
 
@@ -50,11 +52,17 @@ return <Stack initialRouteName={isCoachPro ? "CoachPro" : "ChatList"} />;
 ```tsx
 // In PremiumContext.tsx:
 const isPremiumResolved = subscriptionData !== undefined;
+const isPremiumStatusError = isSubscriptionError && !isPremiumResolved;
 
 // In ChatStackNavigator.tsx:
-const { isPremiumResolved, isError, refreshSubscription } = usePremiumContext();
+const { isPremiumResolved, isPremiumStatusError, refreshSubscription } =
+  usePremiumContext();
 
-if (isError && !isPremiumResolved) {
+// isPremiumStatusError, NOT `isError && !isPremiumResolved`: the context's
+// isError also covers the scan-count query, so that form showed this
+// screen when only the scan count failed while the subscription was still
+// loading (fixed in #1709).
+if (isPremiumStatusError) {
   // Error with no cached data: show retry affordance (not a permanent spinner)
   return <RetryView onRetry={refreshSubscription} />;
 }
