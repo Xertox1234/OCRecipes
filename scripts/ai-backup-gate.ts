@@ -33,25 +33,38 @@ export interface GateSample {
   error?: string;
 }
 
-/** Every reason a sample stops the PR (spec §5); empty = clean. */
+/**
+ * Every reason a sample stops the PR (spec §5); empty = clean. The reply text
+ * alone never proves success: the chat services turn an aiChat error into an
+ * apology, and a failed Vertex backup call records nothing.
+ */
 export function gateProblems(s: GateSample): string[] {
   const problems: string[] = [];
   if (s.error !== undefined) problems.push(s.error);
+  for (const c of s.calls)
+    if (c.error) problems.push(`call error: ${c.error.message}`);
   if (s.calls.some((c) => c.finishReason === "length"))
     problems.push("length finish");
+  // Success records always carry finishReason; null = the stream was cut off.
+  if (s.calls.some((c) => !c.error && c.finishReason === null))
+    problems.push("no finish_reason");
   if (s.text.trim() === "") problems.push("no text");
   if (s.mode === "backup") {
+    if (s.calls.length === 0) problems.push("no AI call recorded");
     if (s.calls.some((c) => c.answeredProvider !== "vertex"))
       problems.push("left the backup route");
   } else {
     if (s.toolRounds === 0)
       problems.push("no tool round — switch not exercised");
-    const [first, second] = s.calls.map((c) => c.answeredProvider === "vertex");
+    const [first, second] = s.calls;
     const wantFirstVertex = s.mode === "switch-vertex-then-or";
+    const answered = (c: AiCallRecord | undefined, vertex: boolean) =>
+      !!c?.answeredProvider &&
+      !c.error &&
+      (c.answeredProvider === "vertex") === vertex;
     if (
-      s.calls.length < 2 ||
-      first !== wantFirstVertex ||
-      second !== !wantFirstVertex
+      !answered(first, wantFirstVertex) ||
+      !answered(second, !wantFirstVertex)
     )
       problems.push("route pair wrong");
   }

@@ -37,6 +37,51 @@ describe("gateProblems", () => {
     ).toContain("400 bad schema");
   });
 
+  // The chat services swallow an aiChat error into an apology reply, and a
+  // failed Vertex backup call records nothing — text alone is not success.
+  it("reports a backup sample with no recorded call (error swallowed into an apology)", () => {
+    expect(
+      gateProblems(
+        sample({ calls: [], text: "Sorry, I'm having trouble responding" }),
+      ),
+    ).toContain("no AI call recorded");
+  });
+
+  it("reports a recorded call error even when the service replied", () => {
+    const failed = call({
+      answeredModel: null,
+      answeredProvider: null,
+      finishReason: undefined,
+      error: {
+        kind: "request",
+        moderated: false,
+        message: "400 bad tool history",
+      },
+    });
+    expect(
+      gateProblems(
+        sample({
+          feature: "coach-pro-chat",
+          mode: "switch-vertex-then-or",
+          calls: [call(), failed],
+          text: "Sorry, I'm having trouble responding",
+          toolRounds: 1,
+        }),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        "call error: 400 bad tool history",
+        "route pair wrong",
+      ]),
+    );
+  });
+
+  it("reports a successful call with no finish_reason (stream cut off)", () => {
+    expect(
+      gateProblems(sample({ calls: [call({ finishReason: null })] })),
+    ).toContain("no finish_reason");
+  });
+
   it("reports a length finish", () => {
     expect(
       gateProblems(sample({ calls: [call({ finishReason: "length" })] })),
