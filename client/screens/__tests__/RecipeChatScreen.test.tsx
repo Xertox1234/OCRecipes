@@ -182,6 +182,13 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
         : true,
 }));
 
+const { mockPlanCheck } = vi.hoisted(() => ({
+  mockPlanCheck: { planUnknown: false, recheckPlan: vi.fn() },
+}));
+vi.mock("@/hooks/usePlanCheck", () => ({
+  usePlanCheck: () => mockPlanCheck,
+}));
+
 vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: ({ visible }: { visible: boolean }) =>
     visible ? <div data-testid="upgrade-modal" /> : null,
@@ -192,6 +199,7 @@ beforeEach(() => {
   mockCanGoBack.mockReturnValue(true);
   mockCanGenerate.value = true;
   mockCanSearchOnline.value = true;
+  mockPlanCheck.planUnknown = false;
   mockRouteParams.value = undefined;
   mockChatMessagesData.value = [];
   mockStreamSnapshot.value = { content: "", recipe: null, finder: null };
@@ -293,6 +301,24 @@ describe("RecipeChatScreen — initialMessage route param (Home's Generate Recip
     });
   });
 
+  it("while the plan is unknown, keeps the prefilled request in the input instead of dropping it", async () => {
+    mockPlanCheck.planUnknown = true;
+    mockRouteParams.value = {
+      initialMessage: "A Mediterranean dinner for two",
+    };
+
+    renderComponent(<RecipeChatScreen />);
+
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("Recipe request") as HTMLInputElement).value,
+      ).toBe("A Mediterranean dinner for two"),
+    );
+    expect(mockPlanCheck.recheckPlan).toHaveBeenCalledTimes(1);
+    expect(mockCreateConversationMutateAsync).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
   it("does not send it again on a re-render", async () => {
     mockCreateConversationMutateAsync.mockResolvedValue({ id: 11 });
     mockRouteParams.value = {
@@ -374,6 +400,31 @@ describe("RecipeChatScreen — free user (QA sweep #59)", () => {
     fireEvent.click(screen.getByLabelText("Send message"));
 
     expect(screen.getByTestId("upgrade-modal")).toBeTruthy();
+    expect(
+      (screen.getByLabelText("Recipe request") as HTMLInputElement).value,
+    ).toBe("Give me a pasta recipe");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockCreateConversationMutateAsync).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("while the plan is unknown: no lock banner, and send re-checks the plan", async () => {
+    // Unknown status falls back to free-tier features (owner ruling 2026-11-02).
+    mockPlanCheck.planUnknown = true;
+    renderComponent(<RecipeChatScreen />);
+
+    expect(
+      screen.queryByLabelText(
+        "Recipe chat is a premium feature. Upgrade to unlock.",
+      ),
+    ).toBeNull();
+    fireEvent.change(screen.getByLabelText("Recipe request"), {
+      target: { value: "Give me a pasta recipe" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+
+    expect(mockPlanCheck.recheckPlan).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
     expect(
       (screen.getByLabelText("Recipe request") as HTMLInputElement).value,
     ).toBe("Give me a pasta recipe");
@@ -1002,6 +1053,35 @@ describe("RecipeChatScreen — recipe finder", () => {
     );
     expect(screen.getByTestId("upgrade-modal")).toBeTruthy();
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("while the plan is unknown, premium buttons show no lock and a tap re-checks the plan", () => {
+    mockCanSearchOnline.value = false;
+    mockCanGenerate.value = false;
+    mockPlanCheck.planUnknown = true;
+    mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
+    renderComponent(<RecipeChatScreen />);
+
+    expect(
+      screen.queryByRole("button", {
+        name: "Get ideas for you. Premium feature",
+      }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Get ideas for you" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(mockPlanCheck.recheckPlan).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("while the plan is unknown, a non-premium finder button still sends", () => {
+    mockPlanCheck.planUnknown = true;
+    mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
+    renderComponent(<RecipeChatScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "None of these" }));
+    expect(mockPlanCheck.recheckPlan).not.toHaveBeenCalled();
+    expect(mockSendMessage).toHaveBeenCalled();
   });
 
   it("a button tap sends its label with the finderAction", () => {

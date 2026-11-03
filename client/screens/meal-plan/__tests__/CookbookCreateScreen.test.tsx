@@ -110,6 +110,13 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: (key: string) => mockPremiumFeature(key),
 }));
 
+const { mockPlanCheck } = vi.hoisted(() => ({
+  mockPlanCheck: { planUnknown: false, recheckPlan: vi.fn() },
+}));
+vi.mock("@/hooks/usePlanCheck", () => ({
+  usePlanCheck: () => mockPlanCheck,
+}));
+
 vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: ({ visible }: { visible: boolean }) =>
     visible ? React.createElement("div", null, "UPGRADE_MODAL") : null,
@@ -160,6 +167,7 @@ beforeEach(() => {
   mockGetState.mockReturnValue(stackState(2));
   mockCookbookDetail.mockReturnValue(idleDetail);
   mockPremiumFeature.mockReturnValue(true);
+  mockPlanCheck.planUnknown = false;
   mockCreate.mockResolvedValue({ id: 7, name: "Weeknight Dinners" });
   mockUploadCover.mockResolvedValue({ id: 7 });
   mockGenerateCover.mockResolvedValue({ id: 7 });
@@ -298,6 +306,32 @@ describe("CookbookCreateScreen — edit-mode cover", () => {
     fireEvent.click(screen.getByLabelText("Generate a cover"));
 
     await waitFor(() => expect(mockGenerateCover).toHaveBeenCalledWith(3));
+  });
+
+  it("while the plan is unknown, Generate shows no lock and a tap re-checks the plan", async () => {
+    // Unknown status falls back to free-tier features (owner ruling 2026-11-02).
+    mockPremiumFeature.mockReturnValue(false);
+    mockPlanCheck.planUnknown = true;
+    mockRouteParams.mockReturnValue({ cookbookId: 3 });
+    mockCookbookDetail.mockReturnValue({
+      ...idleDetail,
+      data: {
+        id: 3,
+        name: "Sunday Bakes",
+        description: null,
+        coverImageUrl: null,
+      },
+    });
+    renderComponent(<CookbookCreateScreen />);
+
+    expect(
+      screen.queryByLabelText("Generate a cover, premium feature"),
+    ).toBeNull();
+    fireEvent.click(screen.getByLabelText("Generate a cover"));
+
+    expect(mockPlanCheck.recheckPlan).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("UPGRADE_MODAL")).toBeNull();
+    expect(mockGenerateCover).not.toHaveBeenCalled();
   });
 });
 

@@ -19,6 +19,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { Spacing, FontFamily } from "@/constants/theme";
 import {
   MEAL_LABELS,
@@ -59,6 +60,7 @@ function ImportRecipeSheetContentInner({
   const haptics = useHaptics();
   const toast = useToast();
   const canImportPhoto = usePremiumFeature("recipePhotoImport");
+  const { planUnknown, recheckPlan } = usePlanCheck();
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
 
@@ -70,6 +72,10 @@ function ImportRecipeSheetContentInner({
 
   const handlePremiumAction = useCallback(
     async (action: () => Promise<void>) => {
+      if (planUnknown) {
+        recheckPlan();
+        return;
+      }
       if (!canImportPhoto) {
         haptics.notification(NotificationFeedbackType.Warning);
         setShowUpgradeModal(true);
@@ -77,7 +83,7 @@ function ImportRecipeSheetContentInner({
       }
       await action();
     },
-    [canImportPhoto, haptics],
+    [canImportPhoto, planUnknown, recheckPlan, haptics],
   );
 
   // Permission denial is a blocking system decision (Cancel vs. navigate out
@@ -290,7 +296,7 @@ function ImportRecipeSheetContentInner({
         </ThemedText>
         <View style={styles.options}>
           {rows.map((row) => {
-            const isLocked = row.premium && !canImportPhoto;
+            const isLocked = row.premium && !planUnknown && !canImportPhoto;
             return (
               <SheetOptionRow
                 key={row.key}

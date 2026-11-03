@@ -70,6 +70,13 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: () => mockCanImportPhoto,
 }));
 
+const { mockPlanCheck } = vi.hoisted(() => ({
+  mockPlanCheck: { planUnknown: false, recheckPlan: vi.fn() },
+}));
+vi.mock("@/hooks/usePlanCheck", () => ({
+  usePlanCheck: () => mockPlanCheck,
+}));
+
 vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: ({ visible }: { visible: boolean }) =>
     visible ? "UPGRADE_MODAL_SHOWN" : null,
@@ -88,6 +95,7 @@ describe("ImportRecipeSheet permission-denied handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCanImportPhoto = true;
+    mockPlanCheck.planUnknown = false;
     mockHasImageAsync.mockResolvedValue(false);
     mockHasStringAsync.mockResolvedValue(false);
   });
@@ -409,6 +417,34 @@ describe("ImportRecipeSheet permission-denied handling", () => {
       expect(
         screen.queryByLabelText("From Clipboard, premium feature"),
       ).toBeNull();
+    });
+  });
+
+  describe("while the plan is unknown (owner ruling 2026-11-02)", () => {
+    beforeEach(() => {
+      // Unknown status falls back to free-tier features.
+      mockCanImportPhoto = false;
+      mockPlanCheck.planUnknown = true;
+    });
+
+    it("does not show the photo rows as locked", () => {
+      renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+      expect(screen.getByLabelText("From Camera")).toBeTruthy();
+      expect(
+        screen.queryByLabelText("From Camera, premium feature"),
+      ).toBeNull();
+    });
+
+    it("a photo tap re-checks the plan instead of opening the upgrade sheet", async () => {
+      renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("From Camera"));
+
+      await waitFor(() => {
+        expect(mockPlanCheck.recheckPlan).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.queryByText("UPGRADE_MODAL_SHOWN")).toBeNull();
+      expect(mockRequestCameraPermissionsAsync).not.toHaveBeenCalled();
+      expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
     });
   });
 });

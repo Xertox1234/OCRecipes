@@ -34,6 +34,7 @@ import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { ApiError } from "@/lib/api-error";
 import { logger } from "@/lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -85,6 +86,9 @@ function CookbookEditForm() {
   const { reducedMotion } = useAccessibility();
   const toast = useToast();
   const canGenerateCover = usePremiumFeature("cookbookCoverGeneration");
+  // Unknown plan: no lock shown, and a tap re-checks instead of upselling.
+  const { planUnknown, recheckPlan } = usePlanCheck();
+  const coverUnlocked = planUnknown || canGenerateCover;
 
   const updateMutation = useUpdateCookbook();
   const uploadCoverMutation = useUploadCookbookCover();
@@ -245,6 +249,10 @@ function CookbookEditForm() {
   }, [haptics, cookbookId, uploadCoverMutation, toast, describeCoverError]);
 
   const handleGenerateCover = useCallback(async () => {
+    if (planUnknown) {
+      recheckPlan();
+      return;
+    }
     if (!canGenerateCover) {
       haptics.selection();
       setShowUpgradeModal(true);
@@ -276,6 +284,8 @@ function CookbookEditForm() {
     }
   }, [
     canGenerateCover,
+    planUnknown,
+    recheckPlan,
     haptics,
     cookbookId,
     generateCoverMutation,
@@ -400,14 +410,14 @@ function CookbookEditForm() {
             onPress={() => void handleGenerateCover()}
             accessibilityLabel={coverGenerateActionLabel(
               hasCover,
-              canGenerateCover,
+              coverUnlocked,
             )}
             accessibilityHint={
-              canGenerateCover
+              coverUnlocked
                 ? "Create cover art from this cookbook's name and description"
                 : "Upgrade to generate cover art"
             }
-            locked={!canGenerateCover}
+            locked={!coverUnlocked}
             loading={coverBusy?.kind === "generate"}
             // Same guard as the photo button above — generating also replaces
             // (and deletes) the existing cover we currently can't see.
