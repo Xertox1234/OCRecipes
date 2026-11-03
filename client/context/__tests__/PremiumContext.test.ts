@@ -33,6 +33,8 @@ function renderPremium(values: {
   scanCount?: { count: number };
   /** When true, seed the subscription query with an error and no data. */
   subscriptionError?: boolean;
+  /** When true, seed the scan-count query with an error and no data. */
+  scanCountError?: boolean;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
@@ -49,6 +51,19 @@ function renderPremium(values: {
       .build(queryClient, {
         queryKey: ["/api/subscription/status"],
       })
+      .setState({
+        status: "error",
+        error: new Error("network failure"),
+        data: undefined,
+        dataUpdatedAt: 0,
+        errorUpdatedAt: Date.now(),
+        fetchStatus: "idle",
+      });
+  }
+  if (values.scanCountError) {
+    queryClient
+      .getQueryCache()
+      .build(queryClient, { queryKey: ["/api/subscription/scan-count"] })
       .setState({
         status: "error",
         error: new Error("network failure"),
@@ -405,6 +420,36 @@ describe("isPremiumResolved — cold-start gate invariant", () => {
     expect(result.current.isPremiumResolved).toBe(false);
     // features default to free while status is unknown
     expect(result.current.features.coachPro).toBe(false);
+  });
+
+  describe("isPremiumStatusError", () => {
+    it("is true when the subscription status fetch failed with no cached data", async () => {
+      // Gates render a retry state (not an upgrade wall) on this flag. The
+      // seeded error refetches on mount, so wait for it to settle back.
+      const { result } = renderPremium({ subscriptionError: true });
+      await waitFor(() =>
+        expect(result.current.isPremiumStatusError).toBe(true),
+      );
+      expect(result.current.isPremiumResolved).toBe(false);
+    });
+
+    it("is false when the status resolved, even if the scan-count query failed", async () => {
+      // Unlike the combined isError, a scan-count failure says nothing about
+      // whether the user is premium.
+      const { result } = renderPremium({
+        subscription: {
+          tier: "premium",
+          expiresAt: null,
+          features: TIER_FEATURES.premium,
+          isActive: true,
+          streakUnlocks: [],
+        },
+        scanCountError: true,
+      });
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(result.current.isPremiumResolved).toBe(true);
+      expect(result.current.isPremiumStatusError).toBe(false);
+    });
   });
 
   it("flips to true when a subsequent successful fetch follows an error (recovery path)", async () => {

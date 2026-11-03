@@ -114,7 +114,10 @@ export default function SavedItemsScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
-  const { isPremium, features } = usePremiumContext();
+  const { isPremium, isPremiumResolved, features } = usePremiumContext();
+  // The free cap and its upgrade banner apply only to a user known to be
+  // free — never while the premium status is unknown (audit M-crel-6).
+  const isKnownFree = isPremiumResolved && !isPremium;
 
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
@@ -159,7 +162,7 @@ export default function SavedItemsScreen() {
   const itemCount = countData?.count ?? 0;
   const itemCountLabel =
     countError && countData === undefined ? "—" : itemCount;
-  const limit = isPremium ? null : features.maxSavedItems;
+  const limit = isKnownFree ? features.maxSavedItems : null;
 
   const handleSwipeDelete = useCallback(
     (item: SavedItem) => {
@@ -254,7 +257,7 @@ export default function SavedItemsScreen() {
           </ThemedText>
         )}
       </View>
-      {!isPremium && itemCount >= features.maxSavedItems ? (
+      {isKnownFree && itemCount >= features.maxSavedItems ? (
         <View
           style={[
             styles.limitBanner,

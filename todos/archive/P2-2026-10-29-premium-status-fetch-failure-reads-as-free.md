@@ -1,9 +1,9 @@
 ---
 title: "A paying user whose subscription-status fetch fails is treated as free"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-11-02
 assignee:
 labels: [deferred, client, iap]
 github_issue:
@@ -25,9 +25,9 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] Gates distinguish "not premium" from "premium status unknown" (loading or failed) and do not show an upgrade wall while unknown
-- [ ] A failed status fetch shows a retryable state where the gate matters
-- [ ] Tests cover failed-status for at least two gates
+- [x] Gates distinguish "not premium" from "premium status unknown" (loading or failed) and do not show an upgrade wall while unknown
+- [x] A failed status fetch shows a retryable state where the gate matters
+- [x] Tests cover failed-status for at least two gates
 
 ## Implementation Notes
 
@@ -43,3 +43,8 @@ Decide first whether "unknown" should allow (optimistic) or show a neutral state
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-11-02
+
+- Owner overrode the human_led gate in a /todo-fast session and ruled **neutral + retry**: while premium status is unknown, no upgrade wall and no premium grant; a failed fetch offers a retry where the gate matters.
+- `PremiumContext` gained `isPremiumStatusError` (subscription fetch failed, nothing cached). Gates now wall only a user known to be free (`isPremiumResolved && !isPremium`).

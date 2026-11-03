@@ -19,7 +19,7 @@ vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({ user: null }),
 }));
 vi.mock("@/context/PremiumContext", () => ({
-  usePremiumContext: () => ({ isPremium: false }),
+  usePremiumContext: () => ({ isPremium: false, isPremiumResolved: true }),
 }));
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
