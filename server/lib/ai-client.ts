@@ -1,7 +1,9 @@
 /**
  * The single entry point for chat/vision completions (spec §3.2). Rows with
  * `primary: "vertex"` route Vertex AI direct → OpenRouter and never reach
- * OpenAI (spec 2026-10-19-vision-rows-vertex-direct). Every other row routes
+ * OpenAI (spec 2026-10-19-vision-rows-vertex-direct). Rows with
+ * `vertexBackup` route OpenRouter → Vertex AI direct and never reach OpenAI
+ * (spec 2026-11-02-vertex-backup-route-design §3). Every other row routes
  * via OpenRouter (zero-data-retention) when OPENROUTER_API_KEY is set, else
  * via today's OpenAI client; falls back per spec §3.4. Never call
  * `chat.completions.create` elsewhere — ocrecipes/no-direct-chat-completions.
@@ -14,7 +16,7 @@ import type {
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
 import { AI_FEATURES, adaptParams, hostForModel } from "./ai-models";
-import type { AiFeature, AiFeatureConfig } from "./ai-models";
+import type { AiAdapt, AiFeature, AiFeatureConfig } from "./ai-models";
 import { getAiCallContext, withAiCallContext } from "./ai-call-context";
 import type { AiCallContext } from "./ai-call-context";
 import {
@@ -105,6 +107,11 @@ function usageCost(res: unknown): number | undefined {
   const c = (res as { usage?: { cost?: unknown } }).usage?.cost;
   return typeof c === "number" ? c : undefined;
 }
+
+const statusOf = (err: unknown) =>
+  err instanceof OpenAI.APIError ? err.status : undefined;
+const messageOf = (err: unknown) =>
+  (err instanceof Error ? err.message : String(err)).slice(0, 300);
 
 function isAbort(err: unknown, options?: AiChatOptions): boolean {
   return (
@@ -232,6 +239,28 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       );
     }
 
+    // Eval/smoke switch (ai-call-context.ts); beats `fallback: "off"`.
+    const force = ctx?.forceBackup;
+    if (
+      force !== undefined &&
+      (typeof force === "function" ? force(ctx!.calls.length) : force)
+    ) {
+      if (!row.vertexBackup) {
+        throw new Error(
+          `aiChat(${feature}): forceBackup on a row with no vertexBackup`,
+        );
+      }
+      return callVertexBackup(
+        feature,
+        row,
+        params,
+        options,
+        undefined,
+        "forced",
+        record,
+      );
+    }
+
     const callFallback = async (reason: FallbackReason, err?: unknown) => {
       deps.log.warn(
         {
@@ -270,6 +299,22 @@ export function createAiChat(deps: AiChatDeps): AiChat {
           `aiChat(${feature}): OPENROUTER_API_KEY is required when fallback is off`,
         );
       }
+      if (row.vertexBackup) {
+        if (!deps.vertex) {
+          throw new Error(
+            `aiChat(${feature}): no AI route — set OPENROUTER_API_KEY and/or GOOGLE_VERTEX_*`,
+          );
+        }
+        return callVertexBackup(
+          feature,
+          row,
+          params,
+          options,
+          undefined,
+          "config",
+          record,
+        );
+      }
       // Today's path, byte-for-byte: no warn — this is the normal no-key state.
       const res = await deps.fallback.chat.completions.create(
         { ...params, model: fallbackModel(row, feature) },
@@ -278,8 +323,19 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       return res as ChatCompletion | AsyncIterable<ChatCompletionChunk>;
     }
 
-    if (fallbackAllowed && deps.breaker.isOpen())
-      return callFallback("circuit-open");
+    if (fallbackAllowed && deps.breaker.isOpen()) {
+      return row.vertexBackup
+        ? callVertexBackup(
+            feature,
+            row,
+            params,
+            options,
+            undefined,
+            "circuit-open",
+            record,
+          )
+        : callFallback("circuit-open");
+    }
 
     const host = hostForModel(requestedModel);
     if (!host) {
@@ -324,7 +380,9 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       if (kind === "balance") {
         deps.report(
           new Error(
-            "OpenRouter balance exhausted (402) — AI traffic is on the OpenAI fallback",
+            row.vertexBackup
+              ? `OpenRouter balance exhausted (402) — ${feature} is on the Vertex backup`
+              : "OpenRouter balance exhausted (402) — AI traffic is on the OpenAI fallback",
           ),
           "ai-client",
         );
@@ -355,7 +413,112 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         });
         throw err;
       }
-      return callFallback(kind, err);
+      return row.vertexBackup
+        ? callVertexBackup(feature, row, params, options, err, kind, record)
+        : callFallback(kind, err);
+    }
+  }
+
+  /** The adapted body for a Vertex-direct call: no `provider` key. */
+  function buildVertexBody(
+    params: AiChatParams | AiChatStreamParams,
+    adapt: AiAdapt | undefined,
+    model: string,
+    extraSet?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return { ...adaptParams(params, adapt, extraSet), model };
+  }
+
+  /**
+   * The Vertex-direct backup for a `vertexBackup` row (spec 2026-11-02-
+   * vertex-backup-route-design §3.2 step 2). NEVER calls deps.fallback.
+   * `openrouterErr` is undefined when OpenRouter was never tried (breaker
+   * open, no key, forced).
+   */
+  async function callVertexBackup(
+    feature: AiFeature,
+    row: AiFeatureConfig,
+    params: AiChatParams | AiChatStreamParams,
+    options: AiChatOptions | undefined,
+    openrouterErr: unknown,
+    reason: FallbackReason | "forced",
+    record: (
+      answeredModel: string | null,
+      provider: string | null,
+      fellBack: boolean,
+    ) => void,
+  ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
+    const backup = row.vertexBackup!;
+    // A forced call is a local smoke run, not an outage worth reporting.
+    const reportUnavailable = (msg: string) => {
+      if (reason !== "forced")
+        throttledReport(`unavailable:${feature}`, new Error(msg));
+    };
+
+    const skip = !deps.vertex
+      ? "not configured (GOOGLE_VERTEX_*)"
+      : deps.vertexBreaker.isOpen()
+        ? "circuit open"
+        : null;
+    if (skip !== null || !deps.vertex) {
+      reportUnavailable(
+        `AI unavailable: ${feature} — OpenRouter failed and the Vertex backup is ${skip}`,
+      );
+      if (openrouterErr !== undefined) throw openrouterErr;
+      throw new Error(
+        `aiChat(${feature}): both routes unavailable (openrouter: ${reason}; vertex backup: ${skip})`,
+      );
+    }
+
+    deps.log.warn(
+      {
+        feature,
+        provider: "vertex",
+        backupModel: backup.model,
+        fallbackReason: reason,
+        ...(openrouterErr !== undefined && {
+          error: {
+            status: statusOf(openrouterErr),
+            message: messageOf(openrouterErr),
+          },
+        }),
+      },
+      "ai call using fallback",
+    );
+    const body = buildVertexBody(params, backup.adapt, backup.model);
+    try {
+      const res = await deps.vertex.chat.completions.create(body, options);
+      deps.vertexBreaker.recordSuccess();
+      const model = answeredModel(res);
+      record(model, "vertex", true);
+      deps.log.info(
+        {
+          feature,
+          provider: "vertex",
+          requestedModel: backup.model,
+          answeredModel: model,
+          fellBack: true,
+          usage: (res as { usage?: unknown }).usage,
+        },
+        "ai call",
+      );
+      return res as ChatCompletion;
+    } catch (err) {
+      if (isAbort(err, options)) throw err;
+      const kind = classifyAiFailure(err);
+      if (countsTowardBreaker(kind)) deps.vertexBreaker.recordFailure();
+      if (kind === "config") {
+        throttledReport(
+          `vertex:${feature}`,
+          new Error(
+            `AI config error: ${feature} (vertex backup) (${String(statusOf(err))}): ${messageOf(err)}`,
+          ),
+        );
+      }
+      reportUnavailable(
+        `AI unavailable: ${feature} — OpenRouter and the Vertex backup both failed`,
+      );
+      throw err;
     }
   }
 
@@ -388,10 +551,6 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       ...adaptParams(params, row.adapt, override?.set),
       model: requestedModel,
     };
-    const statusOf = (err: unknown) =>
-      err instanceof OpenAI.APIError ? err.status : undefined;
-    const messageOf = (err: unknown) =>
-      (err instanceof Error ? err.message : String(err)).slice(0, 300);
     const recordEvalError = (kind: AiFailureKind, err: unknown) => {
       ctx?.calls.push({
         feature,
