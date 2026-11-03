@@ -1,0 +1,53 @@
+appId: com.williamtower.ocrecipes
+name: "Device - Profile library screens open"
+tags:
+  - device
+---
+# READ-ONLY: opens Scan History and Cookbooks from Profile → Your Library
+# and looks; nothing is created, edited or deleted.
+- runFlow: ../helpers/launch-installed.yaml
+
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-profile"
+# Library rows' labels carry a count ("Scan History: 8 items"), so the
+# selectors need the regex suffix (full-string match). Counts load async.
+- extendedWaitUntil:
+    visible: "Scan History.*"
+    timeout: 15000
+- tapOn: "Scan History.*"
+# A pushed screen shows a back button; tab roots have none, and the tree
+# holds only the top screen. So this proves the tap opened a new screen —
+# the title alone repeats the row's own text.
+- extendedWaitUntil:
+    visible:
+      id: "BackButton"
+    timeout: 10000
+- takeScreenshot: library-scan-history
+# Back = re-tap the focused tab: React Navigation pops that tab's stack to
+# its root. Used instead of `id: BackButton`, which a stacked screen can
+# leave in the tree more than once (on the iPhone a BackButton tap from
+# Cookbooks landed on a stale one and the screen never left).
+- tapOn:
+    id: "tab-profile"
+
+- extendedWaitUntil:
+    visible: "Cookbooks.*"
+    timeout: 10000
+- tapOn: "Cookbooks.*"
+# The list header, plus its create button, proves the screen rendered.
+# The button is never tapped: creating a cookbook is a write.
+- extendedWaitUntil:
+    visible: "Create new cookbook"
+    timeout: 10000
+- takeScreenshot: library-cookbooks
+# Back = re-tap the focused tab: React Navigation pops that tab's stack to
+# its root. Used instead of `id: BackButton`, which a stacked screen can
+# leave in the tree more than once (on the iPhone a BackButton tap from
+# Cookbooks landed on a stale one and the screen never left).
+- tapOn:
+    id: "tab-profile"
+- extendedWaitUntil:
+    visible: "Profile photo. Tap to change"
+    timeout: 10000

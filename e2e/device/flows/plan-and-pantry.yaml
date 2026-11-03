@@ -1,0 +1,68 @@
+appId: com.williamtower.ocrecipes
+name: "Device - Plan home, pantry and grocery lists open"
+tags:
+  - device
+---
+# READ-ONLY: opens Plan's Pantry and Grocery Lists screens and looks. The
+# pantry's add field and list rows are never touched.
+- runFlow: ../helpers/launch-installed.yaml
+
+- runFlow:
+    file: ../../helpers/tap-tab.yaml
+    env:
+      TAB: "tab-plan"
+- extendedWaitUntil:
+    visible: "Browse Recipes"
+    timeout: 15000
+# The Pantry row's label grows a suffix when items are near expiry
+# ("Pantry, 2 expiring"), so the selector allows it. [0-9], not \d:
+# maestro-runner did not match `\d` here (the row read plain "Pantry").
+- assertVisible: 'Pantry(, [0-9]+ expiring)?'
+- assertVisible: "Grocery Lists"
+- takeScreenshot: plan-home
+
+- tapOn: 'Pantry(, [0-9]+ expiring)?'
+# A pushed screen shows a back button; tab roots have none, and the tree
+# holds only the top screen. So this proves the tap opened a new screen —
+# the title alone repeats the row's own text.
+- extendedWaitUntil:
+    visible:
+      id: "BackButton"
+    timeout: 10000
+# Then its body: "Your Pantry" for a paying account, the upgrade screen
+# ("Pantry Tracking") for a free one, or the neutral retry state while the
+# plan check is unresolved (#1705). Builds from before #1705 also show the
+# upgrade screen to a PAYING account while the plan is still loading (seen
+# on the owner's phone, 2026-11-03), so the wall alone is not a failure.
+- extendedWaitUntil:
+    visible: "(Your Pantry|Pantry Tracking|Couldn't check your plan)"
+    timeout: 10000
+- takeScreenshot: plan-pantry
+# Back = re-tap the focused tab: React Navigation pops that tab's stack to
+# its root. Used instead of `id: BackButton`, which a stacked screen can
+# leave in the tree more than once (on the iPhone a BackButton tap from
+# Cookbooks landed on a stale one and the screen never left).
+- tapOn:
+    id: "tab-plan"
+
+- extendedWaitUntil:
+    visible: "Grocery Lists"
+    timeout: 10000
+- tapOn: "Grocery Lists"
+# A pushed screen shows a back button; tab roots have none, and the tree
+# holds only the top screen. So this proves the tap opened a new screen —
+# the title alone repeats the row's own text.
+- extendedWaitUntil:
+    visible:
+      id: "BackButton"
+    timeout: 10000
+- takeScreenshot: plan-grocery-lists
+# Back = re-tap the focused tab: React Navigation pops that tab's stack to
+# its root. Used instead of `id: BackButton`, which a stacked screen can
+# leave in the tree more than once (on the iPhone a BackButton tap from
+# Cookbooks landed on a stale one and the screen never left).
+- tapOn:
+    id: "tab-plan"
+- extendedWaitUntil:
+    visible: "Browse Recipes"
+    timeout: 10000
