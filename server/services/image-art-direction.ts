@@ -3,11 +3,7 @@ import { aiChat } from "../lib/ai-client";
 import crypto from "node:crypto";
 import { z } from "zod";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
-import {
-  isAiConfigured,
-  OPENAI_TIMEOUT_FAST_MS,
-  VERTEX_BACKUP_TIMEOUT_FAST_MS,
-} from "../lib/openai";
+import { isAiConfigured, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
 import { createServiceLogger, toError } from "../lib/logger";
 
 export type ImageVariant = "hero" | "plated" | "ingredients";
@@ -489,10 +485,7 @@ export async function resolveArtDirection(
         max_tokens: 300,
         response_format: { type: "json_object" },
       },
-      {
-        timeout: OPENAI_TIMEOUT_FAST_MS,
-        backupTimeout: VERTEX_BACKUP_TIMEOUT_FAST_MS,
-      },
+      { timeout: OPENAI_TIMEOUT_FAST_MS },
     );
 
     const raw = completion.choices[0]?.message?.content;

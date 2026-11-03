@@ -1,10 +1,7 @@
 // server/services/recipe-finder/extract-query.ts
 import { aiChat } from "../../lib/ai-client";
 import { z } from "zod";
-import {
-  OPENAI_TIMEOUT_FAST_MS,
-  VERTEX_BACKUP_TIMEOUT_FAST_MS,
-} from "../../lib/openai";
+import { OPENAI_TIMEOUT_FAST_MS } from "../../lib/openai";
 import {
   sanitizeUserInput,
   sanitizeContextField,
@@ -170,10 +167,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
           },
         ],
       },
-      {
-        timeout: OPENAI_TIMEOUT_FAST_MS,
-        backupTimeout: VERTEX_BACKUP_TIMEOUT_FAST_MS,
-      },
+      { timeout: OPENAI_TIMEOUT_FAST_MS },
     );
     const content = response.choices[0]?.message?.content;
     if (!content) return failed();

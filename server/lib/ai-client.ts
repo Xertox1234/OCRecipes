@@ -15,7 +15,12 @@ import type {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
-import { AI_FEATURES, adaptParams, hostForModel } from "./ai-models";
+import {
+  AI_FEATURES,
+  adaptParams,
+  hostForModel,
+  VERTEX_BACKUP_REASONING_HEADROOM,
+} from "./ai-models";
 import type { AiAdapt, AiFeature, AiFeatureConfig } from "./ai-models";
 import { getAiCallContext, withAiCallContext } from "./ai-call-context";
 import type {
@@ -31,7 +36,11 @@ import {
   isModerationBlock,
 } from "./ai-failure";
 import type { AiFailureKind } from "./ai-failure";
-import { openai } from "./openai";
+import {
+  openai,
+  OPENAI_TIMEOUT_FAST_MS,
+  VERTEX_BACKUP_TIMEOUT_FAST_MS,
+} from "./openai";
 import { createVertexClient } from "./vertex-client";
 import { createServiceLogger } from "./logger";
 import { reportError } from "./error-reporter";
@@ -287,9 +296,16 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     callerOptions?: AiChatOptions,
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
     // `backupTimeout` is ours, never the SDK's: strip it, and give it to the
-    // Vertex backup leg as that leg's timeout.
-    const { backupTimeout, ...sdkOptions } = callerOptions ?? {};
-    const options = backupTimeout === undefined ? callerOptions : sdkOptions;
+    // Vertex backup leg as that leg's timeout. A 15 s "fast" caller gets 30 s
+    // there by default (owner 2026-11-03: Vertex timed out at 15 s in the
+    // PR 3 gate).
+    const { backupTimeout: explicit, ...sdkOptions } = callerOptions ?? {};
+    const backupTimeout =
+      explicit ??
+      (callerOptions?.timeout === OPENAI_TIMEOUT_FAST_MS
+        ? VERTEX_BACKUP_TIMEOUT_FAST_MS
+        : undefined);
+    const options = explicit === undefined ? callerOptions : sdkOptions;
     const backupOptions =
       backupTimeout === undefined
         ? callerOptions
@@ -525,6 +541,17 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     }
   }
 
+  /** The backup body with VERTEX_BACKUP_REASONING_HEADROOM on its cap. */
+  function withThinkingRoom(
+    body: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const out = { ...body };
+    for (const key of ["max_completion_tokens", "max_tokens"])
+      if (typeof out[key] === "number")
+        out[key] = (out[key] as number) + VERTEX_BACKUP_REASONING_HEADROOM;
+    return out;
+  }
+
   /** The adapted body for a Vertex-direct call: no `provider` key. */
   function buildVertexBody(
     params: AiChatParams | AiChatStreamParams,
@@ -591,7 +618,9 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       },
       "ai call using fallback",
     );
-    const body = buildVertexBody(params, backup.adapt, backup.model);
+    const body = withThinkingRoom(
+      buildVertexBody(params, backup.adapt, backup.model),
+    );
     try {
       if (params.stream === true) {
         return await openStream(

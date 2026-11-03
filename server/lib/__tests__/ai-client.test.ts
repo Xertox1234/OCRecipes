@@ -9,7 +9,7 @@ import {
 import type { AiChatDeps, AiChatParams } from "../ai-client";
 import { CircuitBreaker, InStreamError, VertexAuthError } from "../ai-failure";
 import type { AiCallContext } from "../ai-call-context";
-import { AI_FEATURES } from "../ai-models";
+import { AI_FEATURES, VERTEX_BACKUP_REASONING_HEADROOM } from "../ai-models";
 import type { AiFeature } from "../ai-models";
 
 vi.mock("../logger", () => ({
@@ -24,6 +24,8 @@ vi.mock("../logger", () => ({
 vi.mock("../error-reporter", () => ({ reportError: vi.fn() }));
 vi.mock("../openai", () => ({
   openai: { chat: { completions: { create: vi.fn() } } },
+  OPENAI_TIMEOUT_FAST_MS: 15_000,
+  VERTEX_BACKUP_TIMEOUT_FAST_MS: 30_000,
 }));
 vi.mock("../ai-models", async (importOriginal) => {
   const real = await importOriginal<typeof import("../ai-models")>();
@@ -1304,8 +1306,10 @@ describe("aiChat (vertexBackup rows)", () => {
       const [body, opts] = vi.mocked(deps.vertex!.chat.completions.create).mock
         .calls[0];
       // temperature KEPT: the row's Luna adapt is not applied to the backup.
+      // The cap gains thinking room (owner 2026-11-03).
       expect(body).toEqual({
         ...params,
+        max_completion_tokens: 50 + VERTEX_BACKUP_REASONING_HEADROOM,
         model: FLASH,
         reasoning_effort: "low",
       });
@@ -1335,6 +1339,46 @@ describe("aiChat (vertexBackup rows)", () => {
     expect(
       vi.mocked(deps.vertex!.chat.completions.create).mock.calls[0][1],
     ).toEqual({ timeout: 12 });
+  });
+
+  // Owner 2026-11-03: Gemini 3.8 Flash cannot switch thinking off, and once
+  // spent 189 of a 200-token cap on it in the PR 3 gate.
+  it("a max_tokens cap also gains thinking room; a call with no cap gets none", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion(FLASH),
+    );
+    const { max_completion_tokens: _cap, ...uncapped } = params;
+    await createAiChat(deps)(B, { ...uncapped, max_tokens: 20 });
+    await createAiChat(deps)(B, uncapped);
+    const [[withCap], [noCap]] = vi.mocked(deps.vertex!.chat.completions.create)
+      .mock.calls;
+    expect(withCap.max_tokens).toBe(20 + VERTEX_BACKUP_REASONING_HEADROOM);
+    expect(noCap).not.toHaveProperty("max_tokens");
+    expect(noCap).not.toHaveProperty("max_completion_tokens");
+    expect(
+      vi.mocked(deps.openrouter!.chat.completions.create).mock.calls[0][0]
+        .max_tokens,
+    ).toBe(20);
+  });
+
+  // Owner 2026-11-03: every 15 s "fast" caller gets 30 s on the backup leg.
+  it("a 15 s fast-limit call gets 30 s on the Vertex leg; OpenRouter keeps 15 s", async () => {
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion(FLASH),
+    );
+    await createAiChat(deps)(B, params, { timeout: 15_000 });
+    expect(
+      vi.mocked(deps.openrouter!.chat.completions.create).mock.calls[0][1],
+    ).toEqual({ timeout: 15_000 });
+    expect(
+      vi.mocked(deps.vertex!.chat.completions.create).mock.calls[0][1],
+    ).toEqual({ timeout: 30_000 });
   });
 
   it("json response_format and image parts reach the Vertex body unchanged", async () => {

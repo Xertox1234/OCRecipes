@@ -15,7 +15,6 @@ const mockCreate = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/ai-client", () => ({ aiChat: mockCreate }));
 vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_FAST_MS: 15000,
-  VERTEX_BACKUP_TIMEOUT_FAST_MS: 30000,
   isAiConfigured: true,
 }));
 vi.mock("../../lib/ai-safety", () => ({
@@ -244,15 +243,6 @@ describe("resolveArtDirection — LLM enrich + fallback", () => {
     );
     const art = await resolveArtDirection(ctx, "hero");
     expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
-  });
-
-  it("gives the Vertex backup leg 30 s", async () => {
-    mockCreate.mockRejectedValue(new Error("timeout"));
-    await resolveArtDirection(ctx, "hero");
-    expect(mockCreate.mock.calls[0][2]).toEqual({
-      timeout: 15000,
-      backupTimeout: 30000,
-    });
   });
 
   it("falls back to deterministic when the call throws", async () => {

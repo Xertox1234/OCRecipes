@@ -139,6 +139,33 @@ describe("pantry-meal-plan", () => {
       expect(result.success).toBe(true);
     });
 
+    // Gemini (the Vertex backup) capitalises enum values differently
+    // ("Breakfast", "easy"); the PR 3 gate failed 3/3 on it.
+    it("accepts meal type and difficulty in any letter case, normalised", () => {
+      const meal = VALID_AI_RESPONSE.days[0].meals[0];
+      const result = aiResponseSchema.safeParse({
+        days: [
+          {
+            dayNumber: 1,
+            meals: [{ ...meal, mealType: "Breakfast", difficulty: "easy" }],
+          },
+        ],
+      });
+      expect(result.success).toBe(true);
+      expect(result.data?.days[0].meals[0]).toMatchObject({
+        mealType: "breakfast",
+        difficulty: "Easy",
+      });
+    });
+
+    it("still rejects an unknown meal type", () => {
+      const meal = VALID_AI_RESPONSE.days[0].meals[0];
+      const result = aiResponseSchema.safeParse({
+        days: [{ dayNumber: 1, meals: [{ ...meal, mealType: "Brunch" }] }],
+      });
+      expect(result.success).toBe(false);
+    });
+
     it("should reject response with no days", () => {
       const result = aiResponseSchema.safeParse({ days: [] });
       expect(result.success).toBe(false);

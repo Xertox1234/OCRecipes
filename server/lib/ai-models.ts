@@ -42,6 +42,12 @@ export const VERTEX_BACKUP = {
   adapt: { set: { reasoning_effort: "low" } },
 } as const;
 
+// Added to the row's token cap on the backup leg (owner 2026-11-03): Flash
+// counts thinking inside the cap and cannot switch it off ("none"/"minimal"
+// are rejected, thinking_budget 0 is ignored); one 200-cap call spent 189 on
+// it in the PR 3 gate.
+export const VERTEX_BACKUP_REASONING_HEADROOM = 1000;
+
 // Text rows back up to Vertex direct (Flash), never OpenAI (owner 2026-11-03;
 // spec 2026-11-02-vertex-backup-route-design).
 const FAST = {
