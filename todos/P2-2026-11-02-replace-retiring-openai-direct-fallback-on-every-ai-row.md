@@ -30,7 +30,9 @@ The only OpenAI-free routing that exists is the `primary: "vertex"` path (Vertex
 - [x] Design decided 2026-11-02: spec `docs/superpowers/specs/2026-11-02-vertex-backup-route-design.md` (OpenRouter primary → Vertex direct, Gemini 3.8 Flash at low reasoning; never OpenAI).
 - [x] PR 1 plumbing merged (#1703: `vertexBackup` field, routing incl. streaming, thought-signature fill, `ai:smoke --backup`).
 - [x] PR 2: the five rows (coach-chat, coach-pro-chat, recipe-chat, recipe-generate, photo-analyze) switched and the privacy page updated, after the live gate.
-- [ ] The other 29 rows: a decision per row before 2027-01-14.
+- [x] The other 29 rows: decided 2026-11-03 (owner) — same Vertex backup, in two PRs: PR 3 the 21 text rows, PR 4 the 8 vision rows.
+- [x] PR 3: the 21 text rows switched, live gate clean, privacy page updated.
+- [ ] PR 4: the 8 vision rows (recipe-chat-image, photo-recipe, photo-label, photo-classify, receipt-scan, menu-scan, front-label-scan, cooking-ingredient-photo).
 - [ ] No row's fallback names a model whose shutdown date is on or before the switch-over date, checked against OpenAI's deprecations page that day.
 - [ ] `server/lib/__tests__/ai-models.test.ts` pins the new rule.
 - [ ] Done before 2027-01-14.
@@ -50,6 +52,11 @@ The only OpenAI-free routing that exists is the `primary: "vertex"` path (Vertex
 - A design that adds a second Google route for streaming rows touches `aiChat`'s streaming path, which every coach and recipe-chat reply uses.
 
 ## Updates
+
+### 2026-11-03 (PR 3)
+
+- The 21 text-only rows (`FAST` / `HEAVY`) now back up to Vertex direct (Flash, low reasoning), never OpenAI; the 8 vision rows moved to `FAST_VISION` / `HEAVY_VISION`, which keep the OpenAI fallback until PR 4. `ai-models.test.ts` pins "every text row: vertexBackup, no fallback".
+- `npm run ai:backup-gate` drives all 21 through their real service functions (`scripts/ai-backup-gate-text-rows.ts`) and reports a service's stand-in value as a failure. The first run found three rows broken on the backup; owner rulings, all fixed: notebook extraction sent a conversation ending on the coach's turn, which Vertex rejects (400) — the transcript is now one user message; art direction rejected Gemini's longer phrases — now trimmed; three short deadlines timed Vertex out — `aiChat` takes a `backupTimeout` for the Vertex leg. No `length` finish on any row (reasoning tokens ~0 on these prompts).
 
 ### 2026-11-03 (PR 2)
 
