@@ -7,6 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
   BorderRadius,
@@ -90,19 +91,24 @@ export const LibraryGrid = React.memo(function LibraryGrid({
   const { theme } = useTheme();
   const haptics = useHaptics();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
+  const { isPremiumResolved } = usePremiumContext();
   const pantryUnlocked = usePremiumFeature("pantryTracking");
+  // Lock only a user KNOWN to be free: while the plan is unknown the
+  // features read as the free tier (owner ruling 2026-11-02). Same rule as
+  // HomeScreen's pantryLocked; PantryScreen handles the unknown state.
+  const pantryLocked = isPremiumResolved && !pantryUnlocked;
 
   const handlePress = useCallback(
     (item: LibraryItem) => {
       haptics.selection();
-      const locked = item.premiumKey && !pantryUnlocked;
+      const locked = item.premiumKey && pantryLocked;
       if (locked) {
         onLockedPress();
         return;
       }
       navigateLibraryItem(item.id, navigation);
     },
-    [haptics, navigation, pantryUnlocked, onLockedPress],
+    [haptics, navigation, pantryLocked, onLockedPress],
   );
 
   // Render in rows of 2
@@ -129,7 +135,7 @@ export const LibraryGrid = React.memo(function LibraryGrid({
         {rows.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.gridRow}>
             {row.map((item) => {
-              const locked = !!item.premiumKey && !pantryUnlocked;
+              const locked = !!item.premiumKey && pantryLocked;
               return (
                 <LibraryCard
                   key={item.id}

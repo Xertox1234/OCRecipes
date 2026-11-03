@@ -16,7 +16,8 @@
 // native-icon-nulling branch and draw the system back arrow ALONGSIDE the
 // custom close "X".
 import React from "react";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
+import { AccessibilityInfo } from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
 import PantryScreen from "../PantryScreen";
 
@@ -73,10 +74,22 @@ vi.mock("react-native", async (importOriginal) => {
   return { ...actual, SectionList, RefreshControl };
 });
 
-const plan = vi.hoisted(() => ({ receiptScanner: false }));
+const plan = vi.hoisted(() => ({
+  receiptScanner: false,
+  pantryTracking: true,
+  resolved: true,
+  statusError: false,
+  refreshSubscription: vi.fn(),
+}));
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
-    features: { pantryTracking: true, receiptScanner: plan.receiptScanner },
+    features: {
+      pantryTracking: plan.pantryTracking,
+      receiptScanner: plan.receiptScanner,
+    },
+    isPremiumResolved: plan.resolved,
+    isPremiumStatusError: plan.statusError,
+    refreshSubscription: plan.refreshSubscription,
   }),
 }));
 vi.mock("@/hooks/useFeatureTip", () => ({
@@ -185,5 +198,59 @@ describe("PantryScreen -- receipt tip", () => {
   it("does not show the receipt tip to free users", () => {
     renderOn("Pantry", false);
     expect(screen.queryByText("Add a whole shop from the receipt.")).toBeNull();
+  });
+});
+
+// Owner ruling 2026-11-02: unknown premium status is neutral. The features
+// fall back to the free tier while the plan is unknown, so the paywall must
+// wait for a resolved status; a failed check offers a retry instead.
+describe("PantryScreen -- premium gate", () => {
+  afterEach(() => {
+    plan.pantryTracking = true;
+    plan.resolved = true;
+    plan.statusError = false;
+    plan.refreshSubscription.mockClear();
+  });
+
+  it("shows the upgrade wall to a user known to be free", () => {
+    plan.pantryTracking = false;
+    renderOn("Pantry", false);
+    expect(screen.getByLabelText("Upgrade to premium")).toBeDefined();
+  });
+
+  it("shows a retry state, not the upgrade wall, when the plan check failed", () => {
+    plan.pantryTracking = false;
+    plan.resolved = false;
+    plan.statusError = true;
+    renderOn("Pantry", false);
+    expect(screen.queryByLabelText("Upgrade to premium")).toBeNull();
+    expect(screen.getByText("Couldn't check your plan")).toBeDefined();
+    fireEvent.click(screen.getByText("Try Again"));
+    expect(plan.refreshSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces a plan check that fails while the screen is open, not on mount", () => {
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    plan.pantryTracking = false;
+    plan.resolved = false;
+    nav.routeName = "Pantry";
+    const { rerender } = renderComponent(<PantryScreen />);
+    expect(announce).not.toHaveBeenCalled();
+
+    plan.statusError = true;
+    rerender(<PantryScreen />);
+    expect(announce).toHaveBeenCalledWith("Couldn't check your plan.");
+    announce.mockRestore();
+  });
+
+  it("shows neither the wall nor the pantry while the plan is loading", () => {
+    plan.pantryTracking = false;
+    plan.resolved = false;
+    renderOn("Pantry", false);
+    expect(screen.queryByLabelText("Upgrade to premium")).toBeNull();
+    expect(screen.queryByText("Couldn't check your plan")).toBeNull();
+    expect(screen.getByRole("progressbar")).toBeDefined();
   });
 });
