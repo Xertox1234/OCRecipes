@@ -74,9 +74,18 @@ export function visionDegraded(
 }
 
 async function fetchJpegBase64(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: { "User-Agent": "OCRecipes-ai-backup-gate/1.0" },
-  });
+  // Wikimedia rate-limits thumbnails (429) and asks for a contactable agent.
+  let res: Response;
+  for (let attempt = 1; ; attempt++) {
+    res = await fetch(url, {
+      headers: {
+        "User-Agent": "OCRecipes-ai-backup-gate/1.0 (https://ocrecipes.com)",
+      },
+    });
+    if (res.status !== 429 || attempt === 3) break;
+    const wait = Math.min(Number(res.headers.get("retry-after")) || 5, 15);
+    await new Promise((r) => setTimeout(r, wait * 1000));
+  }
   if (!res.ok) throw new Error(`image fetch ${url}: HTTP ${res.status}`);
   const sharp = (await import("sharp")).default;
   const jpeg = await sharp(Buffer.from(await res.arrayBuffer()))

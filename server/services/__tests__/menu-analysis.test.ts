@@ -298,6 +298,42 @@ describe("Menu Analysis", () => {
       expect(result.menuItems[1]!.name).toBe("Plain Rice");
     });
 
+    // Gemini (the Vertex backup) writes null for a field it has no value for,
+    // where GPT leaves the key out (PR 4 live gate, receipt-scan).
+    it("accepts null for the optional fields and returns them as absent", async () => {
+      const [item] = makeMenuResponse().menuItems;
+      mockCreate.mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                restaurantName: null,
+                cuisine: null,
+                menuItems: [
+                  {
+                    ...item,
+                    description: null,
+                    price: null,
+                    recommendation: null,
+                    recommendationReason: null,
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      } as any);
+
+      const result = await analyzeMenuPhoto("base64data", "user-1");
+
+      expect(result.restaurantName).toBeUndefined();
+      expect(result.cuisine).toBeUndefined();
+      expect(result.menuItems[0].description).toBeUndefined();
+      expect(result.menuItems[0].price).toBeUndefined();
+      expect(result.menuItems[0].recommendation).toBeUndefined();
+      expect(result.menuItems[0].recommendationReason).toBeUndefined();
+    });
+
     it("fetches both user and profile in parallel", async () => {
       mockGetUser.mockResolvedValue({ id: "user-1" } as any);
       mockGetUserProfile.mockResolvedValue(null as any);
