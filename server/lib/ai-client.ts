@@ -188,6 +188,45 @@ async function* wrapStream(
   }
 }
 
+/**
+ * Gemini on Vertex direct 400s on tool history whose calls lack a thought
+ * signature (foreign history from another model, or the 2nd+ parallel call,
+ * which Gemini sends unsigned). Google's documented placeholder skips the
+ * check; a real signature is never overwritten. Vertex bodies only — the
+ * OpenRouter body is never touched (spec 2026-11-02-vertex-backup-route-
+ * design §2, §3.4). Pure: returns new objects, input unmodified.
+ */
+const PLACEHOLDER_SIGNATURE = "skip_thought_signature_validator";
+
+interface ToolCallLike {
+  extra_content?: { google?: { thought_signature?: unknown } };
+}
+
+export function fillThoughtSignatures(messages: unknown): unknown {
+  if (!Array.isArray(messages)) return messages;
+  return messages.map((m: unknown) => {
+    const msg = m as { role?: unknown; tool_calls?: unknown };
+    if (msg?.role !== "assistant" || !Array.isArray(msg.tool_calls)) return m;
+    return {
+      ...msg,
+      tool_calls: msg.tool_calls.map((c: ToolCallLike) =>
+        c?.extra_content?.google?.thought_signature !== undefined
+          ? c
+          : {
+              ...c,
+              extra_content: {
+                ...c.extra_content,
+                google: {
+                  ...c.extra_content?.google,
+                  thought_signature: PLACEHOLDER_SIGNATURE,
+                },
+              },
+            },
+      ),
+    };
+  });
+}
+
 /** Unflagged rows always carry `fallback` (pinned by ai-models.test.ts). */
 function fallbackModel(row: AiFeatureConfig, feature: AiFeature): string {
   if (row.fallback === undefined)
@@ -444,7 +483,11 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     model: string,
     extraSet?: Record<string, unknown>,
   ): Record<string, unknown> {
-    return { ...adaptParams(params, adapt, extraSet), model };
+    const body: Record<string, unknown> = {
+      ...adaptParams(params, adapt, extraSet),
+      model,
+    };
+    return { ...body, messages: fillThoughtSignatures(body.messages) };
   }
 
   /**
@@ -578,10 +621,12 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     }
     const evalMode = ctx?.fallback === "off";
     const override = ctx?.overrides[feature];
-    const adapted = {
-      ...adaptParams(params, row.adapt, override?.set),
-      model: requestedModel,
-    };
+    const adapted = buildVertexBody(
+      params,
+      row.adapt,
+      requestedModel,
+      override?.set,
+    );
     const recordEvalError = (kind: AiFailureKind, err: unknown) => {
       ctx?.calls.push({
         feature,
@@ -665,8 +710,13 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         );
       }
       try {
+        // OpenRouter gets the caller's history, never the Vertex placeholder.
         const res = await deps.openrouter.chat.completions.create(
-          { ...adapted, provider: { zdr: true, only: [host] } },
+          {
+            ...adaptParams(params, row.adapt, override?.set),
+            model: requestedModel,
+            provider: { zdr: true, only: [host] },
+          },
           options,
         );
         deps.breaker.recordSuccess();

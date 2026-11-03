@@ -1,8 +1,12 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import OpenAI from "openai";
-import { createAiChat, withAiCallContext } from "../ai-client";
-import type { AiChatDeps } from "../ai-client";
+import {
+  createAiChat,
+  fillThoughtSignatures,
+  withAiCallContext,
+} from "../ai-client";
+import type { AiChatDeps, AiChatParams } from "../ai-client";
 import { CircuitBreaker, InStreamError, VertexAuthError } from "../ai-failure";
 import type { AiCallContext } from "../ai-call-context";
 import { AI_FEATURES } from "../ai-models";
@@ -1625,6 +1629,91 @@ describe("aiChat (vertexBackup rows, streaming)", () => {
     );
     expect(text).toBe("ok");
     expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("Gemini thought signature fill", () => {
+  const PLACEHOLDER = "skip_thought_signature_validator";
+  const call = (id: string, sig?: string) => ({
+    id,
+    type: "function" as const,
+    function: { name: "lookup", arguments: "{}" },
+    ...(sig !== undefined && {
+      extra_content: { google: { thought_signature: sig } },
+    }),
+  });
+  const toolHistory = () => [
+    { role: "user" as const, content: "what did I eat?" },
+    {
+      role: "assistant" as const,
+      content: null,
+      tool_calls: [call("a", "real-sig"), call("b")],
+    },
+    { role: "tool" as const, tool_call_id: "a", content: "x" },
+    { role: "tool" as const, tool_call_id: "b", content: "y" },
+  ];
+  const sigsOf = (messages: unknown) =>
+    (messages as { tool_calls?: ReturnType<typeof call>[] }[])
+      .flatMap((m) => m.tool_calls ?? [])
+      .map((c) => c.extra_content?.google.thought_signature);
+
+  it("keeps a real signature and fills only the missing one", () => {
+    expect(sigsOf(fillThoughtSignatures(toolHistory()))).toEqual([
+      "real-sig",
+      PLACEHOLDER,
+    ]);
+  });
+
+  it("does not mutate its input; messages without tool_calls pass through deep-equal", () => {
+    const input = toolHistory();
+    const snapshot = structuredClone(input);
+    const out = fillThoughtSignatures(input) as unknown[];
+    expect(input).toEqual(snapshot);
+    expect(out[0]).toEqual(input[0]);
+    expect(out[2]).toEqual(input[2]);
+    const plain = [{ role: "user", content: "hi" }];
+    expect(fillThoughtSignatures(plain)).toEqual(plain);
+  });
+
+  it("vertexBackup row: the Vertex body gets the placeholder, the OpenRouter body has no extra_content", async () => {
+    const deps = makeDeps({
+      vertex: { chat: { completions: { create: vi.fn() } } },
+    });
+    vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
+      apiError(503),
+    );
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash"),
+    );
+    const B = "test-backup-row" as unknown as AiFeature;
+    const history = toolHistory().map((m) =>
+      m.role === "assistant" ? { ...m, tool_calls: [call("a"), call("b")] } : m,
+    );
+    await createAiChat(deps)(B, {
+      messages: history as AiChatParams["messages"],
+    });
+    const [orBody] = vi.mocked(deps.openrouter!.chat.completions.create).mock
+      .calls[0];
+    expect(JSON.stringify(orBody)).not.toContain("extra_content");
+    const [vBody] = vi.mocked(deps.vertex!.chat.completions.create).mock
+      .calls[0];
+    expect(sigsOf(vBody.messages)).toEqual([PLACEHOLDER, PLACEHOLDER]);
+  });
+
+  it("Vertex-first row: the Vertex body gets the placeholder", async () => {
+    const deps = makeDeps({
+      vertex: { chat: { completions: { create: vi.fn() } } },
+    });
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue(
+      completion("google/gemini-3.8-flash"),
+    );
+    const V = "test-vertex-row" as unknown as AiFeature;
+    await createAiChat(deps)(V, {
+      messages: toolHistory() as AiChatParams["messages"],
+    });
+    const [vBody] = vi.mocked(deps.vertex!.chat.completions.create).mock
+      .calls[0];
+    expect(sigsOf(vBody.messages)).toEqual(["real-sig", PLACEHOLDER]);
   });
 });
 
