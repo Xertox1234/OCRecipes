@@ -13,23 +13,28 @@ import {
 
 const log = createServiceLogger("menu-analysis");
 
+// Gemini (the Vertex backup) writes null for a field it has no value for,
+// where GPT leaves the key out; both mean "not given".
+const absentAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  schema.nullish().transform((v) => v ?? undefined);
+
 const menuItemSchema = z.object({
   name: z.string(),
-  description: z.string().optional(),
-  price: z.string().optional(),
+  description: absentAsUndefined(z.string()),
+  price: absentAsUndefined(z.string()),
   estimatedCalories: z.number(),
   estimatedProtein: z.number(),
   estimatedCarbs: z.number(),
   estimatedFat: z.number(),
   tags: z.array(z.string()), // e.g., ["high-protein", "vegetarian", "gluten-free"]
-  recommendation: z.enum(["great", "good", "okay", "avoid"]).optional(),
-  recommendationReason: z.string().optional(),
+  recommendation: absentAsUndefined(z.enum(["great", "good", "okay", "avoid"])),
+  recommendationReason: absentAsUndefined(z.string()),
 });
 
 const menuAnalysisSchema = z.object({
-  restaurantName: z.string().optional(),
+  restaurantName: absentAsUndefined(z.string()),
   menuItems: z.array(menuItemSchema),
-  cuisine: z.string().optional(),
+  cuisine: absentAsUndefined(z.string()),
 });
 
 export type MenuAnalysisResult = z.infer<typeof menuAnalysisSchema> & {

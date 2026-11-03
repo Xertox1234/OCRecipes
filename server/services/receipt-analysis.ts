@@ -6,11 +6,16 @@ import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("receipt-analysis");
 
+// Gemini (the Vertex backup) writes null for a field it has no value for,
+// where GPT leaves the key out; both mean "not given".
+const absentAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  schema.nullish().transform((v) => v ?? undefined);
+
 const receiptItemSchema = z.object({
   name: z.string(),
   originalName: z.string(),
   quantity: z.number().min(0).default(1),
-  unit: z.string().optional(),
+  unit: absentAsUndefined(z.string()),
   category: z.enum([
     "produce",
     "meat",
@@ -33,9 +38,9 @@ const receiptItemSchema = z.object({
 
 const receiptAnalysisSchema = z.object({
   items: z.array(receiptItemSchema),
-  storeName: z.string().optional(),
-  purchaseDate: z.string().optional(),
-  totalAmount: z.string().optional(),
+  storeName: absentAsUndefined(z.string()),
+  purchaseDate: absentAsUndefined(z.string()),
+  totalAmount: absentAsUndefined(z.string()),
   isPartialExtraction: z.boolean().default(false),
   overallConfidence: z.number().min(0).max(1),
 });

@@ -42,6 +42,20 @@ vi.mock("../ai-models", async (importOriginal) => {
         primary: "vertex",
         adapt: { set: { reasoning_effort: "low" } },
       },
+      // Synthetic OpenAI-direct fallback rows: since the Vertex backup rollout
+      // no real row has a `fallback`, but aiChat still supports it.
+      "test-fallback-row": {
+        model: "openai/gpt-4o-mini",
+        fallback: "gpt-4o-mini",
+        json: true,
+        vision: true,
+      },
+      "test-fallback-row-2": {
+        model: "openai/gpt-4o",
+        fallback: "gpt-4o",
+        json: true,
+        vision: true,
+      },
       // Synthetic vertexBackup row, Luna-shaped so the row's own adapt
       // (drop temperature) visibly does NOT reach the backup body.
       "test-backup-row": {
@@ -54,6 +68,9 @@ vi.mock("../ai-models", async (importOriginal) => {
     },
   };
 });
+
+const F = "test-fallback-row" as unknown as AiFeature;
+const F2 = "test-fallback-row-2" as unknown as AiFeature;
 
 const completion = (model: string, provider?: string) => ({
   id: "c1",
@@ -117,7 +134,7 @@ describe("aiChat (non-streaming)", () => {
       completion("gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("photo-classify", params, { timeout: 15_000 });
+    await aiChat(F, params, { timeout: 15_000 });
     expect(deps.fallback.chat.completions.create).toHaveBeenCalledWith(
       { ...params, model: "gpt-4o-mini" },
       { timeout: 15_000 },
@@ -129,7 +146,7 @@ describe("aiChat (non-streaming)", () => {
       completion("openai/gpt-4o-mini", "Azure"),
     );
     const aiChat = createAiChat(deps);
-    const res = await aiChat("photo-classify", params);
+    const res = await aiChat(F, params);
     expect(res.model).toBe("openai/gpt-4o-mini");
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
       {
@@ -160,7 +177,7 @@ describe("aiChat (non-streaming)", () => {
       );
       const spy = vi.spyOn(deps.breaker, "recordFailure");
       const aiChat = createAiChat(deps);
-      await aiChat("photo-classify", params);
+      await aiChat(F, params);
       expect(deps.fallback.chat.completions.create).toHaveBeenCalledWith(
         { ...params, model: "gpt-4o-mini" },
         undefined,
@@ -168,7 +185,7 @@ describe("aiChat (non-streaming)", () => {
       expect(spy).toHaveBeenCalledTimes(counts ? 1 : 0);
       expect(deps.log.warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          feature: "photo-classify",
+          feature: F,
           fallbackReason: kind,
         }),
         expect.any(String),
@@ -184,20 +201,20 @@ describe("aiChat (non-streaming)", () => {
     const create = vi.mocked(deps.openrouter!.chat.completions.create);
 
     create.mockRejectedValueOnce(apiError(402));
-    await aiChat("photo-classify", params);
+    await aiChat(F, params);
     expect(vi.mocked(deps.report).mock.calls.at(-1)![0].message).toMatch(
       /balance exhausted/i,
     );
 
     create.mockRejectedValueOnce(apiError(400, "unknown model"));
-    await aiChat("photo-classify", params);
+    await aiChat(F, params);
     expect(vi.mocked(deps.report).mock.calls.at(-1)![0].message).toMatch(
-      /AI config error: photo-classify/,
+      /AI config error: test-fallback-row/,
     );
 
     vi.mocked(deps.report).mockClear();
     create.mockRejectedValueOnce(apiError(400, "content_filter triggered"));
-    await aiChat("photo-classify", params);
+    await aiChat(F, params);
     expect(deps.report).not.toHaveBeenCalled();
   });
 
@@ -209,7 +226,7 @@ describe("aiChat (non-streaming)", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      aiChat("photo-classify", params, { signal: controller.signal }),
+      aiChat(F, params, { signal: controller.signal }),
     ).rejects.toBeInstanceOf(OpenAI.APIUserAbortError);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -233,7 +250,7 @@ describe("aiChat (non-streaming)", () => {
       const spy = vi.spyOn(deps.breaker, "recordFailure");
       const aiChat = createAiChat(deps);
       await expect(
-        aiChat("photo-classify", params, {
+        aiChat(F, params, {
           signal: abortSignal ? controller.signal : undefined,
         }),
       ).rejects.toBe(err);
@@ -251,7 +268,7 @@ describe("aiChat (non-streaming)", () => {
       completion("gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("photo-classify", params);
+    await aiChat(F, params);
     expect(deps.log.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         fallbackReason: "transport",
@@ -271,7 +288,7 @@ describe("aiChat (non-streaming)", () => {
     });
     const aiChat = createAiChat(deps);
     const c: AiCallContext = { overrides: {}, fallback: "on", calls: [] };
-    await withAiCallContext(c, () => aiChat("photo-classify", params));
+    await withAiCallContext(c, () => aiChat(F, params));
     expect(c.calls[0].answeredModel).toBeNull();
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({ answeredModel: null }),
@@ -289,7 +306,7 @@ describe("aiChat (non-streaming)", () => {
     });
     const aiChat = createAiChat(deps);
     const c: AiCallContext = { overrides: {}, fallback: "on", calls: [] };
-    await withAiCallContext(c, () => aiChat("photo-classify", params));
+    await withAiCallContext(c, () => aiChat(F, params));
     expect(c.calls[0]).toMatchObject({ answeredModel: null, fellBack: true });
   });
 
@@ -308,9 +325,9 @@ describe("aiChat (non-streaming)", () => {
 
     it("same feature inside the window → one report; every failure still falls back and warns", async () => {
       const aiChat = createAiChat(deps);
-      await aiChat("photo-classify", params);
+      await aiChat(F, params);
       clock = 9 * 60_000;
-      await aiChat("photo-classify", params);
+      await aiChat(F, params);
       expect(deps.report).toHaveBeenCalledTimes(1);
       expect(deps.fallback.chat.completions.create).toHaveBeenCalledTimes(2);
       expect(deps.log.warn).toHaveBeenCalledTimes(2);
@@ -318,16 +335,16 @@ describe("aiChat (non-streaming)", () => {
 
     it("same feature after the window → reported again", async () => {
       const aiChat = createAiChat(deps);
-      await aiChat("photo-classify", params);
+      await aiChat(F, params);
       clock = 10 * 60_000;
-      await aiChat("photo-classify", params);
+      await aiChat(F, params);
       expect(deps.report).toHaveBeenCalledTimes(2);
     });
 
     it("a different feature inside the window → still reported", async () => {
       const aiChat = createAiChat(deps);
-      await aiChat("photo-classify", params);
-      await aiChat("receipt-scan", params);
+      await aiChat(F, params);
+      await aiChat(F2, params);
       expect(deps.report).toHaveBeenCalledTimes(2);
     });
 
@@ -336,8 +353,8 @@ describe("aiChat (non-streaming)", () => {
         apiError(402),
       );
       const aiChat = createAiChat(deps);
-      await aiChat("photo-classify", params);
-      await aiChat("photo-classify", params);
+      await aiChat(F, params);
+      await aiChat(F, params);
       expect(deps.report).toHaveBeenCalledTimes(2);
     });
   });
@@ -348,7 +365,7 @@ describe("aiChat (non-streaming)", () => {
       completion("gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("photo-classify", params);
+    await aiChat(F, params);
     expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
     expect(deps.log.warn).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackReason: "circuit-open" }),
@@ -361,10 +378,10 @@ describe("aiChat (non-streaming)", () => {
       completion("openai/gpt-4o-mini", "Azure"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("photo-classify", params);
+    await aiChat(F, params);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "photo-classify",
+        feature: F,
         provider: "openrouter",
         requestedModel: "openai/gpt-4o-mini",
         answeredModel: "openai/gpt-4o-mini",
@@ -392,13 +409,13 @@ describe("aiChat inside a call context", () => {
     const aiChat = createAiChat(deps);
     const c = ctx({
       overrides: {
-        "photo-classify": {
+        [F]: {
           model: "openai/gpt-6-luna",
           set: { reasoning_effort: "low" },
         },
       },
     });
-    await withAiCallContext(c, () => aiChat("photo-classify", params));
+    await withAiCallContext(c, () => aiChat(F, params));
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "openai/gpt-6-luna",
@@ -408,7 +425,7 @@ describe("aiChat inside a call context", () => {
     );
     expect(c.calls).toEqual([
       {
-        feature: "photo-classify",
+        feature: F,
         requestedModel: "openai/gpt-6-luna",
         answeredModel: "openai/gpt-6-luna",
         answeredProvider: "Azure",
@@ -424,12 +441,10 @@ describe("aiChat inside a call context", () => {
     const aiChat = createAiChat(deps);
     const c = ctx({
       overrides: {
-        "photo-classify": { model: "anthropic/claude-sonnet-4.6" },
+        [F]: { model: "anthropic/claude-sonnet-4.6" },
       },
     });
-    await expect(
-      withAiCallContext(c, () => aiChat("photo-classify", params)),
-    ).rejects.toThrow(
+    await expect(withAiCallContext(c, () => aiChat(F, params))).rejects.toThrow(
       /no pinned OpenRouter host for "anthropic\/claude-sonnet-4.6"/,
     );
     expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
@@ -443,7 +458,7 @@ describe("aiChat inside a call context", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      withAiCallContext(ctx(), () => aiChat("photo-classify", params)),
+      withAiCallContext(ctx(), () => aiChat(F, params)),
     ).rejects.toThrow();
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -455,13 +470,13 @@ describe("aiChat inside a call context", () => {
     );
     const aiChat = createAiChat(deps);
     const c = ctx();
-    await expect(
-      withAiCallContext(c, () => aiChat("photo-classify", params)),
-    ).rejects.toThrow(/requires moderation/);
+    await expect(withAiCallContext(c, () => aiChat(F, params))).rejects.toThrow(
+      /requires moderation/,
+    );
     expect(c.calls).toEqual([
       {
-        feature: "photo-classify",
-        requestedModel: AI_FEATURES["photo-classify"].model,
+        feature: F,
+        requestedModel: AI_FEATURES[F].model,
         answeredModel: null,
         answeredProvider: null,
         fellBack: false,
@@ -482,7 +497,7 @@ describe("aiChat inside a call context", () => {
     const aiChat = createAiChat(deps);
     const c = ctx();
     await expect(
-      withAiCallContext(c, () => aiChat("photo-classify", params)),
+      withAiCallContext(c, () => aiChat(F, params)),
     ).rejects.toThrow();
     expect(c.calls).toHaveLength(1);
     expect(c.calls[0].error?.kind).toBe("transport");
@@ -503,7 +518,7 @@ describe("aiChat inside a call context", () => {
       const aiChat = createAiChat(deps);
       const c = ctx();
       await expect(
-        withAiCallContext(c, () => aiChat("photo-classify", params)),
+        withAiCallContext(c, () => aiChat(F, params)),
       ).rejects.toThrow();
       expect(c.calls[0].error).toMatchObject({
         kind: "transport",
@@ -524,9 +539,7 @@ describe("aiChat inside a call context", () => {
     const aiChat = createAiChat(deps);
     const c = ctx();
     await expect(
-      withAiCallContext(c, () =>
-        aiChat("photo-classify", params, { signal: ac.signal }),
-      ),
+      withAiCallContext(c, () => aiChat(F, params, { signal: ac.signal })),
     ).rejects.toThrow();
     expect(c.calls).toEqual([]);
   });
@@ -535,7 +548,7 @@ describe("aiChat inside a call context", () => {
     const deps = makeDeps({ openrouter: null });
     const aiChat = createAiChat(deps);
     await expect(
-      withAiCallContext(ctx(), () => aiChat("photo-classify", params)),
+      withAiCallContext(ctx(), () => aiChat(F, params)),
     ).rejects.toThrow(/OPENROUTER_API_KEY is required when fallback is off/);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -547,7 +560,7 @@ describe("aiChat inside a call context", () => {
       completion("openai/gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await withAiCallContext(ctx(), () => aiChat("photo-classify", params));
+    await withAiCallContext(ctx(), () => aiChat(F, params));
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalled();
   });
 
@@ -559,9 +572,9 @@ describe("aiChat inside a call context", () => {
     );
     const aiChat = createAiChat(deps);
     const c = ctx({
-      overrides: { "photo-classify": { model: "openai/gpt-6-luna" } },
+      overrides: { [F]: { model: "openai/gpt-6-luna" } },
     });
-    await withAiCallContext(c, () => aiChat("photo-classify", params));
+    await withAiCallContext(c, () => aiChat(F, params));
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({ model: "openai/gpt-6-luna" }),
       undefined,
@@ -575,7 +588,7 @@ describe("aiChat inside a call context", () => {
       completion("openai/gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    await aiChat("photo-classify", params);
+    await aiChat(F, params);
     expect(deps.openrouter!.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({ model: "openai/gpt-4o-mini" }),
       undefined,
@@ -646,9 +659,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("photo-classify", sparams))).toBe(
-      "Hello",
-    );
+    expect(await collect(await aiChat(F, sparams))).toBe("Hello");
   });
 
   it("a role-only first chunk counts as received", async () => {
@@ -662,7 +673,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    const stream = await aiChat("photo-classify", sparams);
+    const stream = await aiChat(F, sparams);
     await expect(collect(stream)).rejects.toThrow("mid-stream");
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -674,7 +685,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    const stream = await aiChat("photo-classify", sparams);
+    const stream = await aiChat(F, sparams);
     await expect(collect(stream)).rejects.toThrow("mid-stream");
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -689,9 +700,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("photo-classify", sparams))).toBe(
-      "fallback",
-    );
+    expect(await collect(await aiChat(F, sparams))).toBe("fallback");
   });
 
   it("an in-stream error as the FIRST event falls back", async () => {
@@ -711,7 +720,7 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("photo-classify", sparams))).toBe("ok");
+    expect(await collect(await aiChat(F, sparams))).toBe("ok");
   });
 
   it("the first next() throwing (SDK-raised SSE error) falls back", async () => {
@@ -725,7 +734,7 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("photo-classify", sparams))).toBe("ok");
+    expect(await collect(await aiChat(F, sparams))).toBe("ok");
   });
 
   it("an in-stream error AFTER the first chunk is thrown to the caller (no fallback)", async () => {
@@ -742,9 +751,9 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    await expect(
-      collect(await aiChat("photo-classify", sparams)),
-    ).rejects.toThrow(/in-stream error/);
+    await expect(collect(await aiChat(F, sparams))).rejects.toThrow(
+      /in-stream error/,
+    );
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
 
@@ -760,7 +769,7 @@ describe("aiChat (streaming)", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      aiChat("photo-classify", sparams, { signal: controller.signal }),
+      aiChat(F, sparams, { signal: controller.signal }),
     ).rejects.toBeInstanceOf(OpenAI.APIUserAbortError);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -788,7 +797,7 @@ describe("aiChat (streaming)", () => {
       const spy = vi.spyOn(deps.breaker, "recordFailure");
       const aiChat = createAiChat(deps);
       await expect(
-        aiChat("photo-classify", sparams, {
+        aiChat(F, sparams, {
           signal: abortSignal ? controller.signal : undefined,
         }),
       ).rejects.toBe(err);
@@ -807,12 +816,12 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("photo-classify", sparams))).toBe("");
+    expect(await collect(await aiChat(F, sparams))).toBe("");
     expect(recordSuccess).toHaveBeenCalledTimes(1);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "photo-classify",
+        feature: F,
         completed: true,
       }),
       expect.any(String),
@@ -828,12 +837,12 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    await expect(
-      collect(await aiChat("photo-classify", sparams)),
-    ).rejects.toThrow("mid-stream");
+    await expect(collect(await aiChat(F, sparams))).rejects.toThrow(
+      "mid-stream",
+    );
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "photo-classify",
+        feature: F,
         completed: false,
       }),
       expect.any(String),
@@ -849,11 +858,11 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    for await (const _c of await aiChat("photo-classify", sparams)) break;
+    for await (const _c of await aiChat(F, sparams)) break;
     expect(returned.value).toBe(true);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "photo-classify",
+        feature: F,
         completed: false,
       }),
       expect.any(String),
@@ -882,7 +891,7 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("photo-classify", sparams))).toBe("ok");
+    expect(await collect(await aiChat(F, sparams))).toBe("ok");
     expect(deps.log.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         error: expect.objectContaining({
@@ -904,11 +913,11 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    for await (const _c of await aiChat("photo-classify", sparams)) break;
+    for await (const _c of await aiChat(F, sparams)) break;
     expect(returned.value).toBe(true);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "photo-classify",
+        feature: F,
         completed: false,
       }),
       expect.any(String),
@@ -936,14 +945,14 @@ describe("aiChat (streaming)", () => {
     const aiChat = createAiChat(deps);
     const c: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
     await withAiCallContext(c, async () => {
-      const stream = await aiChat("photo-classify", sparams);
+      const stream = await aiChat(F, sparams);
       expect(c.calls).toHaveLength(0); // not yet — written at stream end
       await collect(stream);
     });
     expect(c.calls).toEqual([
       {
-        feature: "photo-classify",
-        requestedModel: "openai/gpt-4o-mini", // the photo-classify row
+        feature: F,
+        requestedModel: "openai/gpt-4o-mini", // the test-fallback-row row
         answeredModel: "openai/gpt-4o-mini", // what the fake chunks report
         answeredProvider: "Azure",
         fellBack: false,
@@ -953,7 +962,7 @@ describe("aiChat (streaming)", () => {
     ]);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "photo-classify",
+        feature: F,
         cost: 0.002,
         completed: true,
       }),
@@ -977,7 +986,7 @@ describe("aiChat default deps", () => {
         ReturnType<typeof openai.chat.completions.create>
       >,
     );
-    await mod.aiChat("photo-classify", params);
+    await mod.aiChat(F, params);
     expect(openai.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({ model: "gpt-4o-mini" }),
       undefined,
@@ -986,7 +995,7 @@ describe("aiChat default deps", () => {
     // so discriminate with fallback off: no client => the "key required" error.
     const c: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
     await expect(
-      mod.withAiCallContext(c, () => mod.aiChat("photo-classify", params)),
+      mod.withAiCallContext(c, () => mod.aiChat(F, params)),
     ).rejects.toThrow(/OPENROUTER_API_KEY is required when fallback is off/);
   });
 });
@@ -1153,7 +1162,7 @@ describe("aiChat (Vertex-first rows)", () => {
       completion("gpt-4o-mini"),
     );
     const aiChat = createAiChat(deps);
-    for (let i = 0; i < 6; i++) await aiChat("photo-classify", params);
+    for (let i = 0; i < 6; i++) await aiChat(F, params);
     expect(deps.breaker.isOpen()).toBe(true);
     expect(deps.vertexBreaker.isOpen()).toBe(false);
   });
@@ -1604,9 +1613,7 @@ describe("aiChat (vertexBackup rows)", () => {
   it("forceBackup on a row with no vertexBackup throws", async () => {
     const ctx = ctxWith({ forceBackup: true });
     await expect(
-      withAiCallContext(ctx, () =>
-        createAiChat(deps)("photo-classify", params),
-      ),
+      withAiCallContext(ctx, () => createAiChat(deps)(F, params)),
     ).rejects.toThrow(/forceBackup on a row with no vertexBackup/);
     expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -1927,9 +1934,7 @@ describe("call records carry finish_reason and usage", () => {
       completion("openai/gpt-4o-mini", "Azure"),
     );
     const c = ctx();
-    await withAiCallContext(c, () =>
-      createAiChat(deps)("photo-classify", params),
-    );
+    await withAiCallContext(c, () => createAiChat(deps)(F, params));
     expect(c.calls[0]).toMatchObject({
       finishReason: "stop",
       usage: { prompt_tokens: 1, completion_tokens: 1 },
@@ -1966,7 +1971,7 @@ describe("call records carry finish_reason and usage", () => {
     const c = ctx();
     await withAiCallContext(c, async () =>
       collect(
-        await createAiChat(deps)("photo-classify", {
+        await createAiChat(deps)(F, {
           ...params,
           stream: true as const,
         }),
@@ -1986,7 +1991,7 @@ describe("call records carry finish_reason and usage", () => {
     const c = ctx();
     await withAiCallContext(c, async () =>
       collect(
-        await createAiChat(deps)("photo-classify", {
+        await createAiChat(deps)(F, {
           ...params,
           stream: true as const,
         }),
