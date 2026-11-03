@@ -23,6 +23,8 @@ const {
   navigate,
   toastError,
   premium,
+  premiumStatus,
+  refreshSubscription,
   routeParams,
 } = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
@@ -30,6 +32,8 @@ const {
   navigate: vi.fn(),
   toastError: vi.fn(),
   premium: { value: true },
+  premiumStatus: { resolved: true, failed: false },
+  refreshSubscription: vi.fn(),
   routeParams: { value: { searchQuery: "tacos" } as Record<string, string> },
 }));
 
@@ -97,7 +101,12 @@ vi.mock("@/context/ToastContext", () => ({
 }));
 
 vi.mock("@/context/PremiumContext", () => ({
-  usePremiumContext: () => ({ isPremium: premium.value }),
+  usePremiumContext: () => ({
+    isPremium: premium.value,
+    isPremiumResolved: premiumStatus.resolved,
+    isPremiumStatusError: premiumStatus.failed,
+    refreshSubscription,
+  }),
 }));
 
 vi.mock("@/hooks/useMealPlan", () => ({
@@ -149,7 +158,25 @@ describe("RecipeBrowserScreen — Ideas for you", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     premium.value = true;
+    premiumStatus.resolved = true;
+    premiumStatus.failed = false;
     routeParams.value = { searchQuery: "tacos" };
+  });
+
+  // A paying user whose status fetch failed must not see the "Premium" lock
+  // (audit 2026-10-29 M-crel-6): the CTA offers a plan re-check instead.
+  it("a failed premium-status fetch offers a plan re-check, not the Premium lock", () => {
+    premium.value = false;
+    premiumStatus.resolved = false;
+    premiumStatus.failed = true;
+    renderComponent(<RecipeBrowserScreen />);
+
+    expect(screen.queryByText(/· Premium/)).toBeNull();
+    fireEvent.click(
+      screen.getByText("Couldn't check your plan. Tap to retry."),
+    );
+    expect(refreshSubscription).toHaveBeenCalledTimes(1);
+    expect(mutateAsync).not.toHaveBeenCalled();
   });
 
   it("tapping the CTA requests ideas for the current query and renders the cards", async () => {

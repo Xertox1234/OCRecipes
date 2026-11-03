@@ -176,7 +176,12 @@ export default function RecipeBrowserScreen() {
     setIsFilterSheetOpen(false);
   }, []);
 
-  const { isPremium } = usePremiumContext();
+  const {
+    isPremium,
+    isPremiumResolved,
+    isPremiumStatusError,
+    refreshSubscription,
+  } = usePremiumContext();
 
   // Debounce search
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery || "");
@@ -339,19 +344,27 @@ export default function RecipeBrowserScreen() {
     [searchData],
   );
 
-  const ideasCtaState = resolveIdeasCtaState({
-    isPremium,
-    pending: ideasPending,
-    error: ideasError,
-    hasIdeas: ideas.length > 0,
-  });
+  // Premium status unknown (audit M-crel-6): never show the Premium lock.
+  // A failed check offers a retry; a check in flight leaves the CTA idle.
+  const ideasCtaState = !isPremiumResolved
+    ? isPremiumStatusError
+      ? "error"
+      : "idle"
+    : resolveIdeasCtaState({
+        isPremium,
+        pending: ideasPending,
+        error: ideasError,
+        hasIdeas: ideas.length > 0,
+      });
   // Ideas are written for a query — nothing to ask for without one.
   const showIdeasCta = debouncedQuery.length > 0 && ideasCtaState !== "hidden";
   // The daily idea cap can't be retried today, so say so instead of "retry".
   const ideasLimitReached = ideasError?.status === 429;
-  const ideasErrorText = ideasLimitReached
-    ? "You've reached today's limit for recipe ideas."
-    : undefined;
+  const ideasErrorText = !isPremiumResolved
+    ? "Couldn't check your plan. Tap to retry."
+    : ideasLimitReached
+      ? "You've reached today's limit for recipe ideas."
+      : undefined;
 
   // Tell screen-reader users the local search results are loading. Delayed
   // 500ms to match the modal-safe pattern (docs/solutions/conventions/on-open-
@@ -362,6 +375,15 @@ export default function RecipeBrowserScreen() {
 
   const onPressIdeasCta = useCallback(() => {
     haptics.selection();
+    // Status unknown: re-check the plan rather than wall a paying user.
+    if (!isPremiumResolved) {
+      void refreshSubscription();
+      // The error CTA already says so; an idle tap mid-check needs feedback.
+      if (!isPremiumStatusError) {
+        toast.info("Checking your plan. Try again in a moment.");
+      }
+      return;
+    }
     // Ideas are premium — free users get the upgrade hook.
     if (!isPremium) {
       setShowUpgradeModal(true);
@@ -409,6 +431,10 @@ export default function RecipeBrowserScreen() {
   }, [
     haptics,
     isPremium,
+    isPremiumResolved,
+    isPremiumStatusError,
+    refreshSubscription,
+    toast,
     requestIdeas,
     debouncedQuery,
     filters.activeCuisine,

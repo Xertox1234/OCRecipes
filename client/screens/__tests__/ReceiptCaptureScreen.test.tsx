@@ -58,8 +58,25 @@ vi.mock("expo-file-system/legacy", () => ({
   deleteAsync: mockDeleteAsync,
 }));
 
+const { premium, mockRefreshSubscription, mockUpgradeModal } = vi.hoisted(
+  () => ({
+    premium: {
+      value: {
+        isPremium: true,
+        isPremiumResolved: true,
+        isPremiumStatusError: false,
+      },
+    },
+    mockRefreshSubscription: vi.fn(),
+    mockUpgradeModal: vi.fn((_props: unknown) => null),
+  }),
+);
+
 vi.mock("@/context/PremiumContext", () => ({
-  usePremiumContext: () => ({ isPremium: true }),
+  usePremiumContext: () => ({
+    ...premium.value,
+    refreshSubscription: mockRefreshSubscription,
+  }),
 }));
 
 vi.mock("@/hooks/useReceiptScan", () => ({
@@ -68,10 +85,18 @@ vi.mock("@/hooks/useReceiptScan", () => ({
 
 // @/components/UpgradeModal transitively imports @/lib/iap, which does a
 // runtime require("./mock-iap") Vite's ESM graph can't resolve under jsdom —
-// same as ScanScreen.test.tsx. Not rendered in these tests (isPremium: true).
+// same as ScanScreen.test.tsx. Stubbed so tests can see whether it rendered.
 vi.mock("@/components/UpgradeModal", () => ({
-  UpgradeModal: () => null,
+  UpgradeModal: (props: unknown) => mockUpgradeModal(props),
 }));
+
+beforeEach(() => {
+  premium.value = {
+    isPremium: true,
+    isPremiumResolved: true,
+    isPremiumStatusError: false,
+  };
+});
 
 const GALLERY_URI_1 = "file:///gallery-1.jpg";
 const GALLERY_URI_2 = "file:///gallery-2.jpg";
@@ -181,6 +206,53 @@ describe("ReceiptCaptureScreen — teaching tips", () => {
   it("marks receipt scanning as used when the screen opens", () => {
     renderComponent(<ReceiptCaptureScreen />);
     expect(mockMarkFeatureUsed).toHaveBeenCalledWith("receiptScan");
+  });
+});
+
+// A paying user whose status fetch fails must not see the upgrade wall
+// (audit 2026-10-29 M-crel-6). Unknown status is neutral: no wall, no camera.
+describe("ReceiptCaptureScreen — premium status gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows the upgrade wall to a user resolved as free", () => {
+    premium.value = {
+      isPremium: false,
+      isPremiumResolved: true,
+      isPremiumStatusError: false,
+    };
+    renderComponent(<ReceiptCaptureScreen />);
+    expect(mockUpgradeModal).toHaveBeenCalled();
+  });
+
+  it("shows a retry state, not the upgrade wall, when the status fetch failed", () => {
+    premium.value = {
+      isPremium: false,
+      isPremiumResolved: false,
+      isPremiumStatusError: true,
+    };
+    renderComponent(<ReceiptCaptureScreen />);
+
+    expect(mockUpgradeModal).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Take photo of receipt")).toBeNull();
+    expect(screen.getByText("Couldn't check your plan")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
+    expect(mockRefreshSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows neither the wall nor the camera while the status is loading", () => {
+    premium.value = {
+      isPremium: false,
+      isPremiumResolved: false,
+      isPremiumStatusError: false,
+    };
+    renderComponent(<ReceiptCaptureScreen />);
+
+    expect(mockUpgradeModal).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Take photo of receipt")).toBeNull();
+    expect(screen.queryByText("Couldn't check your plan")).toBeNull();
   });
 });
 

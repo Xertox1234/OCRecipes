@@ -26,7 +26,10 @@ export function useHistoryData() {
   const { reducedMotion } = useAccessibility();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { isPremium } = usePremiumContext();
+  const { isPremium, isPremiumResolved, refreshSubscription } =
+    usePremiumContext();
+  // The Recipe action shows its Premium lock only for a user known to be free.
+  const isRecipeLocked = isPremiumResolved && !isPremium;
   const toggleFavourite = useToggleFavourite();
   const discardItem = useDiscardItem();
 
@@ -147,6 +150,13 @@ export function useHistoryData() {
 
   const handleGenerateRecipe = useCallback(
     (item: ScannedItemResponse) => {
+      // Status unknown (loading or failed): re-check instead of walling a
+      // user who may be paying (audit 2026-10-29 M-crel-6).
+      if (!isPremiumResolved) {
+        void refreshSubscription();
+        toast.info("Checking your plan. Try again in a moment.");
+        return;
+      }
       if (!isPremium) {
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         setUpgradeModalVisible(true);
@@ -155,7 +165,14 @@ export function useHistoryData() {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       navigation.navigate("MealPlanTab");
     },
-    [isPremium, haptics, navigation],
+    [
+      isPremium,
+      isPremiumResolved,
+      refreshSubscription,
+      toast,
+      haptics,
+      navigation,
+    ],
   );
 
   const handleShare = useCallback(
@@ -238,7 +255,7 @@ export function useHistoryData() {
     setGroceryPickerVisible,
     groceryItemName,
     reducedMotion,
-    isPremium,
+    isRecipeLocked,
 
     // Data
     displayItems: allItems,

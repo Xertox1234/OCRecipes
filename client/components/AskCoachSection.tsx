@@ -11,6 +11,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { useToast } from "@/context/ToastContext";
 import { Spacing, FontFamily } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { CoachQuestion } from "@/components/CoachOverlayContent";
@@ -30,13 +31,22 @@ export const AskCoachSection = React.memo(function AskCoachSection({
   onCustomPress,
 }: AskCoachSectionProps) {
   const { theme } = useTheme();
-  const { isPremium } = usePremiumContext();
+  const { isPremium, isPremiumResolved, refreshSubscription } =
+    usePremiumContext();
   const navigation = useNavigation<NavProp>();
   const haptics = useHaptics();
+  const toast = useToast();
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   const handlePress = useCallback(
     (q: CoachQuestion) => {
+      // Status unknown (loading or failed): re-check instead of walling a
+      // user who may be paying (audit 2026-10-29 M-crel-6).
+      if (!isPremiumResolved) {
+        void refreshSubscription();
+        toast.info("Checking your plan. Try again in a moment.");
+        return;
+      }
       if (!isPremium) {
         setShowUpgrade(true);
         return;
@@ -50,7 +60,16 @@ export const AskCoachSection = React.memo(function AskCoachSection({
         screenContext,
       });
     },
-    [isPremium, navigation, screenContext, onCustomPress, haptics],
+    [
+      isPremium,
+      isPremiumResolved,
+      refreshSubscription,
+      toast,
+      navigation,
+      screenContext,
+      onCustomPress,
+      haptics,
+    ],
   );
 
   return (

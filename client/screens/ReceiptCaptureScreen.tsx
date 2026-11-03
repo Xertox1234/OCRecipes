@@ -19,6 +19,7 @@ import { useNavigation, useIsFocused } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -46,7 +47,12 @@ export default function ReceiptCaptureScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const isFocused = useIsFocused();
-  const { isPremium } = usePremiumContext();
+  const {
+    isPremium,
+    isPremiumResolved,
+    isPremiumStatusError,
+    refreshSubscription,
+  } = usePremiumContext();
   const { data: scanCount } = useReceiptScanCount(isPremium);
 
   const {
@@ -73,8 +79,20 @@ export default function ReceiptCaptureScreen() {
   // first), so the unmount cleanup must see it here too.
   const pendingCaptureRef = useRef<string | null>(null);
 
-  // Premium gate on mount
-  const shouldShowUpgrade = !isPremium;
+  // Premium gate: the wall is only for a user known to be free. While the
+  // status is unknown (loading, or the fetch failed) the screen shows neither
+  // the wall nor the camera — see the early return below.
+  const shouldShowUpgrade = isPremiumResolved && !isPremium;
+
+  // Announce a failed status check when it appears (not on mount — the
+  // error screen's own label is read when focus lands on it).
+  const statusErrorShownRef = useRef(isPremiumStatusError);
+  useEffect(() => {
+    if (isPremiumStatusError && !statusErrorShownRef.current) {
+      AccessibilityInfo.announceForAccessibility("Couldn't check your plan.");
+    }
+    statusErrorShownRef.current = isPremiumStatusError;
+  }, [isPremiumStatusError]);
 
   // Delete every still-captured photo when this screen is abandoned (closed
   // without tapping Done) — the only path that doesn't already delete its
@@ -197,6 +215,41 @@ export default function ReceiptCaptureScreen() {
     });
   }, [photos, ocrTexts, haptics, navigation]);
 
+  // Premium status unknown: neutral, with a retry when the fetch failed, so a
+  // network blip never walls a paying user (audit 2026-10-29 M-crel-6).
+  if (!isPremiumResolved) {
+    return (
+      <View
+        style={[styles.centered, { backgroundColor: theme.backgroundDefault }]}
+      >
+        {isPremiumStatusError ? (
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't check your plan"
+            description="Check your connection and try again."
+            actionLabel="Try Again"
+            onAction={() => void refreshSubscription()}
+            secondaryLabel="Go Back"
+            onSecondaryAction={() => navigation.goBack()}
+          />
+        ) : (
+          <>
+            <ActivityIndicator size="large" color={theme.link} />
+            <Pressable
+              onPress={() => navigation.goBack()}
+              style={styles.backLink}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <ThemedText style={{ color: theme.link }}>Go Back</ThemedText>
+            </Pressable>
+          </>
+        )}
+      </View>
+    );
+  }
+
   // Permission states
   if (permissionLoading) {
     return (
@@ -278,7 +331,7 @@ export default function ReceiptCaptureScreen() {
       )}
 
       {/* Camera */}
-      {isFocused && !shouldShowUpgrade && (
+      {isFocused && isPremium && (
         <CameraView
           ref={cameraRef}
           style={StyleSheet.absoluteFill}

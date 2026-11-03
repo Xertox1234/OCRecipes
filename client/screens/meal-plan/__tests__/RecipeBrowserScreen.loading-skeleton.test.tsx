@@ -45,7 +45,7 @@ vi.mock("@/context/ToastContext", () => ({
 }));
 
 vi.mock("@/context/PremiumContext", () => ({
-  usePremiumContext: () => ({ isPremium: false }),
+  usePremiumContext: () => ({ isPremium: false, isPremiumResolved: true }),
 }));
 
 vi.mock("@/hooks/useMealPlan", () => ({
