@@ -1,12 +1,11 @@
 /**
  * The single entry point for chat/vision completions (spec §3.2). Rows with
- * `primary: "vertex"` route Vertex AI direct → OpenRouter and never reach
- * OpenAI (spec 2026-10-19-vision-rows-vertex-direct). Rows with
- * `vertexBackup` route OpenRouter → Vertex AI direct and never reach OpenAI
- * (spec 2026-11-02-vertex-backup-route-design §3). Every other row routes
- * via OpenRouter (zero-data-retention) when OPENROUTER_API_KEY is set, else
- * via today's OpenAI client; falls back per spec §3.4. Never call
- * `chat.completions.create` elsewhere — ocrecipes/no-direct-chat-completions.
+ * `primary: "vertex"` route Vertex AI direct → OpenRouter (spec
+ * 2026-10-19-vision-rows-vertex-direct). Every other row routes OpenRouter
+ * (zero-data-retention) → the Vertex AI direct backup (spec
+ * 2026-11-02-vertex-backup-route-design §3). No path reaches OpenAI direct.
+ * Never call `chat.completions.create` elsewhere —
+ * ocrecipes/no-direct-chat-completions.
  */
 import OpenAI from "openai";
 import type {
