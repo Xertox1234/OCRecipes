@@ -85,9 +85,14 @@ env:
   JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
   LOG_LEVEL: silent
   AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
-  # The OpenAI stand-in started beside the backend (scripts/ci/stub-openai.mjs): it answers
-  # the receipt-upload flow's AI step and gives every other call sk-stub's usual 401.
+  # The OpenAI-compatible stand-in started beside the backend (scripts/ci/stub-openai.mjs): it
+  # answers the receipt-upload flow's AI step and gives every other call sk-stub's usual 401.
+  # AI features go OpenRouter first (no row falls back to OpenAI direct since #1715), so the
+  # OpenRouter route points at it too; OPENROUTER_BASE_URL is honoured only under
+  # NODE_ENV=development/test (server:dev). No GOOGLE_VERTEX_*: the Vertex backup is off here.
   AI_INTEGRATIONS_OPENAI_BASE_URL: http://127.0.0.1:4010/v1
+  OPENROUTER_API_KEY: sk-stub
+  OPENROUTER_BASE_URL: http://127.0.0.1:4010/v1
   USDA_API_KEY: stub
   API_NINJAS_KEY: stub
   RECEIPT_VALIDATION_STUB: "true"

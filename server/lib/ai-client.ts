@@ -47,6 +47,22 @@ export { withAiCallContext };
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+/**
+ * `OPENROUTER_BASE_URL` points OpenRouter at a stand-in: the E2E run's
+ * scripts/ci/stub-openai.mjs, which answers the receipt-upload flow. Honoured
+ * only when NODE_ENV is EXPLICITLY "development" or "test" (allowlist, as
+ * E2E_RELAXED_RATE_LIMITS): an unset NODE_ENV keeps the real host.
+ */
+export function openRouterBaseUrl(
+  env: Record<string, string | undefined>,
+): string {
+  const override = env.OPENROUTER_BASE_URL?.trim();
+  if (!override) return OPENROUTER_BASE_URL;
+  if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test")
+    return OPENROUTER_BASE_URL;
+  return override;
+}
+
 export type AiChatParams = Omit<
   ChatCompletionCreateParamsNonStreaming,
   "model"
@@ -877,7 +893,7 @@ function defaultDeps(): AiChatDeps {
     openrouter: key
       ? (new OpenAI({
           apiKey: key,
-          baseURL: OPENROUTER_BASE_URL,
+          baseURL: openRouterBaseUrl(process.env),
           defaultHeaders: { "X-Title": "OCRecipes" },
           maxRetries: 0, // the Vertex backup is the retry
         }) as unknown as AiChatClient)

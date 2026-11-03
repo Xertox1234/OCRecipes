@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import {
   createAiChat,
   fillThoughtSignatures,
+  openRouterBaseUrl,
   VERTEX_BUSY_RETRY_MS,
   withAiCallContext,
 } from "../ai-client";
@@ -1815,6 +1816,33 @@ describe("Gemini thought signature fill", () => {
       .calls[0];
     expect(sigsOf(vBody.messages)).toEqual(["real-sig", PLACEHOLDER]);
   });
+});
+
+// The E2E run points OpenRouter at scripts/ci/stub-openai.mjs; allowlist like
+// E2E_RELAXED_RATE_LIMITS, so an unset NODE_ENV keeps the real host.
+describe("openRouterBaseUrl", () => {
+  const STUB = "http://127.0.0.1:4010/v1";
+  it("is OpenRouter's URL when no override is set", () => {
+    expect(openRouterBaseUrl({ NODE_ENV: "development" })).toBe(
+      "https://openrouter.ai/api/v1",
+    );
+  });
+  it.each(["development", "test"])(
+    "takes OPENROUTER_BASE_URL under NODE_ENV=%s",
+    (env) => {
+      expect(
+        openRouterBaseUrl({ NODE_ENV: env, OPENROUTER_BASE_URL: STUB }),
+      ).toBe(STUB);
+    },
+  );
+  it.each([["production"], [undefined], ["staging"]])(
+    "ignores OPENROUTER_BASE_URL under NODE_ENV=%s",
+    (env) => {
+      expect(
+        openRouterBaseUrl({ NODE_ENV: env, OPENROUTER_BASE_URL: STUB }),
+      ).toBe("https://openrouter.ai/api/v1");
+    },
+  );
 });
 
 describe("default OpenRouter client construction", () => {
