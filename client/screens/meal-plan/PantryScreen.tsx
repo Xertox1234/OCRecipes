@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import {
+  ActivityIndicator,
   StyleSheet,
   View,
   Pressable,
@@ -149,7 +150,12 @@ export default function PantryScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const { features } = usePremiumContext();
+  const {
+    features,
+    isPremiumResolved,
+    isPremiumStatusError,
+    refreshSubscription,
+  } = usePremiumContext();
   // Pro only: free users don't have the Scan Receipt button.
   const receiptTip = useFeatureTip("pantry-receipt", {
     feature: "receiptScan",
@@ -320,7 +326,42 @@ export default function PantryScreen() {
     }));
   }, [pantryItems]);
 
-  // Premium gate
+  // Plan unknown: features read as the free tier until the status resolves,
+  // so neither wall nor grant (owner ruling 2026-11-02). A failed check
+  // offers a retry; a pending one shows a spinner.
+  if (!isPremiumResolved) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: headerHeight + Spacing.xl,
+            backgroundColor: theme.backgroundRoot,
+          },
+        ]}
+      >
+        {isPremiumStatusError ? (
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't check your plan"
+            description="Check your connection and try again."
+            actionLabel="Try Again"
+            onAction={() => void refreshSubscription()}
+          />
+        ) : (
+          <View style={styles.emptyState}>
+            <ActivityIndicator
+              color={theme.textSecondary}
+              accessibilityLabel="Checking your plan"
+            />
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // Premium gate: only a user known to be free reaches this.
   if (!features.pantryTracking) {
     return (
       <View
