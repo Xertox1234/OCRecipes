@@ -119,22 +119,14 @@ describe("AI_FEATURES table", () => {
     }
   });
 
-  // Rollout (spec 2026-11-02-vertex-backup-route-design; owner 2026-11-03):
-  // every text row backs up to Vertex; of the vision rows only photo-analyze
-  // does so far — the other 8 keep their OpenAI-direct fallback until PR 4.
-  it("every text row backs up to Vertex, never OpenAI", () => {
+  // Rollout complete (spec 2026-11-02-vertex-backup-route-design; owner
+  // 2026-11-03): OpenAI direct shuts gpt-4o/mini down on 2027-01-14, so no
+  // row may fall back to it — text and vision rows alike back up to Vertex.
+  it("every row backs up to Vertex, never OpenAI", () => {
     for (const [name, row] of rows) {
-      if (row.vision) continue;
       expect(row.vertexBackup, name).toBe(VERTEX_BACKUP);
       expect(row.fallback, name).toBeUndefined();
     }
-  });
-
-  it("vision vertexBackup rows are exactly the rolled-out ones", () => {
-    const flagged = rows
-      .filter(([, row]) => row.vision && row.vertexBackup !== undefined)
-      .map(([name]) => name);
-    expect(flagged).toEqual(["photo-analyze"]);
   });
 
   it("a vertexBackup row uses the shared VERTEX_BACKUP constant", () => {

@@ -7,12 +7,14 @@
  * any problem (a length finish, an error such as a 400, an empty reply, a
  * sample off the intended route).
  *
- * PR 3 adds the 21 text-only rows (drivers in ai-backup-gate-text-rows.ts).
+ * PR 3 adds the 21 text-only rows (drivers in ai-backup-gate-text-rows.ts),
+ * PR 4 the other 8 vision rows (ai-backup-gate-vision-rows.ts; fetches its
+ * photos from Wikimedia Commons and Unsplash).
  *
  * `NODE_ENV=development npm run ai:backup-gate [-- --only a,b]` — needs
  * OPENROUTER_API_KEY, the three GOOGLE_VERTEX_* vars and the local database
  * (coach-pro tools, notebook extraction). Spends real money on OpenRouter and
- * Vertex (84 samples; food-nlp-parse also calls the nutrition lookups).
+ * Vertex (108 samples; food-nlp-parse also calls the nutrition lookups).
  */
 import { randomUUID } from "node:crypto";
 import type { AiFeature } from "../server/lib/ai-models";
@@ -218,6 +220,7 @@ async function main(): Promise<void> {
   Object.assign(
     run,
     await (await import("./ai-backup-gate-text-rows")).textRowDrivers(),
+    await (await import("./ai-backup-gate-vision-rows")).visionRowDrivers(),
   );
   const onlyArg = process.argv.indexOf("--only");
   const only =
