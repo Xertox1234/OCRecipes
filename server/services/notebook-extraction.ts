@@ -32,7 +32,7 @@ interface ConversationMessage {
 // uncached `aiChat` call, so editing this prompt's
 // text has no cache-invalidation consequence.
 function buildExtractionPrompt(now: Date, tz: string): string {
-  return `You are a coaching analyst. Given a conversation between a nutrition coach and a user (in the user message, one "User:" or "Coach:" turn per paragraph), extract structured insights.
+  return `You are a coaching analyst. Given a conversation between a nutrition coach and a user (in the user message, as a JSON array of {speaker, text} turns), extract structured insights.
 
 Current date for this user: ${civilDateString(now, tz)}. Resolve relative phrases ("next week", "in three days", "this weekend") against this date — never guess a date you were not given. The resolved date must be on or after the current date above; if the phrase would resolve to an earlier date, return null instead.
 
@@ -102,17 +102,20 @@ export async function extractNotebookEntries(
           { role: "system", content: prompt },
           {
             role: "user",
-            content: `Conversation:\n${messages
-              .filter((m) => m.role !== "system")
-              .map(
-                (m) =>
+            // JSON, not "User:/Coach:" lines: no turn's text can forge
+            // another turn (ai-reviewer, PR 3).
+            content: `Conversation (JSON, one entry per turn):\n${JSON.stringify(
+              messages
+                .filter((m) => m.role !== "system")
+                .map((m) => ({
+                  speaker: m.role === "user" ? "user" : "coach",
                   // Sanitize before the extractor sees them so prompt-injection
                   // attempts in the chat transcript don't poison what we pull
                   // into the notebook (which is later re-injected into the
                   // coach system prompt).
-                  `${m.role === "user" ? "User" : "Coach"}: ${sanitizeUserInput(m.content)}`,
-              )
-              .join("\n\n")}`,
+                  text: sanitizeUserInput(m.content),
+                })),
+            )}`,
           },
         ],
         response_format: { type: "json_object" },
