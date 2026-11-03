@@ -26,6 +26,13 @@ export interface AiCallContext {
   overrides: Partial<Record<AiFeature, AiModelOverride>>;
   fallback: "on" | "off";
   calls: AiCallRecord[];
+  /**
+   * Eval/smoke only: send a `vertexBackup` row straight to its Vertex backup,
+   * OpenRouter skipped. A function gets the call's index (`calls.length` at
+   * call start). Takes precedence over `fallback: "off"`; on a row without
+   * `vertexBackup` the call throws.
+   */
+  forceBackup?: boolean | ((callIndex: number) => boolean);
 }
 
 const storage = new AsyncLocalStorage<AiCallContext>();

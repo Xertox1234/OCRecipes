@@ -6,6 +6,7 @@ import {
   adaptParams,
   hostForModel,
   isAiFeature,
+  VERTEX_BACKUP,
   type AiFeatureConfig,
 } from "../ai-models";
 
@@ -97,10 +98,40 @@ describe("AI_FEATURES table", () => {
       if (row.primary === "vertex") {
         expect(row.fallback, name).toBeUndefined();
         expect(row.model, name).toMatch(/^google\//);
-      } else {
+      } else if (row.vertexBackup === undefined) {
         expect(typeof row.fallback, name).toBe("string");
       }
     }
+  });
+
+  it("each row has exactly one backup kind: fallback, vertexBackup or primary vertex", () => {
+    for (const [name, row] of rows) {
+      const kinds = [
+        row.fallback !== undefined,
+        row.vertexBackup !== undefined,
+        row.primary === "vertex",
+      ].filter(Boolean);
+      expect(kinds.length, name).toBe(1);
+    }
+  });
+
+  // Rollout allowlist (spec 2026-11-02-vertex-backup-route-design §5): PR 2
+  // adds the five rows.
+  const VERTEX_BACKUP_ROWS: string[] = [];
+  it("vertexBackup rows are exactly the rolled-out ones", () => {
+    const flagged = rows
+      .filter(([, row]) => row.vertexBackup !== undefined)
+      .map(([name]) => name)
+      .sort();
+    expect(flagged).toEqual([...VERTEX_BACKUP_ROWS].sort());
+  });
+
+  it("VERTEX_BACKUP is Gemini 3.8 Flash at low reasoning", () => {
+    expect(VERTEX_BACKUP).toEqual({
+      model: "google/gemini-3.8-flash",
+      adapt: { set: { reasoning_effort: "low" } },
+    });
+    expect(hostForModel(VERTEX_BACKUP.model)).toBeDefined();
   });
 
   // Rollout allowlist (spec 2026-10-19-vision-rows-vertex-direct §2.1): grows

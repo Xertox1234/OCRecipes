@@ -1,10 +1,12 @@
 // server/lib/ai-models.ts
 /**
  * One row per AI call site. `model` is the provider-prefixed id (OpenRouter's
- * form, which Vertex's OpenAI-compatible endpoint also uses). `fallback` is
- * the id for the existing OpenAI client (today's path). A row with
- * `primary: "vertex"` goes Vertex direct → OpenRouter and has NO `fallback`:
- * it never reaches OpenAI (spec 2026-10-19-vision-rows-vertex-direct §2).
+ * form, which Vertex's OpenAI-compatible endpoint also uses). Each row has
+ * exactly one backup kind: `fallback` is the id for the existing OpenAI client
+ * (today's path); `vertexBackup` goes OpenRouter → Vertex direct and never
+ * reaches OpenAI (spec 2026-11-02-vertex-backup-route-design §3); a row with
+ * `primary: "vertex"` goes Vertex direct → OpenRouter and has NO `fallback`
+ * (spec 2026-10-19-vision-rows-vertex-direct §2).
  * Moving a feature to another model = edit its row (owner approval + paired
  * eval report required).
  *
@@ -19,13 +21,26 @@ export interface AiAdapt {
 
 export interface AiFeatureConfig {
   model: string;
-  /** OpenAI-direct model id. Absent exactly when `primary` is "vertex". */
+  /**
+   * OpenAI-direct model id. Exactly one of `fallback`, `vertexBackup`,
+   * `primary: "vertex"` is set on each row.
+   */
   fallback?: string;
+  /** Vertex AI direct as the backup when OpenRouter fails. Replaces `fallback`. */
+  vertexBackup?: { model: string; adapt?: AiAdapt };
   json: boolean;
   vision: boolean;
   primary?: "vertex";
   adapt?: AiAdapt;
 }
+
+// The Vertex-direct backup for every `vertexBackup` row (owner ruling
+// 2026-11-02): Flash, not the row's own model — Vertex keeps "frontier" models'
+// prompts up to 30 days on every request; Flash's only when abuse-flagged.
+export const VERTEX_BACKUP = {
+  model: "google/gemini-3.8-flash",
+  adapt: { set: { reasoning_effort: "low" } },
+} as const;
 
 const FAST = { model: "openai/gpt-4o-mini", fallback: "gpt-4o-mini" } as const;
 const HEAVY = { model: "openai/gpt-4o", fallback: "gpt-4o" } as const;

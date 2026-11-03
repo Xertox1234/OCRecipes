@@ -7,6 +7,11 @@
  * retention: that is the project's cacheConfig and abuse-monitoring exemption
  * (spec 2026-10-19-vision-rows-vertex-direct §4). Run after setting the keys and after every row
  * switch: `npm run ai:smoke` (or `npm run ai:smoke -- coach-chat` for one row).
+ *
+ * `npm run ai:smoke -- --backup` instead sends each `vertexBackup` row
+ * straight to its Vertex-direct backup (forceBackup, OpenRouter skipped) and
+ * expects the backup model to answer (spec 2026-11-02-vertex-backup-route-
+ * design §5). Needs all three GOOGLE_VERTEX_* vars.
  */
 import "dotenv/config";
 import { AI_FEATURES, isAiFeature } from "../server/lib/ai-models";
@@ -17,6 +22,12 @@ import type { AiCallContext } from "../server/lib/ai-call-context";
 import { getAiCallContext } from "../server/lib/ai-call-context";
 import { modelMatches } from "../evals/lib/candidate";
 
+const VERTEX_VARS = [
+  "GOOGLE_VERTEX_PROJECT",
+  "GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL",
+  "GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY",
+] as const;
+
 // 1×1 PNG — enough for the provider to accept an image part.
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -25,11 +36,7 @@ const TINY_PNG =
 export function smokeKeysPresent(
   env: Record<string, string | undefined>,
 ): boolean {
-  const vertex = [
-    "GOOGLE_VERTEX_PROJECT",
-    "GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL",
-    "GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY",
-  ].every((k) => env[k]?.trim());
+  const vertex = VERTEX_VARS.every((k) => env[k]?.trim());
   return vertex || !!env.OPENROUTER_API_KEY?.trim();
 }
 
@@ -65,6 +72,7 @@ export function buildSmokeRequest(row: AiFeatureConfig): AiChatParams {
 export async function smokeRow(
   feature: AiFeature,
   chat: AiChat,
+  opts: { backup?: boolean } = {},
 ): Promise<{
   feature: AiFeature;
   ok: boolean;
@@ -72,6 +80,15 @@ export async function smokeRow(
   detail: string;
 }> {
   const row: AiFeatureConfig = AI_FEATURES[feature];
+  if (opts.backup && !row.vertexBackup) {
+    return {
+      feature,
+      ok: false,
+      answeredProvider: null,
+      detail: "no vertexBackup on this row",
+    };
+  }
+  const expected = opts.backup ? row.vertexBackup!.model : row.model;
   try {
     const res = await chat(feature, buildSmokeRequest(row));
     const content = res.choices[0]?.message?.content ?? "";
@@ -80,7 +97,7 @@ export async function smokeRow(
       (res as unknown as { provider?: string }).provider ??
       getAiCallContext()?.calls.at(-1)?.answeredProvider ??
       null;
-    if (!answeredMatches(row.model, res.model)) {
+    if (!answeredMatches(expected, res.model)) {
       return {
         feature,
         ok: false,
@@ -112,6 +129,11 @@ export async function smokeRow(
 }
 
 async function main(): Promise<void> {
+  const backup = process.argv.includes("--backup");
+  if (backup && !VERTEX_VARS.every((k) => process.env[k]?.trim())) {
+    console.error(`ai:smoke --backup needs ${VERTEX_VARS.join(", ")}.`);
+    process.exit(2);
+  }
   if (!smokeKeysPresent(process.env)) {
     console.error(
       "ai:smoke needs GOOGLE_VERTEX_* (all three) or OPENROUTER_API_KEY (it never uses the OpenAI fallback).",
@@ -125,13 +147,27 @@ async function main(): Promise<void> {
       process.exit(2);
     }
   }
-  const features = (
-    only.length ? only : Object.keys(AI_FEATURES)
-  ) as AiFeature[];
+  const all = Object.keys(AI_FEATURES) as AiFeature[];
+  const features = only.length
+    ? (only as AiFeature[])
+    : backup
+      ? all.filter((f) => (AI_FEATURES[f] as AiFeatureConfig).vertexBackup)
+      : all;
+  if (features.length === 0) {
+    console.log("no rows have vertexBackup yet");
+    process.exit(0);
+  }
   let failures = 0;
   for (const feature of features) {
-    const ctx: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
-    const r = await withAiCallContext(ctx, () => smokeRow(feature, aiChat));
+    const ctx: AiCallContext = {
+      overrides: {},
+      fallback: "off",
+      calls: [],
+      ...(backup && { forceBackup: true }),
+    };
+    const r = await withAiCallContext(ctx, () =>
+      smokeRow(feature, aiChat, { backup }),
+    );
     if (!r.ok) failures++;
     console.log(
       `${r.ok ? "✔" : "✘"} ${feature.padEnd(26)} ${String(r.answeredProvider ?? "-").padEnd(14)} ${r.detail}`,
