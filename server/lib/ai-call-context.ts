@@ -12,12 +12,22 @@ export interface AiModelOverride {
   set?: Record<string, unknown>;
 }
 
+export interface AiCallUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  completion_tokens_details?: { reasoning_tokens?: number };
+}
+
 export interface AiCallRecord {
   feature: AiFeature;
   requestedModel: string;
   answeredModel: string | null;
   answeredProvider: string | null;
   fellBack: boolean;
+  /** On success: the last `finish_reason` the provider sent (null if none). */
+  finishReason?: string | null;
+  /** On success: token usage, when the provider reported it. */
+  usage?: AiCallUsage;
   /** Set when the call failed and (fallback off) the error was re-thrown. */
   error?: { kind: AiFailureKind; moderated: boolean; message: string };
 }

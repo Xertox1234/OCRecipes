@@ -44,15 +44,18 @@ describe("buildSmokeRequest", () => {
     });
     expect(JSON.stringify(req.messages)).toContain("image_url");
   });
-  it("stays tiny", () => {
-    expect(
-      buildSmokeRequest({
-        model: "x/y",
-        fallback: "y",
-        json: false,
-        vision: false,
-      }).max_completion_tokens,
-    ).toBeLessThanOrEqual(20);
+  // Vertex counts reasoning inside max_completion_tokens: Flash at low effort
+  // spent 17 of a 20-token cap on the 1×1 image and returned nothing
+  // (finish "length", probe 2026-11-03); at 200 it answered.
+  it("stays small but leaves room for low-effort reasoning", () => {
+    const cap = buildSmokeRequest({
+      model: "x/y",
+      fallback: "y",
+      json: false,
+      vision: false,
+    }).max_completion_tokens;
+    expect(cap).toBeGreaterThanOrEqual(200);
+    expect(cap).toBeLessThanOrEqual(256);
   });
 });
 

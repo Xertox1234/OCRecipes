@@ -409,6 +409,8 @@ describe("aiChat inside a call context", () => {
         answeredModel: "openai/gpt-6-luna",
         answeredProvider: "Azure",
         fellBack: false,
+        finishReason: "stop",
+        usage: expect.objectContaining({ prompt_tokens: 1 }),
       },
     ]);
   });
@@ -642,7 +644,9 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("Hello");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "Hello",
+    );
   });
 
   it("a role-only first chunk counts as received", async () => {
@@ -656,7 +660,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    const stream = await aiChat("coach-chat", sparams);
+    const stream = await aiChat("coach-notebook-extract", sparams);
     await expect(collect(stream)).rejects.toThrow("mid-stream");
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -668,7 +672,7 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    const stream = await aiChat("coach-chat", sparams);
+    const stream = await aiChat("coach-notebook-extract", sparams);
     await expect(collect(stream)).rejects.toThrow("mid-stream");
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -683,7 +687,9 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("fallback");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "fallback",
+    );
   });
 
   it("an in-stream error as the FIRST event falls back", async () => {
@@ -703,7 +709,9 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "ok",
+    );
   });
 
   it("the first next() throwing (SDK-raised SSE error) falls back", async () => {
@@ -717,7 +725,9 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "ok",
+    );
   });
 
   it("an in-stream error AFTER the first chunk is thrown to the caller (no fallback)", async () => {
@@ -734,9 +744,9 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    await expect(collect(await aiChat("coach-chat", sparams))).rejects.toThrow(
-      /in-stream error/,
-    );
+    await expect(
+      collect(await aiChat("coach-notebook-extract", sparams)),
+    ).rejects.toThrow(/in-stream error/);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
 
@@ -752,7 +762,7 @@ describe("aiChat (streaming)", () => {
     );
     const aiChat = createAiChat(deps);
     await expect(
-      aiChat("coach-chat", sparams, { signal: controller.signal }),
+      aiChat("coach-notebook-extract", sparams, { signal: controller.signal }),
     ).rejects.toBeInstanceOf(OpenAI.APIUserAbortError);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
   });
@@ -780,7 +790,7 @@ describe("aiChat (streaming)", () => {
       const spy = vi.spyOn(deps.breaker, "recordFailure");
       const aiChat = createAiChat(deps);
       await expect(
-        aiChat("coach-chat", sparams, {
+        aiChat("coach-notebook-extract", sparams, {
           signal: abortSignal ? controller.signal : undefined,
         }),
       ).rejects.toBe(err);
@@ -799,11 +809,16 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "",
+    );
     expect(recordSuccess).toHaveBeenCalledTimes(1);
     expect(deps.fallback.chat.completions.create).not.toHaveBeenCalled();
     expect(deps.log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: "coach-chat", completed: true }),
+      expect.objectContaining({
+        feature: "coach-notebook-extract",
+        completed: true,
+      }),
       expect.any(String),
     );
   });
@@ -817,11 +832,14 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    await expect(collect(await aiChat("coach-chat", sparams))).rejects.toThrow(
-      "mid-stream",
-    );
+    await expect(
+      collect(await aiChat("coach-notebook-extract", sparams)),
+    ).rejects.toThrow("mid-stream");
     expect(deps.log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.objectContaining({
+        feature: "coach-notebook-extract",
+        completed: false,
+      }),
       expect.any(String),
     );
   });
@@ -835,10 +853,14 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    for await (const _c of await aiChat("coach-chat", sparams)) break;
+    for await (const _c of await aiChat("coach-notebook-extract", sparams))
+      break;
     expect(returned.value).toBe(true);
     expect(deps.log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.objectContaining({
+        feature: "coach-notebook-extract",
+        completed: false,
+      }),
       expect.any(String),
     );
   });
@@ -865,7 +887,9 @@ describe("aiChat (streaming)", () => {
       fb.iterable,
     );
     const aiChat = createAiChat(deps);
-    expect(await collect(await aiChat("coach-chat", sparams))).toBe("ok");
+    expect(await collect(await aiChat("coach-notebook-extract", sparams))).toBe(
+      "ok",
+    );
     expect(deps.log.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         error: expect.objectContaining({
@@ -887,10 +911,14 @@ describe("aiChat (streaming)", () => {
       iterable,
     );
     const aiChat = createAiChat(deps);
-    for await (const _c of await aiChat("coach-chat", sparams)) break;
+    for await (const _c of await aiChat("coach-notebook-extract", sparams))
+      break;
     expect(returned.value).toBe(true);
     expect(deps.log.info).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: "coach-chat", completed: false }),
+      expect.objectContaining({
+        feature: "coach-notebook-extract",
+        completed: false,
+      }),
       expect.any(String),
     );
   });
@@ -916,22 +944,24 @@ describe("aiChat (streaming)", () => {
     const aiChat = createAiChat(deps);
     const c: AiCallContext = { overrides: {}, fallback: "off", calls: [] };
     await withAiCallContext(c, async () => {
-      const stream = await aiChat("coach-chat", sparams);
+      const stream = await aiChat("coach-notebook-extract", sparams);
       expect(c.calls).toHaveLength(0); // not yet — written at stream end
       await collect(stream);
     });
     expect(c.calls).toEqual([
       {
-        feature: "coach-chat",
-        requestedModel: "openai/gpt-6-luna", // the coach-chat row
+        feature: "coach-notebook-extract",
+        requestedModel: "openai/gpt-4o-mini", // the coach-notebook-extract row
         answeredModel: "openai/gpt-4o-mini", // what the fake chunks report
         answeredProvider: "Azure",
         fellBack: false,
+        finishReason: null,
+        usage: expect.objectContaining({ completion_tokens: 1 }),
       },
     ]);
     expect(deps.log.info).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: "coach-chat",
+        feature: "coach-notebook-extract",
         cost: 0.002,
         completed: true,
       }),
@@ -1762,5 +1792,94 @@ describe("default OpenRouter client construction", () => {
       (o) => o.baseURL === "https://openrouter.ai/api/v1",
     );
     expect(openrouter).toMatchObject({ maxRetries: 0 });
+  });
+});
+
+describe("call records carry finish_reason and usage", () => {
+  const B = "test-backup-row" as unknown as AiFeature;
+  const FLASH = "google/gemini-3.8-flash";
+  const ctx = (over: Partial<AiCallContext> = {}): AiCallContext => ({
+    overrides: {},
+    fallback: "on",
+    calls: [],
+    ...over,
+  });
+  const finishing = (c: ReturnType<typeof chunk>, finish: string | null) => ({
+    ...c,
+    choices: [{ ...c.choices[0], finish_reason: finish }],
+  });
+
+  it("a non-stream record carries finish_reason and usage", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      completion("openai/gpt-4o-mini", "Azure"),
+    );
+    const c = ctx();
+    await withAiCallContext(c, () =>
+      createAiChat(deps)("coach-notebook-extract", params),
+    );
+    expect(c.calls[0]).toMatchObject({
+      finishReason: "stop",
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+  });
+
+  it("a Vertex-backup non-stream record carries finish_reason and usage", async () => {
+    const deps = makeDeps({
+      vertex: { chat: { completions: { create: vi.fn() } } },
+    });
+    const res = completion(FLASH);
+    vi.mocked(deps.vertex!.chat.completions.create).mockResolvedValue({
+      ...res,
+      choices: [{ ...res.choices[0], finish_reason: "length" }],
+    });
+    const c = ctx({ forceBackup: true });
+    await withAiCallContext(c, () => createAiChat(deps)(B, params));
+    expect(c.calls[0]).toMatchObject({
+      answeredProvider: "vertex",
+      finishReason: "length",
+      usage: { completion_tokens: 1 },
+    });
+  });
+
+  it("a stream record carries the last finish_reason and usage", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      fakeStream([
+        chunk("a"),
+        finishing(chunk("b"), "stop"),
+        { ...chunk(""), choices: [], usage: { completion_tokens: 2 } },
+      ]).iterable,
+    );
+    const c = ctx();
+    await withAiCallContext(c, async () =>
+      collect(
+        await createAiChat(deps)("coach-notebook-extract", {
+          ...params,
+          stream: true as const,
+        }),
+      ),
+    );
+    expect(c.calls[0]).toMatchObject({
+      finishReason: "stop",
+      usage: { completion_tokens: 2 },
+    });
+  });
+
+  it("a stream with no finish_reason records null", async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.openrouter!.chat.completions.create).mockResolvedValue(
+      fakeStream([chunk("a"), chunk("b")]).iterable,
+    );
+    const c = ctx();
+    await withAiCallContext(c, async () =>
+      collect(
+        await createAiChat(deps)("coach-notebook-extract", {
+          ...params,
+          stream: true as const,
+        }),
+      ),
+    );
+    expect(c.calls[0].finishReason).toBeNull();
   });
 });

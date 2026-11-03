@@ -18,7 +18,11 @@ import type {
 import { AI_FEATURES, adaptParams, hostForModel } from "./ai-models";
 import type { AiAdapt, AiFeature, AiFeatureConfig } from "./ai-models";
 import { getAiCallContext, withAiCallContext } from "./ai-call-context";
-import type { AiCallContext } from "./ai-call-context";
+import type {
+  AiCallContext,
+  AiCallRecord,
+  AiCallUsage,
+} from "./ai-call-context";
 import {
   CircuitBreaker,
   classifyAiFailure,
@@ -151,6 +155,28 @@ interface StreamSummary {
   answeredProvider: string | null;
   cost: number | undefined;
   completed: boolean;
+  finishReason: string | null;
+  usage: AiCallUsage | undefined;
+}
+
+type CallOutcome = Pick<AiCallRecord, "finishReason" | "usage">;
+type RecordCall = (
+  answeredModel: string | null,
+  provider: string | null,
+  fellBack: boolean,
+  outcome?: CallOutcome,
+) => void;
+
+/** Eval-record outcome of a non-stream completion (spec PR 2 gate). */
+function completionOutcome(res: unknown): CallOutcome {
+  const r = res as {
+    choices?: { finish_reason?: string | null }[];
+    usage?: AiCallUsage;
+  };
+  return {
+    finishReason: r.choices?.[0]?.finish_reason ?? null,
+    usage: r.usage,
+  };
 }
 
 async function* wrapStream(
@@ -163,11 +189,17 @@ async function* wrapStream(
     answeredProvider: null,
     cost: undefined,
     completed: false,
+    finishReason: null,
+    usage: undefined,
   };
   const note = (c: ChatCompletionChunk) => {
     summary.answeredModel ??= c.model ?? null;
     summary.answeredProvider ??= answeredProvider(c);
     summary.cost = usageCost(c) ?? summary.cost;
+    summary.finishReason =
+      c.choices?.[0]?.finish_reason ?? summary.finishReason;
+    summary.usage =
+      (c.usage as AiCallUsage | null | undefined) ?? summary.usage;
   };
   try {
     if (!first.done) {
@@ -259,17 +291,14 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     const fallbackAllowed = ctx?.fallback !== "off";
     const streaming = params.stream === true;
 
-    const record = (
-      answeredModel: string | null,
-      provider: string | null,
-      fellBack: boolean,
-    ) => {
+    const record: RecordCall = (answeredModel, provider, fellBack, outcome) => {
       ctx?.calls.push({
         feature,
         requestedModel,
         answeredModel,
         answeredProvider: provider,
         fellBack,
+        ...outcome,
       });
     };
 
@@ -337,6 +366,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         streaming ? fallbackModel(row, feature) : answeredModel(res),
         "openai-direct",
         true,
+        streaming ? undefined : completionOutcome(res),
       );
       return res as ChatCompletion | AsyncIterable<ChatCompletionChunk>;
     };
@@ -417,7 +447,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       deps.breaker.recordSuccess();
       const model = answeredModel(res);
       const provider = answeredProvider(res);
-      record(model, provider, false);
+      record(model, provider, false, completionOutcome(res));
       deps.log.info(
         {
           feature,
@@ -504,11 +534,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     options: AiChatOptions | undefined,
     openrouterErr: unknown,
     reason: FallbackReason | "forced",
-    record: (
-      answeredModel: string | null,
-      provider: string | null,
-      fellBack: boolean,
-    ) => void,
+    record: RecordCall,
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
     const backup = row.vertexBackup!;
     // A forced call is a local smoke run, not an outage worth reporting.
@@ -565,7 +591,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       const res = await deps.vertex.chat.completions.create(body, options);
       deps.vertexBreaker.recordSuccess();
       const model = answeredModel(res);
-      record(model, "vertex", true);
+      record(model, "vertex", true, completionOutcome(res));
       deps.log.info(
         {
           feature,
@@ -609,11 +635,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     options: AiChatOptions | undefined,
     ctx: AiCallContext | undefined,
     requestedModel: string,
-    record: (
-      answeredModel: string | null,
-      provider: string | null,
-      fellBack: boolean,
-    ) => void,
+    record: RecordCall,
   ): Promise<ChatCompletion> {
     if (params.stream === true) {
       throw new Error(
@@ -655,7 +677,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         const res = await deps.vertex.chat.completions.create(adapted, options);
         deps.vertexBreaker.recordSuccess();
         const model = answeredModel(res);
-        record(model, "vertex", false);
+        record(model, "vertex", false, completionOutcome(res));
         deps.log.info(
           {
             feature,
@@ -723,7 +745,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         deps.breaker.recordSuccess();
         const model = answeredModel(res);
         const provider = answeredProvider(res);
-        record(model, provider, lastErr !== undefined);
+        record(model, provider, lastErr !== undefined, completionOutcome(res));
         deps.log.info(
           {
             feature,
@@ -791,11 +813,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     requestedModel: string,
     body: Record<string, unknown>,
     options: AiChatOptions | undefined,
-    record: (
-      answeredModel: string | null,
-      provider: string | null,
-      fellBack: boolean,
-    ) => void,
+    record: RecordCall,
     fellBack: boolean,
   ): Promise<AsyncIterable<ChatCompletionChunk>> {
     const source = (await client.chat.completions.create(
@@ -815,7 +833,10 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       // Vertex chunks carry no `provider` field: the route is the answer.
       const answered =
         provider === "vertex" ? "vertex" : summary.answeredProvider;
-      record(summary.answeredModel, answered, fellBack);
+      record(summary.answeredModel, answered, fellBack, {
+        finishReason: summary.finishReason,
+        usage: summary.usage,
+      });
       deps.log.info(
         { feature, provider, requestedModel, fellBack, ...summary },
         "ai stream",

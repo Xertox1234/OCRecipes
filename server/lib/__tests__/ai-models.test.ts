@@ -30,14 +30,14 @@ describe("AI_FEATURES table", () => {
   const SWITCHED: Record<string, AiFeatureConfig> = {
     "coach-chat": {
       model: "openai/gpt-6-luna",
-      fallback: "gpt-4o-mini",
+      vertexBackup: VERTEX_BACKUP,
       json: false,
       vision: false,
       adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
     },
     "coach-pro-chat": {
       model: "openai/gpt-6-luna",
-      fallback: "gpt-4o-mini",
+      vertexBackup: VERTEX_BACKUP,
       json: false,
       vision: false,
       adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
@@ -48,7 +48,7 @@ describe("AI_FEATURES table", () => {
     // `max_completion_tokens` for it — so no adapt block.
     "recipe-generate": {
       model: "google/gemini-4-argon",
-      fallback: "gpt-4o",
+      vertexBackup: VERTEX_BACKUP,
       json: true,
       vision: false,
     },
@@ -57,7 +57,7 @@ describe("AI_FEATURES table", () => {
     // keeps the JSON reply inside its token cap.
     "photo-analyze": {
       model: "google/gemini-3.8-flash",
-      fallback: "gpt-4o",
+      vertexBackup: VERTEX_BACKUP,
       json: true,
       vision: true,
       adapt: { set: { reasoning_effort: "low" } },
@@ -66,7 +66,7 @@ describe("AI_FEATURES table", () => {
     // P2-2026-10-17-recipe-chat-row-model-eval-before-switch, Updates).
     "recipe-chat": {
       model: "google/gemini-3.8-flash",
-      fallback: "gpt-4o",
+      vertexBackup: VERTEX_BACKUP,
       json: false,
       vision: false,
       adapt: { set: { reasoning_effort: "low" } },
@@ -115,15 +115,29 @@ describe("AI_FEATURES table", () => {
     }
   });
 
-  // Rollout allowlist (spec 2026-11-02-vertex-backup-route-design §5): PR 2
-  // adds the five rows.
-  const VERTEX_BACKUP_ROWS: string[] = [];
+  // Rollout allowlist (spec 2026-11-02-vertex-backup-route-design §5): the
+  // five rows of PR 2; the other 29 keep their OpenAI-direct fallback.
+  const VERTEX_BACKUP_ROWS = [
+    "coach-chat",
+    "coach-pro-chat",
+    "photo-analyze",
+    "recipe-chat",
+    "recipe-generate",
+  ];
   it("vertexBackup rows are exactly the rolled-out ones", () => {
     const flagged = rows
       .filter(([, row]) => row.vertexBackup !== undefined)
       .map(([name]) => name)
       .sort();
     expect(flagged).toEqual([...VERTEX_BACKUP_ROWS].sort());
+  });
+
+  it("a vertexBackup row uses the shared VERTEX_BACKUP constant", () => {
+    for (const name of VERTEX_BACKUP_ROWS) {
+      const row: AiFeatureConfig =
+        AI_FEATURES[name as keyof typeof AI_FEATURES];
+      expect(row.vertexBackup, name).toBe(VERTEX_BACKUP);
+    }
   });
 
   it("VERTEX_BACKUP is Gemini 3.8 Flash at low reasoning", () => {

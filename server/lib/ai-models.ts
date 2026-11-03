@@ -45,10 +45,11 @@ export const VERTEX_BACKUP = {
 const FAST = { model: "openai/gpt-4o-mini", fallback: "gpt-4o-mini" } as const;
 const HEAVY = { model: "openai/gpt-4o", fallback: "gpt-4o" } as const;
 // GPT-6 Luna (owner ruling 2026-10-06, both coach chats): no temperature
-// parameter; low reasoning effort keeps chat latency and cost down.
+// parameter; low reasoning effort keeps chat latency and cost down. Backup:
+// Vertex direct (Flash) — spec 2026-11-02-vertex-backup-route-design.
 const LUNA = {
   model: "openai/gpt-6-luna",
-  fallback: "gpt-4o-mini",
+  vertexBackup: VERTEX_BACKUP,
   adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
 } as const;
 
@@ -60,13 +61,11 @@ export const AI_FEATURES = {
   // Recipe chat
   // Gemini 3.8 Flash (owner-approved 2026-11-02, paired eval safety +0.96 vs
   // gpt-4o, p50 5.9 s to the card vs Argon's 11.7 s; todo
-  // P2-2026-10-17-recipe-chat-row-model-eval-before-switch). Not gpt-6-luna as
-  // the fallback: this call sends temperature and adapt never reaches the
-  // OpenAI-direct attempt, so the fallback stays gpt-4o until nearer its
-  // 2027-01-14 retirement.
+  // P2-2026-10-17-recipe-chat-row-model-eval-before-switch). Backup: Vertex
+  // direct (Flash) — spec 2026-11-02-vertex-backup-route-design.
   "recipe-chat": {
     model: "google/gemini-3.8-flash",
-    fallback: "gpt-4o",
+    vertexBackup: VERTEX_BACKUP,
     json: false,
     vision: false,
     adapt: { set: { reasoning_effort: "low" } },
@@ -78,11 +77,11 @@ export const AI_FEATURES = {
   "photo-label": { ...HEAVY, json: true, vision: true }, // analyzeLabelPhoto
   // Gemini 3.8 Flash (owner-approved 2026-10-19, paired eval 7.76 vs gpt-4o
   // 6.90; todo P2-2026-10-18-camera-vision-features-to-gemini). Low reasoning
-  // keeps the JSON reply inside its token cap. Direct-OpenAI fallback stays
-  // gpt-4o until nearer its 2027-01-14 retirement.
+  // keeps the JSON reply inside its token cap. Backup: Vertex direct (Flash) —
+  // spec 2026-11-02-vertex-backup-route-design.
   "photo-analyze": {
     model: "google/gemini-3.8-flash",
-    fallback: "gpt-4o",
+    vertexBackup: VERTEX_BACKUP,
     json: true,
     vision: true,
     adapt: { set: { reasoning_effort: "low" } },
@@ -97,12 +96,12 @@ export const AI_FEATURES = {
   // Recipes & meals
   // Gemini 4 Argon (owner-approved 2026-10-17, paired eval +1.97 creativity vs
   // gpt-4o, 0/36 assertion failures; spec 2026-10-17-recipe-generate-argon-
-  // background-completion §1). Direct-OpenAI fallback stays gpt-4o until nearer
-  // its 2027-01-14 retirement. Gemini keeps `temperature` and OpenRouter
-  // honours `max_completion_tokens` for it, so no adapt block.
+  // background-completion §1). Backup: Vertex direct (Flash, never Argon —
+  // spec 2026-11-02-vertex-backup-route-design §1). Gemini keeps `temperature`
+  // and OpenRouter honours `max_completion_tokens` for it, so no adapt block.
   "recipe-generate": {
     model: "google/gemini-4-argon",
-    fallback: "gpt-4o",
+    vertexBackup: VERTEX_BACKUP,
     json: true,
     vision: false,
   }, // recipe-generation generateRecipeContent
