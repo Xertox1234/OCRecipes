@@ -250,7 +250,7 @@ existing plain style:
    routing and streaming of §3.2–3.3, the tool-history fix of §3.4, `ai:smoke`
    support for the backup route (§6), unit tests. No row gains `vertexBackup`.
    This PR also rewrites the acceptance criteria of
-   `todos/P2-2026-11-02-replace-retiring-openai-direct-fallback-on-every-ai-row.md`
+   `todos/archive/P2-2026-11-02-replace-retiring-openai-direct-fallback-on-every-ai-row.md`
    to these rulings (design decided; five rows done in PR 2) and keeps the todo
    open for the other 29 rows.
 2. **PR 2 — turn it on.** The five rows switch from `fallback` to

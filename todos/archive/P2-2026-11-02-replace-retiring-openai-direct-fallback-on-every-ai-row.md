@@ -1,6 +1,6 @@
 ---
 title: "Replace the retiring direct-OpenAI fallback on every AI_FEATURES row before 2027-01-14"
-status: in-progress
+status: done
 priority: medium
 created: 2026-11-02
 updated: 2026-11-03
@@ -32,10 +32,10 @@ The only OpenAI-free routing that exists is the `primary: "vertex"` path (Vertex
 - [x] PR 2: the five rows (coach-chat, coach-pro-chat, recipe-chat, recipe-generate, photo-analyze) switched and the privacy page updated, after the live gate.
 - [x] The other 29 rows: decided 2026-11-03 (owner) — same Vertex backup, in two PRs: PR 3 the 21 text rows, PR 4 the 8 vision rows.
 - [x] PR 3: the 21 text rows switched, live gate clean, privacy page updated.
-- [ ] PR 4: the 8 vision rows (recipe-chat-image, photo-recipe, photo-label, photo-classify, receipt-scan, menu-scan, front-label-scan, cooking-ingredient-photo).
-- [ ] No row's fallback names a model whose shutdown date is on or before the switch-over date, checked against OpenAI's deprecations page that day.
-- [ ] `server/lib/__tests__/ai-models.test.ts` pins the new rule.
-- [ ] Done before 2027-01-14.
+- [x] PR 4: the 8 vision rows (recipe-chat-image, photo-recipe, photo-label, photo-classify, receipt-scan, menu-scan, front-label-scan, cooking-ingredient-photo).
+- [x] No row's fallback names a model whose shutdown date is on or before the switch-over date, checked against OpenAI's deprecations page that day.
+- [x] `server/lib/__tests__/ai-models.test.ts` pins the new rule.
+- [x] Done before 2027-01-14.
 
 ## Implementation Notes
 
@@ -52,6 +52,13 @@ The only OpenAI-free routing that exists is the `primary: "vertex"` path (Vertex
 - A design that adds a second Google route for streaming rows touches `aiChat`'s streaming path, which every coach and recipe-chat reply uses.
 
 ## Updates
+
+### 2026-11-03 (PR 4 — closes this todo)
+
+- The 8 vision rows (recipe-chat-image, photo-recipe, photo-label, photo-classify, receipt-scan, menu-scan, front-label-scan, cooking-ingredient-photo) now back up to Vertex direct (Flash, low reasoning); `FAST_VISION` / `HEAVY_VISION` are gone, so no row has an OpenAI-direct `fallback` at all (the "no row names a retiring model" criterion holds vacuously). `ai-models.test.ts` pins "every row backs up to Vertex, never OpenAI".
+- `npm run ai:backup-gate` drives the 8 through their real service functions on a photo of each kind (`scripts/ai-backup-gate-vision-rows.ts`; every image looked at first — `e2e/assets/receipt.jpg` turned out to be a bowl of tomatoes, not a receipt). The first run rejected 3/3 receipts: Gemini writes `"unit": null` where GPT omits the key; every `.optional()` field in the receipt and menu schemas now reads null as "not given". Final run 23/24, then the one failing row alone 6/6; the miss was a Vertex 429 after the menu rows' large replies (capacity, as in PR 3). cooking-ingredient-photo has a long latency tail on Vertex (42–60 s in 4 of 12 samples; normally 4–8 s).
+- Privacy page: OpenAI is no longer a direct backup for any feature; the Google row lists photo, label, receipt and menu scanning among the features it backs up.
+- Left in place: the OpenAI-direct `fallback` code path in `ai-client.ts` (no production row uses it now; its tests build rows with it).
 
 ### 2026-11-03 (PR 3)
 
