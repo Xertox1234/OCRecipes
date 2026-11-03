@@ -68,9 +68,11 @@ export default function AllConversationsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AllConversationsNavigationProp>();
 
-  const { isLoading: isPremiumLoading } = usePremiumContext();
+  const { isPremiumResolved } = usePremiumContext();
   const isCoachPro = usePremiumFeature("coachPro");
-  const showCoachPro = isCoachPro || isPremiumLoading;
+  // Unknown plan (loading, or a failed check whose features read free):
+  // keep Coach Pro routing, as CoachProScreen does (owner ruling 2026-11-02).
+  const showCoachPro = isCoachPro || !isPremiumResolved;
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const [search, setSearch] = useState("");
@@ -180,9 +182,9 @@ export default function AllConversationsScreen() {
             // `pop: true` returns to the EXISTING Main route below this modal;
             // without it the root StackRouter pushes a second Main on top.
             // Free-tier rows open the plain Chat screen (as ChatListScreen
-            // does). While premium status loads, keep CoachPro so a Coach Pro
+            // does). While the plan is unknown, keep CoachPro so a Coach Pro
             // user is never routed to Chat (CoachProScreen assumes access
-            // while loading too).
+            // until the plan is known too).
             navigation.navigate(
               "Main",
               {

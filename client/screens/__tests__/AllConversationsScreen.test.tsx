@@ -15,7 +15,7 @@ const {
   focusEffectCb,
   premiumState,
 } = vi.hoisted(() => ({
-  premiumState: { coachPro: true, isLoading: false },
+  premiumState: { coachPro: true, isPremiumResolved: true },
   mockGoBack: vi.fn(),
   mockCanGoBack: vi.fn(),
   mockNavigate: vi.fn(),
@@ -54,7 +54,9 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
 }));
 
 vi.mock("@/context/PremiumContext", () => ({
-  usePremiumContext: () => ({ isLoading: premiumState.isLoading }),
+  usePremiumContext: () => ({
+    isPremiumResolved: premiumState.isPremiumResolved,
+  }),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -66,7 +68,7 @@ beforeEach(() => {
   mockCanGoBack.mockReturnValue(true);
   focusEffectCb.current = null;
   premiumState.coachPro = true;
-  premiumState.isLoading = false;
+  premiumState.isPremiumResolved = true;
   mockUseChatConversations.mockReturnValue({
     data: [],
     isLoading: false,
@@ -172,9 +174,11 @@ describe("AllConversationsScreen — Coach and Recipes tabs", () => {
     );
   });
 
-  it("while premium status is loading, a coach row still opens Coach Pro", () => {
+  it("while the plan is unknown (loading or a failed check), a coach row still opens Coach Pro", () => {
+    // Unknown status falls back to free-tier features; a failed check is not
+    // "loading", so it must be keyed on isPremiumResolved (owner ruling 2026-11-02).
     premiumState.coachPro = false;
-    premiumState.isLoading = true;
+    premiumState.isPremiumResolved = false;
     mockUseChatConversations.mockReturnValue({
       data: [conv(10, "Loading chat")],
       isLoading: false,

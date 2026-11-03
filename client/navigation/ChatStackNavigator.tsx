@@ -57,7 +57,7 @@ const Stack = createNativeStackNavigator<ChatStackParamList>();
 
 export default function ChatStackNavigator() {
   const screenOptions = useScreenOptions();
-  const { isPremiumResolved, isError, refreshSubscription } =
+  const { isPremiumResolved, isPremiumStatusError, refreshSubscription } =
     usePremiumContext();
   const isCoachPro = usePremiumFeature("coachPro");
   const { theme } = useTheme();
@@ -79,7 +79,9 @@ export default function ChatStackNavigator() {
   // features still default to free — causing the same lock-in bug. The error
   // branch below lets users manually retry; automatic recovery happens when
   // the app goes offline→online (NetInfo wires refetchOnReconnect).
-  if (isError && !isPremiumResolved) {
+  // isPremiumStatusError, not isError: isError also covers the scan-count
+  // query, which would show this screen while the subscription still loads.
+  if (isPremiumStatusError) {
     return (
       <View style={[styles.loadingContainer, safeAreaStyle]}>
         <Text style={[styles.errorText, { color: theme.textSecondary }]}>

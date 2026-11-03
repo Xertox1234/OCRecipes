@@ -34,6 +34,7 @@ const {
   premiumContextState: {
     isPremiumResolved: true,
     isError: false,
+    isPremiumStatusError: false,
     refreshSubscription: vi.fn(),
   },
   registeredScreenNames: [] as string[],
@@ -124,6 +125,7 @@ beforeEach(() => {
   registeredGetIds.clear();
   premiumContextState.isPremiumResolved = true;
   premiumContextState.isError = false;
+  premiumContextState.isPremiumStatusError = false;
   premiumContextState.refreshSubscription = vi.fn();
 });
 
@@ -164,6 +166,7 @@ describe("ChatStackNavigator — isPremiumResolved mount guard", () => {
   it("renders the retry error state, not the navigator, on a hard subscription error with no resolved data", () => {
     premiumContextState.isPremiumResolved = false;
     premiumContextState.isError = true;
+    premiumContextState.isPremiumStatusError = true;
     mockUsePremiumFeature.mockReturnValue(false);
 
     renderComponent(<ChatStackNavigator />);
@@ -176,6 +179,22 @@ describe("ChatStackNavigator — isPremiumResolved mount guard", () => {
 
     fireEvent.click(retryButton);
     expect(premiumContextState.refreshSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the loading state when only the scan-count query failed while the subscription is still loading", () => {
+    // PremiumContext's isError also covers the scan-count query; only
+    // isPremiumStatusError means the subscription status itself failed.
+    premiumContextState.isPremiumResolved = false;
+    premiumContextState.isError = true;
+    premiumContextState.isPremiumStatusError = false;
+    mockUsePremiumFeature.mockReturnValue(false);
+
+    renderComponent(<ChatStackNavigator />);
+
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /retry loading coach/i }),
+    ).toBeNull();
   });
 
   it("mounts the navigator normally on a resolved-but-currently-erroring query — the retry state is only for data that has never resolved", () => {

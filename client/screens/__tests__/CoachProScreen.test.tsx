@@ -28,7 +28,7 @@ const {
   // Captures the latest callback CoachProScreen's useRefreshOnFocus passes to
   // useFocusEffect, so tests can simulate a refocus by invoking it directly.
   focusEffectCb: { current: null as (() => void) | null },
-  premiumContextState: { isLoading: false },
+  premiumContextState: { isPremiumResolved: true },
   // Mutable conversation list for useChatConversations — defaults to empty
   // (the original harness); the New-thread tests seed an existing thread.
   conversationsState: {
@@ -132,7 +132,7 @@ beforeEach(() => {
   focusEffectCb.current = null;
   mockAcknowledge.mockResolvedValue(undefined);
   // Defaults preserve the original harness: Coach Pro user, premium resolved.
-  premiumContextState.isLoading = false;
+  premiumContextState.isPremiumResolved = true;
   conversationsState.data = [];
   routeState.params = {};
   keyboardState.visible = false;
@@ -264,12 +264,12 @@ describe("CoachProScreen — premium gate (coachPro)", () => {
     expect(screen.getByText("coach-pro:true")).toBeTruthy();
   });
 
-  it("keeps the context fetch enabled while premium status is still loading", () => {
-    // contextEnabled = isCoachPro || isPremiumLoading — the screen is only
-    // mounted for Pro users, so it assumes access until premium resolves
-    // rather than flashing a disabled fetch.
+  it("keeps the context fetch enabled while the plan is unknown (loading or a failed check)", () => {
+    // contextEnabled = isCoachPro || !isPremiumResolved — the screen is only
+    // mounted for Pro users, so it assumes access until premium resolves. A
+    // failed check is not "loading", so it is keyed on isPremiumResolved.
     mockUsePremiumFeature.mockReturnValue(false);
-    premiumContextState.isLoading = true;
+    premiumContextState.isPremiumResolved = false;
 
     renderComponent(<CoachProScreen />);
 

@@ -57,11 +57,13 @@ export default function CoachProScreen() {
   // keyboard). The dashboard folds, and the input drops the tab-bar padding —
   // the keyboard covers the tab bar then.
   const keyboardVisible = useKeyboardVisible();
-  const { isLoading: isPremiumLoading } = usePremiumContext();
+  const { isPremiumResolved } = usePremiumContext();
   const isCoachPro = usePremiumFeature("coachPro");
-  // Enable context fetch when premium is confirmed OR while premium status is still loading
-  // (this screen is only mounted for Coach Pro users, so assume access while loading)
-  const contextEnabled = isCoachPro || isPremiumLoading;
+  // Enable context fetch when premium is confirmed OR while the plan is
+  // unknown — loading, or a failed check (not "loading", yet its features
+  // read free). This screen is only mounted for Coach Pro users, so assume
+  // access until the plan is known (owner ruling 2026-11-02).
+  const contextEnabled = isCoachPro || !isPremiumResolved;
   const {
     data: context,
     isLoading: isContextLoading,
