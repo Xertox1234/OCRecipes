@@ -1,6 +1,6 @@
 # Vertex AI direct as the backup route for five AI features (no OpenAI)
 
-Date: 2026-11-02 · Status: builder check done (no owner questions left); awaiting owner approval
+Date: 2026-11-02 · Status: approved by the owner 2026-11-02
 
 Builds on `2026-10-19-vision-rows-vertex-direct-design.md` (the Vertex client,
 `vertexBreaker` and the Vertex-first flow shipped as plumbing in #1518/#1519).
