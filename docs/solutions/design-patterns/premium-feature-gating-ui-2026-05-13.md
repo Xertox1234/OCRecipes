@@ -6,6 +6,7 @@ module: client
 tags: [react-native, premium, gating, accessibility, ui]
 applies_to: [client/screens/**/*.tsx, client/components/**/*.tsx]
 created: '2026-05-13'
+last_updated: '2026-11-02'
 ---
 
 # Premium feature gating: button lock badge, section lock row, disabled input overlay
@@ -13,6 +14,18 @@ created: '2026-05-13'
 ## When this applies
 
 When a feature requires premium, extract the condition and provide clear feedback at the UI level. Three flavours apply depending on context: a lock-badge button for individual actions, a `Pressable` lock row replacing an entire premium-only section, and a disabled-input overlay for fields free users should see but not edit.
+
+### Wall only a user KNOWN to be free (owner ruling 2026-11-02)
+
+`usePremiumContext()` reports `isPremium: false` both for a free user and while the status is **unknown**: still loading, or `/api/subscription/status` failed with nothing cached. In both cases `tier` defaults to `"free"`. Any lock, badge, cap or `UpgradeModal` must therefore gate on `isPremiumResolved && !isPremium`, never on `!isPremium` alone. Otherwise a 429/5xx walls a paying user (audit M-crel-6).
+
+Unknown status is **neutral**: no wall, and no premium grant.
+
+- **Tap gate** (a button that would open the `UpgradeModal`): when `!isPremiumResolved`, call `void refreshSubscription()`, show `toast.info("Checking your plan. Try again in a moment.")`, and return. One branch covers both the loading and failed cases, because a refetch is deduped while in flight, and on a failed query with no data it resets the query to pending.
+- **Persistent gate** (a screen or CTA that renders instead of the feature): render a spinner while loading. On `isPremiumStatusError` (the subscription fetch failed with nothing cached; a scan-count failure does not set it), render a "Couldn't check your plan" retry that calls `refreshSubscription`. Never mount the premium feature itself, such as the camera, until `isPremium` is true.
+- **Test mocks:** a `usePremiumContext` mock with no `isPremiumResolved` now hits the unknown branch. Set `isPremiumResolved: true` in every mock that tests a resolved tier.
+
+Precedents: `ReceiptCaptureScreen.tsx` (persistent gate), `AskCoachSection.tsx` (tap gate), `RecipeBrowserScreen.tsx` (ideas CTA), and `ChatStackNavigator.tsx` (mount-once gate; see [isloading-false-on-error-not-resolved](../conventions/isloading-false-on-error-not-resolved-2026-06-12.md)).
 
 ## Examples
 
@@ -167,5 +180,8 @@ Free users need to see what they're missing to understand the value of upgrading
 ## Related Files
 
 - `client/hooks/usePremiumFeatures.ts` — `usePremiumFeature` hook
+- `client/context/PremiumContext.tsx` — `isPremiumResolved`, `isPremiumStatusError`
+- `client/screens/ReceiptCaptureScreen.tsx` — persistent gate with unknown-status retry
+- `client/components/AskCoachSection.tsx` — tap gate that re-checks while status is unknown
 - `client/screens/ProfileScreen.tsx` — section-level lock row
 - `client/screens/GoalSetupScreen.tsx` — disabled input gating
