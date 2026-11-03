@@ -273,20 +273,8 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       });
     };
 
-    // Before any OpenAI path below — incl. the no-OpenRouter-key early return.
-    if (row.primary === "vertex") {
-      return runVertexFirst(
-        feature,
-        row,
-        params,
-        options,
-        ctx,
-        requestedModel,
-        record,
-      );
-    }
-
-    // Eval/smoke switch (ai-call-context.ts); beats `fallback: "off"`.
+    // Eval/smoke switch (ai-call-context.ts); beats `fallback: "off"`, and comes
+    // before the Vertex-first dispatch so it is never silently ignored.
     const force = ctx?.forceBackup;
     if (
       force !== undefined &&
@@ -304,6 +292,19 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         options,
         undefined,
         "forced",
+        record,
+      );
+    }
+
+    // Before any OpenAI path below — incl. the no-OpenRouter-key early return.
+    if (row.primary === "vertex") {
+      return runVertexFirst(
+        feature,
+        row,
+        params,
+        options,
+        ctx,
+        requestedModel,
         record,
       );
     }
@@ -523,7 +524,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         : null;
     if (skip !== null || !deps.vertex) {
       reportUnavailable(
-        `AI unavailable: ${feature} — OpenRouter failed and the Vertex backup is ${skip}`,
+        `AI unavailable: ${feature} — OpenRouter ${openrouterErr !== undefined ? "failed" : `not tried (${reason})`} and the Vertex backup is ${skip}`,
       );
       if (openrouterErr !== undefined) throw openrouterErr;
       throw new Error(

@@ -22,13 +22,13 @@ import type { AiCallContext } from "../server/lib/ai-call-context";
 import { getAiCallContext } from "../server/lib/ai-call-context";
 import { modelMatches } from "../evals/lib/candidate";
 
-// 1×1 PNG — enough for the provider to accept an image part.
 const VERTEX_VARS = [
   "GOOGLE_VERTEX_PROJECT",
   "GOOGLE_VERTEX_SERVICE_ACCOUNT_EMAIL",
   "GOOGLE_VERTEX_SERVICE_ACCOUNT_KEY",
 ] as const;
 
+// 1×1 PNG — enough for the provider to accept an image part.
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 

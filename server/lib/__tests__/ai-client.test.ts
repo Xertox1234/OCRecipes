@@ -1484,6 +1484,25 @@ describe("aiChat (vertexBackup rows)", () => {
     expect(deps.openrouter!.chat.completions.create).not.toHaveBeenCalled();
   });
 
+  it("forceBackup on a Vertex-first row throws instead of being ignored", async () => {
+    const ctx = ctxWith({ forceBackup: true });
+    const V = "test-vertex-row" as unknown as AiFeature;
+    await expect(
+      withAiCallContext(ctx, () => createAiChat(deps)(V, params)),
+    ).rejects.toThrow(/forceBackup on a row with no vertexBackup/);
+    expect(deps.vertex!.chat.completions.create).not.toHaveBeenCalled();
+  });
+
+  it("no OpenRouter key and Vertex breaker open → report says OpenRouter was not tried", async () => {
+    deps = makeDeps({ openrouter: null, vertex: client() });
+    for (let i = 0; i < 5; i++) deps.vertexBreaker.recordFailure();
+    await expect(createAiChat(deps)(B, params)).rejects.toThrow(/unavailable/);
+    const msg = reportMessages().find((m) => m.includes("unavailable"));
+    expect(msg).toBeDefined();
+    expect(msg).not.toContain("OpenRouter failed");
+    expect(msg).toContain("config");
+  });
+
   it("402 report names the Vertex backup, not OpenAI", async () => {
     vi.mocked(deps.openrouter!.chat.completions.create).mockRejectedValue(
       apiError(402),
