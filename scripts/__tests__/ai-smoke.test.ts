@@ -20,10 +20,10 @@ vi.mock("../../server/lib/ai-models", async (importOriginal) => {
         vision: false,
         vertexBackup: real.VERTEX_BACKUP,
       },
-      // Synthetic OpenAI-direct fallback row: no real row has one any more.
-      "test-fallback-row": {
-        model: "openai/gpt-4o-mini",
-        fallback: "gpt-4o-mini",
+      // Synthetic Vertex-first row: the only kind with no vertexBackup.
+      "test-vertex-row": {
+        model: "google/gemini-3.8-flash",
+        primary: "vertex",
         json: true,
         vision: true,
       },
@@ -35,7 +35,7 @@ describe("buildSmokeRequest", () => {
   it("json rows ask for json_object and say JSON in the prompt", () => {
     const req = buildSmokeRequest({
       model: "x/y",
-      fallback: "y",
+      primary: "vertex",
       json: true,
       vision: false,
     });
@@ -45,7 +45,7 @@ describe("buildSmokeRequest", () => {
   it("vision rows include an image_url part", () => {
     const req = buildSmokeRequest({
       model: "x/y",
-      fallback: "y",
+      primary: "vertex",
       json: false,
       vision: true,
     });
@@ -57,7 +57,7 @@ describe("buildSmokeRequest", () => {
   it("stays small but leaves room for low-effort reasoning", () => {
     const cap = buildSmokeRequest({
       model: "x/y",
-      fallback: "y",
+      primary: "vertex",
       json: false,
       vision: false,
     }).max_completion_tokens;
@@ -178,7 +178,7 @@ describe("smoke with --backup", () => {
   it("a row with no vertexBackup fails without calling the model", async () => {
     const chat = vi.fn();
     const r = await smokeRow(
-      "test-fallback-row" as unknown as AiFeature,
+      "test-vertex-row" as unknown as AiFeature,
       chat as unknown as AiChat,
       { backup: true },
     );

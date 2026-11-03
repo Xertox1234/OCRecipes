@@ -2,10 +2,10 @@
 /**
  * One row per AI call site. `model` is the provider-prefixed id (OpenRouter's
  * form, which Vertex's OpenAI-compatible endpoint also uses). Each row has
- * exactly one backup kind: `fallback` is the id for the existing OpenAI client
- * (today's path); `vertexBackup` goes OpenRouter → Vertex direct and never
- * reaches OpenAI (spec 2026-11-02-vertex-backup-route-design §3); a row with
- * `primary: "vertex"` goes Vertex direct → OpenRouter and has NO `fallback`
+ * exactly one backup kind, and none reaches OpenAI direct (gpt-4o/mini shut
+ * down there 2027-01-14): `vertexBackup` goes OpenRouter → Vertex direct
+ * (spec 2026-11-02-vertex-backup-route-design §3); a row with
+ * `primary: "vertex"` goes Vertex direct → OpenRouter
  * (spec 2026-10-19-vision-rows-vertex-direct §2).
  * Moving a feature to another model = edit its row (owner approval + paired
  * eval report required).
@@ -19,20 +19,23 @@ export interface AiAdapt {
   set?: Readonly<Record<string, unknown>>;
 }
 
-export interface AiFeatureConfig {
+interface AiFeatureBase {
   model: string;
-  /**
-   * OpenAI-direct model id. Exactly one of `fallback`, `vertexBackup`,
-   * `primary: "vertex"` is set on each row.
-   */
-  fallback?: string;
-  /** Vertex AI direct as the backup when OpenRouter fails. Replaces `fallback`. */
-  vertexBackup?: { model: string; adapt?: AiAdapt };
   json: boolean;
   vision: boolean;
-  primary?: "vertex";
   adapt?: AiAdapt;
 }
+
+/** Either Vertex-first, or OpenRouter-first with the Vertex backup. */
+export type AiFeatureConfig = AiFeatureBase &
+  (
+    | { primary: "vertex"; vertexBackup?: never }
+    | {
+        primary?: never;
+        /** Vertex AI direct as the backup when OpenRouter fails. */
+        vertexBackup: { model: string; adapt?: AiAdapt };
+      }
+  );
 
 // The Vertex-direct backup for every `vertexBackup` row (owner ruling
 // 2026-11-02): Flash, not the row's own model — Vertex keeps "frontier" models'
