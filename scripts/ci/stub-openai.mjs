@@ -6,7 +6,8 @@
 // both platforms for 4 days, and no flow uploaded anything. The receipt scan's AI step runs after
 // the photo reaches the server; with the run's sk-stub key it would 500, and the flow could not
 // tell "the upload arrived, the AI failed" from "nothing left the phone". So the server's
-// AI_INTEGRATIONS_OPENAI_BASE_URL points here and the receipt request gets a fixed answer.
+// OPENROUTER_BASE_URL (the route every AI feature tries first) and AI_INTEGRATIONS_OPENAI_BASE_URL
+// point here, and the receipt request gets a fixed answer.
 //
 // Only a vision request whose prompt is the receipt prompt is answered. Every other request gets
 // the 401 the real API gives sk-stub, so every other flow sees exactly what it saw before.
