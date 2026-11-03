@@ -63,7 +63,7 @@ export function buildSmokeRequest(row: AiFeatureConfig): AiChatParams {
           : text,
       },
     ],
-    max_completion_tokens: 20,
+    max_completion_tokens: 200,
     temperature: 0,
     ...(row.json ? { response_format: { type: "json_object" as const } } : {}),
   };
