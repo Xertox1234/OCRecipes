@@ -7,6 +7,7 @@ tags: [ai-prompting, gemini, zod, validation]
 applies_to: [server/services/**/*.ts]
 symptoms: ["A row validates fine on gpt-4o but fails its Zod schema on Gemini (primary or Vertex backup)", "zod error \"Invalid enum value. Expected 'breakfast' | ..., received 'Breakfast'\"", "zod too_big on a short-phrase field; the service falls back to its default"]
 created: '2026-11-03'
+last_updated: '2026-11-03'
 severity: medium
 ---
 
@@ -24,15 +25,20 @@ Two schemas written against GPT output rejected valid Gemini answers:
 
 Both were silent on the GPT route, which happens to match the casing and brevity.
 
+The PR #1714 vision gate found a third shape: **null for "not given"**. Gemini wrote
+`"unit": null` on every receipt item where GPT leaves the key out, and `.optional()`
+rejects null, so `receipt-scan` failed 3/3.
+
 ## Symptoms
 
 - Same prompt, same schema: passes on gpt-4o / gpt-4o-mini, fails on Gemini.
 - `invalid_enum_value` with a differently-cased value, or `too_big` on a string field.
+- `Expected string, received null` on a field declared `.optional()`.
 - The service returns its error or stand-in value; the call record itself is clean (`stop`).
 
 ## Root Cause
 
-The schema encoded one model's habits (casing, phrase length) as rules. The prompt never
+The schema encoded one model's habits (casing, phrase length, omitting absent keys) as rules. The prompt never
 stated the allowed values or a length, so a different model's equally valid answer fails.
 
 ## Solution
@@ -41,16 +47,22 @@ stated the allowed values or a length, so a different model's equally valid answ
   `difficulty`) before the `z.enum` — unknown values still fail.
 - Length caps on descriptive fields: `transform` that clips to the cap at a word boundary
   (`clip()` in `image-art-direction.ts`) instead of `.max()` — keeps the bound, keeps `min(1)`.
+- Optional fields: `absentAsUndefined(z.string())` =
+  `schema.nullish().transform((v) => v ?? undefined)` (receipt and menu analysis). It
+  accepts null or a missing key, and the inferred type stays `T | undefined`, so callers
+  don't change. Swept by target: every `.optional()` in the vision output schemas, not just
+  the field that failed.
 
 ## Prevention
 
 Before a row moves to a Gemini model (primary or backup), run its real service on the new
 model and read the validation warnings, not just `finish_reason`. For a schema field the
-prompt does not pin, tolerate case and trim length rather than reject.
+prompt does not pin, tolerate case, trim length and read null as absent rather than reject.
 
 ## Related Files
 
 - `server/services/pantry-meal-plan.ts`, `server/services/image-art-direction.ts` (+ tests)
+- `server/services/receipt-analysis.ts`, `server/services/menu-analysis.ts` (+ tests)
 - `scripts/ai-backup-gate-text-rows.ts`
 
 ## See Also

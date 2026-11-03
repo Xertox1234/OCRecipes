@@ -77,6 +77,12 @@ direction rejecting every Gemini answer (`too_big`) on records that looked perfe
   stand-in (reference equality or deep-equal), not only the call records.
 - Test the gate with a fabricated failing sample of each kind (apology text, no records,
   error records in the route pair), not only with real passing runs.
+- Look at every input before it drives a live check: the input is what it shows, not what
+  its name says. For the PR 4 vision gate, `e2e/assets/receipt.jpg` turned out to be a bowl
+  of tomatoes; a receipt driver on it would have "passed" or "failed" a different question.
+  A service that throws on a bad reply can still return an empty list or a null key field
+  for a photo that plainly has content; the vision drivers report those as misses
+  (`visionDegraded`, `scripts/ai-backup-gate-vision-rows.ts`).
 
 ## Related Files
 
