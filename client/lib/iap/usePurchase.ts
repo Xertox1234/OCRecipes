@@ -9,6 +9,7 @@ import {
   mapIAPError,
   buildReceiptPayload,
   buildRestorePayload,
+  entitlementError,
   isSupportedPlatform,
 } from "./purchase-utils";
 
@@ -68,11 +69,18 @@ export function usePurchase() {
       const result = await iap.requestPurchase(product);
       safeSetState({ status: "pending" });
 
-      await apiRequest(
+      const res = await apiRequest(
         "POST",
         "/api/subscription/upgrade",
         buildReceiptPayload(result, platform),
       );
+      // A declined receipt arrives as 200 { success: false }. Leave the
+      // transaction unfinished so the store redelivers it for a retry.
+      const declined = entitlementError(await res.json().catch(() => null));
+      if (declined) {
+        safeSetState({ status: "error", error: declined });
+        return;
+      }
 
       await iap.finishTransaction(result);
       await refreshSubscription();
@@ -117,11 +125,16 @@ export function usePurchase() {
         return;
       }
 
-      await apiRequest(
+      const res = await apiRequest(
         "POST",
         "/api/subscription/restore",
         buildRestorePayload(result.purchaseToken, platform),
       );
+      const declined = entitlementError(await res.json().catch(() => null));
+      if (declined) {
+        safeSetState({ status: "error", error: declined });
+        return;
+      }
 
       await iap.finishTransaction(result);
       await refreshSubscription();

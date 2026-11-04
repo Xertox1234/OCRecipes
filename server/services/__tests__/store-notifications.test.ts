@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { verifyAppleNotification } from "../receipt-validation";
+import {
+  verifyAppleNotification,
+  validateReceipt,
+} from "../receipt-validation";
 import { storage } from "../../storage";
 import { invalidateCache } from "../subscription-tier-cache";
 import {
@@ -11,9 +14,15 @@ import {
 
 vi.mock("../receipt-validation", () => ({
   verifyAppleNotification: vi.fn(),
+  validateReceipt: vi.fn(),
 }));
 vi.mock("../../storage", () => ({
-  storage: { revokeSubscriptionByTransactionId: vi.fn() },
+  storage: {
+    revokeSubscriptionByTransactionId: vi.fn(),
+    expireSubscriptionByTransactionId: vi.fn(),
+    reinstateSubscriptionByTransactionId: vi.fn(),
+    extendSubscriptionByTransactionId: vi.fn(),
+  },
 }));
 vi.mock("../subscription-tier-cache", () => ({
   invalidateCache: vi.fn(),
@@ -54,24 +63,98 @@ describe("handleAppleNotification", () => {
 
     expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
       "orig-123",
+      undefined,
     );
     expect(invalidateCache).toHaveBeenCalledWith("user-1");
   });
 
-  it("revokes on EXPIRED", async () => {
+  it.each(["REFUND", "REVOKE"])(
+    "times a %s by the store's revocationDate",
+    async (notificationType) => {
+      const revokedAt = new Date(Date.now() - 60 * 60 * 1000);
+      vi.mocked(verifyAppleNotification).mockResolvedValue({
+        notificationType,
+        originalTransactionId: "orig-123",
+        revokedAt,
+        signedAt: new Date(),
+      });
+      vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
+        userId: "user-1",
+      });
+
+      await handleAppleNotification("signed-payload");
+
+      expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
+        "orig-123",
+        revokedAt,
+      );
+    },
+  );
+
+  it("falls back to the notification's signedDate when the transaction has no revocationDate", async () => {
+    const signedAt = new Date(Date.now() - 60 * 1000);
     vi.mocked(verifyAppleNotification).mockResolvedValue({
-      notificationType: "EXPIRED",
-      originalTransactionId: "orig-9",
+      notificationType: "REFUND",
+      originalTransactionId: "orig-123",
+      signedAt,
     });
     vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
-      userId: "user-9",
+      userId: "user-1",
     });
 
     await handleAppleNotification("signed-payload");
 
     expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
-      "orig-9",
+      "orig-123",
+      signedAt,
     );
+  });
+
+  it.each(["EXPIRED", "GRACE_PERIOD_EXPIRED"])(
+    "stores %s as a plain expiry, not a revoke",
+    async (notificationType) => {
+      vi.mocked(verifyAppleNotification).mockResolvedValue({
+        notificationType,
+        originalTransactionId: "orig-9",
+        signedAt: new Date(),
+      });
+      vi.mocked(storage.expireSubscriptionByTransactionId).mockResolvedValue({
+        userId: "user-9",
+      });
+
+      await handleAppleNotification("signed-payload");
+
+      expect(storage.expireSubscriptionByTransactionId).toHaveBeenCalledWith(
+        "orig-9",
+      );
+      expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+      expect(invalidateCache).toHaveBeenCalledWith("user-9");
+    },
+  );
+
+  it("does not invalidate the cache when an expiry matches no local transaction", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "EXPIRED",
+      originalTransactionId: "orig-unknown",
+    });
+    vi.mocked(storage.expireSubscriptionByTransactionId).mockResolvedValue(
+      null,
+    );
+
+    await handleAppleNotification("signed-payload");
+
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it("no-ops an expiry that carries no originalTransactionId", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "EXPIRED",
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.expireSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
   });
 
   it("does NOT revoke on an informational notification (AUTO_RENEW_DISABLED)", async () => {
@@ -118,6 +201,128 @@ describe("handleAppleNotification", () => {
 
     await expect(handleAppleNotification("forged")).rejects.toThrow();
     expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleAppleNotification REFUND_REVERSED", () => {
+  const expiresAt = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000);
+  const signedAt = new Date(Date.now() - 60 * 1000);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reinstates the row from the verified, unrevoked transaction", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND_REVERSED",
+      originalTransactionId: "orig-rr",
+      expiresAt,
+      purchasedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      revoked: false,
+      signedAt,
+    });
+    vi.mocked(storage.reinstateSubscriptionByTransactionId).mockResolvedValue({
+      userId: "user-rr",
+      stale: false,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.reinstateSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-rr",
+      expiresAt,
+      signedAt,
+    );
+    expect(invalidateCache).toHaveBeenCalledWith("user-rr");
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("passes null when the transaction carries no expiry", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND_REVERSED",
+      originalTransactionId: "orig-rr",
+      revoked: false,
+      signedAt,
+    });
+    vi.mocked(storage.reinstateSubscriptionByTransactionId).mockResolvedValue({
+      userId: "user-rr",
+      stale: false,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.reinstateSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-rr",
+      null,
+      signedAt,
+    );
+  });
+
+  it.each([
+    ["the transaction is still revoked", { revoked: true }],
+    ["there is no signed transaction", { revoked: undefined }],
+    [
+      "there is no originalTransactionId",
+      { revoked: false, originalTransactionId: undefined },
+    ],
+    [
+      "the notification has no signedDate (cannot order it against a refund)",
+      { revoked: false, signedAt: undefined },
+    ],
+  ])("does nothing when %s", async (_label, overrides) => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND_REVERSED",
+      originalTransactionId: "orig-rr",
+      expiresAt,
+      signedAt,
+      ...overrides,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.reinstateSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate the cache when no local transaction matches", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND_REVERSED",
+      originalTransactionId: "orig-unknown",
+      expiresAt,
+      revoked: false,
+      signedAt,
+    });
+    vi.mocked(storage.reinstateSubscriptionByTransactionId).mockResolvedValue(
+      null,
+    );
+
+    await handleAppleNotification("signed-payload");
+
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate the cache when the reversal is older than the row's refund", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND_REVERSED",
+      originalTransactionId: "orig-rr",
+      expiresAt,
+      revoked: false,
+      signedAt,
+    });
+    vi.mocked(storage.reinstateSubscriptionByTransactionId).mockResolvedValue({
+      userId: "user-rr",
+      stale: true,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.reinstateSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-rr",
+      expiresAt,
+      signedAt,
+    );
+    expect(invalidateCache).not.toHaveBeenCalled();
   });
 });
 
@@ -201,8 +406,8 @@ describe("handleGoogleNotification", () => {
     expect(invalidateCache).toHaveBeenCalledWith("user-g");
   });
 
-  it("revokes on SUBSCRIPTION_EXPIRED (13)", async () => {
-    vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
+  it("stores SUBSCRIPTION_EXPIRED (13) as a plain expiry, not a revoke", async () => {
+    vi.mocked(storage.expireSubscriptionByTransactionId).mockResolvedValue({
       userId: "user-e",
     });
 
@@ -210,9 +415,23 @@ describe("handleGoogleNotification", () => {
       message: { data: rtdnMessage(13, "tok-2") },
     });
 
-    expect(storage.revokeSubscriptionByTransactionId).toHaveBeenCalledWith(
+    expect(storage.expireSubscriptionByTransactionId).toHaveBeenCalledWith(
       "tok-2",
     );
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).toHaveBeenCalledWith("user-e");
+  });
+
+  it("does not invalidate the cache when an expiry matches no local transaction", async () => {
+    vi.mocked(storage.expireSubscriptionByTransactionId).mockResolvedValue(
+      null,
+    );
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(13, "tok-unknown") },
+    });
+
+    expect(invalidateCache).not.toHaveBeenCalled();
   });
 
   it("does NOT revoke on SUBSCRIPTION_CANCELED (3) — active until expiry", async () => {
@@ -239,5 +458,219 @@ describe("handleGoogleNotification", () => {
     });
 
     expect(invalidateCache).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleAppleNotification renewals", () => {
+  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+  const purchasedAt = new Date();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("extends entitlement on DID_RENEW from the verified transaction's expiry", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      originalTransactionId: "orig-r1",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId).mockResolvedValue({
+      status: "extended",
+      userId: "user-r1",
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-r1",
+      expiresAt,
+      purchasedAt,
+    );
+    expect(invalidateCache).toHaveBeenCalledWith("user-r1");
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("extends on a DID_RENEW BILLING_RECOVERY too", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      subtype: "BILLING_RECOVERY",
+      originalTransactionId: "orig-r2",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId).mockResolvedValue({
+      status: "extended",
+      userId: "user-r2",
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "orig-r2",
+      expiresAt,
+      purchasedAt,
+    );
+  });
+
+  it("does not invalidate the cache when the row is revoked or unknown", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      originalTransactionId: "orig-r3",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId)
+      .mockResolvedValueOnce({ status: "revoked", userId: "user-r3" })
+      .mockResolvedValueOnce(null);
+
+    await handleAppleNotification("signed-payload");
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).toHaveBeenCalledTimes(2);
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a revoked transaction", { revoked: true }],
+    ["no expiry", { expiresAt: undefined }],
+    ["no originalTransactionId", { originalTransactionId: undefined }],
+  ])("does not extend a DID_RENEW with %s", async (_label, override) => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      originalTransactionId: "orig-r4",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+      ...override,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "SUBSCRIBED",
+    "DID_CHANGE_RENEWAL_PREF",
+    "DID_CHANGE_RENEWAL_STATUS",
+  ])("does not extend on %s (not a renewal)", async (notificationType) => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType,
+      originalTransactionId: "orig-r5",
+      expiresAt,
+      purchasedAt,
+      revoked: false,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleGoogleNotification renewals", () => {
+  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    [2, "SUBSCRIPTION_RENEWED"],
+    [1, "SUBSCRIPTION_RECOVERED"],
+  ])("re-reads live Play state and extends on %i (%s)", async (type) => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: true,
+      expiresAt,
+      originalTransactionId: "tok-r",
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId).mockResolvedValue({
+      status: "extended",
+      userId: "user-gr",
+    });
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(type, "tok-r") },
+    });
+
+    expect(validateReceipt).toHaveBeenCalledWith("tok-r", "android");
+    expect(storage.extendSubscriptionByTransactionId).toHaveBeenCalledWith(
+      "tok-r",
+      expiresAt,
+      undefined,
+    );
+    expect(invalidateCache).toHaveBeenCalledWith("user-gr");
+  });
+
+  it.each(["STORE_API_ERROR", "PLATFORM_NOT_CONFIGURED", "NOT_IMPLEMENTED"])(
+    "throws on %s (transient or fixable config) so Pub/Sub redelivers",
+    async (errorCode) => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: false,
+        errorCode,
+      });
+
+      await expect(
+        handleGoogleNotification({
+          message: { data: rtdnMessage(2, "tok-t") },
+        }),
+      ).rejects.toThrow();
+      expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    },
+  );
+
+  it("acks (does not throw) a permanent invalid-token answer from Play, so Pub/Sub does not redeliver", async () => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: false,
+      errorCode: "PURCHASE_TOKEN_INVALID",
+    });
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(2, "tok-gone") },
+    });
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it("does not extend (or throw) when Play says the subscription is not active", async () => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: false,
+      errorCode: "SUBSCRIPTION_EXPIRED",
+    });
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(2, "tok-x") },
+    });
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it("does not extend when Play returns no expiry", async () => {
+    vi.mocked(validateReceipt).mockResolvedValue({
+      valid: true,
+      originalTransactionId: "tok-n",
+    });
+
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(2, "tok-n") },
+    });
+
+    expect(storage.extendSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("does not call the Play API for a non-renewal type (SUBSCRIPTION_CANCELED)", async () => {
+    await handleGoogleNotification({
+      message: { data: rtdnMessage(3, "tok-c") },
+    });
+
+    expect(validateReceipt).not.toHaveBeenCalled();
   });
 });

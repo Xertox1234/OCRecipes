@@ -4,6 +4,7 @@ import {
   isSupportedPlatform,
   buildReceiptPayload,
   buildRestorePayload,
+  entitlementError,
 } from "../purchase-utils";
 
 describe("mapIAPError", () => {
@@ -179,5 +180,46 @@ describe("mapIAPError — expo-iap error codes", () => {
     expect(mapIAPError(storeError("service-error", "Network down")).code).toBe(
       "NETWORK",
     );
+  });
+});
+
+describe("entitlementError", () => {
+  it("returns null only when the server granted the entitlement", () => {
+    expect(entitlementError({ success: true, tier: "premium" })).toBeNull();
+  });
+
+  it("maps a store outage on the server to STORE_UNAVAILABLE", () => {
+    expect(
+      entitlementError({ success: false, code: "STORE_API_ERROR" })?.code,
+    ).toBe("STORE_UNAVAILABLE");
+  });
+
+  it("maps a permanent decline to PURCHASE_DECLINED, with no retry advice", () => {
+    for (const code of [
+      "TRANSACTION_REVOKED",
+      "SUBSCRIPTION_EXPIRED",
+      "PRODUCT_MISMATCH",
+    ]) {
+      const error = entitlementError({ success: false, code });
+      expect(error?.code).toBe("PURCHASE_DECLINED");
+      expect(error?.message).not.toMatch(/try again/i);
+    }
+  });
+
+  it("maps any other declined receipt to UNKNOWN", () => {
+    for (const code of [
+      "PURCHASE_NOT_ACTIVE",
+      "MISSING_TRANSACTION_ID",
+      "INVALID_RECEIPT",
+      undefined,
+    ]) {
+      expect(entitlementError({ success: false, code })?.code).toBe("UNKNOWN");
+    }
+  });
+
+  it("fails closed on a body that does not say success: true", () => {
+    for (const body of [null, undefined, "ok", {}, { success: "true" }]) {
+      expect(entitlementError(body)?.code).toBe("UNKNOWN");
+    }
   });
 });

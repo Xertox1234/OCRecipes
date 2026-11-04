@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApiUrl } from "@/lib/query-client";
+import { getApiUrl, notifyIfStreamSessionExpired } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { streamSse } from "@/lib/sse-xhr";
@@ -344,6 +344,13 @@ export function useCoachStream({
             onClose: (outcome) => {
               switch (outcome.kind) {
                 case "http-error":
+                  // This raw XHR bypasses the apiRequest 401 interceptor; a
+                  // dead token must still end the session (with the toast).
+                  void notifyIfStreamSessionExpired(
+                    outcome.status,
+                    outcome.responseText,
+                    token,
+                  );
                   fail(
                     `${outcome.status}: ${outcome.responseText}`,
                     parseErrorCode(outcome.responseText),

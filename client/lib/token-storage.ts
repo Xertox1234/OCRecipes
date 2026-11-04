@@ -25,7 +25,10 @@ let cacheInitialized = false;
 // The first read in flight, shared by concurrent callers. set() and clear()
 // wait until none is in flight, then claim the cache with no await in between,
 // so a read can neither delete a newer token nor overwrite the cache after them.
-let pendingLoad: Promise<string | null> | null = null;
+// It never rejects: a failed read settles as `{ error }`, so set()/clear() can
+// wait on it safely and get() / getOrThrow() each decide how to surface it.
+type LoadResult = { token: string | null } | { error: unknown };
+let pendingLoad: Promise<LoadResult> | null = null;
 
 async function markInstallSeen(): Promise<void> {
   try {
@@ -80,29 +83,48 @@ async function loadToken(): Promise<string | null> {
   return SecureStore.getItemAsync(TOKEN_KEY, SECURE_OPTIONS);
 }
 
+/** The cached token, or the (shared) first read of the stores. */
+function readToken(): Promise<LoadResult> {
+  if (cacheInitialized) {
+    return Promise.resolve({ token: cachedToken });
+  }
+  if (!pendingLoad) {
+    pendingLoad = loadToken()
+      .then((token): LoadResult => {
+        cachedToken = token;
+        cacheInitialized = true;
+        return { token };
+      })
+      .catch((error: unknown): LoadResult => {
+        // Not cached: a Keychain read can fail transiently (e.g. before the
+        // first unlock), and the next call should try again.
+        logger.error("Failed to read token from storage:", error);
+        return { error };
+      })
+      .finally(() => {
+        pendingLoad = null;
+      });
+  }
+  return pendingLoad;
+}
+
 export const tokenStorage = {
+  /** The session token, or null when there is none OR the read failed. */
   async get(): Promise<string | null> {
-    if (cacheInitialized) {
-      return cachedToken;
-    }
-    if (!pendingLoad) {
-      pendingLoad = loadToken()
-        .then((token) => {
-          cachedToken = token;
-          cacheInitialized = true;
-          return token;
-        })
-        .catch((error: unknown) => {
-          // Not cached: a Keychain read can fail transiently (e.g. before the
-          // first unlock), and the next call should try again.
-          logger.error("Failed to read token from storage:", error);
-          return null;
-        })
-        .finally(() => {
-          pendingLoad = null;
-        });
-    }
-    return pendingLoad;
+    const result = await readToken();
+    return "token" in result ? result.token : null;
+  },
+
+  /**
+   * Like get(), but a failed Keychain/Keystore read REJECTS instead of
+   * answering null, so a caller deciding "signed out" can tell a transient
+   * read failure from a confirmed-absent token (SecureStore resolves null only
+   * when no entry exists).
+   */
+  async getOrThrow(): Promise<string | null> {
+    const result = await readToken();
+    if ("error" in result) throw result.error;
+    return result.token;
   },
 
   async set(token: string): Promise<void> {

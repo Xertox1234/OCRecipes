@@ -1,187 +1,231 @@
-import { describe, it, expect } from "vitest";
-import {
-  mapIAPError,
-  buildReceiptPayload,
-  buildRestorePayload,
-  isSupportedPlatform,
-} from "../purchase-utils";
-import type { PurchaseError } from "@shared/types/subscription";
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import type { IAPProduct, IAPPurchaseResult, UseIAPResult } from "../types";
 
-describe("mapIAPError", () => {
-  it("maps user-cancelled error to USER_CANCELLED code", () => {
-    const error = new Error("user-cancelled");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("USER_CANCELLED");
-    expect(result.message).toBe("Purchase cancelled");
-  });
+import { usePurchase } from "../usePurchase";
 
-  it("maps 'User cancelled' message to USER_CANCELLED code", () => {
-    const error = new Error("User cancelled the purchase");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("USER_CANCELLED");
-  });
+const PRODUCT: IAPProduct = {
+  productId: "com.ocrecipes.premium.annual",
+  displayPrice: "$29.99",
+  period: { count: 1, unit: "year" },
+  introOffer: null,
+  androidOfferToken: null,
+};
 
-  it("maps network error to NETWORK code", () => {
-    const error = new Error("Network request failed");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("NETWORK");
-    expect(result.originalError).toBe(error);
-  });
+const PURCHASE: IAPPurchaseResult = {
+  productId: PRODUCT.productId,
+  transactionId: "2000000001",
+  purchaseToken: "eyJ.jws.sig",
+  native: { from: "store" },
+};
 
-  it("maps timeout error to NETWORK code", () => {
-    const error = new Error("Request timeout");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("NETWORK");
-  });
-
-  it("maps already-owned error to ALREADY_OWNED code", () => {
-    const error = new Error("already-owned");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("ALREADY_OWNED");
-  });
-
-  it("maps 'already owned' message to ALREADY_OWNED code", () => {
-    const error = new Error("Item already owned by user");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("ALREADY_OWNED");
-  });
-
-  it("maps store unavailable error to STORE_UNAVAILABLE code", () => {
-    const error = new Error("Store is unavailable");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("STORE_UNAVAILABLE");
-  });
-
-  it("maps 'not available' error to STORE_UNAVAILABLE code", () => {
-    const error = new Error("Billing service not available");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("STORE_UNAVAILABLE");
-  });
-
-  it("maps unknown Error to UNKNOWN code with original message", () => {
-    const error = new Error("Something weird happened");
-    const result = mapIAPError(error);
-    expect(result.code).toBe("UNKNOWN");
-    expect(result.message).toBe("Something weird happened");
-    expect(result.originalError).toBe(error);
-  });
-
-  it("maps non-Error value to UNKNOWN code", () => {
-    const result = mapIAPError("string error");
-    expect(result.code).toBe("UNKNOWN");
-    expect(result.message).toBe("An unexpected error occurred");
-    expect(result.originalError).toBe("string error");
-  });
-
-  it("maps null to UNKNOWN code", () => {
-    const result = mapIAPError(null);
-    expect(result.code).toBe("UNKNOWN");
-  });
-
-  it("maps undefined to UNKNOWN code", () => {
-    const result = mapIAPError(undefined);
-    expect(result.code).toBe("UNKNOWN");
-  });
-
-  it("returns a valid PurchaseError shape for every mapping", () => {
-    const testCases = [
-      new Error("user-cancelled"),
-      new Error("network failure"),
-      new Error("already-owned"),
-      new Error("not available"),
-      new Error("other"),
-      42,
-    ];
-
-    for (const input of testCases) {
-      const result: PurchaseError = mapIAPError(input);
-      expect(result).toHaveProperty("code");
-      expect(result).toHaveProperty("message");
-      expect(typeof result.code).toBe("string");
-      expect(typeof result.message).toBe("string");
-    }
-  });
+const GRANTED = JSON.stringify({ success: true, tier: "premium" });
+const DECLINED = JSON.stringify({
+  success: false,
+  error: "Receipt validation failed",
+  code: "STORE_API_ERROR",
 });
 
-describe("buildReceiptPayload", () => {
-  it("builds correct payload structure", () => {
-    const purchase = {
-      purchaseToken: "receipt-data-123",
-      productId: "com.ocrecipes.premium.annual",
-      transactionId: "txn-456",
-    };
+const { iap, apiRequest, refreshSubscription } = vi.hoisted(() => ({
+  iap: {
+    connected: true,
+    products: [] as IAPProduct[],
+    requestPurchase: vi.fn(),
+    restorePurchases: vi.fn(),
+    finishTransaction: vi.fn(() => Promise.resolve()),
+    refreshProducts: vi.fn(),
+  },
+  apiRequest: vi.fn(() => Promise.resolve(new Response(GRANTED))),
+  refreshSubscription: vi.fn(() => Promise.resolve()),
+}));
 
-    const payload = buildReceiptPayload(purchase, "ios");
+vi.mock("@/lib/iap/index", () => ({
+  useIAP: (): UseIAPResult => iap,
+  PRODUCT_IDS: { ANNUAL_PREMIUM: "com.ocrecipes.premium.annual" },
+}));
+vi.mock("@/lib/query-client", () => ({ apiRequest }));
+vi.mock("@/context/PremiumContext", () => ({
+  usePremiumContext: () => ({ refreshSubscription }),
+}));
 
-    expect(payload).toEqual({
-      receipt: "receipt-data-123",
-      platform: "ios",
-      productId: "com.ocrecipes.premium.annual",
-      transactionId: "txn-456",
+beforeEach(() => {
+  vi.clearAllMocks();
+  iap.products = [PRODUCT];
+  iap.requestPurchase.mockResolvedValue(PURCHASE);
+  iap.restorePurchases.mockResolvedValue(PURCHASE);
+  apiRequest.mockImplementation(() => Promise.resolve(new Response(GRANTED)));
+});
+
+describe("usePurchase.purchase", () => {
+  it("sends the store's token to the server, then finishes the transaction", async () => {
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.purchase());
+
+    expect(iap.requestPurchase).toHaveBeenCalledWith(PRODUCT);
+    expect(apiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/subscription/upgrade",
+      {
+        receipt: "eyJ.jws.sig",
+        platform: "ios",
+        productId: PRODUCT.productId,
+        transactionId: "2000000001",
+      },
+    );
+    expect(iap.finishTransaction).toHaveBeenCalledWith(PURCHASE);
+    expect(result.current.state.status).toBe("success");
+  });
+
+  it("treats a cancelled store sheet as cancelled, not as an error", async () => {
+    // The shape expo-iap's purchase listener actually delivers.
+    iap.requestPurchase.mockRejectedValue({
+      code: "user-cancelled",
+      message: "User cancelled",
+    });
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.purchase());
+
+    expect(result.current.state.status).toBe("cancelled");
+  });
+
+  it("reports the store as unavailable when no product has loaded", async () => {
+    iap.products = [];
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.purchase());
+
+    expect(iap.requestPurchase).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "STORE_UNAVAILABLE" },
     });
   });
 
-  it("maps purchaseToken to receipt field", () => {
-    const purchase = {
-      purchaseToken: "my-receipt",
-      productId: "prod-1",
-      transactionId: "txn-1",
-    };
+  it("does not finish the transaction when the server rejects it", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.reject(new Error("400: invalid receipt")),
+    );
+    const { result } = renderHook(() => usePurchase());
 
-    const payload = buildReceiptPayload(purchase, "android");
-    expect(payload.receipt).toBe("my-receipt");
-    expect(payload.platform).toBe("android");
+    await act(() => result.current.purchase());
+
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.state.status).toBe("error"));
   });
 
-  it("preserves productId and transactionId", () => {
-    const purchase = {
-      purchaseToken: "r",
-      productId: "com.test.product",
-      transactionId: "txn-test-123",
-    };
+  it("does not finish the transaction when the server answers 200 with success: false", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.resolve(new Response(DECLINED)),
+    );
+    const { result } = renderHook(() => usePurchase());
 
-    const payload = buildReceiptPayload(purchase, "ios");
-    expect(payload.productId).toBe("com.test.product");
-    expect(payload.transactionId).toBe("txn-test-123");
-  });
-});
+    await act(() => result.current.purchase());
 
-describe("isSupportedPlatform", () => {
-  it("returns true for ios", () => {
-    expect(isSupportedPlatform("ios")).toBe(true);
-  });
-
-  it("returns true for android", () => {
-    expect(isSupportedPlatform("android")).toBe(true);
-  });
-
-  it("returns false for web", () => {
-    expect(isSupportedPlatform("web")).toBe(false);
-  });
-
-  it("returns false for windows", () => {
-    expect(isSupportedPlatform("windows")).toBe(false);
-  });
-
-  it("returns false for empty string", () => {
-    expect(isSupportedPlatform("")).toBe(false);
-  });
-});
-
-describe("buildRestorePayload", () => {
-  it("builds correct restore payload for ios", () => {
-    const payload = buildRestorePayload("restore-receipt-123", "ios");
-    expect(payload).toEqual({
-      receipt: "restore-receipt-123",
-      platform: "ios",
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    expect(refreshSubscription).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "STORE_UNAVAILABLE" },
     });
   });
 
-  it("builds correct restore payload for android", () => {
-    const payload = buildRestorePayload("android-receipt", "android");
-    expect(payload).toEqual({
-      receipt: "android-receipt",
-      platform: "android",
+  it("does not finish the transaction when the 200 body is not JSON", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.resolve(new Response("<html>proxy</html>")),
+    );
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.purchase());
+
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "UNKNOWN" },
+    });
+  });
+});
+
+describe("usePurchase.refreshProduct", () => {
+  it("passes the store's refresh through unchanged", () => {
+    const { result } = renderHook(() => usePurchase());
+
+    expect(result.current.refreshProduct).toBe(iap.refreshProducts);
+  });
+});
+
+describe("usePurchase.restore", () => {
+  it("sends the restored token to the server", async () => {
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.restore());
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/subscription/restore",
+      {
+        receipt: "eyJ.jws.sig",
+        platform: "ios",
+      },
+    );
+    expect(iap.finishTransaction).toHaveBeenCalledWith(PURCHASE);
+    expect(result.current.state.status).toBe("success");
+  });
+
+  it("does not finish the restored transaction when the server declines it with 200", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ success: false, code: "PURCHASE_NOT_ACTIVE" }),
+        ),
+      ),
+    );
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.restore());
+
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    expect(refreshSubscription).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "UNKNOWN" },
+    });
+  });
+
+  it("tells the user a revoked purchase cannot be restored, without finishing it", async () => {
+    apiRequest.mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ success: false, code: "TRANSACTION_REVOKED" }),
+        ),
+      ),
+    );
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.restore());
+
+    // Left unfinished on purpose: Google Play auto-refunds an unacknowledged
+    // purchase, and a replay only surfaces on a user-initiated restore.
+    expect(iap.finishTransaction).not.toHaveBeenCalled();
+    expect(refreshSubscription).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "PURCHASE_DECLINED" },
+    });
+  });
+
+  it("says there is nothing to restore when the store has no purchase", async () => {
+    iap.restorePurchases.mockResolvedValue(null);
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.restore());
+
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(result.current.state).toMatchObject({
+      status: "error",
+      error: { code: "NOTHING_TO_RESTORE" },
     });
   });
 });

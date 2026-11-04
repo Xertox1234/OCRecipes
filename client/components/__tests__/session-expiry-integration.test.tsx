@@ -24,7 +24,13 @@ const { mockTokenStorage, mockFetch, mockToastError } = vi.hoisted(() => ({
   mockToastError: vi.fn(),
 }));
 
-vi.mock("@/lib/token-storage", () => ({ tokenStorage: mockTokenStorage }));
+vi.mock("@/lib/token-storage", () => ({
+  // checkAuth's first read is the strict getOrThrow(); answer it from get().
+  tokenStorage: {
+    ...mockTokenStorage,
+    getOrThrow: () => mockTokenStorage.get(),
+  },
+}));
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
     getItem: vi.fn(() => Promise.resolve(null)),
@@ -34,6 +40,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
+  subscribePushTokenRotation: vi.fn(() => () => {}),
 }));
 // Stable toast object so the bridge's effect doesn't re-subscribe each render.
 const toastApi = { error: mockToastError, success: vi.fn(), info: vi.fn() };

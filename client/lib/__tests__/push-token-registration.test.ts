@@ -3,10 +3,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const getPermissionsAsync = vi.fn();
 const requestPermissionsAsync = vi.fn();
 const getExpoPushTokenAsync = vi.fn();
+const removeTokenListener = vi.fn();
+const addPushTokenListener = vi.fn((_listener: () => void) => ({
+  remove: removeTokenListener,
+}));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: () => getPermissionsAsync(),
   requestPermissionsAsync: () => requestPermissionsAsync(),
   getExpoPushTokenAsync: (...args: unknown[]) => getExpoPushTokenAsync(...args),
+  addPushTokenListener: (listener: () => void) =>
+    addPushTokenListener(listener),
 }));
 
 const apiRequest = vi.fn();
@@ -16,7 +22,8 @@ vi.mock("../query-client", () => ({
 
 // PROJECT_ID is read at module load, so stub it before importing.
 vi.stubEnv("EXPO_PUBLIC_PROJECT_ID", "proj-1");
-const { unregisterPushToken } = await import("../push-token-registration");
+const { unregisterPushToken, registerPushToken, subscribePushTokenRotation } =
+  await import("../push-token-registration");
 
 describe("unregisterPushToken (auth audit H2)", () => {
   beforeEach(() => {
@@ -83,5 +90,76 @@ describe("unregisterPushToken (auth audit H2)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("registerPushToken", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getExpoPushTokenAsync.mockResolvedValue({ data: "ExponentPushToken[x]" });
+    apiRequest.mockResolvedValue({});
+  });
+
+  it("asks for permission by default (sign-in)", async () => {
+    getPermissionsAsync.mockResolvedValue({ status: "undetermined" });
+    requestPermissionsAsync.mockResolvedValue({ status: "granted" });
+
+    expect(await registerPushToken()).toBe("ExponentPushToken[x]");
+    expect(requestPermissionsAsync).toHaveBeenCalled();
+    expect(apiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/push-tokens",
+      expect.objectContaining({ token: "ExponentPushToken[x]" }),
+    );
+  });
+
+  it("with prompt: false, never asks and skips when not already granted", async () => {
+    getPermissionsAsync.mockResolvedValue({ status: "undetermined" });
+
+    expect(await registerPushToken({ prompt: false })).toBeNull();
+    expect(requestPermissionsAsync).not.toHaveBeenCalled();
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("with prompt: false, registers when permission is already granted", async () => {
+    getPermissionsAsync.mockResolvedValue({ status: "granted" });
+
+    expect(await registerPushToken({ prompt: false })).toBe(
+      "ExponentPushToken[x]",
+    );
+    expect(requestPermissionsAsync).not.toHaveBeenCalled();
+    expect(apiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/push-tokens",
+      expect.objectContaining({ token: "ExponentPushToken[x]" }),
+    );
+  });
+});
+
+describe("subscribePushTokenRotation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getExpoPushTokenAsync.mockResolvedValue({ data: "ExponentPushToken[new]" });
+    apiRequest.mockResolvedValue({});
+  });
+
+  it("re-registers (without prompting) when the push token rotates", async () => {
+    getPermissionsAsync.mockResolvedValue({ status: "granted" });
+    const unsubscribe = subscribePushTokenRotation();
+
+    expect(addPushTokenListener).toHaveBeenCalledTimes(1);
+    const listener = addPushTokenListener.mock.calls[0][0];
+    listener();
+    await vi.waitFor(() =>
+      expect(apiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/push-tokens",
+        expect.objectContaining({ token: "ExponentPushToken[new]" }),
+      ),
+    );
+    expect(requestPermissionsAsync).not.toHaveBeenCalled();
+
+    unsubscribe();
+    expect(removeTokenListener).toHaveBeenCalledTimes(1);
   });
 });

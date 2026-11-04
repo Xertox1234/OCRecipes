@@ -63,13 +63,19 @@ describe("parseErrorCode", () => {
 
 // ── Hook behaviour tests (fake timers + XHR mock) ─────────────────
 
-const { mockTokenStorage, mockGetApiUrl } = vi.hoisted(() => ({
-  mockTokenStorage: { get: vi.fn().mockResolvedValue("test-token") },
-  mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
-}));
+const { mockTokenStorage, mockGetApiUrl, mockNotifyStream } = vi.hoisted(
+  () => ({
+    mockTokenStorage: { get: vi.fn().mockResolvedValue("test-token") },
+    mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
+    mockNotifyStream: vi.fn(() => Promise.resolve()),
+  }),
+);
 
 vi.mock("@/lib/token-storage", () => ({ tokenStorage: mockTokenStorage }));
-vi.mock("@/lib/query-client", () => ({ getApiUrl: mockGetApiUrl }));
+vi.mock("@/lib/query-client", () => ({
+  getApiUrl: mockGetApiUrl,
+  notifyIfStreamSessionExpired: mockNotifyStream,
+}));
 // An explicit zone, not the ambient one: a test that reads the runner's own
 // zone passes on a UTC CI box whether or not the header is sent.
 vi.mock("@/lib/timezone", () => ({
@@ -890,5 +896,40 @@ describe("useCoachStream recipe finder actions", () => {
     };
     expect(body.content).toBe("Generate");
     expect(body.finderAction).toEqual(finderAction);
+  });
+});
+
+describe("useCoachStream session expiry (R22)", () => {
+  it("routes an http-error response through the shared session-expiry check with the sent token", async () => {
+    mockNotifyStream.mockClear();
+    const { result, onError } = await setupHook();
+    await startAndFlush(result);
+
+    const body = JSON.stringify({
+      error: "Token expired",
+      code: "TOKEN_EXPIRED",
+    });
+    act(() => {
+      mockXhr.status = 401;
+      mockXhr.responseText = body;
+      mockXhr.readyState = 4;
+      mockXhr.onreadystatechange?.();
+    });
+
+    expect(mockNotifyStream).toHaveBeenCalledWith(401, body, "test-token");
+    expect(onError).toHaveBeenCalledWith(`401: ${body}`, "TOKEN_EXPIRED");
+  });
+
+  it("does not run the check on a clean stream", async () => {
+    mockNotifyStream.mockClear();
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "hi", done: true });
+      mockXhr.complete();
+    });
+
+    expect(mockNotifyStream).not.toHaveBeenCalled();
   });
 });

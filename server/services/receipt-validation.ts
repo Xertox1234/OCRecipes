@@ -10,7 +10,9 @@ import {
 } from "@apple/app-store-server-library";
 import type { JWSTransactionDecodedPayload } from "@apple/app-store-server-library";
 import type { Platform } from "@shared/schemas/subscription";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { createServiceLogger, toError } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 
 const log = createServiceLogger("receipt-validation");
 
@@ -18,6 +20,12 @@ export interface ReceiptValidationResult {
   valid: boolean;
   productId?: string;
   expiresAt?: Date;
+  /**
+   * When this transaction was purchased (Apple `purchaseDate`; unset for
+   * Google, whose state is re-read live). Lets a claim tell a re-subscription
+   * after a refund/revoke from a replay of the pre-refund receipt.
+   */
+  purchasedAt?: Date;
   originalTransactionId?: string;
   errorCode?: string;
 }
@@ -44,6 +52,9 @@ const STUB_MODE =
   process.env.RECEIPT_VALIDATION_STUB === "true" &&
   !HAS_APPLE_CREDENTIALS &&
   !HAS_GOOGLE_CREDENTIALS;
+
+/** Play API statuses meaning the purchase token itself is unusable (permanent). */
+const PLAY_PERMANENT_TOKEN_STATUSES = new Set([400, 404, 410]);
 
 /** Timeout for outbound API requests to Google (10 seconds). */
 const FETCH_TIMEOUT_MS = 10_000;
@@ -188,8 +199,13 @@ async function validateAppleReceipt(
   }
 
   if (payload.revocationDate) {
-    return { valid: false, errorCode: "TRANSACTION_REVOKED" };
+    return { valid: false, errorCode: ErrorCode.TRANSACTION_REVOKED };
   }
+
+  const purchasedAt =
+    payload.purchaseDate !== undefined
+      ? new Date(payload.purchaseDate)
+      : undefined;
 
   if (payload.expiresDate) {
     const expiresAt = new Date(payload.expiresDate);
@@ -200,6 +216,7 @@ async function validateAppleReceipt(
       valid: true,
       productId: payload.productId,
       expiresAt,
+      purchasedAt,
       originalTransactionId: payload.originalTransactionId,
     };
   }
@@ -208,6 +225,7 @@ async function validateAppleReceipt(
   return {
     valid: true,
     productId: payload.productId,
+    purchasedAt,
     originalTransactionId: payload.originalTransactionId,
   };
 }
@@ -219,6 +237,16 @@ export interface AppleNotification {
   notificationUUID?: string;
   /** Stable subscription key — present for transaction-bearing notifications. */
   originalTransactionId?: string;
+  /** The signed transaction's expiresDate (a renewal carries the new one). */
+  expiresAt?: Date;
+  /** The signed transaction's purchaseDate. */
+  purchasedAt?: Date;
+  /** True when the signed transaction carries a revocationDate. */
+  revoked?: boolean;
+  /** The signed transaction's revocationDate (the store's refund/revoke time). */
+  revokedAt?: Date;
+  /** The notification's signedDate (when Apple signed this notification). */
+  signedAt?: Date;
 }
 
 /**
@@ -233,11 +261,28 @@ export async function verifyAppleNotification(
   const decoded = await verifier.verifyAndDecodeNotification(signedPayload);
 
   let originalTransactionId: string | undefined;
+  let expiresAt: Date | undefined;
+  let purchasedAt: Date | undefined;
+  let revoked: boolean | undefined;
+  let revokedAt: Date | undefined;
   if (decoded.data?.signedTransactionInfo) {
     const txInfo = await verifier.verifyAndDecodeTransaction(
       decoded.data.signedTransactionInfo,
     );
     originalTransactionId = txInfo.originalTransactionId;
+    expiresAt =
+      txInfo.expiresDate !== undefined
+        ? new Date(txInfo.expiresDate)
+        : undefined;
+    purchasedAt =
+      txInfo.purchaseDate !== undefined
+        ? new Date(txInfo.purchaseDate)
+        : undefined;
+    revoked = txInfo.revocationDate !== undefined;
+    revokedAt =
+      txInfo.revocationDate !== undefined
+        ? new Date(txInfo.revocationDate)
+        : undefined;
   }
 
   return {
@@ -245,6 +290,14 @@ export async function verifyAppleNotification(
     subtype: decoded.subtype ? String(decoded.subtype) : undefined,
     notificationUUID: decoded.notificationUUID,
     originalTransactionId,
+    expiresAt,
+    purchasedAt,
+    revoked,
+    revokedAt,
+    signedAt:
+      decoded.signedDate !== undefined
+        ? new Date(decoded.signedDate)
+        : undefined,
   };
 }
 
@@ -358,7 +411,11 @@ async function validateGoogleReceipt(
   let accessToken: string;
   try {
     accessToken = await getGoogleAccessToken();
-  } catch {
+  } catch (err) {
+    // A rotated/malformed GOOGLE_SERVICE_ACCOUNT_KEY or email fails every
+    // Android purchase here; log + report so it is told apart from an outage.
+    log.error({ err: toError(err) }, "Google access token fetch failed");
+    reportError(err, "google-access-token");
     return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 
@@ -378,9 +435,15 @@ async function validateGoogleReceipt(
   if (!response.ok) {
     const text = await response.text();
     log.error(
-      { responseBody: text.slice(0, 200) },
+      { status: response.status, responseBody: text.slice(0, 200) },
       "Google Play subscription check failed",
     );
+    // 400/404/410: Play does not know this token (invalid, foreign or long
+    // expired) — permanent, so a retry can never succeed. Everything else
+    // (5xx, 429, 401/403 permission) stays transient.
+    if (PLAY_PERMANENT_TOKEN_STATUSES.has(response.status)) {
+      return { valid: false, errorCode: "PURCHASE_TOKEN_INVALID" };
+    }
     return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 
@@ -400,7 +463,18 @@ async function validateGoogleReceipt(
     "SUBSCRIPTION_STATE_ACTIVE",
     "SUBSCRIPTION_STATE_IN_GRACE_PERIOD",
   ];
-  if (
+  // CANCELED means auto-renew is off, but the user keeps access until the
+  // line item's expiryTime (Play Billing "Cancellations"). Entitled only while
+  // that expiry is in the future; no expiry fails closed below.
+  if (data.subscriptionState === "SUBSCRIPTION_STATE_CANCELED") {
+    const expiryMs = Date.parse(data.lineItems?.[0]?.expiryTime ?? "");
+    if (Number.isNaN(expiryMs)) {
+      return { valid: false, errorCode: "PURCHASE_NOT_ACTIVE" };
+    }
+    if (expiryMs <= Date.now()) {
+      return { valid: false, errorCode: "SUBSCRIPTION_EXPIRED" };
+    }
+  } else if (
     !data.subscriptionState ||
     !activeStates.includes(data.subscriptionState)
   ) {

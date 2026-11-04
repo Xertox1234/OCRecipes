@@ -21,20 +21,24 @@ import {
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 
-const { mockApiRequest, mockGetApiUrl, mockTokenStorage } = vi.hoisted(() => ({
-  mockApiRequest: vi.fn(),
-  mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
-  mockTokenStorage: {
-    get: vi.fn(),
-    set: vi.fn(),
-    clear: vi.fn(),
-    invalidateCache: vi.fn(),
-  },
-}));
+const { mockApiRequest, mockGetApiUrl, mockTokenStorage, mockNotifyStream } =
+  vi.hoisted(() => ({
+    mockNotifyStream: vi.fn(() => Promise.resolve()),
+    mockApiRequest: vi.fn(),
+    mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
+    mockTokenStorage: {
+      get: vi.fn(),
+      set: vi.fn(),
+      clear: vi.fn(),
+      invalidateCache: vi.fn(),
+    },
+  }));
 
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
   getApiUrl: () => mockGetApiUrl(),
+  notifyIfStreamSessionExpired: (...args: unknown[]) =>
+    mockNotifyStream(...(args as [])),
 }));
 
 vi.mock("@/lib/token-storage", () => ({
@@ -220,6 +224,32 @@ describe("useSendMessage", () => {
 
     expect(result.current.isStreaming).toBe(false);
     expect(result.current.requestError).toBe("Internal Server Error");
+  });
+
+  it("routes an error response through the shared session-expiry check with the sent token (R22)", async () => {
+    mockNotifyStream.mockClear();
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateErrorResponse(401, {
+        error: "Token expired",
+        code: "TOKEN_EXPIRED",
+      });
+      await p;
+    });
+
+    expect(mockNotifyStream).toHaveBeenCalledWith(
+      401,
+      expect.stringContaining("TOKEN_EXPIRED"),
+      "token",
+    );
+    expect(result.current.requestError).toBe("Token expired");
   });
 
   it("arms the XHR timeout above the server's SSE cap, so the server's graceful timeout arrives first", async () => {

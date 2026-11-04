@@ -148,14 +148,39 @@ async function notifyIfSessionExpired(
   res: Response,
   sentToken: string | null,
 ): Promise<void> {
-  if (res.status !== 401 || !sentToken) return;
+  await checkSessionExpiry(res.status, () => res.clone().text(), sentToken);
+}
+
+/**
+ * The same check for the raw-XHR SSE streams (coach, recipe chat), which send
+ * their own bearer and never pass through `apiRequest`/`getQueryFn`: call it
+ * with the stream's final status, its response text and the token it sent.
+ */
+export async function notifyIfStreamSessionExpired(
+  status: number,
+  responseText: string,
+  sentToken: string | null,
+): Promise<void> {
+  await checkSessionExpiry(
+    status,
+    () => Promise.resolve(responseText),
+    sentToken,
+  );
+}
+
+async function checkSessionExpiry(
+  status: number,
+  readBody: () => Promise<string>,
+  sentToken: string | null,
+): Promise<void> {
+  if (status !== 401 || !sentToken) return;
   // A 401 for a token that is no longer the stored one (signed out and back
   // in as someone else, or 2FA setup swapped the token mid-flight) is about a
   // session that already ended — it must not end the CURRENT one (audit L7).
   if ((await tokenStorage.get()) !== sentToken) return;
   let code: string | undefined;
   try {
-    const parsed: unknown = JSON.parse(await res.clone().text());
+    const parsed: unknown = JSON.parse(await readBody());
     if (parsed !== null && typeof parsed === "object") {
       const body = parsed as { code?: unknown };
       if (typeof body.code === "string") code = body.code;

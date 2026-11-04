@@ -10,8 +10,8 @@ import { sha256Hex } from "./nonce";
 import type { ProviderClaims } from "./types";
 
 export class TokenVerificationError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = "TokenVerificationError";
   }
 }
@@ -49,8 +49,11 @@ async function verifyJwt(
     });
     return payload;
   } catch (err) {
+    // Keep the original (jose / JWKS fetch) error as `cause` so a provider
+    // outage stays distinguishable from a bad token in logs.
     throw new TokenVerificationError(
       err instanceof Error ? err.message : "invalid token",
+      { cause: err },
     );
   }
 }

@@ -124,6 +124,8 @@ export function getUpgradeErrorMessage(
       return "The store is currently unavailable. Try again later.";
     case "NOTHING_TO_RESTORE":
       return "No previous purchase was found to restore.";
+    case "PURCHASE_DECLINED":
+      return "This purchase can no longer unlock Premium. Contact support if you think this is a mistake.";
     case "PENDING_APPROVAL":
       return "Your purchase is waiting for approval. Premium unlocks once it's approved.";
     default:
