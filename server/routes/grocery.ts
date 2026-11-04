@@ -157,7 +157,8 @@ export function register(app: Express): void {
         // limit check only and never feed these columns), so there is no
         // UTC-vs-local basis to unify (see
         // docs/solutions/logic-errors/two-writers-of-one-date-column-must-share-a-normalisation-basis-2026-08-31.md).
-        // Atomically check count + create list + insert items (TOCTOU-safe)
+        // Check count + create list + insert items in one transaction, under a
+        // per-user advisory lock (see createGroceryListWithLimitCheck)
         const result = await storage.createGroceryListWithLimitCheck(
           {
             userId: req.userId,
