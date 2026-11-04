@@ -189,11 +189,13 @@ async function purgeBatch(
   // size and lets the planner handle the membership test internally. When
   // the exclusion set is empty we emit a tautology because `<> ALL('{}')`
   // would be `TRUE` for any value anyway, but skipping the predicate keeps
-  // EXPLAIN plans cleaner.
+  // EXPLAIN plans cleaner. sql.param is what makes it ONE parameter: a bare
+  // ${array} in the sql template expands to ($1, $2, ...), which Postgres
+  // rejects as "cannot cast type record to text[]".
   const excludeClause =
     excludedUserIds.length === 0
       ? sql`TRUE`
-      : sql`${userId} <> ALL(${excludedUserIds}::text[])`;
+      : sql`${userId} <> ALL(${sql.param(excludedUserIds)}::text[])`;
 
   const result = await database.execute<{ ctid: unknown }>(sql`
     DELETE FROM ${tableId}
