@@ -10,12 +10,16 @@ const expoMock = vi.hoisted(() => ({
   send: vi.fn(),
   chunk: vi.fn((msgs: unknown[]) => [msgs]),
   isToken: vi.fn().mockReturnValue(true),
+  chunkReceipts: vi.fn((ids: unknown[]) => [ids]),
+  getReceipts: vi.fn(),
 }));
 
 vi.mock("expo-server-sdk", () => ({
   default: class MockExpo {
     sendPushNotificationsAsync = expoMock.send;
     chunkPushNotifications = expoMock.chunk;
+    chunkPushNotificationReceiptIds = expoMock.chunkReceipts;
+    getPushNotificationReceiptsAsync = expoMock.getReceipts;
     static isExpoPushToken = expoMock.isToken;
   },
 }));
@@ -47,6 +51,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   expoMock.isToken.mockReturnValue(true);
   expoMock.chunk.mockImplementation((msgs: unknown[]) => [msgs]);
+  expoMock.chunkReceipts.mockImplementation((ids: unknown[]) => [ids]);
 });
 
 describe("sendPushToUser", () => {
@@ -212,6 +217,102 @@ describe("PR #269 — push send timeout via Promise.race", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(await p).toBe(true);
+  });
+});
+
+describe("ticket/token alignment across chunks", () => {
+  it("a failed first chunk does not shift the second chunk's ticket onto the wrong token", async () => {
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(VALID_TOKEN),
+      mockToken(VALID_TOKEN_2),
+    ]);
+    expoMock.chunk.mockImplementation((msgs: unknown[]) =>
+      msgs.map((m) => [m]),
+    );
+    expoMock.send
+      .mockRejectedValueOnce(new Error("chunk failed"))
+      .mockResolvedValueOnce([
+        {
+          status: "error",
+          message: "x",
+          details: { error: "DeviceNotRegistered" },
+        },
+      ]);
+    vi.mocked(storage.deletePushToken).mockResolvedValue();
+
+    await sendPushToUser("1", "title", "body");
+
+    expect(storage.deletePushToken).toHaveBeenCalledTimes(1);
+    expect(storage.deletePushToken).toHaveBeenCalledWith("1", VALID_TOKEN_2);
+  });
+});
+
+describe("push receipts", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fetches receipts after the delay (never on the send path) and prunes DeviceNotRegistered tokens", async () => {
+    vi.useFakeTimers();
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(VALID_TOKEN),
+      mockToken(VALID_TOKEN_2),
+    ]);
+    expoMock.send.mockResolvedValue([
+      { status: "ok", id: "r1" },
+      { status: "ok", id: "r2" },
+    ]);
+    expoMock.getReceipts.mockResolvedValue({
+      r1: { status: "ok" },
+      r2: {
+        status: "error",
+        message: "gone",
+        details: { error: "DeviceNotRegistered" },
+      },
+    });
+    vi.mocked(storage.deletePushToken).mockResolvedValue();
+
+    expect(await sendPushToUser("1", "title", "body")).toBe(true);
+    expect(expoMock.getReceipts).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(15 * 60_000);
+
+    expect(expoMock.getReceipts).toHaveBeenCalledWith(["r1", "r2"]);
+    expect(storage.deletePushToken).toHaveBeenCalledTimes(1);
+    expect(storage.deletePushToken).toHaveBeenCalledWith("1", VALID_TOKEN_2);
+  });
+
+  it("logs other receipt errors without deleting, and survives a receipt fetch failure", async () => {
+    vi.useFakeTimers();
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(VALID_TOKEN),
+    ]);
+    expoMock.send.mockResolvedValue([{ status: "ok", id: "r1" }]);
+    expoMock.getReceipts.mockResolvedValueOnce({
+      r1: {
+        status: "error",
+        message: "rate",
+        details: { error: "MessageRateExceeded" },
+      },
+    });
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    await sendPushToUser("1", "title", "body");
+    await vi.advanceTimersByTimeAsync(15 * 60_000);
+    expect(storage.deletePushToken).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "1" }),
+      "push-notifications: receipt error",
+    );
+
+    expoMock.getReceipts.mockRejectedValueOnce(new Error("expo down"));
+    await sendPushToUser("1", "title", "body");
+    await vi.advanceTimersByTimeAsync(15 * 60_000);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "1" }),
+      "push-notifications: receipt fetch failed",
+    );
+    warnSpy.mockRestore();
   });
 });
 
