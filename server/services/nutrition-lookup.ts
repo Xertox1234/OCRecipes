@@ -4,7 +4,7 @@ import { storage } from "../storage";
 import { getStandardizedFoodName } from "./cultural-food-map";
 import { createServiceLogger, toError } from "../lib/logger";
 import { lookupCNF } from "./cnf-lookup";
-import { lookupUSDA } from "./usda-lookup";
+import { lookupUSDA, UpstreamUnavailableError } from "./usda-lookup";
 import type { NutritionData } from "./nutrition-source-utils";
 import { FETCH_TIMEOUT_MS } from "./nutrition-source-utils";
 import { cachedFetch } from "./dev-api-cache";
@@ -199,6 +199,10 @@ async function writeNutritionCache(
  * below) rather than returned as a food that looks like a real 0-kcal or
  * 0 g-protein match; the caller treats it the same as "not found" (todo
  * P2-2026-09-27).
+ *
+ * Null means API Ninjas answered with no usable food (or no key is
+ * configured, which is a skipped source, not an outage). A non-OK response,
+ * timeout or network error throws `UpstreamUnavailableError`.
  */
 async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
   const apiKey = process.env.API_NINJAS_KEY;
@@ -219,7 +223,7 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
 
     if (!response.ok) {
       log.error({ status: response.status }, "API Ninjas error");
-      return null;
+      throw new UpstreamUnavailableError(`API Ninjas error ${response.status}`);
     }
 
     const json = await response.json();
@@ -251,8 +255,9 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
       source: "api-ninjas" as const,
     };
   } catch (error) {
+    if (error instanceof UpstreamUnavailableError) throw error;
     log.error({ err: toError(error) }, "API Ninjas lookup error");
-    return null;
+    throw new UpstreamUnavailableError("API Ninjas lookup failed");
   }
 }
 
@@ -281,23 +286,50 @@ async function fetchNutritionFromSources(
   const queries =
     standardizedQuery !== query ? [query, standardizedQuery] : [query];
 
+  // A provider that could not answer must not read as "not found". Keep
+  // looking at the others; a result from any of them wins.
+  let unavailable = false;
+  const tryProvider = async (
+    lookup: () => Promise<NutritionData | null>,
+  ): Promise<NutritionData | null> => {
+    try {
+      return await lookup();
+    } catch (error) {
+      if (!(error instanceof UpstreamUnavailableError)) throw error;
+      unavailable = true;
+      return null;
+    }
+  };
+
   for (const q of queries) {
     // Primary: Canadian Nutrient File (bilingual, supports French product names)
-    const cnfResult = await lookupCNF(q);
+    const cnfResult = await tryProvider(() => lookupCNF(q));
     if (cnfResult && cnfResult.calories > 0) return cnfResult;
 
     // Secondary: USDA FoodData Central (reliable government data)
-    const usdaResult = await lookupUSDA(q);
+    const usdaResult = await tryProvider(() => lookupUSDA(q));
     if (usdaResult) return usdaResult;
   }
 
   // Last-resort fallback: API Ninjas, with the query as typed — it parses
   // natural language, and the standardized names are vaguer search terms.
-  return lookupAPINinjas(query);
+  const ninjasResult = await tryProvider(() => lookupAPINinjas(query));
+  if (ninjasResult) return ninjasResult;
+
+  // Nothing found. If ANY provider could not answer, "not found" is not
+  // trustworthy (the one that was down may have had it), so report an outage
+  // instead — stricter than the barcode path, which has OFF data to fall back
+  // on and throws only when every source errored. Never cached by callers.
+  if (unavailable) {
+    throw new UpstreamUnavailableError("Nutrition lookup sources unavailable");
+  }
+  return null;
 }
 
 /**
- * Lookup nutrition data for a single item.
+ * Lookup nutrition data for a single item. Null means every source answered
+ * and none has the food; `UpstreamUnavailableError` means nothing was found
+ * and a source could not answer.
  * Canadian Nutrient File is tried first (bilingual, ideal for Canadian products).
  * USDA FoodData Central is the secondary source.
  * API Ninjas is used only as a last-resort fallback.
@@ -346,7 +378,15 @@ export async function batchNutritionLookup(
   // call would have done).
   const lookupPromises = uncached.map((item) =>
     limit(async () => {
-      const data = await fetchNutritionFromSources(item);
+      let data: NutritionData | null = null;
+      try {
+        data = await fetchNutritionFromSources(item);
+      } catch (error) {
+        // An outage for one item must not fail the whole batch. It comes back
+        // null (uncached), so a later call can still find it.
+        if (!(error instanceof UpstreamUnavailableError)) throw error;
+        log.warn({ item }, "nutrition sources unavailable for batch item");
+      }
       if (data && data.calories > 0) {
         await writeNutritionCache(item, data, { allowOverwrite: true });
       }

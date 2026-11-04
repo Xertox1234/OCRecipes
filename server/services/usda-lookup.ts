@@ -176,8 +176,65 @@ function usdaHeadMatchesQuery(description: string, qWords: string[]): boolean {
   );
 }
 
+// USDA blocks an API key for an hour after a 429, so a 429 opens a breaker for
+// that long: no USDA call is made until `usdaBlockedUntil` (epoch ms) passes.
+const USDA_RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
+let usdaBlockedUntil = 0;
+
+/** Test-only: close the USDA breaker. */
+export function _resetUSDABreakerForTesting(): void {
+  usdaBlockedUntil = 0;
+}
+
+/**
+ * Every USDA request goes through here, so its failures are logged and
+ * reported as `UpstreamUnavailableError` instead of reading as "not found".
+ * An open breaker throws without calling out; a 429 opens it and is not
+ * retried; a 5xx is retried once; any other non-OK status, timeout or
+ * network error is unavailable. Returns only an OK response. Each attempt
+ * gets its own timeout signal.
+ */
+async function fetchUSDA(
+  url: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  if (Date.now() < usdaBlockedUntil) {
+    throw new UpstreamUnavailableError("USDA is rate-limited (breaker open)");
+  }
+
+  for (let attempt = 1; ; attempt++) {
+    let response: Response;
+    try {
+      response = await cachedFetch("usda", url, {
+        ...init,
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+    } catch (err) {
+      log.error({ err: toError(err) }, "USDA request failed");
+      throw new UpstreamUnavailableError("USDA request failed");
+    }
+    if (response.ok) return response;
+
+    if (response.status === 429) {
+      usdaBlockedUntil = Date.now() + USDA_RATE_LIMIT_COOLDOWN_MS;
+      log.error(
+        { status: 429 },
+        "USDA rate limit hit — pausing USDA calls for an hour",
+      );
+      throw new UpstreamUnavailableError("USDA rate limit reached");
+    }
+    if (response.status >= 500 && attempt === 1) continue;
+
+    log.error({ status: response.status, attempt }, "USDA error response");
+    throw new UpstreamUnavailableError(`USDA error ${response.status}`);
+  }
+}
+
 /**
  * Lookup nutrition data from USDA FoodData Central (fallback).
+ *
+ * Returns null when USDA answered and has no matching food; throws
+ * `UpstreamUnavailableError` when USDA could not answer (see `fetchUSDA`).
  *
  * Takes the first of up to 5 candidates (USDA's own relevance order) whose
  * description covers every query word. A `Branded` candidate additionally
@@ -197,15 +254,9 @@ function usdaHeadMatchesQuery(description: string, qWords: string[]): boolean {
  */
 export async function lookupUSDA(query: string): Promise<NutritionData | null> {
   try {
-    const response = await cachedFetch(
-      "usda",
+    const response = await fetchUSDA(
       `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${USDA_API_KEY}`,
-      { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
-
-    if (!response.ok) {
-      return null;
-    }
 
     const json = await response.json();
     const parsed = usdaResponseSchema.safeParse(json);
@@ -230,8 +281,10 @@ export async function lookupUSDA(query: string): Promise<NutritionData | null> {
 
     return match ? mapUsdaFoodToNutrition(match) : null;
   } catch (error) {
+    if (error instanceof UpstreamUnavailableError) throw error;
+    // An unreadable body (not JSON) is USDA failing, not "no such food".
     log.error({ err: toError(error) }, "USDA lookup error");
-    return null;
+    throw new UpstreamUnavailableError("USDA lookup unavailable");
   }
 }
 
@@ -296,8 +349,7 @@ export async function lookupUSDAByUPC(code: string): Promise<{
 
   for (const variant of variants) {
     try {
-      const response = await cachedFetch(
-        "usda",
+      const response = await fetchUSDA(
         `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${USDA_API_KEY}`,
         {
           method: "POST",
@@ -307,11 +359,9 @@ export async function lookupUSDAByUPC(code: string): Promise<{
             dataType: ["Branded"],
             pageSize: 3,
           }),
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         },
       );
 
-      if (!response.ok) continue;
       answered = true;
       const parsed = usdaUpcResponseSchema.safeParse(await response.json());
       if (!parsed.success || parsed.data.foods.length === 0) continue;
@@ -331,7 +381,11 @@ export async function lookupUSDAByUPC(code: string): Promise<{
         brandName: match.brandOwner || match.brandName || undefined,
         labelServingSize: usdaLabelServingSize(match),
       };
-    } catch {
+    } catch (err) {
+      // fetchUSDA already logged an upstream failure; log anything else.
+      if (!(err instanceof UpstreamUnavailableError)) {
+        log.error({ err: toError(err) }, "USDA UPC variant lookup failed");
+      }
       // Continue to next variant
     }
   }

@@ -273,6 +273,19 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(404);
     });
+
+    it("returns a retryable 503, not 404, when a source was unavailable", async () => {
+      vi.mocked(lookupNutrition).mockRejectedValue(
+        new UpstreamUnavailableError(),
+      );
+
+      const res = await request(app)
+        .get("/api/nutrition/lookup?name=chicken")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
+    });
   });
 
   describe("GET /api/nutrition/barcode/:code", () => {

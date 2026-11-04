@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -7,7 +7,9 @@ import {
   batchNutritionLookup,
   _resetCNFCacheForTesting,
   fuzzyMatchCNF,
+  lookupUSDAByUPC,
 } from "../nutrition-lookup";
+import { _resetUSDABreakerForTesting } from "../usda-lookup";
 import { lookupBarcode, UpstreamUnavailableError } from "../barcode-lookup";
 
 // `mockInsertValues` is hoisted so tests can assert on the args passed to
@@ -1381,7 +1383,7 @@ describe("lookupNutrition", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when USDA returns non-ok response", async () => {
+  it("reports an outage, not null, when USDA returns a non-ok response", async () => {
     setupFetchMock({
       "food/?lang=en": emptyCNFEN,
       "food/?lang=fr": emptyCNFFR,
@@ -1389,8 +1391,9 @@ describe("lookupNutrition", () => {
         Promise.resolve({ ok: false, json: async () => ({}) }),
     });
 
-    const result = await lookupNutrition("test food");
-    expect(result).toBeNull();
+    await expect(lookupNutrition("test food")).rejects.toBeInstanceOf(
+      UpstreamUnavailableError,
+    );
   });
 });
 
@@ -2341,5 +2344,264 @@ describe("fuzzyMatchCNF — committed gold set", () => {
     expect(fuzzyMatchCNF("fresh thyme", rows)?.food_description).toBe(
       "Spices, thyme, fresh",
     );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Outage vs not-found: USDA, API Ninjas and CNF each answer found / not-found /
+// unavailable. "Not found" is null; "unavailable" is an UpstreamUnavailableError
+// that is never cached. Stubbed fetch is the lowest boundary, and every
+// "unavailable" case has a positive control proving the real path was reached.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("lookupNutrition — outage vs not-found", () => {
+  const okJson = (body: unknown) => () =>
+    Promise.resolve({ ok: true, status: 200, json: async () => body });
+  const failing = (status: number) => () =>
+    Promise.resolve({ ok: false, status, json: async () => ({}) });
+  const usdaEmpty = okJson({ foods: [] });
+  const usdaBanana = okJson({
+    foods: [
+      {
+        description: "Banana, raw",
+        foodNutrients: [
+          { nutrientName: "Energy", unitName: "KCAL", value: 89 },
+          { nutrientName: "Protein", value: 1.1 },
+        ],
+      },
+    ],
+  });
+  const ninjasEmpty = okJson([]);
+  const usdaCalls = () =>
+    mockFetch.mock.calls.filter(([url]) =>
+      String(url).includes("fdc/v1/foods/search"),
+    );
+  const cnfEmpty = {
+    "food/?lang=en": emptyCNFEN,
+    "food/?lang=fr": emptyCNFFR,
+  };
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockInsertValues.mockClear();
+    _resetCNFCacheForTesting();
+    _resetUSDABreakerForTesting();
+    vi.stubEnv("API_NINJAS_KEY", "test-key");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    _resetUSDABreakerForTesting();
+  });
+
+  describe("USDA", () => {
+    it("found: returns the USDA food", async () => {
+      setupFetchMock({ ...cnfEmpty, "fdc/v1/foods/search": usdaBanana });
+      const result = await lookupNutrition("banana");
+      expect(result?.source).toBe("usda");
+      expect(result?.calories).toBe(89);
+    });
+
+    it("not-found: a 200 with no foods is a miss, not an outage", async () => {
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": usdaEmpty,
+        "api-ninjas.com": ninjasEmpty,
+      });
+      await expect(lookupNutrition("xyznonexistent")).resolves.toBeNull();
+    });
+
+    it("unavailable: a persistent 5xx is retried once, then reported as an outage and not cached", async () => {
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": failing(503),
+        "api-ninjas.com": ninjasEmpty,
+      });
+      await expect(lookupNutrition("banana")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+      expect(usdaCalls()).toHaveLength(2);
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("a 5xx followed by a 200 is found (one retry)", async () => {
+      let n = 0;
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": () =>
+          ++n === 1 ? failing(502)() : usdaBanana(),
+      });
+      const result = await lookupNutrition("banana");
+      expect(result?.calories).toBe(89);
+      expect(usdaCalls()).toHaveLength(2);
+    });
+
+    it("unavailable: a network error or timeout is an outage", async () => {
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": () => Promise.reject(new Error("timeout")),
+        "api-ninjas.com": ninjasEmpty,
+      });
+      await expect(lookupNutrition("banana")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+    });
+
+    it("a 429 opens the breaker: no USDA call until the cooldown ends", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-11-04T00:00:00Z"));
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": failing(429),
+        "api-ninjas.com": ninjasEmpty,
+      });
+
+      await expect(lookupNutrition("banana")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+      expect(usdaCalls()).toHaveLength(1); // 429 is not retried
+
+      await expect(lookupNutrition("apple")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+      expect(usdaCalls()).toHaveLength(1); // breaker open: no new call
+
+      // Control: after the cooldown USDA is called again and can answer.
+      vi.setSystemTime(new Date("2026-11-04T01:00:01Z"));
+      setupFetchMock({ ...cnfEmpty, "fdc/v1/foods/search": usdaBanana });
+      const result = await lookupNutrition("banana");
+      expect(result?.calories).toBe(89);
+    });
+
+    it("UPC lookup goes through the same breaker and reports an outage", async () => {
+      setupFetchMock({ "fdc/v1/foods/search": failing(429) });
+      await expect(lookupUSDAByUPC("012345678905")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+      const callsAfterFirst = usdaCalls().length;
+      await expect(lookupUSDAByUPC("012345678905")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+      expect(usdaCalls()).toHaveLength(callsAfterFirst); // breaker open
+    });
+
+    it("UPC lookup: a 200 with no match is a miss, not an outage", async () => {
+      setupFetchMock({ "fdc/v1/foods/search": usdaEmpty });
+      await expect(lookupUSDAByUPC("012345678905")).resolves.toBeNull();
+    });
+  });
+
+  describe("CNF", () => {
+    it("unavailable list load + USDA found: found wins", async () => {
+      setupFetchMock({
+        "food/?lang=en": () => Promise.reject(new Error("CNF down")),
+        "food/?lang=fr": () => Promise.reject(new Error("CNF down")),
+        "fdc/v1/foods/search": usdaBanana,
+      });
+      const result = await lookupNutrition("banana");
+      expect(result?.source).toBe("usda");
+    });
+
+    it("unavailable list load + nothing found elsewhere is an outage, not a miss", async () => {
+      setupFetchMock({
+        "food/?lang=en": () => Promise.reject(new Error("CNF down")),
+        "food/?lang=fr": () => Promise.reject(new Error("CNF down")),
+        "fdc/v1/foods/search": usdaEmpty,
+        "api-ninjas.com": ninjasEmpty,
+      });
+      await expect(lookupNutrition("xyznonexistent")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+    });
+
+    it("unavailable nutrient fetch (non-OK) is an outage when nothing else finds it", async () => {
+      setupFetchMock({
+        "food/?lang=en": cnfWithSugarEN,
+        "food/?lang=fr": cnfWithSugarFR,
+        nutrientamount: failing(500),
+        "fdc/v1/foods/search": usdaEmpty,
+        "api-ninjas.com": ninjasEmpty,
+      });
+      await expect(lookupNutrition("sugar")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+    });
+
+    it("found: a CNF match with nutrients is returned", async () => {
+      setupFetchMock({
+        "food/?lang=en": cnfWithSugarEN,
+        "food/?lang=fr": cnfWithSugarFR,
+        nutrientamount: cnfSugarNutrients,
+      });
+      expect((await lookupNutrition("sugar"))?.source).toBe("cnf");
+    });
+
+    it("not-found: a clean answer with no match is a miss", async () => {
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": usdaEmpty,
+        "api-ninjas.com": ninjasEmpty,
+      });
+      await expect(lookupNutrition("xyznonexistent")).resolves.toBeNull();
+    });
+  });
+
+  describe("API Ninjas", () => {
+    const ninjasBanana = okJson([
+      {
+        name: "banana",
+        calories: 89,
+        protein_g: 1.1,
+        carbohydrates_total_g: 22.8,
+        fat_total_g: 0.3,
+      },
+    ]);
+
+    it("found", async () => {
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": usdaEmpty,
+        "api-ninjas.com": ninjasBanana,
+      });
+      expect((await lookupNutrition("banana"))?.source).toBe("api-ninjas");
+    });
+
+    it("not-found: an empty array is a miss", async () => {
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": usdaEmpty,
+        "api-ninjas.com": ninjasEmpty,
+      });
+      await expect(lookupNutrition("xyznonexistent")).resolves.toBeNull();
+    });
+
+    it("unavailable: a non-OK response is an outage and not cached", async () => {
+      setupFetchMock({
+        ...cnfEmpty,
+        "fdc/v1/foods/search": usdaEmpty,
+        "api-ninjas.com": failing(429),
+      });
+      await expect(lookupNutrition("banana")).rejects.toBeInstanceOf(
+        UpstreamUnavailableError,
+      );
+      expect(mockInsertValues).not.toHaveBeenCalled();
+    });
+
+    it("an unconfigured key is skipped, not an outage", async () => {
+      vi.stubEnv("API_NINJAS_KEY", "");
+      setupFetchMock({ ...cnfEmpty, "fdc/v1/foods/search": usdaEmpty });
+      await expect(lookupNutrition("xyznonexistent")).resolves.toBeNull();
+    });
+  });
+
+  it("batch: an unavailable item comes back null and is not cached", async () => {
+    setupFetchMock({
+      ...cnfEmpty,
+      "fdc/v1/foods/search": failing(503),
+      "api-ninjas.com": ninjasEmpty,
+    });
+    const result = await batchNutritionLookup(["banana"]);
+    expect(result.get("banana")).toBeNull();
+    expect(mockInsertValues).not.toHaveBeenCalled();
   });
 });

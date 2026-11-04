@@ -1,6 +1,6 @@
 ---
 title: "USDA, API Ninjas and CNF lookups: tell an outage apart from not-found, with a 429 breaker"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-11-03
 updated: 2026-11-03

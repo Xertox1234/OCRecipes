@@ -11,6 +11,7 @@ import {
   findNutrientValue,
   type NutritionData,
 } from "./nutrition-source-utils";
+import { UpstreamUnavailableError } from "./usda-lookup";
 
 const log = createServiceLogger("nutrition-lookup");
 
@@ -321,10 +322,17 @@ export function fuzzyMatchCNF(query: string, foods: CNFFood[]): CNFFood | null {
  * Look up nutrition data from the Canadian Nutrient File (Health Canada).
  * Searches both English and French food lists for the best match,
  * then fetches nutrient amounts per 100 g.
+ *
+ * Returns null when CNF answered and has no usable match; throws
+ * `UpstreamUnavailableError` when the food lists or the nutrient amounts
+ * could not be fetched.
  */
 export async function lookupCNF(query: string): Promise<NutritionData | null> {
   await ensureCNFFoods();
-  if (!cnfFoodsEN || !cnfFoodsFR) return null;
+  // The food lists never loaded: CNF could not answer, which is not "no match".
+  if (!cnfFoodsEN || !cnfFoodsFR) {
+    throw new UpstreamUnavailableError("CNF food lists unavailable");
+  }
 
   // Search both EN and FR food lists
   const matchEN = fuzzyMatchCNF(query, cnfFoodsEN);
@@ -355,6 +363,13 @@ export async function lookupCNF(query: string): Promise<NutritionData | null> {
       `https://food-nutrition.canada.ca/api/canadian-nutrient-file/nutrientamount/?lang=en&type=json&id=${matchCode}`,
       { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
+    if (!nutRes.ok) {
+      log.warn(
+        { status: nutRes.status, code: matchCode },
+        "CNF nutrient error",
+      );
+      throw new UpstreamUnavailableError(`CNF error ${nutRes.status}`);
+    }
     const nutrientsParsed = cnfNutrientAmountListSchema.safeParse(
       await nutRes.json(),
     );
@@ -389,8 +404,9 @@ export async function lookupCNF(query: string): Promise<NutritionData | null> {
       source: "cnf",
     };
   } catch (err) {
+    if (err instanceof UpstreamUnavailableError) throw err;
     log.warn({ err: toError(err) }, "CNF nutrient lookup error");
-    return null;
+    throw new UpstreamUnavailableError("CNF nutrient lookup failed");
   }
 }
 
