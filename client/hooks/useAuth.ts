@@ -11,6 +11,7 @@ import {
 import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { logger } from "@/lib/logger";
+import { sendDeviceTimezoneOnce } from "@/lib/timezone";
 import type {
   MfaChallengeResult,
   MfaVerifyResult,
@@ -314,6 +315,16 @@ export function useAuth() {
   useEffect(() => {
     void checkAuth();
   }, [checkAuth]);
+
+  // Daily quotas reset at the user's local midnight once the server knows the
+  // phone's timezone. Fire-and-forget after the session is established (keyed
+  // on the user id, so it runs once per sign-in / launch, never blocks either);
+  // a local marker stops re-sends and a failure retries at the next launch.
+  const signedInUserId = state.user?.id;
+  useEffect(() => {
+    if (signedInUserId === undefined) return;
+    sendDeviceTimezoneOnce(String(signedInUserId)).catch(() => {});
+  }, [signedInUserId]);
 
   // Re-validate auth when the app returns to the foreground, so a session that
   // expired (or was revoked) while backgrounded is caught on resume rather than
