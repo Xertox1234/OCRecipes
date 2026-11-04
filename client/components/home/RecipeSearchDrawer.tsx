@@ -1,10 +1,10 @@
 // client/components/home/RecipeSearchDrawer.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { InlineError } from "@/components/InlineError";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
@@ -81,38 +81,17 @@ export function RecipeSearchDrawer({
   const searchFocus = useFieldFocus();
 
   // Voice input REPLACES the field with the dictated words.
+  // The drawers stay mounted when closed: `enabled` ends a session this
+  // drawer started on close and never touches another drawer's.
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  // True only while THIS drawer started the session. Every mounted instance
-  // of the hook sees the shared recognizer, and the drawers stay mounted
-  // when closed, so a hidden drawer must never stop or take a session that
-  // another drawer started.
-  const voiceActiveRef = useRef(false);
-  useEffect(() => {
-    if (
-      isOpen &&
-      voiceActiveRef.current &&
-      transcript &&
-      (isListening || isFinal)
-    ) {
-      setText(transcript);
-    }
-  }, [isOpen, isListening, isFinal, transcript]);
+    toggle: toggleVoice,
+  } = useVoiceField({ onTranscript: setText, enabled: isOpen });
   const handleVoicePress = () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceActiveRef.current = true;
-      void startListening();
-    }
+    toggleVoice();
   };
 
   // Refresh recent list whenever the drawer opens
@@ -121,10 +100,8 @@ export function RecipeSearchDrawer({
       setRecent(getRecentSearches());
     } else {
       setText("");
-      if (voiceActiveRef.current && isListening) stopListening();
-      voiceActiveRef.current = false;
     }
-  }, [isOpen, isListening, stopListening]);
+  }, [isOpen]);
 
   const trending = useTrendingSearches(isOpen);
   const resolved = resolveTrendingSource(

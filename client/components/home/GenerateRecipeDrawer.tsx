@@ -1,10 +1,10 @@
 // client/components/home/GenerateRecipeDrawer.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { InlineError } from "@/components/InlineError";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
@@ -31,10 +31,15 @@ import type { HomeScreenNavigationProp } from "@/types/navigation";
 const PROMPT_LABEL = "Recipe idea";
 
 interface GenerateRecipeDrawerProps {
+  /** The drawer stays mounted when collapsed; closing it ends a dictation. */
+  isOpen: boolean;
   onUsed: () => void;
 }
 
-export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
+export function GenerateRecipeDrawer({
+  isOpen,
+  onUsed,
+}: GenerateRecipeDrawerProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -44,36 +49,21 @@ export function GenerateRecipeDrawer({ onUsed }: GenerateRecipeDrawerProps) {
   // Voice input REPLACES the field with the dictated words.
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  // false once submitted/closed, so a late final result cannot refill.
-  const voiceActiveRef = useRef(false);
-  useEffect(() => {
-    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
-      setText(transcript);
-    }
-  }, [isListening, isFinal, transcript]);
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({ onTranscript: setText, enabled: isOpen });
   const handleVoicePress = () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceActiveRef.current = true;
-      void startListening();
-    }
+    toggleVoice();
   };
 
   const generate = (prompt: string) => {
     const p = prompt.trim();
     if (!p) return;
     haptics.selection();
-    voiceActiveRef.current = false;
-    if (isListening) stopListening();
+    releaseVoice();
     onUsed();
     navigation.navigate("RecipeChat", { initialMessage: p });
   };

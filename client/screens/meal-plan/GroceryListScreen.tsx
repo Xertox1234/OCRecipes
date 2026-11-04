@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { useHeaderHeight } from "@react-navigation/elements";
 import {
   useNavigation,
@@ -264,33 +264,18 @@ export default function GroceryListScreen() {
   // Voice input REPLACES the single-value field with the dictated words.
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  // false once the item is added, so a late final result cannot refill the
-  // field with the item just added.
-  const voiceActiveRef = useRef(false);
-  useEffect(() => {
-    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
-      setNewItemName(transcript);
-    }
-  }, [isListening, isFinal, transcript]);
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({ onTranscript: setNewItemName });
   useEffect(() => {
     if (speechError) toast.error(speechError);
   }, [speechError, toast]);
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceActiveRef.current = true;
-      void startListening();
-    }
-  }, [haptics, isListening, startListening, stopListening]);
+    toggleVoice();
+  }, [haptics, toggleVoice]);
 
   const [pantryPromptItem, setPantryPromptItem] =
     useState<GroceryListItem | null>(null);
@@ -307,20 +292,12 @@ export default function GroceryListScreen() {
     const name = newItemName.trim();
     if (!name) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    voiceActiveRef.current = false;
-    if (isListening) stopListening();
+    releaseVoice();
     addItemMutation.mutate(
       { listId, name },
       { onSuccess: () => setNewItemName("") },
     );
-  }, [
-    haptics,
-    addItemMutation,
-    listId,
-    newItemName,
-    isListening,
-    stopListening,
-  ]);
+  }, [haptics, addItemMutation, listId, newItemName, releaseVoice]);
 
   const handleItemChecked = useCallback(
     (item: GroceryListItem) => {

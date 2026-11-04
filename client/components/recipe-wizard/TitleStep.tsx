@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   StyleSheet,
   ScrollView,
@@ -10,7 +10,7 @@ import { FocusTextInput } from "@/components/FocusTextInput";
 import { FieldCounter } from "@/components/FieldCounter";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { InlineError } from "@/components/InlineError";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -44,28 +44,16 @@ export default function TitleStep({
   // Voice input REPLACES the title with the dictated words.
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  // false once the title is submitted, so a late final result cannot refill.
-  const voiceActiveRef = useRef(false);
-  useEffect(() => {
-    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
-      setTitle(transcript.slice(0, TITLE_MAX_LENGTH));
-    }
-  }, [isListening, isFinal, transcript, setTitle]);
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({
+    onTranscript: (text) => setTitle(text.slice(0, TITLE_MAX_LENGTH)),
+  });
   const handleVoicePress = () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceActiveRef.current = true;
-      void startListening();
-    }
+    toggleVoice();
   };
 
   return (
@@ -94,8 +82,7 @@ export default function TitleStep({
         // Keep the keyboard up while focus moves on to the description.
         submitBehavior="submit"
         onSubmitEditing={() => {
-          voiceActiveRef.current = false;
-          if (isListening) stopListening();
+          releaseVoice();
           descriptionRef.current?.focus();
         }}
         maxLength={TITLE_MAX_LENGTH}

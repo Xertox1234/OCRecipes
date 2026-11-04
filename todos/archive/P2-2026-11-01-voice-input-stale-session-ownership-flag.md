@@ -1,6 +1,6 @@
 ---
 title: "Voice input: the 'this field owns the mic' flag stays set after the session ends"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-01
 updated: 2026-11-01

@@ -12,24 +12,27 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
-const { mockSpeech, mockStartListening } = vi.hoisted(() => ({
-  mockSpeech: {
-    value: {
-      isListening: false,
-      transcript: "",
-      isFinal: false,
-      volume: 0,
-      error: null as string | null,
+const { mockSpeech, mockStartListening, mockStopListening } = vi.hoisted(
+  () => ({
+    mockSpeech: {
+      value: {
+        isListening: false,
+        transcript: "",
+        isFinal: false,
+        volume: 0,
+        error: null as string | null,
+      },
     },
-  },
-  mockStartListening: vi.fn(),
-}));
+    mockStartListening: vi.fn(),
+    mockStopListening: vi.fn(),
+  }),
+);
 
 vi.mock("@/hooks/useSpeechToText", () => ({
   useSpeechToText: () => ({
     ...mockSpeech.value,
     startListening: mockStartListening,
-    stopListening: vi.fn(),
+    stopListening: mockStopListening,
   }),
 }));
 
@@ -43,7 +46,7 @@ describe("GenerateRecipeDrawer", () => {
   });
 
   it("names the prompt input by its visible floating label", () => {
-    renderComponent(<GenerateRecipeDrawer onUsed={vi.fn()} />);
+    renderComponent(<GenerateRecipeDrawer isOpen onUsed={vi.fn()} />);
     // The floating label is drawn hidden from screen readers; the input's
     // accessible name must contain it (label-in-name).
     expect(screen.getByText("Recipe idea")).toBeTruthy();
@@ -53,7 +56,7 @@ describe("GenerateRecipeDrawer", () => {
 
   it("sends the typed idea to recipe chat on Return", () => {
     const onUsed = vi.fn();
-    renderComponent(<GenerateRecipeDrawer onUsed={onUsed} />);
+    renderComponent(<GenerateRecipeDrawer isOpen onUsed={onUsed} />);
     const input = screen.getByLabelText("Recipe idea");
     fireEvent.change(input, { target: { value: "quick curry" } });
     act(() => {
@@ -78,7 +81,7 @@ describe("GenerateRecipeDrawer", () => {
 
     it("replaces the typed idea with the dictation", () => {
       const { rerender } = renderComponent(
-        <GenerateRecipeDrawer onUsed={vi.fn()} />,
+        <GenerateRecipeDrawer isOpen onUsed={vi.fn()} />,
       );
       fireEvent.change(screen.getByLabelText("Recipe idea"), {
         target: { value: "old idea" },
@@ -91,7 +94,7 @@ describe("GenerateRecipeDrawer", () => {
         isListening: true,
         transcript: "a quick curry",
       };
-      rerender(<GenerateRecipeDrawer onUsed={vi.fn()} />);
+      rerender(<GenerateRecipeDrawer isOpen onUsed={vi.fn()} />);
 
       expect(
         (screen.getByLabelText("Recipe idea") as HTMLInputElement).value,
@@ -100,7 +103,7 @@ describe("GenerateRecipeDrawer", () => {
 
     it("ignores a late final result after the idea was submitted", () => {
       const { rerender } = renderComponent(
-        <GenerateRecipeDrawer onUsed={vi.fn()} />,
+        <GenerateRecipeDrawer isOpen onUsed={vi.fn()} />,
       );
       fireEvent.click(screen.getByLabelText("Start voice input"));
       mockSpeech.value = {
@@ -108,7 +111,7 @@ describe("GenerateRecipeDrawer", () => {
         isListening: true,
         transcript: "a quick curry",
       };
-      rerender(<GenerateRecipeDrawer onUsed={vi.fn()} />);
+      rerender(<GenerateRecipeDrawer isOpen onUsed={vi.fn()} />);
       const input = screen.getByLabelText("Recipe idea");
       expect((input as HTMLInputElement).value).toBe("a quick curry");
 
@@ -123,16 +126,44 @@ describe("GenerateRecipeDrawer", () => {
         isFinal: true,
         transcript: "a quick curry now final",
       };
-      rerender(<GenerateRecipeDrawer onUsed={vi.fn()} />);
+      rerender(<GenerateRecipeDrawer isOpen onUsed={vi.fn()} />);
 
       expect(
         (screen.getByLabelText("Recipe idea") as HTMLInputElement).value,
       ).toBe("typed after");
     });
 
+    it("stops the recognizer and ignores later words when the drawer closes mid-session", () => {
+      const { rerender } = renderComponent(
+        <GenerateRecipeDrawer isOpen onUsed={vi.fn()} />,
+      );
+      fireEvent.click(screen.getByLabelText("Start voice input"));
+      mockSpeech.value = {
+        ...mockSpeech.value,
+        isListening: true,
+        transcript: "a quick",
+      };
+      rerender(<GenerateRecipeDrawer isOpen onUsed={vi.fn()} />);
+
+      rerender(<GenerateRecipeDrawer isOpen={false} onUsed={vi.fn()} />);
+      expect(mockStopListening).toHaveBeenCalledOnce();
+
+      mockSpeech.value = {
+        ...mockSpeech.value,
+        isListening: false,
+        isFinal: true,
+        transcript: "a quick curry",
+      };
+      rerender(<GenerateRecipeDrawer isOpen={false} onUsed={vi.fn()} />);
+      rerender(<GenerateRecipeDrawer isOpen onUsed={vi.fn()} />);
+      expect(
+        (screen.getByLabelText("Recipe idea") as HTMLInputElement).value,
+      ).toBe("a quick");
+    });
+
     it("shows a speech error and leaves the typed text untouched", () => {
       const { rerender } = renderComponent(
-        <GenerateRecipeDrawer onUsed={vi.fn()} />,
+        <GenerateRecipeDrawer isOpen onUsed={vi.fn()} />,
       );
       fireEvent.change(screen.getByLabelText("Recipe idea"), {
         target: { value: "keep me" },
@@ -141,7 +172,7 @@ describe("GenerateRecipeDrawer", () => {
         ...mockSpeech.value,
         error: "Microphone or speech recognition permission not granted.",
       };
-      rerender(<GenerateRecipeDrawer onUsed={vi.fn()} />);
+      rerender(<GenerateRecipeDrawer isOpen onUsed={vi.fn()} />);
 
       expect(
         screen.getByText(
