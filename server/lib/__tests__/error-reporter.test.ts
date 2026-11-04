@@ -31,6 +31,7 @@ const sentryMocks = vi.hoisted(() => ({
   onUncaughtExceptionIntegration: vi.fn(() => ({
     name: "OnUncaughtException",
   })),
+  pinoIntegration: vi.fn(() => ({ name: "Pino" })),
 }));
 
 vi.mock("@sentry/node", () => sentryMocks);
@@ -123,9 +124,53 @@ describe("error-reporter", () => {
         name: "OnUncaughtException",
       });
     });
+
+    it("turns logger.error into Sentry events via pinoIntegration (handled background/cron/stream failures)", async () => {
+      // fireAndForget, cron catches, and the SSE stream catch all log with
+      // logger.error and never throw — without this integration none of them
+      // reach Sentry (onUnhandledRejection only sees UNhandled rejections).
+      await importActiveReporter();
+      expect(sentryMocks.pinoIntegration).toHaveBeenCalledWith({
+        error: { levels: ["error"] },
+      });
+      const options = sentryMocks.init.mock.calls[0][0];
+      expect(options.integrations).toContainEqual({ name: "Pino" });
+      // Error tracking only — never ship the log stream to Sentry Logs.
+      expect(options.enableLogs).toBeUndefined();
+    });
   });
 
   describe("scrubEvent", () => {
+    it("reduces the pino log context to an allowlist (arbitrary log fields may carry PII)", async () => {
+      const { scrubEvent } = await importReporter();
+      const event = {
+        type: undefined,
+        contexts: {
+          pino: {
+            msg: "background operation failed",
+            operation: "recipe-image",
+            requestId: "req-1",
+            service: "ai-client",
+            kind: "enabled",
+            userId: "user-42",
+            to: "victim@example.com",
+            resendError: { message: "x", name: "y", statusCode: 422 },
+            barcode: "0123",
+          },
+          os: { name: "linux" },
+        },
+      };
+      const scrubbed = scrubEvent(event as unknown as ErrorEvent);
+      expect(scrubbed.contexts?.pino).toEqual({
+        msg: "background operation failed",
+        operation: "recipe-image",
+        requestId: "req-1",
+        service: "ai-client",
+        kind: "enabled",
+      });
+      expect(scrubbed.contexts?.os).toEqual({ name: "linux" });
+    });
+
     it("removes credential-bearing headers by snippet match, keeps benign headers", async () => {
       const { scrubEvent } = await importReporter();
       const event = {
@@ -222,6 +267,7 @@ describe("error-reporter", () => {
                 'Failed query: update "users" set "password" = $1 where "id" = $2\nparams: pv2$NEWHASH,user-uuid',
             },
             { type: "Error", value: "connection reset" },
+            { type: "Error" },
           ],
         },
       };
@@ -234,6 +280,56 @@ describe("error-reporter", () => {
       );
       expect(JSON.stringify(scrubbed)).not.toContain("NEWHASH");
       expect(values[1].value).toBe("connection reset");
+      expect(values[2].value).toBeUndefined();
+    });
+
+    // linkedErrorsIntegration (an SDK default) ships the Drizzle error's
+    // `cause` — the pg error — as its own exception value, and pg puts the
+    // offending input in the MESSAGE for type/enum/date errors (22P02, 22007).
+    it("drops the quoted input value from linked pg error messages", async () => {
+      const { scrubEvent } = await importReporter();
+      const event = {
+        exception: {
+          values: [
+            {
+              type: "error",
+              value: 'invalid input syntax for type uuid: "victim@example.com"',
+            },
+            {
+              type: "error",
+              value: 'invalid input value for enum diet_type: "my secret diet"',
+            },
+            {
+              type: "error",
+              value: 'date/time field value out of range: "2026-13-45"',
+            },
+            { type: "error", value: 'relation "users" does not exist' },
+            {
+              type: "DrizzleQueryError",
+              value: 'Failed query: select * from "users" where "id" = $1',
+            },
+          ],
+        },
+      };
+
+      const scrubbed = scrubEvent(event as ErrorEvent);
+
+      const values = scrubbed.exception?.values ?? [];
+      expect(values[0].value).toBe(
+        'invalid input syntax for type uuid: "[redacted]"',
+      );
+      expect(values[1].value).toBe(
+        'invalid input value for enum diet_type: "[redacted]"',
+      );
+      expect(values[2].value).toBe(
+        'date/time field value out of range: "[redacted]"',
+      );
+      expect(JSON.stringify(scrubbed)).not.toMatch(/victim|secret diet|13-45/);
+      // Identifiers in quotes (no ': "' before them) are kept for debugging.
+      expect(values[3].value).toBe('relation "users" does not exist');
+      expect(values[4].value).toBe(
+        'Failed query: select * from "users" where "id" = $1',
+      );
     });
   });
 

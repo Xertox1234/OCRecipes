@@ -41,3 +41,4 @@ In `scrubEvent`, cut every `event.exception.values[].value` at `"\nparams:"` —
 ## See Also
 
 - `docs/rules/security.md`
+- [pinoIntegration ships the whole log line](pino-integration-ships-whole-log-line-and-drizzle-params-to-sentry-2026-10-30.md) — every `logger.error` now reaches this scrub too, and the `contexts.pino` allowlist
