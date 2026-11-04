@@ -949,3 +949,73 @@ describe("ChatScreen — messages query paused offline", () => {
     expect(screen.getByText("You're offline")).toBeDefined();
   });
 });
+
+// --- Voice input: ownership ends with the session ---------------------------
+// useSpeechToText is mocked with a mutable state object so a test can play the
+// recognizer's side (the real one is one recognizer shared by every field).
+const { mockSpeech, mockStartListening, mockStopListening } = vi.hoisted(
+  () => ({
+    mockSpeech: {
+      value: {
+        isListening: false,
+        transcript: "",
+        isFinal: false,
+        volume: 0,
+        error: null as string | null,
+      },
+    },
+    mockStartListening: vi.fn(),
+    mockStopListening: vi.fn(),
+  }),
+);
+
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    ...mockSpeech.value,
+    startListening: mockStartListening,
+    stopListening: mockStopListening,
+  }),
+}));
+
+function resetSpeech() {
+  mockSpeech.value = {
+    isListening: false,
+    transcript: "",
+    isFinal: false,
+    volume: 0,
+    error: null,
+  };
+  mockStartListening.mockClear();
+  mockStopListening.mockClear();
+}
+
+describe("ChatScreen — voice ownership", () => {
+  beforeEach(resetSpeech);
+
+  it("does not write a transcript that arrives after the session ended", () => {
+    const { rerender } = renderComponent(<ChatScreen />);
+    const input = screen.getByLabelText("Message input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "what about" } });
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "protein",
+    };
+    rerender(<ChatScreen />);
+    expect(input.value).toBe("what about protein");
+
+    // The session times out on its own...
+    mockSpeech.value = { ...mockSpeech.value, isListening: false };
+    rerender(<ChatScreen />);
+    // ...then the shared recognizer is used by another field.
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "stray words",
+    };
+    rerender(<ChatScreen />);
+    expect(input.value).toBe("what about protein");
+  });
+});

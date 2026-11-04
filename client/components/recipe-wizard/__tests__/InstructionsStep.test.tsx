@@ -264,3 +264,85 @@ describe("InstructionsStep — Return key", () => {
     );
   });
 });
+
+// --- Voice input: ownership ends with the session ---------------------------
+// useSpeechToText is mocked with a mutable state object so a test can play the
+// recognizer's side (the real one is one recognizer shared by every field).
+const { mockSpeech, mockStartListening, mockStopListening } = vi.hoisted(
+  () => ({
+    mockSpeech: {
+      value: {
+        isListening: false,
+        transcript: "",
+        isFinal: false,
+        volume: 0,
+        error: null as string | null,
+      },
+    },
+    mockStartListening: vi.fn(),
+    mockStopListening: vi.fn(),
+  }),
+);
+
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    ...mockSpeech.value,
+    startListening: mockStartListening,
+    stopListening: mockStopListening,
+  }),
+}));
+
+function resetSpeech() {
+  mockSpeech.value = {
+    isListening: false,
+    transcript: "",
+    isFinal: false,
+    volume: 0,
+    error: null,
+  };
+  mockStartListening.mockClear();
+  mockStopListening.mockClear();
+}
+
+describe("InstructionsStep — voice ownership", () => {
+  beforeEach(resetSpeech);
+
+  it("does not write a transcript that arrives after the session ended", () => {
+    const updateStep = vi.fn();
+    const ui = () => (
+      <InstructionsStep
+        steps={[{ key: "step_1", text: "Boil water" }]}
+        addStep={vi.fn()}
+        removeStep={vi.fn()}
+        updateStep={updateStep}
+        moveStep={vi.fn()}
+      />
+    );
+    const { rerender } = renderComponent(ui());
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "then salt it",
+    };
+    rerender(ui());
+    expect(updateStep).toHaveBeenLastCalledWith(
+      "step_1",
+      "Boil water then salt it",
+    );
+
+    // The session times out on its own...
+    mockSpeech.value = { ...mockSpeech.value, isListening: false };
+    rerender(ui());
+    updateStep.mockClear();
+    // ...then the shared recognizer is used by another field.
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "stray words",
+    };
+    rerender(ui());
+    expect(updateStep).not.toHaveBeenCalled();
+  });
+});
