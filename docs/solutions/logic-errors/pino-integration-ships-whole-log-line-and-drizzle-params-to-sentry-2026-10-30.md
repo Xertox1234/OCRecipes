@@ -74,9 +74,16 @@ keeps row values of constraint errors (23505) in `detail`, which is not
 shipped because `extraErrorDataIntegration` is off, but it puts the rejected
 input in the MESSAGE for type, enum and date errors
 (`invalid input syntax for type uuid: "<input>"`, 22P02 / 22007). `scrubEvent`
-therefore also redacts any quoted tail after `: "` in every exception value.
-Quoted identifiers without that prefix (`relation "users" does not exist`) are
-kept. Measured 2026-11-03 with a real `Sentry.init` probe before the fix:
+therefore also redacts any quoted tail after `: "` in every exception value,
+plus three shapes that quote the input mid-message: `value "<input>" is out of
+range for type …` (22003), `time zone "<input>" not recognized` (22023) and
+`invalid value "<input>" for "<fmt>"` (22007 from `to_date`/`to_timestamp`).
+Each is cut greedily up to its fixed suffix, so a quote inside the input
+cannot end the redaction early. The three run BEFORE the `: "` tail cut: an
+input containing `: "` would otherwise let the tail cut remove the suffix
+they match on and leak the input's start. Quoted identifiers in other messages
+(`relation "users" does not exist`) are kept. A new pg message shape that
+quotes user input needs its own pattern and test row. Measured 2026-11-03 with a real `Sentry.init` probe before the fix:
 the input survived the `\nparams:` cut.
 
 ## Prevention

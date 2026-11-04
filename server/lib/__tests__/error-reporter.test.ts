@@ -331,6 +331,63 @@ describe("error-reporter", () => {
         'Failed query: select * from "users" where "id" = $1',
       );
     });
+
+    // pg shapes that quote the input with no ': "' before it (security
+    // re-check of #1627, 2026-11-03). Inputs carry their own quote marks so
+    // a redaction that stops at the first closing quote would leak the rest.
+    it("drops the quoted input from pg shapes without a ': \"' prefix", async () => {
+      const { scrubEvent } = await importReporter();
+      const event = {
+        exception: {
+          values: [
+            {
+              type: "error",
+              value: 'value "99"9@x.com" is out of range for type integer',
+            },
+            { type: "error", value: 'time zone "Ann"e/Home" not recognized' },
+            { type: "error", value: 'invalid value "sec"ret" for "YYYY"' },
+          ],
+        },
+      };
+
+      const scrubbed = scrubEvent(event as ErrorEvent);
+
+      const values = scrubbed.exception?.values ?? [];
+      expect(values[0].value).toBe(
+        'value "[redacted]" is out of range for type integer',
+      );
+      expect(values[1].value).toBe('time zone "[redacted]" not recognized');
+      expect(values[2].value).toBe('invalid value "[redacted]" for "YYYY"');
+      expect(JSON.stringify(scrubbed)).not.toMatch(/9@x|Ann|Home|sec|ret"/);
+    });
+
+    // An input that itself contains ': "' must not let the generic tail cut
+    // eat the fixed suffix the mid-message rules match on (#1725 review).
+    it("redacts mid-message shapes whose input contains ': \"'", async () => {
+      const { scrubEvent } = await importReporter();
+      const event = {
+        exception: {
+          values: [
+            { type: "error", value: 'time zone "Ann: "x" not recognized' },
+            { type: "error", value: 'invalid value "sec: "ret" for "YYYY"' },
+            {
+              type: "error",
+              value: 'value "12: "34" is out of range for type integer',
+            },
+          ],
+        },
+      };
+
+      const scrubbed = scrubEvent(event as ErrorEvent);
+
+      const values = scrubbed.exception?.values ?? [];
+      expect(values[0].value).toBe('time zone "[redacted]" not recognized');
+      expect(values[1].value).toBe('invalid value "[redacted]" for "YYYY"');
+      expect(values[2].value).toBe(
+        'value "[redacted]" is out of range for type integer',
+      );
+      expect(JSON.stringify(scrubbed)).not.toMatch(/Ann|sec|12/);
+    });
   });
 
   describe("SENSITIVE_HEADER_SNIPPETS drift guard", () => {
