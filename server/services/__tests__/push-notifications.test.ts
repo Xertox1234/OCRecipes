@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { storage } from "../../storage";
+import { logger } from "../../lib/logger";
 
 import { sendPushToUser } from "../push-notifications";
 
@@ -107,6 +108,27 @@ describe("sendPushToUser", () => {
     // Index 0 of validTokens (VALID_TOKEN) was DeviceNotRegistered
     expect(storage.deletePushToken).toHaveBeenCalledWith("1", VALID_TOKEN);
     expect(storage.deletePushToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs (never swallows) a failed stale-token delete and still returns the send result", async () => {
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(VALID_TOKEN, "ios"),
+      mockToken(VALID_TOKEN_2, "android"),
+    ]);
+    expoMock.send.mockResolvedValue([
+      { status: "error", details: { error: "DeviceNotRegistered" } },
+      { status: "ok", id: "xyz" },
+    ]);
+    const dbError = new Error("connection terminated");
+    vi.mocked(storage.deletePushToken).mockRejectedValue(dbError);
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    expect(await sendPushToUser("1", "title", "body")).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ err: dbError, userId: "1" }),
+      "push-notifications: stale token delete failed",
+    );
+    warnSpy.mockRestore();
   });
 
   it("does not delete tokens for non-DeviceNotRegistered errors", async () => {

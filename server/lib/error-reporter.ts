@@ -162,6 +162,24 @@ const SENSITIVE_HEADER_SNIPPETS = [
  */
 
 /**
+ * Keys kept from the `contexts.pino` block pinoIntegration attaches to every
+ * logger.error-derived event. That block is the WHOLE log line minus `err`
+ * (mixin requestId/userId, child bindings, and every ad-hoc field a call
+ * site logs — `to` email addresses, provider error bodies, food/barcode
+ * fields), so it is allowlisted rather than denylisted: anything not named
+ * here never leaves the box. The requestId alone correlates an event back to
+ * the full pino line in the log stream. `userId` is dropped on purpose,
+ * matching `sendDefaultPii: false`.
+ */
+const PINO_CONTEXT_ALLOWLIST = new Set([
+  "msg",
+  "requestId",
+  "service",
+  "operation",
+  "kind",
+]);
+
+/**
  * PII scrubber for outbound events — the load-bearing control on this
  * external trust boundary (see the module doc: `sendDefaultPii: false`
  * does NOT withhold headers/cookies/query on the error-event path in v10).
@@ -199,11 +217,23 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   // A failed Drizzle query's message ends with "\nparams: <every bound
   // value>" — password hashes, coach health text, ids. Keep the query, drop
   // the values, for handled route errors and background failures alike.
+  // Its `cause` (the pg error) arrives as a separate value through the SDK's
+  // default linkedErrorsIntegration, and pg puts the rejected input in that
+  // message for type/enum/date errors (`... for type uuid: "<input>"`), so
+  // redact any quoted tail after ': "'. Quoted identifiers without that
+  // prefix (`relation "users" does not exist`) are kept.
   for (const exception of event.exception?.values ?? []) {
     if (typeof exception.value !== "string") continue;
     const paramsStart = exception.value.indexOf("\nparams:");
     if (paramsStart !== -1) {
       exception.value = exception.value.slice(0, paramsStart);
+    }
+    exception.value = exception.value.replace(/: "[\s\S]*$/, ': "[redacted]"');
+  }
+  const pinoContext = event.contexts?.pino;
+  if (pinoContext) {
+    for (const key of Object.keys(pinoContext)) {
+      if (!PINO_CONTEXT_ALLOWLIST.has(key)) delete pinoContext[key];
     }
   }
   for (const crumb of event.breadcrumbs ?? []) {
@@ -270,6 +300,17 @@ export function initErrorReporter(): void {
       Sentry.onUncaughtExceptionIntegration({
         exitEvenIfOtherHandlersAreRegistered: false,
       }),
+      // Every logger.error becomes a handled Sentry event. Handled failures
+      // never reach Sentry otherwise: the cron/interval catches and the SSE
+      // chat-stream catch log and swallow, and onUnhandledRejection only sees
+      // UNhandled rejections. (fireAndForget also calls reportError with the
+      // same Error it logs, so that capture is deduped, not doubled.) Error level
+      // only (warn stays log-only); `log` levels are inert because
+      // enableLogs is never set. Events still pass through beforeSend (rate
+      // cap + scrub — scrubEvent allowlists the attached pino context). An
+      // Error object logged here AND passed to reportError (handleRouteError)
+      // is captured once: the SDK marks a captured Error and skips repeats.
+      Sentry.pinoIntegration({ error: { levels: ["error"] } }),
       // The default onUnhandledRejection integration (mode: "warn") stays:
       // it captures without exiting, matching the project convention that
       // unhandledRejection never exits.

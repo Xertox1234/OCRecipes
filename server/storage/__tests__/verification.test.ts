@@ -15,7 +15,7 @@ import {
   getTestTx,
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import type * as schema from "@shared/schema";
 import { barcodeVerifications, verificationHistory } from "@shared/schema";
@@ -38,6 +38,7 @@ const {
   hasUserFrontLabelScanned,
   confirmFrontLabelData,
   getUserCompositeScore,
+  lockBarcodes,
 } = await import("../verification");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -817,6 +818,48 @@ describe("verification storage", () => {
       const result = await getUserVerificationStats(testUser.id);
       expect(result.count).toBe(1);
       expect(result.streak).toBe(1);
+    });
+  });
+
+  // ==========================================================================
+  // lockBarcodes
+  // ==========================================================================
+
+  describe("lockBarcodes", () => {
+    // setupTestTransaction returns a real NodePgTransaction typed as the db.
+    const lockTx = () => tx as unknown as Parameters<typeof lockBarcodes>[0];
+    const heldAdvisoryLocks = async () => {
+      const { rows } = await tx.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()`,
+      );
+      return rows[0].n;
+    };
+
+    it("takes every barcode's lock in one statement, not one round-trip each", async () => {
+      const before = await heldAdvisoryLocks();
+      const execute = vi.spyOn(tx, "execute");
+
+      await lockBarcodes(lockTx(), [
+        "lb-5",
+        "lb-1",
+        "lb-3",
+        "lb-1",
+        "lb-2",
+        "lb-4",
+      ]);
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      execute.mockRestore();
+      expect((await heldAdvisoryLocks()) - before).toBe(5);
+    });
+
+    it("skips the database when there is nothing to lock", async () => {
+      const execute = vi.spyOn(tx, "execute");
+
+      await lockBarcodes(lockTx(), []);
+
+      expect(execute).not.toHaveBeenCalled();
+      execute.mockRestore();
     });
   });
 });

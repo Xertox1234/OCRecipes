@@ -37,6 +37,7 @@ import {
   ne,
   or,
 } from "drizzle-orm";
+import { logger, toError } from "../lib/logger";
 import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
 import { deleteAllPushTokensForUser } from "./push-tokens";
@@ -493,6 +494,14 @@ export async function touchLastActive(userId: string): Promise<void> {
 }
 
 /**
+ * Most barcodes `deleteUser` locks inside the deletion transaction. Each lock
+ * holds a slot in Postgres's shared lock table until commit; past this a
+ * deletion could fail with "out of shared memory", so the aggregates are
+ * recomputed after commit instead, this many barcodes per transaction.
+ */
+export const DELETE_USER_LOCK_THRESHOLD = 1000;
+
+/**
  * Permanently delete a user and all associated data.
  * Relies on ON DELETE CASCADE foreign keys to clean up child tables.
  * Community recipes (which use SET NULL) are explicitly deleted first.
@@ -508,6 +517,7 @@ export async function deleteUser(id: string): Promise<boolean> {
     .from(communityRecipes)
     .where(eq(communityRecipes.authorId, id));
 
+  let votedBarcodes: string[] = [];
   const deleted = await db.transaction(async (tx) => {
     if (orphanedRecipes.length > 0) {
       const recipeIds = orphanedRecipes.map((r) => r.id);
@@ -552,26 +562,52 @@ export async function deleteUser(id: string): Promise<boolean> {
 
     // verification_history cascades with the user; remember which barcodes
     // that touches so their stored aggregates can be recomputed after.
-    const votedBarcodes = (
-      await tx
-        .select({ barcode: verificationHistory.barcode })
-        .from(verificationHistory)
-        .where(eq(verificationHistory.userId, id))
-    ).map((r) => r.barcode);
+    votedBarcodes = [
+      ...new Set(
+        (
+          await tx
+            .select({ barcode: verificationHistory.barcode })
+            .from(verificationHistory)
+            .where(eq(verificationHistory.userId, id))
+        ).map((r) => r.barcode),
+      ),
+    ];
+    const recomputeHere = votedBarcodes.length <= DELETE_USER_LOCK_THRESHOLD;
 
     // Lock before the user-row delete: a concurrent submitVerification holds
     // this lock and then needs a key-share on the user row we are deleting.
-    await lockBarcodes(tx, votedBarcodes);
+    // Past the threshold no barcode lock is held here, so there is nothing
+    // for that submit to deadlock against.
+    if (recomputeHere) await lockBarcodes(tx, votedBarcodes);
 
     const result = await tx
       .delete(users)
       .where(eq(users.id, id))
       .returning({ id: users.id });
-    if (result.length > 0 && votedBarcodes.length > 0) {
+    if (result.length > 0 && recomputeHere && votedBarcodes.length > 0) {
       await recomputeAggregatesForBarcodes(tx, votedBarcodes);
     }
     return result.length > 0;
   });
+
+  // Past the threshold: the user's history rows are gone, so each batch
+  // recomputes from what remains under its own locks. The account is already
+  // deleted, so a failed batch is logged (its aggregates stay stale) rather
+  // than failing the request.
+  if (deleted && votedBarcodes.length > DELETE_USER_LOCK_THRESHOLD) {
+    const sorted = [...votedBarcodes].sort();
+    for (let i = 0; i < sorted.length; i += DELETE_USER_LOCK_THRESHOLD) {
+      const batch = sorted.slice(i, i + DELETE_USER_LOCK_THRESHOLD);
+      try {
+        await db.transaction((tx) => recomputeAggregatesForBarcodes(tx, batch));
+      } catch (err) {
+        logger.error(
+          { err: toError(err), userId: id, barcodes: batch.length },
+          "deleteUser: barcode aggregate recompute failed",
+        );
+      }
+    }
+  }
 
   // Post-commit: evict deleted recipes from the MiniSearch index so they
   // stop surfacing in search results. Only fires when the transaction succeeded.
