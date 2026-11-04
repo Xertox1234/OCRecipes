@@ -220,15 +220,33 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   // Its `cause` (the pg error) arrives as a separate value through the SDK's
   // default linkedErrorsIntegration, and pg puts the rejected input in that
   // message for type/enum/date errors (`... for type uuid: "<input>"`), so
-  // redact any quoted tail after ': "'. Quoted identifiers without that
-  // prefix (`relation "users" does not exist`) are kept.
+  // redact any quoted tail after ': "'. Three more pg shapes quote the input
+  // mid-message; each is redacted greedily up to its fixed suffix, so a quote
+  // inside the input cannot end the redaction early. Quoted identifiers in
+  // other messages (`relation "users" does not exist`) are kept.
   for (const exception of event.exception?.values ?? []) {
     if (typeof exception.value !== "string") continue;
     const paramsStart = exception.value.indexOf("\nparams:");
     if (paramsStart !== -1) {
       exception.value = exception.value.slice(0, paramsStart);
     }
-    exception.value = exception.value.replace(/: "[\s\S]*$/, ': "[redacted]"');
+    exception.value = exception.value
+      .replace(/: "[\s\S]*$/, ': "[redacted]"')
+      // 22003: value "<input>" is out of range for type integer
+      .replace(
+        /\bvalue "[\s\S]*" is out of range for type\b/,
+        'value "[redacted]" is out of range for type',
+      )
+      // 22023: time zone "<input>" not recognized
+      .replace(
+        /\btime zone "[\s\S]*" not recognized/,
+        'time zone "[redacted]" not recognized',
+      )
+      // 22007 (to_date / to_timestamp): invalid value "<input>" for "<fmt>"
+      .replace(
+        /\binvalid value "[\s\S]*" for "/,
+        'invalid value "[redacted]" for "',
+      );
   }
   const pinoContext = event.contexts?.pino;
   if (pinoContext) {
