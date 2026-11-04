@@ -1,6 +1,6 @@
 ---
 title: "Grocery-list cap: two parallel creates can both pass the count check"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-01
 updated: 2026-11-01
