@@ -377,7 +377,6 @@ export function UpgradeModal({
                 accessibilityRole="link"
                 accessibilityLabel="Terms of Service"
                 accessibilityHint="Opens our Terms of Service in your browser"
-                hitSlop={8}
                 style={styles.legalLink}
               >
                 <ThemedText type="small" style={{ color: theme.link }}>
@@ -389,7 +388,6 @@ export function UpgradeModal({
                 accessibilityRole="link"
                 accessibilityLabel="Privacy Policy"
                 accessibilityHint="Opens our Privacy Policy in your browser"
-                hitSlop={8}
                 style={styles.legalLink}
               >
                 <ThemedText type="small" style={{ color: theme.link }}>
@@ -520,6 +518,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   legalLink: {
+    minWidth: 44,
     minHeight: 44,
     justifyContent: "center",
   },

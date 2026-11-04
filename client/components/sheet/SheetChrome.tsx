@@ -43,7 +43,7 @@ export function SheetHeader({ title, onDone }: SheetHeaderProps) {
         <ThemedText style={styles.headerTitle}>{title}</ThemedText>
         <Pressable
           onPress={onDone}
-          hitSlop={8}
+          style={styles.doneButton}
           accessibilityRole="button"
           accessibilityLabel="Close"
         >
@@ -120,6 +120,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 17,
     fontFamily: FontFamily.semiBold,
+  },
+  doneButton: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "flex-end",
   },
   doneText: {
     fontSize: 16,

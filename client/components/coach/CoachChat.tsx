@@ -1042,7 +1042,6 @@ export default function CoachChat({
             ]}
             accessibilityRole="button"
             accessibilityLabel="Retry loading conversation"
-            hitSlop={8}
           >
             <Text style={[styles.historyRetryText, { color: theme.link }]}>
               ↺ Retry
@@ -1207,6 +1206,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
   },
   historyRetryButton: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: "center" as const,
     paddingVertical: 12,
     paddingHorizontal: Spacing.md,
   },

@@ -304,7 +304,6 @@ export const MealSlotSection = React.memo(function MealSlotSection({
           <PressableScale
             scaleTo={0.95}
             onPress={() => onSuggest(mealType)}
-            hitSlop={8}
             style={[
               styles.suggestChip,
               {
@@ -473,6 +472,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
+    minWidth: 44,
     minHeight: 44,
   },
   suggestChipText: {

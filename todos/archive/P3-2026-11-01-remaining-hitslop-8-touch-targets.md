@@ -1,6 +1,6 @@
 ---
 title: "Last five small icon buttons still rely on hitSlop={8} for their tap area"
-status: backlog
+status: done
 priority: low
 created: 2026-11-01
 updated: 2026-11-04
