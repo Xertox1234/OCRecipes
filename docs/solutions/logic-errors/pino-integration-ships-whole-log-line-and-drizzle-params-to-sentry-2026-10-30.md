@@ -68,18 +68,26 @@ In `server/lib/error-reporter.ts` → `scrubEvent` (the `beforeSend` hook):
   `resend <name> (<statusCode>)`; Resend's free-text message stays in the
   log under `resendError`.
 
-Accepted residual, recorded in the code comment: `pg` puts row values in the
-error's `detail`, not `message`, and `extraErrorDataIntegration` (which would
-ship `detail`) is not enabled. No other driver or provider messages are
-rewritten.
+The Drizzle error's `cause` (the `pg` error) also reaches Sentry: the SDK's
+default `linkedErrorsIntegration` sends it as its own exception value. `pg`
+keeps row values of constraint errors (23505) in `detail`, which is not
+shipped because `extraErrorDataIntegration` is off, but it puts the rejected
+input in the MESSAGE for type, enum and date errors
+(`invalid input syntax for type uuid: "<input>"`, 22P02 / 22007). `scrubEvent`
+therefore also redacts any quoted tail after `: "` in every exception value.
+Quoted identifiers without that prefix (`relation "users" does not exist`) are
+kept. Measured 2026-11-03 with a real `Sentry.init` probe before the fix:
+the input survived the `\nparams:` cut.
 
 ## Prevention
 
 - Before adding a key to `PINO_CONTEXT_ALLOWLIST`, confirm it can never carry
   PII (user ids, emails, free text, food or health data). If it can, leave it
   out; the requestId is enough to find it in the log.
-- Never enable `extraErrorDataIntegration`, and never add `detail` /
-  `cause` serialization to the reporter, without extending `scrubEvent`.
+- `cause` is already serialized by the default `linkedErrorsIntegration` —
+  check every exception value, not only the primary one. Never enable
+  `extraErrorDataIntegration` (which ships `detail`) without extending
+  `scrubEvent`.
 - Any new log-to-telemetry bridge (a Sentry Logs `enableLogs`, another
   integration) needs its own scrub. Treat it as a new trust boundary, not a
   copy of the log stream.

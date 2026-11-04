@@ -282,6 +282,55 @@ describe("error-reporter", () => {
       expect(values[1].value).toBe("connection reset");
       expect(values[2].value).toBeUndefined();
     });
+
+    // linkedErrorsIntegration (an SDK default) ships the Drizzle error's
+    // `cause` — the pg error — as its own exception value, and pg puts the
+    // offending input in the MESSAGE for type/enum/date errors (22P02, 22007).
+    it("drops the quoted input value from linked pg error messages", async () => {
+      const { scrubEvent } = await importReporter();
+      const event = {
+        exception: {
+          values: [
+            {
+              type: "error",
+              value: 'invalid input syntax for type uuid: "victim@example.com"',
+            },
+            {
+              type: "error",
+              value: 'invalid input value for enum diet_type: "my secret diet"',
+            },
+            {
+              type: "error",
+              value: 'date/time field value out of range: "2026-13-45"',
+            },
+            { type: "error", value: 'relation "users" does not exist' },
+            {
+              type: "DrizzleQueryError",
+              value: 'Failed query: select * from "users" where "id" = $1',
+            },
+          ],
+        },
+      };
+
+      const scrubbed = scrubEvent(event as ErrorEvent);
+
+      const values = scrubbed.exception?.values ?? [];
+      expect(values[0].value).toBe(
+        'invalid input syntax for type uuid: "[redacted]"',
+      );
+      expect(values[1].value).toBe(
+        'invalid input value for enum diet_type: "[redacted]"',
+      );
+      expect(values[2].value).toBe(
+        'date/time field value out of range: "[redacted]"',
+      );
+      expect(JSON.stringify(scrubbed)).not.toMatch(/victim|secret diet|13-45/);
+      // Identifiers in quotes (no ': "' before them) are kept for debugging.
+      expect(values[3].value).toBe('relation "users" does not exist');
+      expect(values[4].value).toBe(
+        'Failed query: select * from "users" where "id" = $1',
+      );
+    });
   });
 
   describe("SENSITIVE_HEADER_SNIPPETS drift guard", () => {
