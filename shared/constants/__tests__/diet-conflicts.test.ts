@@ -43,6 +43,12 @@ describe("deriveRecipeDietConflicts", () => {
     ["meat free-range", "meat"],
     ["meat free range", "meat"],
     ["meat, free-range", "meat"],
+    ["beef broth", "meat"],
+    ["chicken", "poultry"],
+    ["chicken free-range", "poultry"],
+    ["chicken free from antibiotics", "poultry"],
+    ["meat free from additives", "meat"],
+    ["chicken less salt", "poultry"],
   ])("flags %s as %s", (ingredient, id) => {
     expect(deriveRecipeDietConflicts([ingredient])).toContain(id);
   });
@@ -71,6 +77,15 @@ describe("deriveRecipeDietConflicts", () => {
     "meat-free-style burger",
     "plant-based meat",
     "vegan chicken egg noodles",
+    "meat substitute",
+    "meat substitutes",
+    "meat alternative",
+    "imitation meat",
+    "meat-less",
+    "chicken-free",
+    "chicken substitute",
+    "imitation bacon bits",
+    "honey alternative",
   ])("does not flag %s", (ingredient) => {
     expect(deriveRecipeDietConflicts([ingredient])).toEqual([]);
   });

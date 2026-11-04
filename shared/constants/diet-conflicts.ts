@@ -37,7 +37,7 @@ const CONFLICT_KEYWORDS: Record<DietConflictId, readonly string[]> = {
     "meatball",
     "meatballs",
     // Bare "meat" covers "ground meat" / "meat sauce". Bare "goat" stays out
-    // ("goat cheese"). "meat-free" is skipped per occurrence (MEAT_FREE_SUFFIX).
+    // ("goat cheese"). "meat-free" is skipped per occurrence (SUBSTITUTE_SUFFIX).
     "meat",
     "mutton",
     "rabbit",
@@ -59,9 +59,10 @@ const CONFLICT_KEYWORDS: Record<DietConflictId, readonly string[]> = {
 };
 
 /**
- * A plant word directly before the keyword (space or hyphen join only — the
- * same narrow join as the allergen plant-substitute guard, because suppression
- * is the dangerous direction) names a substitute: "veggie bacon".
+ * A plant word (or "imitation") directly before the keyword (space or hyphen
+ * join only — the same narrow join as the allergen plant-substitute guard,
+ * because suppression is the dangerous direction) names a substitute:
+ * "veggie bacon", "imitation meat".
  *
  * Only words that unambiguously name a substitute belong here. Mushroom, soy,
  * tofu and vegetable are NOT listed: they also come before real meat
@@ -77,16 +78,21 @@ const PLANT_QUALIFIERS = [
   "seitan",
   "jackfruit",
   "microbial",
+  "imitation",
 ];
 
 /** Poultry followed by egg(s) is an egg, which the egg allergen covers. */
 const EGG_SUFFIX = /^[\s-]+eggs?(?:$|[\s,;/()-])/;
 
 /**
- * "meat-free" / "meat free" names a substitute, not meat. "meat free-range" /
- * "meat free range" is real meat, so the lookahead refuses "free" + "range".
+ * A negation or substitute word directly after any keyword names a stand-in:
+ * "meat-free", "chicken-free", "meat substitute(s)", "meat alternative(s)",
+ * "meat-less". "free range" / "free from" follow real meat ("chicken free-range",
+ * "chicken free from antibiotics"), so the lookahead refuses them. "less" needs
+ * the hyphen: "chicken less salt" is chicken.
  */
-const MEAT_FREE_SUFFIX = /^[\s-]+free(?![\s-]*range)(?:$|[\s,;/()-])/;
+const SUBSTITUTE_SUFFIX =
+  /^(?:[\s-]+(?:free(?![\s-]*(?:range|from))|substitutes?|alternatives?)|-less)(?:$|[\s,;/()-])/;
 
 const QUALIFIER_BEFORE = new RegExp(
   `(?:^|[\\s,;/()\\-])(?:${PLANT_QUALIFIERS.join("|")})[\\s\\-]$`,
@@ -126,7 +132,7 @@ function conflictKeywordHits(
     const after = lower.slice(m.index + keyword.length);
     if (QUALIFIER_BEFORE.test(before)) continue;
     if (id === "poultry" && EGG_SUFFIX.test(after)) continue;
-    if (keyword === "meat" && MEAT_FREE_SUFFIX.test(after)) continue;
+    if (SUBSTITUTE_SUFFIX.test(after)) continue;
     return true;
   }
   // Contains-check passed but no whole-word occurrence (e.g. a multi-word

@@ -1,9 +1,9 @@
 ---
 title: "Diet conflicts: 'meat substitute', 'imitation meat', 'meat-less', 'chicken-free' are flagged as meat/poultry"
-status: backlog
+status: done
 priority: low
 created: 2026-11-01
-updated: 2026-11-01
+updated: 2026-11-03
 assignee:
 labels: [deferred, nutrition]
 github_issue:
@@ -34,8 +34,8 @@ no users yet) and outside N7's scope.
 
 ## Acceptance Criteria
 
-- [ ] Each "Expected" row above holds, with a test row for each
-- [ ] "meat free-range", "beef broth", "chicken" still flag (no new under-warning)
+- [x] Each "Expected" row above holds, with a test row for each
+- [x] "meat free-range", "beef broth", "chicken" still flag (no new under-warning)
 - [ ] Run the base-vs-head and keyword-present-but-unflagged comparison (N7 tool, once it lands) and
       list every changed verdict in the PR
 
@@ -45,3 +45,10 @@ no users yet) and outside N7's scope.
   (substitute, alternative, imitation, -less, -free) for every conflict keyword, not only `meat`.
 - `shared/constants/__tests__/diet-conflicts.test.ts`: add the rows above.
 - If the prod diet backfill already ran, re-run it after merge (see the oats ruling memory for the steps).
+
+### 2026-11-03
+
+- Fixed: the "-free" skip now covers every keyword, and so do new "substitute(s)",
+  "alternative(s)" and hyphenated "-less" skips. "imitation" counts as a qualifier
+  before the keyword. "free from" now flags like "free-range", so "chicken free from
+  antibiotics" is poultry.
