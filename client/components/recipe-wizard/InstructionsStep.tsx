@@ -17,7 +17,7 @@ import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { InlineError } from "@/components/InlineError";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
@@ -212,13 +212,45 @@ export default function InstructionsStep({
   }, [handleAdd]);
   const handleAutoFocused = useCallback(() => setFocusAddedRow(false), []);
 
+  // Voice input APPENDS to the LAST step as it stood when the mic was tapped.
+  // One recognizer lives here at the step level, not per row: every
+  // useSpeechToText instance reacts to the same native "start" event, so
+  // per-row hooks would all show "listening" at once.
+  const voiceTargetRef = useRef<{ key: string; base: string } | null>(null);
+  const {
+    isListening,
+    volume,
+    error: speechError,
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({
+    onTranscript: (transcript) => {
+      const target = voiceTargetRef.current;
+      if (!target) return;
+      updateStep(
+        target.key,
+        target.base ? `${target.base} ${transcript}` : transcript,
+      );
+    },
+  });
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (!isListening) {
+      const last = steps[steps.length - 1];
+      if (!last) return;
+      voiceTargetRef.current = { key: last.key, base: last.text.trim() };
+    }
+    toggleVoice();
+  }, [haptics, isListening, steps, toggleVoice]);
+
   const handleRemove = useCallback(
     (key: string) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      if (voiceTargetRef.current?.key === key) releaseVoice();
       removeStep(key);
       AccessibilityInfo.announceForAccessibility("Step removed");
     },
-    [removeStep, haptics],
+    [removeStep, haptics, releaseVoice],
   );
 
   const handleMove = useCallback(
@@ -231,41 +263,6 @@ export default function InstructionsStep({
     },
     [moveStep, haptics],
   );
-
-  // Voice input APPENDS to the LAST step as it stood when the mic was tapped.
-  // One recognizer lives here at the step level, not per row: every
-  // useSpeechToText instance reacts to the same native "start" event, so
-  // per-row hooks would all show "listening" at once.
-  const voiceTargetRef = useRef<{ key: string; base: string } | null>(null);
-  const {
-    isListening,
-    transcript,
-    isFinal,
-    volume,
-    error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  useEffect(() => {
-    const target = voiceTargetRef.current;
-    if (target && transcript && (isListening || isFinal)) {
-      updateStep(
-        target.key,
-        target.base ? `${target.base} ${transcript}` : transcript,
-      );
-    }
-  }, [isListening, isFinal, transcript, updateStep]);
-  const handleVoicePress = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-      return;
-    }
-    const last = steps[steps.length - 1];
-    if (!last) return;
-    voiceTargetRef.current = { key: last.key, base: last.text.trim() };
-    void startListening();
-  }, [haptics, isListening, steps, startListening, stopListening]);
 
   const stepCount = steps.length;
   const showDelete = useMemo(

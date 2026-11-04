@@ -11,7 +11,7 @@ import {
 import * as Haptics from "expo-haptics";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { FieldCounter } from "@/components/FieldCounter";
 import { InlineError } from "@/components/InlineError";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -120,38 +120,31 @@ export default function NotebookEntryScreen() {
   const haptics = useHaptics();
   const [contentFocused, setContentFocused] = useState(false);
 
-  // Voice input APPENDS to the note as it stood when the mic was tapped.
-  // null = no dictation in progress (a late final result must not refill).
-  const voiceBaseRef = useRef<string | null>(null);
+  // Voice input APPENDS to the note as it stood when the mic was tapped;
+  // useVoiceField decides whether a transcript may be written at all.
+  const voiceBaseRef = useRef("");
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  useEffect(() => {
-    const base = voiceBaseRef.current;
-    if (base !== null && transcript && (isListening || isFinal)) {
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({
+    onTranscript: (transcript) => {
+      const base = voiceBaseRef.current;
       setContent(
         (base ? `${base} ${transcript}` : transcript).slice(0, NOTE_MAX_LENGTH),
       );
-    }
-  }, [isListening, isFinal, transcript, setContent]);
+    },
+  });
   useEffect(() => {
     if (speechError) toast.error(speechError);
   }, [speechError, toast]);
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceBaseRef.current = content.trim();
-      void startListening();
-    }
-  }, [haptics, isListening, content, startListening, stopListening]);
+    if (!isListening) voiceBaseRef.current = content.trim();
+    toggleVoice();
+  }, [haptics, isListening, content, toggleVoice]);
   const [followUpDate, setFollowUpDate] = useState<string | null>(
     entry?.followUpDate
       ? toLocalDateString(new Date(entry.followUpDate))
@@ -195,8 +188,7 @@ export default function NotebookEntryScreen() {
   const canSave = !isSaving && (isDirty || content.trim().length === 0);
 
   const handleSave = useCallback(async () => {
-    voiceBaseRef.current = null;
-    if (isListening) stopListening();
+    releaseVoice();
     if (!focusFirstInvalid([contentField])) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
@@ -255,8 +247,7 @@ export default function NotebookEntryScreen() {
     cancelCommitmentReminder,
     goBack,
     toast,
-    isListening,
-    stopListening,
+    releaseVoice,
   ]);
 
   const handleMarkComplete = useCallback(() => {

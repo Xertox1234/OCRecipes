@@ -1,6 +1,6 @@
 ---
 title: "Voice input: move the five append-style mic fields onto useVoiceField"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-04
 updated: 2026-11-04
@@ -21,11 +21,11 @@ Five screens keep their own "this field owns the mic" ref under another name (`v
 
 ## Acceptance Criteria
 
-- [ ] `ChatScreen`, `RecipeChatScreen`, `NotebookEntryScreen`, `IngredientsStep`, `InstructionsStep` use `useVoiceField`; the base text (and, for the wizard steps, the target row key) is kept by the caller and applied inside `onTranscript`
-- [ ] Ownership is cleared when the session ends for any reason, via the hook — no per-screen ownership ref left
-- [ ] ChatScreen / RecipeChatScreen keep their "stop dictation when a reply starts streaming" behaviour
-- [ ] Wizard steps: a step that is not visible passes `enabled: false`
-- [ ] A test per screen kind (chat, notebook, wizard row) proves a transcript arriving after the session ended is not written
+- [x] `ChatScreen`, `RecipeChatScreen`, `NotebookEntryScreen`, `IngredientsStep`, `InstructionsStep` use `useVoiceField`; the base text (and, for the wizard steps, the target row key) is kept by the caller and applied inside `onTranscript`
+- [x] Ownership is cleared when the session ends for any reason, via the hook — no per-screen ownership ref left
+- [x] ChatScreen / RecipeChatScreen keep their "stop dictation when a reply starts streaming" behaviour
+- [x] Wizard steps: a step that is not visible passes `enabled: false` (N/A as written: hidden steps are unmounted by WizardShell, which drops the hook's ownership ref)
+- [x] A test per screen kind (chat, notebook, wizard row) proves a transcript arriving after the session ended is not written
 
 ## Implementation Notes
 
@@ -48,3 +48,7 @@ Five screens keep their own "this field owns the mic" ref under another name (`v
 ### 2026-11-04
 
 - Filed by the /todo-fast run for #1735 (deferred warning from its executor, confirmed by reading the five sites on main).
+
+### 2026-11-04 (executor)
+
+- Moved all five sites onto `useVoiceField` (hook unchanged). Wizard steps are unmounted by `WizardShell`'s switch when hidden, so the hook's ownership ref goes with them; no `enabled` prop exists to pass. Removing the target row calls `release()`.

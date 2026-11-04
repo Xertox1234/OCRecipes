@@ -1521,3 +1521,42 @@ describe("RecipeChatScreen — voice input", () => {
     ).toBe(true);
   });
 });
+
+describe("RecipeChatScreen — voice ownership", () => {
+  beforeEach(() => {
+    mockSpeech.value = {
+      isListening: false,
+      transcript: "",
+      isFinal: false,
+      volume: 0,
+      error: null,
+    };
+  });
+
+  it("does not write a transcript that arrives after the session ended", () => {
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+    const input = screen.getByLabelText("Recipe request") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "a pasta dish" } });
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "with garlic",
+    };
+    rerender(<RecipeChatScreen />);
+    expect(input.value).toBe("a pasta dish with garlic");
+
+    // The session times out on its own...
+    mockSpeech.value = { ...mockSpeech.value, isListening: false };
+    rerender(<RecipeChatScreen />);
+    // ...then the shared recognizer is used by another field.
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "stray words",
+    };
+    rerender(<RecipeChatScreen />);
+    expect(input.value).toBe("a pasta dish with garlic");
+  });
+});
