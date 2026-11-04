@@ -21,6 +21,7 @@ import {
 } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { AllergenWarningBanner } from "@/components/AllergenWarningBanner";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -30,8 +31,14 @@ import {
   Spacing,
   BorderRadius,
   CameraColors,
+  withOpacity,
 } from "@/constants/theme";
 import { logger } from "@/lib/logger";
+import {
+  getCookPhotoAllergenState,
+  ALLERGEN_CHECK_FAILED_NOTICE,
+  type CookPhotoAllergenState,
+} from "./CookSessionCaptureScreen-utils";
 import { CameraView, useCameraPermissions, type CameraRef } from "@/camera";
 import { useCreateCookSession, useAddCookPhoto } from "@/hooks/useCookSession";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -63,6 +70,12 @@ export default function CookSessionCaptureScreen() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ingredientCount, setIngredientCount] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // Each photo response re-checks ALL session ingredients, so the latest
+  // response replaces earlier allergen state rather than accumulating.
+  const [allergenState, setAllergenState] = useState<CookPhotoAllergenState>({
+    warnings: [],
+    checkFailed: false,
+  });
 
   // Promise memoization for session creation
   const sessionPromiseRef = useRef<Promise<string> | null>(null);
@@ -113,6 +126,7 @@ export default function CookSessionCaptureScreen() {
         });
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         setIngredientCount(result.ingredients.length);
+        setAllergenState(getCookPhotoAllergenState(result));
         setPhotos((prev) => [...prev, photoUri]);
       } catch (error) {
         logger.error("[CookSessionCapture] photo analysis failed", error);
@@ -323,6 +337,54 @@ export default function CookSessionCaptureScreen() {
         </Pressable>
       </View>
 
+      {/* Allergen notice (warnings, or a check that could not run) */}
+      {(allergenState.warnings.length > 0 || allergenState.checkFailed) && (
+        <View
+          style={[
+            styles.allergenNotice,
+            {
+              top: insets.top + 64,
+              backgroundColor: theme.backgroundRoot,
+            },
+          ]}
+          {...behindContentA11yProps}
+        >
+          {allergenState.warnings.length > 0 ? (
+            <AllergenWarningBanner matches={allergenState.warnings} />
+          ) : (
+            <View
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+              style={[
+                styles.allergenCheckFailed,
+                {
+                  backgroundColor: withOpacity(theme.warning, 0.08),
+                  borderLeftColor: theme.warning,
+                },
+              ]}
+            >
+              <Feather
+                name="alert-triangle"
+                size={18}
+                color={theme.warning}
+                accessible={false}
+              />
+              <ThemedText
+                type="small"
+                style={{
+                  color: theme.warning,
+                  marginLeft: Spacing.sm,
+                  flex: 1,
+                  fontWeight: "600",
+                }}
+              >
+                {ALLERGEN_CHECK_FAILED_NOTICE}
+              </ThemedText>
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Analyzing overlay */}
       {isAnalyzing && (
         <View style={styles.analyzingOverlay} {...behindContentA11yProps}>
@@ -435,6 +497,19 @@ const styles = StyleSheet.create({
   topCenter: {
     flex: 1,
     alignItems: "center",
+  },
+  allergenNotice: {
+    position: "absolute",
+    left: Spacing.lg,
+    right: Spacing.lg,
+    borderRadius: BorderRadius.sm,
+    overflow: "hidden",
+  },
+  allergenCheckFailed: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderLeftWidth: 3,
   },
   ingredientBadge: {
     flexDirection: "row",

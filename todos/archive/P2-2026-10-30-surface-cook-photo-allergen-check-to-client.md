@@ -1,6 +1,6 @@
 ---
 title: "Show cook-photo allergen warnings and allergen-check failure in the client"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-30
 updated: 2026-10-30
