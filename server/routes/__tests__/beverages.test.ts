@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../beverages";
+import { UpstreamUnavailableError } from "../../services/usda-lookup";
 import {
   lookupNutrition,
   type NutritionData,
@@ -328,6 +329,20 @@ describe("Beverages Routes", () => {
         .send({ beverageType: "tea", size: "medium", modifiers: ["sugar"] });
 
       expect(res.status).toBe(422);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
+    it("returns a retryable 503, not 422, when a nutrition source is unavailable", async () => {
+      vi.mocked(lookupNutrition).mockRejectedValue(
+        new UpstreamUnavailableError(),
+      );
+
+      const res = await request(app)
+        .post("/api/beverages/log")
+        .send({ beverageType: "tea", size: "medium" });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
       expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
     });
 

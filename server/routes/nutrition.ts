@@ -267,6 +267,17 @@ export function register(app: Express): void {
         }
         res.json(result);
       } catch (error) {
+        if (error instanceof UpstreamUnavailableError) {
+          // A source could not answer and none had the food: an outage, not
+          // "not found". 503 so the client offers a retry.
+          sendError(
+            res,
+            503,
+            "Nutrition lookup is temporarily unavailable. Please try again.",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
         handleRouteError(res, error, "look up nutrition");
       }
     },
