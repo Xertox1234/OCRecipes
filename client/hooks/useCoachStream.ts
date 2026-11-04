@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApiUrl, notifyIfStreamSessionExpired } from "@/lib/query-client";
+import {
+  getApiUrl,
+  notifyIfStreamSessionExpired,
+  queryClient,
+} from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
-import { streamSse } from "@/lib/sse-xhr";
+import {
+  streamSse,
+  watchStreamHealth,
+  pollUntilTurnSettled,
+} from "@/lib/sse-xhr";
 import { randomUuidV4 } from "@/lib/uuid";
 import {
   stripCoachBlocksFence,
@@ -140,6 +148,14 @@ export function useCoachStream({
   // Aborting it stops the in-flight request and its inactivity watchdog.
   const abortRef = useRef<AbortController | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Offline / dead-socket guard for the in-flight stream, and the post-abort
+  // messages poll. Both end with the stream, a new stream, or unmount.
+  const disposeHealthRef = useRef<(() => void) | null>(null);
+  const cancelPollRef = useRef<(() => void) | null>(null);
+  const disposeHealth = useCallback(() => {
+    disposeHealthRef.current?.();
+    disposeHealthRef.current = null;
+  }, []);
 
   const stopDrain = useCallback(() => {
     if (drainIntervalRef.current !== null) {
@@ -187,6 +203,7 @@ export function useCoachStream({
 
   const abortStream = useCallback(() => {
     streamEpochRef.current += 1;
+    disposeHealth();
     abortRef.current?.abort();
     abortRef.current = null;
     stopDrain();
@@ -200,16 +217,18 @@ export function useCoachStream({
     setIsStreaming(false);
     setStatusText("");
     setStreamingContent("");
-  }, [stopDrain]);
+  }, [stopDrain, disposeHealth]);
 
   // Abort XHR and drain interval on unmount
   useEffect(() => {
     return () => {
       streamEpochRef.current += 1;
+      disposeHealth();
+      cancelPollRef.current?.();
       abortRef.current?.abort();
       stopDrain();
     };
-  }, [stopDrain]);
+  }, [stopDrain, disposeHealth]);
 
   const startStream = useCallback(
     (
@@ -229,6 +248,8 @@ export function useCoachStream({
       if (isStreamingRef.current) return;
       isStreamingRef.current = true;
       const epoch = ++streamEpochRef.current;
+      cancelPollRef.current?.();
+      cancelPollRef.current = null;
 
       // Reset all state for a fresh stream
       bufferRef.current = "";
@@ -257,6 +278,7 @@ export function useCoachStream({
           // continuation above. The transport delivers at most one outcome.
           const fail = (msg: string, code?: string) => {
             if (epoch !== streamEpochRef.current) return;
+            disposeHealth();
             stopDrain();
             isStreamingRef.current = false;
             setIsStreaming(false);
@@ -276,6 +298,29 @@ export function useCoachStream({
 
           startDrain();
 
+          // Offline fails fast with the network copy. A resume with no bytes
+          // (data or server ping) for 20 s is a dead socket: abort quietly
+          // and reconcile with whatever the server saved. The server's coach
+          // path settles on the close: partial reply saved, or the turn
+          // refunded (user message deleted) — onDone's refetch shows either.
+          disposeHealth();
+          const health = watchStreamHealth((reason) => {
+            if (epoch !== streamEpochRef.current) return;
+            if (reason === "offline") {
+              controller.abort();
+              fail("Network error");
+              return;
+            }
+            const partial = stripCoachBlocksFence(accumulatedRef.current);
+            abortStream();
+            onDoneRef.current?.(partial);
+            cancelPollRef.current?.();
+            cancelPollRef.current = pollUntilTurnSettled(queryClient, [
+              `/api/chat/conversations/${conversationId}/messages`,
+            ]);
+          });
+          disposeHealthRef.current = health.dispose;
+
           const turnKey = randomUuidV4();
           const body: Record<string, unknown> = {
             content: userMessage,
@@ -292,6 +337,7 @@ export function useCoachStream({
             timeoutMs: XHR_TIMEOUT_MS,
             inactivityMs: STREAM_INACTIVITY_MS,
             signal: controller.signal,
+            onBytes: health.noteBytes,
             onEvent: (data) => {
               if (data.error) {
                 fail(String(data.error));
@@ -330,6 +376,7 @@ export function useCoachStream({
                 blocksRef.current = filterValidBlocks(data.blocks);
               }
               if (data.done) {
+                disposeHealth();
                 isDoneRef.current = true;
                 if (accumulatedRef.current) {
                   fullTextRef.current = stripCoachBlocksFence(
@@ -342,6 +389,7 @@ export function useCoachStream({
               }
             },
             onClose: (outcome) => {
+              if (epoch === streamEpochRef.current) disposeHealth();
               switch (outcome.kind) {
                 case "http-error":
                   // This raw XHR bypasses the apiRequest 401 interceptor; a
@@ -391,7 +439,7 @@ export function useCoachStream({
           );
         });
     },
-    [startDrain, stopDrain],
+    [startDrain, stopDrain, disposeHealth, abortStream],
   );
 
   return {

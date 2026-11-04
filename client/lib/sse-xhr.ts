@@ -17,6 +17,9 @@
  * dropped.
  */
 
+import { AppState } from "react-native";
+import { onlineManager, type QueryClient } from "@tanstack/react-query";
+
 export type SseEventData = Record<string, unknown>;
 
 export type SseOutcome =
@@ -46,6 +49,11 @@ export interface StreamSseOptions {
    * and no outcome is delivered. A throw is swallowed like a bad chunk.
    */
   onEvent: (data: SseEventData) => void | "stop";
+  /**
+   * Called whenever new bytes arrive, including `: ping` keep-alive comments
+   * that produce no event. Feeds `watchStreamHealth`'s dead-socket check.
+   */
+  onBytes?: () => void;
   /** Called at most once with the stream's terminal outcome. */
   onClose: (outcome: SseOutcome) => void;
   /** Aborting calls `xhr.abort()` and delivers `{ kind: "aborted" }`. */
@@ -59,6 +67,7 @@ export function streamSse({
   timeoutMs,
   inactivityMs,
   onEvent,
+  onBytes,
   onClose,
   signal,
 }: StreamSseOptions): void {
@@ -117,6 +126,7 @@ export function streamSse({
     processedLength = text ? text.length : processedLength;
     if (!newText) return;
     armInactivity();
+    onBytes?.();
 
     lineBuffer += newText;
     const lines = lineBuffer.split("\n");
@@ -181,4 +191,115 @@ export function streamSse({
 
   armInactivity();
   xhr.send(body);
+}
+
+// ---- Offline / dead-socket guards -----------------------------------------
+
+/** No bytes (data or `: ping`) this long after an app resume = dead socket. */
+export const RESUME_DEAD_SOCKET_MS = 20_000;
+
+export type StreamHealthTrip = "offline" | "dead-socket";
+
+/**
+ * Watches one in-flight stream for the two cases the XHR never reports
+ * promptly: the device going offline, and the app returning from background
+ * onto a half-open socket. The server pings every 15 s while a reply is in
+ * flight, so a live stream always delivers a byte inside the 20 s window.
+ * Calls `onTrip` at most once; the caller aborts the stream. Call
+ * `noteBytes` from `streamSse`'s `onBytes`, and `dispose` wherever the
+ * stream ends.
+ */
+export function watchStreamHealth(onTrip: (reason: StreamHealthTrip) => void): {
+  noteBytes: () => void;
+  dispose: () => void;
+} {
+  let tripped = false;
+  let wentAway = false;
+  let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearResume = () => {
+    if (resumeTimer !== null) {
+      clearTimeout(resumeTimer);
+      resumeTimer = null;
+    }
+  };
+  const trip = (reason: StreamHealthTrip) => {
+    if (tripped) return;
+    tripped = true;
+    dispose();
+    onTrip(reason);
+  };
+
+  const unsubscribeOnline = onlineManager.subscribe((isOnline) => {
+    if (!isOnline) trip("offline");
+  });
+  const appStateSub = AppState.addEventListener("change", (state) => {
+    if (state === "active") {
+      if (!wentAway) return;
+      wentAway = false;
+      clearResume();
+      resumeTimer = setTimeout(
+        () => trip("dead-socket"),
+        RESUME_DEAD_SOCKET_MS,
+      );
+    } else {
+      wentAway = true;
+      clearResume();
+    }
+  });
+
+  function dispose() {
+    clearResume();
+    unsubscribeOnline();
+    appStateSub.remove();
+  }
+
+  return {
+    // Any byte after a resume proves the socket is live; the inactivity
+    // watchdog covers it from there.
+    noteBytes: clearResume,
+    dispose,
+  };
+}
+
+// ---- Post-abort reconciliation ---------------------------------------------
+
+export const SETTLE_POLL_INTERVAL_MS = 5_000;
+export const SETTLE_POLL_CAP_MS = 60_000;
+
+/**
+ * After a quiet abort the server may not have saved yet (recipe chat still
+ * generating; coach settles only once it notices the close). Refetch the
+ * conversation's messages now, then every 5 s for at most 60 s, until the
+ * turn is settled: the last message is no longer the user's question (a
+ * saved reply, or a refunded turn that deleted it). Returns a cancel
+ * function — call it when the conversation leaves the screen.
+ */
+export function pollUntilTurnSettled(
+  queryClient: QueryClient,
+  queryKey: readonly unknown[],
+): () => void {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const startedAt = Date.now();
+
+  const tick = async () => {
+    try {
+      await queryClient.refetchQueries({ queryKey, exact: true });
+    } catch {
+      // A failed refetch is retried on the next tick.
+    }
+    if (cancelled) return;
+    const rows = queryClient.getQueryData<{ role: string }[]>(queryKey);
+    const last = rows?.[rows.length - 1];
+    if (!last || last.role !== "user") return;
+    if (Date.now() - startedAt >= SETTLE_POLL_CAP_MS) return;
+    timer = setTimeout(() => void tick(), SETTLE_POLL_INTERVAL_MS);
+  };
+  void tick();
+
+  return () => {
+    cancelled = true;
+    if (timer !== null) clearTimeout(timer);
+  };
 }

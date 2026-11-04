@@ -18,7 +18,13 @@ import {
 } from "@/lib/mutation-defaults";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
-import { streamSse, type SseOutcome } from "@/lib/sse-xhr";
+import {
+  streamSse,
+  watchStreamHealth,
+  pollUntilTurnSettled,
+  type SseOutcome,
+  type StreamHealthTrip,
+} from "@/lib/sse-xhr";
 import {
   clearCoachReplyUnread,
   noteCoachReplyFinished,
@@ -38,6 +44,10 @@ import {
 // `{ error: "Response timeout" }` never arrives. Same 150s ceiling as
 // useCoachStream's XHR_TIMEOUT_MS; this hook has no inactivity watchdog.
 export const CHAT_XHR_TIMEOUT_MS = SSE_TIMEOUT_MS + 30_000;
+// Idle watchdog for recipe chat, as in the coach stream: the server's own
+// SSE_TIMEOUT_MS error arrives first on a live connection, and its 15 s
+// `: ping` comments keep a quiet-but-live reply from tripping this.
+export const CHAT_INACTIVITY_MS = SSE_TIMEOUT_MS + 5_000;
 
 /** The SSE event fields `sendMessage` reads (everything is optional). */
 interface ChatSseEvent {
@@ -398,6 +408,9 @@ export function useSendMessage(
   // can't leave an orphaned request or clobber whichever request is current
   // now. Same pattern as useCoachStream's streamEpochRef.
   const sendEpochRef = useRef(0);
+  // Messages poll after a quiet dead-socket abort; stops when the screen
+  // using this hook goes away or a new send starts.
+  const cancelPollRef = useRef<(() => void) | null>(null);
 
   const abortStream = useCallback(() => {
     if (!isStreamingRef.current) return; // nothing in flight — no-op
@@ -424,6 +437,7 @@ export function useSendMessage(
   useEffect(() => {
     return () => {
       sendEpochRef.current += 1;
+      cancelPollRef.current?.();
     };
   }, []);
 
@@ -443,6 +457,8 @@ export function useSendMessage(
       if (isStreamingRef.current) return;
       isStreamingRef.current = true;
       const epoch = ++sendEpochRef.current;
+      cancelPollRef.current?.();
+      cancelPollRef.current = null;
       streamingContentRef.current = "";
       streamingRecipeRef.current = null;
       streamingFinderRef.current = null;
@@ -616,19 +632,34 @@ export function useSendMessage(
         ownController = controller;
         abortRef.current = controller;
 
-        const outcome = await new Promise<SseOutcome>((resolve) => {
-          streamSse({
-            url: url.href,
-            body: requestBody,
-            headers,
-            timeoutMs: CHAT_XHR_TIMEOUT_MS,
-            signal: controller.signal,
-            onEvent: (data) => handleEvent(data as ChatSseEvent),
-            onClose: resolve,
-          });
+        // Offline fails fast with the network copy; a resume with no bytes
+        // (data or server ping) for 20 s is a dead socket: abort quietly and
+        // poll for whatever the server saved.
+        const tripped: { reason: StreamHealthTrip | null } = { reason: null };
+        const health = watchStreamHealth((reason) => {
+          tripped.reason = reason;
+          controller.abort();
         });
+        let outcome: SseOutcome;
+        try {
+          outcome = await new Promise<SseOutcome>((resolve) => {
+            streamSse({
+              url: url.href,
+              body: requestBody,
+              headers,
+              timeoutMs: CHAT_XHR_TIMEOUT_MS,
+              inactivityMs: CHAT_INACTIVITY_MS,
+              signal: controller.signal,
+              onEvent: (data) => handleEvent(data as ChatSseEvent),
+              onBytes: health.noteBytes,
+              onClose: resolve,
+            });
+          });
+        } finally {
+          health.dispose();
+        }
 
-        if (outcome.kind === "network") {
+        if (outcome.kind === "network" || tripped.reason === "offline") {
           throw new Error(
             "Network error. Please check your connection and try again.",
           );
@@ -659,7 +690,20 @@ export function useSendMessage(
         }
 
         // Stream ended — check if it completed normally
-        if (aborted) {
+        if (aborted && tripped.reason === "dead-socket") {
+          // Quiet abort: no error copy. The server may still be generating
+          // (recipe) or not yet have noticed the close, so poll the messages
+          // instead of a single refetch.
+          void queryClient.invalidateQueries({
+            queryKey: ["/api/chat/conversations"],
+            refetchType: "none",
+          });
+          if (epoch === sendEpochRef.current) {
+            cancelPollRef.current = pollUntilTurnSettled(queryClient, [
+              `/api/chat/conversations/${effectiveId}/messages`,
+            ]);
+          }
+        } else if (aborted) {
           // The XHR was intentionally aborted (e.g. RecipeChatScreen
           // unmounted). Recipe/remix generation keeps running and saves the
           // reply server-side after a disconnect (finish-and-save policy —

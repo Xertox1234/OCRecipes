@@ -9,6 +9,7 @@ import {
   useDeleteConversation,
   RECIPE_TURN_POLL_INTERVAL_MS,
   RECIPE_TURN_POLL_CAP_MS,
+  CHAT_INACTIVITY_MS,
   useSaveRecipeFromChat,
 } from "../useChat";
 import { useCreateNotebookEntry, useUpdateNotebookEntry } from "../useNotebook";
@@ -20,6 +21,9 @@ import {
 } from "../useCoachUnreadReplies";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import { AppState } from "react-native";
+import { onlineManager } from "@tanstack/react-query";
+import { RESUME_DEAD_SOCKET_MS } from "@/lib/sse-xhr";
 
 const { mockApiRequest, mockGetApiUrl, mockTokenStorage, mockNotifyStream } =
   vi.hoisted(() => ({
@@ -1742,5 +1746,110 @@ describe("useSaveRecipeFromChat", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["/api/saved-items/count"],
     });
+  });
+});
+
+describe("useSendMessage offline / dead-socket / inactivity guards", () => {
+  const appStateChange = () => {
+    const calls = vi.mocked(AppState.addEventListener).mock.calls;
+    return calls[calls.length - 1][1] as (s: string) => void;
+  };
+
+  const ping = () => {
+    xhrInstance.responseText += ": ping\n\n";
+    xhrInstance.onprogress?.(new ProgressEvent("progress"));
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockTokenStorage.get.mockResolvedValue("token");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    onlineManager.setOnline(true);
+  });
+
+  async function startSend(result: {
+    current: ReturnType<typeof useSendMessage>;
+  }) {
+    let p!: Promise<void>;
+    await act(async () => {
+      p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // Boxed: returning the promise itself would make this await the send.
+    return { p };
+  }
+
+  it("arms an inactivity watchdog like the coach stream", async () => {
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+    const { p } = await startSend(result);
+    await act(async () => {
+      vi.advanceTimersByTime(CHAT_INACTIVITY_MS);
+      await p;
+    });
+    expect(result.current.requestError).toBe(
+      "Request timed out. Please try again.",
+    );
+  });
+
+  it("fails with the network-error copy when the device goes offline", async () => {
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+    const { p } = await startSend(result);
+    await act(async () => {
+      onlineManager.setOnline(false);
+      await p;
+    });
+    expect(xhrInstance.abort).toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.requestError).toBe(
+      "Network error. Please check your connection and try again.",
+    );
+  });
+
+  it("aborts quietly and polls the messages when a resume sees no bytes for 20 s", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const refetch = vi
+      .spyOn(queryClient, "refetchQueries")
+      .mockResolvedValue(undefined);
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+    const { p } = await startSend(result);
+    await act(async () => {
+      appStateChange()("background");
+      appStateChange()("active");
+      vi.advanceTimersByTime(RESUME_DEAD_SOCKET_MS);
+      await p;
+    });
+    expect(xhrInstance.abort).toHaveBeenCalled();
+    expect(result.current.requestError).toBeNull();
+    expect(result.current.isStreaming).toBe(false);
+    expect(refetch).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/1/messages"],
+      exact: true,
+    });
+  });
+
+  it("keeps a live socket running when a ping arrives inside the 20 s window", async () => {
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+    const { p } = await startSend(result);
+    await act(async () => {
+      appStateChange()("background");
+      appStateChange()("active");
+      vi.advanceTimersByTime(15_000);
+      ping();
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(xhrInstance.abort).not.toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(true);
+    await act(async () => {
+      xhrInstance.simulateChunks(['data: {"done":true}\n']);
+      await p;
+    });
+    expect(result.current.requestError).toBeNull();
   });
 });

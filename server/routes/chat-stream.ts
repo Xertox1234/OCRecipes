@@ -40,6 +40,10 @@ import {
 } from "../services/recipe-finder";
 
 const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
+// SSE comment keep-alive cadence. The client treats 20 s of silence after an
+// app resume as a dead socket (client/lib/sse-xhr.ts), so this must stay well
+// under that.
+export const SSE_PING_INTERVAL_MS = 15_000;
 
 export type ConversationType = "coach" | "recipe" | "remix";
 export type TurnFeatures = NonNullable<
@@ -122,8 +126,9 @@ export const CONVERSATION_CONFIG: Record<
 };
 
 /** Owns SSE writes, the response byte cap, and the abort/timeout wiring. */
-class SseSink {
+export class SseSink {
   private readonly timeout: ReturnType<typeof setTimeout>;
+  private readonly pingTimer: ReturnType<typeof setInterval>;
 
   constructor(
     private readonly res: Response,
@@ -131,8 +136,16 @@ class SseSink {
     private readonly state: TurnState,
     private readonly abortController: AbortController,
   ) {
+    // Keep-alive comment: lets the client tell a quiet-but-live reply from a
+    // dead socket. Cleared in dispose() (done/error), on the SSE timeout and
+    // on client disconnect.
+    this.pingTimer = setInterval(() => {
+      if (!res.writableEnded) res.write(": ping\n\n");
+    }, SSE_PING_INTERVAL_MS);
+    res.once("close", () => clearInterval(this.pingTimer));
     // SSE timeout — prevent hung connections
     this.timeout = setTimeout(() => {
+      clearInterval(this.pingTimer);
       state.aborted = true;
       abortController.abort();
       // The coach generators' "streaming error" log is downgraded to debug
@@ -185,6 +198,7 @@ class SseSink {
 
   dispose(): void {
     clearTimeout(this.timeout);
+    clearInterval(this.pingTimer);
   }
 }
 
