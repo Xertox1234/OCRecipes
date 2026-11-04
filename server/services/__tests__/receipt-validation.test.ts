@@ -702,8 +702,7 @@ describe("Receipt Validation", () => {
 
       const fetchSpy = vi
         .spyOn(global, "fetch")
-
-        .mockImplementation(() => Promise.reject("network down"));
+        .mockRejectedValue("network down");
 
       const result = await mod.validateReceipt("purchase-token-123", "android");
       expect(result.errorCode).toBe("STORE_API_ERROR");
