@@ -59,13 +59,6 @@ const {
   getSubscriptionStatus,
   getEffectiveTierForUser,
   updateSubscription,
-  getTransaction,
-  createTransaction,
-  claimTransactionAndUpgrade,
-  extendSubscriptionByTransactionId,
-  revokeSubscriptionByTransactionId,
-  expireSubscriptionByTransactionId,
-  reinstateSubscriptionByTransactionId,
   upsertProfileWithOnboarding,
   deleteUser,
   RESERVED_USERNAMES,
@@ -73,6 +66,16 @@ const {
   isReservedUsername,
   DELETE_USER_LOCK_THRESHOLD,
 } = await import("../users");
+
+const {
+  getTransaction,
+  createTransaction,
+  claimTransactionAndUpgrade,
+  extendSubscriptionByTransactionId,
+  revokeSubscriptionByTransactionId,
+  expireSubscriptionByTransactionId,
+  reinstateSubscriptionByTransactionId,
+} = await import("../subscriptions");
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
