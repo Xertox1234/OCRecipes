@@ -11,6 +11,7 @@ import type {
   IngredientEdit,
   RecipeContent,
 } from "@shared/types/cook-session";
+import type { AllergenMatch } from "@shared/constants/allergens";
 
 // ============================================================================
 // Session queries
@@ -42,6 +43,10 @@ export function useCreateCookSession() {
 
 interface AddPhotoResult extends CookingSessionResponse {
   newDetections: number;
+  /** Allergens matched against the user's profile; empty when none or unchecked. */
+  allergenWarnings: AllergenMatch[];
+  /** True when the server could not run the check — empty warnings are not "safe". */
+  allergenCheckFailed: boolean;
 }
 
 export interface AddCookPhotoVars {
