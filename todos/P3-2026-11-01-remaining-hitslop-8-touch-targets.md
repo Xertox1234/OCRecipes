@@ -3,7 +3,7 @@ title: "Last five small icon buttons still rely on hitSlop={8} for their tap are
 status: backlog
 priority: low
 created: 2026-11-01
-updated: 2026-11-01
+updated: 2026-11-04
 assignee:
 labels: [deferred, client, accessibility]
 github_issue:
@@ -30,7 +30,7 @@ Sites on main at 3a07881c (`grep -rn 'hitSlop={8}' client`):
 
 - `client/components/Toast.tsx:188`
 - `client/components/UpgradeModal.tsx:380`, `:392`
-- `client/components/coach/CoachChat.tsx:1026`
+- `client/components/coach/CoachChat.tsx:1045` (was :1026; re-checked on main at d696cb34 2026-11-04)
 - `client/components/sheet/SheetChrome.tsx:46`
 - `client/components/meal-plan/MealSlotSection.tsx:307`
 
@@ -46,10 +46,14 @@ Sites on main at 3a07881c (`grep -rn 'hitSlop={8}' client`):
 
 ## Risks
 
-- Bigger tap areas can overlap nearby controls; check each one on a phone with VoiceOver/TalkBack.
+- Bigger tap areas can overlap nearby controls. The unit test covers sizing; the executor checks neighbours by reading each layout. The on-phone VoiceOver/TalkBack check is NOT a merge blocker — it joins the owner's next phone session.
 
 ## Updates
 
 ### 2026-11-01
 
 - Filed by the /todo run (left over from #1673).
+
+### 2026-11-04
+
+- Triage: no owner questions. Sites re-checked (six `hitSlop={8}` across five files; CoachChat line moved). The phone check is deferred to the owner's device session, not a blocker. Ready for automation.
