@@ -1457,7 +1457,8 @@ describe("lookupNutrition — cultural food names are a fallback, not a rewrite"
           ],
         });
       if (url.includes("fdc/v1/foods/search")) return usdaAnswering(usda)(url);
-      if (url.includes("api-ninjas.com")) return ninjasNoMatch();
+      if (new URL(url).hostname === "api.api-ninjas.com")
+        return ninjasNoMatch();
       return Promise.resolve({ ok: false, json: async () => ({}) });
     });
   }
