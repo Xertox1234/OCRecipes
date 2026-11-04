@@ -477,7 +477,6 @@ export default function RecipeChatScreen() {
 
   // Voice input APPENDS to whatever was typed before the mic was tapped and
   // never sends — the user reviews the dictation and taps Send themselves.
-  // null = no dictation in progress (a late final result must not refill).
   // The base is what was typed when the mic was tapped; useVoiceField decides
   // whether a transcript may be written at all.
   const voiceBaseRef = useRef("");
