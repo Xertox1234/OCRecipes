@@ -1,9 +1,9 @@
 ---
 title: "recipe-chat row (coach / RecipeChef recipe cards): run its eval suite against Gemini candidates and pick the gpt-4o replacement"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-17
-updated: 2026-11-02
+updated: 2026-11-04
 assignee:
 labels: [deferred, ai, evals]
 github_issue:
@@ -24,7 +24,7 @@ On 2026-10-17 `recipe-generate` was measured (12 cases ×3, judge sonnet-4.6): G
 - [x] `npm run eval:recipe-chat` run as a same-session gpt-4o control, then with `--candidate "recipe-chat=google/gemini-4-argon"` and `--candidate "recipe-chat=google/gemini-3.8-flash;reasoning_effort=low"`, `EVAL_SAMPLES_PER_CASE=3`, paired via `npm run eval:paired`.
 - [x] Check the output-token cap at `server/services/recipe-chat.ts` ~line 394 (2000) and ~543 (500) against thinking-model behaviour; a Flash candidate without low effort will truncate (see the 2026-10-17 recipe-generate finding).
 - [x] Safety-category cases pass at least as well as the control after excluding the plant-milk / nut-butter regex false positives (todo `P2-2026-10-17-recipe-eval-dairy-regex-plant-milk-false-positives.md` — fix that first if it has not landed).
-- [ ] A streamed-latency note: time-to-first-token and total time for one real finder "adjusted" generation on the simulator, so the owner can judge the feel.
+- [x] (closed without it, owner 2026-11-04 — see Updates) A streamed-latency note: time-to-first-token and total time for one real finder "adjusted" generation on the simulator, so the owner can judge the feel.
 - [x] Owner picks the model; row added to `AI_FEATURES` with a test update in `server/lib/__tests__/ai-models.test.ts` ("switched rows are exactly the approved ones"), `fallback: "gpt-6-luna"`, adapt block as needed.
 - [x] `recipe-chat-image` (vision, same file) is NOT in scope here — it belongs to the vision migration (Gemini for vision, owner 2026-10-17).
 
@@ -112,3 +112,8 @@ Run `recipe-chat-2026-11-02T22-12-13.json` (same settings: 15 × 3, parallelism 
 **Owner's call:** Flash-low is roughly as good as Argon on every score (safety 7.9 vs 7.8), at about half Argon's time-to-card (p50 5.9 s vs 11.7 s; gpt-4o 3.3 s). Argon is cleaner on the two safety details above.
 
 **Owner picked Gemini 3.8 Flash (`reasoning_effort=low`), 2026-11-02.** Row switched in `server/lib/ai-models.ts` with its `SWITCHED` test entry. Fallback is `gpt-4o`, not the `gpt-6-luna` the criteria named: `generateRecipeChatResponse` sends `temperature: 0.5` and `adapt` applies only to the OpenRouter attempt, so a direct-OpenAI Luna fallback would get a parameter Luna rejects. Same choice as `recipe-generate` and `photo-analyze`. Card-parser risk: the eval drives the real `generateRecipeChatResponse`, which parses the card server-side, and 45/45 parsed. Remaining: the streamed-latency note on the simulator.
+
+### 2026-11-04 — closed
+
+- Owner: "close it". The streamed-latency note is dropped: it was meant to help the owner judge the feel before picking, and the pick (Gemini 3.8 Flash, `reasoning_effort=low`, 2026-11-02) is already live. The eval's time-to-card stands in: p50 5.9 s, p90 8.1 s (gpt-4o 3.3 s). The owner judges the feel on the phone.
+- Correction to the 2026-11-02 note: the row no longer falls back to `gpt-4o`. #1711 and #1715 moved every text row's backup to Vertex direct and removed the OpenAI-direct route. On main at d696cb34 the row is `model: "google/gemini-3.8-flash"`, `vertexBackup: VERTEX_BACKUP`, `adapt: { set: { reasoning_effort: "low" } }` (`server/lib/ai-models.ts:80-86`).

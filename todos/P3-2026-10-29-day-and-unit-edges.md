@@ -3,7 +3,7 @@ title: "Verification streak in UTC days; micronutrient unit assumed"
 status: backlog
 priority: low
 created: 2026-10-29
-updated: 2026-10-31
+updated: 2026-11-04
 assignee:
 labels: [deferred, reliability]
 github_issue:
@@ -29,6 +29,9 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Implementation Notes
 
+- Timezone: a missing or invalid `users.timezone` falls back to UTC through `parseTimezone` (`server/lib/civil-date.ts`) — today's behaviour, no decision needed.
+- Micronutrients: the configured unit is `TRACKED_NUTRIENTS[name].unit` in `server/services/micronutrient-lookup.ts`. USDA `unitName` is upper-case (`MG`, `UG`, `G`); compare case-insensitively and treat `µg`/`UG`/`MCG` as the same unit. Convert between µg/mg/g; skip anything else (e.g. `IU`, `KCAL`).
+
 ## Scope Contract
 
 - **Files in scope:** `server/storage/verification.ts`, `server/services/micronutrient-lookup.ts` and tests
@@ -43,3 +46,7 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 ### 2026-10-31
 
 - Decisions: the streak uses the user's stored timezone. For micronutrients, convert when the unit pair is known (µg / mg / g) and skip the value when the unit is unknown or mismatched in any other way.
+
+### 2026-11-04
+
+- Triage: both decisions recorded 2026-10-31; implementation notes added. No open questions. Ready for automation.
