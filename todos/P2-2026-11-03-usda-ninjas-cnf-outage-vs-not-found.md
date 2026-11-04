@@ -13,7 +13,7 @@ github_issue:
 
 ## Summary
 
-`lookupUSDA` (and the API Ninjas and CNF lookups) return `null` both when the food does not exist and when the provider is down or rate-limiting, so an outage reads as "not found". A USDA 429 is retried blindly, though USDA then blocks the key for an hour.
+`lookupUSDA` (and the API Ninjas and CNF lookups) return `null` both when the food does not exist and when the provider is down or rate-limiting, so an outage reads as "not found". A USDA 429 is also treated as not-found, and the next lookup calls USDA again straight away, though USDA blocks the key for an hour after a 429.
 
 ## Background
 
