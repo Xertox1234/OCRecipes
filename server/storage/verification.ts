@@ -1,6 +1,11 @@
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { db } from "../db";
-import { barcodeVerifications, verificationHistory } from "@shared/schema";
+import {
+  barcodeVerifications,
+  verificationHistory,
+  users,
+} from "@shared/schema";
+import { civilDateString, parseTimezone } from "../lib/civil-date";
 import type {
   ConsensusNutritionData,
   VerificationNutrition,
@@ -75,7 +80,8 @@ export async function hasUserVerified(
 
 /**
  * Get the user's verification stats: total count + current streak.
- * Streak = consecutive calendar days (UTC) with at least one verification,
+ * Streak = consecutive calendar days in the user's
+ * stored timezone (`users.timezone`, UTC when missing or invalid) with at least one verification,
  * counting backwards from today.
  */
 export async function getUserVerificationStats(userId: string): Promise<{
@@ -84,6 +90,12 @@ export async function getUserVerificationStats(userId: string): Promise<{
   compositeScore: number;
   streak: number;
 }> {
+  const [userRow] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId));
+  const tz = parseTimezone(userRow?.timezone);
+
   // Run both queries in parallel — count + activity dates
   const [countResult, activityRows] = await Promise.all([
     db
@@ -99,12 +111,12 @@ export async function getUserVerificationStats(userId: string): Promise<{
     // drops days for users with several verifications per day.
     db.execute<{ day: string }>(sql`
       SELECT day::text AS day FROM (
-        SELECT DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC') AS day
+        SELECT DATE(${verificationHistory.createdAt} AT TIME ZONE ${tz}) AS day
           FROM ${verificationHistory}
           WHERE ${verificationHistory.userId} = ${userId}
             AND ${verificationHistory.createdAt} >= NOW() - INTERVAL '90 days'
         UNION
-        SELECT DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC') AS day
+        SELECT DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE ${tz}) AS day
           FROM ${verificationHistory}
           WHERE ${verificationHistory.userId} = ${userId}
             AND ${verificationHistory.createdAt} >= NOW() - INTERVAL '90 days'
@@ -125,29 +137,24 @@ export async function getUserVerificationStats(userId: string): Promise<{
   // Already distinct and sorted newest-first by the query.
   const dates = activityRows.rows;
 
-  // Walk backwards from today counting consecutive days
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  // Walk backwards from today (in the user's timezone) counting consecutive
+  // civil days. Days are yyyy-mm-dd strings; compare them as UTC midnights,
+  // which is exact for whole-day arithmetic.
+  const dayMs = 1000 * 60 * 60 * 24;
+  const toDayNumber = (day: string) => Math.round(Date.parse(day) / dayMs);
   let streak = 0;
-  let expectedDate = new Date(today);
+  let expectedDay = toDayNumber(civilDateString(new Date(), tz));
 
   for (const row of dates) {
-    const verificationDate = new Date(row.day);
-    verificationDate.setUTCHours(0, 0, 0, 0);
-
-    const diffDays = Math.round(
-      (expectedDate.getTime() - verificationDate.getTime()) /
-        (1000 * 60 * 60 * 24),
-    );
+    const diffDays = expectedDay - toDayNumber(row.day);
 
     if (diffDays === 0) {
       streak++;
-      expectedDate.setUTCDate(expectedDate.getUTCDate() - 1);
+      expectedDay -= 1;
     } else if (diffDays === 1 && streak === 0) {
       // Yesterday counts as start of streak (user hasn't verified today yet)
       streak++;
-      expectedDate = new Date(verificationDate);
-      expectedDate.setUTCDate(expectedDate.getUTCDate() - 1);
+      expectedDay = toDayNumber(row.day) - 1;
     } else {
       break;
     }

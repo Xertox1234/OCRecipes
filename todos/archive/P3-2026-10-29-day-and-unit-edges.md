@@ -1,6 +1,6 @@
 ---
 title: "Verification streak in UTC days; micronutrient unit assumed"
-status: backlog
+status: done
 priority: low
 created: 2026-10-29
 updated: 2026-11-04
@@ -23,9 +23,9 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 
 ## Acceptance Criteria
 
-- [ ] The streak uses the user's timezone (`users.timezone` / `parseTimezone`), per `docs/solutions/conventions/timezone-day-bucketing-threading-2026-06-10.md`
-- [ ] Micronutrients with a mismatched unit are converted or skipped
-- [ ] Tests for both
+- [x] The streak uses the user's timezone (`users.timezone` / `parseTimezone`), per `docs/solutions/conventions/timezone-day-bucketing-threading-2026-06-10.md`
+- [x] Micronutrients with a mismatched unit are converted or skipped
+- [x] Tests for both
 
 ## Implementation Notes
 

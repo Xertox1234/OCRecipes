@@ -36,6 +36,32 @@ const TRACKED_NUTRIENTS: Record<
   Manganese: { id: 1101, unit: "mg", dailyValue: 2.3 },
 };
 
+// Micrograms per unit, for the mass units we can convert between.
+const MICROGRAMS_PER_UNIT: Record<string, number> = {
+  g: 1_000_000,
+  mg: 1_000,
+  mcg: 1,
+  ug: 1,
+  µg: 1, // micro sign U+00B5
+  μg: 1, // Greek mu U+03BC
+};
+
+/**
+ * Convert a USDA value into the configured unit. Returns null when either
+ * unit is unknown (IU, KCAL, missing...), so the caller skips the value
+ * rather than guessing.
+ */
+function convertToConfiguredUnit(
+  value: number,
+  usdaUnit: string,
+  configuredUnit: string,
+): number | null {
+  const from = MICROGRAMS_PER_UNIT[usdaUnit.trim().toLowerCase()];
+  const to = MICROGRAMS_PER_UNIT[configuredUnit.trim().toLowerCase()];
+  if (from === undefined || to === undefined) return null;
+  return (value * from) / to;
+}
+
 export interface MicronutrientData {
   nutrientName: string;
   amount: number;
@@ -95,7 +121,13 @@ async function lookupMicronutrients(
       if (!entry || !nutrient.value) continue;
 
       const [name, config] = entry;
-      const amount = Math.round(nutrient.value * 100) / 100;
+      const converted = convertToConfiguredUnit(
+        nutrient.value,
+        nutrient.unitName,
+        config.unit,
+      );
+      if (converted === null) continue;
+      const amount = Math.round(converted * 100) / 100;
       const percentDV =
         config.dailyValue > 0
           ? Math.round((amount / config.dailyValue) * 100)
