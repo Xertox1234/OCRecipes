@@ -6,6 +6,7 @@ import { crudRateLimit } from "./_rate-limiters";
 import { handleRouteError } from "./_helpers";
 import { storage } from "../storage";
 import { lookupNutrition } from "../services/nutrition-lookup";
+import { UpstreamUnavailableError } from "../services/usda-lookup";
 import {
   scaleToGrams,
   type NutrientValues,
@@ -193,6 +194,15 @@ export function register(app: Express): void {
 
         res.status(201).json(scannedItem);
       } catch (error) {
+        if (error instanceof UpstreamUnavailableError) {
+          // A source was down and none had the drink: retryable, not "not found".
+          return sendError(
+            res,
+            503,
+            "Nutrition lookup is temporarily unavailable. Please try again.",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+        }
         handleRouteError(res, error, "log beverage");
       }
     },

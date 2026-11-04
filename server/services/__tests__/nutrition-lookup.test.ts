@@ -70,6 +70,9 @@ function setupFetchMock(
   });
 }
 
+/** API Ninjas answering with no food: a clean miss, not an outage. */
+const ninjasNoMatch = () => Promise.resolve({ ok: true, json: async () => [] });
+
 /** Standard CNF mock responses — empty food lists so CNF doesn't interfere */
 const emptyCNFEN = () => Promise.resolve({ ok: true, json: async () => [] });
 const emptyCNFFR = () => Promise.resolve({ ok: true, json: async () => [] });
@@ -973,8 +976,12 @@ describe("lookupNutrition", () => {
       "food/?lang=fr": () => Promise.reject(new Error("CNF down")),
     });
 
-    await lookupNutrition("sugar");
-    await lookupNutrition("rice");
+    await expect(lookupNutrition("sugar")).rejects.toBeInstanceOf(
+      UpstreamUnavailableError,
+    );
+    await expect(lookupNutrition("rice")).rejects.toBeInstanceOf(
+      UpstreamUnavailableError,
+    );
 
     const listFetches = mockFetch.mock.calls.filter(([url]) =>
       String(url).includes("canadian-nutrient-file/food/?lang="),
@@ -1181,6 +1188,7 @@ describe("lookupNutrition", () => {
       setupFetchMock({
         "food/?lang=en": emptyCNFEN,
         "food/?lang=fr": emptyCNFFR,
+        "api-ninjas.com": ninjasNoMatch,
         "fdc/v1/foods/search": () =>
           Promise.resolve({
             ok: true,
@@ -1372,6 +1380,7 @@ describe("lookupNutrition", () => {
     setupFetchMock({
       "food/?lang=en": emptyCNFEN,
       "food/?lang=fr": emptyCNFFR,
+      "api-ninjas.com": ninjasNoMatch,
       "fdc/v1/foods/search": () =>
         Promise.resolve({
           ok: true,
@@ -1448,6 +1457,7 @@ describe("lookupNutrition — cultural food names are a fallback, not a rewrite"
           ],
         });
       if (url.includes("fdc/v1/foods/search")) return usdaAnswering(usda)(url);
+      if (url.includes("api-ninjas.com")) return ninjasNoMatch();
       return Promise.resolve({ ok: false, json: async () => ({}) });
     });
   }

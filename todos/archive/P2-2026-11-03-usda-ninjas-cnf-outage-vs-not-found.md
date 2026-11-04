@@ -1,9 +1,9 @@
 ---
 title: "USDA, API Ninjas and CNF lookups: tell an outage apart from not-found, with a 429 breaker"
-status: in-progress
+status: done
 priority: medium
 created: 2026-11-03
-updated: 2026-11-03
+updated: 2026-11-04
 assignee:
 labels: [deferred, server, nutrition]
 github_issue:
@@ -21,11 +21,11 @@ Items R09 and R43 of the 2026-10-30 reliability audit, plus the CNF follow-up th
 
 ## Acceptance Criteria
 
-- [ ] USDA, API Ninjas and CNF lookups return a three-way outcome: found / not-found / unavailable; only "found" is cached, and "unavailable" is never cached as a miss
-- [ ] A USDA 429 opens a circuit breaker (no calls until it cools down) instead of retrying; a 5xx gets one retry
-- [ ] The USDA UPC lookup goes through the same fetch helper, so its failures are logged, not swallowed
-- [ ] "unavailable" reaches the route as the existing `UpstreamUnavailableError` → 503 path from #1659, not as a 404
-- [ ] Tests cover each outcome per provider
+- [x] USDA, API Ninjas and CNF lookups return a three-way outcome: found / not-found / unavailable; only "found" is cached, and "unavailable" is never cached as a miss
+- [x] A USDA 429 opens a circuit breaker (no calls until it cools down) instead of retrying; a 5xx gets one retry
+- [x] The USDA UPC lookup goes through the same fetch helper, so its failures are logged, not swallowed
+- [x] "unavailable" reaches the route as the existing `UpstreamUnavailableError` → 503 path from #1659, not as a 404
+- [x] Tests cover each outcome per provider
 
 ## Implementation Notes
 
@@ -44,3 +44,7 @@ Items R09 and R43 of the 2026-10-30 reliability audit, plus the CNF follow-up th
 ### 2026-11-03
 
 - Filed when closing draft PR #1624 (R09, R43 and the CNF follow-up never reached main).
+
+### 2026-11-04
+
+- Implemented: three-way outcome for USDA/API Ninjas/CNF via `UpstreamUnavailableError`, USDA 429 breaker (1 h) and one 5xx retry in `fetchUSDA`, UPC path through the same helper, 503 on `/api/nutrition/lookup`. Also mapped it to 503 in `/api/beverages/log` (previously an outage would have become a 500; before this change it was a misleading 422). Batch lookups return null for an unavailable item, uncached.
