@@ -1,9 +1,9 @@
 ---
 title: "Account deletion takes one lock per verified barcode, one round-trip each"
-status: backlog
+status: done
 priority: low
 created: 2026-11-01
-updated: 2026-11-01
+updated: 2026-11-03
 assignee:
 labels: [deferred, server, data-integrity]
 github_issue:
@@ -21,9 +21,9 @@ Flagged by the #1676 executor as a deferred warning. The lock is needed so the b
 
 ## Acceptance Criteria
 
-- [ ] Locks are taken in one statement (e.g. `SELECT pg_advisory_xact_lock(hashtextextended(b, 0)) FROM unnest($1::text[]) b ORDER BY b`), not one round-trip per barcode
-- [ ] Past a threshold (e.g. 1,000 barcodes), deletion still succeeds: either recompute in batches in follow-up transactions after the user row is gone, or fall back to one table-level lock
-- [ ] A test deletes a user with more voted barcodes than the threshold
+- [x] Locks are taken in one statement (e.g. `SELECT pg_advisory_xact_lock(hashtextextended(b, 0)) FROM unnest($1::text[]) b ORDER BY b`), not one round-trip per barcode
+- [x] Past a threshold (e.g. 1,000 barcodes), deletion still succeeds: either recompute in batches in follow-up transactions after the user row is gone, or fall back to one table-level lock
+- [x] A test deletes a user with more voted barcodes than the threshold
 
 ## Implementation Notes
 
@@ -50,3 +50,7 @@ Flagged by the #1676 executor as a deferred warning. The lock is needed so the b
 ### 2026-11-01
 
 - Filed by the /todo run (deferred warning from #1676).
+
+### 2026-11-03
+
+- Done. `lockBarcodes` takes all locks in one `unnest` statement (array bound with `sql.param` — a bare `${array}` expands to `($1, $2, ...)`). Past `DELETE_USER_LOCK_THRESHOLD` (1,000 distinct barcodes) `deleteUser` deletes the user without barcode locks, then recomputes in 1,000-barcode follow-up transactions; a failed batch is logged, not thrown.
