@@ -53,6 +53,8 @@ export const receiptPantryItemSchema = z.object({
 
 export const receiptConfirmResultSchema = z.object({
   added: z.number(),
+  // Items left out because the pantry hit its cap; absent from older servers.
+  skipped: z.number().optional(),
   items: z.array(receiptPantryItemSchema),
 });
 

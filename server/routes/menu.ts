@@ -10,6 +10,7 @@ import {
   handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
+  claimAiCallOrReject,
 } from "./_helpers";
 import { menuRateLimit, crudRateLimit } from "./_rate-limiters";
 import { createImageUpload } from "./_upload";
@@ -55,6 +56,9 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
+
+        if (!(await claimAiCallOrReject(req, res, "menuScan", "menu scan")))
+          return;
 
         const imageBase64 = req.file.buffer.toString("base64");
         const result = await analyzeMenuPhoto(imageBase64, req.userId);

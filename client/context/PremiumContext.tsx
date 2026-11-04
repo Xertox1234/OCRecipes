@@ -44,6 +44,12 @@ interface PremiumContextType {
    * flip to false prematurely on a query error.
    */
   isPremiumResolved: boolean;
+  /**
+   * True when the subscription status fetch failed and no copy is cached, so
+   * premium status is unknown. Unlike `isError`, a scan-count failure does not
+   * set it. A gate shows a retry state on this, never an upgrade wall.
+   */
+  isPremiumStatusError: boolean;
   isError: boolean;
   error: Error | null;
   dailyScanCount: number;
@@ -125,6 +131,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   // Use this (not isLoading) in mount-once contexts like navigator initialRouteName
   // so a hard error never prematurely "resolves" premium status as free.
   const isPremiumResolved = subscriptionData !== undefined;
+  const isPremiumStatusError = isSubscriptionError && !isPremiumResolved;
   const isPremium = tier === "premium" && (subscriptionData?.isActive ?? false);
   const dailyScanCount = scanCountData?.count ?? 0;
   const canScanToday = isPremium || dailyScanCount < features.maxDailyScans;
@@ -179,6 +186,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       isLoading:
         isSubscriptionLoading || isScanCountLoading || isRecipeGenLoading,
       isPremiumResolved,
+      isPremiumStatusError,
       isError,
       error,
       dailyScanCount,
@@ -203,6 +211,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       isScanCountLoading,
       isRecipeGenLoading,
       isPremiumResolved,
+      isPremiumStatusError,
       isError,
       error,
       dailyScanCount,

@@ -308,4 +308,80 @@ describe("offline-queue", () => {
     expect(lastWrite).toContain("persisted");
     expect(lastWrite).toContain("during-load");
   });
+  describe("no silent loss (R18)", () => {
+    it("enqueue rejects (and keeps nothing in memory) when the disk write fails", async () => {
+      const { initOfflineQueue, enqueue, loadQueue } = await importModule();
+      await initOfflineQueue();
+      vi.mocked(AsyncStorage.setItem).mockRejectedValueOnce(
+        new Error("database or disk is full"),
+      );
+      await expect(
+        enqueue({ endpoint: "/api/scanned-items", method: "POST", body: {} }),
+      ).rejects.toThrow();
+      // Not durable → not queued: the caller surfaces a failure instead of a
+      // "logged" toast for an entry that would vanish on the next force-quit.
+      expect(loadQueue()).toHaveLength(0);
+    });
+
+    it("restores the entries a depth-cap enqueue would have dropped when its write fails", async () => {
+      const { initOfflineQueue, enqueue, loadQueue } = await importModule();
+      await initOfflineQueue();
+      for (let i = 0; i < 50; i++) {
+        await enqueue({
+          endpoint: "/api/scanned-items",
+          method: "POST",
+          body: { name: `item-${i}` },
+        });
+      }
+      const before = loadQueue().map((i) => i.id);
+      vi.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error("full"));
+      await expect(
+        enqueue({ endpoint: "/api/scanned-items", method: "POST", body: {} }),
+      ).rejects.toThrow();
+      expect(loadQueue().map((i) => i.id)).toEqual(before);
+    });
+
+    it("signals the eviction when the depth cap drops the oldest entry", async () => {
+      const { initOfflineQueue, enqueue, subscribeToQueueEvictions } =
+        await importModule();
+      await initOfflineQueue();
+      const listener = vi.fn();
+      subscribeToQueueEvictions(listener);
+      for (let i = 0; i < 51; i++) {
+        await enqueue({
+          endpoint: "/api/scanned-items",
+          method: "POST",
+          body: {},
+        });
+      }
+      expect(listener).toHaveBeenCalledOnce();
+      expect(listener).toHaveBeenCalledWith(1);
+    });
+
+    it("delivers a startup TTL eviction to a listener that subscribes after init", async () => {
+      const { initOfflineQueue, subscribeToQueueEvictions } =
+        await importModule();
+      vi.mocked(AsyncStorage.getItem).mockResolvedValue(
+        JSON.stringify([
+          {
+            id: "old",
+            endpoint: "/api/scanned-items",
+            method: "POST",
+            body: {},
+            attempts: 0,
+            savedAt: Date.now() - 25 * 60 * 60 * 1000,
+          },
+        ]),
+      );
+      // Init runs at module load, before the toast bridge mounts.
+      await initOfflineQueue();
+      const listener = vi.fn();
+      subscribeToQueueEvictions(listener);
+      expect(listener).toHaveBeenCalledWith(1);
+      // Delivered once, not replayed to every later subscriber.
+      const late = vi.fn();
+      subscribeToQueueEvictions(late);
+      expect(late).not.toHaveBeenCalled();
+    });
+  });
 });

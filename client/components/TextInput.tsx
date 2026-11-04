@@ -1,6 +1,7 @@
 import React, { forwardRef, useState } from "react";
 import {
   TextInput as RNTextInput,
+  type TextInputInstance,
   TextInputProps as RNTextInputProps,
   StyleSheet,
   View,
@@ -52,7 +53,7 @@ interface TextInputProps extends Omit<RNTextInputProps, "style"> {
   label?: string;
 }
 
-export const TextInput = forwardRef<RNTextInput, TextInputProps>(
+export const TextInput = forwardRef<TextInputInstance, TextInputProps>(
   (
     {
       leftIcon,

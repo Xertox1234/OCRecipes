@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { generateRecipeImage } from "../services/recipe-generation";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { inferMealTypes } from "../services/meal-type-inference";
@@ -191,11 +192,19 @@ export function register(app: Express): void {
           ingredientData,
         );
 
-        // Auto-generate image if source had none (async, non-blocking)
+        // Auto-generate image if source had none (async, non-blocking).
+        // Shares the meal-plan auto-image daily cap, claimed BEFORE the paid
+        // call; a refused claim only skips the image, the import succeeds.
         if (!recipe.imageUrl) {
           fireAndForget(
             "recipe-image-gen",
             (async () => {
+              const claimed = await storage.claimDailyAiCall(
+                req.userId,
+                "recipeAutoImage",
+                AI_DAILY_CAPS.recipeAutoImage,
+              );
+              if (!claimed) return;
               const imageUrl = await generateRecipeImage({
                 title: recipe.title,
                 cuisine: recipe.cuisine,

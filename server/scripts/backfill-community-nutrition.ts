@@ -18,6 +18,16 @@ import { aiChat } from "../lib/ai-client";
 import { db, pool } from "../db";
 import { communityRecipes } from "@shared/schema";
 import { isNull, eq } from "drizzle-orm";
+import { z } from "zod";
+import { validateAiResponse } from "../lib/ai-safety";
+
+/** The AI's per-serving macro estimate: finite, non-negative numbers. */
+const macroEstimateSchema = z.object({
+  calories: z.coerce.number().finite().min(0),
+  protein: z.coerce.number().finite().min(0),
+  carbs: z.coerce.number().finite().min(0),
+  fat: z.coerce.number().finite().min(0),
+});
 
 const DRY_RUN = process.env.DRY_RUN === "1";
 
@@ -28,7 +38,7 @@ interface RecipeMacros {
   fatPerServing: string;
 }
 
-async function estimateMacros(
+export async function estimateMacros(
   title: string,
   ingredients: { name: string; quantity: string; unit: string }[],
   servings: number,
@@ -59,29 +69,17 @@ async function estimateMacros(
       },
       { timeout: 15_000 },
     );
-    const raw = JSON.parse(response.choices[0]?.message?.content ?? "{}");
-    const cal = Math.round(Number(raw.calories));
-    const protein = Math.round(Number(raw.protein));
-    const carbs = Math.round(Number(raw.carbs));
-    const fat = Math.round(Number(raw.fat));
-    if (
-      Number.isFinite(cal) &&
-      cal >= 0 &&
-      Number.isFinite(protein) &&
-      protein >= 0 &&
-      Number.isFinite(carbs) &&
-      carbs >= 0 &&
-      Number.isFinite(fat) &&
-      fat >= 0
-    ) {
-      return {
-        caloriesPerServing: String(cal),
-        proteinPerServing: String(protein),
-        carbsPerServing: String(carbs),
-        fatPerServing: String(fat),
-      };
-    }
-    return null;
+    const parsed = validateAiResponse(
+      JSON.parse(response.choices[0]?.message?.content ?? "{}"),
+      macroEstimateSchema,
+    );
+    if (!parsed) return null;
+    return {
+      caloriesPerServing: String(Math.round(parsed.calories)),
+      proteinPerServing: String(Math.round(parsed.protein)),
+      carbsPerServing: String(Math.round(parsed.carbs)),
+      fatPerServing: String(Math.round(parsed.fat)),
+    };
   } catch (err) {
     console.error(`  Macro estimation error for "${title}":`, err);
     return null;
@@ -152,7 +150,13 @@ async function main() {
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+// Run only as a script: scripts/ai-backup-gate.ts imports the AI call above.
+if (
+  process.argv[1] &&
+  /backfill-community-nutrition\.(ts|js)$/.test(process.argv[1])
+) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
+}

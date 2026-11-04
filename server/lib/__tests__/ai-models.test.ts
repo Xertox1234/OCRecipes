@@ -6,6 +6,7 @@ import {
   adaptParams,
   hostForModel,
   isAiFeature,
+  VERTEX_BACKUP,
   type AiFeatureConfig,
 } from "../ai-models";
 
@@ -16,27 +17,25 @@ describe("AI_FEATURES table", () => {
     expect(rows).toHaveLength(34);
   });
 
-  it("every model has a provider/ prefix and no fallback does", () => {
+  it("every model has a provider/ prefix", () => {
     for (const [name, row] of rows) {
       expect(row.model, name).toMatch(/^[a-z0-9-]+\/[^/]+$/);
-      if (row.fallback !== undefined)
-        expect(row.fallback, name).not.toContain("/");
     }
   });
 
   // Owner-approved switches (spec §6 step 5). Every other row still runs
-  // today's model: its fallback with the openai/ prefix and no adapt.
+  // gpt-4o or gpt-4o-mini with no adapt.
   const SWITCHED: Record<string, AiFeatureConfig> = {
     "coach-chat": {
       model: "openai/gpt-6-luna",
-      fallback: "gpt-4o-mini",
+      vertexBackup: VERTEX_BACKUP,
       json: false,
       vision: false,
       adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
     },
     "coach-pro-chat": {
       model: "openai/gpt-6-luna",
-      fallback: "gpt-4o-mini",
+      vertexBackup: VERTEX_BACKUP,
       json: false,
       vision: false,
       adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
@@ -47,7 +46,7 @@ describe("AI_FEATURES table", () => {
     // `max_completion_tokens` for it — so no adapt block.
     "recipe-generate": {
       model: "google/gemini-4-argon",
-      fallback: "gpt-4o",
+      vertexBackup: VERTEX_BACKUP,
       json: true,
       vision: false,
     },
@@ -56,9 +55,18 @@ describe("AI_FEATURES table", () => {
     // keeps the JSON reply inside its token cap.
     "photo-analyze": {
       model: "google/gemini-3.8-flash",
-      fallback: "gpt-4o",
+      vertexBackup: VERTEX_BACKUP,
       json: true,
       vision: true,
+      adapt: { set: { reasoning_effort: "low" } },
+    },
+    // Owner-approved 2026-11-02 after a paired eval (todo
+    // P2-2026-10-17-recipe-chat-row-model-eval-before-switch, Updates).
+    "recipe-chat": {
+      model: "google/gemini-3.8-flash",
+      vertexBackup: VERTEX_BACKUP,
+      json: false,
+      vision: false,
       adapt: { set: { reasoning_effort: "low" } },
     },
   };
@@ -69,10 +77,12 @@ describe("AI_FEATURES table", () => {
     }
   });
 
-  it("every other row is its fallback with the openai/ prefix and no adapt", () => {
+  it("every other row is gpt-4o or gpt-4o-mini with no adapt", () => {
     for (const [name, row] of rows) {
       if (name in SWITCHED) continue;
-      expect(row.model, name).toBe(`openai/${row.fallback}`);
+      expect(["openai/gpt-4o", "openai/gpt-4o-mini"], name).toContain(
+        row.model,
+      );
       expect(row.adapt, name).toBeUndefined();
     }
   });
@@ -83,15 +93,61 @@ describe("AI_FEATURES table", () => {
     }
   });
 
-  it("a Vertex-first row has no OpenAI fallback; every other row has one", () => {
+  it("a Vertex-first row runs a Google model", () => {
     for (const [name, row] of rows) {
-      if (row.primary === "vertex") {
-        expect(row.fallback, name).toBeUndefined();
+      if (row.primary === "vertex")
         expect(row.model, name).toMatch(/^google\//);
-      } else {
-        expect(typeof row.fallback, name).toBe("string");
-      }
     }
+  });
+
+  // OpenAI direct shuts gpt-4o/mini down on 2027-01-14: the OpenAI-direct
+  // `fallback` route is gone, and only a Vertex-first row may lack the backup.
+  it("the row type has no OpenAI fallback and requires a backup", () => {
+    const withFallback: AiFeatureConfig = {
+      model: "openai/gpt-4o",
+      // @ts-expect-error — no OpenAI-direct fallback route any more
+      fallback: "gpt-4o",
+      vertexBackup: VERTEX_BACKUP,
+      json: true,
+      vision: false,
+    };
+    // @ts-expect-error — an OpenRouter-primary row needs the Vertex backup
+    const noBackup: AiFeatureConfig = {
+      model: "openai/gpt-4o",
+      json: true,
+      vision: false,
+    };
+    const vertexFirst: AiFeatureConfig = {
+      model: "google/gemini-3.8-flash",
+      primary: "vertex",
+      json: true,
+      vision: true,
+    };
+    expect([withFallback, noBackup, vertexFirst]).toHaveLength(3);
+  });
+
+  // Rollout complete (spec 2026-11-02-vertex-backup-route-design; owner
+  // 2026-11-03): OpenAI direct shuts gpt-4o/mini down on 2027-01-14, so no
+  // row may fall back to it — text and vision rows alike back up to Vertex.
+  it("every row backs up to Vertex, never OpenAI", () => {
+    for (const [name, row] of rows) {
+      expect(row.vertexBackup, name).toBe(VERTEX_BACKUP);
+    }
+  });
+
+  it("a vertexBackup row uses the shared VERTEX_BACKUP constant", () => {
+    for (const [name, row] of rows) {
+      if (row.vertexBackup !== undefined)
+        expect(row.vertexBackup, name).toBe(VERTEX_BACKUP);
+    }
+  });
+
+  it("VERTEX_BACKUP is Gemini 3.8 Flash at low reasoning", () => {
+    expect(VERTEX_BACKUP).toEqual({
+      model: "google/gemini-3.8-flash",
+      adapt: { set: { reasoning_effort: "low" } },
+    });
+    expect(hostForModel(VERTEX_BACKUP.model)).toBeDefined();
   });
 
   // Rollout allowlist (spec 2026-10-19-vision-rows-vertex-direct §2.1): grows

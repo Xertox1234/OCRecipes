@@ -197,37 +197,29 @@ vi.mock("@/components/home/CuratedRecipeCarousel", () => ({
 }));
 
 // Capture point for handleActionPress — passed directly (unwrapped) as
-// onActionPress.
-vi.mock("@/components/home/RecentActionsRow", () => ({
-  RecentActionsRow: (props: Record<string, unknown>) => {
-    capturedRecentActionsRowProps.current = props;
-    return null;
-  },
-}));
-
-// Renders one real button that invokes the REAL onActionPress with the real
-// "import-recipe" HomeAction — used as this test's independent re-render
-// trigger (opens the import sheet, an unrelated state change), exactly as
-// HomeScreen.test.tsx's own Android-trap tests already do.
-vi.mock("@/components/home/DiscoveryCarousel", async () => {
+// onActionPress. It also renders one real button that invokes the REAL
+// onActionPress with the real "import-recipe" HomeAction — this test's
+// independent re-render trigger (opens the import sheet, an unrelated state
+// change), as HomeScreen.test.tsx's Android-trap tests do. (That button lived
+// on the Discover carousel until Discover was removed.)
+vi.mock("@/components/home/RecentActionsRow", async () => {
   const { HOME_ACTIONS } = await vi.importActual<
     typeof import("@/components/home/action-config")
   >("@/components/home/action-config");
   const importAction = HOME_ACTIONS.find((a) => a.id === "import-recipe");
   return {
-    DiscoveryCarousel: ({
-      onActionPress,
-    }: {
-      onActionPress: (action: unknown) => void;
-    }) =>
-      React.createElement(
+    RecentActionsRow: (props: Record<string, unknown>) => {
+      capturedRecentActionsRowProps.current = props;
+      const onActionPress = props.onActionPress as (action: unknown) => void;
+      return React.createElement(
         "button",
         {
           onClick: () => onActionPress(importAction),
           "data-testid": "open-import-sheet",
         },
         "Import a Recipe",
-      ),
+      );
+    },
   };
 });
 

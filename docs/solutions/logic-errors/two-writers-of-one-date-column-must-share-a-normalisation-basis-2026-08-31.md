@@ -4,10 +4,10 @@ track: bug
 category: logic-errors
 tags: [react-native, client-state, testing, timezone, date, data-integrity, meal-plan, silent-failure]
 module: client
-applies_to: [client/components/coach/**/*.ts, client/screens/meal-plan/**/*.tsx, shared/lib/date.ts]
+applies_to: [client/components/coach/**/*.ts, client/screens/NotebookEntryScreen.tsx, client/screens/meal-plan/**/*.tsx, shared/lib/date.ts]
 symptoms: ["An item saved from one screen appears under a different day on another screen", "A date bug that reproduces for users east of UTC and never for users west of it (or the reverse)", "Two features call the same date-formatting helper and still produce different keys", "A picker's first chip is tomorrow for part of the day", "Tests pass in CI and the bug is reported from a real device"]
 created: '2026-08-31'
-last_updated: '2026-08-31'
+last_updated: '2026-10-30'
 severity: high
 ---
 
@@ -165,6 +165,15 @@ transition DST at 00:00 local, so `setHours(0,0,0,0)` lands on 01:00. That is fi
 hour offset does not cross a UTC day boundary at those offsets — but it is worth checking rather
 than assuming when the basis is load-bearing.
 
+**The READ side has the same bug, and an editor turns it into drift.** `NotebookEntryScreen`
+read the server's local-midnight `followUpDate` instant with `toISOString().slice(0, 10)` — the
+UTC day, which for a UTC-positive user is the day *before*. It showed the wrong day, the dirty
+check compared against it, every edit-save wrote it back (moving the date one day earlier per
+save), and the reminder was scheduled from it. Convert a stored instant to a civil day with
+local accessors (`toLocalDateString(new Date(stored))` from `shared/lib/date.ts`) and route
+**every** read through it — initial state, load effect, dirty check, scheduling. A bug fixed in
+3 of 4 reads still drifts. (Fixed in #1621, audit M-xc-1.)
+
 ## Related Files
 
 - `client/components/coach/plan-slot-picker-utils.ts` — `buildPlanSlotDays`, with a docblock that
@@ -177,6 +186,7 @@ than assuming when the basis is load-bearing.
 - `todos/archive/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md` —
   the product decision, now made: a true device-local basis
 - `todos/P2-2026-08-31-plan-slot-timezone-guards-never-run-in-ci.md` — the guard-durability gap
+- `client/screens/NotebookEntryScreen.tsx` — the four read sites, each `toLocalDateString(new Date(followUpDate))`
 
 ## See Also
 

@@ -75,7 +75,9 @@ function ActionButton({
 
 interface HistoryItemActionsProps {
   isFavourited: boolean;
-  isPremium: boolean;
+  /** Free users see the Recipe action's Premium lock. False while the
+   *  premium status is still unknown, so a paying user is never shown it. */
+  isRecipeLocked: boolean;
   isFavouriteLoading?: boolean;
   isDiscardLoading?: boolean;
   onFavourite: () => void;
@@ -87,7 +89,7 @@ interface HistoryItemActionsProps {
 
 export function HistoryItemActions({
   isFavourited,
-  isPremium,
+  isRecipeLocked,
   isFavouriteLoading,
   isDiscardLoading,
   onFavourite,
@@ -126,11 +128,11 @@ export function HistoryItemActions({
         label="Recipe"
         onPress={onGenerateRecipe}
         color={theme.carbsAccent}
-        isLocked={!isPremium}
+        isLocked={isRecipeLocked}
         accessibilityHint={
-          isPremium
-            ? "Generate a recipe using this item"
-            : "Premium feature. Tap to upgrade."
+          isRecipeLocked
+            ? "Premium feature. Tap to upgrade."
+            : "Generate a recipe using this item"
         }
       />
       <ActionButton

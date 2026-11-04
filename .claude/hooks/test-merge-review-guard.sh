@@ -77,15 +77,38 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
         printf '%s\n' "${FAKE_CHANGED_FILES:-$(printf '%s\n' "${FAKE_FILES}" | grep -c . || true)}"
         exit 0
         ;;
+      body)
+        # the platform check reads the PR body with --jq '.body'; answer with the text itself
+        printf '%s\n' "${FAKE_BODY:-}"
+        exit 0
+        ;;
     esac
   done
   printf '%s\n' "${FAKE_VIEW_JSON}"; exit 0
 fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
-  [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
-  printf '%s\n' "${FAKE_FILES}"; exit 0
+  # --name-only is stage 3's changed-file read (FAKE_DIFF_FAIL); the full diff is the platform
+  # check's (FAKE_PR_DIFF_FAIL). Kept apart so the stage-3 fail-closed rows still reach stage 3.
+  # The full diff defaults to one header per file and no hunks: never in platform scope.
+  case " $* " in
+    *" --name-only "*)
+      [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
+      printf '%s\n' "${FAKE_FILES}"; exit 0 ;;
+  esac
+  [ -n "${FAKE_PR_DIFF_FAIL:-}" ] && exit 1
+  [ -n "${FAKE_PR_DIFF_EMPTY:-}" ] && exit 0
+  if [ -n "${FAKE_PR_DIFF:-}" ]; then printf '%s\n' "$FAKE_PR_DIFF"; exit 0; fi
+  printf '%s\n' "${FAKE_FILES}" | sed '/^$/d' | while IFS= read -r f; do printf 'diff --git a/%s b/%s\n' "$f" "$f"; done
+  exit 0
 fi
 if [ "${1:-}" = "api" ]; then
+  # The platform check's run lookup. FAKE_RUN is what the guard's --jq would print:
+  # "<run id> <conclusion>", or empty for no completed run on the head.
+  case "$*" in
+    *actions/workflows/e2e-regression.yml/runs*)
+      [ -n "${FAKE_RUNS_FAIL:-}" ] && exit 1
+      printf '%s\n' "${FAKE_RUN:-}"; exit 0 ;;
+  esac
   # todo-automerge-guard.sh reads its file list from pulls/{n}/files so that a rename SOURCE
   # path (previous_filename) is gated and not just the destination. That is also a `gh api`
   # call, so this stub must dispatch on the ENDPOINT: without the case below, the file-list
@@ -158,6 +181,21 @@ assert_allowed() {  # assert_allowed <label> <captured-output>
   local label="$1" out="${2:-}" rc
   rc=$(cat "$RC_FILE" 2>/dev/null)
   if [ -z "$out" ] && [ "$rc" = "0" ]; then
+    ok "$label"
+  else
+    bad "$label" "out=[$out] rc=[${rc:-<unrecorded>}]"
+  fi
+}
+# An exempt merge (stage 1 or 2) allows exactly as a silent exit did — rc 0 and NO
+# permissionDecision of any kind (an explicit "allow" would skip the owner's permission
+# prompts) — and now names why in systemMessage + additionalContext (harness N8).
+assert_exempt() {  # assert_exempt <label> <captured-output> <expected-route-text>
+  local label="$1" out="${2:-}" want="$3" rc
+  rc=$(cat "$RC_FILE" 2>/dev/null)
+  if [ "$rc" = "0" ] \
+     && jq -e --arg w "$want" '(has("hookSpecificOutput") and (.hookSpecificOutput | has("permissionDecision") | not))
+          and (.systemMessage | contains("needs no review record") and contains($w))
+          and (.hookSpecificOutput.additionalContext == .systemMessage)' <<<"$out" >/dev/null 2>&1; then
     ok "$label"
   else
     bad "$label" "out=[$out] rc=[${rc:-<unrecorded>}]"
@@ -488,7 +526,7 @@ MRG_PIGGY_FILES_SAVE="$FAKE_FILES"
 export FAKE_FILES="$FILES_SAFE"
 
 out=$(bash_payload 'gh pr merge 938 --auto --squash' | run)
-assert_allowed "CONTROL: the leading pr-merge clause alone allows on a safe diff" "$out"
+assert_exempt "CONTROL: the leading pr-merge clause alone allows on a safe diff" "$out" "--paths-only"
 
 out=$(bash_payload 'gh pr merge 938 --auto --squash; gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge' | run)
 denied "$out" && ok "a gh-api merge piggybacked after pr merge (;) still denies" \
@@ -587,12 +625,12 @@ denied "$out" && ok "trailing redirect glued to the value still denies" \
 # 4. ALLOW. Safe paths need no stamp.
 export FAKE_FILES="$FILES_SAFE"
 out=$(mcp_payload 938 | run)
-assert_allowed "safe paths allow without a stamp" "$out"
+assert_exempt "safe paths allow without a stamp" "$out" "--paths-only"
 
 # 5. ALLOW, Bash path. The `--auto` arming call is the form that survives
 #    guard-outward-cli.sh, so it must be able to reach stage 2 and be ALLOWED there.
 out=$(bash_payload "gh pr merge 938 --auto --squash --delete-branch" | run)
-assert_allowed "Bash --auto arming with safe paths allows" "$out"
+assert_exempt "Bash --auto arming with safe paths allows" "$out" "--paths-only"
 
 # 6. DENY. Sensitive paths, no record at all.
 export FAKE_FILES="$FILES_ONE"
@@ -641,6 +679,35 @@ stamp "$SHA" "$DIGEST_TWO" maybe code-reviewer
 out=$(mcp_payload 938 | run)
 denied "$out" && ok "control: an unknown verdict with no unresolved entries still denies" \
               || bad "control: an unknown verdict with no unresolved entries still denies" "$out"
+
+# 9c. code-reviewer requirement (todo 2026-10-31). The gate's allow match needs a record from
+#     code-reviewer. 9c-1 is the allow control; 9c-2 FAILS against the old any-reviewer gate;
+#     9c-3 is a findings code-reviewer beside a clean domain record (the findings must win);
+#     9c-4 confirms domain + code-reviewer clean together still allows.
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
+out=$(mcp_payload 938 | run)
+assert_allowed "9c-1 control: code-reviewer clean alone allows" "$out"
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" clean security-auditor
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "9c-2 domain-reviewer clean alone denies" \
+              || bad "9c-2 domain-reviewer clean alone denies" "$out"
+r=$(reason "$out")
+grep -q 'code-reviewer' <<<"$r" && grep -q 'pr=938' <<<"$r" \
+  && ok "9c-2b deny names the missing code-reviewer record and the recovery (pr=<N>)" \
+  || bad "9c-2b deny names the missing code-reviewer record and the recovery (pr=<N>)" "$r"
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" findings code-reviewer 'server/x.ts:1 — CRITICAL — open'
+stamp "$SHA" "$DIGEST_TWO" clean security-auditor
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "9c-3 code-reviewer findings beside domain clean denies" \
+              || bad "9c-3 code-reviewer findings beside domain clean denies" "$out"
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
+stamp "$SHA" "$DIGEST_TWO" clean security-auditor
+out=$(mcp_payload 938 | run)
+assert_allowed "9c-4 code-reviewer clean plus domain clean allows" "$out"
 
 # 10. DENY. Mis-scoped review: the record describes ONE file, the PR changes TWO. Same
 #     SHA, same reviewer, clean verdict — only the scope is wrong.
@@ -884,7 +951,8 @@ fi
 export FAKE_VIEW_JSON="{\"headRefName\":\"todo/P3-2026-01-01-x\",\"headRefOid\":\"$SHA\"}"
 export FAKE_FILES="$FILES_TODO_SAFE"
 out=$(mcp_payload 938 | run)
-assert_allowed "todo/* with safe paths is exempt" "$out"
+# The API reads fail here, so the full guard fails and stage 2's allowlist exempts it.
+assert_exempt "todo/* with safe paths is exempt" "$out" "--paths-only"
 
 # 24. STAGE 1 MECHANISM. The branch name — not the file list — selects whether the FULL
 #     guard runs. The full guard's TODO GATE reads the archived todo through the API's
@@ -895,9 +963,10 @@ assert_allowed "todo/* with safe paths is exempt" "$out"
 #     did so a rename SOURCE path is gated, not just the destination). Match contents.
 export FAKE_API_FAIL=""
 : > "$GH_LOG"
-mcp_payload 938 | run >/dev/null
+out=$(mcp_payload 938 | run)
 grep -q '^api .*/contents/' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fires)" \
                           || bad "todo/* branch runs the FULL guard (stage 1 fires)" "$(cat "$GH_LOG")"
+assert_exempt "stage 1's exemption names the todo/* route" "$out" "a todo/* branch"
 
 # 25. …and the SAME file list on a non-todo branch does NOT run it. This is the #938
 #     shape: an interactive PR that happens to carry a todos/archive file. A stage 1 keyed
@@ -949,7 +1018,7 @@ out=$(bash_payload 'gh pr merge 4$(echo 9)2 --auto' | run)
 denied "$out" && ok "substitution-obfuscated ref fails closed" || bad "substitution-obfuscated ref fails closed" "$out"
 
 # 31. DENY, and the message must name the MISSING-NUMBER cause FIRST. `gh pr merge --auto
-#     --squash --delete-branch` is legal, documented usage (todo-executor.md:564 minus the
+#     --squash --delete-branch` is legal, documented usage (todo-executor.md Step 10's auto-merge command, minus the
 #     number) and guard-outward-cli.sh ALLOWS it — measured, that guard denies only the
 #     non---auto form — so it arrives here and is denied unconditionally, before any risk
 #     classification, even on a docs-only PR. Recovery is SKIP_MERGE_REVIEW=1, the pressure
@@ -1248,10 +1317,84 @@ case "$SELF_NWO" in
     out=$(mcp_payload_repo 938 \
             "$(printf '%s' "${SELF_NWO%%/*}" | tr '[:lower:]' '[:upper:]')" \
             "$(printf '%s' "${SELF_NWO##*/}" | tr '[:lower:]' '[:upper:]')" | run)
-    assert_allowed "MCP merge naming THIS repository (case-folded) is unaffected" "$out" ;;
+    assert_exempt "MCP merge naming THIS repository (case-folded) is unaffected" "$out" "--paths-only" ;;
   *) bad "MCP owner/repo control fixture is usable" "unparseable remote.origin.url [$SELF_URL]" ;;
 esac
 export FAKE_FILES="$FILES_ONE"
+
+# ── Real-platform check (harness diagnosis N6) ───────────────────────────────
+# A PR whose diff changes upload code (here: FormData in a client file) needs a completed
+# hand-started E2E run on its head AND a '## Platform check' body section naming that run.
+# Every row carries a VALID clean review record, so a deny can only come from this check.
+P_DIFF=$'diff --git a/client/hooks/useNutritionLookup.ts b/client/hooks/useNutritionLookup.ts\n--- a/client/hooks/useNutritionLookup.ts\n+++ b/client/hooks/useNutritionLookup.ts\n@@ -1 +1,2 @@\n+  const body = new FormData();'
+P_BODY_OK=$'## Summary\nx\n\n## Platform check\nE2E run 777 green on both jobs. Simulator upload: cook photo, POST /api/cooking/sessions/1/photos 200.\n\n## Review\ny'
+stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
+
+# P1. DENY: in scope, no completed run on the head; the message says how to start one.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="")
+denied "$out" && reason "$out" | grep -q 'no completed E2E run' && reason "$out" | grep -q 'gh workflow run e2e-regression.yml --ref fix/thing' \
+  && ok "platform: in-scope PR with no E2E run on the head denies, naming the dispatch command" \
+  || bad "platform: in-scope PR with no E2E run on the head denies, naming the dispatch command" "$out"
+
+# P2. DENY: green run, but the body has no '## Platform check' section.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 success" FAKE_BODY=$'## Summary\nrun 777')
+denied "$out" && reason "$out" | grep -q "no '## Platform check' section" \
+  && ok "platform: green run without a Platform check section denies (a mention elsewhere does not count)" \
+  || bad "platform: green run without a Platform check section denies (a mention elsewhere does not count)" "$out"
+
+# P3. DENY: the section names an earlier run, not the newest one on this head.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="888 success" FAKE_BODY="$P_BODY_OK")
+denied "$out" && reason "$out" | grep -q 'does not name E2E run 888' \
+  && ok "platform: a section naming a different run denies" \
+  || bad "platform: a section naming a different run denies" "$out"
+
+# P4. ALLOW: green run, section names it.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 success" FAKE_BODY="$P_BODY_OK")
+assert_allowed "platform: green run named in the Platform check section allows" "$out"
+
+# P5. DENY: red run with no 'Already failing on main:' line.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 failure" FAKE_BODY="$P_BODY_OK")
+denied "$out" && reason "$out" | grep -q 'Already failing on main:' \
+  && ok "platform: red run without an already-failing-on-main line denies" \
+  || bad "platform: red run without an already-failing-on-main line denies" "$out"
+
+# P6. ALLOW: red run explained as already failing on main.
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUN="777 failure" \
+  FAKE_BODY=$'## Platform check\nE2E run 777: iOS onboarding failed.\nAlready failing on main: complete-onboarding (nightly 41288476343)\n')
+assert_allowed "platform: red run explained as already failing on main allows" "$out"
+
+# P7. DENY: the run list cannot be read (fail-closed).
+out=$(mcp_payload 938 | run FAKE_PR_DIFF="$P_DIFF" FAKE_RUNS_FAIL=1)
+denied "$out" && reason "$out" | grep -q 'could not read its E2E runs' \
+  && ok "platform: unreadable run list denies" || bad "platform: unreadable run list denies" "$out"
+
+# P8. DENY: the full diff cannot be read (fail-closed, not 'not in scope').
+out=$(mcp_payload 938 | run FAKE_PR_DIFF_FAIL=1)
+denied "$out" && reason "$out" | grep -q 'diff for the real-platform check' \
+  && ok "platform: unreadable diff denies" || bad "platform: unreadable diff denies" "$out"
+
+# P8b. DENY: gh exits 0 but prints no diff. Empty input is "could not read", never "not in scope"
+#      (the callers once piped through printf '%s\n', which turned empty into one blank line).
+out=$(mcp_payload 938 | run FAKE_PR_DIFF_EMPTY=1)
+denied "$out" && reason "$out" | grep -q 'scope check could not read' \
+  && ok "platform: an empty diff from a successful gh denies" || bad "platform: an empty diff from a successful gh denies" "$out"
+
+# P9. ALLOW CONTROL: the same PR without an upload change never looks up runs.
+: > "$GH_LOG"
+out=$(mcp_payload 938 | run FAKE_RUN="" FAKE_BODY="")
+assert_allowed "platform: out-of-scope PR is not asked for an E2E run" "$out"
+grep -q 'actions/workflows' "$GH_LOG" \
+  && bad "platform: out-of-scope PR makes no run lookup" "$(cat "$GH_LOG")" \
+  || ok "platform: out-of-scope PR makes no run lookup"
+
+# P10. DENY: the check runs BEFORE stage 2's allowlist early allow — a docs-path PR whose diff is
+#      in scope (a native folder) still needs the run.
+out=$(mcp_payload 938 | run FAKE_FILES="$FILES_SAFE" \
+  FAKE_PR_DIFF=$'diff --git a/patches/x.patch b/patches/x.patch' FAKE_RUN="")
+denied "$out" && reason "$out" | grep -q 'native patches/x.patch' \
+  && ok "platform: check runs before the allowlist early allow" \
+  || bad "platform: check runs before the allowlist early allow" "$out"
+clear_stamps
 
 # ── Fail-closed on tooling ───────────────────────────────────────────────────
 
@@ -1325,7 +1468,7 @@ denied "$out" && ok "denies identically from a foreign cwd" || bad "denies ident
 #     alone proves nothing. Only a hook that anchored itself to the project root allows.
 export FAKE_FILES="$FILES_SAFE"
 out=$( cd / && bash_payload "gh pr merge 938 --auto" | run )
-assert_allowed "allows identically from a foreign cwd" "$out"
+assert_exempt "allows identically from a foreign cwd" "$out" "--paths-only"
 unset FAKE_PIN_PWD
 
 # ── Missing jq: a BLOCKING guard must fail CLOSED ────────────────────────────
@@ -1632,7 +1775,10 @@ unset _mrgcloser_hits _mrgcloser_prose
 # blank flipped main-DENY -> head-ALLOW, 2 controls, and the anchor's cost pinned KNOWN-WRONG.
 # 199 -> 201 (2026-09-22, advisory verdict): +2 = advisory allows (9a) and its unknown-verdict control (9b).
 # 201 -> 202 (2026-09-22, review round 1): +1, case 7 asserts the advisory literal survives the deny string.
-EXPECTED_TOTAL=202
+# 202 -> 207 (2026-11-01, code-reviewer record required): +5 rows (9c-1, 9c-2, 9c-2b, 9c-3, 9c-4).
+# 207 -> 219 (2026-11-01, harness N6 real-platform check): +12 = rows P1-P10 and P8b (P9 asserts twice).
+# 219 -> 220 (2026-11-01, harness N8 exemption note): +1 = stage 1's exemption names the todo/* route.
+EXPECTED_TOTAL=220
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

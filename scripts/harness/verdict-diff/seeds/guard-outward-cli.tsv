@@ -1,0 +1,19 @@
+# Seeds for guard-outward-cli.sh. <expect><TAB><cwd><TAB><command>. expect T = must deny, N = must not.
+# \n in a command is a newline. Every T row must deny at head, unvaried (the run's positive control).
+# Nothing here is ever executed: each command reaches the hook as a JSON string. The python3/node
+# heredoc bodies are bare shell lines on purpose: harmless while the interpreter is python3/node,
+# outward once a variation redefines it (the #1545 → #1548 regression).
+T	MAIN	eas update --branch production --message x
+T	MAIN	railway up
+T	MAIN	npm publish
+T	MAIN	gh pr merge 12 --squash
+T	MAIN	eas submit -p ios
+T	MAIN	gh release create v1
+T	MAIN	bash <<'EOF'\neas update --branch production\nEOF
+N	MAIN	python3 <<'EOF'\neas update --branch production\nEOF
+N	MAIN	node <<'EOF'\nrailway up\nEOF
+N	MAIN	eas --help
+N	MAIN	gh pr view 12
+N	MAIN	gh pr list
+N	MAIN	npm run build
+N	MAIN	git push

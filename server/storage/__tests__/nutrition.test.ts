@@ -24,6 +24,7 @@ import {
   favouriteScannedItems,
   mealPlanItems,
   mealPlanRecipes,
+  users,
 } from "@shared/schema";
 
 vi.mock("../../db", () => ({
@@ -680,6 +681,23 @@ describe("nutrition storage", () => {
   });
 
   describe("getDailyScanCount", () => {
+    it("buckets in the user's STORED timezone, not UTC", async () => {
+      await getTestTx()
+        .update(users)
+        .set({ timezone: "Pacific/Kiritimati" })
+        .where(eq(users.id, testUser.id));
+      const { getDayBounds } = await import("../helpers");
+      const { startOfDay } = getDayBounds(new Date(), "Pacific/Kiritimati");
+      // One minute before local midnight = yesterday there, whatever the UTC date.
+      await insertScannedItem(testUser.id, {
+        scannedAt: new Date(startOfDay.getTime() - 60 * 1000),
+      });
+      await insertScannedItem(testUser.id, {
+        scannedAt: new Date(startOfDay.getTime() + 60 * 1000),
+      });
+      expect(await getDailyScanCount(testUser.id, new Date())).toBe(1);
+    });
+
     it("counts scanned items for the given user and date", async () => {
       await insertScannedItem(testUser.id);
       await insertScannedItem(testUser.id);
@@ -1050,6 +1068,33 @@ describe("nutrition storage", () => {
       expect(log.mealType).toBeNull();
     });
 
+    it("stamps scannedAt and loggedAt with occurredAt when given (R28: offline replay keeps the meal's time)", async () => {
+      const occurredAt = new Date("2026-10-29T23:50:00.000Z");
+      const item = await createScannedItemWithLog(
+        {
+          userId: testUser.id,
+          productName: "Late Snack",
+          barcode: "444555",
+          calories: "200",
+          protein: "5",
+          carbs: "30",
+          fat: "7",
+          servingSize: "1 bar",
+          sourceType: "barcode",
+        },
+        { occurredAt },
+      );
+
+      expect(item.scannedAt.toISOString()).toBe(occurredAt.toISOString());
+      const t = getTestTx();
+      const [log] = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.scannedItemId, item.id));
+      expect(log.loggedAt.toISOString()).toBe(occurredAt.toISOString());
+      expect(log.source).toBe("scan");
+    });
+
     it("applies logOverrides for source and mealType", async () => {
       const item = await createScannedItemWithLog(
         {
@@ -1342,6 +1387,41 @@ describe("nutrition storage", () => {
 
       expect(result).toHaveLength(5);
       expect(result[0]).toEqual({ name: "Food 6", timesLogged: 9 });
+    });
+  });
+  describe("scanned_items non-negative CHECKs", () => {
+    // calories/protein/carbs/fat had `>= 0` CHECKs; fiber/sugar/sodium did not
+    // (audit 2026-10-29 L-data-9, migration 0036).
+    it.each(["fiber", "sugar", "sodium"] as const)(
+      "rejects a negative %s",
+      async (column) => {
+        await expect(
+          // A savepoint, so the rejected insert does not abort the test tx.
+          tx.transaction(async (inner) =>
+            inner.insert(scannedItems).values({
+              userId: testUser.id,
+              productName: "Negative test",
+              [column]: "-1",
+            }),
+          ),
+        ).rejects.toMatchObject({
+          cause: { constraint: `scanned_items_${column}_gte0` },
+        });
+      },
+    );
+
+    it("still accepts null and zero", async () => {
+      const [row] = await tx
+        .insert(scannedItems)
+        .values({
+          userId: testUser.id,
+          productName: "Zero test",
+          fiber: "0",
+          sugar: null,
+        })
+        .returning();
+      expect(row.fiber).toBe("0.00");
+      expect(row.sugar).toBeNull();
     });
   });
 });

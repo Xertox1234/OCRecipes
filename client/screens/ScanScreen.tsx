@@ -90,6 +90,7 @@ import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import { parseFrontLabelFromOCR } from "@/lib/front-label-ocr-parser";
 import { pickTopSafetyFlag } from "@shared/types/scan-flags";
 import type { ScanFlag } from "@shared/types/scan-flags";
+import { useMarkFeatureUsed } from "@/hooks/useFeatureTip";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
 
@@ -104,6 +105,8 @@ const EMPTY_FRONT_LABEL: FrontLabelExtractionResult = {
 };
 
 export default function ScanScreen() {
+  // Opening this screen counts as using the feature, so its tips stop.
+  useMarkFeatureUsed("scan");
   const navigation = useNavigation<ScanScreenNavigationProp>();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();

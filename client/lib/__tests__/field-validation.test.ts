@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { RefObject } from "react";
-import type { TextInput as RNTextInput } from "react-native";
+import type { TextInputInstance } from "react-native";
 
 import { shouldShowError, focusFirstInvalid } from "../field-validation";
 
@@ -8,7 +8,9 @@ function fakeField(valid: boolean) {
   const focus = vi.fn();
   return {
     markSubmitted: vi.fn(() => valid),
-    ref: { current: { focus } } as unknown as RefObject<RNTextInput | null>,
+    ref: {
+      current: { focus },
+    } as unknown as RefObject<TextInputInstance | null>,
     focus,
   };
 }

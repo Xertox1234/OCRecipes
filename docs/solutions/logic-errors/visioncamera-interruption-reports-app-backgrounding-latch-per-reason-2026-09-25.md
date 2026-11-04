@@ -7,6 +7,7 @@ module: camera
 applies_to: ["client/camera/components/CameraView*.tsx"]
 symptoms: ["Sentry fills with 'Camera session interrupted (video-device-not-available-in-background)' from normal use", "A real interruption (system pressure, device in use) never reaches Sentry after the user once pressed Home mid-scan"]
 created: 2026-09-25
+last_updated: 2026-11-01
 severity: medium
 ---
 
@@ -26,8 +27,8 @@ Two defects compound:
 
 - Skip `video-device-not-available-in-background` entirely. The end callback carries no reason, so pair ends with REPORTED starts: set an "awaiting end" flag when a start is reported and report the end only while it is set. Do not key the end on "was the last start the background one": AVFoundation can post a second, changed-reason notification mid-episode, so real → background → end would drop the real episode's end.
 - Latch **per reason** (`useRef(new Set<string>())`), not one boolean for the whole callback.
-- Android is different: CameraX only raises this path for a `RECOVERABLE` `CameraState.ErrorType` and always reports `unknown`, so one latch is fine there.
-- The iOS tests pin the forwarded payload (`toHaveBeenCalledWith`), not just the call count. A count-only assertion stays green if a refactor drops the error that made it into Sentry. (The Android file still pins only the end message.)
+- Android is different: CameraX only raises this path for a `RECOVERABLE` `CameraState.ErrorType` and always reports `unknown`, so one latch was enough there. Since 2026-11-01 Android mirrors iOS anyway (background skip, per-reason latch, end paired with a reported start): it costs nothing and a library version that forwards real reasons cannot reintroduce the hiding bug.
+- The iOS tests pin the forwarded payload (`toHaveBeenCalledWith`), not just the call count. A count-only assertion stays green if a refactor drops the error that made it into Sentry. (The Android test file now pins the same payloads.)
 
 ## Prevention
 

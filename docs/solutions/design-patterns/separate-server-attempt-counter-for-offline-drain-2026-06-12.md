@@ -6,7 +6,7 @@ module: client
 tags: [client-state, offline-queue, retry, error-classification, network-errors, TypeError]
 applies_to: [client/lib/offline-queue-drain.ts, client/lib/**/*.ts]
 created: '2026-06-12'
-last_updated: '2026-06-20'
+last_updated: '2026-10-30'
 ---
 
 # Separate server-attempt counter to isolate network errors from eviction budget in offline drain
@@ -21,7 +21,7 @@ The pre-request `incrementAttempts` pattern correctly increments `attempts` befo
 
 - **`TypeError: Network request failed`** — the device is still offline; the item was never actually sent to the server. These should not count against the eviction budget.
 - **5xx server errors** — a real server-side failure; these should consume the budget.
-- **4xx errors** — permanent failure; evict immediately.
+- **4xx errors** — permanent failure; evict immediately. **Superseded 2026-10-30:** only a *permanent* 4xx evicts; 401/408/425/429 halt the drain and keep the item, and an exhausted 5xx budget defers (keeps) the item until the 24h TTL — see [offline-drain-evicts-on-transient-status-and-head-of-line-blocks-2026-10-30.md](../logic-errors/offline-drain-evicts-on-transient-status-and-head-of-line-blocks-2026-10-30.md). The `is4xx || svrCount >= MAX_ATTEMPTS` eviction in the examples below is the pre-2026-10-30 shape; the separate-counter rule itself still holds.
 
 If the eviction check is `current.attempts >= MAX_ATTEMPTS`, a user on a flappy connection can lose a queued food-log entry after 4 offline reconnect attempts that never reached the server.
 
@@ -98,3 +98,4 @@ if (!current) {
 - [retry-delay-array-index-underflow-zero-attempts-2026-06-12.md](../logic-errors/retry-delay-array-index-underflow-zero-attempts-2026-06-12.md) — companion bug: `Math.max(0, attempts - 1)` index guard for the same drain loop
 - [offline-drain-wiring-avoid-circular-import-2026-06-12.md](../conventions/offline-drain-wiring-avoid-circular-import-2026-06-12.md) — wiring `drainQueue` at App.tsx entry point
 - [vitest-resetmodules-instanceof-stale-class-identity-2026-06-20.md](../conventions/vitest-resetmodules-instanceof-stale-class-identity-2026-06-20.md) — the test-side `instanceof ApiError` class-identity trap exposed by branching the drain on `ApiError.status`
+- [offline-drain-evicts-on-transient-status-and-head-of-line-blocks-2026-10-30.md](../logic-errors/offline-drain-evicts-on-transient-status-and-head-of-line-blocks-2026-10-30.md) — the current status classification (transient 4xx halt, 5xx defer, poison-item skip)

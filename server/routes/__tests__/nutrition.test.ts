@@ -4,7 +4,10 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { lookupNutrition } from "../../services/nutrition-lookup";
-import { lookupBarcode } from "../../services/barcode-lookup";
+import {
+  lookupBarcode,
+  UpstreamUnavailableError,
+} from "../../services/barcode-lookup";
 import type { BarcodeLookupResult } from "../../services/barcode-lookup";
 import { register } from "../nutrition";
 import {
@@ -318,6 +321,19 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe("NOT_FOUND");
+    });
+
+    it("returns a retryable 503 (not 404) when every upstream source errored", async () => {
+      vi.mocked(lookupBarcode).mockRejectedValue(
+        new UpstreamUnavailableError(),
+      );
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/9999999999")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
     });
   });
 
@@ -797,6 +813,53 @@ describe("Nutrition Routes", () => {
       );
     });
 
+    describe("X-Queued-At (R28: an offline-queued log keeps its time)", () => {
+      const NOW = new Date("2026-10-30T09:00:00.000Z");
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(NOW);
+        vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+          mockScannedItem,
+        );
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      const post = (queuedAt?: string) => {
+        const req = request(app)
+          .post("/api/scanned-items")
+          .set("Authorization", "Bearer token");
+        if (queuedAt !== undefined) req.set("X-Queued-At", queuedAt);
+        return req.send({ productName: "Late Snack", calories: 200 });
+      };
+
+      it("stamps the log with a recent queued-at time (replayed the next morning)", async () => {
+        const res = await post("2026-10-29T23:50:00.000Z");
+        expect(res.status).toBe(201);
+        expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+          expect.objectContaining({ productName: "Late Snack" }),
+          { occurredAt: new Date("2026-10-29T23:50:00.000Z") },
+        );
+      });
+
+      it.each([
+        ["in the future", "2026-10-30T10:00:00.000Z"],
+        ["older than the replay window", "2026-10-27T09:00:00.000Z"],
+        ["not a date", "yesterday-ish"],
+        ["absent", undefined],
+      ])(
+        "ignores a queued-at %s and stamps server time",
+        async (_label, queuedAt) => {
+          const res = await post(queuedAt);
+          expect(res.status).toBe(201);
+          expect(
+            vi.mocked(storage.createScannedItemWithLog).mock.calls[0],
+          ).toHaveLength(1);
+        },
+      );
+    });
+
     it("returns 400 when Zod validation fails", async () => {
       const res = await request(app)
         .post("/api/scanned-items")
@@ -1124,6 +1187,36 @@ describe("Nutrition Routes", () => {
   });
 
   describe("POST /api/nutrition/barcode/:code (label override)", () => {
+    const labelBody = {
+      labelNutrition: {
+        calories: 150,
+        totalSugars: 39,
+        totalFat: 0,
+        saturatedFat: null,
+        servingSize: "355 mL",
+      },
+    };
+
+    it("returns 404 on a genuine miss", async () => {
+      mockLookup.mockResolvedValue(null);
+      const res = await authedPost(
+        "/api/nutrition/barcode/06772408",
+        labelBody,
+      );
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("NOT_FOUND");
+    });
+
+    it("returns a retryable 503 when every upstream source errored", async () => {
+      mockLookup.mockRejectedValue(new UpstreamUnavailableError());
+      const res = await authedPost(
+        "/api/nutrition/barcode/06772408",
+        labelBody,
+      );
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
+    });
+
     it("returns a conflict with a label result whose flags include High-in-Sugar", async () => {
       mockLookup.mockResolvedValue(cherryCokeDbResult()); // per-100 11.11 kcal / 3.09 sugar, nova 4, en:colas
       const res = await authedPost("/api/nutrition/barcode/06772408", {

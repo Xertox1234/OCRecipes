@@ -26,6 +26,7 @@ import * as community from "./community";
 import * as menu from "./menu";
 import * as receipt from "./receipt";
 import * as cookbooksStorage from "./cookbooks";
+import * as coverCandidates from "./cookbook-cover-candidates";
 import * as favouriteRecipesStorage from "./favourite-recipes";
 import * as verification from "./verification";
 import * as apiKeysStorage from "./api-keys";
@@ -39,6 +40,7 @@ import * as recipeFromChat from "./recipe-from-chat";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
 import * as notificationSendsStorage from "./notification-sends";
+import * as schedulerRunsStorage from "./scheduler-runs";
 import * as canonicalRecipesStorage from "./canonical-recipes";
 import * as tastePicksStorage from "./taste-picks";
 import * as recipeTriesStorage from "./recipe-tries";
@@ -122,6 +124,7 @@ export const storage = {
   filterUnreferencedImageUrls: accountImages.filterUnreferencedImageUrls,
   createUser: users.createUser,
   updateUser: users.updateUser,
+  setUserTimezoneIfUnset: users.setUserTimezoneIfUnset,
   updateUserEmail: users.updateUserEmail,
   stagePendingEmail: users.stagePendingEmail,
   applyEmailVerification: users.applyEmailVerification,
@@ -198,9 +201,7 @@ export const storage = {
   // Pantry
   getPantryItems: pantry.getPantryItems,
   getPantryItem: pantry.getPantryItem,
-  getPantryItemCount: pantry.getPantryItemCount,
-  createPantryItem: pantry.createPantryItem,
-  createPantryItems: pantry.createPantryItems,
+  createPantryItemsUnderCap: pantry.createPantryItemsUnderCap,
   addGroceryItemToPantryAtomically: pantry.addGroceryItemToPantryAtomically,
   updatePantryItem: pantry.updatePantryItem,
   deletePantryItem: pantry.deletePantryItem,
@@ -262,6 +263,7 @@ export const storage = {
   logRecipeGeneration: community.logRecipeGeneration,
   logRecipeGenerationWithLimitCheck:
     community.logRecipeGenerationWithLimitCheck,
+  claimDailyAiCall: community.claimDailyAiCall,
   getCommunityRecipes: community.getCommunityRecipes,
   createCommunityRecipe: community.createCommunityRecipe,
   createRecipeWithLimitCheck: community.createRecipeWithLimitCheck,
@@ -297,6 +299,9 @@ export const storage = {
   removeRecipeFromCookbook: cookbooksStorage.removeRecipeFromCookbook,
   getCookbookRecipes: cookbooksStorage.getCookbookRecipes,
   getResolvedCookbookRecipes: cookbooksStorage.getResolvedCookbookRecipes,
+  storeCoverCandidateSet: coverCandidates.storeCoverCandidateSet,
+  claimCoverCandidate: coverCandidates.claimCoverCandidate,
+  countCoverSetsSince: coverCandidates.countCoverSetsSince,
 
   // Favourite recipes
   toggleFavouriteRecipe: favouriteRecipesStorage.toggleFavouriteRecipe,
@@ -390,6 +395,9 @@ export const storage = {
   // Notification governance ledger
   recordNotificationSend: notificationSendsStorage.recordNotificationSend,
   getLastNotificationSend: notificationSendsStorage.getLastNotificationSend,
+
+  // Scheduler run claims (multi-instance cron dedup)
+  claimSchedulerRun: schedulerRunsStorage.claimSchedulerRun,
 
   // Pending reminders
   createPendingReminder: remindersStorage.createPendingReminder,

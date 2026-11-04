@@ -10,6 +10,11 @@ const GENERIC_PARSE_MESSAGE = "Failed to parse food text. Please try again.";
 const QUICK_LOG_PREMIUM_MESSAGE =
   "Quick Log is a premium feature. Upgrade to log food by text or voice.";
 
+const mockNoteLoggedItems = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/hooks/useCameraTeachingToast", () => ({
+  useCameraTeachingToast: () => mockNoteLoggedItems,
+}));
+
 const { mockApiRequest, mockTokenStorage, mockEnqueue, mockKeyboardDismiss } =
   vi.hoisted(() => ({
     mockApiRequest: vi.fn(),
@@ -1309,5 +1314,56 @@ describe("useQuickLogSession", () => {
 
     act(() => result.current.reset());
     expect(result.current.capWarning).toBeNull();
+  });
+
+  describe("camera teaching", () => {
+    async function parseTyped(result: {
+      current: ReturnType<typeof useQuickLogSession>;
+    }) {
+      mockApiRequest.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "eggs",
+                quantity: 2,
+                unit: "large",
+                calories: 143,
+                protein: 12,
+                carbs: 1,
+                fat: 10,
+                servingSize: null,
+              },
+            ],
+          }),
+      });
+      act(() => result.current.setInputText("2 eggs"));
+      act(() => result.current.handleTextSubmit());
+      await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+    }
+
+    beforeEach(() => mockNoteLoggedItems.mockClear());
+
+    it("counts only successful or queued typed logs", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+      await parseTyped(result);
+
+      mockApiRequest.mockRejectedValueOnce(new Error("server down"));
+      act(() => result.current.submitLog());
+      await waitFor(() => expect(result.current.submitError).not.toBeNull());
+      expect(mockNoteLoggedItems).not.toHaveBeenCalled();
+
+      mockApiRequest.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 1 }),
+      });
+      act(() => result.current.submitLog());
+      await waitFor(() => expect(mockNoteLoggedItems).toHaveBeenCalledTimes(1));
+      expect(mockNoteLoggedItems).toHaveBeenCalledWith([
+        expect.objectContaining({ name: "eggs", sourceType: "text" }),
+      ]);
+    });
   });
 });

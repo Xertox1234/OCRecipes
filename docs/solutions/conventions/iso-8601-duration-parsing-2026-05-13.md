@@ -6,6 +6,7 @@ module: server
 tags: [api, parsing, duration, iso-8601, recipe-import]
 applies_to: [server/services/**/*.ts]
 created: '2026-05-13'
+last_updated: '2026-10-30'
 ---
 
 # ISO 8601 duration parsing — null for missing/invalid
@@ -29,12 +30,14 @@ Internal data that already stores durations as numbers.
 
 export function parseIsoDuration(duration: string | undefined): number | null {
   if (!duration) return null;
-  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  const match = duration.trim().match(ISO_DURATION_RE);
   if (!match) return null;
-  const hours = parseInt(match[1] || "0", 10);
-  const minutes = parseInt(match[2] || "0", 10);
-  return hours * 60 + minutes;
+  const [, d, h, m, sec] = match;
+  if (!d && !h && !m && !sec) return null; // bare "P" / "PT"
+  const n = (v: string | undefined) => (v ? parseFloat(v.replace(",", ".")) : 0);
+  return Math.round(n(d) * 1440 + n(h) * 60 + n(m) + n(sec) / 60);
 }
+// ISO_DURATION_RE = /^P(?:(\d+(?:[.,]\d+)?)D)?(?:T(?=\d)(?:(\d+(?:[.,]\d+)?)H)?(?:(\d+(?:[.,]\d+)?)M)?(?:(\d+(?:[.,]\d+)?)S)?)?$/i
 
 // Usage
 parseIsoDuration("PT1H30M"); // → 90
@@ -42,12 +45,16 @@ parseIsoDuration("PT15M"); // → 15
 parseIsoDuration("PT2H"); // → 120
 parseIsoDuration(undefined); // → null
 parseIsoDuration("invalid"); // → null
+parseIsoDuration("P0DT30M"); // → 30   (day part, common in real markup)
+parseIsoDuration("PT1.5H"); // → 90   (decimal, "." or ",")
 ```
 
 ## Key details
 
 - Case-insensitive (`/i` flag) to handle mixed-case from external sources
-- Seconds component is parsed but not added to the result (recipes don't need second-level precision)
+- A `P…D` day part and decimal components (`.` or `,`) are valid ISO 8601 and appear in real recipe markup. A `PT`-only regex returned `null` for `P0DT30M`, and the time was silently lost (2026-10-30 audit R37).
+- Seconds are rounded into minutes. A bare `P`/`PT` (no components) returns `null`.
+- When both `prepTime` and `cookTime` are missing, fill `cookTimeMinutes` from `totalTime`. Many sites publish only `totalTime`.
 - Returns `null` (not 0 or throws) for graceful handling in optional fields
 
 ## Related Files

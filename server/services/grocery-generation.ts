@@ -4,6 +4,7 @@ import {
   type AllergenMatch,
   type AllergySeverity,
 } from "@shared/constants/allergens";
+import { normalizeQuantityToDecimal } from "@shared/lib/quantity";
 
 export const GROCERY_CATEGORIES = [
   "produce",
@@ -245,6 +246,61 @@ export function categorizeIngredient(name: string): GroceryCategory {
   return (bestMatch?.category as GroceryCategory) ?? "other";
 }
 
+/** Round to 2 decimals so float sums (0.1 + 0.2) don't persist as 0.30000000000000004. */
+export function roundQuantity(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+const RANGE_RE = /^(.+?)\s*(?:-|–|—|\bto\b)\s*(.+)$/i;
+/** "1-1/2" is a hyphenated mixed number (1½), not the range 1 to ½. */
+const HYPHEN_MIXED_RE = /^(\d+)-(\d+\/\d+)(?=\s|$)/;
+const FRACTION_GLYPHS = "½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞";
+/** Leading numeric token: mixed number, digit+glyph, fraction, decimal, or glyph. */
+const LEADING_QTY_RE = new RegExp(
+  `^(\\d+\\s+\\d+\\/\\d+|\\d+\\s*[${FRACTION_GLYPHS}]|\\d+\\/\\d+|\\d+(?:\\.\\d+)?|[${FRACTION_GLYPHS}])(?![\\d/.])`,
+);
+
+/** Parse a quantity that may carry trailing text ("1/2 cup" → 0.5). */
+function parseLeadingQuantity(raw: string): number | null {
+  const trimmed = raw.trim();
+  const whole = normalizeQuantityToDecimal(trimmed);
+  if (whole !== null) return Number(whole);
+  const token = trimmed.match(LEADING_QTY_RE);
+  if (!token) return null;
+  const normalized = normalizeQuantityToDecimal(token[1]);
+  return normalized !== null ? Number(normalized) : null;
+}
+
+/**
+ * Parse an ingredient quantity string to a number for summing. Handles
+ * integers, decimals, fractions ("1/2"), mixed numbers ("1 1/2", "1-1/2") and
+ * unicode glyphs via normalizeQuantityToDecimal; a range ("1-2", "2 to 3")
+ * takes its upper end so the grocery list never under-buys. Trailing text after
+ * the leading quantity is ignored ("1/2 cup" → 0.5, "2-3 cloves" → 3).
+ * Negative or non-numeric input returns null.
+ * (Bare parseFloat read "1/2" as 1 and "1-2" as 1.)
+ */
+export function parseQuantityForSum(
+  raw: string | null | undefined,
+): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const text = trimmed.replace(HYPHEN_MIXED_RE, "$1 $2");
+  const single = parseLeadingQuantity(text);
+
+  const range = text.match(RANGE_RE);
+  if (range) {
+    const lo = parseLeadingQuantity(range[1]);
+    const hi = parseLeadingQuantity(range[2]);
+    if (lo !== null && hi !== null) return Math.max(lo, hi);
+  }
+
+  // A leading "-" never matches LEADING_QTY_RE, so negatives yield null.
+  return single;
+}
+
 /**
  * Aggregate recipe ingredients into a grocery list, merging duplicates.
  * Pure function, no DB access.
@@ -264,12 +320,11 @@ export function generateGroceryItems(
     const key = `${normalized}|${unit || ""}`;
 
     const existing = grouped.get(key);
-    const raw = ing.quantity ? parseFloat(ing.quantity) : null;
-    const qty = raw !== null && !isNaN(raw) ? raw : null;
+    const qty = parseQuantityForSum(ing.quantity);
 
     if (existing) {
       if (existing.quantity !== null && qty !== null) {
-        existing.quantity += qty;
+        existing.quantity = roundQuantity(existing.quantity + qty);
       } else if (qty !== null) {
         existing.quantity = qty;
       }

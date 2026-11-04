@@ -17,6 +17,8 @@ interface BatchConfirmResponse {
   success: boolean;
   destination: BatchDestination;
   created: number;
+  /** Pantry destination only: items left out because the pantry is full. */
+  skipped?: number;
   groceryListId?: number;
 }
 

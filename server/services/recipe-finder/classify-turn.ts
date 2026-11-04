@@ -74,7 +74,11 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
           { role: "user", content: sanitizeContextField(message, 2000) },
         ],
       },
-      { timeout: CLASSIFY_TURN_TIMEOUT_MS },
+      // The Vertex backup timed out at 6 s in the PR 3 gate (owner 2026-11-03).
+      {
+        timeout: CLASSIFY_TURN_TIMEOUT_MS,
+        backupTimeout: 2 * CLASSIFY_TURN_TIMEOUT_MS,
+      },
     );
     content = response.choices[0]?.message?.content;
   } catch (error) {

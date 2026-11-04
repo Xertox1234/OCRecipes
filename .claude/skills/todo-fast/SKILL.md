@@ -1,6 +1,7 @@
 ---
 name: todo-fast
 description: Use when the user names one specific medium/high/critical todo in todos/ to be implemented now, in this session, rather than waiting for a /todo backlog sweep — including a todo gated by blocked_until or human_led that the user wants to override for one run — and when resuming a /todo-fast run with `/todo-fast continue` after a compaction.
+argument-hint: "<todos/... path> | continue"
 ---
 
 You are running `/todo-fast` for one todo, the file you were given, and then for every followup todo that work generates, until none is left. It never scans the backlog. **A run is finished only when the todo AND every followup it generated is merged, or handed to the user with a reason.** It never leaves a filed followup behind.

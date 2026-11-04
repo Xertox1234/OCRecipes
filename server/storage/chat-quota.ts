@@ -10,7 +10,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, gte, lt, sql } from "drizzle-orm";
-import { getDayBounds } from "./helpers";
+import { quotaDayBounds } from "./quota-day";
 
 export type ChatTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -30,13 +30,13 @@ export const lockUser = (tx: ChatTx, userId: string) =>
  *      so deleting the row or its conversation never hands the slot back
  *   C: distinct remix conversations with a user row, created today
  * Legs A and C stay row-based, as the legacy limits always were. Day bounds
- * are UTC, as the pre-finder count always was — the paths share one bucket.
+ * are the user's stored-timezone day (`quotaDayBounds`) — the paths share one bucket.
  */
 export async function countRecipeGenerationsToday(
   tx: ChatTx,
   userId: string,
 ): Promise<number> {
-  const { startOfDay, endOfDay } = getDayBounds(new Date());
+  const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
   const today = and(
     eq(chatConversations.userId, userId),
     eq(chatMessages.role, "user"),
@@ -138,7 +138,7 @@ export async function createFinderUserMessage(
     }
 
     if (opts.coachDailyLimit !== undefined) {
-      const { startOfDay, endOfDay } = getDayBounds(new Date());
+      const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
       const [row] = await tx
         .select({ count: sql<number>`count(*)` })
         .from(chatMessages)
@@ -187,7 +187,7 @@ async function countClaimsToday(
   userId: string,
   kind: ClaimKind,
 ): Promise<number> {
-  const { startOfDay, endOfDay } = getDayBounds(new Date());
+  const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
   const [row] = await tx
     .select({ count: sql<number>`count(*)` })
     .from(recipeFinderClaims)

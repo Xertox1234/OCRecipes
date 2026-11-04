@@ -170,6 +170,15 @@ Respond with JSON: { "suggestions": [...] }`;
   } catch {
     throw new Error("AI returned invalid JSON response");
   }
-  const validated = aiResponseSchema.parse(parsed);
-  return validated.suggestions;
+  // safeParse, not parse: a ZodError would be mapped to a 400 client
+  // validation error by handleRouteError, but a schema miss is a model fault.
+  const result = aiResponseSchema.safeParse(parsed);
+  if (!result.success) {
+    log.warn(
+      { zodErrors: result.error.flatten() },
+      "meal suggestions AI output failed schema validation",
+    );
+    throw new Error("AI returned invalid meal suggestions. Please try again.");
+  }
+  return result.data.suggestions;
 }

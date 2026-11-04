@@ -3,6 +3,7 @@ import {
   normalizeIngredientName,
   categorizeIngredient,
   generateGroceryItems,
+  parseQuantityForSum,
 } from "../grocery-generation";
 import type { RecipeIngredient } from "@shared/schema";
 
@@ -158,5 +159,68 @@ describe("grocery-generation", () => {
       expect(result[1].name).toBe("apple");
       expect(result[2].name).toBe("zucchini");
     });
+  });
+});
+
+describe("quantity parsing and rounding (R36)", () => {
+  it("parses fractions, mixed numbers and unicode glyphs", () => {
+    expect(parseQuantityForSum("1/2")).toBe(0.5);
+    expect(parseQuantityForSum("1 1/2")).toBe(1.5);
+    expect(parseQuantityForSum("½")).toBe(0.5);
+    expect(parseQuantityForSum("2")).toBe(2);
+  });
+
+  it("takes the upper end of a range so the list never under-buys", () => {
+    expect(parseQuantityForSum("1-2")).toBe(2);
+    expect(parseQuantityForSum("2 to 3")).toBe(3);
+    expect(parseQuantityForSum("1/2–1")).toBe(1);
+  });
+
+  it("returns null for unparseable quantities", () => {
+    expect(parseQuantityForSum(null)).toBeNull();
+    expect(parseQuantityForSum("a pinch")).toBeNull();
+  });
+
+  it("keeps a leading number from free-form quantities", () => {
+    expect(parseQuantityForSum("2 large")).toBe(2);
+  });
+
+  it("reads a leading fraction or mixed number when followed by text", () => {
+    expect(parseQuantityForSum("1/2 cup")).toBe(0.5);
+    expect(parseQuantityForSum("3/4 lb")).toBe(0.75);
+    expect(parseQuantityForSum("1 1/2 cups")).toBe(1.5);
+    expect(parseQuantityForSum("1½ cups")).toBe(1.5);
+    expect(parseQuantityForSum("1.5 tbsp")).toBe(1.5);
+  });
+
+  it("treats a hyphenated mixed number as one quantity, not a range", () => {
+    expect(parseQuantityForSum("1-1/2")).toBe(1.5);
+    expect(parseQuantityForSum("1-1/2 cups")).toBe(1.5);
+  });
+
+  it("takes the upper end of a range followed by text", () => {
+    expect(parseQuantityForSum("2-3 cloves")).toBe(3);
+    expect(parseQuantityForSum("1/2 to 1 cup")).toBe(1);
+  });
+
+  it("rejects negative quantities", () => {
+    expect(parseQuantityForSum("-1")).toBeNull();
+  });
+
+  it("aggregates legacy fraction and range quantities correctly", () => {
+    const items = generateGroceryItems([
+      makeIngredient({ name: "milk", quantity: "1/2", unit: "cup" }),
+      makeIngredient({ name: "milk", quantity: "1-2", unit: "cup" }),
+    ]);
+    expect(items[0].quantity).toBe(2.5);
+  });
+
+  it("rounds float sums so 0.1 + 0.2 is stored as 0.3", () => {
+    const items = generateGroceryItems([
+      makeIngredient({ name: "oil", quantity: "0.1", unit: "cup" }),
+      makeIngredient({ name: "oil", quantity: "0.2", unit: "cup" }),
+    ]);
+    expect(items[0].quantity).toBe(0.3);
+    expect(items[0].quantity!.toString()).toBe("0.3");
   });
 });

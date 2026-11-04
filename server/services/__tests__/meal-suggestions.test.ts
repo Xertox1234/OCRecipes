@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   buildSuggestionCacheKey,
@@ -473,8 +474,11 @@ describe("meal-suggestions", () => {
         ),
       );
 
-      await expect(generateMealSuggestions(baseInput)).rejects.toThrow(
-        /description/,
+      const err = await generateMealSuggestions(baseInput).catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(ZodError);
+      expect(err.message).toBe(
+        "AI returned invalid meal suggestions. Please try again.",
       );
     });
 

@@ -28,22 +28,23 @@ Review Policy → One review pass per PR).
 
 ### Bypass shapes (constructed, not seen in real use)
 
-| Todo                                                                                      | Gap                                                                                                  |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow                         | Unparseable `gh pr merge` spellings are silently allowed by the merge gate                           |
-| P1-2026-09-15-a-root-flag-whose-value-is-a-bare-dash-hides-the-namespace-from-both-guards | A root flag with a bare-dash value hides the namespace from both merge guards                        |
-| P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers     | A parameter expansion in the fd slot defeats the git-safety matcher (shape 2)                        |
-| P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag                       | A brace list at flag position rebuilds a gated flag on PR merge                                      |
-| P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list     | Post-verb flag walker hand-enumerates gh flags, twice; one real flag missing                         |
-| P3-2026-09-15-brace-range-third-word-verb-unreachable                                     | Brace-range denial never reaches a third-word verb                                                   |
-| P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position                           | Endpoint check keys on path shape, not argv position                                                 |
-| P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head   | A later objection from one reviewer cannot retract its earlier clean record                          |
-| P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-…   | A delivery above 1 MiB makes guard (c) write no record (fail-closed)                                 |
-| _(no todo — #1436 confirmation review, 2026-10-13)_                                       | PR guard head pick scans the whole command: `echo --head X; gh pr create …` uses X's stamp           |
-| _(no todo — outward-CLI false-alarm work, 2026-10-23)_                                    | FIXED 2026-10-24: a quote inside one heredoc's body threw off the quote scan, hiding a later command |
-| _(no todo — worktree-contract false-alarm work, 2026-10-24)_                              | After an honored leading `cd <worktree> &&`, a shell function that changes folder hides it           |
-| _(no todo — found 2026-10-24, pre-existing)_                                              | `cp --target-directory=<main>/d x` is not read as a write into main                                  |
-| _(no todo — found 2026-10-24 by the #1552 review, pre-existing)_                          | `git log --output <main>/x` writes into main from any folder; neither layer reads it                 |
+| Todo                                                                                      | Gap                                                                                                                      |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow                         | Unparseable `gh pr merge` spellings are silently allowed by the merge gate                                               |
+| P1-2026-09-15-a-root-flag-whose-value-is-a-bare-dash-hides-the-namespace-from-both-guards | A root flag with a bare-dash value hides the namespace from both merge guards                                            |
+| P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers     | A parameter expansion in the fd slot defeats the git-safety matcher (shape 2)                                            |
+| P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag                       | A brace list at flag position rebuilds a gated flag on PR merge                                                          |
+| P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list     | Post-verb flag walker hand-enumerates gh flags, twice; one real flag missing                                             |
+| P3-2026-09-15-brace-range-third-word-verb-unreachable                                     | Brace-range denial never reaches a third-word verb                                                                       |
+| P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position                           | Endpoint check keys on path shape, not argv position                                                                     |
+| P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head   | A later objection from one reviewer cannot retract its earlier clean record                                              |
+| P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-…   | A delivery above 1 MiB makes guard (c) write no record (fail-closed)                                                     |
+| _(no todo — #1436 confirmation review, 2026-10-13)_                                       | PR guard head pick scans the whole command: `echo --head X; gh pr create …` uses X's stamp                               |
+| _(no todo — outward-CLI false-alarm work, 2026-10-23)_                                    | FIXED 2026-10-24: a quote inside one heredoc's body threw off the quote scan, hiding a later command                     |
+| _(no todo — worktree-contract false-alarm work, 2026-10-24)_                              | After an honored leading `cd <worktree> &&`, a shell function that changes folder hides it                               |
+| _(no todo — found 2026-10-24, pre-existing)_                                              | `cp --target-directory=<main>/d x` is not read as a write into main                                                      |
+| _(no todo — found 2026-10-24 by the #1552 review, pre-existing)_                          | `git log --output <main>/x` writes into main from any folder; neither layer reads it                                     |
+| _(no todo — found 2026-11-01 by verdict-diff (N7), pre-existing)_                         | git-safety's contract check is silent on wrapped or quoted git: `sudo`/`env`/`command` prefix, `{ …; }`, `\git`, `'git'` |
 
 The 2026-10-23 heredoc row, measured: `cmd_bare` (and the renderings built like it) scan a heredoc body
 as shell text, so a lone `'` in a body flips its quote state for the rest of the command. Five lines are
@@ -265,6 +266,12 @@ reboot (missing stamp root) or the hand-back delivery path is the trigger. First
 reviewer, then `ls` the stamp dir; then pipe a `merge_pull_request` payload for an open, unreviewed PR into the
 guard by hand and read its decision.
 
+**Resolved 2026-11-01 (harness diagnosis §2.3, item 8 + N8):** the allow was correct. All of #1535's files
+are on the safe-path allowlist (`todo-automerge-guard.sh --paths-only 1535` returns 0), so no record was
+needed. The guard said nothing when it exempted the PR, and that silence was misread as a miss. An exempt merge
+now prints `merge-review-guard: PR #N needs no review record — …` to both the owner and the agent. The missing
+record itself was the SubagentStop race, fixed separately on 10-29.
+
 ### HIT IN REAL USE 2026-10-23 — `code-reviewer` hand-backs write no review record; `mobile-reviewer` does (#1541)
 
 Observed, not constructed; root cause not investigated (harness frozen). Three background reviewers were
@@ -339,3 +346,12 @@ Code 2.1.312) with a readable transcript holding 0 hand-backs and `last_assistan
 and the hand-back was present 3 s later. The writer now polls for the hand-back for up to 5 s
 (`REVIEW_STAMP_HANDBACK_WAIT_SECS`, capped at 8 inside the 10 s hook timeout); cases 78-80 in
 `test-review-stamp-writer.sh` pin it.
+
+### Constructed 2026-11-01 — the real-platform scope check misreads a git-quoted path (#1678, review)
+
+`scripts/harness/platform-scope.sh` (read by `merge-review-guard.sh`'s platform check and by
+`todo-automerge-guard.sh`) takes the file path from `diff --git a/<old> b/<new>` by field. Git quotes
+a path with spaces or non-ASCII bytes (`diff --git "a/client/a b.ts" "b/client/a b.ts"`), the fields
+split inside the quotes, and an upload change in such a file reads as not in scope (reviewer measured
+rc 1). No such path exists under `client/`, `patches/`, `plugins/` or `modules/` today. First check if
+reopened: read the path from the `+++ b/…` line (or `git diff --no-prefix -z`) instead of the header.

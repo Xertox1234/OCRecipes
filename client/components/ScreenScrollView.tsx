@@ -1,5 +1,9 @@
 import React, { forwardRef } from "react";
-import { ScrollView, ScrollViewProps } from "react-native";
+import {
+  ScrollView,
+  ScrollViewProps,
+  type ScrollViewInstance,
+} from "react-native";
 
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { mergeHeaderInsetStyle } from "./screen-scroll-view-utils";
@@ -27,21 +31,22 @@ interface ScreenScrollViewProps extends ScrollViewProps {
  * (e.g. hero-image detail screens) should keep using a plain `ScrollView`
  * with their existing opt-out instead of this component.
  */
-export const ScreenScrollView = forwardRef<ScrollView, ScreenScrollViewProps>(
-  ({ contentContainerStyle, headerInsetExtra = 0, ...props }, ref) => {
-    const headerInset = useHeaderContentInset(headerInsetExtra);
+export const ScreenScrollView = forwardRef<
+  ScrollViewInstance,
+  ScreenScrollViewProps
+>(({ contentContainerStyle, headerInsetExtra = 0, ...props }, ref) => {
+  const headerInset = useHeaderContentInset(headerInsetExtra);
 
-    return (
-      <ScrollView
-        ref={ref}
-        contentContainerStyle={mergeHeaderInsetStyle(
-          headerInset,
-          contentContainerStyle,
-        )}
-        {...props}
-      />
-    );
-  },
-);
+  return (
+    <ScrollView
+      ref={ref}
+      contentContainerStyle={mergeHeaderInsetStyle(
+        headerInset,
+        contentContainerStyle,
+      )}
+      {...props}
+    />
+  );
+});
 
 ScreenScrollView.displayName = "ScreenScrollView";

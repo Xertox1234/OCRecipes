@@ -767,6 +767,43 @@ describe("verification storage", () => {
       expect(result.streak).toBe(2);
     });
 
+    it("counts the full streak when the user has >90 rows in the window (R32)", async () => {
+      // 95 verifications today (heavy scanner), inserted FIRST so they sit
+      // ahead of older days in heap order, then one per day for 4 prior days.
+      // A row-level LIMIT 90 with no ORDER BY returns only today's rows.
+      const today = new Date();
+      today.setUTCHours(12, 0, 0, 0);
+      const todayBarcodes = Array.from({ length: 95 }, () => makeBarcode());
+      await tx.insert(barcodeVerifications).values(
+        todayBarcodes.map((barcode) => ({
+          barcode,
+          verificationLevel: "unverified",
+          verificationCount: 0,
+        })),
+      );
+      await tx.insert(verificationHistory).values(
+        todayBarcodes.map((barcode) => ({
+          barcode,
+          userId: testUser.id,
+          extractedNutrition: makeNutrition(),
+          ocrConfidence: "0.95",
+          isMatch: true,
+          createdAt: today,
+        })),
+      );
+      for (let i = 1; i <= 4; i++) {
+        const day = new Date(today);
+        day.setUTCDate(today.getUTCDate() - i);
+        const b = makeBarcode();
+        await seedBarcodeVerification(b);
+        await seedHistoryOnDay(b, day);
+      }
+
+      const result = await getUserVerificationStats(testUser.id);
+      expect(result.count).toBe(99);
+      expect(result.streak).toBe(5);
+    });
+
     it("counts yesterday-only as streak=1 when today has no verification", async () => {
       const today = new Date();
       today.setUTCHours(12, 0, 0, 0);

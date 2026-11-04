@@ -6,11 +6,13 @@ import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../test/utils/render-component";
 import ReceiptReviewScreen from "../ReceiptReviewScreen";
 
-const { mockTriggerPop, mockNotification, confirmOutcome } = vi.hoisted(() => ({
-  mockTriggerPop: vi.fn(),
-  mockNotification: vi.fn(),
-  confirmOutcome: { value: "ok" as "ok" | "fail" },
-}));
+const { mockTriggerPop, mockNotification, mockToastInfo, confirmOutcome } =
+  vi.hoisted(() => ({
+    mockTriggerPop: vi.fn(),
+    mockNotification: vi.fn(),
+    mockToastInfo: vi.fn(),
+    confirmOutcome: { value: "ok" as "ok" | "fail", skipped: 0 },
+  }));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
@@ -20,6 +22,10 @@ vi.mock("@react-navigation/native", () => ({
     goBack: vi.fn(),
   }),
   useRoute: () => ({ params: { photoUris: ["file://r.jpg"] } }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: mockToastInfo }),
 }));
 
 vi.mock("@react-navigation/elements", () => ({
@@ -69,9 +75,13 @@ vi.mock("@/hooks/useReceiptScan", () => ({
   useReceiptConfirm: () => ({
     mutate: (
       _items: unknown,
-      opts: { onSuccess?: () => void; onError?: () => void },
+      opts: {
+        onSuccess?: (r: { added: number; skipped: number }) => void;
+        onError?: () => void;
+      },
     ) => {
-      if (confirmOutcome.value === "ok") opts.onSuccess?.();
+      if (confirmOutcome.value === "ok")
+        opts.onSuccess?.({ added: 1, skipped: confirmOutcome.skipped });
       else opts.onError?.();
     },
     isPending: false,
@@ -81,6 +91,7 @@ vi.mock("@/hooks/useReceiptScan", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   confirmOutcome.value = "ok";
+  confirmOutcome.skipped = 0;
 });
 
 // Adding the receipt to the pantry swaps in a success view. Its check icon
@@ -102,6 +113,30 @@ describe("ReceiptReviewScreen — pantry add success", () => {
       Haptics.NotificationFeedbackType.Success,
     );
     announceSpy.mockRestore();
+  });
+
+  it("tells the user how many items were left out when the pantry is full", async () => {
+    confirmOutcome.skipped = 3;
+    renderComponent(<ReceiptReviewScreen />);
+
+    fireEvent.click(await screen.findByLabelText("Add 1 items to pantry"));
+
+    await waitFor(() => {
+      expect(mockToastInfo).toHaveBeenCalledWith(
+        "Pantry full: 3 items weren't added",
+      );
+    });
+  });
+
+  it("shows no pantry-full toast when everything was added", async () => {
+    renderComponent(<ReceiptReviewScreen />);
+
+    fireEvent.click(await screen.findByLabelText("Add 1 items to pantry"));
+
+    await waitFor(() => {
+      expect(mockTriggerPop).toHaveBeenCalledOnce();
+    });
+    expect(mockToastInfo).not.toHaveBeenCalled();
   });
 
   it("a failed add does not pop", async () => {

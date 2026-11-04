@@ -75,6 +75,11 @@ export const ErrorCode = {
   SUGGESTION_EXPIRED: "SUGGESTION_EXPIRED",
   /** Another request is already turning this card into a recipe. */
   MAKING_IN_PROGRESS: "MAKING_IN_PROGRESS",
+  // Cookbook cover studio
+  /** The picked cover is gone (expired, replaced, or not this user's). */
+  COVER_CANDIDATE_EXPIRED: "COVER_CANDIDATE_EXPIRED",
+  /** The parsed request body holds more values than the server accepts. */
+  PAYLOAD_TOO_LARGE: "PAYLOAD_TOO_LARGE",
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- intentional: merging value + type

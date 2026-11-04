@@ -1,10 +1,12 @@
 // server/lib/ai-models.ts
 /**
  * One row per AI call site. `model` is the provider-prefixed id (OpenRouter's
- * form, which Vertex's OpenAI-compatible endpoint also uses). `fallback` is
- * the id for the existing OpenAI client (today's path). A row with
- * `primary: "vertex"` goes Vertex direct → OpenRouter and has NO `fallback`:
- * it never reaches OpenAI (spec 2026-10-19-vision-rows-vertex-direct §2).
+ * form, which Vertex's OpenAI-compatible endpoint also uses). Each row has
+ * exactly one backup kind, and none reaches OpenAI direct (gpt-4o/mini shut
+ * down there 2027-01-14): `vertexBackup` goes OpenRouter → Vertex direct
+ * (spec 2026-11-02-vertex-backup-route-design §3); a row with
+ * `primary: "vertex"` goes Vertex direct → OpenRouter
+ * (spec 2026-10-19-vision-rows-vertex-direct §2).
  * Moving a feature to another model = edit its row (owner approval + paired
  * eval report required).
  *
@@ -17,23 +19,51 @@ export interface AiAdapt {
   set?: Readonly<Record<string, unknown>>;
 }
 
-export interface AiFeatureConfig {
+interface AiFeatureBase {
   model: string;
-  /** OpenAI-direct model id. Absent exactly when `primary` is "vertex". */
-  fallback?: string;
   json: boolean;
   vision: boolean;
-  primary?: "vertex";
   adapt?: AiAdapt;
 }
 
-const FAST = { model: "openai/gpt-4o-mini", fallback: "gpt-4o-mini" } as const;
-const HEAVY = { model: "openai/gpt-4o", fallback: "gpt-4o" } as const;
+/** Either Vertex-first, or OpenRouter-first with the Vertex backup. */
+export type AiFeatureConfig = AiFeatureBase &
+  (
+    | { primary: "vertex"; vertexBackup?: never }
+    | {
+        primary?: never;
+        /** Vertex AI direct as the backup when OpenRouter fails. */
+        vertexBackup: { model: string; adapt?: AiAdapt };
+      }
+  );
+
+// The Vertex-direct backup for every `vertexBackup` row (owner ruling
+// 2026-11-02): Flash, not the row's own model — Vertex keeps "frontier" models'
+// prompts up to 30 days on every request; Flash's only when abuse-flagged.
+export const VERTEX_BACKUP = {
+  model: "google/gemini-3.8-flash",
+  adapt: { set: { reasoning_effort: "low" } },
+} as const;
+
+// Added to the row's token cap on the backup leg (owner 2026-11-03): Flash
+// counts thinking inside the cap and cannot switch it off ("none"/"minimal"
+// are rejected, thinking_budget 0 is ignored); one 200-cap call spent 189 on
+// it in the PR 3 gate.
+export const VERTEX_BACKUP_REASONING_HEADROOM = 1000;
+
+// Every row backs up to Vertex direct (Flash), never OpenAI (owner 2026-11-03;
+// spec 2026-11-02-vertex-backup-route-design).
+const FAST = {
+  model: "openai/gpt-4o-mini",
+  vertexBackup: VERTEX_BACKUP,
+} as const;
+const HEAVY = { model: "openai/gpt-4o", vertexBackup: VERTEX_BACKUP } as const;
 // GPT-6 Luna (owner ruling 2026-10-06, both coach chats): no temperature
-// parameter; low reasoning effort keeps chat latency and cost down.
+// parameter; low reasoning effort keeps chat latency and cost down. Backup:
+// Vertex direct (Flash) — spec 2026-11-02-vertex-backup-route-design.
 const LUNA = {
   model: "openai/gpt-6-luna",
-  fallback: "gpt-4o-mini",
+  vertexBackup: VERTEX_BACKUP,
   adapt: { drop: ["temperature"], set: { reasoning_effort: "low" } },
 } as const;
 
@@ -43,7 +73,17 @@ export const AI_FEATURES = {
   "coach-pro-chat": { ...LUNA, json: false, vision: false }, // nutrition-coach generateCoachProResponse (stream, tools)
   "coach-notebook-extract": { ...FAST, json: true, vision: false }, // notebook-extraction extractNotebookEntries
   // Recipe chat
-  "recipe-chat": { ...HEAVY, json: false, vision: false }, // recipe-chat generateRecipeChatResponse (stream)
+  // Gemini 3.8 Flash (owner-approved 2026-11-02, paired eval safety +0.96 vs
+  // gpt-4o, p50 5.9 s to the card vs Argon's 11.7 s; todo
+  // P2-2026-10-17-recipe-chat-row-model-eval-before-switch). Backup: Vertex
+  // direct (Flash) — spec 2026-11-02-vertex-backup-route-design.
+  "recipe-chat": {
+    model: "google/gemini-3.8-flash",
+    vertexBackup: VERTEX_BACKUP,
+    json: false,
+    vision: false,
+    adapt: { set: { reasoning_effort: "low" } },
+  }, // recipe-chat generateRecipeChatResponse (stream)
   "recipe-chat-image": { ...HEAVY, json: false, vision: true }, // recipe-chat analyzeImageForRecipe
   // Photo analysis (photo-analysis.ts)
   "photo-recipe": { ...HEAVY, json: true, vision: true }, // analyzeRecipePhoto
@@ -51,11 +91,11 @@ export const AI_FEATURES = {
   "photo-label": { ...HEAVY, json: true, vision: true }, // analyzeLabelPhoto
   // Gemini 3.8 Flash (owner-approved 2026-10-19, paired eval 7.76 vs gpt-4o
   // 6.90; todo P2-2026-10-18-camera-vision-features-to-gemini). Low reasoning
-  // keeps the JSON reply inside its token cap. Direct-OpenAI fallback stays
-  // gpt-4o until nearer its 2027-01-14 retirement.
+  // keeps the JSON reply inside its token cap. Backup: Vertex direct (Flash) —
+  // spec 2026-11-02-vertex-backup-route-design.
   "photo-analyze": {
     model: "google/gemini-3.8-flash",
-    fallback: "gpt-4o",
+    vertexBackup: VERTEX_BACKUP,
     json: true,
     vision: true,
     adapt: { set: { reasoning_effort: "low" } },
@@ -70,12 +110,12 @@ export const AI_FEATURES = {
   // Recipes & meals
   // Gemini 4 Argon (owner-approved 2026-10-17, paired eval +1.97 creativity vs
   // gpt-4o, 0/36 assertion failures; spec 2026-10-17-recipe-generate-argon-
-  // background-completion §1). Direct-OpenAI fallback stays gpt-4o until nearer
-  // its 2027-01-14 retirement. Gemini keeps `temperature` and OpenRouter
-  // honours `max_completion_tokens` for it, so no adapt block.
+  // background-completion §1). Backup: Vertex direct (Flash, never Argon —
+  // spec 2026-11-02-vertex-backup-route-design §1). Gemini keeps `temperature`
+  // and OpenRouter honours `max_completion_tokens` for it, so no adapt block.
   "recipe-generate": {
     model: "google/gemini-4-argon",
-    fallback: "gpt-4o",
+    vertexBackup: VERTEX_BACKUP,
     json: true,
     vision: false,
   }, // recipe-generation generateRecipeContent

@@ -66,6 +66,8 @@ describe("classifyTurn", () => {
     expect(feature).toBe("finder-classify-turn");
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(opts?.timeout).toBe(CLASSIFY_TURN_TIMEOUT_MS);
+    // Owner 2026-11-03: the Vertex backup timed out at 6 s in the PR 3 gate.
+    expect(opts?.backupTimeout).toBe(2 * CLASSIFY_TURN_TIMEOUT_MS);
   });
 });
 

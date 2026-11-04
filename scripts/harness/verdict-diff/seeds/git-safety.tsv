@@ -1,0 +1,22 @@
+# Seeds for git-safety.sh. <expect><TAB><cwd><TAB><command>. expect T = must deny, N = must not.
+# cwd MAIN, WT, RMAIN or RWT. {MAIN}/{WT}: fake paths outside temp folders, for git verbs.
+# {RMAIN}/{RWT}: a real repo + linked worktree, for write-shaped commands. Both worktrees hold a contract.
+# \n in a command is a newline. Every T row must deny at head, unvaried (the run's positive control).
+T	MAIN	git commit -m x
+T	MAIN	git mv a.ts b.ts
+T	WT	git -C {MAIN} commit -m x
+T	MAIN	git reset --hard
+T	MAIN	git checkout -- file.ts
+T	MAIN	git stash
+T	RWT	echo x > {RMAIN}/a.txt
+T	RWT	rm {RMAIN}/a.txt
+T	RWT	cp a.txt {RMAIN}/b.txt
+T	MAIN	git stash list --output {MAIN}/x
+N	MAIN	git status
+N	MAIN	git diff HEAD
+N	MAIN	git log --oneline -3
+N	MAIN	git -C {WT} commit -m x
+N	WT	git commit -m x
+N	RWT	echo x > {RWT}/notes.txt
+N	MAIN	git stash list
+N	MAIN	git stash show stash@{0}

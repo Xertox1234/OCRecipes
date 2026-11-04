@@ -42,6 +42,7 @@ import {
 } from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 import { logger } from "@/lib/logger";
 import type { CoachChatNavigationProp } from "@/types/navigation";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
@@ -51,11 +52,18 @@ export default function CoachProScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const { isLoading: isPremiumLoading } = usePremiumContext();
+  // While typing, the open dashboard plus the keyboard leave the chat input no
+  // room on a small screen (Galaxy A37: 453 + ~358 of 832 dp put it under the
+  // keyboard). The dashboard folds, and the input drops the tab-bar padding —
+  // the keyboard covers the tab bar then.
+  const keyboardVisible = useKeyboardVisible();
+  const { isPremiumResolved } = usePremiumContext();
   const isCoachPro = usePremiumFeature("coachPro");
-  // Enable context fetch when premium is confirmed OR while premium status is still loading
-  // (this screen is only mounted for Coach Pro users, so assume access while loading)
-  const contextEnabled = isCoachPro || isPremiumLoading;
+  // Enable context fetch when premium is confirmed OR while the plan is
+  // unknown — loading, or a failed check (not "loading", yet its features
+  // read free). This screen is only mounted for Coach Pro users, so assume
+  // access until the plan is known (owner ruling 2026-11-02).
+  const contextEnabled = isCoachPro || !isPremiumResolved;
   const {
     data: context,
     isLoading: isContextLoading,
@@ -238,28 +246,12 @@ export default function CoachProScreen() {
         </View>
       )}
       {context && (
-        <>
-          <View
-            style={[styles.notebookHeader, { borderBottomColor: theme.border }]}
-          >
-            <ThemedText type="h4">Coach</ThemedText>
-            <Pressable
-              onPress={() => navigation.navigate("NotebookScreen")}
-              style={[styles.notebookBtn, { borderColor: theme.border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Open notebook"
-            >
-              <Feather name="book-open" size={16} color={theme.textSecondary} />
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                Notebook
-              </ThemedText>
-            </Pressable>
-          </View>
-          <CoachDashboard
-            context={context}
-            onSuggestionPress={handleSuggestionPress}
-          />
-        </>
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={handleSuggestionPress}
+          onNotebookPress={() => navigation.navigate("NotebookScreen")}
+          forceCollapsed={keyboardVisible}
+        />
       )}
       <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
         <Pressable
@@ -383,7 +375,9 @@ export default function CoachProScreen() {
         initialMessage={pendingSuggestion}
         onInitialMessageSent={() => setPendingSuggestion(null)}
         onMessageSent={handleMessageSent}
-        inputBarStyle={{ paddingBottom: tabBarHeight }}
+        inputBarStyle={{
+          paddingBottom: keyboardVisible ? Spacing.sm : tabBarHeight,
+        }}
       />
     </View>
   );
@@ -433,21 +427,4 @@ const styles = StyleSheet.create({
   },
   pinIcon: { marginRight: 3 },
   seeAllChip: { width: 72 },
-  notebookHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  notebookBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-  },
 });

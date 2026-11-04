@@ -8,7 +8,7 @@ tags: [zod, validation, typescript, architecture, nutrition-pipeline, silent-fai
 applies_to: [server/services/**/*.ts, server/lib/**/*.ts, shared/schema.ts, shared/schemas/**/*.ts]
 symptoms: [A third-party lookup that used to return data now returns null/empty, One bad row/sibling in an upstream response drops the whole valid result, '`.default(0)` does not stop a `null` from failing `z.number()`', A wrong-typed present value (e.g. `"N/A"` string) passes `.optional()` but still rejects the parent object parse, A schema that was only ever checked for `.success` becomes load-bearing after a `result.data` reassignment, One malformed value in a newly-typed field (e.g. recipeType: "spoonacular") fails the entire enclosing array via discriminated-union superRefine]
 created: '2026-05-29'
-last_updated: '2026-09-27'
+last_updated: '2026-10-30'
 ---
 
 # A Zod ingestion schema stricter than its readers is a new silent failure
@@ -97,11 +97,13 @@ The conservative direction for a monetized/cached data path is still **drop bad 
 - Prefer per-item lenient parse + filter over whole-array `safeParse` when one bad element shouldn't disable the batch.
 - A validation fix is not done until you've confirmed it does not reject inputs the old code accepted — a too-strict guard is a silent failure wearing a safety vest.
 - **Adding a field to an existing external schema is the same trap.** #1128 added `unitName: z.string().nullish()` to the USDA nutrient schema; review showed one nutrient with `unitName: 7` would fail the whole `foods` array, where the old schema (no `unitName`) parsed it. It shipped as `.nullish().catch(undefined)`, and the reader treats a missing unit as its old default.
+- **Coerce first, then `.catch(undefined)`, for shape-variant standards (2026-10-30, R26, High).** In the URL recipe importer, a single off-spec field in schema.org Recipe LD+JSON rejected the whole import: an `image` given as an ImageObject, a numeric `recipeYield`, or `recipeInstructions` nested in HowToSection. `.catch(undefined)` on its own would stop the rejection, but it would also throw away data that is valid and only in a different legal shape. `server/services/recipe-import-schema.ts` applies `lenient(schema, coerce)` = `z.preprocess(coerce, schema.optional()).catch(undefined)` to every optional field. It unwraps ImageObject to its `url`/`contentUrl`, turns a number or QuantitativeValue `{value}` into a string, flattens `itemListElement` into steps, and filters out non-string array entries. Only the one field the consumer cannot do without (`name`) stays strict. When the source is a published spec that permits several shapes for a field, list those shapes and coerce each one before choosing what to drop.
 - **When activating a previously-inert schema** (one that was only checked for `.success` without using `result.data`), every field that was previously unlisted must be widened to a typed field with `.optional().catch(undefined)` — not just `.optional()`. Otherwise, any value (including one that is perfectly valid but from a sibling schema's enum) will fail the containing object parse, and if that object is inside a `z.array` validated by a discriminated union's `superRefine`, one bad item will silently drop all siblings.
 
 ## Related Files
 
 - `server/services/nutrition-lookup.ts` — `cnfFoodListSchema`, `cnfNutrientAmountListSchema`, `usdaFoodSchema`/`usdaUpcResponseSchema`, `offNutrimentsSchema` (added 2026-05-30)
+- `server/services/recipe-import-schema.ts` — `lenient()`, `schemaOrgRecipeSchema` (2026-10-30 R26 instance)
 - `shared/schemas/coach-blocks.ts` — `screenParamSchemas.FeaturedRecipeDetail`, `.RecipeChat`, `validateNavigateParams` (2026-08-16 instance)
 - `shared/schemas/__tests__/coach-blocks.test.ts` (2026-08-16 test)
 - Caught by the Phase 6 code-reviewer in the 2026-05-29 reliability audit (the per-fix kimi-review passed it). The 2026-08-16 instance was caught during code review of P3-2026-08-16.

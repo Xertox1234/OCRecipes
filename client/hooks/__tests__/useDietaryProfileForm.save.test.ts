@@ -66,6 +66,26 @@ describe("useDietaryProfileForm — save feedback", () => {
     expect(mockNotification).not.toHaveBeenCalled();
   });
 
+  // R48: the plain try/catch bypasses MutationCache.onError — report it.
+  it("a failed save is reported off-device", async () => {
+    const { logger } = await import("@/lib/logger");
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    try {
+      const boom = new Error("500");
+      mockApiRequest.mockRejectedValue(boom);
+      const { result } = renderForm();
+
+      await act(() => result.current.handleSave());
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        "Dietary profile save failed",
+        boom,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("a failed save keeps the inline error and Error haptic, with no toast", async () => {
     mockApiRequest.mockRejectedValue(new Error("500"));
     const { result } = renderForm();

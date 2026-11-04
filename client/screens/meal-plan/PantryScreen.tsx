@@ -6,14 +6,18 @@ import React, {
   useState,
 } from "react";
 import {
+  AccessibilityInfo,
+  ActivityIndicator,
   StyleSheet,
   View,
   Pressable,
   SectionList,
   RefreshControl,
-  type TextInput,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -30,6 +34,8 @@ import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useToast } from "@/context/ToastContext";
+import { ApiError } from "@/lib/api-error";
+import { formatPantryFullSkipped } from "@/lib/log-success";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -50,6 +56,8 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { PantryItem } from "@shared/schema";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
+import { FeatureTip } from "@/components/FeatureTip";
+import { useFeatureTip } from "@/hooks/useFeatureTip";
 
 function getExpirationBadge(expiresAt: string | Date | null) {
   if (!expiresAt) return null;
@@ -143,7 +151,27 @@ export default function PantryScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const { features } = usePremiumContext();
+  const {
+    features,
+    isPremiumResolved,
+    isPremiumStatusError,
+    refreshSubscription,
+  } = usePremiumContext();
+  // Announce a failed plan check when it appears (not on mount — the error
+  // screen's own label is read when focus lands on it). Same as
+  // ReceiptCaptureScreen.
+  const statusErrorShownRef = useRef(isPremiumStatusError);
+  useEffect(() => {
+    if (isPremiumStatusError && !statusErrorShownRef.current) {
+      AccessibilityInfo.announceForAccessibility("Couldn't check your plan.");
+    }
+    statusErrorShownRef.current = isPremiumStatusError;
+  }, [isPremiumStatusError]);
+  // Pro only: free users don't have the Scan Receipt button.
+  const receiptTip = useFeatureTip("pantry-receipt", {
+    feature: "receiptScan",
+    eligible: features.receiptScanner,
+  });
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
   const navigation =
@@ -206,7 +234,38 @@ export default function PantryScreen() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");
-  const addItemInputRef = useRef<TextInput>(null);
+  const addItemInputRef = useRef<TextInputInstance>(null);
+
+  // Voice input REPLACES the single-value field with the dictated words.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  // false once the item is added, so a late final result cannot refill the
+  // field with the item just added.
+  const voiceActiveRef = useRef(false);
+  useEffect(() => {
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      setNewItemName(transcript);
+    }
+  }, [isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceActiveRef.current = true;
+      void startListening();
+    }
+  }, [haptics, isListening, startListening, stopListening]);
 
   const {
     data: pantryItems,
@@ -222,16 +281,22 @@ export default function PantryScreen() {
     const name = newItemName.trim();
     if (!name) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    voiceActiveRef.current = false;
+    if (isListening) stopListening();
     createMutation.mutate(
       { name },
       {
         onSuccess: () => setNewItemName(""),
-        onError: () => {
-          toast.error("Couldn't add the item. Please try again.");
+        onError: (error) => {
+          if (error instanceof ApiError && error.code === "LIMIT_REACHED") {
+            toast.info(formatPantryFullSkipped(1));
+          } else {
+            toast.error("Couldn't add the item. Please try again.");
+          }
         },
       },
     );
-  }, [haptics, toast, createMutation, newItemName]);
+  }, [haptics, toast, createMutation, newItemName, isListening, stopListening]);
 
   const handleDeleteItem = useCallback(
     (id: number) => {
@@ -272,7 +337,42 @@ export default function PantryScreen() {
     }));
   }, [pantryItems]);
 
-  // Premium gate
+  // Plan unknown: features read as the free tier until the status resolves,
+  // so neither wall nor grant (owner ruling 2026-11-02). A failed check
+  // offers a retry; a pending one shows a spinner.
+  if (!isPremiumResolved) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: headerHeight + Spacing.xl,
+            backgroundColor: theme.backgroundRoot,
+          },
+        ]}
+      >
+        {isPremiumStatusError ? (
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't check your plan"
+            description="Check your connection and try again."
+            actionLabel="Try Again"
+            onAction={() => void refreshSubscription()}
+          />
+        ) : (
+          <View style={styles.emptyState}>
+            <ActivityIndicator
+              color={theme.textSecondary}
+              accessibilityLabel="Checking your plan"
+            />
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // Premium gate: only a user known to be free reaches this.
   if (!features.pantryTracking) {
     return (
       <View
@@ -438,6 +538,13 @@ export default function PantryScreen() {
                 </PressableScale>
               )}
             </View>
+            <FeatureTip
+              text="Add a whole shop from the receipt."
+              visible={receiptTip.visible}
+              onDismiss={receiptTip.dismiss}
+              pointer="up"
+              style={styles.receiptTip}
+            />
             <ThemedText
               style={[styles.itemCountText, { color: theme.textSecondary }]}
             >
@@ -490,6 +597,12 @@ export default function PantryScreen() {
               returnKeyType="done"
               onSubmitEditing={handleAddItem}
             />
+            <InlineMicButton
+              isListening={isListening}
+              volume={volume}
+              onPress={handleVoicePress}
+              disabled={createMutation.isPending}
+            />
             <PressableScale
               onPress={handleAddItem}
               disabled={!newItemName.trim() || createMutation.isPending}
@@ -516,6 +629,10 @@ export default function PantryScreen() {
 }
 
 const styles = StyleSheet.create({
+  receiptTip: {
+    alignSelf: "flex-end",
+    marginBottom: Spacing.sm,
+  },
   container: {
     flex: 1,
   },

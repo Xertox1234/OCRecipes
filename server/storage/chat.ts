@@ -7,7 +7,8 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, inArray, ilike } from "drizzle-orm";
-import { getDayBounds, escapeLike } from "./helpers";
+import { escapeLike } from "./helpers";
+import { quotaDayBounds } from "./quota-day";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { countRecipeGenerationsToday, lockUser } from "./chat-quota";
 
@@ -333,7 +334,7 @@ export async function createChatMessageWithLimitCheck(
       return null;
     }
 
-    const { startOfDay, endOfDay } = getDayBounds(new Date());
+    const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
 
     // For remix conversations, only the first user message counts against the
     // shared recipe generation quota. Subsequent messages are free refinements.

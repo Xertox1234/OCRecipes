@@ -48,6 +48,8 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { parseDecimalInput } from "@/lib/number-input";
+import { useToast } from "@/context/ToastContext";
+import { formatPantryFullSkipped } from "@/lib/log-success";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -92,6 +94,7 @@ export default function ReceiptReviewScreen() {
   const { photoUris, ocrTexts } = route.params;
   const scanMutation = useReceiptScan();
   const confirmMutation = useReceiptConfirm();
+  const toast = useToast();
 
   const [items, setItems] = useState<EditableItem[]>([]);
   // Text the person is typing in each quantity box, keyed by item id. Absent
@@ -233,11 +236,14 @@ export default function ReceiptReviewScreen() {
     }));
 
     confirmMutation.mutate(confirmItems, {
-      onSuccess: () => {
+      onSuccess: (result) => {
+        if (result.skipped && result.skipped > 0) {
+          toast.info(formatPantryFullSkipped(result.skipped));
+        }
         setShowMealPlanPrompt(true);
       },
     });
-  }, [items, haptics, confirmMutation]);
+  }, [items, haptics, confirmMutation, toast]);
 
   const renderItem = useCallback(
     ({ item }: { item: EditableItem }) => {

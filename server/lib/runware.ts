@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { logger } from "./logger";
 import { saveRecipeImage } from "./image-store";
+import { detectImageMimeType } from "./image-mime";
 import { z } from "zod";
 
 const RUNWARE_API_URL = "https://api.runware.ai/v1";
@@ -25,6 +26,8 @@ const runwareResponseSchema = z.object({
       taskType: z.string(),
       imageBase64Data: z.string().optional(),
       imageURL: z.string().optional(),
+      /** Present only when the request set `safety.checkContent`. */
+      NSFWContent: z.boolean().optional(),
     }),
   ),
 });
@@ -45,6 +48,31 @@ export interface GenerateImageOptions {
    * app-icon asset written to a `.png` path); do not default this globally.
    */
   outputFormat?: "PNG";
+  /**
+   * Ask Runware to check the image's content. A result it flags — or one
+   * that comes back without a verdict — returns null, like a failed call.
+   */
+  checkContent?: boolean;
+  /** Abort after this long. Defaults to RUNWARE_TIMEOUT_MS. */
+  timeoutMs?: number;
+}
+
+/**
+ * Decode Runware's base64 payload and verify it is a real image by magic
+ * bytes. `Buffer.from(_, "base64")` never throws, so a 200 carrying error
+ * text or truncated data would otherwise be stored as a permanently broken
+ * recipe/cookbook image; returning null lets callers fall back instead.
+ */
+function decodeImageOrNull(base64: string, op: string): Buffer | null {
+  const buffer = Buffer.from(base64, "base64");
+  if (!detectImageMimeType(buffer)) {
+    logger.error(
+      { op, bytes: buffer.length },
+      "Runware returned a payload that is not a recognised image",
+    );
+    return null;
+  }
+  return buffer;
 }
 
 /**
@@ -57,7 +85,10 @@ export async function generateImage(
   if (!apiKey) return null;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), RUNWARE_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    options.timeoutMs ?? RUNWARE_TIMEOUT_MS,
+  );
 
   try {
     const response = await fetch(RUNWARE_API_URL, {
@@ -80,6 +111,7 @@ export async function generateImage(
           ...(options.outputFormat
             ? { outputFormat: options.outputFormat }
             : {}),
+          ...(options.checkContent ? { safety: { checkContent: true } } : {}),
         },
       ]),
       signal: controller.signal,
@@ -102,14 +134,24 @@ export async function generateImage(
       );
       return null;
     }
-    const imageData = parsed.data.data[0]?.imageBase64Data;
+    const result = parsed.data.data[0];
+    const imageData = result?.imageBase64Data;
 
     if (!imageData) {
       logger.error("Runware returned no image data");
       return null;
     }
 
-    return Buffer.from(imageData, "base64");
+    // Fail closed: when a check was asked for, only an explicit `false` passes.
+    if (options.checkContent && result.NSFWContent !== false) {
+      logger.warn(
+        { flagged: result.NSFWContent ?? "missing" },
+        "Runware content check did not pass; dropping image",
+      );
+      return null;
+    }
+
+    return decodeImageOrNull(imageData, "image generation");
   } catch (error) {
     logger.error({ err: error }, "Runware image generation error");
     return null;
@@ -175,7 +217,7 @@ export async function removeBackground(
       return null;
     }
 
-    return Buffer.from(imageData, "base64");
+    return decodeImageOrNull(imageData, "background removal");
   } catch (error) {
     logger.error({ err: error }, "Runware background removal error");
     return null;

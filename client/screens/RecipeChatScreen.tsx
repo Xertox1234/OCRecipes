@@ -48,6 +48,8 @@ import {
 import { ThemedText } from "@/components/ThemedText";
 import { TypingDots } from "@/components/TypingDots";
 import { SendButton } from "@/components/SendButton";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { MarkdownText } from "@/components/MarkdownText";
 import { spokenMarkdown } from "@/components/markdown-text-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -69,10 +71,12 @@ import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMess
 import {
   finderBlockFromMessageMetadata,
   finderItemNavParams,
+  finderActionNeedsPlan,
   lockedFinderButtons,
 } from "@/components/recipe-finder/recipe-finder-utils";
 import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import type {
   FinderAction,
@@ -228,12 +232,28 @@ export default function RecipeChatScreen() {
   const isRemixMode = !!remixSourceRecipeId;
   const remixSourceRecipeTitle = route.params?.remixSourceRecipeTitle;
 
+  // linking.ts coerces a malformed `recipe-chat/:conversationId` to 0, and a
+  // negative id passes through. Malformed = present but not a positive integer
+  // (R21) — never fetched, never sent; the screen starts a new chat and says
+  // so, instead of silently looking like a link with no id. Mirrors ChatScreen.
+  const routeConversationId = route.params?.conversationId;
+  const isMalformedRouteId =
+    routeConversationId != null && !(routeConversationId > 0);
   const [conversationId, setConversationId] = useState<number | null>(
-    route.params?.conversationId ?? null,
+    isMalformedRouteId ? null : (routeConversationId ?? null),
   );
   const [inputText, setInputText] = useState("");
   const [inputFocused, setInputFocused] = useState(false);
-  const [hasStarted, setHasStarted] = useState(!!route.params?.conversationId);
+  const [hasStarted, setHasStarted] = useState(
+    !isMalformedRouteId && !!routeConversationId,
+  );
+  useEffect(() => {
+    if (isMalformedRouteId) {
+      toast.info("That chat couldn't be found. Starting a new one.");
+    }
+    // Once, for the id the screen opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
     null,
   );
@@ -450,17 +470,72 @@ export default function RecipeChatScreen() {
   // is consumed so a free user keeps their typed prompt and no empty
   // "New Recipe Chat" is created (QA sweep #59).
   const canGenerate = usePremiumFeature("recipeGeneration");
+  // Unknown plan (loading/failed): no lock banner or finder locks; a premium
+  // tap re-checks the plan instead of upselling (owner ruling 2026-11-02).
+  const { planUnknown, recheckPlan } = usePlanCheck();
   const [showUpgrade, setShowUpgrade] = useState(false);
+
+  // Voice input APPENDS to whatever was typed before the mic was tapped and
+  // never sends — the user reviews the dictation and taps Send themselves.
+  // null = no dictation in progress (a late final result must not refill).
+  const voiceBaseRef = useRef<string | null>(null);
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    const base = voiceBaseRef.current;
+    if (base !== null && transcript && (isListening || isFinal)) {
+      setInputText(
+        (base ? `${base} ${transcript}` : transcript).slice(
+          0,
+          CHAT_MESSAGE_MAX_LENGTH,
+        ),
+      );
+    }
+  }, [isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  // A reply that starts streaming locks the composer; end any capture too.
+  useEffect(() => {
+    if (isStreaming && isListening && voiceBaseRef.current !== null) {
+      stopListening();
+    }
+  }, [isStreaming, isListening, stopListening]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceBaseRef.current = inputText.trim();
+      void startListening();
+    }
+  }, [haptics, isListening, inputText, startListening, stopListening]);
 
   const handleSend = useCallback(
     async (text?: string) => {
       const content = (text || inputText).trim();
       if (!content || isStreaming) return;
+      if (planUnknown) {
+        // A prefilled (auto-sent) request isn't in the input yet — put it
+        // there so the retry is one tap, not a retype.
+        if (text) setInputText(content);
+        recheckPlan();
+        return;
+      }
       if (!canGenerate) {
         setShowUpgrade(true);
         return;
       }
 
+      voiceBaseRef.current = null;
+      if (isListening) stopListening();
       setInputText("");
       setHasStarted(true);
       setPendingUserMessage(content);
@@ -492,8 +567,12 @@ export default function RecipeChatScreen() {
     },
     [
       inputText,
+      isListening,
+      stopListening,
       isStreaming,
       canGenerate,
+      planUnknown,
+      recheckPlan,
       conversationId,
       createConversation,
       sendMessage,
@@ -505,8 +584,8 @@ export default function RecipeChatScreen() {
 
   const canSearchOnline = usePremiumFeature("catalogSave");
   const finderLocks = useMemo(
-    () => lockedFinderButtons({ canSearchOnline, canGenerate }),
-    [canSearchOnline, canGenerate],
+    () => lockedFinderButtons({ canSearchOnline, canGenerate, planUnknown }),
+    [canSearchOnline, canGenerate, planUnknown],
   );
 
   // The adjust card's choices by flowId: the card first renders in the
@@ -517,13 +596,24 @@ export default function RecipeChatScreen() {
   const handleFinderAction = useCallback(
     (action: FinderAction, label: string) => {
       if (!conversationId || isStreaming) return;
+      if (planUnknown && finderActionNeedsPlan(action.type)) {
+        recheckPlan();
+        return;
+      }
       setPendingUserMessage(label);
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       void sendMessage(label, undefined, conversationId, {
         finderAction: action,
       });
     },
-    [conversationId, isStreaming, sendMessage, haptics],
+    [
+      conversationId,
+      isStreaming,
+      planUnknown,
+      recheckPlan,
+      sendMessage,
+      haptics,
+    ],
   );
 
   const handleOpenFinderItem = useCallback(
@@ -982,11 +1072,11 @@ export default function RecipeChatScreen() {
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
           keyboardDismissMode="interactive"
           {...FLATLIST_DEFAULTS}
-          ListFooterComponent={streamingFooter}
+          ListFooterComponent={streamingFooter ?? undefined}
         />
       )}
 
-      {!canGenerate ? (
+      {!planUnknown && !canGenerate ? (
         <Pressable
           onPress={openUpgrade}
           accessibilityRole="button"
@@ -1045,6 +1135,12 @@ export default function RecipeChatScreen() {
           blurOnSubmit
           accessibilityLabel="Recipe request"
           accessibilityHint="Describe what you want to cook"
+        />
+        <InlineMicButton
+          isListening={isListening}
+          volume={volume}
+          onPress={handleVoicePress}
+          disabled={isStreaming}
         />
         <SendButton
           onPress={() => handleSend()}

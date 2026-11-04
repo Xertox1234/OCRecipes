@@ -3,6 +3,8 @@ import {
   StyleSheet,
   View,
   ScrollView,
+  type ScrollViewInstance,
+  type ViewInstance,
   Pressable,
   ActivityIndicator,
   AccessibilityInfo,
@@ -63,8 +65,8 @@ export function CoachOverlayContent({
     null,
   );
 
-  const scrollRef = useRef<ScrollView>(null);
-  const titleRef = useRef<View>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const titleRef = useRef<ViewInstance>(null);
 
   // Load disclaimer dismissal state from AsyncStorage on mount.
   // `isCoachDisclaimerDismissed()` already swallows read failures and returns

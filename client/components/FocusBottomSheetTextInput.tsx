@@ -1,6 +1,10 @@
 import React, { forwardRef } from "react";
-import { StyleSheet, type StyleProp, type TextStyle } from "react-native";
-import type { TextInput } from "react-native-gesture-handler";
+import {
+  StyleSheet,
+  type StyleProp,
+  type TextInputInstance,
+  type TextStyle,
+} from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 
 import { FocusField } from "./FocusField";
@@ -17,6 +21,7 @@ import {
 import { useFieldFocus } from "./useFieldFocus";
 
 type SheetInputProps = React.ComponentProps<typeof BottomSheetTextInput>;
+type SheetInputRef = React.Ref<React.ComponentRef<typeof BottomSheetTextInput>>;
 
 interface FocusBottomSheetTextInputProps
   extends Omit<SheetInputProps, "style"> {
@@ -42,15 +47,18 @@ interface FocusBottomSheetTextInputProps
  * stays the actual input: it tracks keyboard focus for the sheet.
  */
 export const FocusBottomSheetTextInput = forwardRef<
-  TextInput,
+  TextInputInstance,
   FocusBottomSheetTextInputProps
 >(({ style, onFocus, onBlur, focusRing = true, label, ...props }, ref) => {
   const field = useFieldFocus({ onFocus, onBlur });
+  // gorhom 5.2 still types its ref with gesture-handler 2's TextInput; under
+  // gesture-handler 3 the ref it hands back is RN's TextInputInstance.
+  const sheetRef = ref as SheetInputRef;
 
   if (!focusRing) {
     return (
       <BottomSheetTextInput
-        ref={ref}
+        ref={sheetRef}
         {...props}
         style={style}
         onFocus={onFocus}
@@ -73,7 +81,7 @@ export const FocusBottomSheetTextInput = forwardRef<
       labelLeft={labelled?.labelLeft}
     >
       <BottomSheetTextInput
-        ref={ref}
+        ref={sheetRef}
         {...props}
         placeholder={resolvePlaceholder(
           label,

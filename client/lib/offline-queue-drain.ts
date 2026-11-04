@@ -4,6 +4,7 @@ import {
   loadQueue,
   dequeue,
   incrementAttempts,
+  QUEUE_TTL_MS,
   type QueuedMutation,
 } from "@/lib/offline-queue";
 import { QUERY_KEYS } from "@/lib/query-keys";
@@ -39,13 +40,32 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Resolves to true when the item was actually synced server-side (a real write
-// happened — success, or an idempotent-DELETE 404), so the caller can invalidate
-// affected queries once after the whole drain rather than per item (L7). Returns
-// false when the item was left queued (still offline) or discarded as failed.
-async function attemptDrain(item: QueuedMutation): Promise<boolean> {
+// 4xx statuses that describe a temporary condition, not a bad request (R15):
+// 401 = session expired/refreshing (the session-expiry flow owns it), 408 =
+// request timeout, 425 = too early, 429 = rate limited (likely on a reconnect
+// that replays several items). These must never discard the user's only copy
+// of the write; the item stays queued and the drain halts until the next
+// trigger (reconnect, cold start, foreground).
+const TRANSIENT_4XX = new Set([401, 408, 425, 429]);
+
+// Outcome of one item's drain attempt:
+// - "synced": a real write happened (success, or an idempotent-DELETE 404), so
+//   the caller invalidates affected queries once after the whole drain (L7).
+// - "pending": left queued (still offline, or aborted by a re-validation gate).
+// - "discarded": permanently evicted (permanent 4xx, or failing past the TTL).
+// - "deferred": left queued after a 5xx that outlasted the in-drain backoff.
+//   One deferral alone may be a poison item (a deterministic server bug on that
+//   payload), so the caller moves on to the next item rather than blocking the
+//   queue behind it; two deferrals in a row look like a systemic outage, so the
+//   caller halts.
+// - "halt": left queued after a session- or server-wide transient 4xx
+//   (401/408/425/429); the caller stops the drain so the remaining items aren't
+//   hammered against an unhealthy server.
+type DrainOutcome = "synced" | "pending" | "discarded" | "deferred" | "halt";
+
+async function attemptDrain(item: QueuedMutation): Promise<DrainOutcome> {
   let done = false;
-  let synced = false;
+  let outcome: DrainOutcome = "pending";
   // Capture the token of the user who is draining (defense-in-depth #2). If a
   // logout + relogin straddles a backoff `wait` below, the token changes
   // underneath us; we abort rather than replay this item under the new user.
@@ -56,7 +76,7 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
     const current = loadQueue().find((i) => i.id === item.id);
     if (!current) {
       serverAttempts.delete(item.id); // item dequeued externally — clean up
-      return false;
+      return "pending";
     }
 
     const delayMs = RETRY_DELAYS_MS[Math.max(0, current.attempts - 1)] ?? 8000;
@@ -74,13 +94,18 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
     const tokenNow = await tokenStorage.get();
     if (!stillQueued || !tokenNow || tokenNow !== tokenAtStart) {
       serverAttempts.delete(item.id);
-      return false;
+      return "pending";
     }
 
-    const init: RequestInit = {};
-    if (current.method === "POST") {
-      init.headers = { "X-Idempotency-Key": current.id };
-    }
+    // X-Queued-At: when the user actually made this write. The server stamps
+    // a replayed food log with it (bounded) instead of the replay time, so a
+    // meal logged offline at 11:50pm and synced next morning stays on the day
+    // it was eaten (R28). Harmless to endpoints that don't read it.
+    const headers: Record<string, string> = {
+      "X-Queued-At": new Date(current.savedAt).toISOString(),
+    };
+    if (current.method === "POST") headers["X-Idempotency-Key"] = current.id;
+    const init: RequestInit = { headers };
 
     try {
       // Pin the token validated by the post-wait re-check above (tokenNow ===
@@ -96,7 +121,7 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
       );
       await dequeue(current.id);
       serverAttempts.delete(current.id);
-      synced = true;
+      outcome = "synced";
       done = true;
     } catch (error) {
       // React Native's fetch throws a native `TypeError` when the request never
@@ -106,7 +131,7 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
       if (error instanceof TypeError) {
         // Device is still offline — do not consume a retry budget slot.
         // Leave the item in the queue; the next reconnect event will retry.
-        return false;
+        return "pending";
       }
       // From here the error reached the server: it is an `ApiError` carrying a
       // numeric `status`. Branch on the status class instead of regexing the
@@ -121,23 +146,41 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
       if (status === 404 && current.method === "DELETE") {
         await dequeue(current.id);
         serverAttempts.delete(current.id);
-        synced = true;
+        outcome = "synced";
         done = true;
         break;
       }
-      const is4xx = status !== undefined && status >= 400 && status < 500;
-      const svrCount = (serverAttempts.get(current.id) ?? 0) + 1;
-      serverAttempts.set(current.id, svrCount);
-      if (is4xx || svrCount >= MAX_ATTEMPTS) {
+      if (status !== undefined && TRANSIENT_4XX.has(status)) {
+        serverAttempts.delete(current.id);
+        return "halt";
+      }
+      // Only a PERMANENT client error (400/403/404/409/422/...) is evicted
+      // immediately — replaying the same body can never succeed.
+      if (status !== undefined && status >= 400 && status < 500) {
         await dequeue(current.id);
         serverAttempts.delete(current.id);
         emitDrainError();
-        done = true;
+        return "discarded";
+      }
+      const svrCount = (serverAttempts.get(current.id) ?? 0) + 1;
+      serverAttempts.set(current.id, svrCount);
+      if (svrCount >= MAX_ATTEMPTS) {
+        serverAttempts.delete(current.id);
+        // A 5xx that outlasts the in-drain backoff (~14s — a deploy/restart
+        // window) is NOT evidence the write is bad (R15). Keep it queued for the
+        // next drain with a fresh budget; give up only once it has been failing
+        // past the queue TTL, so the queue can't hold a poison item forever.
+        if (Date.now() - current.savedAt > QUEUE_TTL_MS) {
+          await dequeue(current.id);
+          emitDrainError();
+          return "discarded";
+        }
+        return "deferred";
       }
       // 5xx with remaining server attempts: loop
     }
   }
-  return synced;
+  return outcome;
 }
 
 export async function drainQueue(): Promise<void> {
@@ -168,9 +211,23 @@ export async function drainQueue(): Promise<void> {
     const owner = await getDurableOwner();
     if (!owner || owner !== (await getActiveUserId())) return;
     const sorted = [...loadQueue()].sort((a, b) => a.savedAt - b.savedAt);
+    // Consecutive 5xx deferrals in this drain. One is tolerated (skip past a
+    // possible poison item so it can't head-of-line block every later write
+    // for the whole TTL); a second in a row means the server itself is
+    // unhealthy, so stop instead of paying the backoff on every item.
+    let consecutiveDeferrals = 0;
     for (const item of sorted) {
       const exists = loadQueue().find((i) => i.id === item.id);
-      if (exists && (await attemptDrain(item))) anySynced = true;
+      if (!exists) continue;
+      const outcome = await attemptDrain(item);
+      if (outcome === "synced") anySynced = true;
+      if (outcome === "halt") break;
+      if (outcome === "deferred") {
+        consecutiveDeferrals++;
+        if (consecutiveDeferrals >= 2) break;
+      } else {
+        consecutiveDeferrals = 0;
+      }
     }
   } finally {
     isDraining = false;

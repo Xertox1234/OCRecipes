@@ -61,7 +61,7 @@ const HistoryItem = React.memo(function HistoryItem({
   expandedItemId,
   onToggleExpand,
   onNavigateToDetail,
-  isPremium,
+  isRecipeLocked,
   onFavourite,
   onGroceryList,
   onGenerateRecipe,
@@ -76,7 +76,7 @@ const HistoryItem = React.memo(function HistoryItem({
   expandedItemId: number | null;
   onToggleExpand: (itemId: number) => void;
   onNavigateToDetail: (itemId: number) => void;
-  isPremium: boolean;
+  isRecipeLocked: boolean;
   onFavourite: (itemId: number) => void;
   onGroceryList: (item: ScannedItemResponse) => void;
   onGenerateRecipe: (item: ScannedItemResponse) => void;
@@ -282,7 +282,7 @@ const HistoryItem = React.memo(function HistoryItem({
             <Animated.View style={animatedExpand}>
               <HistoryItemActions
                 isFavourited={item.isFavourited}
-                isPremium={isPremium}
+                isRecipeLocked={isRecipeLocked}
                 isFavouriteLoading={isFavouriteLoading}
                 isDiscardLoading={isDiscardLoading}
                 onFavourite={() => onFavourite(item.id)}
@@ -348,7 +348,7 @@ export default function HistoryScreen() {
     setGroceryPickerVisible,
     groceryItemName,
     reducedMotion,
-    isPremium,
+    isRecipeLocked,
 
     // Data
     displayItems,
@@ -423,7 +423,7 @@ export default function HistoryScreen() {
         expandedItemId={expandedItemId}
         onToggleExpand={handleToggleExpand}
         onNavigateToDetail={handleNavigateToDetail}
-        isPremium={isPremium}
+        isRecipeLocked={isRecipeLocked}
         onFavourite={handleFavourite}
         onGroceryList={handleGroceryList}
         onGenerateRecipe={handleGenerateRecipe}
@@ -443,7 +443,7 @@ export default function HistoryScreen() {
     [
       handleToggleExpand,
       handleNavigateToDetail,
-      isPremium,
+      isRecipeLocked,
       handleFavourite,
       handleGroceryList,
       handleGenerateRecipe,
@@ -534,7 +534,7 @@ export default function HistoryScreen() {
             <HistoryEmptyState onScan={handleScanPress} />
           )
         }
-        ListFooterComponent={isFetchingNextPage ? <LoadingFooter /> : null}
+        ListFooterComponent={isFetchingNextPage ? <LoadingFooter /> : undefined}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}

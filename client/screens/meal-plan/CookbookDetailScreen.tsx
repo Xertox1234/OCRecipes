@@ -242,9 +242,11 @@ export default function CookbookDetailScreen() {
                 </View>
               </View>
               <Pressable
-                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.removeButton,
+                  pressed && { opacity: 0.7 },
+                ]}
                 onPress={() => handleConfirmRemove(item)}
-                hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${item.title}`}
               >
@@ -353,7 +355,6 @@ export default function CookbookDetailScreen() {
               ) : null}
               <Pressable
                 onPress={handleOverflowMenu}
-                hitSlop={8}
                 style={({ pressed }) => [
                   styles.overflowButton,
                   { backgroundColor: withOpacity(theme.text, 0.06) },
@@ -437,10 +438,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FontFamily.semiBold,
   },
+  // 44pt box, not hitSlop: the row is tappable itself, so a slop would bleed
+  // into the row's own press area (and Android clips it to the parent).
+  removeButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   overflowButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -26,6 +26,7 @@ import * as Haptics from "expo-haptics";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
+import { useImportTeachingToast } from "@/hooks/useImportTeachingToast";
 import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
@@ -80,6 +81,7 @@ export default function WizardShell({
   const { reducedMotion } = useAccessibility();
   const haptics = useHaptics();
   const toast = useToast();
+  const offerImport = useImportTeachingToast();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useSafeTabBarHeight();
   const keyboardVisible = useKeyboardVisible();
@@ -261,6 +263,10 @@ export default function WizardShell({
         );
       } else {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
+        // Built by hand: suggest import next time. Not after a plan add — that
+        // path's own "added to your plan" toast matters more, and only one
+        // toast shows at a time.
+        offerImport();
       }
 
       onSaveComplete();
@@ -273,6 +279,7 @@ export default function WizardShell({
     form,
     createMutation,
     addItemMutation,
+    offerImport,
     returnToMealPlan,
     onSaveComplete,
     haptics,

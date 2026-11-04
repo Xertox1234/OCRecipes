@@ -125,7 +125,8 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
   const haptics = useHaptics();
   const toast = useToast();
   const navigation = useNavigation<NavProp>();
-  const { isPremium } = usePremiumContext();
+  const { isPremium, isPremiumResolved, refreshSubscription } =
+    usePremiumContext();
   const { width: screenWidth } = useWindowDimensions();
   const [pickerVisible, setPickerVisible] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -155,7 +156,9 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
     setExpandedStep((prev) => (prev === index ? null : index));
     if (!hasShownHintRef.current) {
       setHasShownHint(true);
-      void AsyncStorage.setItem(CURATED_STEP_HINT_KEY, "1");
+      AsyncStorage.setItem(CURATED_STEP_HINT_KEY, "1").catch((err) =>
+        logger.error("Failed to persist curated step hint", err),
+      );
     }
   }, []); // stable reference — reads hasShownHint via ref
 
@@ -172,6 +175,13 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
   const isFavourited = useIsRecipeFavourited(props.recipeId, props.recipeType);
 
   const handleRemixPress = useCallback(() => {
+    // Status unknown (loading or failed): re-check instead of walling a user
+    // who may be paying (audit 2026-10-29 M-crel-6).
+    if (!isPremiumResolved) {
+      void refreshSubscription();
+      toast.info("Checking your plan. Try again in a moment.");
+      return;
+    }
     if (!isPremium) {
       setShowUpgrade(true);
       return;
@@ -181,7 +191,16 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
       remixSourceRecipeId: props.recipeId,
       remixSourceRecipeTitle: props.title,
     });
-  }, [isPremium, haptics, navigation, props.recipeId, props.title]);
+  }, [
+    isPremium,
+    isPremiumResolved,
+    refreshSubscription,
+    toast,
+    haptics,
+    navigation,
+    props.recipeId,
+    props.title,
+  ]);
 
   // Allergen checking — short-circuits when ingredients is empty (enabled: length > 0)
   const ingredientNames = useMemo(

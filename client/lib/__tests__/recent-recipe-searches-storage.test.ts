@@ -98,3 +98,30 @@ describe("recent-recipe-searches-storage", () => {
     expect(store.has("@ocrecipes_recent_recipe_searches")).toBe(false);
   });
 });
+
+// R24/R50: wrong-shape blob and fire-and-forget write failures.
+describe("recent-recipe-searches-storage — resilience (R24/R50)", () => {
+  it("treats a non-array persisted blob as empty and keeps working", async () => {
+    store.set("@ocrecipes_recent_recipe_searches", '{"q":"pasta"}');
+    await initRecentSearchesCache("user-1");
+    expect(getRecentSearches()).toEqual([]);
+    await pushRecentSearch("salad");
+    expect(getRecentSearches()).toEqual(["salad"]);
+  });
+
+  it("drops non-string entries from a persisted list", async () => {
+    store.set("@ocrecipes_recent_recipe_searches", '["pasta", 5, null]');
+    await initRecentSearchesCache("user-1");
+    expect(getRecentSearches()).toEqual(["pasta"]);
+  });
+
+  it("pushRecentSearch never rejects on a failed write", async () => {
+    await initRecentSearchesCache("user-1");
+    const AsyncStorage = (
+      await import("@react-native-async-storage/async-storage")
+    ).default;
+    vi.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error("full"));
+    await expect(pushRecentSearch("pasta")).resolves.toBeUndefined();
+    expect(getRecentSearches()).toEqual(["pasta"]);
+  });
+});

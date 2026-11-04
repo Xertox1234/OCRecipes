@@ -3,7 +3,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Share, Platform } from "react-native";
 import { apiRequest, type MutationErrorMeta } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
-import { recipeStatsKey } from "@/hooks/useRecipeCommunity";
+import {
+  TOGGLE_FAVOURITE_RECIPE_KEY,
+  toggleFavouriteRecipeFn,
+  settleFavouriteRecipeToggle,
+} from "@/lib/mutation-defaults";
 import type { ResolvedFavouriteRecipe } from "@shared/schema";
 
 const FAVOURITES_KEY = ["/api/favourite-recipes"];
@@ -70,19 +74,10 @@ export function useToggleFavouriteRecipe(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      recipeId,
-      recipeType,
-    }: {
-      recipeId: number;
-      recipeType: "mealPlan" | "community";
-    }) => {
-      const res = await apiRequest("POST", "/api/favourite-recipes/toggle", {
-        recipeId,
-        recipeType,
-      });
-      return res.json() as Promise<{ favourited: boolean }>;
-    },
+    // Durable across a restart: the key + mutationFn are registered in
+    // client/lib/mutation-defaults.ts.
+    mutationKey: TOGGLE_FAVOURITE_RECIPE_KEY,
+    mutationFn: toggleFavouriteRecipeFn,
     onMutate: async ({ recipeId, recipeType }) => {
       await queryClient.cancelQueries({ queryKey: FAVOURITES_IDS_KEY });
       const previous = queryClient.getQueryData<{ ids: FavouriteId[] }>(
@@ -119,15 +114,8 @@ export function useToggleFavouriteRecipe(meta?: MutationErrorMeta) {
         );
       }
     },
-    onSettled: (_data, _error, { recipeId, recipeType }) => {
-      void queryClient.invalidateQueries({ queryKey: FAVOURITES_IDS_KEY });
-      void queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
-      if (recipeType === "community") {
-        void queryClient.invalidateQueries({
-          queryKey: recipeStatsKey(recipeId),
-        });
-      }
-    },
+    onSettled: (_data, _error, vars) =>
+      settleFavouriteRecipeToggle(queryClient, vars),
     meta,
   });
 }

@@ -4,6 +4,8 @@
 # unprotected file at a derivable path (spec §6.2, corrected 2026-09-10), so what this gate
 # catches is a review OMITTED, stale or mis-scoped — not one deliberately fabricated.
 # Design: docs/superpowers/specs/2026-09-08-merge-review-gate-design.md
+# Also (harness N6, 2026-11-01): a PR in real-platform scope needs a completed E2E run on its
+# head and a '## Platform check' body section — see the PLATFORM CHECK block below.
 #
 # Escape (emergencies): SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code.
 # It is read from THIS PROCESS'S ENVIRONMENT ONLY and never parsed out of the command
@@ -78,6 +80,21 @@ deny() {
       "hookEventName": "PreToolUse",
       "permissionDecision": "deny",
       "permissionDecisionReason": $r
+    }
+  }'
+  exit 0
+}
+
+# An exempt merge says so (harness N8, 2026-11-01): a silent exit here was read as "merged with
+# no review" (the #1535 residual). Context only — no permissionDecision, so permission handling
+# is exactly what a silent exit 0 gave. systemMessage reaches the owner, additionalContext the agent.
+exempt() {
+  local m="merge-review-guard: PR #$PR needs no review record — $1"
+  jq -n --arg m "$m" '{
+    "systemMessage": $m,
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "additionalContext": $m
     }
   }'
   exit 0
@@ -583,7 +600,7 @@ case "$PR" in
   ''|*[!0-9]*)
     # Cause order is deliberate. The overwhelmingly common one is NO PR NUMBER AT ALL:
     # `gh pr merge --auto --squash --delete-branch` is legal, documented usage
-    # (todo-executor.md:564 minus the number) and guard-outward-cli.sh ALLOWS it — measured,
+    # (todo-executor.md Step 10's auto-merge command, minus the number) and guard-outward-cli.sh ALLOWS it — measured,
     # it denies only the non---auto form — so it arrives here and is denied unconditionally,
     # before any risk classification, even on a docs-only PR. A human who reads
     # "obfuscated or --repo" first has to guess that "the ref is missing" is their case.
@@ -623,8 +640,51 @@ HEAD_SHA=$(printf '%s' "$VIEW" | jq -r '.headRefOid // empty' 2>/dev/null)
 [ -n "$HEAD_SHA" ] \
   || deny "Blocked: PR #$PR has no resolvable head sha, so no review can be bound to it. Fail-closed. $BYPASS"
 
+# ── PLATFORM CHECK (harness diagnosis N6) ─────────────────────────────────────
+# The SDK 57 upgrade (#1549) broke three photo uploads on both platforms for 4 days: mocked tests
+# cannot see how a file leaves the phone. A PR that changes the native build, an SDK or native
+# dependency, or upload code (scripts/harness/platform-scope.sh) needs, on THIS head commit:
+#   1. a completed e2e-regression.yml run started by hand (both the iOS and Android jobs), and
+#   2. a "## Platform check" section in the PR body naming that run's id (plus the real
+#      simulator upload done), and, when the run is red, a line "Already failing on main: …".
+# Runs before stage 1 so neither early allow below can skip it. GitHub's run list is read by
+# commit, so a run on an older commit or on main cannot count. The body text is checked for
+# presence only: whether the explanation is true is for review and the owner.
+PSCOPE="$ROOT/scripts/harness/platform-scope.sh"
+[ -f "$PSCOPE" ] \
+  || deny "Blocked: merge-review-guard could not locate scripts/harness/platform-scope.sh, so it cannot tell whether PR #$PR needs a real-platform check. Fail-closed. $BYPASS"
+PDIFF=$(gh pr diff "$PR" 2>/dev/null) \
+  || deny "Blocked: could not read PR #$PR's diff for the real-platform check (gh error, or a diff too large for gh). Fail-closed. $BYPASS"
+P_RC=0
+P_WHY=$(printf '%s' "$PDIFF" | bash "$PSCOPE") || P_RC=$?
+case "$P_RC" in
+  0)
+    P_WHY_ONE=$(printf '%s\n' "$P_WHY" | head -3 | tr '\n' ';' | sed 's/;$//; s/;/; /g')
+    P_RUN=$(gh api "repos/{owner}/{repo}/actions/workflows/e2e-regression.yml/runs?head_sha=$HEAD_SHA&event=workflow_dispatch&status=completed&per_page=20" \
+      --jq "[.workflow_runs[] | select(.head_sha == \"$HEAD_SHA\")] | sort_by(.created_at) | last | if . == null then \"\" else \"\(.id) \(.conclusion)\" end" 2>/dev/null) \
+      || deny "Blocked: PR #$PR needs a real-platform check ($P_WHY_ONE) and merge-review-guard could not read its E2E runs from GitHub. Fail-closed. $BYPASS"
+    [ -n "$P_RUN" ] \
+      || deny "Blocked: PR #$PR changes how the app builds or uploads ($P_WHY_ONE), and no completed E2E run exists for head ${HEAD_SHA:0:7}. Start one on this exact commit: ALLOW_OUTWARD_CLI=1 gh workflow run e2e-regression.yml --ref $BRANCH — wait for both jobs, then record the run id and the real simulator upload under '## Platform check' in the PR body. A push after the run needs a new run. $BYPASS"
+    P_ID=${P_RUN%% *}
+    P_CONC=${P_RUN#* }
+    P_BODY=$(gh pr view "$PR" --json body --jq '.body // ""' 2>/dev/null) \
+      || deny "Blocked: could not read PR #$PR's body for the real-platform check. Fail-closed. $BYPASS"
+    P_SECTION=$(printf '%s\n' "$P_BODY" | awk '/^## /{on = ($0 ~ /^## Platform check[[:space:]]*$/); next} on')
+    [ -n "$P_SECTION" ] \
+      || deny "Blocked: PR #$PR needs a real-platform check ($P_WHY_ONE). E2E run $P_ID on head ${HEAD_SHA:0:7} finished ($P_CONC), but the PR body has no '## Platform check' section. Add one naming run $P_ID and the real simulator upload you did (which upload, and the server's 2xx line). $BYPASS"
+    printf '%s\n' "$P_SECTION" | grep -qw "$P_ID" \
+      || deny "Blocked: PR #$PR's '## Platform check' section does not name E2E run $P_ID, the newest completed run on head ${HEAD_SHA:0:7} ($P_CONC). Record that run, not an earlier one. $BYPASS"
+    if [ "$P_CONC" != "success" ]; then
+      printf '%s\n' "$P_SECTION" | grep -q '^Already failing on main:' \
+        || deny "Blocked: E2E run $P_ID on head ${HEAD_SHA:0:7} is $P_CONC. PR #$PR may merge only if every failed flow also failed on main's latest nightly: list them in '## Platform check' on a line starting 'Already failing on main:' with that nightly's run id. Otherwise fix the failure, push, and run E2E again. $BYPASS"
+    fi
+    ;;
+  1) ;;
+  *) deny "Blocked: the real-platform scope check could not read PR #$PR's diff (rc $P_RC). Fail-closed. $BYPASS" ;;
+esac
+
 # ── STAGE 1 — source type ─────────────────────────────────────────────────────
-# `todo/<slug>` is an enforced invariant (.claude/agents/todo-executor.md:474), already
+# `todo/<slug>` is an enforced invariant (.claude/agents/todo-executor.md, Step 10 "Determine the todo slug"), already
 # load-bearing for the executor's batch-merge skip. The NAME selects the policy; the full
 # guard ENFORCES it — a todo/* branch touching sensitive paths must not shortcut (#821),
 # and a non-todo branch that merely CARRIES a todos/archive file must not be mistaken for
@@ -638,7 +698,9 @@ HEAD_SHA=$(printf '%s' "$VIEW" | jq -r '.headRefOid // empty' 2>/dev/null)
 # merges. Do not infer from "it never flips a verdict" that the branch name is unused.
 case "$BRANCH" in
   todo/*)
-    if bash "$GUARD" "$PR" >/dev/null 2>&1; then exit 0; fi
+    if bash "$GUARD" "$PR" >/dev/null 2>&1; then
+      exempt "a todo/* branch that passes todo-automerge-guard.sh (every changed file is on the safe-path allowlist)."
+    fi
     ;;
 esac
 
@@ -648,7 +710,7 @@ esac
 # unauthenticated gh must not read as "nothing risky here".
 GUARD_RC=0
 bash "$GUARD" --paths-only "$PR" >/dev/null 2>&1 || GUARD_RC=$?
-[ "$GUARD_RC" -eq 0 ] && exit 0
+[ "$GUARD_RC" -eq 0 ] && exempt "every changed file is on the safe-path allowlist (todo-automerge-guard.sh --paths-only)."
 
 # ── STAGE 3 — review record ───────────────────────────────────────────────────
 [ -f "$HERE/lib/review-stamp-path.sh" ] \
@@ -678,6 +740,7 @@ WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum 2>/dev/null | cut -c1-16)
   || deny "Blocked: could not compute the changed-file digest for PR #$PR (shasum unavailable). Fail-closed. $BYPASS"
 
 MATCHED=""
+SCOPED_OTHER=""   # a clean in-scope record exists, but not from code-reviewer (set -u safe)
 while IFS= read -r rec; do
   [ -z "$rec" ] && continue
   # AN UNREADABLE RECORD IS NOT AN ABSENT ONE. This test used to be a bare `continue`, which
@@ -752,8 +815,21 @@ while IFS= read -r rec; do
   # Scope decides only whether this record SATISFIES the requirement — reached only after
   # the objection test above, so a mismatch can never skip a findings record.
   [ "$(jq -r '.reviewed_files_digest // empty' "$rec" 2>/dev/null)" = "$WANT_DIGEST" ] || continue
-  MATCHED=1
+
+  # Only a code-reviewer record SATISFIES the requirement (todo 2026-10-31). A clean,
+  # digest-matching record from a domain reviewer alone is not enough: the review set may have
+  # left out the baseline. This sits AFTER the objection and scope tests on purpose, so a
+  # findings record from ANY reviewer has already denied above — agent_type never skips a record
+  # before its verdict is read. A missing/unreadable agent_type is not code-reviewer.
+  if [ "$(jq -r '.agent_type // empty' "$rec" 2>/dev/null)" = "code-reviewer" ]; then
+    MATCHED=1
+  else
+    SCOPED_OTHER=1
+  fi
 done <<< "$RECORDS"
+
+[ -z "$MATCHED" ] && [ -n "$SCOPED_OTHER" ] \
+  && deny "Blocked: PR #$PR has a clean review record for head ${HEAD_SHA:0:7} scoped to its changed files, but none from code-reviewer — the baseline reviewer. A domain reviewer's record alone does not satisfy the gate. Dispatch code-reviewer against this exact commit (head ${HEAD_SHA:0:7}) with pr=$PR and the PR's gh pr diff $PR --name-only list; its report must carry the full 40-character REVIEWED-SHA and a REVIEWED-FILES block. $BYPASS"
 
 [ -n "$MATCHED" ] \
   || deny "Blocked: $(printf '%s\n' "$RECORDS" | wc -l | tr -d ' ') review record(s) exist for head ${HEAD_SHA:0:7}, but none was scoped to PR #$PR's changed files (this diff's digest over $(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ') file(s) is ${WANT_DIGEST}). The recorded review covered a different file set, so its verdict says nothing about this diff. Re-review this commit's actual changed files. $BYPASS"

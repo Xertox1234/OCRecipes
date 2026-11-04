@@ -2,6 +2,7 @@ import {
   chatConversations,
   chatMessages,
   communityRecipes,
+  cookbookCoverCandidates,
   cookbooks,
   mealPlanRecipes,
 } from "@shared/schema";
@@ -42,7 +43,7 @@ const chatImageUrl = sql<string>`${chatMessages.metadata}->>'imageUrl'`;
 export async function collectUserImageUrls(
   userId: string,
 ): Promise<OwnedImage[]> {
-  const [covers, community, planned, chat] = await Promise.all([
+  const [covers, community, planned, chat, candidates] = await Promise.all([
     db
       .select({ url: cookbooks.coverImageUrl })
       .from(cookbooks)
@@ -66,6 +67,12 @@ export async function collectUserImageUrls(
         eq(chatMessages.conversationId, chatConversations.id),
       )
       .where(eq(chatConversations.userId, userId)),
+    // Unpicked cover-studio candidates: their rows cascade away with the
+    // user, so the hourly purge would never see them.
+    db
+      .select({ url: cookbookCoverCandidates.imageUrl })
+      .from(cookbookCoverCandidates)
+      .where(eq(cookbookCoverCandidates.userId, userId)),
   ]);
 
   const seen = new Set<string>();
@@ -77,7 +84,7 @@ export async function collectUserImageUrls(
       images.push({ url, kind });
     }
   };
-  add(covers, "cookbook");
+  add([...covers, ...candidates], "cookbook");
   const gallery = community.flatMap((r) =>
     (r.gallery ?? []).map((url) => ({ url })),
   );

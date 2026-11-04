@@ -26,6 +26,27 @@ vi.mock("react-native-reanimated", async (importOriginal) => {
   return { ...actual, default: { ...Animated, View } };
 });
 
+const { mockSpeech, mockStopListening } = vi.hoisted(() => ({
+  mockSpeech: {
+    value: {
+      isListening: false,
+      transcript: "",
+      isFinal: false,
+      volume: 0,
+      error: null as string | null,
+    },
+  },
+  mockStopListening: vi.fn(),
+}));
+
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    ...mockSpeech.value,
+    startListening: vi.fn(),
+    stopListening: mockStopListening,
+  }),
+}));
+
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
 }));
@@ -96,5 +117,39 @@ describe("RecipeSearchDrawer search field", () => {
     expect(input.getAttribute("placeholder")).toBe(
       "e.g. pasta or high protein",
     );
+  });
+});
+
+describe("RecipeSearchDrawer voice input", () => {
+  beforeEach(() => {
+    mockStopListening.mockClear();
+    mockSpeech.value = {
+      isListening: false,
+      transcript: "",
+      isFinal: false,
+      volume: 0,
+      error: null,
+    };
+  });
+
+  it("a closed drawer does not stop a session another drawer started", () => {
+    const { rerender } = renderComponent(
+      <RecipeSearchDrawer isOpen={false} onUsed={vi.fn()} />,
+    );
+    // The shared recognizer turns on for the Generate drawer.
+    mockSpeech.value = { ...mockSpeech.value, isListening: true };
+    rerender(<RecipeSearchDrawer isOpen={false} onUsed={vi.fn()} />);
+    expect(mockStopListening).not.toHaveBeenCalled();
+  });
+
+  it("closing the drawer stops a session it started itself", () => {
+    const { rerender } = renderComponent(
+      <RecipeSearchDrawer isOpen onUsed={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+    mockSpeech.value = { ...mockSpeech.value, isListening: true };
+    rerender(<RecipeSearchDrawer isOpen onUsed={vi.fn()} />);
+    rerender(<RecipeSearchDrawer isOpen={false} onUsed={vi.fn()} />);
+    expect(mockStopListening).toHaveBeenCalled();
   });
 });

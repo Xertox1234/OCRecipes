@@ -17,3 +17,16 @@ export function getEmptyStateDefaults(
       return { iconSize: 36, iconOpacity: 0.3 };
   }
 }
+
+/**
+ * TanStack's default networkMode pauses a query that fires offline: not
+ * loading, not errored, no data. Callers that default `data = []` would render
+ * that as genuinely empty, so they check this first. `hasData` is whether the
+ * screen already holds usable data (cached or persisted).
+ */
+export function isPausedWithoutData(
+  fetchStatus: string | undefined,
+  hasData: boolean,
+): boolean {
+  return fetchStatus === "paused" && !hasData;
+}

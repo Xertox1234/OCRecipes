@@ -22,7 +22,7 @@ vi.mock("../../storage", () => ({
     getEffectiveTierForUser: vi.fn(),
     getMonthlyReceiptScanCount: vi.fn(),
     createReceiptScan: vi.fn(),
-    createPantryItems: vi.fn(),
+    createPantryItemsUnderCap: vi.fn(),
   },
 }));
 
@@ -328,7 +328,10 @@ describe("Receipt Routes", () => {
           category: "dairy",
         }),
       ];
-      vi.mocked(storage.createPantryItems).mockResolvedValue(mockCreated);
+      vi.mocked(storage.createPantryItemsUnderCap).mockResolvedValue({
+        created: mockCreated,
+        skipped: 0,
+      });
 
       const res = await request(app)
         .post("/api/receipt/confirm")
@@ -354,7 +357,32 @@ describe("Receipt Routes", () => {
       expect(res.status).toBe(200);
       expectResponseToMatch(res.body, receiptConfirmResultSchema);
       expect(res.body.added).toBe(2);
+      expect(res.body.skipped).toBe(0);
       expect(res.body.items).toHaveLength(2);
+    });
+
+    it("reports how many items were left out when the pantry is nearly full", async () => {
+      setupPremiumMock();
+      vi.mocked(storage.createPantryItemsUnderCap).mockResolvedValue({
+        created: [createMockPantryItem({ id: 1, name: "Milk" })],
+        skipped: 2,
+      });
+
+      const res = await request(app)
+        .post("/api/receipt/confirm")
+        .set("Authorization", "Bearer token")
+        .send({
+          items: ["Milk", "Eggs", "Rice"].map((name) => ({
+            name,
+            quantity: 1,
+            category: "other",
+            estimatedShelfLifeDays: 7,
+          })),
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.added).toBe(1);
+      expect(res.body.skipped).toBe(2);
     });
 
     it("returns 403 for free tier user", async () => {
@@ -441,7 +469,7 @@ describe("Receipt Routes", () => {
 
     it("returns 500 when storage fails", async () => {
       setupPremiumMock();
-      vi.mocked(storage.createPantryItems).mockRejectedValue(
+      vi.mocked(storage.createPantryItemsUnderCap).mockRejectedValue(
         new Error("DB error"),
       );
 

@@ -5,11 +5,13 @@ import { valuesMatch } from "../lib/verification-consensus";
 import {
   type BarcodePer100g,
   barcodeVariants,
+  boundOffPer100g,
   offEnergyKcal,
   offMacrosCorroborateEnergy,
   ZERO_CAL_MAX_MACRO_KCAL_100G,
 } from "./barcode-policy";
 import { mapOffAllergenTags } from "./off-allergen-tags";
+import { UpstreamUnavailableError } from "./usda-lookup";
 import {
   lookupCNF,
   lookupNutrition,
@@ -38,6 +40,7 @@ export {
   offMacrosCorroborateEnergy,
 } from "./barcode-policy";
 export type { BarcodePer100g } from "./barcode-policy";
+export { UpstreamUnavailableError } from "./usda-lookup";
 
 export interface BarcodeServingInfo {
   displayLabel: string;
@@ -409,7 +412,10 @@ function reconcilePer100g(
  * Look up a barcode via Open Food Facts, then cross-validate per-100g
  * nutrition with USDA FoodData Central (and API Ninjas as fallback).
  *
- * Returns null only when no source has data for this barcode.
+ * Returns null only when no source has data for this barcode. Throws
+ * `UpstreamUnavailableError` when nothing was found AND neither Open Food
+ * Facts nor USDA could answer (every attempt errored) — an outage, which the
+ * caller must not report as "not found".
  */
 export async function lookupBarcode(
   code: string,
@@ -419,6 +425,9 @@ export async function lookupBarcode(
   // Using `any` here is pragmatic — a full interface would be brittle and unmaintainable.
   let offProduct: Record<string, any> | null = null;
   const codesToTry = barcodeVariants(code);
+  // True once any OFF variant gave a definitive answer ("status 0" counts,
+  // even on an HTTP 404). Stays false only if every attempt errored.
+  let offAnswered = false;
 
   for (const variant of codesToTry) {
     try {
@@ -427,7 +436,16 @@ export async function lookupBarcode(
         { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
       );
       const json = await res.json();
+      if (json.status === 0) offAnswered = true;
+      else if (!res.ok) {
+        log.warn(
+          { variant },
+          "Open Food Facts returned a non-OK response without a status",
+        );
+        continue;
+      }
       if (json.status === 1 && json.product) {
+        offAnswered = true;
         offProduct = json.product;
         log.debug(
           { barcode: code, variant, digits: variant.length },
@@ -516,7 +534,7 @@ export async function lookupBarcode(
   // Validate nutriments at the boundary: drop non-numeric/garbage values rather
   // than writing them to the monetized cache (under-report is the safe direction).
   const nm = offNutrimentsSchema.parse(offProduct?.nutriments ?? {});
-  const offPer100g: BarcodePer100g = {
+  const offPer100gRaw: BarcodePer100g = {
     calories: offEnergyKcal(nm["energy-kcal_100g"], nm.energy_100g),
     protein: nm.proteins_100g,
     carbs: nm.carbohydrates_100g,
@@ -542,6 +560,19 @@ export async function lookupBarcode(
           : roundToOneDecimal(nm.caffeine_100g * 1000) // OFF default caffeine unit is g → mg
         : undefined,
   };
+  // Plausibility-bound the per-100g values (R34): offNumericField accepts any
+  // finite number, so a typo'd OFF entry (kJ in the kcal field, protein 450 g)
+  // would otherwise be shown to the user and frozen into the first-write-wins
+  // barcodeNutrition cache. Dropped fields fall through to the secondary
+  // source as "missing" — under-report is the safe direction.
+  const { per100g: offPer100g, dropped: offDroppedFields } =
+    boundOffPer100g(offPer100gRaw);
+  if (offDroppedFields.length > 0) {
+    log.warn(
+      { barcode: code, dropped: offDroppedFields },
+      "implausible OFF per-100g values dropped",
+    );
+  }
 
   // OFF's own per-serving energy, used only as a self-consistency signal below.
   const offPerServingCal = offEnergyKcal(
@@ -631,6 +662,7 @@ export async function lookupBarcode(
 
   // ── Step 2b: If OFF has no product, try USDA branded food by UPC ─
   // Some products exist in USDA but not OFF (branded/US-market items).
+  let usdaUnavailable = false;
   let usdaByUPC: {
     product: NutritionData;
     brandName?: string;
@@ -641,7 +673,12 @@ export async function lookupBarcode(
       { barcode: code },
       "barcode not in OFF — trying USDA branded food by UPC",
     );
-    usdaByUPC = await lookupUSDAByUPC(code);
+    try {
+      usdaByUPC = await lookupUSDAByUPC(code);
+    } catch (err) {
+      if (!(err instanceof UpstreamUnavailableError)) throw err;
+      usdaUnavailable = true;
+    }
     if (usdaByUPC) {
       log.debug(
         {
@@ -824,6 +861,11 @@ export async function lookupBarcode(
 
   // If no data from any source, give up
   if (per100g.calories === undefined && !resolvedProductName) {
+    // Distinguish "every source errored" from "no source had data": only the
+    // former is an outage the user can retry.
+    if (!offProduct && !offAnswered && usdaUnavailable) {
+      throw new UpstreamUnavailableError();
+    }
     return null;
   }
 
@@ -876,23 +918,27 @@ export async function lookupBarcode(
   // understates calories by ~15x relative to what its own label claims. No
   // "~"/"(estimated)" cosmetic wrapper here (unlike `servingInfo.displayLabel`
   // below) — this value may be parsed as a number by other consumers.
-  storage
-    .insertBarcodeNutritionIfAbsent({
-      barcode: code,
-      productName: resolvedProductName || null,
-      brandName: resolvedBrandName || null,
-      servingSize: wasCorrected
-        ? `${finalGrams}g`
-        : rawServing || `${finalGrams}g`,
-      calories: perServing.calories?.toFixed(2) ?? null,
-      protein: perServing.protein?.toFixed(2) ?? null,
-      carbs: perServing.carbs?.toFixed(2) ?? null,
-      fat: perServing.fat?.toFixed(2) ?? null,
-      source,
-    })
-    .catch((err) => {
-      log.error({ err: toError(err) }, "failed to insert barcodeNutrition");
-    });
+  // Skipped when OFF carried implausible values: the row is first-write-wins,
+  // so persisting it would freeze a known-bad entry past any later OFF fix.
+  if (offDroppedFields.length === 0) {
+    storage
+      .insertBarcodeNutritionIfAbsent({
+        barcode: code,
+        productName: resolvedProductName || null,
+        brandName: resolvedBrandName || null,
+        servingSize: wasCorrected
+          ? `${finalGrams}g`
+          : rawServing || `${finalGrams}g`,
+        calories: perServing.calories?.toFixed(2) ?? null,
+        protein: perServing.protein?.toFixed(2) ?? null,
+        carbs: perServing.carbs?.toFixed(2) ?? null,
+        fat: perServing.fat?.toFixed(2) ?? null,
+        source,
+      })
+      .catch((err) => {
+        log.error({ err: toError(err) }, "failed to insert barcodeNutrition");
+      });
+  }
 
   return {
     productName: resolvedProductName || "Unknown Product",

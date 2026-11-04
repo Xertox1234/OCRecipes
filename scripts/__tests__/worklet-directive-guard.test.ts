@@ -348,6 +348,38 @@ describe("scanFileForWorkletOffenders (unit, synthetic fixtures)", () => {
     expect(offenders[0].calleeName).toBe("clampX");
   });
 
+  it.each(["useTapGesture", "usePanGesture", "usePinchGesture"])(
+    "scans the callbacks of a gesture-handler 3 %s config and flags an offending one",
+    (hook) => {
+      const memfs = memoryFs({
+        "/virtual/gesture-util.ts": `export function clampX(x: number) { return x; }`,
+      });
+      const source = `
+      import { ${hook} } from "react-native-gesture-handler";
+      import { clampX } from "./gesture-util";
+      function useIt(shared: { value: number }) {
+        return ${hook}({
+          onUpdate: (e) => {
+            shared.value = clampX(e.translationX);
+          },
+          onDeactivate: () => {
+            shared.value = 0;
+          },
+        });
+      }
+    `;
+      const offenders = scanFileForWorkletOffenders(
+        "/virtual/caller-v3.ts",
+        source,
+        memfs,
+        NO_ALIASES,
+      );
+      expect(offenders).toHaveLength(1);
+      expect(offenders[0].workletKind).toBe(`${hook}.onUpdate`);
+      expect(offenders[0].calleeName).toBe("clampX");
+    },
+  );
+
   it("does not flag a call passed to runOnJS (dispatches back to the JS thread, not a worklet)", () => {
     const memfs = memoryFs({
       "/virtual/js-thread-fn.ts": `export function updateState(v: boolean) { return v; }`,

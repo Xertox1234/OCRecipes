@@ -39,6 +39,7 @@ import {
 import { RecipeCard as GeneratedRecipeCard } from "@/components/recipe-chat/RecipeCard";
 import {
   finderItemNavParams,
+  finderActionNeedsPlan,
   lockedFinderButtons,
 } from "@/components/recipe-finder/recipe-finder-utils";
 import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
@@ -50,6 +51,7 @@ import {
 } from "@shared/schemas/recipe-finder";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -138,13 +140,17 @@ export default function CoachChat({
     ReadonlySet<string>
   >(() => new Set());
   const canGenerateRecipes = usePremiumFeature("recipeGeneration");
+  // Unknown plan (loading/failed): no finder locks; a premium finder tap
+  // re-checks the plan instead (owner ruling 2026-11-02).
+  const { planUnknown, recheckPlan } = usePlanCheck();
   const finderLocks = useMemo(
     () =>
       lockedFinderButtons({
         canSearchOnline,
         canGenerate: canGenerateRecipes,
+        planUnknown,
       }),
-    [canSearchOnline, canGenerateRecipes],
+    [canSearchOnline, canGenerateRecipes, planUnknown],
   );
   const { mutateAsync: saveRecipeFromChat } = useSaveRecipeFromChat();
   // messageId → the community recipe id it was saved as (this session).
@@ -296,6 +302,16 @@ export default function CoachChat({
         setStreamingError("Something went wrong. Please try again.");
       }
       setOptimisticMessage(null);
+      // The server may already have saved this turn (the chat route persists
+      // the user message before streaming; an interrupt/timeout can land after
+      // it, or even after the reply). Clearing the optimistic copy without a refetch hid a
+      // saved question and invited a duplicate retry (R23) — reconcile.
+      const convId = activeConvIdRef.current;
+      if (convId !== null) {
+        void queryClient.invalidateQueries({
+          queryKey: [`/api/chat/conversations/${convId}/messages`],
+        });
+      }
     },
   });
 
@@ -724,6 +740,10 @@ export default function CoachChat({
   const handleFinderAction = useCallback(
     (action: FinderAction, label: string) => {
       if (isStreaming || !conversationId) return;
+      if (planUnknown && finderActionNeedsPlan(action.type)) {
+        recheckPlan();
+        return;
+      }
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       turnEpochRef.current += 1;
@@ -738,7 +758,16 @@ export default function CoachChat({
       startStream(conversationId, label, { finderAction: action });
       onMessageSent?.();
     },
-    [isStreaming, conversationId, haptics, ttsStop, startStream, onMessageSent],
+    [
+      isStreaming,
+      conversationId,
+      planUnknown,
+      recheckPlan,
+      haptics,
+      ttsStop,
+      startStream,
+      onMessageSent,
+    ],
   );
 
   // The adjust card's choices by flowId, so a card row that remounts (the
@@ -1131,7 +1160,6 @@ export default function CoachChat({
       multilineInput
       submitOnReturn
       inputBarAlign="flex-end"
-      keyboardVerticalOffset={90}
       streamingError={streamingError}
       inlineBanner={limitBanner}
       inputBarStyle={inputBarStyle}
@@ -1143,8 +1171,8 @@ export default function CoachChat({
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         extraData={listExtraData}
-        ListFooterComponent={streamingFooter}
-        ListEmptyComponent={historyErrorEmpty}
+        ListFooterComponent={streamingFooter ?? undefined}
+        ListEmptyComponent={historyErrorEmpty ?? undefined}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"

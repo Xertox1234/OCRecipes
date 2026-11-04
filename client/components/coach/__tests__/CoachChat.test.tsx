@@ -109,6 +109,12 @@ vi.mock("@/hooks/useTTS", () => ({
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: () => false,
 }));
+vi.mock("@/hooks/usePlanCheck", () => {
+  // One object, like the real hook's memoised callback — a fresh function per
+  // render would churn every useCallback that lists recheckPlan.
+  const plan = { planUnknown: false, recheckPlan: () => {} };
+  return { usePlanCheck: () => plan };
+});
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
@@ -717,5 +723,50 @@ describe("CoachChat — unmount marks the conversation stale (H6)", () => {
       queryKey: ["/api/chat/conversations"],
       refetchType: "none",
     });
+  });
+});
+
+// R23: a stream that fails AFTER the server saved the user's turn (a mid-stream
+// interrupt, a timeout) cleared the optimistic copy with no refetch — the
+// question vanished from the UI while it existed server-side, inviting a
+// duplicate retry. On failure, reconcile with the server.
+describe("CoachChat — reconciles with the server after a stream failure (R23)", () => {
+  let invalidateSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  });
+  afterEach(() => {
+    invalidateSpy.mockRestore();
+  });
+
+  it("refetches the conversation's messages when the stream errors", () => {
+    renderCoachChat();
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Hello coach" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    invalidateSpy.mockClear();
+
+    act(() => {
+      coachStreamRef.onError?.("Response interrupted", undefined);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/1/messages"],
+    });
+  });
+});
+
+// The keyboard offset is the height of anything ABOVE the Coach screen —
+// a navigation header elsewhere in the app. Coach Pro has none (its dashboard
+// is inside the screen), so any offset is empty space between the input and
+// the keyboard: 90 left a ~91-unit gap on a Galaxy A37 and the iPhone 17 Pro
+// simulator (measured 2026-11-02).
+describe("CoachChat — keyboard offset", () => {
+  it("adds no offset above the keyboard", () => {
+    const { container } = renderCoachChat();
+    const kav = container.querySelector("[keyboardverticaloffset]");
+    expect(kav?.getAttribute("keyboardverticaloffset")).toBe("0");
   });
 });

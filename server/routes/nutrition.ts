@@ -12,6 +12,7 @@ import { logger, toError } from "../lib/logger";
 import { lookupNutrition } from "../services/nutrition-lookup";
 import {
   lookupBarcode,
+  UpstreamUnavailableError,
   type BarcodeLookupResult,
 } from "../services/barcode-lookup";
 import {
@@ -43,6 +44,24 @@ const nullishString = z
   .optional()
   .nullable()
   .transform((v) => (v === "null" || v === "undefined" || v === "" ? null : v));
+
+// Bounds for the client-supplied X-Queued-At on POST /api/scanned-items (R28).
+// The client offline queue holds writes for 24h; allow slack for a queue item
+// that waited a bit past that before its drain, and a little clock skew ahead.
+const CONSUMED_AT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+const CONSUMED_AT_MAX_FUTURE_MS = 5 * 60 * 1000;
+
+/** A valid, in-window X-Queued-At ISO timestamp as a Date; otherwise undefined. */
+function parseQueuedAt(raw: unknown): Date | undefined {
+  if (typeof raw !== "string") return undefined;
+  const at = new Date(raw);
+  const t = at.getTime();
+  if (Number.isNaN(t)) return undefined;
+  const now = Date.now();
+  if (t > now + CONSUMED_AT_MAX_FUTURE_MS) return undefined;
+  if (now - t > CONSUMED_AT_MAX_AGE_MS) return undefined;
+  return at;
+}
 
 // Extended schema for scanned items with string coercion for numeric fields
 const scannedItemInputSchema = insertScannedItemSchema.extend({
@@ -301,6 +320,17 @@ export function register(app: Express): void {
         );
         res.json(body);
       } catch (error) {
+        if (error instanceof UpstreamUnavailableError) {
+          // Every source errored: an outage, not an unknown product. 503 so
+          // the client offers a retry instead of the unknown-product flow.
+          sendError(
+            res,
+            503,
+            "Product lookup is temporarily unavailable. Please try again.",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
         handleRouteError(res, error, "look up barcode");
       }
     },
@@ -483,6 +513,17 @@ export function register(app: Express): void {
         }
         res.json({ ...body, labelCompared: compared });
       } catch (error) {
+        if (error instanceof UpstreamUnavailableError) {
+          // Every source errored: an outage, not an unknown product. 503 so
+          // the client offers a retry instead of the unknown-product flow.
+          sendError(
+            res,
+            503,
+            "Product lookup is temporarily unavailable. Please try again.",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
         handleRouteError(res, error, "look up barcode");
       }
     },
@@ -593,24 +634,31 @@ export function register(app: Express): void {
           userId: req.userId,
         });
 
-        // No logOverrides needed — defaults to source: "scan", mealType: null
+        // R28: an offline-queued log is replayed later (up to the client queue
+        // TTL); the drain sends when it was actually logged as X-Queued-At.
+        // Honour it only within a bounded window; otherwise stamp server time.
+        // source/mealType keep their defaults ("scan", null).
+        const occurredAt = parseQueuedAt(req.headers["x-queued-at"]);
         try {
-          const item = await storage.createScannedItemWithLog({
-            userId: validated.userId,
-            barcode: validated.barcode,
-            productName: validated.productName,
-            brandName: validated.brandName,
-            servingSize: validated.servingSize,
-            calories: validated.calories,
-            protein: validated.protein,
-            carbs: validated.carbs,
-            fat: validated.fat,
-            fiber: validated.fiber,
-            sugar: validated.sugar,
-            sodium: validated.sodium,
-            imageUrl: validated.imageUrl,
-            idempotencyKey: idempotencyKey ?? null,
-          });
+          const item = await storage.createScannedItemWithLog(
+            {
+              userId: validated.userId,
+              barcode: validated.barcode,
+              productName: validated.productName,
+              brandName: validated.brandName,
+              servingSize: validated.servingSize,
+              calories: validated.calories,
+              protein: validated.protein,
+              carbs: validated.carbs,
+              fat: validated.fat,
+              fiber: validated.fiber,
+              sugar: validated.sugar,
+              sodium: validated.sodium,
+              imageUrl: validated.imageUrl,
+              idempotencyKey: idempotencyKey ?? null,
+            },
+            ...(occurredAt ? [{ occurredAt }] : []),
+          );
           return res.status(201).json(item);
         } catch (error) {
           // Concurrent double-submit with the same idempotency key: both requests

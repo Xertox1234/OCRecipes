@@ -7,12 +7,12 @@ severity: medium
 tags: [offline, tanstack-query, persistquerysclient, onlinemanager, async-storage, reliability, react-native, query-cache]
 applies_to: [client/App.tsx, client/lib/query-client.ts, client/lib/offline-queue.ts, client/lib/offline-queue-drain.ts, client/lib/query-keys.ts, client/screens/*.tsx]
 created: '2026-06-19'
-last_updated: '2026-06-20'
+last_updated: '2026-10-30'
 ---
 
 # Offline persistence reliability gotchas (TanStack Query + AsyncStorage)
 
-Four non-obvious failure modes found auditing the offline-persistence feature.
+Non-obvious failure modes found auditing the offline-persistence feature.
 Each is verified against current TanStack Query v5 behavior and the installed
 `@tanstack/query-core` source.
 
@@ -98,6 +98,17 @@ share invalidation and persistence — that is the intended shape, and
 `setQueryData(QUERY_KEYS.scannedItems, …)` optimistic writes target only the
 exact length-1 list key, never the length-2 detail.
 
+**6. A durable enqueue must report a failed write, and drops must be loud — including
+ones that happen before anything is listening.** `persist()` swallowed AsyncStorage
+failures ("database or disk is full"), so `enqueue` resolved and the UI said "logged" for an
+entry that vanished on the next force-quit; the `MAX_DEPTH` cap and the TTL sweep dropped
+entries silently. Fix: `persist()` returns whether it wrote; on `false`, `enqueue` rolls back
+its own entry (restoring whatever the depth cap evicted *for* it) and throws. Drops go out via
+`subscribeToQueueEvictions` — and because the startup TTL sweep runs at module load, before
+`OfflineQueueBridge` mounts, an emit with no listener is **held** and delivered once to the
+first subscriber. A module-load event bus that drops emits with zero listeners loses exactly
+the startup events.
+
 ## Examples
 
 See `client/App.tsx` (cold-start drain, persist allowlist + buster) and
@@ -110,7 +121,7 @@ single scanned-item read as `["/api/scanned-items", itemId]`.
 
 - `client/App.tsx` — persistOptions (`buster`, `dehydrateOptions`), cold-start drain wiring
 - `client/lib/query-client.ts` — `onlineManager.setEventListener` (NetInfo), `asyncStoragePersister`
-- `client/lib/offline-queue.ts` — `initOfflineQueue` merge + persist
+- `client/lib/offline-queue.ts` — `initOfflineQueue` merge + persist; `persist()` result, `enqueue` rollback, `subscribeToQueueEvictions` held-until-first-subscriber (gotcha #6)
 - `client/lib/offline-queue-drain.ts` — `drainQueue` invalidates once after the loop
 - `client/lib/query-keys.ts` — `QUERY_KEYS`; the allowlist + prefix-invalidation key on `[0]` (gotcha #5)
 - `client/screens/ItemDetailScreen.tsx` — single scanned-item read keyed as the tuple `["/api/scanned-items", itemId]` (gotcha #5)

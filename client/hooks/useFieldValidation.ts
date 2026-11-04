@@ -1,5 +1,5 @@
 import { useRef, useState, type RefObject } from "react";
-import type { TextInput as RNTextInput } from "react-native";
+import type { TextInputInstance } from "react-native";
 
 import { shouldShowError } from "@/lib/field-validation";
 
@@ -19,7 +19,7 @@ export type FieldValidation = {
   checked: boolean;
   /** The main button's check: show this field's error; true when valid. */
   markSubmitted: () => boolean;
-  ref: RefObject<RNTextInput | null>;
+  ref: RefObject<TextInputInstance | null>;
   /**
    * Bumped by each `markSubmitted` that finds the value invalid — pass to
    * this field's `InlineError` so a submit reject shakes it and a blur never
@@ -58,7 +58,7 @@ export function useFieldValidation(
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
   const [focused, setFocused] = useState(false);
-  const ref = useRef<RNTextInput | null>(null);
+  const ref = useRef<TextInputInstance | null>(null);
 
   const rawError = validate(value);
   const checked = leftNonEmpty || submitAttempted;

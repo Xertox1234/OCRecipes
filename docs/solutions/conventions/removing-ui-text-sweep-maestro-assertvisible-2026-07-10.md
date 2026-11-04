@@ -3,11 +3,11 @@ title: Removing a UI component requires sweeping Maestro E2E flows for assertion
 track: knowledge
 category: conventions
 module: client
-tags: [maestro, e2e, ui-removal, assertvisible, testing, regression]
+tags: [maestro, e2e, ui-removal, assertvisible, testing, react-native, regression]
 symptoms: ['Maestro E2E flow fails on assertVisible after an unrelated-looking UI cleanup PR merges', 'e2e smoke run red on text that no longer renders anywhere', 'Maestro E2E flow fails on tapOn after a navigation restructure merges — every subsequent step runs on the wrong screen']
-applies_to: ['client/**/*.tsx', 'e2e/flows/**', 'client/navigation/**']
+applies_to: ['client/**/*.tsx', 'client/**/*.ts', 'e2e/flows/**', 'e2e/manual/**', 'client/navigation/**']
 created: '2026-07-10'
-last_updated: '2026-07-11'
+last_updated: '2026-11-02'
 ---
 
 # Removing a UI component requires sweeping Maestro E2E flows for assertions on its visible text
@@ -35,6 +35,14 @@ Re-ground every navigation step in the current navigator source (e.g. `MainTabNa
 Maestro flows in `e2e/flows/` assert on rendered text (`assertVisible: "…"`) and tap on text labels (`tapOn: "…"`) — not on component identity. The Vitest suite catches broken imports and render errors, but nothing at commit/push time executes Maestro — so a text-anchored E2E assertion or navigation step breaks silently and only surfaces when the (workflow_dispatch-only) smoke run or the nightly E2E Regression is next triggered, far from the PR that caused it.
 
 A navigation restructure is especially insidious because a stale `tapOn` fails at the first navigation step, derailing the entire scenario — and since nothing executes the flows automatically, the staleness surfaces only when someone finally runs them. This was discovered on 2026-07-11: `e2e/flows/home/navigate-tabs.yaml` and `e2e/flows/home/view-item-detail.yaml` still tapped 'History' and 'Scan' TABS from a pre-redesign tab bar; the real tab bar (`client/navigation/MainTabNavigator.tsx`) is Home / Plan / Coach / Profile with Scan as a FAB (accessibilityLabel 'Open scan menu'), and history is reached via Profile -> 'Scan History' (label in `client/components/profile/library-config.ts`). The flows stayed silently stale for weeks because nothing ran Maestro automatically until the nightly E2E Regression workflow was added (`.github/workflows/e2e-regression.yml`).
+
+**Label maps and manual flows (2026-11-02).** Button text often lives in a `.ts` label map, not the
+`.tsx` that renders it — #1429 renamed the recipe finder's "Search Spoonacular" to "Get ideas for you" in
+`client/components/recipe-finder/recipe-finder-utils.ts` (`FINDER_BUTTON_LABELS`), and
+`e2e/manual/recipe-finder.yaml` kept tapping the old label for three weeks. Manual flows (`e2e/manual/`)
+are never run by CI or the nightly, so this grep is their only defence; the staleness surfaced only when the
+flow was next run by hand (first Android run). Grep `e2e/` — both folders — for the OLD string whenever a
+label map changes.
 
 ## Exceptions
 

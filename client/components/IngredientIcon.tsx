@@ -25,6 +25,8 @@ export const IngredientIcon = React.memo(function IngredientIcon({
   if (!icon) {
     return (
       <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
         style={[
           styles.container,
           {
@@ -42,6 +44,8 @@ export const IngredientIcon = React.memo(function IngredientIcon({
 
   return (
     <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       style={[
         styles.container,
         {

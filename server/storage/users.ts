@@ -13,6 +13,7 @@ import {
   favouriteRecipes,
   savedItems,
   recipeDismissals,
+  verificationHistory,
 } from "@shared/schema";
 import {
   isValidSubscriptionTier,
@@ -31,10 +32,12 @@ import {
   gt,
   asc,
   isNotNull,
+  isNull,
 } from "drizzle-orm";
 import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
 import { deleteAllPushTokensForUser } from "./push-tokens";
+import { lockBarcodes, recomputeAggregatesForBarcodes } from "./verification";
 
 // ============================================================================
 // USER CRUD
@@ -210,8 +213,28 @@ export type UpdatableUserFields = Pick<
   | "goalsCalculatedAt"
   | "onboardingCompleted"
   | "measurementUnit"
-  | "timezone"
 >;
+
+/**
+ * Store the user's quota timezone, ONCE. The conditional `timezone IS NULL`
+ * write is the cap: every daily quota resets at midnight in this zone
+ * (`quotaDayBounds`), so a freely rewritable value would let a client earn an
+ * extra reset by switching zones. Deliberately not part of `UpdatableUserFields`
+ * (that spread would overwrite). Returns true when this call stored it, false
+ * when a timezone was already set (no change). Callers pass an IANA name
+ * validated at the route boundary.
+ */
+export async function setUserTimezoneIfUnset(
+  userId: string,
+  timezone: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(users)
+    .set({ timezone })
+    .where(and(eq(users.id, userId), isNull(users.timezone)))
+    .returning({ id: users.id });
+  return rows.length > 0;
+}
 
 export async function updateUser(
   id: string,
@@ -524,10 +547,26 @@ export async function deleteUser(id: string): Promise<boolean> {
         .where(eq(communityRecipes.authorId, id));
     }
 
+    // verification_history cascades with the user; remember which barcodes
+    // that touches so their stored aggregates can be recomputed after.
+    const votedBarcodes = (
+      await tx
+        .select({ barcode: verificationHistory.barcode })
+        .from(verificationHistory)
+        .where(eq(verificationHistory.userId, id))
+    ).map((r) => r.barcode);
+
+    // Lock before the user-row delete: a concurrent submitVerification holds
+    // this lock and then needs a key-share on the user row we are deleting.
+    await lockBarcodes(tx, votedBarcodes);
+
     const result = await tx
       .delete(users)
       .where(eq(users.id, id))
       .returning({ id: users.id });
+    if (result.length > 0 && votedBarcodes.length > 0) {
+      await recomputeAggregatesForBarcodes(tx, votedBarcodes);
+    }
     return result.length > 0;
   });
 

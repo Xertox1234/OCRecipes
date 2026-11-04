@@ -109,7 +109,6 @@ function Header({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
           onPress={onSeeAll}
           accessibilityRole="button"
           accessibilityLabel={`See all ${title}`}
-          hitSlop={8}
           style={styles.seeAll}
         >
           <ThemedText
@@ -137,9 +136,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
+    // Same height with or without the 44pt See all button (no layout jump).
+    minHeight: 44,
   },
   header: { fontFamily: FontFamily.semiBold, fontSize: 17 },
-  seeAll: { flexDirection: "row", alignItems: "center", gap: 2 },
+  // 44pt box, not hitSlop (clipped to the header row on Android).
+  seeAll: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    minHeight: 44,
+  },
   listContent: { paddingHorizontal: Spacing.lg },
 });

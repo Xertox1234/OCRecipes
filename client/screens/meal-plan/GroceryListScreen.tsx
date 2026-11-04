@@ -8,9 +8,11 @@ import {
   SectionList,
   RefreshControl,
   Share,
-  type TextInput,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useHeaderHeight } from "@react-navigation/elements";
 import {
   useNavigation,
@@ -36,6 +38,8 @@ import { useTheme } from "@/hooks/useTheme";
 import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHaptics } from "@/hooks/useHaptics";
 import { ApiError } from "@/lib/api-error";
+import { useToast } from "@/context/ToastContext";
+import { formatPantryFullSkipped } from "@/lib/log-success";
 import { formatGroceryListTitle } from "@/lib/format";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
@@ -219,7 +223,7 @@ export default function GroceryListScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { features } = usePremiumContext();
-  const addItemRef = useRef<TextInput>(null);
+  const addItemRef = useRef<TextInputInstance>(null);
 
   const {
     data: list,
@@ -238,8 +242,56 @@ export default function GroceryListScreen() {
     isError && error instanceof ApiError && error.code === "NOT_FOUND";
   const addItemMutation = useAddManualGroceryItem();
   const addToPantryMutation = useAddGroceryItemToPantry();
+  const toast = useToast();
+  const addToPantry = useCallback(
+    (itemId: number) => {
+      addToPantryMutation.mutate(
+        { listId, itemId },
+        {
+          onError: (err) => {
+            if (err instanceof ApiError && err.code === "LIMIT_REACHED") {
+              toast.info(formatPantryFullSkipped(1));
+            }
+          },
+        },
+      );
+    },
+    [addToPantryMutation, listId, toast],
+  );
 
   const [newItemName, setNewItemName] = useState("");
+
+  // Voice input REPLACES the single-value field with the dictated words.
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  // false once the item is added, so a late final result cannot refill the
+  // field with the item just added.
+  const voiceActiveRef = useRef(false);
+  useEffect(() => {
+    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
+      setNewItemName(transcript);
+    }
+  }, [isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceActiveRef.current = true;
+      void startListening();
+    }
+  }, [haptics, isListening, startListening, stopListening]);
+
   const [pantryPromptItem, setPantryPromptItem] =
     useState<GroceryListItem | null>(null);
 
@@ -255,11 +307,20 @@ export default function GroceryListScreen() {
     const name = newItemName.trim();
     if (!name) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    voiceActiveRef.current = false;
+    if (isListening) stopListening();
     addItemMutation.mutate(
       { listId, name },
       { onSuccess: () => setNewItemName("") },
     );
-  }, [haptics, addItemMutation, listId, newItemName]);
+  }, [
+    haptics,
+    addItemMutation,
+    listId,
+    newItemName,
+    isListening,
+    stopListening,
+  ]);
 
   const handleItemChecked = useCallback(
     (item: GroceryListItem) => {
@@ -272,12 +333,9 @@ export default function GroceryListScreen() {
   const handleAddToPantry = useCallback(() => {
     if (!pantryPromptItem) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    addToPantryMutation.mutate({
-      listId,
-      itemId: pantryPromptItem.id,
-    });
+    addToPantry(pantryPromptItem.id);
     setPantryPromptItem(null);
-  }, [haptics, addToPantryMutation, listId, pantryPromptItem]);
+  }, [haptics, addToPantry, pantryPromptItem]);
 
   const handleDismissPantryPrompt = useCallback(() => {
     setPantryPromptItem(null);
@@ -431,7 +489,7 @@ export default function GroceryListScreen() {
                     label: "Pantry",
                     backgroundColor: theme.success,
                     onAction: () => {
-                      addToPantryMutation.mutate({ listId, itemId: item.id });
+                      addToPantry(item.id);
                     },
                   }
                 : undefined
@@ -530,6 +588,12 @@ export default function GroceryListScreen() {
                 returnKeyType="done"
                 onSubmitEditing={handleAddItem}
               />
+              <InlineMicButton
+                isListening={isListening}
+                volume={volume}
+                onPress={handleVoicePress}
+                disabled={addItemMutation.isPending}
+              />
               <Pressable
                 onPress={handleAddItem}
                 disabled={!newItemName.trim() || addItemMutation.isPending}
@@ -605,7 +669,7 @@ export default function GroceryListScreen() {
           </Pressable>
           <Pressable
             onPress={handleDismissPantryPrompt}
-            hitSlop={8}
+            style={styles.pantrySnackbarDismiss}
             accessibilityRole="button"
             accessibilityLabel="Dismiss"
           >
@@ -753,6 +817,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.xs,
+  },
+  // 44pt box, not hitSlop (it would overlap the Yes button). Negative vertical
+  // margin keeps the snackbar's height; the box still fits inside it.
+  pantrySnackbarDismiss: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -Spacing.sm,
+    marginRight: -Spacing.sm,
   },
   pantrySnackbarBtnText: {
     fontSize: 13,

@@ -9,6 +9,9 @@ import {
   whenQueryCacheRestored,
 } from "@/lib/query-client";
 import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
+import { fetchWithTimeout } from "@/lib/fetch-timeout";
+import { logger } from "@/lib/logger";
+import { sendDeviceTimezoneOnce } from "@/lib/timezone";
 import type {
   MfaChallengeResult,
   MfaVerifyResult,
@@ -28,6 +31,7 @@ import {
 } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
+import { clearFeatureTipsState } from "@/lib/feature-tips-storage";
 import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
 import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
@@ -39,6 +43,15 @@ interface AuthState {
 }
 
 const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
+
+/**
+ * Deadline for the cold-start / foreground `/api/auth/me` check (R16). RN fetch
+ * has no default timeout, so on a captive portal or half-open connection the
+ * check would hang forever — the root navigator spins indefinitely and the
+ * cached-user offline fallback in the catch is never reached. Short, because
+ * this gates app launch and the fallback is a good answer.
+ */
+export const AUTH_ME_TIMEOUT_MS = 10_000;
 
 /**
  * Best-effort teardown of every piece of device-local state that outlives a
@@ -85,6 +98,8 @@ async function clearDurableLocalState(): Promise<boolean> {
     // throws; it serializes against its own startup init and is non-throwing.
     // (Section-expansion state stays — a device-display pref; theme is its own module.)
     if (!(await clearHomeActionsState())) ok = false;
+    // Which teaching tips were seen / features used: same shared-device bleed.
+    if (!(await clearFeatureTipsState())) ok = false;
     // Recent recipe searches: same global, non-namespaced key with the same
     // cross-user bleed risk on a shared device; clear them on every session-ending
     // path. Non-throwing; a failed wipe feeds `ok` so the durable-owner marker is
@@ -106,17 +121,34 @@ async function clearDurableLocalState(): Promise<boolean> {
     // removal — the original ordering relied on clear() being last for this.
     try {
       queryClient.clear();
-    } catch {}
+    } catch (err) {
+      // Not fatal to the sweep (the disk removal below still runs), but a
+      // failed privacy wipe must leave an off-device signal (R47).
+      logger.error("Durable local state wipe: query cache clear failed", err);
+    }
     // Guard the disk removal independently so its failure feeds `ok` (gating the
     // owner-marker advance) without aborting — and without poisoning the marker
     // into never advancing if some OTHER step throws.
     try {
       await AsyncStorage.removeItem(QUERY_CACHE_KEY);
-    } catch {
+    } catch (err) {
+      logger.error("Durable local state wipe: query cache removal failed", err);
       ok = false;
     }
-  } catch {
+  } catch (err) {
+    logger.error("Durable local state wipe threw", err);
     ok = false;
+  }
+  // The non-throwing clear* steps report failure only as `false`. The retry on
+  // the next auth resolution limits user impact, but a failed privacy wipe must
+  // still be visible off-device (R47) — logger.error routes to the reporter.
+  if (!ok) {
+    logger.error(
+      "Durable local state wipe incomplete",
+      new Error(
+        "clearDurableLocalState: a wipe step failed; retried next auth",
+      ),
+    );
   }
   return ok;
 }
@@ -218,9 +250,11 @@ export function useAuth() {
       }
 
       try {
-        const response = await fetch(`${getApiUrl()}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetchWithTimeout(
+          `${getApiUrl()}/api/auth/me`,
+          { headers: { Authorization: `Bearer ${token}` } },
+          AUTH_ME_TIMEOUT_MS,
+        );
 
         // The token changed while /me was in flight (sign-out + new sign-in, or
         // a 2FA token swap): this answer is about a session that already ended,
@@ -281,6 +315,16 @@ export function useAuth() {
   useEffect(() => {
     void checkAuth();
   }, [checkAuth]);
+
+  // Daily quotas reset at the user's local midnight once the server knows the
+  // phone's timezone. Fire-and-forget after the session is established (keyed
+  // on the user id, so it runs once per sign-in / launch, never blocks either);
+  // a local marker stops re-sends and a failure retries at the next launch.
+  const signedInUserId = state.user?.id;
+  useEffect(() => {
+    if (signedInUserId === undefined) return;
+    sendDeviceTimezoneOnce(String(signedInUserId)).catch(() => {});
+  }, [signedInUserId]);
 
   // Re-validate auth when the app returns to the foreground, so a session that
   // expired (or was revoked) while backgrounded is caught on resume rather than

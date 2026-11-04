@@ -1,3 +1,8 @@
+import {
+  QueryClient,
+  type QueryFunctionContext,
+  type QueryKey,
+} from "@tanstack/react-query";
 import { ApiError } from "../api-error";
 import { appStateToFocus, resolveImageUrl } from "../query-client";
 
@@ -411,5 +416,88 @@ describe("query-cache restore gate", () => {
     await gate;
     expect(clearTimeoutSpy).toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0); // and cleared — no lingering timer
+  });
+});
+
+// R16 / N3: every app request carries an abort signal so a hung connection
+// can't wedge cold-start auth, the offline-queue drain, or a pending button;
+// getQueryFn also forwards TanStack's cancellation signal.
+describe("request deadlines and cancellation (R16 / N3)", () => {
+  const queryCtx = (signal: AbortSignal): QueryFunctionContext<QueryKey> => ({
+    queryKey: ["/api/y"],
+    signal,
+    meta: undefined,
+    client: new QueryClient(),
+  });
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchMock = vi.fn(
+      (_input: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const err = new Error("Aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("apiRequest aborts a hung request after the default deadline", async () => {
+    const { apiRequest } = await import("../query-client");
+    const { DEFAULT_REQUEST_TIMEOUT_MS } = await import("../fetch-timeout");
+    const p = apiRequest("GET", "/api/x", undefined, undefined, null);
+    const settled = expect(p).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS);
+    await settled;
+  });
+
+  it("apiRequest leaves a caller-supplied signal (its own deadline) in charge", async () => {
+    const { apiRequest } = await import("../query-client");
+    const { DEFAULT_REQUEST_TIMEOUT_MS } = await import("../fetch-timeout");
+    const caller = new AbortController();
+    const p = apiRequest(
+      "POST",
+      "/api/generate",
+      { a: 1 },
+      { signal: caller.signal },
+      null,
+    );
+    let settled = false;
+    p.catch(() => {}).finally(() => (settled = true));
+    // A 90s generation deadline must not be cut short by the 60s default.
+    await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS + 1);
+    expect(settled).toBe(false);
+    caller.abort();
+    await expect(p).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("getQueryFn aborts a hung query after the default deadline", async () => {
+    const { getQueryFn } = await import("../query-client");
+    const { DEFAULT_REQUEST_TIMEOUT_MS } = await import("../fetch-timeout");
+    const fn = getQueryFn({ on401: "throw" });
+    const p = fn(queryCtx(new AbortController().signal));
+    const settled = expect(p).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS);
+    await settled;
+  });
+
+  it("getQueryFn forwards TanStack's cancellation signal to fetch", async () => {
+    const { getQueryFn } = await import("../query-client");
+    const fn = getQueryFn({ on401: "throw" });
+    const tanstack = new AbortController();
+    const p = fn(queryCtx(tanstack.signal));
+    const settled = expect(p).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(0);
+    tanstack.abort();
+    await settled;
   });
 });

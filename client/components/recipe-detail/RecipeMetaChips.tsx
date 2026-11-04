@@ -52,7 +52,13 @@ export function RecipeMetaChips({
             { backgroundColor: withOpacity(theme.text, 0.06) },
           ]}
         >
-          <Feather name="clock" size={12} color={theme.textSecondary} />
+          <Feather
+            name="clock"
+            size={12}
+            color={theme.textSecondary}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
           <ThemedText style={[styles.metaText, { color: theme.textSecondary }]}>
             {timeDisplay}
           </ThemedText>
@@ -65,7 +71,13 @@ export function RecipeMetaChips({
             { backgroundColor: withOpacity(theme.text, 0.06) },
           ]}
         >
-          <Feather name="bar-chart-2" size={12} color={theme.textSecondary} />
+          <Feather
+            name="bar-chart-2"
+            size={12}
+            color={theme.textSecondary}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
           <ThemedText style={[styles.metaText, { color: theme.textSecondary }]}>
             {difficulty}
           </ThemedText>
@@ -87,7 +99,13 @@ export function RecipeMetaChips({
               { backgroundColor: withOpacity(theme.text, 0.06) },
             ]}
           >
-            <Feather name="users" size={12} color={theme.textSecondary} />
+            <Feather
+              name="users"
+              size={12}
+              color={theme.textSecondary}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            />
             <ThemedText
               style={[styles.metaText, { color: theme.textSecondary }]}
             >

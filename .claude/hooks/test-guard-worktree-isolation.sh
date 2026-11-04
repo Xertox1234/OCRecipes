@@ -130,6 +130,38 @@ assert_deny "registry: malformed entry fails closed" \
   "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"$WT_A/server/app.ts\"}}"
 rm -f "$REG_DIR/cccc000000000003"
 
+# A subagent in its OWN isolation worktree (harness item 8, 2026-11-01). The registry is per
+# session and shared with the parent, so it can list only other worktrees (5 of 31 denials in
+# 10-30..11-01). agent_id equals the subagent's agent-<id> worktree suffix and is absent at the
+# top level; the exception needs both that and a cwd inside that worktree.
+WT_C='/Users/x/projects/OCRecipes/.claude/worktrees/agent-ccc'
+WT_D='/Users/x/projects/OCRecipes/.claude/worktrees/agent-ddd'
+assert_allow "registry: subagent writes inside its own unregistered worktree" \
+  "{\"session_id\":\"$SESSION\",\"agent_id\":\"ccc\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$WT_C/server/app.ts\"}}"
+assert_allow "registry: subagent's relative path inside its own worktree" \
+  "{\"session_id\":\"$SESSION\",\"agent_id\":\"ccc\",\"cwd\":\"$WT_C/server\",\"tool_input\":{\"file_path\":\"app.ts\"}}"
+assert_deny "registry: no agent_id (the parent session) gets no exception in a subagent's worktree" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$WT_C/server/app.ts\"}}"
+assert_deny "registry: a subagent cannot write into a sibling's worktree" \
+  "{\"session_id\":\"$SESSION\",\"agent_id\":\"ccc\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$WT_D/server/app.ts\"}}"
+assert_deny "registry: agent_id naming a worktree the cwd is not in gets no exception" \
+  "{\"session_id\":\"$SESSION\",\"agent_id\":\"ddd\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$WT_D/server/app.ts\"}}"
+assert_deny "registry: a subagent still cannot write into the main checkout" \
+  "{\"session_id\":\"$SESSION\",\"agent_id\":\"ccc\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$MAIN/server/app.ts\"}}"
+assert_deny "registry: a non-alphanumeric agent_id gets no exception" \
+  "{\"session_id\":\"$SESSION\",\"agent_id\":\"c*\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$WT_C/server/app.ts\"}}"
+# A present-but-broken helper (here it runs `exit 0`) must not end the hook with no decision:
+# the helper runs in a subshell, so the main checkout write is still denied.
+BROKEN_DIR=$(mktemp -d); mkdir -p "$BROKEN_DIR/lib"
+cp "$HOOK" "$BROKEN_DIR/guard-worktree-isolation.sh"; echo 'exit 0' > "$BROKEN_DIR/lib/own-agent-worktree.sh"
+OUT=$(echo "{\"session_id\":\"$SESSION\",\"agent_id\":\"ccc\",\"cwd\":\"$WT_C\",\"tool_input\":{\"file_path\":\"$MAIN/server/app.ts\"}}" | bash "$BROKEN_DIR/guard-worktree-isolation.sh" 2>/dev/null)
+if echo "$OUT" | grep -q '"permissionDecision": "deny"'; then
+  echo "PASS: registry: a broken own-worktree helper still denies"; PASS=$((PASS+1))
+else
+  echo "FAIL: registry: a broken own-worktree helper still denies"; echo "  got: $OUT"; FAIL=$((FAIL+1))
+fi
+rm -rf "$BROKEN_DIR"
+
 # Bypass.
 out=$(echo "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"file_path\":\"$MAIN/server/app.ts\"}}" \
   | SKIP_WORKTREE_CONTRACT=1 bash "$HOOK" 2>/dev/null)

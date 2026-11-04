@@ -67,6 +67,11 @@ const state = vi.hoisted(() => ({
   // Captured from the mocked BlockRenderer's onAction prop so tests can fire
   // an arbitrary action without a canned block.action.
   onAction: null as ((action: Record<string, unknown>) => void) | null,
+  // The plan-status check (usePlanCheck): known by default.
+  planUnknown: false,
+  recheckPlan: vi.fn(),
+  // Captured from the mocked BlockRenderer's lockedFinderButtons.
+  lockedFinderButtons: undefined as string[] | undefined,
   // Recipe finder: captured from the mocked BlockRenderer's onFinderAction.
   onFinderAction: null as ((a: unknown, label: string) => void) | null,
   // Finder idea cards: captured from the mocked BlockRenderer.
@@ -132,6 +137,13 @@ vi.mock("@/hooks/useTTS", () => ({
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: (feature: string) =>
     feature === "catalogSave" ? state.canSearchOnline : state.hasVoice,
+}));
+
+vi.mock("@/hooks/usePlanCheck", () => ({
+  usePlanCheck: () => ({
+    planUnknown: state.planUnknown,
+    recheckPlan: state.recheckPlan,
+  }),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -223,8 +235,10 @@ vi.mock("@/components/coach/blocks", () => ({
     onMakeFinderItem,
     makingFinderItemId,
     expiredFinderFlowIds,
+    lockedFinderButtons,
     isActive,
   }: {
+    lockedFinderButtons?: string[];
     block: { type: string; [k: string]: unknown };
     onFinderAction?: (a: unknown, label: string) => void;
     onOpenFinderItem?: (item: unknown) => void;
@@ -244,6 +258,7 @@ vi.mock("@/components/coach/blocks", () => ({
     // block.action a given render was mounted with) via `state.onAction?.(...)`.
     state.onAction = onAction ?? null;
     state.onFinderAction = onFinderAction ?? null;
+    state.lockedFinderButtons = lockedFinderButtons;
     state.onOpenFinderItem = onOpenFinderItem ?? null;
     state.onMakeFinderItem = onMakeFinderItem ?? null;
     state.makingFinderItemId = makingFinderItemId;
@@ -409,6 +424,9 @@ function resetState() {
   state.apiRequest = vi.fn().mockResolvedValue(undefined);
   state.onAction = null;
   state.onFinderAction = null;
+  state.planUnknown = false;
+  state.recheckPlan = vi.fn();
+  state.lockedFinderButtons = undefined;
   state.saveRecipe = vi.fn().mockResolvedValue({ id: 5 });
   state.onOpenFinderItem = null;
   state.onMakeFinderItem = null;
@@ -1049,6 +1067,52 @@ describe("CoachChat — recipe finder", () => {
     });
     expect(state.startStream).toHaveBeenCalledWith(1, "Generate", {
       finderAction: { type: "generate", flowId: FLOW },
+    });
+  });
+
+  it("a known free user sees the premium finder buttons locked", () => {
+    state.canSearchOnline = false;
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "No community recipes matched.",
+        metadata: { blocks: [finderBlock] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    expect(state.lockedFinderButtons).toContain("search_online");
+  });
+
+  it("while the plan is unknown: no finder locks, and a premium button re-checks the plan", () => {
+    // Unknown status falls back to free-tier features (owner ruling 2026-11-02).
+    state.canSearchOnline = false;
+    state.planUnknown = true;
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "No community recipes matched.",
+        metadata: { blocks: [finderBlock] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    expect(state.lockedFinderButtons).toEqual([]);
+    act(() => {
+      state.onFinderAction?.({ type: "generate", flowId: FLOW }, "Generate");
+    });
+    expect(state.recheckPlan).toHaveBeenCalledTimes(1);
+    expect(state.startStream).not.toHaveBeenCalled();
+
+    act(() => {
+      state.onFinderAction?.(
+        { type: "none_of_these", flowId: FLOW },
+        "None of these",
+      );
+    });
+    expect(state.recheckPlan).toHaveBeenCalledTimes(1);
+    expect(state.startStream).toHaveBeenCalledWith(1, "None of these", {
+      finderAction: { type: "none_of_these", flowId: FLOW },
     });
   });
 

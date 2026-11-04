@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
-import { barcodeVariants, offEnergyKcal } from "../barcode-policy";
+import {
+  barcodeVariants,
+  boundOffPer100g,
+  offEnergyKcal,
+} from "../barcode-policy";
 
 describe("barcodeVariants", () => {
   it("generates the padded form a row may be cached under (dev spring-water pair)", () => {
@@ -79,5 +83,61 @@ describe("module import graph", () => {
     // against a silent-but-degraded import, not the primary assertion.
     expect(r.status).toBe(0);
     expect(r.stderr).not.toMatch(/error|DATABASE_URL/i);
+  });
+});
+
+describe("boundOffPer100g (R34 plausibility bounds)", () => {
+  it("passes plausible values through unchanged", () => {
+    const input = {
+      calories: 539,
+      protein: 6.3,
+      carbs: 57.5,
+      fat: 30.9,
+      fiber: 4,
+      sugar: 56.3,
+      sodium: 43,
+      saturatedFat: 10.6,
+      cholesterol: 0,
+      caffeine: 0,
+    };
+    expect(boundOffPer100g(input)).toEqual({ per100g: input, dropped: [] });
+  });
+
+  it("drops negative values", () => {
+    const r = boundOffPer100g({ calories: 100, fat: -5, sugar: -1 });
+    expect(r.per100g).toEqual({ calories: 100 });
+    expect(r.dropped.sort()).toEqual(["fat", "sugar"]);
+  });
+
+  it("drops energy above the pure-fat ceiling (kJ typed as kcal)", () => {
+    const r = boundOffPer100g({ calories: 3700, protein: 10 });
+    expect(r.per100g.calories).toBeUndefined();
+    expect(r.per100g.protein).toBe(10);
+    expect(r.dropped).toEqual(["calories"]);
+  });
+
+  it("drops gram nutrients above 100 g per 100 g", () => {
+    const r = boundOffPer100g({ calories: 400, protein: 450, carbs: 20 });
+    expect(r.per100g.protein).toBeUndefined();
+    expect(r.per100g.carbs).toBe(20);
+    expect(r.dropped).toEqual(["protein"]);
+  });
+
+  it("drops mg nutrients above 100 g (100000 mg) per 100 g", () => {
+    const r = boundOffPer100g({ sodium: 38_758, cholesterol: 250_000 });
+    expect(r.per100g.sodium).toBe(38_758); // table salt is plausible
+    expect(r.per100g.cholesterol).toBeUndefined();
+  });
+
+  it("drops protein/carbs/fat when their sum exceeds ~105 g per 100 g", () => {
+    const r = boundOffPer100g({
+      calories: 500,
+      protein: 60,
+      carbs: 60,
+      fat: 10,
+      fiber: 3,
+    });
+    expect(r.per100g).toEqual({ calories: 500, fiber: 3 });
+    expect(r.dropped.sort()).toEqual(["carbs", "fat", "protein"]);
   });
 });

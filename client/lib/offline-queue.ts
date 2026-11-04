@@ -4,6 +4,8 @@ import { randomUuidV4 } from "@/lib/uuid";
 
 const STORAGE_KEY = "@ocrecipes_offline_queue";
 const TTL_MS = 24 * 60 * 60 * 1000;
+/** How long a queued write may wait to sync before it is given up on. */
+export const QUEUE_TTL_MS = TTL_MS;
 const MAX_DEPTH = 50;
 
 export interface QueuedMutation {
@@ -25,10 +27,44 @@ let queue: QueuedMutation[] = [];
 // under whoever logs in next (cross-user replay). See clearOfflineQueue.
 let initPromise: Promise<void> | null = null;
 
-async function persist(): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue)).catch(
-    () => {},
-  );
+// Resolves false (never throws) when the write failed — e.g. AsyncStorage's
+// "database or disk is full". enqueue() turns that into a rejection (R18); the
+// other writers stay best-effort (the in-memory state is still correct).
+async function persist(): Promise<boolean> {
+  let ok = true;
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue)).catch(() => {
+    ok = false;
+  });
+  return ok;
+}
+
+// Queued writes dropped without being synced — by the depth cap or the TTL —
+// are reported, never silent (R18). The startup TTL sweep runs at module load,
+// before the toast bridge mounts, so an emit with no listener is held and
+// delivered once to the first subscriber.
+type EvictionListener = (count: number) => void;
+const evictionListeners = new Set<EvictionListener>();
+let undeliveredEvictions = 0;
+
+function emitEvictions(count: number): void {
+  if (count <= 0) return;
+  if (evictionListeners.size === 0) {
+    undeliveredEvictions += count;
+    return;
+  }
+  evictionListeners.forEach((l) => l(count));
+}
+
+export function subscribeToQueueEvictions(
+  listener: EvictionListener,
+): () => void {
+  evictionListeners.add(listener);
+  if (undeliveredEvictions > 0) {
+    const count = undeliveredEvictions;
+    undeliveredEvictions = 0;
+    listener(count);
+  }
+  return () => evictionListeners.delete(listener);
 }
 
 // Per-item shape guard for persisted entries. A valid-JSON-but-non-array blob
@@ -76,6 +112,7 @@ export function initOfflineQueue(): Promise<void> {
       merged.length > MAX_DEPTH
         ? merged.slice(merged.length - MAX_DEPTH)
         : merged;
+    emitEvictions(merged.length - queue.length);
     // Persist the merged set UNCONDITIONALLY before clearStale: a mid-load enqueue
     // already clobbered storage to just its own entry (its persist() ran while
     // getItem was awaiting), so without this write the merged result lives only in
@@ -91,8 +128,10 @@ export async function clearStale(): Promise<void> {
   const now = Date.now();
   const fresh = queue.filter((item) => now - item.savedAt <= TTL_MS);
   if (fresh.length !== queue.length) {
+    const dropped = queue.length - fresh.length;
     queue = fresh;
     await persist();
+    emitEvictions(dropped);
   }
 }
 
@@ -106,8 +145,18 @@ export async function enqueue(
     savedAt: Date.now(),
   };
   const next = [...queue, entry];
-  queue = next.length > MAX_DEPTH ? next.slice(next.length - MAX_DEPTH) : next;
-  await persist();
+  const dropped =
+    next.length > MAX_DEPTH ? next.slice(0, next.length - MAX_DEPTH) : [];
+  queue = next.slice(dropped.length);
+  if (!(await persist())) {
+    // Not durable → don't pretend it is (R18). Roll back this entry (and
+    // restore anything the depth cap dropped for it) and reject, so the caller
+    // shows a failure instead of a "logged" toast for an entry that would
+    // vanish on the next force-quit.
+    queue = [...dropped, ...queue.filter((i) => i.id !== entry.id)];
+    throw new Error("Couldn't save the offline entry to device storage");
+  }
+  emitEvictions(dropped.length);
 }
 
 export async function dequeue(id: string): Promise<void> {

@@ -1,6 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import {
+  TOGGLE_FAVOURITE_ITEM_KEY,
+  toggleFavouriteItemFn,
+  settleFavouriteItemToggle,
+} from "@/lib/mutation-defaults";
 import type { ScannedItemResponse, PaginatedResponse } from "@/types/api";
 
 /**
@@ -11,13 +15,10 @@ export function useToggleFavourite() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (itemId: number) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/scanned-items/${itemId}/favourite`,
-      );
-      return res.json() as Promise<{ isFavourited: boolean }>;
-    },
+    // Durable across a restart: the key + mutationFn are registered in
+    // client/lib/mutation-defaults.ts.
+    mutationKey: TOGGLE_FAVOURITE_ITEM_KEY,
+    mutationFn: toggleFavouriteItemFn,
     onMutate: async (itemId: number) => {
       await queryClient.cancelQueries({ queryKey: QUERY_KEYS.scannedItems });
 
@@ -55,9 +56,7 @@ export function useToggleFavourite() {
         queryClient.setQueryData(QUERY_KEYS.scannedItems, context.previousData);
       }
     },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-    },
+    onSettled: () => settleFavouriteItemToggle(queryClient),
     // Reviewed for the global mutation net (2026-09-25): no opt-out — its
     // one call site (useHistoryData.handleFavourite, via HistoryScreen)
     // shows no visible failure feedback beyond this rollback, so the global

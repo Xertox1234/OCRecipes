@@ -37,8 +37,16 @@ vi.mock("@/context/AuthContext", () => ({
   }),
 }));
 
+let mockCanSetMacros = true;
 vi.mock("@/hooks/usePremiumFeatures", () => ({
-  usePremiumFeature: () => true,
+  usePremiumFeature: () => mockCanSetMacros,
+}));
+
+const { mockPlanCheck } = vi.hoisted(() => ({
+  mockPlanCheck: { planUnknown: false, recheckPlan: vi.fn() },
+}));
+vi.mock("@/hooks/usePlanCheck", () => ({
+  usePlanCheck: () => mockPlanCheck,
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -73,7 +81,7 @@ const mockScrollToEnd = vi.fn();
   HTMLElement.prototype as unknown as { scrollToEnd: typeof mockScrollToEnd }
 ).scrollToEnd = mockScrollToEnd;
 
-async function fillCalculateAndSave() {
+async function fillAndCalculate() {
   renderComponent(<GoalSetupScreen />);
 
   fireEvent.change(screen.getByLabelText("Age"), {
@@ -90,8 +98,11 @@ async function fillCalculateAndSave() {
   fireEvent.click(screen.getByLabelText("Lose Weight"));
 
   fireEvent.click(screen.getByLabelText("Calculate my goals"));
+  return screen.findByLabelText("Save my goals");
+}
 
-  const saveButton = await screen.findByLabelText("Save my goals");
+async function fillCalculateAndSave() {
+  const saveButton = await fillAndCalculate();
   // Calculate fires its own Success haptic (results appear on screen); the
   // save assertions below are about the save alone.
   mockNotification.mockClear();
@@ -537,5 +548,36 @@ describe("GoalSetupScreen — Calculate with only a choice missing", () => {
       expect.stringMatching(/^Still needed/),
     );
     announce.mockRestore();
+  });
+});
+
+describe("GoalSetupScreen — macro targets while the plan is unknown", () => {
+  const PREMIUM_NOTE =
+    "Editing protein, carb and fat targets requires Premium.";
+
+  afterEach(() => {
+    mockCanSetMacros = true;
+    mockPlanCheck.planUnknown = false;
+  });
+
+  it("a known free user sees the premium note and the Premium-required labels", async () => {
+    mockCanSetMacros = false;
+    await fillAndCalculate();
+    expect(screen.getByText(PREMIUM_NOTE)).toBeTruthy();
+    expect(
+      screen.getByLabelText("Daily protein target (Premium required)"),
+    ).toBeTruthy();
+  });
+
+  it("an unknown plan shows no premium note and no Premium-required labels", async () => {
+    // Unknown status falls back to free-tier features (owner ruling 2026-11-02).
+    mockCanSetMacros = false;
+    mockPlanCheck.planUnknown = true;
+    await fillAndCalculate();
+    expect(screen.queryByText(PREMIUM_NOTE)).toBeNull();
+    expect(screen.getByLabelText("Daily protein target")).toBeTruthy();
+    expect(
+      screen.queryByLabelText("Daily protein target (Premium required)"),
+    ).toBeNull();
   });
 });

@@ -52,6 +52,13 @@ export const Gesture = {
   Exclusive: (..._gestures: unknown[]) => new GestureMock(),
 };
 
+// gesture-handler 3 hook API — each hook returns an inert gesture object.
+export const useTapGesture = (_config?: unknown) => new GestureMock();
+export const usePanGesture = (_config?: unknown) => new GestureMock();
+export const usePinchGesture = (_config?: unknown) => new GestureMock();
+export const useSimultaneousGestures = (..._gestures: unknown[]) =>
+  new GestureMock();
+
 // GestureDetector renders children directly
 export function GestureDetector({ children }: { children: React.ReactNode }) {
   return children;
@@ -78,4 +85,8 @@ export default {
   GestureDetector,
   GestureHandlerRootView,
   Swipeable,
+  useTapGesture,
+  usePanGesture,
+  usePinchGesture,
+  useSimultaneousGestures,
 };

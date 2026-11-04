@@ -13,7 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   AccessibilityInfo,
-  type TextInput,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import {
@@ -35,9 +35,12 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ChatBubble } from "@/components/ChatBubble";
 import { ThemedText } from "@/components/ThemedText";
-import { EmptyState } from "@/components/EmptyState";
+import { EmptyState, OfflineEmptyState } from "@/components/EmptyState";
+import { isPausedWithoutData } from "@/components/empty-state-utils";
 import { TypingDots } from "@/components/TypingDots";
 import { SendButton } from "@/components/SendButton";
+import { InlineMicButton } from "@/components/InlineMicButton";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -64,12 +67,27 @@ import {
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { RouteProp } from "@react-navigation/native";
+import type {
+  RouteProp,
+  CompositeNavigationProp,
+} from "@react-navigation/native";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import type { MainTabParamList } from "@/navigation/MainTabNavigator";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { UpgradeModal } from "@/components/UpgradeModal";
+import {
+  SUGGESTED_PROMPTS,
+  type SuggestedPrompt,
+} from "@/screens/coach-teaching-prompts";
 
-type ChatScreenNavigationProp = NativeStackNavigationProp<
-  ChatStackParamList,
-  "Chat"
+// Composite so a teaching prompt can open the camera (a root-stack screen).
+type ChatScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<ChatStackParamList, "Chat">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
 >;
 type ChatScreenRouteProp = RouteProp<ChatStackParamList, "Chat">;
 
@@ -79,13 +97,6 @@ interface DisplayMessage {
   content: string;
   createdAt: string;
 }
-
-const SUGGESTED_PROMPTS = [
-  "What should I eat today?",
-  "How can I hit my protein goal?",
-  "Analyze my eating patterns",
-  "Suggest a healthy snack",
-];
 
 const CoachStreamingFooter = React.memo(function CoachStreamingFooter({
   content,
@@ -119,11 +130,31 @@ const CoachStreamingFooter = React.memo(function CoachStreamingFooter({
 
 const SuggestedPrompts = React.memo(function SuggestedPrompts({
   onSelect,
+  onOpenCamera,
+  onUpgrade,
 }: {
   onSelect: (prompt: string) => void;
+  onOpenCamera: () => void;
+  onUpgrade: () => void;
 }) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
+  // A teaching or Pro prompt is answered here, under the prompts.
+  const [answered, setAnswered] = React.useState<Exclude<
+    SuggestedPrompt,
+    { kind: "ask" }
+  > | null>(null);
+
+  const handlePress = (prompt: SuggestedPrompt) => {
+    if (prompt.kind === "ask") {
+      onSelect(prompt.text);
+    } else {
+      setAnswered(prompt);
+      // No chat message carries this answer, so tell screen readers directly
+      // (no live region here, so on both platforms).
+      AccessibilityInfo.announceForAccessibility(prompt.answer);
+    }
+  };
 
   return (
     <View style={styles.suggestionsContainer}>
@@ -155,7 +186,7 @@ const SuggestedPrompts = React.memo(function SuggestedPrompts({
       <View style={styles.promptsGrid}>
         {SUGGESTED_PROMPTS.map((prompt, index) => (
           <Animated.View
-            key={prompt}
+            key={prompt.text}
             entering={
               reducedMotion
                 ? undefined
@@ -163,7 +194,7 @@ const SuggestedPrompts = React.memo(function SuggestedPrompts({
             }
           >
             <Pressable
-              onPress={() => onSelect(prompt)}
+              onPress={() => handlePress(prompt)}
               style={({ pressed }) => [
                 styles.promptChip,
                 {
@@ -174,7 +205,9 @@ const SuggestedPrompts = React.memo(function SuggestedPrompts({
                 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel={`Suggested prompt: ${prompt}`}
+              accessibilityLabel={`Suggested prompt: ${prompt.text}${
+                prompt.kind === "pro" ? " (Pro)" : ""
+              }`}
             >
               <Feather
                 name="message-circle"
@@ -186,12 +219,50 @@ const SuggestedPrompts = React.memo(function SuggestedPrompts({
                 type="small"
                 style={[styles.promptText, { color: theme.text }]}
               >
-                {prompt}
+                {prompt.text}
               </ThemedText>
+              {prompt.kind === "pro" ? (
+                <View
+                  style={[
+                    styles.proBadge,
+                    { backgroundColor: theme.accentSolid },
+                  ]}
+                  accessible={false}
+                >
+                  <ThemedText
+                    style={[styles.proBadgeText, { color: theme.buttonText }]}
+                  >
+                    Pro
+                  </ThemedText>
+                </View>
+              ) : null}
             </Pressable>
           </Animated.View>
         ))}
       </View>
+      {answered ? (
+        <View style={styles.teachingAnswer}>
+          <ChatBubble role="assistant" content={answered.answer} />
+          <Pressable
+            onPress={answered.kind === "teach" ? onOpenCamera : onUpgrade}
+            accessibilityRole="button"
+            accessibilityLabel={answered.actionLabel}
+            style={({ pressed }) => [
+              styles.teachingAction,
+              {
+                backgroundColor: theme.accentSolid,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            <ThemedText
+              style={[styles.teachingActionText, { color: theme.buttonText }]}
+            >
+              {answered.actionLabel}
+            </ThemedText>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -302,6 +373,7 @@ export default function ChatScreen() {
     data: messages,
     isLoading,
     isError: messagesError,
+    fetchStatus: messagesFetchStatus,
     refetch: refetchMessages,
   } = useChatMessages(validConversationId);
   const {
@@ -343,8 +415,51 @@ export default function ChatScreen() {
 
   const [inputText, setInputText] = useState("");
   const flatListRef = useRef<FlatList>(null);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const composerFocus = useFieldFocus();
+
+  // Voice input APPENDS to whatever was typed before the mic was tapped and
+  // never sends — the user reviews the dictation and taps Send themselves.
+  // null = no dictation in progress (a late final result must not refill).
+  const voiceBaseRef = useRef<string | null>(null);
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+  useEffect(() => {
+    const base = voiceBaseRef.current;
+    if (base !== null && transcript && (isListening || isFinal)) {
+      setInputText(
+        (base ? `${base} ${transcript}` : transcript).slice(
+          0,
+          CHAT_MESSAGE_MAX_LENGTH,
+        ),
+      );
+    }
+  }, [isListening, isFinal, transcript]);
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError, toast]);
+  // A reply that starts streaming locks the composer; end any capture too.
+  useEffect(() => {
+    if (isStreaming && isListening && voiceBaseRef.current !== null) {
+      stopListening();
+    }
+  }, [isStreaming, isListening, stopListening]);
+  const handleVoicePress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      stopListening();
+    } else {
+      voiceBaseRef.current = inputText.trim();
+      void startListening();
+    }
+  }, [haptics, isListening, inputText, startListening, stopListening]);
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
@@ -491,6 +606,8 @@ export default function ChatScreen() {
       if (!content || isStreaming || isMalformedId) return;
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      voiceBaseRef.current = null;
+      if (isListening) stopListening();
       setInputText("");
       setPendingUser({
         content,
@@ -545,6 +662,8 @@ export default function ChatScreen() {
     },
     [
       inputText,
+      isListening,
+      stopListening,
       isStreaming,
       isMalformedId,
       haptics,
@@ -558,6 +677,12 @@ export default function ChatScreen() {
       toast,
     ],
   );
+
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const handleOpenCamera = useCallback(() => {
+    navigation.navigate("Scan");
+  }, [navigation]);
+  const handleShowUpgrade = useCallback(() => setShowUpgrade(true), []);
 
   const handlePromptSelect = useCallback(
     // handleSend buzzes; a second impact here would double it.
@@ -625,6 +750,13 @@ export default function ChatScreen() {
     !isStreaming &&
     !showPendingUser;
 
+  // Offline cold start: the messages query is paused (not loading, no error).
+  const loadPaused =
+    validConversationId !== null &&
+    isPausedWithoutData(messagesFetchStatus, !!messages?.length) &&
+    !isStreaming &&
+    !showPendingUser;
+
   const isEmpty =
     !isLoading &&
     (!messages || messages.length === 0) &&
@@ -651,6 +783,10 @@ export default function ChatScreen() {
             }}
           />
         </View>
+      ) : loadPaused ? (
+        <View style={[styles.emptyContent, { paddingTop: headerInset }]}>
+          <OfflineEmptyState what="conversation" />
+        </View>
       ) : isEmpty ? (
         <FlatList
           ref={flatListRef}
@@ -663,7 +799,11 @@ export default function ChatScreen() {
             { paddingTop: headerInset },
           ]}
           ListEmptyComponent={
-            <SuggestedPrompts onSelect={handlePromptSelect} />
+            <SuggestedPrompts
+              onSelect={handlePromptSelect}
+              onOpenCamera={handleOpenCamera}
+              onUpgrade={handleShowUpgrade}
+            />
           }
         />
       ) : (
@@ -672,7 +812,7 @@ export default function ChatScreen() {
           data={displayMessages}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          ListFooterComponent={streamingFooter}
+          ListFooterComponent={streamingFooter ?? undefined}
           contentContainerStyle={[
             styles.messagesContent,
             { paddingTop: headerInset },
@@ -732,6 +872,12 @@ export default function ChatScreen() {
             accessibilityLabel="Message input"
             accessibilityHint="Type your question for NutriCoach"
           />
+          <InlineMicButton
+            isListening={isListening}
+            volume={volume}
+            onPress={handleVoicePress}
+            disabled={isStreaming}
+          />
           <SendButton
             onPress={() => handleSend()}
             canSend={inputText.trim().length > 0}
@@ -749,11 +895,40 @@ export default function ChatScreen() {
           }
         />
       </View>
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  proBadge: {
+    marginLeft: Spacing.xs,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.xs,
+  },
+  proBadgeText: {
+    fontSize: 11,
+    fontFamily: FontFamily.semiBold,
+  },
+  teachingAnswer: {
+    marginTop: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  teachingAction: {
+    alignSelf: "flex-start",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  teachingActionText: {
+    fontSize: 15,
+    fontFamily: FontFamily.semiBold,
+  },
   container: {
     flex: 1,
   },

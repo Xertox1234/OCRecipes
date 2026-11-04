@@ -1,0 +1,23 @@
+appId: com.williamtower.ocrecipes
+name: "Device - Open a curated recipe from Home"
+tags:
+  - device
+---
+# READ-ONLY: opens the first curated recipe on Home and looks at it. The
+# detail screen writes nothing when it opens; its favourite, add-to-plan
+# and coach buttons are never tapped.
+- runFlow: ../helpers/launch-installed.yaml
+
+# Curated cards' labels read "Curated recipe. <title>, … Double tap to view
+# recipe." (or "<title>. Curated recipe. Double tap to view."). Tap the
+# first match, whichever recipe is featured today.
+- extendedWaitUntil:
+    visible: ".*Curated recipe.*Double tap to view.*"
+    timeout: 20000
+- tapOn:
+    text: ".*Curated recipe.*Double tap to view.*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Ingredients.*"
+    timeout: 20000
+- takeScreenshot: recipe-detail

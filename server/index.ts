@@ -14,10 +14,16 @@ import { registerRoutes } from "./routes";
 import * as path from "path";
 import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
+import { startCoverCandidatePurgeJob } from "./storage/cookbook-cover-candidates";
 import { sampleStoredAppleTokens } from "./storage/identities";
 import { runIdentityKeyBootCheck } from "./lib/social-identity/key-check";
 import { fireAndForget } from "./lib/fire-and-forget";
 import { startPromotionJob } from "./services/canonical-promotion";
+import { initSearchIndex } from "./services/recipe-search";
+import {
+  startNotificationScheduler,
+  stopNotificationScheduler,
+} from "./services/notification-scheduler";
 import { logger, rootLogger, toError } from "./lib/logger";
 import {
   attachExpressErrorReporter,
@@ -25,6 +31,7 @@ import {
   reportError,
 } from "./lib/error-reporter";
 import { requestContextMiddleware } from "./lib/request-context";
+import { bodyShapeBudget } from "./middleware/body-shape-budget";
 import { installContractSnapshotMiddleware } from "./lib/contract-snapshot";
 import { UUID_RE } from "./lib/identifier-patterns";
 import {
@@ -171,6 +178,7 @@ function setupBodyParsing(app: express.Application) {
   );
 
   app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+  app.use(bodyShapeBudget);
 }
 
 function setupRequestLogging(app: express.Application) {
@@ -326,6 +334,18 @@ function startServer() {
 
   const server = registerRoutes(app);
 
+  // Background work lives here, not in registerRoutes, so a test or script that
+  // registers routes does not start the search index or the cron jobs.
+  // Search index: non-blocking — the server starts even if the index fails.
+  initSearchIndex().catch((err) => {
+    logger.error({ err: toError(err) }, "Failed to initialize search index");
+    reportError(err, "search index init");
+  });
+
+  // Push notification scheduler (daily 09:00 commitment reminders and the
+  // hourly local-time reminders). Stopped in shutdown() below.
+  startNotificationScheduler();
+
   // Sentry's Express error handler must sit after all routes and before our
   // JSON error handler. It captures only 5xx by default, tags events with
   // the ALS requestId (via beforeSend), and always forwards to the next
@@ -357,6 +377,10 @@ function startServer() {
 
   // Start periodic cache cleanup (every 6 hours)
   const cacheCleanupInterval = startCacheCleanupJob();
+
+  // Hourly purge of expired cover-studio candidates and their stored objects.
+  // Not in the retention cron: that is off in production until opted in.
+  const coverCandidatePurgeInterval = startCoverCandidatePurgeJob();
 
   // Start canonical recipe promotion job (every 6 hours)
   const promotionInterval = startPromotionJob();
@@ -414,7 +438,9 @@ function startServer() {
     logger.info({ signal }, "graceful shutdown initiated");
     rootLogger.flush();
     clearInterval(cacheCleanupInterval);
+    clearInterval(coverCandidatePurgeInterval);
     clearInterval(promotionInterval);
+    stopNotificationScheduler();
     if (retentionCleanupTask) {
       void retentionCleanupTask.stop();
     }

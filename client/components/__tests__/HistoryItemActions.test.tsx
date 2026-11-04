@@ -7,7 +7,7 @@ import { HistoryItemActions } from "../HistoryItemActions";
 describe("HistoryItemActions", () => {
   const defaultProps = {
     isFavourited: false,
-    isPremium: true,
+    isRecipeLocked: false,
     isFavouriteLoading: false,
     isDiscardLoading: false,
     onFavourite: vi.fn(),

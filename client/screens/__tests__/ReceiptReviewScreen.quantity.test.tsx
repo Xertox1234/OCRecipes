@@ -10,6 +10,10 @@ const { mockTriggerPop, mockNotification, confirmSpy } = vi.hoisted(() => ({
   confirmSpy: vi.fn(),
 }));
 
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }),
+}));
+
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     navigate: vi.fn(),
@@ -65,9 +69,12 @@ vi.mock("@/hooks/useReceiptScan", () => ({
     isSuccess: true,
   }),
   useReceiptConfirm: () => ({
-    mutate: (items: unknown, opts: { onSuccess?: () => void }) => {
+    mutate: (
+      items: unknown,
+      opts: { onSuccess?: (r: { added: number }) => void },
+    ) => {
       confirmSpy(items);
-      opts.onSuccess?.();
+      opts.onSuccess?.({ added: 1 });
     },
     isPending: false,
   }),

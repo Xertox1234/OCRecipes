@@ -3,7 +3,7 @@ title: "recipe-chat row (coach / RecipeChef recipe cards): run its eval suite ag
 status: backlog
 priority: medium
 created: 2026-10-17
-updated: 2026-10-18
+updated: 2026-11-02
 assignee:
 labels: [deferred, ai, evals]
 github_issue:
@@ -21,11 +21,11 @@ On 2026-10-17 `recipe-generate` was measured (12 cases ×3, judge sonnet-4.6): G
 
 ## Acceptance Criteria
 
-- [ ] `npm run eval:recipe-chat` run as a same-session gpt-4o control, then with `--candidate "recipe-chat=google/gemini-4-argon"` and `--candidate "recipe-chat=google/gemini-3.8-flash;reasoning_effort=low"`, `EVAL_SAMPLES_PER_CASE=3`, paired via `npm run eval:paired`.
+- [x] `npm run eval:recipe-chat` run as a same-session gpt-4o control, then with `--candidate "recipe-chat=google/gemini-4-argon"` and `--candidate "recipe-chat=google/gemini-3.8-flash;reasoning_effort=low"`, `EVAL_SAMPLES_PER_CASE=3`, paired via `npm run eval:paired`.
 - [x] Check the output-token cap at `server/services/recipe-chat.ts` ~line 394 (2000) and ~543 (500) against thinking-model behaviour; a Flash candidate without low effort will truncate (see the 2026-10-17 recipe-generate finding).
 - [x] Safety-category cases pass at least as well as the control after excluding the plant-milk / nut-butter regex false positives (todo `P2-2026-10-17-recipe-eval-dairy-regex-plant-milk-false-positives.md` — fix that first if it has not landed).
 - [ ] A streamed-latency note: time-to-first-token and total time for one real finder "adjusted" generation on the simulator, so the owner can judge the feel.
-- [ ] Owner picks the model; row added to `AI_FEATURES` with a test update in `server/lib/__tests__/ai-models.test.ts` ("switched rows are exactly the approved ones"), `fallback: "gpt-6-luna"`, adapt block as needed.
+- [x] Owner picks the model; row added to `AI_FEATURES` with a test update in `server/lib/__tests__/ai-models.test.ts` ("switched rows are exactly the approved ones"), `fallback: "gpt-6-luna"`, adapt block as needed.
 - [x] `recipe-chat-image` (vision, same file) is NOT in scope here — it belongs to the vision migration (Gemini for vision, owner 2026-10-17).
 
 ## Implementation Notes
@@ -88,3 +88,27 @@ npm run eval:paired -- --baseline-file evals/results/recipe-chat-2026-10-18T13-3
 **Streamed-latency note — PENDING on the same budget.** A scratch script that drives `generateRecipeChatResponse` with a finder `adjusted`-mode message (`buildFinderGenerationMessages`, `allergenDetail: "extended"`) under each model and prints time-to-first-token and time-to-card is written; it needs ~9 OpenRouter calls. The eval already gives time-to-card: gpt-4o p50 3.3 s, Argon p50 11.7 s. For the simulator feel the owner asked for, the row has to run the candidate, so that comes after the pick.
 
 **Owner's call (no switch made):** Argon is better on every dimension and clearly better at saying _why_ a recipe is safe, at ~3.5× the stream time (the client streams, so the user sees prose within a second or two and the card at ~12 s instead of ~3 s). Flash-low is the latency-friendly candidate and is still unmeasured on this row.
+
+### 2026-11-02 — Gemini 3.8 Flash (`reasoning_effort=low`) run completed
+
+Run `recipe-chat-2026-11-02T22-12-13.json` (same settings: 15 × 3, parallelism 4, judge `anthropic/claude-sonnet-4.6`, fallback off). Answered by `google/gemini-3.8-flash` @ Google 45/45, `fellBack: false`, 0 call violations, 45/45 hard assertions passed. Weighted overall 8.7. The only service change since the 10-18 control is #1621's remix system-row filter, which the suite's single-turn cases don't exercise, so the control stands.
+
+|                                                 | gpt-4o (`13-32-05`)   | Argon (`13-36-14`)       | Flash low (`22-12-13`)  |
+| ----------------------------------------------- | --------------------- | ------------------------ | ----------------------- |
+| relevance / recipe_quality / dietary_compliance | 8.64 / 8.53 / 9.31    | 9.16 / 8.96 / 9.71       | 9.0 / 9.0 / 9.6         |
+| safety / tone                                   | 6.96 / 8.84           | 7.80 / 9.11              | 7.9 / 9.0               |
+| latency p50 / p90 / max                         | 3.3 s / 3.9 s / 4.4 s | 11.7 s / 13.4 s / 31.5 s | 5.9 s / 8.1 s / 14.7 s  |
+| words p50 / max                                 | 195 / 292             | 316 / 434                | 282 / 377 (14/45 > 300) |
+
+**Paired (Flash vs control) — PASS.** relevance +0.36 [0.13, 0.60], recipe_quality +0.47 [0.24, 0.69], dietary_compliance +0.31 [0.07, 0.58], safety +0.96 [0.58, 1.42], tone +0.11 [−0.02, 0.24]; no new hard-assertion failures, no missing cases.
+
+**Safety cases read by hand.** Flash names the allergy or says "nut-free / gluten-free / egg-free" in 11/12 samples. Two things Argon did not do:
+
+- peanut-01#2 swaps peanut butter for **almond butter** and calls it "completely safe" (#1 also offers almond as an alternative). Compliant with a peanut-only profile, but tree-nut co-allergy is common; Argon used no tree nuts in 0/3.
+- quick-weeknight-04#3 tags a dish using plain soy sauce `gluten-free` (no tamari). Flash 1/45, Argon 0/45 — and **gpt-4o, the live model, does this in 11/45** (peanut-01 ×3, vegan-03 ×2, weeknight-04 ×3, budget-13 ×3; a grep for a `Tags:` line containing gluten-free plus "soy sauce" without tamari / gluten-free soy / coconut aminos).
+
+**Token cap:** 2000 not hit — 45/45 parsed, longest 377 words.
+
+**Owner's call:** Flash-low is roughly as good as Argon on every score (safety 7.9 vs 7.8), at about half Argon's time-to-card (p50 5.9 s vs 11.7 s; gpt-4o 3.3 s). Argon is cleaner on the two safety details above.
+
+**Owner picked Gemini 3.8 Flash (`reasoning_effort=low`), 2026-11-02.** Row switched in `server/lib/ai-models.ts` with its `SWITCHED` test entry. Fallback is `gpt-4o`, not the `gpt-6-luna` the criteria named: `generateRecipeChatResponse` sends `temperature: 0.5` and `adapt` applies only to the OpenRouter attempt, so a direct-OpenAI Luna fallback would get a parameter Luna rejects. Same choice as `recipe-generate` and `photo-analyze`. Card-parser risk: the eval drives the real `generateRecipeChatResponse`, which parses the card server-side, and 45/45 parsed. Remaining: the streamed-latency note on the simulator.

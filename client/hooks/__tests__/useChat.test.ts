@@ -685,6 +685,61 @@ describe("useSendMessage", () => {
     expect(result.current.requestError).toBeNull();
   });
 
+  describe("safety_override event", () => {
+    it("replaces the streamed text and drops the streamed recipe card", async () => {
+      vi.useFakeTimers();
+      try {
+        const { wrapper } = createQueryWrapper();
+        mockTokenStorage.get.mockResolvedValue("t");
+        const { result } = renderHook(() => useSendMessage(42), { wrapper });
+        let p!: Promise<void>;
+        await act(async () => {
+          p = result.current.sendMessage("extreme plan");
+          await Promise.resolve();
+          await Promise.resolve();
+          xhrInstance.responseText =
+            'data: {"content":"Try a 72-hour water fast."}\n' +
+            `data: ${JSON.stringify({
+              content: "",
+              recipe: { title: "Water" },
+              allergenWarning: "Potential allergens detected: x",
+            })}\n`;
+          xhrInstance.onprogress?.(new ProgressEvent("progress"));
+          await vi.advanceTimersByTimeAsync(20);
+        });
+        expect(result.current.streamingContent).toBe(
+          "Try a 72-hour water fast.",
+        );
+        expect(result.current.streamingRecipe).not.toBeNull();
+
+        await act(async () => {
+          xhrInstance.responseText +=
+            'data: {"safety_override":"Please consult a dietitian."}\n';
+          xhrInstance.onprogress?.(new ProgressEvent("progress"));
+          await vi.advanceTimersByTimeAsync(20);
+        });
+        expect(result.current.streamingContent).toBe(
+          "Please consult a dietitian.",
+        );
+        expect(result.current.streamingRecipe).toBeNull();
+        expect(result.current.allergenWarning).toBeNull();
+        expect(result.current.getStreamSnapshot()).toMatchObject({
+          content: "Please consult a dietitian.",
+          recipe: null,
+        });
+
+        await act(async () => {
+          xhrInstance.responseText += 'data: {"done":true}\n';
+          xhrInstance.onload?.(new ProgressEvent("load"));
+          await vi.advanceTimersByTimeAsync(5);
+          await p;
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe("recipe finder events", () => {
     const block = {
       type: "recipe_results",

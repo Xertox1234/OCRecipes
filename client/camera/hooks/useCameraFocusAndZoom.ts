@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
-import { Gesture } from "react-native-gesture-handler";
+import { usePinchGesture, useTapGesture } from "react-native-gesture-handler";
 import { useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import type { CameraDevice, CameraRef } from "react-native-vision-camera";
@@ -191,11 +191,13 @@ export function useCameraFocusAndZoom({
     };
   }, []);
 
-  const tapGesture = Gesture.Tap().onEnd((e) => {
-    scheduleOnRN(runFocus, e.x, e.y);
+  const tapGesture = useTapGesture({
+    onDeactivate: (e) => {
+      scheduleOnRN(runFocus, e.x, e.y);
+    },
   });
 
-  const pinchGesture = Gesture.Pinch()
+  const pinchGesture = usePinchGesture({
     // Reset the label gate on EVERY touch attempt, not just activated ones:
     // onFinalize also fires for an attempt that never activates (on Android a
     // single-finger tap drives the pinch recognizer BEGAN→FAILED), and a gate
@@ -203,13 +205,13 @@ export function useCameraFocusAndZoom({
     // reset also lets a new pinch show the readout even if it ends in the
     // bucket the last one left off in. lastAppliedZoom is NOT reset: it tracks
     // native state, so an unchanged zoom correctly stays un-re-sent.
-    .onBegin(() => {
+    onBegin: () => {
       lastZoomLabelText.value = null;
-    })
-    .onStart(() => {
+    },
+    onActivate: () => {
       zoomAtGestureStart.value = zoom.value;
-    })
-    .onUpdate((e) => {
+    },
+    onUpdate: (e) => {
       if (!device) return;
       zoom.value = clampZoom(
         zoomAtGestureStart.value * e.scale,
@@ -225,12 +227,12 @@ export function useCameraFocusAndZoom({
         lastZoomLabelText.value = nextZoomLabel;
         scheduleOnRN(showZoomLabel, zoom.value);
       }
-    })
-    // onFinalize (not onEnd) so a system-cancelled pinch still flushes and
-    // hides. At most one bridge call per ACTIVATED gesture (a never-activated
+    },
+    // onFinalize (not onDeactivate) so a system-cancelled pinch still flushes
+    // and hides. At most one bridge call per ACTIVATED gesture (a never-activated
     // attempt finds both gates clean and sends nothing): apply a final value the epsilon
     // gate held back, and start the label fade if this gesture showed it.
-    .onFinalize(() => {
+    onFinalize: () => {
       if (zoom.value !== lastAppliedZoom.value) {
         lastAppliedZoom.value = zoom.value;
         scheduleOnRN(setCameraZoom, zoom.value);
@@ -243,7 +245,8 @@ export function useCameraFocusAndZoom({
         lastZoomLabelText.value = null;
         scheduleOnRN(hideZoomLabel);
       }
-    });
+    },
+  });
 
   return { focusPoint, zoomLabel, tapGesture, pinchGesture };
 }

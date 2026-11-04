@@ -78,14 +78,25 @@ export interface GeneratedMealPlan {
 // ZOD SCHEMAS
 // ============================================================================
 
+// Gemini (the Vertex backup) capitalises these differently ("Breakfast",
+// "easy"); normalise the case, still reject unknown values.
+const caseless = (fix: (s: string) => string) => (v: unknown) =>
+  typeof v === "string" ? fix(v.trim()) : v;
+
 const generatedMealSchema = z.object({
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  mealType: z.preprocess(
+    caseless((s) => s.toLowerCase()),
+    z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  ),
   title: z.string().min(1).max(200),
   description: z.string().min(1).max(500),
   servings: z.number().int().min(1).max(20),
   prepTimeMinutes: z.number().int().min(0).max(1440),
   cookTimeMinutes: z.number().int().min(0).max(1440),
-  difficulty: z.enum(["Easy", "Medium", "Hard"]),
+  difficulty: z.preprocess(
+    caseless((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()),
+    z.enum(["Easy", "Medium", "Hard"]),
+  ),
   ingredients: z.array(
     z.object({
       name: z.string().min(1),
@@ -251,8 +262,17 @@ Each meal needs: mealType, title, description, servings, prepTimeMinutes, cookTi
     throw new Error("AI returned invalid JSON response");
   }
 
-  const validated = aiResponseSchema.parse(parsed);
-  return validated;
+  // safeParse, not parse: a ZodError would be mapped to a 400 client
+  // validation error by handleRouteError, but a schema miss is a model fault.
+  const result = aiResponseSchema.safeParse(parsed);
+  if (!result.success) {
+    log.warn(
+      { zodErrors: result.error.flatten() },
+      "pantry meal plan AI output failed schema validation",
+    );
+    throw new Error("AI returned an invalid meal plan. Please try again.");
+  }
+  return result.data;
 }
 
 // ============================================================================

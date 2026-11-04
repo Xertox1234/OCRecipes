@@ -4,7 +4,7 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  type TextInput as RNTextInput,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
@@ -76,7 +76,7 @@ function NutritionCell({
   field: NutrientField;
   value: string;
   onChange: (key: keyof NutritionData, raw: string) => void;
-  inputRef: React.Ref<RNTextInput>;
+  inputRef: React.Ref<TextInputInstance>;
   /** Moves to the next box; omitted on the last one, whose key says Done. */
   onNext?: () => void;
 }) {
@@ -129,7 +129,7 @@ export default function NutritionStep({
   nutrition,
   setNutrition,
 }: NutritionStepProps) {
-  const inputs = useRef<(RNTextInput | null)[]>([]);
+  const inputs = useRef<(TextInputInstance | null)[]>([]);
   const handleChange = useCallback(
     (key: keyof NutritionData, raw: string) => {
       const sanitized = sanitizeNumericInput(raw);

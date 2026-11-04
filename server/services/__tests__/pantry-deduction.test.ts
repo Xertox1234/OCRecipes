@@ -181,3 +181,38 @@ describe("deductPantryFromGrocery", () => {
     expect(result).toEqual([]);
   });
 });
+
+describe("deductPantryFromGrocery quantity parsing (R36)", () => {
+  it("parses fraction pantry quantities instead of truncating at the slash", () => {
+    const grocery = [
+      makeGroceryItem({ name: "butter", quantity: 1, unit: "cup" }),
+    ];
+    const pantry = [
+      makePantryItem({
+        name: "butter",
+        quantity: "1/2",
+        unit: "cup",
+        userId: "u",
+      }),
+    ];
+    // parseFloat("1/2") === 1 would wrongly cover the whole cup.
+    const result = deductPantryFromGrocery(grocery, pantry);
+    expect(result).toEqual([{ ...grocery[0], quantity: 0.5 }]);
+  });
+
+  it("rounds the remaining quantity", () => {
+    const grocery = [
+      makeGroceryItem({ name: "oil", quantity: 0.3, unit: "cup" }),
+    ];
+    const pantry = [
+      makePantryItem({
+        name: "oil",
+        quantity: "0.1",
+        unit: "cup",
+        userId: "u",
+      }),
+    ];
+    const result = deductPantryFromGrocery(grocery, pantry);
+    expect(result[0].quantity).toBe(0.2);
+  });
+});
