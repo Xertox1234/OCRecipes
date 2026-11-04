@@ -223,3 +223,63 @@ export const trustKeyStorage = {
     }
   },
 };
+
+// A server logout that failed (offline, 5xx) leaves the session token valid
+// until it expires. The old token and its user id are kept here, apart from
+// the session token so sign-out (tokenStorage.clear) leaves it, until a retry
+// revokes it. Same Keychain options as the session token: it is the same
+// credential, kept a little longer — never a new kind of secret.
+const PENDING_REVOKE_KEY = "ocrecipes_pending_revoke";
+
+export interface PendingRevoke {
+  token: string;
+  userId: string;
+}
+
+export const pendingRevokeStorage = {
+  /** The pending revoke, or null when there is none, the read failed, or the entry is malformed. */
+  async get(): Promise<PendingRevoke | null> {
+    try {
+      const raw = await SecureStore.getItemAsync(
+        PENDING_REVOKE_KEY,
+        SECURE_OPTIONS,
+      );
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        typeof (parsed as PendingRevoke).token === "string" &&
+        typeof (parsed as PendingRevoke).userId === "string"
+      ) {
+        const { token, userId } = parsed as PendingRevoke;
+        return { token, userId };
+      }
+      return null;
+    } catch (error) {
+      logger.error("Failed to read the pending logout revoke:", error);
+      return null;
+    }
+  },
+
+  async set(record: PendingRevoke): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(
+        PENDING_REVOKE_KEY,
+        JSON.stringify(record),
+        SECURE_OPTIONS,
+      );
+    } catch (error) {
+      // Only loses the retry; the token still expires on its own.
+      logger.error("Failed to save the pending logout revoke:", error);
+    }
+  },
+
+  async clear(): Promise<void> {
+    try {
+      await SecureStore.deleteItemAsync(PENDING_REVOKE_KEY, SECURE_OPTIONS);
+    } catch (error) {
+      logger.error("Failed to clear the pending logout revoke:", error);
+    }
+  },
+};

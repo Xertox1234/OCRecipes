@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -8,7 +8,11 @@ import {
   notifySessionExpired,
   whenQueryCacheRestored,
 } from "@/lib/query-client";
-import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
+import {
+  tokenStorage,
+  trustKeyStorage,
+  pendingRevokeStorage,
+} from "@/lib/token-storage";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { logger } from "@/lib/logger";
 import { sendDeviceTimezoneOnce } from "@/lib/timezone";
@@ -53,6 +57,88 @@ const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
  * this gates app launch and the fallback is a good answer.
  */
 export const AUTH_ME_TIMEOUT_MS = 10_000;
+
+/**
+ * Retry a server logout that failed (offline, 5xx), using the OLD token kept
+ * in pendingRevokeStorage. The server logout bumps the user's tokenVersion,
+ * which revokes EVERY token that user holds — so on this device it is never
+ * sent while that same user is signed in again, or while a sign-in is in
+ * progress (it would end the new session); their record is dropped instead,
+ * and the old token simply expires as before. Another user's old token is safe
+ * to revoke: tokenVersion is per user.
+ *
+ * Known gap (owner ruling 2026-11-04, accepted): a session the same user opened
+ * on ANOTHER device after the failed logout also ends when the retry lands —
+ * as it would have, had the logout succeeded after that sign-in. Closing it
+ * needs a server-side cutoff (revoke only tokens issued before the logout).
+ *
+ * Plain fetch with the old token, never apiRequest: apiRequest attaches the
+ * CURRENT token and its 401 handling would expire the current session. 2xx or
+ * 401 (already revoked/expired) forgets the record; anything else keeps it for
+ * the next launch or foreground. Never throws. Concurrent triggers share one run.
+ */
+let pendingRevokeRun: Promise<void> | null = null;
+
+/**
+ * Sign-ins in progress. The server issues the new token BEFORE establishSession
+ * drops the pending record, so a retry and a sign-in must never overlap: a
+ * revoke landing after the login would end the new session. A sign-in first
+ * waits out a retry already on the wire; a retry does not start while a
+ * sign-in is in progress (a later trigger handles the record).
+ */
+let signInsInFlight = 0;
+async function withSignInExclusion<T>(signIn: () => Promise<T>): Promise<T> {
+  signInsInFlight += 1;
+  try {
+    await pendingRevokeRun; // never rejects
+    return await signIn();
+  } finally {
+    signInsInFlight -= 1;
+  }
+}
+
+function retryPendingRevoke(currentUserId: string | undefined): Promise<void> {
+  if (signInsInFlight > 0) return Promise.resolve();
+  if (pendingRevokeRun) return pendingRevokeRun;
+  pendingRevokeRun = (async () => {
+    try {
+      const pending = await pendingRevokeStorage.get();
+      if (!pending) return;
+      if (currentUserId !== undefined && pending.userId === currentUserId) {
+        await pendingRevokeStorage.clear();
+        return;
+      }
+      const response = await fetchWithTimeout(
+        `${getApiUrl()}/api/auth/logout`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${pending.token}`,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        },
+        AUTH_ME_TIMEOUT_MS,
+      );
+      if (response.ok || response.status === 401) {
+        await pendingRevokeStorage.clear();
+      }
+    } catch {
+      // Offline or timed out: keep the record for the next try.
+    }
+  })().finally(() => {
+    pendingRevokeRun = null;
+  });
+  return pendingRevokeRun;
+}
+
+/** Drop a pending revoke that belongs to the user now signing in (see above). */
+async function dropPendingRevokeFor(userId: string | number): Promise<void> {
+  const pending = await pendingRevokeStorage.get();
+  if (pending && pending.userId === String(userId)) {
+    await pendingRevokeStorage.clear();
+  }
+}
 
 /**
  * Best-effort teardown of every piece of device-local state that outlives a
@@ -344,6 +430,19 @@ export function useAuth() {
     sendDeviceTimezoneOnce(String(signedInUserId)).catch(() => {});
   }, [signedInUserId]);
 
+  // Retry a failed server logout once the session state is known (launch) and
+  // whenever the signed-in user changes. The AppState listener below reads the
+  // current user through the ref.
+  const currentUserIdRef = useRef<string | undefined>(undefined);
+  const isAuthLoading = state.isLoading;
+  useEffect(() => {
+    const userId =
+      signedInUserId === undefined ? undefined : String(signedInUserId);
+    currentUserIdRef.current = userId;
+    if (isAuthLoading) return;
+    void retryPendingRevoke(userId);
+  }, [isAuthLoading, signedInUserId]);
+
   // Re-validate auth when the app returns to the foreground, so a session that
   // expired (or was revoked) while backgrounded is caught on resume rather than
   // surfacing as a stale-looking failure on the next user action.
@@ -370,6 +469,7 @@ export function useAuth() {
           recheckInFlight = true;
           void checkAuth().finally(() => {
             recheckInFlight = false;
+            void retryPendingRevoke(currentUserIdRef.current);
           });
         }
       },
@@ -383,6 +483,9 @@ export function useAuth() {
   // Shared by every path that ends with a session token (password login and
   // each Google/Apple path).
   const establishSession = useCallback(async (user: User, token: string) => {
+    // Before the new token exists: a pending revoke for this same user would
+    // end the session being created.
+    await dropPendingRevokeFor(user.id);
     await tokenStorage.set(token);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     // The root-cause fix: login() historically cleared NO durable local state, so
@@ -401,21 +504,22 @@ export function useAuth() {
    * the code screen, and nothing is stored until the code passes.
    */
   const login = useCallback(
-    async (username: string, password: string): Promise<SessionResult> => {
-      const trustKey = await trustKeyStorage.get();
-      const response = await apiRequest("POST", "/api/auth/login", {
-        username,
-        password,
-        ...(trustKey ? { trustKey } : {}),
-      });
-      const data = (await response.json()) as
-        | MfaChallengeResult
-        | { user: User; token: string };
-      if ("status" in data) return data;
-      const { user, token } = data as { user: User; token: string };
-      await establishSession(user, token);
-      return { status: "signed_in", user, token };
-    },
+    async (username: string, password: string): Promise<SessionResult> =>
+      withSignInExclusion(async () => {
+        const trustKey = await trustKeyStorage.get();
+        const response = await apiRequest("POST", "/api/auth/login", {
+          username,
+          password,
+          ...(trustKey ? { trustKey } : {}),
+        });
+        const data = (await response.json()) as
+          | MfaChallengeResult
+          | { user: User; token: string };
+        if ("status" in data) return data;
+        const { user, token } = data as { user: User; token: string };
+        await establishSession(user, token);
+        return { status: "signed_in", user, token };
+      }),
     [establishSession],
   );
 
@@ -428,16 +532,20 @@ export function useAuth() {
       challenge: string,
       proof: SecondFactorInput,
       trustDevice: boolean,
-    ): Promise<MfaVerifyResult> => {
-      const res = await apiRequest("POST", "/api/auth/mfa/verify", {
-        challenge,
-        secondFactor: proof,
-        trustDevice,
-      });
-      const result = (await res.json()) as MfaVerifyResult;
-      if (result.trustKey) await trustKeyStorage.set(result.trustKey);
-      return result;
-    },
+    ): Promise<MfaVerifyResult> =>
+      withSignInExclusion(async () => {
+        const res = await apiRequest("POST", "/api/auth/mfa/verify", {
+          challenge,
+          secondFactor: proof,
+          trustDevice,
+        });
+        const result = (await res.json()) as MfaVerifyResult;
+        if (result.trustKey) await trustKeyStorage.set(result.trustKey);
+        // The session token exists now; finishSignIn runs outside this
+        // exclusion, so drop this user's record before a retry could send it.
+        await dropPendingRevokeFor(result.user.id);
+        return result;
+      }),
     [],
   );
 
@@ -446,68 +554,72 @@ export function useAuth() {
   // checks the token's nonce claim against sha256(raw). Returns null when the
   // person cancels the sheet.
   const signInWithProvider = useCallback(
-    async (provider: SocialProvider): Promise<SocialSignInResult | null> => {
-      const { nonce, nonceHash } = await fetchNonce("sign_in");
-      const token = await getProviderToken(provider, nonceHash);
-      if (!token) return null;
-      const res = await apiRequest("POST", "/api/auth/social", {
-        provider,
-        nonce,
-        ...token,
-      });
-      const result = (await res.json()) as SocialSignInResult;
-      if (result.status === "signed_in") {
-        await establishSession(result.user, result.token);
-      }
-      return result;
-    },
+    async (provider: SocialProvider): Promise<SocialSignInResult | null> =>
+      withSignInExclusion(async () => {
+        const { nonce, nonceHash } = await fetchNonce("sign_in");
+        const token = await getProviderToken(provider, nonceHash);
+        if (!token) return null;
+        const res = await apiRequest("POST", "/api/auth/social", {
+          provider,
+          nonce,
+          ...token,
+        });
+        const result = (await res.json()) as SocialSignInResult;
+        if (result.status === "signed_in") {
+          await establishSession(result.user, result.token);
+        }
+        return result;
+      }),
     [establishSession],
   );
 
   const completeSocialSignUp = useCallback(
-    async (ticket: string, username: string, ageConfirmed: boolean) => {
-      const res = await apiRequest(
-        "POST",
-        "/api/auth/social/complete-sign-up",
-        // COPPA 13+ attestation — the person's actual checkbox state.
-        { ticket, username, ageConfirmed },
-      );
-      const { user, token } = await res.json();
-      await establishSession(user, token);
-    },
+    async (ticket: string, username: string, ageConfirmed: boolean) =>
+      withSignInExclusion(async () => {
+        const res = await apiRequest(
+          "POST",
+          "/api/auth/social/complete-sign-up",
+          // COPPA 13+ attestation — the person's actual checkbox state.
+          { ticket, username, ageConfirmed },
+        );
+        const { user, token } = await res.json();
+        await establishSession(user, token);
+      }),
     [establishSession],
   );
 
   /** The Connect prompt's password proof; a 2FA account answers with a challenge. */
   const linkWithPassword = useCallback(
-    async (ticket: string, password: string): Promise<SessionResult> => {
-      const res = await apiRequest("POST", "/api/auth/social/link", {
-        ticket,
-        password,
-      });
-      const result = (await res.json()) as SessionResult;
-      if (result.status === "signed_in") {
-        await establishSession(result.user, result.token);
-      }
-      return result;
-    },
+    async (ticket: string, password: string): Promise<SessionResult> =>
+      withSignInExclusion(async () => {
+        const res = await apiRequest("POST", "/api/auth/social/link", {
+          ticket,
+          password,
+        });
+        const result = (await res.json()) as SessionResult;
+        if (result.status === "signed_in") {
+          await establishSession(result.user, result.token);
+        }
+        return result;
+      }),
     [establishSession],
   );
 
   const linkWithProvider = useCallback(
-    async (ticket: string, provider: SocialProvider) => {
-      const { nonce, nonceHash } = await fetchNonce("link");
-      const token = await getProviderToken(provider, nonceHash);
-      if (!token) return;
-      const res = await apiRequest("POST", "/api/auth/social/link", {
-        ticket,
-        provider,
-        nonce,
-        idToken: token.idToken,
-      });
-      const { user, token: session } = await res.json();
-      await establishSession(user, session);
-    },
+    async (ticket: string, provider: SocialProvider) =>
+      withSignInExclusion(async () => {
+        const { nonce, nonceHash } = await fetchNonce("link");
+        const token = await getProviderToken(provider, nonceHash);
+        if (!token) return;
+        const res = await apiRequest("POST", "/api/auth/social/link", {
+          ticket,
+          provider,
+          nonce,
+          idToken: token.idToken,
+        });
+        const { user, token: session } = await res.json();
+        await establishSession(user, session);
+      }),
     [establishSession],
   );
 
@@ -533,6 +645,7 @@ export function useAuth() {
       // Verification OFF (fail-open) → server returns a token → auto-login,
       // preserving the pre-feature behavior.
       if (data.token) {
+        await dropPendingRevokeFor(data.user.id);
         await tokenStorage.set(data.token);
         await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
         // A freshly-registered user is, by definition, a different owner than any
@@ -560,15 +673,24 @@ export function useAuth() {
     // the rotation listener before that so it cannot re-register the token.
     stopPushRotation();
     await unregisterPushToken();
+    // Read before the POST: if it fails, this token is kept for a later revoke.
+    const revokeToken = await tokenStorage.get();
     try {
       await apiRequest("POST", "/api/auth/logout", {});
     } catch (error) {
       // Local sign-out still proceeds, but the server never revoked the token
-      // (offline, 5xx): it stays usable until it expires. Make that visible.
+      // (offline, 5xx): it stays usable until it expires. Make that visible,
+      // and keep it so the next launch or foreground can revoke it.
       logger.error(
         "Server logout failed; token not revoked server-side",
         error,
       );
+      if (revokeToken && signedInUserId !== undefined) {
+        await pendingRevokeStorage.set({
+          token: revokeToken,
+          userId: String(signedInUserId),
+        });
+      }
     }
     await tokenStorage.clear();
     // Guarded like expireSession/deleteAccount: a storage rejection here must
@@ -579,7 +701,7 @@ export function useAuth() {
     } catch {}
     await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
-  }, [stopPushRotation]);
+  }, [stopPushRotation, signedInUserId]);
 
   /**
    * Local-only session teardown for an expired/revoked token (a token-bearing

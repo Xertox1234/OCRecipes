@@ -421,3 +421,52 @@ describe("trustKeyStorage — 'trust this phone' (two-step verification)", () =>
     expect(await trustKeyStorage.get()).toBeNull();
   });
 });
+
+describe("pendingRevokeStorage — retrying a failed server logout", () => {
+  async function load() {
+    vi.resetModules();
+    return import("@/lib/token-storage");
+  }
+
+  it("stores the old token and its user under their own Keychain entry with the same options", async () => {
+    const { pendingRevokeStorage } = await load();
+    await pendingRevokeStorage.set({ token: "old-token", userId: "7" });
+    expect(secureMock.setItemAsync).toHaveBeenCalledWith(
+      "ocrecipes_pending_revoke",
+      JSON.stringify({ token: "old-token", userId: "7" }),
+      SECURE_OPTIONS,
+    );
+    expect(await pendingRevokeStorage.get()).toEqual({
+      token: "old-token",
+      userId: "7",
+    });
+  });
+
+  it("signing out (tokenStorage.clear) leaves the pending revoke in place", async () => {
+    const { pendingRevokeStorage, tokenStorage } = await load();
+    await pendingRevokeStorage.set({ token: "old-token", userId: "7" });
+    await tokenStorage.set("session");
+    await tokenStorage.clear();
+    expect(await pendingRevokeStorage.get()).toEqual({
+      token: "old-token",
+      userId: "7",
+    });
+  });
+
+  it("clear() forgets it", async () => {
+    const { pendingRevokeStorage } = await load();
+    await pendingRevokeStorage.set({ token: "old-token", userId: "7" });
+    await pendingRevokeStorage.clear();
+    expect(await pendingRevokeStorage.get()).toBeNull();
+  });
+
+  it("a Keychain read failure or a malformed entry answers null instead of throwing", async () => {
+    const { pendingRevokeStorage } = await load();
+    secureMock.getItemAsync.mockRejectedValueOnce(new Error("locked"));
+    expect(await pendingRevokeStorage.get()).toBeNull();
+    secureMock.getItemAsync.mockResolvedValueOnce("not json");
+    expect(await pendingRevokeStorage.get()).toBeNull();
+    secureMock.getItemAsync.mockResolvedValueOnce(JSON.stringify({ token: 1 }));
+    expect(await pendingRevokeStorage.get()).toBeNull();
+  });
+});
