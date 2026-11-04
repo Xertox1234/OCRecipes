@@ -209,6 +209,67 @@ describe("compressImage", () => {
 
     expect(result.sizeKB).toBe(0);
   });
+
+  // Nightly E2E 2026-11-04: the receipt scan sat on "Analyzing receipt…" for
+  // 96 s and no upload ever left the iOS simulator — one of the awaits before
+  // the fetch never settled. Neither step may wait forever.
+  describe("when a native step never answers", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("falls back to a width-only resize when reading the size never settles", async () => {
+      mockGetSize.mockReturnValue(new Promise(() => {}));
+      mockManipulateAsync.mockResolvedValue({
+        uri: "file://c.jpg",
+        width: 1024,
+        height: 768,
+      });
+      mockGetInfoAsync.mockResolvedValue({ exists: true, size: 300 * 1024 });
+
+      const pending = compressImage("file://stalled-size.jpg");
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await expect(pending).resolves.toMatchObject({ uri: "file://c.jpg" });
+      expect(mockManipulateAsync.mock.calls[0][1]).toEqual([
+        { resize: { width: 1024 } },
+      ]);
+    });
+
+    it("rejects when the resize never settles, so the caller can show its error", async () => {
+      mockManipulateAsync.mockReturnValue(new Promise(() => {}));
+
+      const pending = compressImage("file://stalled-resize.jpg");
+      const assertion = expect(pending).rejects.toThrow(/timed out/i);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await assertion;
+    });
+
+    it("deletes the file a timed-out resize writes when it finally finishes", async () => {
+      let finish!: (r: { uri: string; width: number; height: number }) => void;
+      mockManipulateAsync.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+
+      const pending = compressImage("file://late.jpg");
+      const assertion = expect(pending).rejects.toThrow(/timed out/i);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await assertion;
+
+      finish({ uri: "file://late-result.jpg", width: 1024, height: 768 });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockDeleteAsync).toHaveBeenCalledWith("file://late-result.jpg", {
+        idempotent: true,
+      });
+    });
+  });
 });
 
 describe("cleanupImage", () => {
