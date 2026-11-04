@@ -493,13 +493,6 @@ export default function CoachChat({
     }
   }, [isListening, transcript, isCoachPro, warmUpHook, setInputText]);
 
-  // Auto-send when speech finalizes
-  useEffect(() => {
-    if (isFinal && transcript) {
-      void handleSend(transcript);
-    }
-  }, [isFinal]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleSend = useCallback(
     async (text?: string) => {
       // onPress/onSubmitEditing invoke this with an event object, not a string — only trust an explicit string arg (quick replies, voice).
@@ -565,6 +558,13 @@ export default function CoachChat({
       haptics,
     ],
   );
+
+  // Auto-send when speech finalizes
+  useEffect(() => {
+    if (isFinal && transcript) {
+      void handleSend(transcript);
+    }
+  }, [isFinal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRetry = useCallback(async () => {
     if (!messages || messages.length < 2 || showLiveReply) return;
