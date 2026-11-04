@@ -1,68 +1,68 @@
 ---
-title: Drizzle sql template serializes JavaScript array as scalar bound parameter in ANY()
+title: Drizzle sql template expands a JavaScript array into a parameter list, so array casts and ANY/ALL/unnest fail
 track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [database, drizzle, sql-template, postgresql, array, in-array]
-symptoms: ['PostgreSQL error: malformed array literal', 'PostgreSQL error: op ANY/ALL (array) requires array on right side', Failure only appears when the JavaScript array is non-empty, Silent success when the table is empty due to an earlier length guard]
-applies_to: [server/storage/**/*.ts]
+tags: [database, drizzle, sql-template, postgresql, array, in-array, sql-param]
+symptoms: ['PostgreSQL error: cannot cast type record to text[]', 'PostgreSQL error: malformed array literal', 'PostgreSQL error: op ANY/ALL (array) requires array on right side', Failure only appears when the JavaScript array is non-empty, Unit tests with a fake db pass because the SQL never reaches Postgres]
+applies_to: [server/storage/**/*.ts, server/scripts/**/*.ts]
 created: '2026-05-15'
+last_updated: '2026-11-03'
 ---
 
-# Drizzle sql template serializes JavaScript array as scalar bound parameter in ANY()
+# Drizzle sql template expands a JavaScript array into a parameter list, so array casts and ANY/ALL/unnest fail
 
 ## Problem
 
-`getRecipesWithEmptyMealTypes` used a raw `sql` template to filter by a list of recipe ids with PostgreSQL's `ANY()`:
+A JavaScript array interpolated into Drizzle's `sql` template does not reach Postgres as an array. Three incidents so far:
 
-```typescript
-.where(sql`${recipeIngredients.recipeId} = ANY(${recipeIds})`)
-```
-
-Where `recipeIds` is a JavaScript `number[]`. Drizzle's `sql` template tag serializes the entire array as a single bound scalar parameter. PostgreSQL then receives a text value like `"1"` or a comma-separated string on the right side of `ANY()`, causing a runtime type error.
+- `getRecipesWithEmptyMealTypes` (2026-05-15): `` sql`${col} = ANY(${recipeIds})` ``
+- `cleanup-retention.ts` `purgeBatch` (found 2026-11-03): `` sql`${userId} <> ALL(${excludedUserIds}::text[])` ``. Every nightly retention purge would have failed as soon as one user was active. It went unnoticed only because the app has no users yet, and because the purge tests use a fake db.
+- `lockBarcodes` (#1722, caught by its test before merge): `` unnest(${barcodes}::text[]) ``
 
 ## Symptoms
 
-- PostgreSQL throws `'malformed array literal: "1"'` or `'op ANY/ALL (array) requires array on right side'`
-- The error only triggers when `recipeIds` is non-empty; an explicit `if (recipes.length === 0) return` guard masks the empty case
-- If the queried table is usually empty, the bug can lurk undetected because the failing code path is skipped entirely
-- Type checking passes with no compile-time error
+- `cannot cast type record to text[]` (two or more elements), `malformed array literal: "a"` (one element), or `op ANY/ALL (array) requires array on right side`
+- Only when the array is non-empty: an empty-array guard (`length === 0 ? sql\`TRUE\` : ...`) hides it
+- Type checking passes, and tests against a fake db pass
 
 ## Root Cause
 
-Drizzle's `sql` template tag treats every `${}` interpolation as a bound parameter. When a JavaScript array is interpolated, Drizzle sends it as a scalar text value rather than as a PostgreSQL array literal or set of values for `ANY()`. PostgreSQL expects an actual array expression on the right side of `ANY()`, so it rejects the scalar string.
+The `sql` template treats a JS array as a **list of values** and emits one placeholder per element. Measured with `new PgDialect().sqlToQuery(...)`:
 
-```typescript
-// Bad — ${recipeIds} becomes a single scalar text parameter
-db.select()
-  .from(recipeIngredients)
-  .where(sql`${recipeIngredients.recipeId} = ANY(${recipeIds})`);
-// Generated: ... = ANY($1)  -- bound as scalar text, not an array
 ```
+sql`x <> ALL(${["a", "b"]}::text[])`
+  → "x <> ALL(($1, $2)::text[])"   params ["a","b"]      — a row value, not an array
+sql`x <> ALL(${sql.param(["a", "b"])}::text[])`
+  → "x <> ALL($1::text[])"         params [["a","b"]]    — one array parameter
+```
+
+`($1, $2)` is a row constructor, so the cast fails. With one element, `($1)` is a parenthesised scalar, and `'a'::text[]` is a malformed array literal. (An earlier version of this note said the array was sent as "one scalar parameter". That was wrong, and it hid the fix.)
 
 ## Solution
 
-Use Drizzle's first-class `inArray(column, jsArray)` helper from `drizzle-orm`. It emits a proper parameterized `IN (...)` / `= ANY()` with correct array binding, and safely handles empty arrays by emitting a false-equivalent condition.
+- **Membership filter** → use `inArray(column, arr)` from `drizzle-orm`. It handles binding and empty arrays.
+- **One array parameter is required** (`<> ALL(...)`, `unnest(...)`, a list too long for one placeholder per element, since Postgres caps a query at ~65k parameters) → wrap it: `${sql.param(arr)}::text[]`. node-postgres then serialises the JS array as a single Postgres array literal.
 
 ```typescript
-// Good — inArray handles proper binding and empty arrays
-import { inArray } from "drizzle-orm";
-
-db.select()
-  .from(recipeIngredients)
-  .where(inArray(recipeIngredients.recipeId, recipeIds));
+// one statement, one parameter, any length
+sql`SELECT pg_advisory_xact_lock(hashtextextended(b, 0)) FROM unnest(${sql.param(sorted)}::text[]) AS b`;
+sql`${userId} <> ALL(${sql.param(excludedUserIds)}::text[])`;
 ```
 
 ## Prevention
 
-- Never interpolate a JavaScript array into a raw `sql` template inside `ANY()`, `IN (...)`, or similar set operations.
-- Always use `inArray()` from `drizzle-orm` for id-list filters.
-- Keeping an explicit length guard for early returns is fine, but do not rely on it to hide parameter-binding mismatches.
+- Never interpolate a bare array into a `sql` template next to `ANY`/`ALL`/`unnest` or an array cast. Grep: `\$\{[A-Za-z_.]+\}::[a-z]+\[\]|ANY\(\$\{|ALL\(\$\{|unnest\(\$\{` with no `sql.param`.
+- Test the query against a real database with a **non-empty** array. A fake db never parses the SQL.
+- Reviewer check: `.claude/agents/server-reviewer.md` (Drizzle `sql` rules).
 
 ## Related Files
 
-- `server/storage/meal-plan-recipes.ts`
+- `server/storage/meal-plan-recipes-browse.ts` — `inArray` fix
+- `server/scripts/cleanup-retention.ts` — `purgeBatch` exclusion list, `sql.param`
+- `server/scripts/__tests__/cleanup-retention-active-users.test.ts` — real-DB purge with an active user
+- `server/storage/verification.ts` — `lockBarcodes`, `sql.param`
 
 ## See Also
 
