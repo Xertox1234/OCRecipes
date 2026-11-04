@@ -189,11 +189,15 @@ function deriveAggregate(matchingNutrition: VerificationNutrition[]): {
  * later without deadlocking.
  */
 export async function lockBarcodes(tx: Tx, barcodes: string[]): Promise<void> {
-  for (const barcode of [...new Set(barcodes)].sort()) {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${barcode}, 0))`,
-    );
-  }
+  const sorted = [...new Set(barcodes)].sort();
+  if (sorted.length === 0) return;
+  // One statement for all locks. unnest emits the array in order, so they are
+  // still taken in sorted order; an ORDER BY would let the planner decide
+  // whether the lock calls run before or after its sort. sql.param binds the
+  // array as ONE parameter — a bare ${array} expands to ($1, $2, ...).
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(b, 0)) FROM unnest(${sql.param(sorted)}::text[]) AS b`,
+  );
 }
 
 /**

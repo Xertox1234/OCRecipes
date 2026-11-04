@@ -28,7 +28,7 @@ import {
   barcodeVerifications,
   verificationHistory,
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   isUniqueViolation,
   uniqueViolationConstraint,
@@ -67,6 +67,7 @@ const {
   RESERVED_USERNAMES,
   ReservedUsernameError,
   isReservedUsername,
+  DELETE_USER_LOCK_THRESHOLD,
 } = await import("../users");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -1401,6 +1402,57 @@ describe("users storage", () => {
         .where(eq(barcodeVerifications.barcode, barcode));
       expect(row.verificationCount).toBe(1);
       expect(row.verificationLevel).toBe("verified");
+    });
+
+    it("deletes a user past the lock threshold and recomputes in follow-up batches", async () => {
+      // Holding one advisory lock per barcode until commit can exhaust the
+      // shared lock table and roll the deletion back. Past the threshold the
+      // user row goes first, then aggregates are recomputed in batches.
+      const voter = await createTestUser(tx);
+      const stamp = Date.now() % 1_000_000;
+      const barcodes = Array.from(
+        { length: DELETE_USER_LOCK_THRESHOLD + 1 },
+        (_, i) =>
+          `97${String(stamp).padStart(6, "0")}${String(i).padStart(5, "0")}`,
+      );
+      await tx.insert(barcodeVerifications).values(
+        barcodes.map((barcode) => ({
+          barcode,
+          verificationLevel: "single_verified",
+          verificationCount: 1,
+        })),
+      );
+      await tx.insert(verificationHistory).values(
+        barcodes.map((barcode) => ({
+          barcode,
+          userId: voter.id,
+          extractedNutrition: nutrition,
+          ocrConfidence: "0.90",
+          isMatch: true,
+        })),
+      );
+      const transaction = vi.spyOn(tx, "transaction");
+
+      expect(await deleteUser(voter.id)).toBe(true);
+
+      expect(transaction).toHaveBeenCalledTimes(
+        1 + Math.ceil(barcodes.length / DELETE_USER_LOCK_THRESHOLD),
+      );
+      transaction.mockRestore();
+      const rows = await tx
+        .select()
+        .from(barcodeVerifications)
+        .where(
+          inArray(barcodeVerifications.barcode, [
+            barcodes[0],
+            barcodes.at(-1)!,
+          ]),
+        );
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row.verificationCount).toBe(0);
+        expect(row.verificationLevel).toBe("unverified");
+      }
     });
   });
 });
