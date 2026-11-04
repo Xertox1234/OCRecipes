@@ -689,6 +689,31 @@ describe("Receipt Validation", () => {
 
       fetchSpy.mockRestore();
     });
+
+    // pinoIntegration captures the logged `err` and reportError captures its
+    // argument; Sentry skips an Error object it already captured, so both must
+    // get the SAME object or a non-Error rejection becomes two events.
+    it("hands reportError the same Error it logged when the token fetch rejects with a non-Error", async () => {
+      vi.resetModules();
+      const mod = await import("../receipt-validation");
+      mod.resetGoogleTokenCache();
+      mockLog.error.mockClear();
+      mockReportError.mockClear();
+
+      const fetchSpy = vi
+        .spyOn(global, "fetch")
+        .mockRejectedValue("network down");
+
+      const result = await mod.validateReceipt("purchase-token-123", "android");
+      expect(result.errorCode).toBe("STORE_API_ERROR");
+
+      const logged = (mockLog.error.mock.calls[0]?.[0] as { err?: unknown })
+        ?.err;
+      expect(logged).toBeInstanceOf(Error);
+      expect(mockReportError.mock.calls[0]?.[0]).toBe(logged);
+
+      fetchSpy.mockRestore();
+    });
   });
 
   describe("verifyAppleNotification", () => {

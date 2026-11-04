@@ -414,8 +414,10 @@ async function validateGoogleReceipt(
   } catch (err) {
     // A rotated/malformed GOOGLE_SERVICE_ACCOUNT_KEY or email fails every
     // Android purchase here; log + report so it is told apart from an outage.
-    log.error({ err: toError(err) }, "Google access token fetch failed");
-    reportError(err, "google-access-token");
+    // One Error object for both: Sentry skips an object it already captured.
+    const error = toError(err);
+    log.error({ err: error }, "Google access token fetch failed");
+    reportError(error, "google-access-token");
     return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 
