@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -8,7 +8,11 @@ import {
   notifySessionExpired,
   whenQueryCacheRestored,
 } from "@/lib/query-client";
-import { tokenStorage, trustKeyStorage } from "@/lib/token-storage";
+import {
+  tokenStorage,
+  trustKeyStorage,
+  pendingRevokeStorage,
+} from "@/lib/token-storage";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { logger } from "@/lib/logger";
 import { sendDeviceTimezoneOnce } from "@/lib/timezone";
@@ -53,6 +57,62 @@ const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
  * this gates app launch and the fallback is a good answer.
  */
 export const AUTH_ME_TIMEOUT_MS = 10_000;
+
+/**
+ * Retry a server logout that failed (offline, 5xx), using the OLD token kept
+ * in pendingRevokeStorage. The server logout bumps the user's tokenVersion,
+ * which revokes EVERY token that user holds — so it is never sent while that
+ * same user is signed in again (it would end their new session); their record
+ * is dropped instead, and the old token simply expires as before. Another
+ * user's old token is safe to revoke: tokenVersion is per user.
+ *
+ * Plain fetch with the old token, never apiRequest: apiRequest attaches the
+ * CURRENT token and its 401 handling would expire the current session. 2xx or
+ * 401 (already revoked/expired) forgets the record; anything else keeps it for
+ * the next launch or foreground. Never throws. Concurrent triggers share one run.
+ */
+let pendingRevokeRun: Promise<void> | null = null;
+function retryPendingRevoke(currentUserId: string | undefined): Promise<void> {
+  if (pendingRevokeRun) return pendingRevokeRun;
+  pendingRevokeRun = (async () => {
+    try {
+      const pending = await pendingRevokeStorage.get();
+      if (!pending) return;
+      if (currentUserId !== undefined && pending.userId === currentUserId) {
+        await pendingRevokeStorage.clear();
+        return;
+      }
+      const response = await fetchWithTimeout(
+        `${getApiUrl()}/api/auth/logout`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${pending.token}`,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        },
+        AUTH_ME_TIMEOUT_MS,
+      );
+      if (response.ok || response.status === 401) {
+        await pendingRevokeStorage.clear();
+      }
+    } catch {
+      // Offline or timed out: keep the record for the next try.
+    }
+  })().finally(() => {
+    pendingRevokeRun = null;
+  });
+  return pendingRevokeRun;
+}
+
+/** Drop a pending revoke that belongs to the user now signing in (see above). */
+async function dropPendingRevokeFor(userId: string | number): Promise<void> {
+  const pending = await pendingRevokeStorage.get();
+  if (pending && pending.userId === String(userId)) {
+    await pendingRevokeStorage.clear();
+  }
+}
 
 /**
  * Best-effort teardown of every piece of device-local state that outlives a
@@ -344,6 +404,19 @@ export function useAuth() {
     sendDeviceTimezoneOnce(String(signedInUserId)).catch(() => {});
   }, [signedInUserId]);
 
+  // Retry a failed server logout once the session state is known (launch) and
+  // whenever the signed-in user changes. The AppState listener below reads the
+  // current user through the ref.
+  const currentUserIdRef = useRef<string | undefined>(undefined);
+  const isAuthLoading = state.isLoading;
+  useEffect(() => {
+    const userId =
+      signedInUserId === undefined ? undefined : String(signedInUserId);
+    currentUserIdRef.current = userId;
+    if (isAuthLoading) return;
+    void retryPendingRevoke(userId);
+  }, [isAuthLoading, signedInUserId]);
+
   // Re-validate auth when the app returns to the foreground, so a session that
   // expired (or was revoked) while backgrounded is caught on resume rather than
   // surfacing as a stale-looking failure on the next user action.
@@ -370,6 +443,7 @@ export function useAuth() {
           recheckInFlight = true;
           void checkAuth().finally(() => {
             recheckInFlight = false;
+            void retryPendingRevoke(currentUserIdRef.current);
           });
         }
       },
@@ -383,6 +457,9 @@ export function useAuth() {
   // Shared by every path that ends with a session token (password login and
   // each Google/Apple path).
   const establishSession = useCallback(async (user: User, token: string) => {
+    // Before the new token exists: a pending revoke for this same user would
+    // end the session being created.
+    await dropPendingRevokeFor(user.id);
     await tokenStorage.set(token);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     // The root-cause fix: login() historically cleared NO durable local state, so
@@ -533,6 +610,7 @@ export function useAuth() {
       // Verification OFF (fail-open) → server returns a token → auto-login,
       // preserving the pre-feature behavior.
       if (data.token) {
+        await dropPendingRevokeFor(data.user.id);
         await tokenStorage.set(data.token);
         await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
         // A freshly-registered user is, by definition, a different owner than any
@@ -560,15 +638,24 @@ export function useAuth() {
     // the rotation listener before that so it cannot re-register the token.
     stopPushRotation();
     await unregisterPushToken();
+    // Read before the POST: if it fails, this token is kept for a later revoke.
+    const revokeToken = await tokenStorage.get();
     try {
       await apiRequest("POST", "/api/auth/logout", {});
     } catch (error) {
       // Local sign-out still proceeds, but the server never revoked the token
-      // (offline, 5xx): it stays usable until it expires. Make that visible.
+      // (offline, 5xx): it stays usable until it expires. Make that visible,
+      // and keep it so the next launch or foreground can revoke it.
       logger.error(
         "Server logout failed; token not revoked server-side",
         error,
       );
+      if (revokeToken && signedInUserId !== undefined) {
+        await pendingRevokeStorage.set({
+          token: revokeToken,
+          userId: String(signedInUserId),
+        });
+      }
     }
     await tokenStorage.clear();
     // Guarded like expireSession/deleteAccount: a storage rejection here must
@@ -579,7 +666,7 @@ export function useAuth() {
     } catch {}
     await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
-  }, [stopPushRotation]);
+  }, [stopPushRotation, signedInUserId]);
 
   /**
    * Local-only session teardown for an expired/revoked token (a token-bearing

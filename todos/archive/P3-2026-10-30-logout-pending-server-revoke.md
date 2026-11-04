@@ -1,9 +1,9 @@
 ---
 title: "Retry a failed server logout (pending revoke) instead of only logging it"
-status: backlog
+status: done
 priority: low
 created: 2026-10-30
-updated: 2026-10-30
+updated: 2026-11-04
 assignee:
 labels: [deferred, reliability, auth]
 github_issue:
@@ -30,10 +30,10 @@ deliberately avoids (`tokenStorage.clear()` on every session-ending path).
 
 ## Acceptance Criteria
 
-- [ ] Decide what is persisted for a later revoke (the old token in SecureStore, or a server-issued revocation handle) and confirm it with the owner.
-- [ ] A failed server logout records a pending revoke; the next app start / reconnect retries it and clears the record on success.
-- [ ] A pending revoke never attaches to, or revokes, the NEXT signed-in user's session.
-- [ ] Tests cover offline logout, retry success, retry failure, and sign-in of another user before the retry.
+- [x] Decide what is persisted for a later revoke (the old token in SecureStore, or a server-issued revocation handle) and confirm it with the owner.
+- [x] A failed server logout records a pending revoke; the next app start / reconnect retries it and clears the record on success.
+- [x] A pending revoke never attaches to, or revokes, the NEXT signed-in user's session.
+- [x] Tests cover offline logout, retry success, retry failure, and sign-in of another user before the retry.
 
 ## Implementation Notes
 
@@ -60,3 +60,10 @@ deliberately avoids (`tokenStorage.clear()` on every session-ending path).
 ### 2026-10-30
 
 - Initial creation (deferred remainder of reliability audit R25).
+
+### 2026-11-04
+
+- Owner overrode the human_led hold for this run (remote session, after seeing the gate reason).
+- Persisted: the OLD session token + its user id, under its own Keychain entry (`pendingRevokeStorage`, same `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY` options as the session token), until a retry revokes it (2xx) or the server says it is already dead (401). A server-issued revocation handle would need a new endpoint (out of the scope contract).
+- The server logout bumps tokenVersion (revokes every token of that user), so a retry is never sent while the same user is signed in again: that user's record is dropped at sign-in and at retry time.
+- Retries: once the session state is known at launch, on every signed-in-user change, and when the app returns from the background. Plain fetch with the old token, never apiRequest.

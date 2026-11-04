@@ -85,9 +85,18 @@ const { mockTrustKeyStorage } = vi.hoisted(() => ({
   },
 }));
 
+const { mockPendingRevokeStorage } = vi.hoisted(() => ({
+  mockPendingRevokeStorage: {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue(undefined),
+    clear: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 vi.mock("@/lib/token-storage", () => ({
   tokenStorage: mockTokenStorage,
   trustKeyStorage: mockTrustKeyStorage,
+  pendingRevokeStorage: mockPendingRevokeStorage,
 }));
 
 vi.mock("@/lib/query-client", () => ({
@@ -162,6 +171,8 @@ describe("useAuth", () => {
     mockTokenStorage.getOrThrow.mockImplementation(() =>
       mockTokenStorage.get(),
     );
+    mockPendingRevokeStorage.get.mockReset();
+    mockPendingRevokeStorage.get.mockResolvedValue(null);
   });
 
   describe("checkAuth", () => {
@@ -2120,6 +2131,235 @@ describe("useAuth", () => {
         "/api/auth/change-password/code",
         {},
       );
+    });
+  });
+
+  // A failed server logout leaves the token valid until it expires. The old
+  // token is kept (pendingRevokeStorage) and revoked later. The server logout
+  // bumps tokenVersion — it revokes EVERY token of that user — so a retry must
+  // never run while that same user is signed in again, or it would end their
+  // new session.
+  describe("pending server revoke after a failed logout", () => {
+    const revokeCalls = () =>
+      mockFetch.mock.calls.filter((c) =>
+        String(c[0]).endsWith("/api/auth/logout"),
+      );
+
+    it("records the old token and user when the server logout fails", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      mockApiRequest.mockRejectedValue(new Error("Network request failed"));
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(mockPendingRevokeStorage.set).toHaveBeenCalledWith({
+        token: "valid-token",
+        userId: "1",
+      });
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("records nothing when the server logout succeeds", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+      mockApiRequest.mockResolvedValue({});
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(mockPendingRevokeStorage.set).not.toHaveBeenCalled();
+    });
+
+    it("retries at app start with the OLD token, and forgets it once revoked", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockPendingRevokeStorage.get.mockResolvedValue({
+        token: "old-token",
+        userId: "9",
+      });
+      mockFetch.mockResolvedValue({ ok: true, status: 200 });
+
+      renderHook(() => useAuth());
+
+      await waitFor(() =>
+        expect(mockPendingRevokeStorage.clear).toHaveBeenCalled(),
+      );
+      const calls = revokeCalls();
+      expect(calls).toHaveLength(1);
+      expect(calls[0][1]).toMatchObject({
+        method: "POST",
+        headers: { Authorization: "Bearer old-token" },
+      });
+      // Never through apiRequest: its 401 handling would act on the CURRENT session.
+      expect(mockApiRequest).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a 5xx", () => mockFetch.mockResolvedValue({ ok: false, status: 503 })],
+      [
+        "no network",
+        () =>
+          mockFetch.mockRejectedValue(new TypeError("Network request failed")),
+      ],
+    ])(
+      "keeps the record when the retry fails (%s)",
+      async (_label, arrange) => {
+        mockTokenStorage.get.mockResolvedValue(null);
+        mockPendingRevokeStorage.get.mockResolvedValue({
+          token: "old-token",
+          userId: "9",
+        });
+        arrange();
+
+        renderHook(() => useAuth());
+        await waitFor(() => expect(revokeCalls()).toHaveLength(1));
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 0));
+        });
+
+        expect(mockPendingRevokeStorage.clear).not.toHaveBeenCalled();
+        expect(mockNotifySessionExpired).not.toHaveBeenCalled();
+      },
+    );
+
+    it("forgets the record when the old token is already dead (401)", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockPendingRevokeStorage.get.mockResolvedValue({
+        token: "old-token",
+        userId: "9",
+      });
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+
+      renderHook(() => useAuth());
+
+      await waitFor(() =>
+        expect(mockPendingRevokeStorage.clear).toHaveBeenCalled(),
+      );
+      // A dead OLD token must not expire whoever is signed in now.
+      expect(mockNotifySessionExpired).not.toHaveBeenCalled();
+    });
+
+    it("still revokes another user's old token while a different user is signed in, without touching the new session", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token"); // user 1
+      mockPendingRevokeStorage.get.mockResolvedValue({
+        token: "old-token",
+        userId: "9",
+      });
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).endsWith("/api/auth/me")
+            ? { ok: true, status: 200, json: () => Promise.resolve(fakeUser) }
+            : { ok: true, status: 200 },
+        ),
+      );
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() =>
+        expect(mockPendingRevokeStorage.clear).toHaveBeenCalled(),
+      );
+      const calls = revokeCalls();
+      expect(calls).toHaveLength(1);
+      expect(calls[0][1]).toMatchObject({
+        headers: { Authorization: "Bearer old-token" },
+      });
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+    });
+
+    it("drops the record, without revoking, when the SAME user is signed in again", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token"); // user 1
+      mockPendingRevokeStorage.get.mockResolvedValue({
+        token: "old-token",
+        userId: "1",
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() =>
+        expect(mockPendingRevokeStorage.clear).toHaveBeenCalled(),
+      );
+      expect(revokeCalls()).toHaveLength(0);
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("signing the same user back in drops their record before it can be retried", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      // Offline at launch: the startup retry fails and the record stays.
+      mockPendingRevokeStorage.get.mockResolvedValue({
+        token: "old-token",
+        userId: "1",
+      });
+      mockFetch.mockResolvedValue({ ok: false, status: 503 });
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(revokeCalls()).toHaveLength(1));
+      mockPendingRevokeStorage.clear.mockClear();
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+      });
+
+      await act(async () => {
+        await result.current.login("testuser", "password123");
+      });
+
+      expect(mockPendingRevokeStorage.clear).toHaveBeenCalled();
+      const clearOrder =
+        mockPendingRevokeStorage.clear.mock.invocationCallOrder[0];
+      const setOrder = mockTokenStorage.set.mock.invocationCallOrder[0];
+      expect(clearOrder).toBeLessThan(setOrder);
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("retries again when the app comes back from the background", async () => {
+      let appStateHandler: ((state: AppStateStatus) => void) | undefined;
+      vi.mocked(AppState.addEventListener).mockImplementation(
+        (_event, listener) => {
+          appStateHandler = listener;
+          return { remove: vi.fn() };
+        },
+      );
+      try {
+        mockTokenStorage.get.mockResolvedValue(null);
+        mockPendingRevokeStorage.get.mockResolvedValue({
+          token: "old-token",
+          userId: "9",
+        });
+        mockFetch.mockResolvedValue({ ok: false, status: 503 });
+        renderHook(() => useAuth());
+        await waitFor(() => expect(revokeCalls()).toHaveLength(1));
+
+        mockFetch.mockResolvedValue({ ok: true, status: 200 });
+        await act(async () => {
+          appStateHandler?.("background");
+          appStateHandler?.("active");
+        });
+
+        await waitFor(() => expect(revokeCalls()).toHaveLength(2));
+        await waitFor(() =>
+          expect(mockPendingRevokeStorage.clear).toHaveBeenCalled(),
+        );
+      } finally {
+        vi.mocked(AppState.addEventListener).mockImplementation(() => ({
+          remove: vi.fn(),
+        }));
+      }
     });
   });
 });
