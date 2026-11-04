@@ -442,3 +442,77 @@ describe("NotebookEntryScreen — empty note", () => {
     expect(mockUpdateMutateAsync).not.toHaveBeenCalled();
   });
 });
+
+// --- Voice input: ownership ends with the session ---------------------------
+// useSpeechToText is mocked with a mutable state object so a test can play the
+// recognizer's side (the real one is one recognizer shared by every field).
+const { mockSpeech, mockStartListening, mockStopListening } = vi.hoisted(
+  () => ({
+    mockSpeech: {
+      value: {
+        isListening: false,
+        transcript: "",
+        isFinal: false,
+        volume: 0,
+        error: null as string | null,
+      },
+    },
+    mockStartListening: vi.fn(),
+    mockStopListening: vi.fn(),
+  }),
+);
+
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    ...mockSpeech.value,
+    startListening: mockStartListening,
+    stopListening: mockStopListening,
+  }),
+}));
+
+function resetSpeech() {
+  mockSpeech.value = {
+    isListening: false,
+    transcript: "",
+    isFinal: false,
+    volume: 0,
+    error: null,
+  };
+  mockStartListening.mockClear();
+  mockStopListening.mockClear();
+}
+
+describe("NotebookEntryScreen — voice ownership", () => {
+  beforeEach(() => {
+    resetSpeech();
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+  });
+
+  it("does not write a transcript that arrives after the session ended", () => {
+    const { rerender } = renderComponent(<NotebookEntryScreen />);
+    const input = screen.getByLabelText("Note") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "felt good" } });
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "after lunch",
+    };
+    rerender(<NotebookEntryScreen />);
+    expect(input.value).toBe("felt good after lunch");
+
+    // The session times out on its own...
+    mockSpeech.value = { ...mockSpeech.value, isListening: false };
+    rerender(<NotebookEntryScreen />);
+    // ...then the shared recognizer is used by another field.
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "stray words",
+    };
+    rerender(<NotebookEntryScreen />);
+    expect(input.value).toBe("felt good after lunch");
+  });
+});

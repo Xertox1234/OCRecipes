@@ -40,7 +40,7 @@ import { isPausedWithoutData } from "@/components/empty-state-utils";
 import { TypingDots } from "@/components/TypingDots";
 import { SendButton } from "@/components/SendButton";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -420,46 +420,38 @@ export default function ChatScreen() {
 
   // Voice input APPENDS to whatever was typed before the mic was tapped and
   // never sends — the user reviews the dictation and taps Send themselves.
-  // null = no dictation in progress (a late final result must not refill).
-  const voiceBaseRef = useRef<string | null>(null);
+  // The base is what was typed when the mic was tapped; useVoiceField decides
+  // whether a transcript may be written at all.
+  const voiceBaseRef = useRef("");
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  useEffect(() => {
-    const base = voiceBaseRef.current;
-    if (base !== null && transcript && (isListening || isFinal)) {
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({
+    onTranscript: (transcript) => {
+      const base = voiceBaseRef.current;
       setInputText(
         (base ? `${base} ${transcript}` : transcript).slice(
           0,
           CHAT_MESSAGE_MAX_LENGTH,
         ),
       );
-    }
-  }, [isListening, isFinal, transcript]);
+    },
+  });
   useEffect(() => {
     if (speechError) toast.error(speechError);
   }, [speechError, toast]);
   // A reply that starts streaming locks the composer; end any capture too.
   useEffect(() => {
-    if (isStreaming && isListening && voiceBaseRef.current !== null) {
-      stopListening();
-    }
-  }, [isStreaming, isListening, stopListening]);
+    if (isStreaming) releaseVoice();
+  }, [isStreaming, releaseVoice]);
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceBaseRef.current = inputText.trim();
-      void startListening();
-    }
-  }, [haptics, isListening, inputText, startListening, stopListening]);
+    if (!isListening) voiceBaseRef.current = inputText.trim();
+    toggleVoice();
+  }, [haptics, isListening, inputText, toggleVoice]);
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
@@ -606,8 +598,7 @@ export default function ChatScreen() {
       if (!content || isStreaming || isMalformedId) return;
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      voiceBaseRef.current = null;
-      if (isListening) stopListening();
+      releaseVoice();
       setInputText("");
       setPendingUser({
         content,
@@ -662,8 +653,7 @@ export default function ChatScreen() {
     },
     [
       inputText,
-      isListening,
-      stopListening,
+      releaseVoice,
       isStreaming,
       isMalformedId,
       haptics,

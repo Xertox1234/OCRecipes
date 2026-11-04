@@ -11,7 +11,7 @@ import { FocusTextInput } from "@/components/FocusTextInput";
 import { FocusField } from "@/components/FocusField";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { InlineError } from "@/components/InlineError";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
@@ -126,15 +126,6 @@ export default function IngredientsStep({
     addIngredient();
   }, [addIngredient, haptics]);
 
-  const handleRemove = useCallback(
-    (key: string) => {
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      removeIngredient(key);
-      AccessibilityInfo.announceForAccessibility("Ingredient removed");
-    },
-    [removeIngredient, haptics],
-  );
-
   // Voice input APPENDS to the LAST ingredient row as it stood when the mic
   // was tapped. One recognizer lives here at the step level, not per row:
   // every useSpeechToText instance reacts to the same native "start" event,
@@ -142,33 +133,39 @@ export default function IngredientsStep({
   const voiceTargetRef = useRef<{ key: string; base: string } | null>(null);
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  useEffect(() => {
-    const target = voiceTargetRef.current;
-    if (target && transcript && (isListening || isFinal)) {
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({
+    onTranscript: (transcript) => {
+      const target = voiceTargetRef.current;
+      if (!target) return;
       updateIngredient(
         target.key,
         target.base ? `${target.base} ${transcript}` : transcript,
       );
-    }
-  }, [isListening, isFinal, transcript, updateIngredient]);
+    },
+  });
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-      return;
+    if (!isListening) {
+      const last = ingredients[ingredients.length - 1];
+      if (!last) return;
+      voiceTargetRef.current = { key: last.key, base: last.text.trim() };
     }
-    const last = ingredients[ingredients.length - 1];
-    if (!last) return;
-    voiceTargetRef.current = { key: last.key, base: last.text.trim() };
-    void startListening();
-  }, [haptics, isListening, ingredients, startListening, stopListening]);
+    toggleVoice();
+  }, [haptics, isListening, ingredients, toggleVoice]);
+
+  const handleRemove = useCallback(
+    (key: string) => {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      if (voiceTargetRef.current?.key === key) releaseVoice();
+      removeIngredient(key);
+      AccessibilityInfo.announceForAccessibility("Ingredient removed");
+    },
+    [removeIngredient, haptics, releaseVoice],
+  );
 
   // `showDelete` is the only row-level prop that depends on siblings; derive
   // it once here and pass as a primitive prop so rows stay pure.

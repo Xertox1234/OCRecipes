@@ -181,3 +181,85 @@ describe("IngredientsStep — render", () => {
     expect(updateIngredient).toHaveBeenCalledWith("ing_1", "2 cups flour");
   });
 });
+
+// --- Voice input: ownership ends with the session ---------------------------
+// useSpeechToText is mocked with a mutable state object so a test can play the
+// recognizer's side (the real one is one recognizer shared by every field).
+const { mockSpeech, mockStartListening, mockStopListening } = vi.hoisted(
+  () => ({
+    mockSpeech: {
+      value: {
+        isListening: false,
+        transcript: "",
+        isFinal: false,
+        volume: 0,
+        error: null as string | null,
+      },
+    },
+    mockStartListening: vi.fn(),
+    mockStopListening: vi.fn(),
+  }),
+);
+
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    ...mockSpeech.value,
+    startListening: mockStartListening,
+    stopListening: mockStopListening,
+  }),
+}));
+
+function resetSpeech() {
+  mockSpeech.value = {
+    isListening: false,
+    transcript: "",
+    isFinal: false,
+    volume: 0,
+    error: null,
+  };
+  mockStartListening.mockClear();
+  mockStopListening.mockClear();
+}
+
+describe("IngredientsStep — voice ownership", () => {
+  beforeEach(resetSpeech);
+
+  function renderStep(updateIngredient: (key: string, text: string) => void) {
+    const ui = () => (
+      <IngredientsStep
+        ingredients={[row("ing_1", "2 cups")]}
+        addIngredient={vi.fn()}
+        removeIngredient={vi.fn()}
+        updateIngredient={updateIngredient}
+      />
+    );
+    return { ui, ...renderComponent(ui()) };
+  }
+
+  it("does not write a transcript that arrives after the session ended", () => {
+    const updateIngredient = vi.fn();
+    const { ui, rerender } = renderStep(updateIngredient);
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "flour",
+    };
+    rerender(ui());
+    expect(updateIngredient).toHaveBeenLastCalledWith("ing_1", "2 cups flour");
+
+    // The session times out on its own...
+    mockSpeech.value = { ...mockSpeech.value, isListening: false };
+    rerender(ui());
+    updateIngredient.mockClear();
+    // ...then the shared recognizer is used by another field.
+    mockSpeech.value = {
+      ...mockSpeech.value,
+      isListening: true,
+      transcript: "stray words",
+    };
+    rerender(ui());
+    expect(updateIngredient).not.toHaveBeenCalled();
+  });
+});
