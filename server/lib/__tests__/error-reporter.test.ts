@@ -402,19 +402,28 @@ describe("error-reporter", () => {
       // a different dependency pins to 10.12.0, a version that predates this
       // file existing entirely.
       //
-      // Deliberately fragile: an unrelated dependency-tree restructuring (not
-      // just a @sentry/node bump) can break this path. That's the point — it
-      // fails LOUDLY and forces a re-verification, rather than silently
+      // Still loud: if the SDK moves the file, readFile throws and forces a
+      // re-verification, rather than silently
       // drifting the way SENSITIVE_HEADER_SNIPPETS itself already did once
       // (PR #589 shipped only 6 of the SDK's 19 real entries despite a
       // docstring already claiming parity — see the docs/solutions writeup).
       const { readFile } = await import("node:fs/promises");
-      const { fileURLToPath } = await import("node:url");
-      const snippetsPath = fileURLToPath(
-        new URL(
-          "../../../node_modules/@sentry/node/node_modules/@sentry/core/build/cjs/utils/data-collection/filtering-snippets.js",
-          import.meta.url,
-        ).href,
+      const { createRequire } = await import("node:module");
+      const { dirname, join } = await import("node:path");
+      // Resolve through Node module resolution (not a path relative to this
+      // file) so it works from an agent worktree whose node_modules is a
+      // symlink/near-empty. Resolving @sentry/core FROM @sentry/node's
+      // package.json picks the copy @sentry/node actually uses (the nested
+      // one when present), so the drift guard keeps its meaning.
+      const nodePkgPath = createRequire(import.meta.url).resolve(
+        "@sentry/node/package.json",
+      );
+      const corePkgPath = createRequire(nodePkgPath).resolve(
+        "@sentry/core/package.json",
+      );
+      const snippetsPath = join(
+        dirname(corePkgPath),
+        "build/cjs/utils/data-collection/filtering-snippets.js",
       );
       const source = await readFile(snippetsPath, "utf8");
       const match = source.match(

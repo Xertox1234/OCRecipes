@@ -1,6 +1,6 @@
 ---
 title: "Sentry drift-guard test hard-codes a node_modules path, so it fails in every agent worktree"
-status: backlog
+status: done
 priority: low
 created: 2026-11-03
 updated: 2026-11-03
@@ -21,9 +21,9 @@ Hit on 2026-11-03 while reviving #1627: `preflight:fast` failed with `ENOENT ...
 
 ## Acceptance Criteria
 
-- [ ] The test locates the installed file through Node module resolution (e.g. `createRequire(import.meta.url).resolve("@sentry/core/package.json", { paths: [<@sentry/node's dir>] })`, then join the build path) instead of a hard-coded relative path
-- [ ] It still reads the copy `@sentry/node` actually uses (the nested one when present), so the drift guard keeps its meaning
-- [ ] It passes from an agent worktree with no local `node_modules/@sentry`, and in CI
+- [x] The test locates the installed file through Node module resolution (e.g. `createRequire(import.meta.url).resolve("@sentry/core/package.json", { paths: [<@sentry/node's dir>] })`, then join the build path) instead of a hard-coded relative path
+- [x] It still reads the copy `@sentry/node` actually uses (the nested one when present), so the drift guard keeps its meaning
+- [x] It passes from an agent worktree with no local `node_modules/@sentry`, and in CI
 
 ## Implementation Notes
 
