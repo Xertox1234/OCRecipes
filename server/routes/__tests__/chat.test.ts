@@ -612,6 +612,97 @@ describe("Chat Routes", () => {
       expect(storage.updateChatConversationTitle).toHaveBeenCalled();
     });
 
+    describe.each(["recipe", "remix"] as const)(
+      "%s conversation output safety screen",
+      (type) => {
+        function setupRecipeTurn() {
+          mockStreamingSetup();
+          vi.mocked(storage.getChatConversation).mockResolvedValue(
+            createMockChatConversation({
+              type,
+              ...(type === "remix" ? { metadata: { sourceRecipeId: 42 } } : {}),
+            }),
+          );
+          if (type === "remix") {
+            vi.mocked(storage.getCommunityRecipe).mockResolvedValue(
+              createMockCommunityRecipe({ id: 42 }),
+            );
+          }
+        }
+
+        it("replaces an unsafe reply: sends safety_override and stores the standard message without the recipe", async () => {
+          setupRecipeTurn();
+          vi.mocked(generateRecipeChatResponse).mockImplementation(
+            async function* () {
+              yield { content: "Try a 72-hour water fast to lose weight." };
+              yield {
+                content: "",
+                recipe: {
+                  title: "Water",
+                  description: "d",
+                  difficulty: "Easy",
+                  timeEstimate: "5 min",
+                  servings: 1,
+                  ingredients: [{ name: "water", quantity: "1", unit: "cup" }],
+                  instructions: ["Drink"],
+                  dietTags: [],
+                  spiceLevel: null,
+                },
+                allergenWarning: null,
+              };
+              yield { done: true };
+            },
+          );
+
+          const res = await request(app)
+            .post("/api/chat/conversations/1/messages")
+            .set("Authorization", "Bearer token")
+            .send({ content: "Make me an extreme plan" });
+
+          expect(res.status).toBe(200);
+          expect(res.text).toContain(
+            JSON.stringify({ safety_override: STANDARD_SAFETY_MESSAGE }),
+          );
+          // override arrives before the terminal event
+          expect(res.text.indexOf("safety_override")).toBeLessThan(
+            res.text.indexOf('"done":true'),
+          );
+          const assistantWrites = vi
+            .mocked(storage.createChatMessage)
+            .mock.calls.filter((c) => c[2] === "assistant");
+          expect(assistantWrites).toHaveLength(1);
+          expect(assistantWrites[0][3]).toBe(STANDARD_SAFETY_MESSAGE);
+          expect(assistantWrites[0][4]).toBeNull();
+          expect(storage.updateChatConversationTitle).not.toHaveBeenCalled();
+        });
+
+        it("leaves a clean reply untouched: no override, original text stored", async () => {
+          setupRecipeTurn();
+          vi.mocked(generateRecipeChatResponse).mockImplementation(
+            async function* () {
+              yield { content: "Sure! Here's a pasta idea." };
+              yield { done: true };
+            },
+          );
+
+          const res = await request(app)
+            .post("/api/chat/conversations/1/messages")
+            .set("Authorization", "Bearer token")
+            .send({ content: "Make me a pasta recipe" });
+
+          expect(res.status).toBe(200);
+          expect(res.text).not.toContain("safety_override");
+          expect(storage.createChatMessage).toHaveBeenCalledWith(
+            1,
+            "1",
+            "assistant",
+            "Sure! Here's a pasta idea.",
+            null,
+          );
+        });
+      },
+    );
+
     it("handles streaming error and sends error SSE event", async () => {
       mockStreamingSetup();
 

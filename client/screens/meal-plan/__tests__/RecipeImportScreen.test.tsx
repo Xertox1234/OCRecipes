@@ -6,20 +6,45 @@ import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import RecipeImportScreen from "../RecipeImportScreen";
 
-const { mockReplace, mockParse } = vi.hoisted(() => ({
+vi.mock("@/hooks/useFeatureTip", () => ({
+  useMarkFeatureUsed: (feature: string) => mockMarkFeatureUsed(feature),
+}));
+const mockMarkFeatureUsed = vi.hoisted(() => vi.fn());
+
+const {
+  mockReplace,
+  mockParse,
+  mockGoBack,
+  mockPopTo,
+  mockGetState,
+  mockSetOptions,
+  mockParentNavigate,
+  mockRouteParams,
+} = vi.hoisted(() => ({
   mockReplace: vi.fn(),
   mockParse: vi.fn(),
+  mockGoBack: vi.fn(),
+  mockPopTo: vi.fn(),
+  mockGetState: vi.fn(),
+  mockSetOptions: vi.fn(),
+  mockParentNavigate: vi.fn(),
+  mockRouteParams: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     replace: mockReplace,
     navigate: vi.fn(),
-    goBack: vi.fn(),
+    goBack: mockGoBack,
+    popTo: mockPopTo,
+    getState: mockGetState,
+    setOptions: mockSetOptions,
+    setParams: vi.fn(),
+    dispatch: vi.fn(),
     addListener: vi.fn(() => () => {}),
-    getParent: vi.fn(),
+    getParent: () => ({ navigate: mockParentNavigate }),
   }),
-  useRoute: () => ({ params: undefined }),
+  useRoute: () => ({ params: mockRouteParams() }),
   usePreventRemove: vi.fn(),
 }));
 
@@ -29,6 +54,7 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockRouteParams.mockReturnValue(undefined);
 });
 
 // Spec §5.1: Import is pressable with an empty link; pressing it names the
@@ -59,5 +85,61 @@ describe("RecipeImportScreen — empty link", () => {
       expect(mockParse).toHaveBeenCalledWith("https://example.com/soup"),
     );
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+  });
+});
+
+describe("RecipeImportScreen — teaching tips", () => {
+  it("marks recipe import as used when the screen opens", () => {
+    renderComponent(<RecipeImportScreen />);
+    expect(mockMarkFeatureUsed).toHaveBeenCalledWith("import");
+  });
+});
+
+/** Pull the headerLeft element the screen registered via setOptions. */
+function renderHeaderLeft() {
+  const call = mockSetOptions.mock.calls.at(-1)?.[0] as
+    | { headerBackVisible?: boolean; headerLeft?: () => React.ReactElement }
+    | undefined;
+  expect(call?.headerBackVisible).toBe(false);
+  expect(call?.headerLeft).toBeTypeOf("function");
+  return call!.headerLeft!();
+}
+
+// Reached from Home before the Plan tab was ever opened, this screen is the
+// only route in the Plan stack — no native back chevron, so without its own
+// close control it was a dead end.
+describe("RecipeImportScreen — leaving the screen", () => {
+  it("from Home, as the only route: closes back to Home", () => {
+    mockGetState.mockReturnValue({
+      index: 0,
+      routes: [{ key: "import-1", name: "RecipeImport" }],
+    });
+    mockRouteParams.mockReturnValue({ fromHome: true });
+    renderComponent(<RecipeImportScreen />);
+    renderComponent(renderHeaderLeft());
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(mockPopTo).toHaveBeenCalledWith("MealPlanHome");
+    expect(mockParentNavigate).toHaveBeenCalledWith("HomeTab");
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("within Plan, with a route beneath: goes back", () => {
+    mockGetState.mockReturnValue({
+      index: 1,
+      routes: [
+        { key: "hub-1", name: "RecipeEntryHub" },
+        { key: "import-1", name: "RecipeImport" },
+      ],
+    });
+    renderComponent(<RecipeImportScreen />);
+    renderComponent(renderHeaderLeft());
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(mockGoBack).toHaveBeenCalled();
+    expect(mockPopTo).not.toHaveBeenCalled();
+    expect(mockParentNavigate).not.toHaveBeenCalled();
   });
 });

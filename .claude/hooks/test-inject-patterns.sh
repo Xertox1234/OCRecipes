@@ -697,8 +697,27 @@ LOG_TEST_INPUT='{"session_id":"itest-hook-log-eq","tool_name":"Edit","tool_input
 rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-eq
 OUT_OFF=$(echo "$LOG_TEST_INPUT" | PATTERN_INJECT_NO_LOG=1 bash "$HOOK" 2>/dev/null)
 
+# The DB-down run also stands in a SLOW lab DB: a fake psql that leaves a marker, then sleeps
+# 5s. The background log write must not hold the hook's stdout open — Claude Code refuses an
+# injecting hook whose stream stays open after its JSON ("stdio went quiet before
+# end-of-stream", harness diagnosis item 3). $(...) waits for EOF, so the clock times exactly
+# that. SECONDS is whole seconds: a fixed hook reads 0-2, the held-open stream reads >= 5.
+SLOW_PSQL_DIR=$(mktemp -d)
+printf '#!/bin/sh\n: > "%s/ran"\nsleep 5\n' "$SLOW_PSQL_DIR" > "$SLOW_PSQL_DIR/psql"
+chmod +x "$SLOW_PSQL_DIR/psql"
 rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-eq
-OUT_DBDOWN=$(echo "$LOG_TEST_INPUT" | PATTERN_INJECT_NO_LOG=0 LAB_DATABASE_URL="postgresql://localhost/pg_lab_does_not_exist_$$" bash "$HOOK" 2>/dev/null)
+SECONDS=0
+OUT_DBDOWN=$(echo "$LOG_TEST_INPUT" | PATH="$SLOW_PSQL_DIR:$PATH" PATTERN_INJECT_NO_LOG=0 LAB_DATABASE_URL="postgresql://localhost/pg_lab_does_not_exist_$$" bash "$HOOK" 2>/dev/null)
+SLOW_EOF=$SECONDS
+for _ in $(seq 1 20); do [ -f "$SLOW_PSQL_DIR/ran" ] && break; sleep 0.1; done
+if [ ! -f "$SLOW_PSQL_DIR/ran" ]; then
+  echo "FAIL: slow lab DB — the stand-in psql never ran, so the timing below proves nothing"; FAIL=$((FAIL + 1))
+elif [ "$SLOW_EOF" -le 2 ]; then
+  echo "PASS: slow lab DB — hook stdout closed in ${SLOW_EOF}s, not held open by the log write"; PASS=$((PASS + 1))
+else
+  echo "FAIL: slow lab DB — hook stdout stayed open ${SLOW_EOF}s (background log write holds it)"; FAIL=$((FAIL + 1))
+fi
+rm -f "$SLOW_PSQL_DIR/psql" "$SLOW_PSQL_DIR/ran"; rmdir "$SLOW_PSQL_DIR" 2>/dev/null || true
 
 LOG_TEST_DB="pg_lab_itest_hook_log_$$"
 LOG_TEST_URL="postgresql://localhost/$LOG_TEST_DB"

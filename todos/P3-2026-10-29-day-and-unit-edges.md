@@ -3,7 +3,7 @@ title: "Verification streak in UTC days; micronutrient unit assumed"
 status: backlog
 priority: low
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-10-31
 assignee:
 labels: [deferred, reliability]
 github_issue:
@@ -39,3 +39,7 @@ Found by the 2026-10-29 pre-launch audit (manifest `docs/audits/2026-10-29-pre-l
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-10-31
+
+- Decisions: the streak uses the user's stored timezone. For micronutrients, convert when the unit pair is known (µg / mg / g) and skip the value when the unit is unknown or mismatched in any other way.

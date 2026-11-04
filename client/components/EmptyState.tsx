@@ -110,6 +110,22 @@ export function EmptyState({
   );
 }
 
+/**
+ * Shown when a query is paused offline with nothing to display (see
+ * `isPausedWithoutData`). No retry action: the paused fetch resumes by itself
+ * when the connection returns.
+ */
+export function OfflineEmptyState({ what }: { what: string }) {
+  return (
+    <EmptyState
+      variant="temporary"
+      icon="wifi-off"
+      title="You're offline"
+      description={`Your ${what} will load when you're back online.`}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     alignItems: "center",

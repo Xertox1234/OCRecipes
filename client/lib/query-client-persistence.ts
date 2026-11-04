@@ -1,12 +1,19 @@
 import { onlineManager, type Mutation } from "@tanstack/react-query";
 import { queryClient, markQueryCacheRestored } from "./query-client";
 import { logger } from "./logger";
+import { registerMutationDefaults } from "./mutation-defaults";
 
 /**
  * Paused-mutation signal and persisted-cache lifecycle handlers, split out of
  * `query-client.ts` (which owns the singletons, fetch helpers and the restore
  * gate). This module depends on `query-client`, never the reverse.
  */
+
+// Register the replay-safe mutations' defaults at module scope, before the
+// persister restores (App.tsx imports this module ahead of the provider). It
+// lives here, not in query-client.ts, because mutation-defaults needs
+// query-client's exports (apiRequest) and the dependency runs one way only.
+registerMutationDefaults(queryClient);
 
 /**
  * Paused-mutation signal (R19). Only the three food-log hooks are backed by the

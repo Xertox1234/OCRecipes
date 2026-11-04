@@ -12,12 +12,22 @@ export interface AiModelOverride {
   set?: Record<string, unknown>;
 }
 
+export interface AiCallUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  completion_tokens_details?: { reasoning_tokens?: number };
+}
+
 export interface AiCallRecord {
   feature: AiFeature;
   requestedModel: string;
   answeredModel: string | null;
   answeredProvider: string | null;
   fellBack: boolean;
+  /** On success: the last `finish_reason` the provider sent (null if none). */
+  finishReason?: string | null;
+  /** On success: token usage, when the provider reported it. */
+  usage?: AiCallUsage;
   /** Set when the call failed and (fallback off) the error was re-thrown. */
   error?: { kind: AiFailureKind; moderated: boolean; message: string };
 }
@@ -26,6 +36,13 @@ export interface AiCallContext {
   overrides: Partial<Record<AiFeature, AiModelOverride>>;
   fallback: "on" | "off";
   calls: AiCallRecord[];
+  /**
+   * Eval/smoke only: send a `vertexBackup` row straight to its Vertex backup,
+   * OpenRouter skipped. A function gets the call's index (`calls.length` at
+   * call start). Takes precedence over `fallback: "off"`; on a row without
+   * `vertexBackup` the call throws.
+   */
+  forceBackup?: boolean | ((callIndex: number) => boolean);
 }
 
 const storage = new AsyncLocalStorage<AiCallContext>();

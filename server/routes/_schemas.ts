@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { insertUserProfileSchema, allergySchema } from "@shared/schema";
 import { measurementUnitSchema } from "@shared/lib/units";
+import { parseTimezone } from "../lib/civil-date";
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -266,6 +267,13 @@ export const profileUpdateSchema = z.object({
   dailyCalorieGoal: z.number().int().min(500).max(10000).optional(),
   onboardingCompleted: z.boolean().optional(),
   measurementUnit: measurementUnitSchema.optional(),
+  // IANA zone the daily quotas reset in. Stored once (write-once; a later
+  // value is ignored), see `storage.setUserTimezoneIfUnset`.
+  timezone: z
+    .string()
+    .max(64)
+    .refine((v) => parseTimezone(v) === v, "Invalid IANA timezone")
+    .optional(),
 });
 
 // Enhanced user profile schema with proper validation for nested objects

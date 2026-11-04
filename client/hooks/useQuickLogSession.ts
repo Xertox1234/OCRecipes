@@ -9,6 +9,7 @@ import {
 import * as Haptics from "expo-haptics";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useCameraTeachingToast } from "@/hooks/useCameraTeachingToast";
 import { useParseFoodText, type ParsedFoodItem } from "@/hooks/useFoodParse";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
@@ -57,6 +58,7 @@ export function useQuickLogSession({
 }: UseQuickLogSessionOptions = {}) {
   const queryClient = useQueryClient();
   const haptics = useHaptics();
+  const noteLoggedItems = useCameraTeachingToast();
 
   const onLogSuccessRef = useRef(onLogSuccess);
   useEffect(() => {
@@ -306,6 +308,10 @@ export function useQuickLogSession({
         });
       }
       // Offline path: drain will invalidate after replay — no invalidation here
+
+      // A real or durably-queued log either way: count typed foods toward the
+      // camera tip (failures land in onError and never count).
+      void noteLoggedItems(items.slice(0, MAX_LOG_ITEMS));
 
       // A submit that resolves after the session was reset must not touch a
       // dismissed session's UI state (see sessionEpochRef doc comment).

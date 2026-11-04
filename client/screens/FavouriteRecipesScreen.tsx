@@ -173,7 +173,7 @@ export default function FavouriteRecipesScreen() {
           </View>
           <Pressable
             onPress={() => handleUnfavourite(item)}
-            hitSlop={8}
+            style={styles.unfavouriteButton}
             accessibilityRole="button"
             accessibilityLabel={`Remove ${item.title} from favourites`}
           >
@@ -299,6 +299,14 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: BorderRadius.xs,
     marginRight: Spacing.md,
+  },
+  // 44pt box, not hitSlop: the card is tappable itself, so a slop would bleed
+  // into the card's own press area.
+  unfavouriteButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   recipePlaceholder: {
     alignItems: "center",

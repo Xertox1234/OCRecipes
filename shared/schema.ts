@@ -518,6 +518,9 @@ export const scannedItems = pgTable(
     check("scanned_items_protein_gte0", sql`${table.protein} >= 0`),
     check("scanned_items_carbs_gte0", sql`${table.carbs} >= 0`),
     check("scanned_items_fat_gte0", sql`${table.fat} >= 0`),
+    check("scanned_items_fiber_gte0", sql`${table.fiber} >= 0`),
+    check("scanned_items_sugar_gte0", sql`${table.sugar} >= 0`),
+    check("scanned_items_sodium_gte0", sql`${table.sodium} >= 0`),
     uniqueIndex("scanned_items_idempotency_key_idx")
       .on(table.userId, table.idempotencyKey)
       .where(sql`idempotency_key IS NOT NULL`),
@@ -547,6 +550,14 @@ export const dailyLogs = pgTable(
     source: text("source").notNull().default("scan"),
     servings: decimal("servings", { precision: 5, scale: 2 }).default("1"),
     mealType: text("meal_type"),
+    // Recipe logs only: the recipe's per-serving nutrition copied at log time
+    // (UNSCALED — readers multiply by `servings`), so editing the recipe later
+    // never rewrites past days. Written by `createDailyLog`, never by callers.
+    // Null = not snapshotted: a scan log, or a row from before migration 0033.
+    calories: decimal("calories", { precision: 10, scale: 2 }),
+    protein: decimal("protein", { precision: 10, scale: 2 }),
+    carbs: decimal("carbs", { precision: 10, scale: 2 }),
+    fat: decimal("fat", { precision: 10, scale: 2 }),
     loggedAt: timestamp("logged_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -565,6 +576,10 @@ export const dailyLogs = pgTable(
       sql`scanned_item_id IS NOT NULL OR recipe_id IS NOT NULL`,
     ),
     check("daily_logs_servings_gt0", sql`${table.servings} > 0`),
+    check("daily_logs_calories_gte0", sql`${table.calories} >= 0`),
+    check("daily_logs_protein_gte0", sql`${table.protein} >= 0`),
+    check("daily_logs_carbs_gte0", sql`${table.carbs} >= 0`),
+    check("daily_logs_fat_gte0", sql`${table.fat} >= 0`),
   ],
 );
 
@@ -1026,6 +1041,12 @@ export const recipeGenerationLog = pgTable(
     recipeId: integer("recipe_id").references(() => communityRecipes.id, {
       onDelete: "set null",
     }),
+    /**
+     * Which daily quota this row counts against. "recipe" is the recipe
+     * generation quota; every other value is a paid-AI-call cap (see
+     * `AI_DAILY_CAPS` in shared/types/premium.ts). Kinds never share a bucket.
+     */
+    kind: text("kind").default("recipe").notNull(),
     generatedAt: timestamp("generated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -1569,6 +1590,11 @@ export const insertScannedItemSchema = createInsertSchema(scannedItems).omit({
 export const insertDailyLogSchema = createInsertSchema(dailyLogs).omit({
   id: true,
   loggedAt: true,
+  // The recipe snapshot is copied by `createDailyLog`, never supplied.
+  calories: true,
+  protein: true,
+  carbs: true,
+  fat: true,
 });
 
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
@@ -2014,6 +2040,56 @@ export const cookbookRecipes = pgTable(
   ],
 );
 
+/**
+ * Cover-studio candidates waiting to be picked. Short-lived: a new set
+ * replaces the user's old one, attaching deletes the picked row, and the
+ * hourly purge deletes expired rows and their stored objects. `image_url` is
+ * only ever a URL `saveCookbookCover` minted — never client input.
+ */
+export const cookbookCoverCandidates = pgTable(
+  "cookbook_cover_candidates",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    imageUrl: text("image_url").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("cookbook_cover_candidates_user_id_idx").on(table.userId),
+    index("cookbook_cover_candidates_expires_idx").on(table.expiresAt),
+  ],
+);
+
+/**
+ * One row per STORED cover-studio set — the daily cap's counter. Kept apart
+ * from the candidates, which are deleted on replace and attach.
+ */
+export const cookbookCoverGenerationLog = pgTable(
+  "cookbook_cover_generation_log",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    index("cookbook_cover_generation_log_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const cookbooksRelations = relations(cookbooks, ({ one, many }) => ({
   user: one(users, {
     fields: [cookbooks.userId],
@@ -2378,3 +2454,26 @@ export const notificationSends = pgTable(
 
 export type NotificationSend = typeof notificationSends.$inferSelect;
 export type InsertNotificationSend = typeof notificationSends.$inferInsert;
+
+/**
+ * Scheduler run claims — one row per (job, run slot) that some server instance
+ * has taken. The unique index is the claim: `INSERT ... ON CONFLICT DO NOTHING
+ * RETURNING` returns a row for exactly one instance, so a cron tick that fires
+ * on several instances runs once. See server/storage/scheduler-runs.ts.
+ */
+export const schedulerRuns = pgTable(
+  "scheduler_runs",
+  {
+    id: serial("id").primaryKey(),
+    jobName: text("job_name").notNull(),
+    runSlot: text("run_slot").notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("scheduler_runs_job_slot_idx").on(table.jobName, table.runSlot),
+  ],
+);
+
+export type SchedulerRun = typeof schedulerRuns.$inferSelect;

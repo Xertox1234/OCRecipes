@@ -26,15 +26,28 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
-vi.mock("@/context/PremiumContext", () => ({
-  usePremiumContext: () => ({ isPremium: true }),
+const { premium, mockRefreshSubscription, mockToastInfo } = vi.hoisted(() => ({
+  premium: { value: { isPremium: true, isPremiumResolved: true } },
+  mockRefreshSubscription: vi.fn(),
+  mockToastInfo: vi.fn(),
 }));
 
-// UpgradeModal pulls in the full IAP/premium hook chain; it's irrelevant to
-// this component's own behavior (isPremium is mocked true, so it never
-// becomes visible) so it's stubbed out like other consumers do.
+vi.mock("@/context/PremiumContext", () => ({
+  usePremiumContext: () => ({
+    ...premium.value,
+    refreshSubscription: mockRefreshSubscription,
+  }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: mockToastInfo }),
+}));
+
+// UpgradeModal pulls in the full IAP/premium hook chain, so it's stubbed out
+// like other consumers do; it renders a marker only while visible.
 vi.mock("@/components/UpgradeModal", () => ({
-  UpgradeModal: () => null,
+  UpgradeModal: ({ visible }: { visible: boolean }) =>
+    visible ? "upgrade-modal-open" : null,
 }));
 
 const questions: readonly CoachQuestion[] = [
@@ -44,6 +57,32 @@ const questions: readonly CoachQuestion[] = [
 describe("AskCoachSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    premium.value = { isPremium: true, isPremiumResolved: true };
+  });
+
+  it("opens the upgrade prompt for a user resolved as free", () => {
+    premium.value = { isPremium: false, isPremiumResolved: true };
+    renderComponent(
+      <AskCoachSection questions={questions} screenContext="home" />,
+    );
+    fireEvent.click(screen.getByLabelText("How much protein today?"));
+    expect(screen.getByText("upgrade-modal-open")).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  // A paying user whose status fetch failed must not see the upgrade wall
+  // (audit 2026-10-29 M-crel-6): the tap re-checks the plan instead.
+  it("re-checks the plan instead of showing the upgrade prompt while status is unknown", () => {
+    premium.value = { isPremium: false, isPremiumResolved: false };
+    renderComponent(
+      <AskCoachSection questions={questions} screenContext="home" />,
+    );
+    fireEvent.click(screen.getByLabelText("How much protein today?"));
+
+    expect(screen.queryByText("upgrade-modal-open")).toBeNull();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockRefreshSubscription).toHaveBeenCalledTimes(1);
+    expect(mockToastInfo).toHaveBeenCalledTimes(1);
   });
 
   it("renders each question", () => {

@@ -35,3 +35,13 @@ export function formatBatchSaveSuccess(
   const count = items.length;
   return `${count} item${count !== 1 ? "s" : ""} added to ${destinationLabel}`;
 }
+
+/**
+ * Copy for the "pantry is full" toast. The server adds what fits under the
+ * 500-item cap and reports how many it left out; callers pass this to
+ * `toast.info(...)` when that count is above zero.
+ */
+export function formatPantryFullSkipped(skipped: number): string {
+  if (skipped === 1) return "Pantry full: 1 item wasn't added";
+  return `Pantry full: ${skipped} items weren't added`;
+}

@@ -8,6 +8,9 @@ import {
   SheetOptionRow,
 } from "@/components/sheet/SheetChrome";
 import { useHaptics } from "@/hooks/useHaptics";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { FeatureTip } from "@/components/FeatureTip";
+import { useFeatureTip } from "@/hooks/useFeatureTip";
 import { Spacing, FontFamily } from "@/constants/theme";
 import {
   MEAL_LABELS,
@@ -73,6 +76,13 @@ function AddItemMenuSheetContentInner({
 
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
 
+  // Pro only: import by link or photo is a premium feature.
+  const canImport = usePremiumFeature("urlImport");
+  const importTip = useFeatureTip("plan-import", {
+    feature: "import",
+    eligible: canImport,
+  });
+
   return (
     // accessibilityViewIsModal must live on this inner View — BottomSheetModal
     // typechecks the prop but never forwards it (verified in @gorhom/bottom-sheet
@@ -104,6 +114,13 @@ function AddItemMenuSheetContentInner({
           description="From URL, photo, or clipboard"
           onPress={handleImportRecipe}
           accessibilityLabel="Import recipe"
+        />
+        <FeatureTip
+          text="Paste a link or snap a cookbook page."
+          visible={importTip.visible}
+          onDismiss={importTip.dismiss}
+          pointer="up"
+          pointerAlign="start"
         />
       </View>
     </View>

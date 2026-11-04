@@ -10,6 +10,7 @@ import {
   type SectionKey,
 } from "@/lib/home-actions-storage";
 import { useAuthContext } from "@/context/AuthContext";
+import { initFeatureTipsCache } from "@/lib/feature-tips-storage";
 import { logger } from "@/lib/logger";
 
 export function useHomeActions() {
@@ -28,6 +29,9 @@ export function useHomeActions() {
     // while a prior init is in flight, its late .then must not pull the stale
     // user's getters into state. The cleanup flips `cancelled` for the old effect.
     let cancelled = false;
+    void initFeatureTipsCache(userId).catch((err) =>
+      logger.error("initFeatureTipsCache failed", err),
+    );
     initHomeActionsCache(userId)
       .then(() => {
         if (cancelled) return;

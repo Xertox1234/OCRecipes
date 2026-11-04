@@ -26,6 +26,8 @@ const runwareResponseSchema = z.object({
       taskType: z.string(),
       imageBase64Data: z.string().optional(),
       imageURL: z.string().optional(),
+      /** Present only when the request set `safety.checkContent`. */
+      NSFWContent: z.boolean().optional(),
     }),
   ),
 });
@@ -46,6 +48,13 @@ export interface GenerateImageOptions {
    * app-icon asset written to a `.png` path); do not default this globally.
    */
   outputFormat?: "PNG";
+  /**
+   * Ask Runware to check the image's content. A result it flags — or one
+   * that comes back without a verdict — returns null, like a failed call.
+   */
+  checkContent?: boolean;
+  /** Abort after this long. Defaults to RUNWARE_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
 
 /**
@@ -76,7 +85,10 @@ export async function generateImage(
   if (!apiKey) return null;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), RUNWARE_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    options.timeoutMs ?? RUNWARE_TIMEOUT_MS,
+  );
 
   try {
     const response = await fetch(RUNWARE_API_URL, {
@@ -99,6 +111,7 @@ export async function generateImage(
           ...(options.outputFormat
             ? { outputFormat: options.outputFormat }
             : {}),
+          ...(options.checkContent ? { safety: { checkContent: true } } : {}),
         },
       ]),
       signal: controller.signal,
@@ -121,10 +134,20 @@ export async function generateImage(
       );
       return null;
     }
-    const imageData = parsed.data.data[0]?.imageBase64Data;
+    const result = parsed.data.data[0];
+    const imageData = result?.imageBase64Data;
 
     if (!imageData) {
       logger.error("Runware returned no image data");
+      return null;
+    }
+
+    // Fail closed: when a check was asked for, only an explicit `false` passes.
+    if (options.checkContent && result.NSFWContent !== false) {
+      logger.warn(
+        { flagged: result.NSFWContent ?? "missing" },
+        "Runware content check did not pass; dropping image",
+      );
       return null;
     }
 

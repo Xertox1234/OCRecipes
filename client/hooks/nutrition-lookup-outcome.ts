@@ -31,6 +31,9 @@ import {
   toLabelNutritionPayload,
 } from "@/lib/nutrition-ocr-parser";
 
+const LOOKUP_UNAVAILABLE_COPY =
+  "We couldn't look up this product right now. Please try scanning again in a moment.";
+
 export interface NutritionData {
   id?: number;
   productName: string;
@@ -249,6 +252,9 @@ export async function lookupBarcode(
   // OFF-fallback and total-outage branches below can pick copy that doesn't
   // falsely claim we couldn't reach the service.
   let serverResponseInvalid = false;
+  // The server answered 503: every upstream source errored. That is an
+  // outage, not an unknown product — the terminal copy must say "try again".
+  let serverLookupUnavailable = false;
 
   try {
     // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
@@ -417,6 +423,9 @@ export async function lookupBarcode(
           // Couldn't parse error body — fall through to OFF.
         }
       }
+      if (serverRes.status === 503) {
+        serverLookupUnavailable = true;
+      }
     } catch (err) {
       // A malformed-response failure already logged via `logger.error`
       // above (and set `serverResponseInvalid`) — it is not a connectivity
@@ -482,6 +491,21 @@ export async function lookupBarcode(
       };
     }
 
+    // The direct-OFF miss is not proof of absence when our server said every
+    // source was down — show retry copy, not the unknown-product message.
+    if (serverLookupUnavailable) {
+      return {
+        kind: "total-outage",
+        labelReadNotice,
+        nutrition: { productName: "Unknown Product", barcode: code },
+        error: LOOKUP_UNAVAILABLE_COPY,
+        allergenFlag: createAllergenUnavailableFlag({
+          detail:
+            "We couldn't reach our product sources to check this against your allergies — check the package label.",
+        }),
+      };
+    }
+
     return {
       kind: "off-not-found",
       labelReadNotice,
@@ -495,7 +519,9 @@ export async function lookupBarcode(
       kind: "total-outage",
       labelReadNotice,
       nutrition: { productName: "Unknown Product", barcode: code },
-      error: "Failed to fetch product data",
+      error: serverLookupUnavailable
+        ? LOOKUP_UNAVAILABLE_COPY
+        : "Failed to fetch product data",
       allergenFlag: createAllergenUnavailableFlag({
         detail: serverResponseInvalid
           ? "Our service sent back information we couldn't understand, and we couldn't reach a backup source either — check the package label."

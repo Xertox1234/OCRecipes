@@ -18,6 +18,11 @@ const { mockNotification, mockToastSuccess, mockToastError } = vi.hoisted(
   }),
 );
 
+const mockOfferImport = vi.hoisted(() => vi.fn());
+vi.mock("@/hooks/useImportTeachingToast", () => ({
+  useImportTeachingToast: () => mockOfferImport,
+}));
+
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
     success: mockToastSuccess,
@@ -427,6 +432,8 @@ describe("WizardShell", () => {
     await waitFor(() => expect(mutateCreate).toHaveBeenCalled());
     expect(mutateCreate.mock.calls[0][0]).toMatchObject({ title: "My Recipe" });
     await waitFor(() => expect(onSaveComplete).toHaveBeenCalled());
+    // A hand-built recipe: suggest import for next time.
+    expect(mockOfferImport).toHaveBeenCalledTimes(1);
   });
 
   it("fires a success haptic via useHaptics (not raw expo-haptics) when save succeeds", async () => {

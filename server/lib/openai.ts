@@ -7,6 +7,9 @@ export const OPENAI_TIMEOUT_FAST_MS = 15_000; // food-nlp: simple text parsing
 export const OPENAI_TIMEOUT_STREAM_MS = 30_000; // nutrition-coach: streaming chat
 export const OPENAI_TIMEOUT_HEAVY_MS = 60_000; // recipe/meal generation: large token budgets
 export const OPENAI_TIMEOUT_LONG_MS = 120_000; // recipe-chat photo analysis, canonical editorial content: long outputs
+// The Vertex backup leg's timeout for every OPENAI_TIMEOUT_FAST_MS caller
+// (aiChat applies it; owner 2026-11-03 after 15 s timeouts in the PR 3 gate).
+export const VERTEX_BACKUP_TIMEOUT_FAST_MS = 30_000;
 
 const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 if (!apiKey) {

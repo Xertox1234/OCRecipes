@@ -10,6 +10,7 @@ import {
   checkPremiumFeature,
   checkAiConfigured,
   handleRouteError,
+  claimAiCallOrReject,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -216,6 +217,16 @@ export function register(app: Express): void {
           "Recipe Generation",
         );
         if (!features) return;
+
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "recipeChatImage",
+            "recipe photo analysis",
+          ))
+        )
+          return;
 
         // Analyze image with Vision API
         const imageBase64 = req.file.buffer.toString("base64");

@@ -5,7 +5,7 @@
  * (the caller re-derives `error` from the current value on each render).
  */
 import type { RefObject } from "react";
-import type { TextInput as RNTextInput } from "react-native";
+import type { TextInputInstance } from "react-native";
 
 export function shouldShowError(s: {
   value: string;
@@ -23,7 +23,7 @@ export function shouldShowError(s: {
 export function focusFirstInvalid(
   fields: {
     markSubmitted: () => boolean;
-    ref: RefObject<RNTextInput | null>;
+    ref: RefObject<TextInputInstance | null>;
   }[],
 ): boolean {
   let firstInvalid: (typeof fields)[number] | null = null;

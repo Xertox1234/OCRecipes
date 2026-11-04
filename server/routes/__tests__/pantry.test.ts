@@ -11,8 +11,7 @@ vi.mock("../../storage", () => ({
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     getPantryItems: vi.fn(),
-    getPantryItemCount: vi.fn().mockResolvedValue(0),
-    createPantryItem: vi.fn(),
+    createPantryItemsUnderCap: vi.fn(),
     updatePantryItem: vi.fn(),
     deletePantryItem: vi.fn(),
     getExpiringPantryItems: vi.fn(),
@@ -83,7 +82,10 @@ describe("Pantry Routes", () => {
   describe("POST /api/pantry", () => {
     it("creates a pantry item", async () => {
       mockPremium();
-      vi.mocked(storage.createPantryItem).mockResolvedValue(mockItem);
+      vi.mocked(storage.createPantryItemsUnderCap).mockResolvedValue({
+        created: [mockItem],
+        skipped: 0,
+      });
 
       const res = await request(app)
         .post("/api/pantry")
@@ -92,6 +94,22 @@ describe("Pantry Routes", () => {
 
       expect(res.status).toBe(201);
       expect(res.body.name).toBe("Rice");
+    });
+
+    it("returns 400 LIMIT_REACHED when the pantry is full", async () => {
+      mockPremium();
+      vi.mocked(storage.createPantryItemsUnderCap).mockResolvedValue({
+        created: [],
+        skipped: 1,
+      });
+
+      const res = await request(app)
+        .post("/api/pantry")
+        .set("Authorization", "Bearer token")
+        .send({ name: "Rice", quantity: "2" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("LIMIT_REACHED");
     });
 
     it("returns 400 for missing name", async () => {

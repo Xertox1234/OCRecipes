@@ -96,13 +96,23 @@ export async function addGroceryListItems(
   return db.insert(groceryListItems).values(items).returning();
 }
 
-/** Atomically check list count limit, create list, and insert items (TOCTOU-safe) */
+/**
+ * Check the list count limit, create the list and insert its items in one
+ * transaction. A per-user advisory lock (taken first, released at commit)
+ * serialises concurrent creates: READ COMMITTED alone lets two parallel calls
+ * both count below the cap and both insert.
+ */
 export async function createGroceryListWithLimitCheck(
   list: InsertGroceryList,
   items: Omit<InsertGroceryListItem, "groceryListId">[],
   maxLists: number,
 ): Promise<{ list: GroceryList; items: GroceryListItem[] } | null> {
   return db.transaction(async (tx) => {
+    // Feature-scoped key so this lock never queues behind unrelated per-user
+    // locks (pantry, nutrition, ...). Must precede the count.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${"grocery-lists:" + list.userId}, 0))`,
+    );
     const countResult = await tx
       .select({ count: sql<number>`count(*)` })
       .from(groceryLists)

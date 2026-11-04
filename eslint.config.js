@@ -53,6 +53,9 @@ module.exports = defineConfig([
       // Railway IaC, evaluated by the Railway CLI. tsc's `**` glob skips dot-dirs, so
       // the type-aware block would hit the same "not found by the project service" error.
       ".railway/**",
+      // Claude Code mods: TypeScript the Claude Code engine loads, typed by its own
+      // "claude-code" module (no npm package). Checked by `claude plugin validate`/`test`.
+      ".claude/mods/**",
     ],
   },
   {

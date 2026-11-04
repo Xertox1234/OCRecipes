@@ -11,6 +11,7 @@ import {
   ZERO_CAL_MAX_MACRO_KCAL_100G,
 } from "./barcode-policy";
 import { mapOffAllergenTags } from "./off-allergen-tags";
+import { UpstreamUnavailableError } from "./usda-lookup";
 import {
   lookupCNF,
   lookupNutrition,
@@ -39,6 +40,7 @@ export {
   offMacrosCorroborateEnergy,
 } from "./barcode-policy";
 export type { BarcodePer100g } from "./barcode-policy";
+export { UpstreamUnavailableError } from "./usda-lookup";
 
 export interface BarcodeServingInfo {
   displayLabel: string;
@@ -410,7 +412,10 @@ function reconcilePer100g(
  * Look up a barcode via Open Food Facts, then cross-validate per-100g
  * nutrition with USDA FoodData Central (and API Ninjas as fallback).
  *
- * Returns null only when no source has data for this barcode.
+ * Returns null only when no source has data for this barcode. Throws
+ * `UpstreamUnavailableError` when nothing was found AND neither Open Food
+ * Facts nor USDA could answer (every attempt errored) — an outage, which the
+ * caller must not report as "not found".
  */
 export async function lookupBarcode(
   code: string,
@@ -420,6 +425,9 @@ export async function lookupBarcode(
   // Using `any` here is pragmatic — a full interface would be brittle and unmaintainable.
   let offProduct: Record<string, any> | null = null;
   const codesToTry = barcodeVariants(code);
+  // True once any OFF variant gave a definitive answer ("status 0" counts,
+  // even on an HTTP 404). Stays false only if every attempt errored.
+  let offAnswered = false;
 
   for (const variant of codesToTry) {
     try {
@@ -428,7 +436,16 @@ export async function lookupBarcode(
         { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
       );
       const json = await res.json();
+      if (json.status === 0) offAnswered = true;
+      else if (!res.ok) {
+        log.warn(
+          { variant },
+          "Open Food Facts returned a non-OK response without a status",
+        );
+        continue;
+      }
       if (json.status === 1 && json.product) {
+        offAnswered = true;
         offProduct = json.product;
         log.debug(
           { barcode: code, variant, digits: variant.length },
@@ -645,6 +662,7 @@ export async function lookupBarcode(
 
   // ── Step 2b: If OFF has no product, try USDA branded food by UPC ─
   // Some products exist in USDA but not OFF (branded/US-market items).
+  let usdaUnavailable = false;
   let usdaByUPC: {
     product: NutritionData;
     brandName?: string;
@@ -655,7 +673,12 @@ export async function lookupBarcode(
       { barcode: code },
       "barcode not in OFF — trying USDA branded food by UPC",
     );
-    usdaByUPC = await lookupUSDAByUPC(code);
+    try {
+      usdaByUPC = await lookupUSDAByUPC(code);
+    } catch (err) {
+      if (!(err instanceof UpstreamUnavailableError)) throw err;
+      usdaUnavailable = true;
+    }
     if (usdaByUPC) {
       log.debug(
         {
@@ -838,6 +861,11 @@ export async function lookupBarcode(
 
   // If no data from any source, give up
   if (per100g.calories === undefined && !resolvedProductName) {
+    // Distinguish "every source errored" from "no source had data": only the
+    // former is an outage the user can retry.
+    if (!offProduct && !offAnswered && usdaUnavailable) {
+      throw new UpstreamUnavailableError();
+    }
     return null;
   }
 

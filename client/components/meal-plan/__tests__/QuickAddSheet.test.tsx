@@ -49,6 +49,27 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
   }),
 }));
 
+const { mockSpeech, mockStartListening } = vi.hoisted(() => ({
+  mockSpeech: {
+    value: {
+      isListening: false,
+      transcript: "",
+      isFinal: false,
+      volume: 0,
+      error: null as string | null,
+    },
+  },
+  mockStartListening: vi.fn(),
+}));
+
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    ...mockSpeech.value,
+    startListening: mockStartListening,
+    stopListening: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({
     mutateAsync: mockAddItem,
@@ -197,5 +218,47 @@ describe("QuickAddSheet — search field label", () => {
     expect(input.getAttribute("placeholder")).toBe(
       "e.g. pasta or high protein",
     );
+  });
+
+  describe("voice input", () => {
+    // The sheet is React.memo: each rerender passes a fresh onDismiss so the
+    // mocked hook state is re-read.
+    const defaultProps = {
+      mealType: "breakfast" as const,
+      plannedDate: "2025-06-01",
+      onDismiss: vi.fn(),
+      onNavigateCreate: vi.fn(),
+      onOpenImportSheet: vi.fn(),
+      onOpenCommunityRecipe: vi.fn(),
+    };
+
+    it("dictation fills the search field after recognition starts", () => {
+      mockSpeech.value = {
+        isListening: false,
+        transcript: "",
+        isFinal: false,
+        volume: 0,
+        error: null,
+      };
+      const { rerender } = renderComponent(
+        <QuickAddSheetContent {...defaultProps} />,
+      );
+      fireEvent.click(screen.getByLabelText("Start voice input"));
+      expect(mockStartListening).toHaveBeenCalledOnce();
+
+      // The "start" event flips isListening, then the transcript streams in.
+      mockSpeech.value = { ...mockSpeech.value, isListening: true };
+      rerender(<QuickAddSheetContent {...defaultProps} onDismiss={vi.fn()} />);
+      mockSpeech.value = {
+        ...mockSpeech.value,
+        isListening: true,
+        transcript: "chicken soup",
+      };
+      rerender(<QuickAddSheetContent {...defaultProps} onDismiss={vi.fn()} />);
+
+      expect(
+        (screen.getByLabelText("Search recipes") as HTMLInputElement).value,
+      ).toBe("chicken soup");
+    });
   });
 });

@@ -12,6 +12,7 @@ import { logger, toError } from "../lib/logger";
 import { lookupNutrition } from "../services/nutrition-lookup";
 import {
   lookupBarcode,
+  UpstreamUnavailableError,
   type BarcodeLookupResult,
 } from "../services/barcode-lookup";
 import {
@@ -319,6 +320,17 @@ export function register(app: Express): void {
         );
         res.json(body);
       } catch (error) {
+        if (error instanceof UpstreamUnavailableError) {
+          // Every source errored: an outage, not an unknown product. 503 so
+          // the client offers a retry instead of the unknown-product flow.
+          sendError(
+            res,
+            503,
+            "Product lookup is temporarily unavailable. Please try again.",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
         handleRouteError(res, error, "look up barcode");
       }
     },
@@ -501,6 +513,17 @@ export function register(app: Express): void {
         }
         res.json({ ...body, labelCompared: compared });
       } catch (error) {
+        if (error instanceof UpstreamUnavailableError) {
+          // Every source errored: an outage, not an unknown product. 503 so
+          // the client offers a retry instead of the unknown-product flow.
+          sendError(
+            res,
+            503,
+            "Product lookup is temporarily unavailable. Please try again.",
+            ErrorCode.NUTRITION_LOOKUP_FAILED,
+          );
+          return;
+        }
         handleRouteError(res, error, "look up barcode");
       }
     },

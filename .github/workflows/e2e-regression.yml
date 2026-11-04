@@ -21,6 +21,10 @@
 #   went unnoticed for a month under that assumption) — a failed run instead
 #   files/updates a GitHub Issue labelled `e2e-regression-failure` via the
 #   `notify-on-failure` job below, so a red night is visible in the Issues tab.
+#   That issue alone did not get read either (#1041 collected 36 comments; 9 red
+#   nights 10-19 → 10-27 went unseen), so the `nightly-band` mod
+#   (.claude/mods/nightly-band/) also shows a red scheduled run on main above the
+#   Claude Code prompt and tells the agent at session start.
 #
 #   Cost note: the repo is public, so standard GitHub-hosted runners — including
 #   macOS — are free; the previous "manual-only to save paid macOS minutes"
@@ -81,6 +85,14 @@ env:
   JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
   LOG_LEVEL: silent
   AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
+  # The OpenAI-compatible stand-in started beside the backend (scripts/ci/stub-openai.mjs): it
+  # answers the receipt-upload flow's AI step and gives every other call sk-stub's usual 401.
+  # AI features go OpenRouter first (no row falls back to OpenAI direct since #1715), so the
+  # OpenRouter route points at it too; OPENROUTER_BASE_URL is honoured only under
+  # NODE_ENV=development/test (server:dev). No GOOGLE_VERTEX_*: the Vertex backup is off here.
+  AI_INTEGRATIONS_OPENAI_BASE_URL: http://127.0.0.1:4010/v1
+  OPENROUTER_API_KEY: sk-stub
+  OPENROUTER_BASE_URL: http://127.0.0.1:4010/v1
   USDA_API_KEY: stub
   API_NINJAS_KEY: stub
   RECEIPT_VALIDATION_STUB: "true"
@@ -336,8 +348,16 @@ jobs:
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
 
       # Start the backend the flows talk to; keep it running for the rest of the job.
+      # The OpenAI stand-in answers the receipt-upload flow's AI step (scripts/ci/stub-openai.mjs);
+      # every other AI call gets the same 401 sk-stub got from the real API.
       - name: Start backend
         run: |
+          node scripts/ci/stub-openai.mjs &
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1 || { echo "::error::OpenAI stand-in did not start"; cat stub-openai.log; exit 1; }
           npm run server:dev > server.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
@@ -351,7 +371,8 @@ jobs:
       # fail-loud register/login/profile-update contract and why `|| true`
       # only covers an idempotent re-run within the same job).
       - name: Seed E2E test user
-        run: bash scripts/ci/seed-e2e-user.sh
+        # Second account: the premium one e2e/flows/plan/receipt-upload.yaml signs in as.
+        run: bash scripts/ci/seed-e2e-user.sh && USERNAME=e2epremium PREMIUM=1 bash scripts/ci/seed-e2e-user.sh
 
       # The debug build is a dev client that loads its JS bundle from Metro, so
       # Metro must be running for the app to render anything Maestro can drive.
@@ -532,6 +553,9 @@ jobs:
       # the simulator. Do not renice Metro to fix that: run 40686366318 tried
       # `renice -n -10` and was worse at every load level (load 150-250: p90
       # 12.8s vs 5.0s) and the load median doubled (281 vs 142).
+      # Since 2026-11-02 patches/expo++@expo+cli+*.patch resolves the runtime
+      # version once per platform instead (after SDK 58, 15-20% of manifests
+      # passed 10s, nightlies 41288476343 and 41412869659).
       - name: Keep Metro manifest warm
         run: |
           nohup bash -c 'while true; do
@@ -569,6 +593,7 @@ jobs:
           name: logs-ios
           path: |
             server.log
+            stub-openai.log
             metro.log
             metro-probe.log
             e2e/maestro-output/
@@ -646,8 +671,16 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The OpenAI stand-in answers the receipt-upload flow's AI step (scripts/ci/stub-openai.mjs);
+      # every other AI call gets the same 401 sk-stub got from the real API.
       - name: Start backend
         run: |
+          node scripts/ci/stub-openai.mjs &
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4010/health >/dev/null 2>&1 || { echo "::error::OpenAI stand-in did not start"; cat stub-openai.log; exit 1; }
           npm run server:dev > server.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
@@ -658,7 +691,8 @@ jobs:
       # Shared with the iOS job: scripts/ci/seed-e2e-user.sh (see that file
       # for the fail-loud register/login/profile-update contract).
       - name: Seed E2E test user
-        run: bash scripts/ci/seed-e2e-user.sh
+        # Second account: the premium one e2e/flows/plan/receipt-upload.yaml signs in as.
+        run: bash scripts/ci/seed-e2e-user.sh && USERNAME=e2epremium PREMIUM=1 bash scripts/ci/seed-e2e-user.sh
 
       # See the iOS job's Metro note. On Android the emulator's localhost is the
       # emulator itself, so `adb reverse` (below) tunnels the app's
@@ -710,6 +744,7 @@ jobs:
           name: logs-android
           path: |
             server.log
+            stub-openai.log
             metro.log
             e2e/maestro-output/
           if-no-files-found: warn

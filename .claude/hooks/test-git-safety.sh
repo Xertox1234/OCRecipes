@@ -118,6 +118,26 @@ assert_deny "registry: compound — mutating -C main first, benign -C worktree s
   "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x && git -C $WT_A status")"
 assert_deny "registry: compound — benign -C worktree first, mutating -C main second" \
   "$(json "$SESSION" "$WT_A" "git -C $WT_A status && git -C $MAIN commit -m x")"
+
+# A subagent in its OWN isolation worktree (harness item 8, 2026-11-01; lib/own-agent-worktree.sh).
+# The registry is per session and lists only other worktrees; agent_id equals the subagent's
+# agent-<id> suffix and is absent at the top level.
+jsona() {  # $1=agent_id $2=cwd $3=raw command
+  jq -cn --arg s "$SESSION" --arg a "$1" --arg c "$2" --arg cmd "$3" \
+    '{tool_name:"Bash",session_id:$s,agent_id:$a,cwd:$c,tool_input:{command:$cmd}}'
+}
+WT_C='/Users/x/projects/OCRecipes/.claude/worktrees/agent-ccc'
+WT_D='/Users/x/projects/OCRecipes/.claude/worktrees/agent-ddd'
+assert_allow "registry: subagent's git commit in its own unregistered worktree" \
+  "$(jsona ccc "$WT_C" 'git commit -m x')"
+assert_deny "registry: no agent_id (the parent session) gets no exception in a subagent's worktree" \
+  "$(jsonc "$SESSION" "$WT_C" 'git commit -m x')"
+assert_deny "registry: subagent's git -C into the main checkout is still denied" \
+  "$(jsona ccc "$WT_C" "git -C $MAIN commit -m x")"
+assert_deny "registry: subagent's git -C into a sibling's worktree is denied" \
+  "$(jsona ccc "$WT_C" "git -C $WT_D commit -m x")"
+assert_deny "registry: agent_id naming a worktree the cwd is not in gets no exception" \
+  "$(jsona ddd "$WT_C" 'git commit -m x')"
 assert_allow "registry: compound — both mutating segments target the worktree" \
   "$(json "$SESSION" "$MAIN" "git -C $WT_A mv a b && git -C $WT_A commit -m x")"
 
@@ -1002,6 +1022,23 @@ assert_deny "registry: /tmp/..-laundered redirect into the main checkout is deni
 assert_allow "registry: /tmp/.. path collapsing back into /tmp is allowed" \
   "$(json "$SESSION" "$R_WT" 'echo x > /tmp/../tmp/scratch.txt')"
 
+# Write-shaped commands from a subagent in its OWN unregistered worktree (item 8; the real
+# L67 denial was a relative cp back into the subagent's own worktree). A sibling's worktree
+# and the main checkout stay denied.
+( cd "$R_MAIN" && git worktree add -q ".claude/worktrees/agent-own" && git worktree add -q ".claude/worktrees/agent-sib" ) >/dev/null 2>&1
+R_OWN="$R_MAIN/.claude/worktrees/agent-own"
+R_SIB="$R_MAIN/.claude/worktrees/agent-sib"
+assert_allow "registry: subagent's relative cp into its own worktree" \
+  "$(jsona own "$R_OWN" 'cp /tmp/x.bak server/routes/x.ts')"
+assert_allow "registry: subagent's absolute redirect into its own worktree" \
+  "$(jsona own "$R_OWN" "echo x > $R_OWN/notes.txt")"
+assert_deny "registry: subagent's cp into a sibling's worktree is denied" \
+  "$(jsona own "$R_OWN" "cp /tmp/x.bak $R_SIB/server/x.ts")"
+assert_deny "registry: subagent's redirect into the main checkout is denied" \
+  "$(jsona own "$R_OWN" "echo x > $R_MAIN/notes.txt")"
+assert_deny "registry: the parent (no agent_id) writing into a subagent's worktree is denied" \
+  "$(jsonc "$SESSION" "$R_OWN" "echo x > $R_OWN/notes.txt")"
+
 # Quote-AWARE write extraction: a commit MESSAGE that merely MENTIONS a write
 # operator/command is NOT a real write — the operator/command is quoted, so it must
 # not be mined (the CONFIRMED false-DENY class; see quote-strip-escape-glue solution).
@@ -1793,7 +1830,10 @@ fi
 # 1 stash --stat allow, 1 missing-folder || cp deny. Net +8 because the heredoc row became two.
 # 332 -> 336 (2026-10-24, #1553 review fixes): +4 = 1 unenterable-folder deny + its enterable
 # control, 2 stash brace denies (the measured {-..-}-output and a {a,b} list).
-EXPECTED_TOTAL=336
+# 336 -> 346 (2026-11-01, harness item 8, own agent worktree): +10 = 1 git allow + 3 git denies
+# (fake paths), 2 write allows + 3 write denies (real repo), 1 parent-session git deny. RED before
+# the guard change: the 3 allows failed.
+EXPECTED_TOTAL=346
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

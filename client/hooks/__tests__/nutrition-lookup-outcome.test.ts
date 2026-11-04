@@ -246,6 +246,58 @@ describe("lookupBarcode", () => {
     });
   });
 
+  it("server 503 + direct OFF miss: retry copy (total-outage), not 'Product not found'", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ code: "NUTRITION_LOOKUP_FAILED" }),
+      })
+      .mockResolvedValueOnce({ json: async () => ({ status: 0 }) });
+
+    const outcome = await lookupBarcode("000000000008", undefined);
+
+    expect(outcome.kind).toBe("total-outage");
+    if (outcome.kind !== "total-outage") throw new Error("wrong outcome kind");
+    expect(outcome.error).toMatch(/try scanning again/i);
+    expect(outcome.error).not.toMatch(/not found/i);
+  });
+
+  it("server 503 + direct OFF unreachable: the same retry copy", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ code: "NUTRITION_LOOKUP_FAILED" }),
+      })
+      .mockRejectedValueOnce(new Error("OFF unreachable"));
+
+    const outcome = await lookupBarcode("000000000009", undefined);
+
+    expect(outcome.kind).toBe("total-outage");
+    if (outcome.kind !== "total-outage") throw new Error("wrong outcome kind");
+    expect(outcome.error).toMatch(/try scanning again/i);
+  });
+
+  it("server 503 + direct OFF hit: still falls back to OFF data", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ code: "NUTRITION_LOOKUP_FAILED" }),
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({
+          status: 1,
+          product: { product_name: "Found", nutriments: {} },
+        }),
+      });
+
+    const outcome = await lookupBarcode("000000000010", undefined);
+
+    expect(outcome.kind).toBe("off-fallback");
+  });
+
   it("resolves 'total-outage' when both legs fail, with the plain copy", async () => {
     mockFetch
       .mockRejectedValueOnce(new Error("server unreachable"))

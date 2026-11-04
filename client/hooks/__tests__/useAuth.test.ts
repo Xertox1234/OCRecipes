@@ -25,6 +25,7 @@ const {
   mockNotifySessionExpired,
   mockClearOfflineQueue,
   mockClearHomeActionsState,
+  mockClearFeatureTipsState,
   mockClearScheduledCoachReminders,
   mockWhenQueryCacheRestored,
 } = vi.hoisted(() => {
@@ -51,6 +52,7 @@ const {
     // to falsy and the marker would never advance.
     mockClearOfflineQueue: vi.fn().mockResolvedValue(true),
     mockClearHomeActionsState: vi.fn().mockResolvedValue(true),
+    mockClearFeatureTipsState: vi.fn().mockResolvedValue(true),
     mockClearScheduledCoachReminders: vi.fn().mockResolvedValue(true),
     // Default: the persisted-cache restore gate is already settled, so the sweep
     // proceeds immediately. Individual tests override with a deferred promise to
@@ -109,6 +111,10 @@ vi.mock("@/lib/offline-queue", () => ({
   clearOfflineQueue: () => mockClearOfflineQueue(),
 }));
 
+vi.mock("@/lib/feature-tips-storage", () => ({
+  clearFeatureTipsState: () => mockClearFeatureTipsState(),
+}));
+
 vi.mock("@/lib/home-actions-storage", () => ({
   clearHomeActionsState: () => mockClearHomeActionsState(),
 }));
@@ -127,6 +133,16 @@ const { mockGetProviderToken } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/social-sign-in", () => ({
   getProviderToken: (...args: unknown[]) => mockGetProviderToken(...args),
+}));
+
+// The send-once behaviour is covered in lib/__tests__/timezone.test.ts; mocked
+// here so its profile PUT does not interleave with these apiRequest assertions.
+const { mockSendDeviceTimezoneOnce } = vi.hoisted(() => ({
+  mockSendDeviceTimezoneOnce: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/timezone", () => ({
+  sendDeviceTimezoneOnce: (...args: unknown[]) =>
+    mockSendDeviceTimezoneOnce(...args),
 }));
 
 const originalFetch = globalThis.fetch;
@@ -302,6 +318,23 @@ describe("useAuth", () => {
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(fakeUser),
       );
+    });
+
+    it("hands the signed-in user to the timezone sender, and a failing sender never blocks sign-in", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+      mockSendDeviceTimezoneOnce.mockRejectedValueOnce(new Error("offline"));
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => {
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+      expect(mockSendDeviceTimezoneOnce).toHaveBeenCalledTimes(1);
+      expect(mockSendDeviceTimezoneOnce).toHaveBeenCalledWith("1");
     });
 
     // Auth audit 2026-10-10 L7: a /me started under token A that finishes after
@@ -1279,6 +1312,8 @@ describe("useAuth", () => {
       // path only: clearHomeActionsState runs solely via the shared
       // clearDurableLocalState chokepoint, so one path proves wiring for all five.
       expect(mockClearHomeActionsState).toHaveBeenCalled();
+      // ...and which teaching tips were seen / features used (same chokepoint).
+      expect(mockClearFeatureTipsState).toHaveBeenCalled();
       // ...and the OS-scheduled coach reminders (journal text) plus their global
       // id map (auth audit M2) — same chokepoint, so one path proves all five.
       expect(mockClearScheduledCoachReminders).toHaveBeenCalled();

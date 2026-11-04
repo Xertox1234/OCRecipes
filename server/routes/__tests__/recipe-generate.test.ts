@@ -149,7 +149,6 @@ describe("POST /api/meal-plan/recipes/generate", () => {
       expect.any(String),
       expect.any(Number),
       null,
-      expect.any(String), // tz param (defaults to "UTC" when no X-Timezone header)
     );
   });
 
@@ -217,9 +216,10 @@ describe("POST /api/meal-plan/recipes/generate", () => {
     expect(res.status).toBe(500);
   });
 
-  it("passes X-Timezone header as tz to generation quota (non-UTC user)", async () => {
-    // Regression for H8: a user near local midnight must not wrongly
-    // receive a fresh quota or a spurious 429 due to UTC day mismatch.
+  it("ignores X-Timezone for the generation quota (stored timezone decides)", async () => {
+    // Day-boundary policy: quota buckets use the user's STORED timezone,
+    // resolved inside storage. A client-controlled header must never reach
+    // the quota calls, or flipping it would earn an extra daily reset.
     vi.mocked(generateRecipeContent).mockResolvedValue({
       title: "Test",
       description: "desc",
@@ -233,38 +233,14 @@ describe("POST /api/meal-plan/recipes/generate", () => {
     await request(app)
       .post("/api/meal-plan/recipes/generate")
       .set("Authorization", "Bearer test-token")
-      .set("X-Timezone", "America/Los_Angeles")
+      .set("X-Timezone", "Pacific/Kiritimati")
       .send({ prompt: "tacos" });
 
-    // getDailyRecipeGenerationCount must receive the user's tz as 3rd arg
-    const countCallArgs = vi.mocked(storage.getDailyRecipeGenerationCount).mock
-      .calls[0];
-    expect(countCallArgs[2]).toBe("America/Los_Angeles");
-
-    // logRecipeGenerationWithLimitCheck must also receive tz as 4th arg
-    const logCallArgs = vi.mocked(storage.logRecipeGenerationWithLimitCheck)
-      .mock.calls[0];
-    expect(logCallArgs[3]).toBe("America/Los_Angeles");
-  });
-
-  it("defaults quota tz to UTC when X-Timezone is absent", async () => {
-    vi.mocked(generateRecipeContent).mockResolvedValue({
-      title: "Test",
-      description: "desc",
-      difficulty: "Easy",
-      timeEstimate: "10 minutes",
-      ingredients: [],
-      instructions: [],
-      dietTags: [],
-    });
-
-    await request(app)
-      .post("/api/meal-plan/recipes/generate")
-      .set("Authorization", "Bearer test-token")
-      .send({ prompt: "tacos" });
-
-    const countCallArgs = vi.mocked(storage.getDailyRecipeGenerationCount).mock
-      .calls[0];
-    expect(countCallArgs[2]).toBe("UTC");
+    expect(
+      vi.mocked(storage.getDailyRecipeGenerationCount).mock.calls[0],
+    ).toHaveLength(2);
+    expect(
+      vi.mocked(storage.logRecipeGenerationWithLimitCheck).mock.calls[0],
+    ).toHaveLength(3);
   });
 });

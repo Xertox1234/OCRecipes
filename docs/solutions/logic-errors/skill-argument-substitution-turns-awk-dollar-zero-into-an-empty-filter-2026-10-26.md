@@ -39,7 +39,7 @@ Write the field reference as `$ 0`. In awk `$` is an operator on an expression, 
 
 ## Prevention
 
-- In any SKILL.md, never write a bare `$0`–`$9` that a shell or awk must see literally — use `$ 0` in awk, or put the code in a script file the skill calls.
+- In any SKILL.md, never write a bare `$0`–`$9` that a shell or awk must see literally — use `$ 0` in awk, or put the code in a script file the skill calls. `scripts/check-skill-positional-params.js` (lint-staged on `.claude/skills/**/SKILL.md`) now fails the commit on one. The same hazard had made `/todo`'s `wt_in_use` read `w="unattended"`; the sweep moved to `scripts/todo-worktree-sweep.sh` (2026-10-30).
 - A filter that guards what leaves the machine must be checked against the text as the skill loader *delivers* it, not as the file stores it.
 
 ## Related Files

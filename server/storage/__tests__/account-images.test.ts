@@ -23,6 +23,7 @@ import {
   cookbooks,
   mealPlanRecipes,
   users,
+  cookbookCoverCandidates,
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
@@ -141,6 +142,28 @@ describe("account image cleanup storage", () => {
         { url: `${CDN}/recipe-images/same.jpg`, kind: "recipe" },
       ]);
     });
+  });
+
+  it("collects the user's unpicked cover-studio candidates, not another user's", async () => {
+    const expiresAt = new Date(Date.now() + 60_000);
+    await tx.insert(cookbookCoverCandidates).values([
+      {
+        userId: owner.id,
+        imageUrl: `${CDN}/cookbook-covers/cand.jpg`,
+        expiresAt,
+      },
+      {
+        userId: other.id,
+        imageUrl: `${CDN}/cookbook-covers/theirs-cand.jpg`,
+        expiresAt,
+      },
+    ]);
+
+    const images = await collectUserImageUrls(owner.id);
+
+    expect(images).toEqual([
+      { url: `${CDN}/cookbook-covers/cand.jpg`, kind: "cookbook" },
+    ]);
   });
 
   it("collects the author's featured-recipe gallery images too", async () => {

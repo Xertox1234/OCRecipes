@@ -1,10 +1,11 @@
 /**
  * The single entry point for chat/vision completions (spec §3.2). Rows with
- * `primary: "vertex"` route Vertex AI direct → OpenRouter and never reach
- * OpenAI (spec 2026-10-19-vision-rows-vertex-direct). Every other row routes
- * via OpenRouter (zero-data-retention) when OPENROUTER_API_KEY is set, else
- * via today's OpenAI client; falls back per spec §3.4. Never call
- * `chat.completions.create` elsewhere — ocrecipes/no-direct-chat-completions.
+ * `primary: "vertex"` route Vertex AI direct → OpenRouter (spec
+ * 2026-10-19-vision-rows-vertex-direct). Every other row routes OpenRouter
+ * (zero-data-retention) → the Vertex AI direct backup (spec
+ * 2026-11-02-vertex-backup-route-design §3). No path reaches OpenAI direct.
+ * Never call `chat.completions.create` elsewhere —
+ * ocrecipes/no-direct-chat-completions.
  */
 import OpenAI from "openai";
 import type {
@@ -13,10 +14,19 @@ import type {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
-import { AI_FEATURES, adaptParams, hostForModel } from "./ai-models";
-import type { AiFeature, AiFeatureConfig } from "./ai-models";
+import {
+  AI_FEATURES,
+  adaptParams,
+  hostForModel,
+  VERTEX_BACKUP_REASONING_HEADROOM,
+} from "./ai-models";
+import type { AiAdapt, AiFeature, AiFeatureConfig } from "./ai-models";
 import { getAiCallContext, withAiCallContext } from "./ai-call-context";
-import type { AiCallContext } from "./ai-call-context";
+import type {
+  AiCallContext,
+  AiCallRecord,
+  AiCallUsage,
+} from "./ai-call-context";
 import {
   CircuitBreaker,
   classifyAiFailure,
@@ -25,7 +35,10 @@ import {
   isModerationBlock,
 } from "./ai-failure";
 import type { AiFailureKind } from "./ai-failure";
-import { openai } from "./openai";
+import {
+  OPENAI_TIMEOUT_FAST_MS,
+  VERTEX_BACKUP_TIMEOUT_FAST_MS,
+} from "./openai";
 import { createVertexClient } from "./vertex-client";
 import { createServiceLogger } from "./logger";
 import { reportError } from "./error-reporter";
@@ -33,6 +46,22 @@ import { reportError } from "./error-reporter";
 export { withAiCallContext };
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+/**
+ * `OPENROUTER_BASE_URL` points OpenRouter at a stand-in: the E2E run's
+ * scripts/ci/stub-openai.mjs, which answers the receipt-upload flow. Honoured
+ * only when NODE_ENV is EXPLICITLY "development" or "test" (allowlist, as
+ * E2E_RELAXED_RATE_LIMITS): an unset NODE_ENV keeps the real host.
+ */
+export function openRouterBaseUrl(
+  env: Record<string, string | undefined>,
+): string {
+  const override = env.OPENROUTER_BASE_URL?.trim();
+  if (!override) return OPENROUTER_BASE_URL;
+  if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test")
+    return OPENROUTER_BASE_URL;
+  return override;
+}
 
 export type AiChatParams = Omit<
   ChatCompletionCreateParamsNonStreaming,
@@ -44,6 +73,8 @@ export type AiChatStreamParams = Omit<
 >;
 export interface AiChatOptions {
   timeout?: number;
+  /** The Vertex backup leg's timeout, when it needs longer than `timeout`. */
+  backupTimeout?: number;
   signal?: AbortSignal;
 }
 
@@ -62,7 +93,6 @@ export interface AiChatDeps {
   openrouter: AiChatClient | null;
   /** Vertex AI direct — primary for `primary: "vertex"` rows; null = not configured. */
   vertex: AiChatClient | null;
-  fallback: AiChatClient;
   breaker: CircuitBreaker;
   /** Separate from `breaker` (= OpenRouter health): one route's outage never trips the other. */
   vertexBreaker: CircuitBreaker;
@@ -72,7 +102,16 @@ export interface AiChatDeps {
     warn(obj: object, msg: string): void;
   };
   now?: () => number;
+  /** Injected so tests skip the wait before a Vertex 429 retry. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/**
+ * The wait before the Vertex backup's one retry after a 429 (owner
+ * 2026-11-03: Vertex's shared capacity answered 429 on 2 of 84 gate calls).
+ * Timeouts are never retried: that would double the user's wait.
+ */
+export const VERTEX_BUSY_RETRY_MS = 1000;
 
 export interface AiChat {
   (
@@ -106,6 +145,11 @@ function usageCost(res: unknown): number | undefined {
   return typeof c === "number" ? c : undefined;
 }
 
+const statusOf = (err: unknown) =>
+  err instanceof OpenAI.APIError ? err.status : undefined;
+const messageOf = (err: unknown) =>
+  (err instanceof Error ? err.message : String(err)).slice(0, 300);
+
 function isAbort(err: unknown, options?: AiChatOptions): boolean {
   return (
     options?.signal?.aborted === true || err instanceof OpenAI.APIUserAbortError
@@ -123,6 +167,14 @@ async function closeQuietly(
   }
 }
 
+/**
+ * OpenRouter's in-stream error shape: a chunk with `error` and/or
+ * `finish_reason: "error"`. Vertex's OpenAI-compatible endpoint has no
+ * documented chunk-level error; whatever it sends as an SSE `error` event or
+ * a `data:` payload with `error` is raised by the openai SDK itself as an
+ * APIError from `next()` (node_modules/openai/core/streaming.js, v6.39), so
+ * both routes end a failed stream with a throw, never a silent truncation.
+ */
 function isErrorChunk(chunk: unknown): boolean {
   const c = chunk as {
     error?: unknown;
@@ -136,6 +188,28 @@ interface StreamSummary {
   answeredProvider: string | null;
   cost: number | undefined;
   completed: boolean;
+  finishReason: string | null;
+  usage: AiCallUsage | undefined;
+}
+
+type CallOutcome = Pick<AiCallRecord, "finishReason" | "usage">;
+type RecordCall = (
+  answeredModel: string | null,
+  provider: string | null,
+  fellBack: boolean,
+  outcome?: CallOutcome,
+) => void;
+
+/** Eval-record outcome of a non-stream completion (spec PR 2 gate). */
+function completionOutcome(res: unknown): CallOutcome {
+  const r = res as {
+    choices?: { finish_reason?: string | null }[];
+    usage?: AiCallUsage;
+  };
+  return {
+    finishReason: r.choices?.[0]?.finish_reason ?? null,
+    usage: r.usage,
+  };
 }
 
 async function* wrapStream(
@@ -148,11 +222,17 @@ async function* wrapStream(
     answeredProvider: null,
     cost: undefined,
     completed: false,
+    finishReason: null,
+    usage: undefined,
   };
   const note = (c: ChatCompletionChunk) => {
     summary.answeredModel ??= c.model ?? null;
     summary.answeredProvider ??= answeredProvider(c);
     summary.cost = usageCost(c) ?? summary.cost;
+    summary.finishReason =
+      c.choices?.[0]?.finish_reason ?? summary.finishReason;
+    summary.usage =
+      (c.usage as AiCallUsage | null | undefined) ?? summary.usage;
   };
   try {
     if (!first.done) {
@@ -173,11 +253,43 @@ async function* wrapStream(
   }
 }
 
-/** Unflagged rows always carry `fallback` (pinned by ai-models.test.ts). */
-function fallbackModel(row: AiFeatureConfig, feature: AiFeature): string {
-  if (row.fallback === undefined)
-    throw new Error(`aiChat(${feature}): row has no OpenAI fallback`);
-  return row.fallback;
+/**
+ * Gemini on Vertex direct 400s on tool history whose calls lack a thought
+ * signature (foreign history from another model, or the 2nd+ parallel call,
+ * which Gemini sends unsigned). Google's documented placeholder skips the
+ * check; a real signature is never overwritten. Vertex bodies only — the
+ * OpenRouter body is never touched (spec 2026-11-02-vertex-backup-route-
+ * design §2, §3.4). Pure: returns new objects, input unmodified.
+ */
+const PLACEHOLDER_SIGNATURE = "skip_thought_signature_validator";
+
+interface ToolCallLike {
+  extra_content?: { google?: { thought_signature?: unknown } };
+}
+
+export function fillThoughtSignatures(messages: unknown): unknown {
+  if (!Array.isArray(messages)) return messages;
+  return messages.map((m: unknown) => {
+    const msg = m as { role?: unknown; tool_calls?: unknown };
+    if (msg?.role !== "assistant" || !Array.isArray(msg.tool_calls)) return m;
+    return {
+      ...msg,
+      tool_calls: msg.tool_calls.map((c: ToolCallLike) =>
+        c?.extra_content?.google?.thought_signature !== undefined
+          ? c
+          : {
+              ...c,
+              extra_content: {
+                ...c.extra_content,
+                google: {
+                  ...c.extra_content?.google,
+                  thought_signature: PLACEHOLDER_SIGNATURE,
+                },
+              },
+            },
+      ),
+    };
+  });
 }
 
 export function createAiChat(deps: AiChatDeps): AiChat {
@@ -196,8 +308,23 @@ export function createAiChat(deps: AiChatDeps): AiChat {
   async function run(
     feature: AiFeature,
     params: AiChatParams | AiChatStreamParams,
-    options?: AiChatOptions,
+    callerOptions?: AiChatOptions,
   ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
+    // `backupTimeout` is ours, never the SDK's: strip it, and give it to the
+    // Vertex backup leg as that leg's timeout. A 15 s "fast" caller gets 30 s
+    // there by default (owner 2026-11-03: Vertex timed out at 15 s in the
+    // PR 3 gate).
+    const { backupTimeout: explicit, ...sdkOptions } = callerOptions ?? {};
+    const backupTimeout =
+      explicit ??
+      (callerOptions?.timeout === OPENAI_TIMEOUT_FAST_MS
+        ? VERTEX_BACKUP_TIMEOUT_FAST_MS
+        : undefined);
+    const options = explicit === undefined ? callerOptions : sdkOptions;
+    const backupOptions =
+      backupTimeout === undefined
+        ? callerOptions
+        : { ...sdkOptions, timeout: backupTimeout };
     const row: AiFeatureConfig = AI_FEATURES[feature];
     const ctx: AiCallContext | undefined = getAiCallContext();
     const override = ctx?.overrides[feature];
@@ -205,21 +332,41 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     const fallbackAllowed = ctx?.fallback !== "off";
     const streaming = params.stream === true;
 
-    const record = (
-      answeredModel: string | null,
-      provider: string | null,
-      fellBack: boolean,
-    ) => {
+    const record: RecordCall = (answeredModel, provider, fellBack, outcome) => {
       ctx?.calls.push({
         feature,
         requestedModel,
         answeredModel,
         answeredProvider: provider,
         fellBack,
+        ...outcome,
       });
     };
 
-    // Before any OpenAI path below — incl. the no-OpenRouter-key early return.
+    // Eval/smoke switch (ai-call-context.ts); beats `fallback: "off"`, and comes
+    // before the Vertex-first dispatch so it is never silently ignored.
+    const force = ctx?.forceBackup;
+    if (
+      force !== undefined &&
+      (typeof force === "function" ? force(ctx!.calls.length) : force)
+    ) {
+      if (!row.vertexBackup) {
+        throw new Error(
+          `aiChat(${feature}): forceBackup on a row with no vertexBackup`,
+        );
+      }
+      return callVertexBackup(
+        feature,
+        row,
+        params,
+        backupOptions,
+        undefined,
+        "forced",
+        record,
+      );
+    }
+
+    // Before the OpenRouter path below — incl. the no-OpenRouter-key early return.
     if (row.primary === "vertex") {
       return runVertexFirst(
         feature,
@@ -232,54 +379,39 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       );
     }
 
-    const callFallback = async (reason: FallbackReason, err?: unknown) => {
-      deps.log.warn(
-        {
-          feature,
-          provider: "fallback",
-          requestedModel,
-          fallbackModel: fallbackModel(row, feature),
-          fallbackReason: reason,
-          ...(err !== undefined && {
-            error: {
-              status: err instanceof OpenAI.APIError ? err.status : undefined,
-              message: (err instanceof Error ? err.message : String(err)).slice(
-                0,
-                300,
-              ),
-            },
-          }),
-        },
-        "ai call using fallback",
-      );
-      const res = await deps.fallback.chat.completions.create(
-        { ...params, model: fallbackModel(row, feature) },
-        options,
-      );
-      record(
-        streaming ? fallbackModel(row, feature) : answeredModel(res),
-        "openai-direct",
-        true,
-      );
-      return res as ChatCompletion | AsyncIterable<ChatCompletionChunk>;
-    };
-
     if (!deps.openrouter) {
       if (!fallbackAllowed) {
         throw new Error(
           `aiChat(${feature}): OPENROUTER_API_KEY is required when fallback is off`,
         );
       }
-      // Today's path, byte-for-byte: no warn — this is the normal no-key state.
-      const res = await deps.fallback.chat.completions.create(
-        { ...params, model: fallbackModel(row, feature) },
-        options,
+      if (!deps.vertex) {
+        throw new Error(
+          `aiChat(${feature}): no AI route — set OPENROUTER_API_KEY and/or GOOGLE_VERTEX_*`,
+        );
+      }
+      return callVertexBackup(
+        feature,
+        row,
+        params,
+        backupOptions,
+        undefined,
+        "config",
+        record,
       );
-      return res as ChatCompletion | AsyncIterable<ChatCompletionChunk>;
     }
 
-    if (fallbackAllowed && deps.breaker.isOpen())
-      return callFallback("circuit-open");
+    if (fallbackAllowed && deps.breaker.isOpen()) {
+      return callVertexBackup(
+        feature,
+        row,
+        params,
+        backupOptions,
+        undefined,
+        "circuit-open",
+        record,
+      );
+    }
 
     const host = hostForModel(requestedModel);
     if (!host) {
@@ -297,13 +429,23 @@ export function createAiChat(deps: AiChatDeps): AiChat {
 
     try {
       if (streaming) {
-        return await openStream(feature, requestedModel, body, options, record);
+        return await openStream(
+          deps.openrouter,
+          deps.breaker,
+          "openrouter",
+          feature,
+          requestedModel,
+          body,
+          options,
+          record,
+          false,
+        );
       }
       const res = await deps.openrouter.chat.completions.create(body, options);
       deps.breaker.recordSuccess();
       const model = answeredModel(res);
       const provider = answeredProvider(res);
-      record(model, provider, false);
+      record(model, provider, false, completionOutcome(res));
       deps.log.info(
         {
           feature,
@@ -324,7 +466,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       if (kind === "balance") {
         deps.report(
           new Error(
-            "OpenRouter balance exhausted (402) — AI traffic is on the OpenAI fallback",
+            `OpenRouter balance exhausted (402) — ${feature} is on the Vertex backup`,
           ),
           "ai-client",
         );
@@ -355,13 +497,173 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         });
         throw err;
       }
-      return callFallback(kind, err);
+      return callVertexBackup(
+        feature,
+        row,
+        params,
+        backupOptions,
+        err,
+        kind,
+        record,
+      );
+    }
+  }
+
+  /** `client`, but a 429 is retried once after VERTEX_BUSY_RETRY_MS. */
+  function retryOnceWhenBusy(client: AiChatClient): AiChatClient {
+    const sleep =
+      deps.sleep ??
+      ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    return {
+      chat: {
+        completions: {
+          create: async (body, options) => {
+            try {
+              return await client.chat.completions.create(body, options);
+            } catch (err) {
+              if (statusOf(err) !== 429 || options?.signal?.aborted) throw err;
+              await sleep(VERTEX_BUSY_RETRY_MS);
+              return client.chat.completions.create(body, options);
+            }
+          },
+        },
+      },
+    };
+  }
+
+  /** The backup body with VERTEX_BACKUP_REASONING_HEADROOM on its cap. */
+  function withThinkingRoom(
+    body: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const out = { ...body };
+    for (const key of ["max_completion_tokens", "max_tokens"])
+      if (typeof out[key] === "number")
+        out[key] = (out[key] as number) + VERTEX_BACKUP_REASONING_HEADROOM;
+    return out;
+  }
+
+  /** The adapted body for a Vertex-direct call: no `provider` key. */
+  function buildVertexBody(
+    params: AiChatParams | AiChatStreamParams,
+    adapt: AiAdapt | undefined,
+    model: string,
+    extraSet?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      ...adaptParams(params, adapt, extraSet),
+      model,
+    };
+    return { ...body, messages: fillThoughtSignatures(body.messages) };
+  }
+
+  /**
+   * The Vertex-direct backup for a `vertexBackup` row (spec 2026-11-02-
+   * vertex-backup-route-design §3.2 step 2).
+   * `openrouterErr` is undefined when OpenRouter was never tried (breaker
+   * open, no key, forced).
+   */
+  async function callVertexBackup(
+    feature: AiFeature,
+    row: AiFeatureConfig,
+    params: AiChatParams | AiChatStreamParams,
+    options: AiChatOptions | undefined,
+    openrouterErr: unknown,
+    reason: FallbackReason | "forced",
+    record: RecordCall,
+  ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
+    const backup = row.vertexBackup!;
+    // A forced call is a local smoke run, not an outage worth reporting.
+    const reportUnavailable = (msg: string) => {
+      if (reason !== "forced")
+        throttledReport(`unavailable:${feature}`, new Error(msg));
+    };
+
+    const skip = !deps.vertex
+      ? "not configured (GOOGLE_VERTEX_*)"
+      : deps.vertexBreaker.isOpen()
+        ? "circuit open"
+        : null;
+    if (skip !== null || !deps.vertex) {
+      reportUnavailable(
+        `AI unavailable: ${feature} — OpenRouter ${openrouterErr !== undefined ? "failed" : `not tried (${reason})`} and the Vertex backup is ${skip}`,
+      );
+      if (openrouterErr !== undefined) throw openrouterErr;
+      throw new Error(
+        `aiChat(${feature}): both routes unavailable (openrouter: ${reason}; vertex backup: ${skip})`,
+      );
+    }
+
+    deps.log.warn(
+      {
+        feature,
+        provider: "vertex",
+        backupModel: backup.model,
+        fallbackReason: reason,
+        ...(openrouterErr !== undefined && {
+          error: {
+            status: statusOf(openrouterErr),
+            message: messageOf(openrouterErr),
+          },
+        }),
+      },
+      "ai call using fallback",
+    );
+    const body = withThinkingRoom(
+      buildVertexBody(params, backup.adapt, backup.model),
+    );
+    const vertex = retryOnceWhenBusy(deps.vertex);
+    try {
+      if (params.stream === true) {
+        return await openStream(
+          vertex,
+          deps.vertexBreaker,
+          "vertex",
+          feature,
+          backup.model,
+          body,
+          options,
+          record,
+          true,
+        );
+      }
+      const res = await vertex.chat.completions.create(body, options);
+      deps.vertexBreaker.recordSuccess();
+      const model = answeredModel(res);
+      record(model, "vertex", true, completionOutcome(res));
+      deps.log.info(
+        {
+          feature,
+          provider: "vertex",
+          requestedModel: backup.model,
+          answeredModel: model,
+          fellBack: true,
+          usage: (res as { usage?: unknown }).usage,
+        },
+        "ai call",
+      );
+      return res as ChatCompletion;
+    } catch (err) {
+      if (isAbort(err, options)) throw err;
+      const kind = classifyAiFailure(err);
+      if (countsTowardBreaker(kind)) deps.vertexBreaker.recordFailure();
+      if (kind === "config") {
+        throttledReport(
+          `vertex:${feature}`,
+          new Error(
+            `AI config error: ${feature} (vertex backup) (${String(statusOf(err))}): ${messageOf(err)}`,
+          ),
+        );
+      }
+      reportUnavailable(
+        `AI unavailable: ${feature} — OpenRouter and the Vertex backup both failed`,
+      );
+      throw err;
     }
   }
 
   /**
    * Vertex direct → OpenRouter → throw (spec 2026-10-19-vision-rows-vertex-
-   * direct §2.3). NEVER calls deps.fallback (OpenAI direct). With the
+   * direct §2.3). With the
    * fallback off (evals) only the first available route is tried.
    */
   async function runVertexFirst(
@@ -371,11 +673,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     options: AiChatOptions | undefined,
     ctx: AiCallContext | undefined,
     requestedModel: string,
-    record: (
-      answeredModel: string | null,
-      provider: string | null,
-      fellBack: boolean,
-    ) => void,
+    record: RecordCall,
   ): Promise<ChatCompletion> {
     if (params.stream === true) {
       throw new Error(
@@ -384,14 +682,12 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     }
     const evalMode = ctx?.fallback === "off";
     const override = ctx?.overrides[feature];
-    const adapted = {
-      ...adaptParams(params, row.adapt, override?.set),
-      model: requestedModel,
-    };
-    const statusOf = (err: unknown) =>
-      err instanceof OpenAI.APIError ? err.status : undefined;
-    const messageOf = (err: unknown) =>
-      (err instanceof Error ? err.message : String(err)).slice(0, 300);
+    const adapted = buildVertexBody(
+      params,
+      row.adapt,
+      requestedModel,
+      override?.set,
+    );
     const recordEvalError = (kind: AiFailureKind, err: unknown) => {
       ctx?.calls.push({
         feature,
@@ -419,7 +715,7 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         const res = await deps.vertex.chat.completions.create(adapted, options);
         deps.vertexBreaker.recordSuccess();
         const model = answeredModel(res);
-        record(model, "vertex", false);
+        record(model, "vertex", false, completionOutcome(res));
         deps.log.info(
           {
             feature,
@@ -475,14 +771,19 @@ export function createAiChat(deps: AiChatDeps): AiChat {
         );
       }
       try {
+        // OpenRouter gets the caller's history, never the Vertex placeholder.
         const res = await deps.openrouter.chat.completions.create(
-          { ...adapted, provider: { zdr: true, only: [host] } },
+          {
+            ...adaptParams(params, row.adapt, override?.set),
+            model: requestedModel,
+            provider: { zdr: true, only: [host] },
+          },
           options,
         );
         deps.breaker.recordSuccess();
         const model = answeredModel(res);
         const provider = answeredProvider(res);
-        record(model, provider, lastErr !== undefined);
+        record(model, provider, lastErr !== undefined, completionOutcome(res));
         deps.log.info(
           {
             feature,
@@ -537,18 +838,23 @@ export function createAiChat(deps: AiChatDeps): AiChat {
     );
   }
 
+  /**
+   * Open a stream and peek its first event; a failure up to and including
+   * that event throws to the caller's catch (which may switch routes). After
+   * it, failures reach the stream's consumer (spec §3.5 / 2026-11-02 §3.3).
+   */
   async function openStream(
+    client: AiChatClient,
+    breaker: CircuitBreaker,
+    provider: "openrouter" | "vertex",
     feature: AiFeature,
     requestedModel: string,
     body: Record<string, unknown>,
     options: AiChatOptions | undefined,
-    record: (
-      answeredModel: string | null,
-      provider: string | null,
-      fellBack: boolean,
-    ) => void,
+    record: RecordCall,
+    fellBack: boolean,
   ): Promise<AsyncIterable<ChatCompletionChunk>> {
-    const source = (await deps.openrouter!.chat.completions.create(
+    const source = (await client.chat.completions.create(
       body,
       options,
     )) as AsyncIterable<ChatCompletionChunk>;
@@ -560,11 +866,17 @@ export function createAiChat(deps: AiChatDeps): AiChat {
       await closeQuietly(iterator);
       throw new InStreamError(first.value);
     }
-    deps.breaker.recordSuccess();
+    breaker.recordSuccess();
     return wrapStream(iterator, first, (summary) => {
-      record(summary.answeredModel, summary.answeredProvider, false);
+      // Vertex chunks carry no `provider` field: the route is the answer.
+      const answered =
+        provider === "vertex" ? "vertex" : summary.answeredProvider;
+      record(summary.answeredModel, answered, fellBack, {
+        finishReason: summary.finishReason,
+        usage: summary.usage,
+      });
       deps.log.info(
-        { feature, provider: "openrouter", requestedModel, ...summary },
+        { feature, provider, requestedModel, fellBack, ...summary },
         "ai stream",
       );
     });
@@ -581,12 +893,12 @@ function defaultDeps(): AiChatDeps {
     openrouter: key
       ? (new OpenAI({
           apiKey: key,
-          baseURL: OPENROUTER_BASE_URL,
+          baseURL: openRouterBaseUrl(process.env),
           defaultHeaders: { "X-Title": "OCRecipes" },
+          maxRetries: 0, // the Vertex backup is the retry
         }) as unknown as AiChatClient)
       : null,
     vertex: createVertexClient(),
-    fallback: openai as unknown as AiChatClient,
     breaker: new CircuitBreaker(),
     vertexBreaker: new CircuitBreaker(),
     report: (error, context) => reportError(error, context),

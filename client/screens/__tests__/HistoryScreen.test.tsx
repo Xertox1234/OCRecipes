@@ -183,7 +183,7 @@ describe("HistoryScreen — row tap and back affordance", () => {
         displayItems: [item],
         expandedItemId: null,
         reducedMotion: true,
-        isPremium: false,
+        isRecipeLocked: true,
         ...handlers,
       }),
     );

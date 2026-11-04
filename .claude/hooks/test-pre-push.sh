@@ -80,6 +80,15 @@ assert_npm_empty "stamped HEAD: npm not run"
 echo "$SHA_A" > "$PREFLIGHT_STAMP_FILE"
 out=$(run_case "refs/heads/main $SHA_B refs/heads/main $SHA_A"$'\n')
 assert_npm_line "stale stamp: runs fast gate" "run preflight:fast"
+rm -f "$PREFLIGHT_STAMP_FILE"
+
+# 6b. HEAD passed, then another commit's pass took the single slot (a parallel session's push)
+#     → still skip: HEAD's own per-commit stamp counts.
+( . "$TMP/scripts/lib/preflight-stamp-path.sh"; preflight_stamp_write "$SHA_B" && preflight_stamp_write "$SHA_A" )
+out=$(run_case "refs/heads/main $SHA_B refs/heads/main $SHA_A"$'\n')
+assert_contains  "HEAD stamped before another pass: skips gate" "already verified" "$out"
+assert_npm_empty "HEAD stamped before another pass: npm not run"
+rm -rf "$PREFLIGHT_STAMP_FILE" "$PREFLIGHT_STAMP_FILE.d"
 
 # 7. ORDERING: a delete push while HEAD is stamped must take the DELETE path, not the stamp
 #    path — the delete/no-op skip runs first and never consults the stamp.

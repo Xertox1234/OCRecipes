@@ -557,5 +557,28 @@ if [ -n "$unsafe" ]; then
   exit 1
 fi
 
+# PLATFORM SCOPE (harness diagnosis N6). A change to how a file leaves the phone can sit in an
+# allowlisted client/ file the override above does not name (a new or moved upload helper), and
+# merge-review-guard.sh refuses such a PR until an E2E run proves it on that commit. An armed
+# auto-merge lands server-side without passing that hook, so it HOLDs here. Matched by diff
+# content (scripts/harness/platform-scope.sh); an unreadable diff is an ERROR, never "not in scope".
+pr_diff="$(gh pr diff "$PR" 2>&1)" || {
+  echo "guard: ERROR PR #$PR — could not read the diff for the platform-scope check: $(printf '%s' "$pr_diff" | head -1). Fail-closed."
+  exit 2
+}
+scope_rc=0
+scope_out="$(printf '%s' "$pr_diff" | bash "$(dirname "$0")/harness/platform-scope.sh")" || scope_rc=$?
+case "$scope_rc" in
+  0)
+    echo "guard: HOLD PR #$PR — changes how the app builds or uploads, so it needs a real-platform check before merge:"
+    printf '%s\n' "$scope_out" | sed 's/^/  /'
+    echo "Needs individual review; exclude from the batch-merge."
+    exit 1 ;;
+  1) ;;
+  *)
+    echo "guard: ERROR PR #$PR — the platform-scope check could not read the diff (rc $scope_rc). Fail-closed."
+    exit 2 ;;
+esac
+
 echo "guard: OK PR #$PR — every changed file is on the safe allowlist"
 exit 0

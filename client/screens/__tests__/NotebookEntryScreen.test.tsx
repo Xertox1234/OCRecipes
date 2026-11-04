@@ -99,12 +99,13 @@ function makeEntry(
 
 function setupEntries(
   entries: ReturnType<typeof makeEntry>[],
-  opts: { isLoading?: boolean; isError?: boolean } = {},
+  opts: { isLoading?: boolean; isError?: boolean; paused?: boolean } = {},
 ) {
   mockUseNotebookEntries.mockReturnValue({
     data: entries,
     isLoading: opts.isLoading ?? false,
     isError: opts.isError ?? false,
+    fetchStatus: opts.paused ? "paused" : "idle",
     refetch: mockRefetch,
   });
 }
@@ -182,6 +183,21 @@ describe("NotebookEntryScreen — isError (network failure)", () => {
     renderComponent(<NotebookEntryScreen />);
     fireEvent.click(screen.getByText("Retry"));
     expect(mockRefetch).toHaveBeenCalledOnce();
+  });
+});
+
+describe("NotebookEntryScreen — paused (offline cold start)", () => {
+  it("says it is offline instead of claiming the entry was deleted", () => {
+    mockRouteParams.params = { entryId: 99 };
+    setupEntries([], { paused: true });
+
+    renderComponent(<NotebookEntryScreen />);
+    expect(
+      screen.getByText(
+        "You're offline. This entry will load when you're back online.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/couldn't be found/)).toBeNull();
   });
 });
 

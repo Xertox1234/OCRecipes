@@ -362,7 +362,7 @@ describe("useFavouriteRecipes", () => {
       RN.Platform.OS = "ios";
       const shareSpy = vi
         .spyOn(RN.Share, "share")
-        .mockResolvedValue({ action: "sharedAction" });
+        .mockResolvedValue({ action: "sharedAction", activityType: undefined });
 
       mockApiRequest.mockResolvedValue({
         ok: true,
@@ -393,7 +393,7 @@ describe("useFavouriteRecipes", () => {
       RN.Platform.OS = "android";
       const shareSpy = vi
         .spyOn(RN.Share, "share")
-        .mockResolvedValue({ action: "sharedAction" });
+        .mockResolvedValue({ action: "sharedAction", activityType: undefined });
 
       mockApiRequest.mockResolvedValue({
         ok: true,

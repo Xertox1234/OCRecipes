@@ -86,27 +86,29 @@ export function register(app: Express): void {
           return;
         }
 
-        const MAX_PANTRY_ITEMS = 500;
-        const pantryCount = await storage.getPantryItemCount(req.userId);
-        if (pantryCount >= MAX_PANTRY_ITEMS) {
+        const { created } = await storage.createPantryItemsUnderCap(
+          req.userId,
+          [
+            {
+              userId: req.userId,
+              name: parsed.data.name,
+              quantity: parsed.data.quantity,
+              unit: parsed.data.unit || null,
+              category: parsed.data.category || "other",
+              expiresAt: parsed.data.expiresAt || null,
+            },
+          ],
+        );
+        if (created.length === 0) {
           sendError(
             res,
             400,
-            `Maximum of ${MAX_PANTRY_ITEMS} pantry items reached`,
+            "Maximum of 500 pantry items reached",
             ErrorCode.LIMIT_REACHED,
           );
           return;
         }
-
-        const item = await storage.createPantryItem({
-          userId: req.userId,
-          name: parsed.data.name,
-          quantity: parsed.data.quantity,
-          unit: parsed.data.unit || null,
-          category: parsed.data.category || "other",
-          expiresAt: parsed.data.expiresAt || null,
-        });
-        res.status(201).json(item);
+        res.status(201).json(created[0]);
       } catch (error) {
         handleRouteError(res, error, "create pantry item");
       }

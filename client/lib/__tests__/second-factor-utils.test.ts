@@ -8,6 +8,7 @@ import {
   emailCodeButtonLabel,
   emailCodeSendError,
   twoStepCodeParams,
+  mapReauthError,
 } from "../second-factor-utils";
 
 /** The shape throwIfResNotOk produces: `${status}: ${body}`. */
@@ -162,5 +163,43 @@ describe("twoStepCodeParams", () => {
       emailHint: "w•••@x.com",
       codeSent: true,
     });
+  });
+});
+
+describe("mapReauthError", () => {
+  it("SECOND_FACTOR_REQUIRED asks for the code and keeps the password", () => {
+    expect(
+      mapReauthError(
+        apiError(403, { code: "SECOND_FACTOR_REQUIRED", error: "x" }),
+      ),
+    ).toEqual({
+      message: "Enter the code we email you.",
+      needsCode: true,
+      wrongPassword: false,
+    });
+  });
+
+  it("a failed code check shows the code's own copy without asking again", () => {
+    const err = apiError(401, { code: "MFA_UNAVAILABLE", error: "x" });
+    expect(mapReauthError(err)).toEqual({
+      message: secondFactorErrorMessage(err).message,
+      needsCode: false,
+      wrongPassword: false,
+    });
+  });
+
+  it("Invalid credentials becomes the incorrect-password copy", () => {
+    expect(
+      mapReauthError(new ApiError('401: {"error":"Invalid credentials"}')),
+    ).toEqual({
+      message: "Incorrect password. Please try again.",
+      needsCode: false,
+      wrongPassword: true,
+    });
+  });
+
+  it("returns null for anything the caller words itself", () => {
+    expect(mapReauthError(new Error("409: already in use"))).toBeNull();
+    expect(mapReauthError("boom")).toBeNull();
   });
 });

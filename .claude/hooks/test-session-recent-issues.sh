@@ -3,7 +3,7 @@
 # Core focus: the FAIL-SILENT contract (the SessionStart digest must never block or error a
 # session — it exits 0 with no output on a missing/empty corpus) plus the digest semantics:
 # 14-day window, bug-track-first ordering, decoy exclusion (_manifests/, README.md), YAML
-# scalar unwrapping, and the 12-row cap. Fixtures are temp trees via RECENT_SOLUTIONS_DIR.
+# scalar unwrapping, and the 5-row cap. Fixtures are temp trees via RECENT_SOLUTIONS_DIR.
 set -uo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK="$HOOK_DIR/session-recent-issues.sh"
@@ -54,8 +54,8 @@ else
   echo "FAIL: digest shape wrong — got: $OUT"; FAIL=1
 fi
 CTX=$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext')
-assert_contains "recent bug listed"        "$CTX" "- $TODAY [bug/logic-errors] A recent bug — docs/solutions/logic-errors/recent-bug-$TODAY.md"
-assert_contains "recent knowledge listed"  "$CTX" "- $TODAY [knowledge/conventions] A recent rule — docs/solutions/conventions/recent-rule-$TODAY.md"
+assert_contains "recent bug listed"        "$CTX" "- A recent bug — docs/solutions/logic-errors/recent-bug-$TODAY.md"
+assert_contains "recent knowledge listed"  "$CTX" "- A recent rule — docs/solutions/conventions/recent-rule-$TODAY.md"
 assert_absent   "out-of-window excluded"   "$CTX" "An old rule"
 assert_absent   "_manifests/ excluded"     "$CTX" "A manifest decoy"
 assert_absent   "README.md excluded"       "$CTX" "A readme decoy"
@@ -73,17 +73,17 @@ mkfix "$FIX2" "conventions/quoted-title-$TODAY.md" knowledge "$TODAY" "It''s a q
 CTX=$(RECENT_SOLUTIONS_DIR="$FIX2" PATTERN_INJECT_NO_LOG=1 bash "$HOOK" | jq -r '.hookSpecificOutput.additionalContext')
 assert_contains "single-quote unescape" "$CTX" "It's a quoted title"
 
-# 5. Cap: 14 in-window files → exactly 12 rows.
+# 5. Cap: 14 in-window files → exactly 5 rows (harness item 7, 2026-11-02: re-sent on every compaction).
 FIX3="$TMP/cap"
 for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14; do
   mkfix "$FIX3" "conventions/capped-$i-$TODAY.md" knowledge "$TODAY" "Capped $i"
 done
 CTX=$(RECENT_SOLUTIONS_DIR="$FIX3" PATTERN_INJECT_NO_LOG=1 bash "$HOOK" | jq -r '.hookSpecificOutput.additionalContext')
 ROWCOUNT=$(printf '%s\n' "$CTX" | grep -c '^- ')
-if [ "$ROWCOUNT" -eq 12 ]; then
-  echo "ok: 14 in-window files cap to 12 rows"
+if [ "$ROWCOUNT" -eq 5 ]; then
+  echo "ok: 14 in-window files cap to 5 rows"
 else
-  echo "FAIL: expected 12 rows, got $ROWCOUNT"; FAIL=1
+  echo "FAIL: expected 5 rows, got $ROWCOUNT"; FAIL=1
 fi
 
 # 6. PG Lab usage telemetry tail call: digest output must be BYTE-IDENTICAL whether logging
@@ -94,7 +94,24 @@ fi
 # developer's real telemetry ledger.
 LOG_SESS='{"session_id":"srt-log-itest"}'
 OUT_OFF=$(echo "$LOG_SESS" | RECENT_SOLUTIONS_DIR="$FIX" PATTERN_INJECT_NO_LOG=1 bash "$HOOK")
-OUT_DBDOWN=$(echo "$LOG_SESS" | RECENT_SOLUTIONS_DIR="$FIX" LAB_DATABASE_URL="postgresql://localhost/pg_lab_does_not_exist_$$" bash "$HOOK")
+# The DB-down run also stands in a SLOW lab DB (fake psql: marker, then sleep 5). The
+# background log write must not hold the hook's stdout open past its JSON (harness diagnosis
+# item 3); $(...) waits for EOF, and SECONDS reads 0-2 when fixed, >= 5 when held open.
+SLOW_PSQL_DIR=$(mktemp -d)
+printf '#!/bin/sh\n: > "%s/ran"\nsleep 5\n' "$SLOW_PSQL_DIR" > "$SLOW_PSQL_DIR/psql"
+chmod +x "$SLOW_PSQL_DIR/psql"
+SECONDS=0
+OUT_DBDOWN=$(echo "$LOG_SESS" | PATH="$SLOW_PSQL_DIR:$PATH" RECENT_SOLUTIONS_DIR="$FIX" LAB_DATABASE_URL="postgresql://localhost/pg_lab_does_not_exist_$$" bash "$HOOK")
+SLOW_EOF=$SECONDS
+for _ in $(seq 1 20); do [ -f "$SLOW_PSQL_DIR/ran" ] && break; sleep 0.1; done
+if [ ! -f "$SLOW_PSQL_DIR/ran" ]; then
+  echo "FAIL: slow lab DB — the stand-in psql never ran, so the timing proves nothing"; FAIL=1
+elif [ "$SLOW_EOF" -le 2 ]; then
+  echo "ok: slow lab DB — hook stdout closed in ${SLOW_EOF}s"
+else
+  echo "FAIL: slow lab DB — hook stdout stayed open ${SLOW_EOF}s (background log write holds it)"; FAIL=1
+fi
+rm -f "$SLOW_PSQL_DIR/psql" "$SLOW_PSQL_DIR/ran"; rmdir "$SLOW_PSQL_DIR" 2>/dev/null || true
 
 LOG_TEST_DB="pg_lab_srt_itest_$$"
 LOG_TEST_URL="postgresql://localhost/$LOG_TEST_DB"

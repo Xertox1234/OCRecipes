@@ -109,6 +109,12 @@ vi.mock("@/hooks/useTTS", () => ({
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: () => false,
 }));
+vi.mock("@/hooks/usePlanCheck", () => {
+  // One object, like the real hook's memoised callback — a fresh function per
+  // render would churn every useCallback that lists recheckPlan.
+  const plan = { planUnknown: false, recheckPlan: () => {} };
+  return { usePlanCheck: () => plan };
+});
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
@@ -749,5 +755,18 @@ describe("CoachChat — reconciles with the server after a stream failure (R23)"
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["/api/chat/conversations/1/messages"],
     });
+  });
+});
+
+// The keyboard offset is the height of anything ABOVE the Coach screen —
+// a navigation header elsewhere in the app. Coach Pro has none (its dashboard
+// is inside the screen), so any offset is empty space between the input and
+// the keyboard: 90 left a ~91-unit gap on a Galaxy A37 and the iPhone 17 Pro
+// simulator (measured 2026-11-02).
+describe("CoachChat — keyboard offset", () => {
+  it("adds no offset above the keyboard", () => {
+    const { container } = renderCoachChat();
+    const kav = container.querySelector("[keyboardverticaloffset]");
+    expect(kav?.getAttribute("keyboardverticaloffset")).toBe("0");
   });
 });

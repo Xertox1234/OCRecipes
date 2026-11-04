@@ -37,6 +37,7 @@ vi.mock("@/hooks/useSavedItems", () => ({
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
     isPremium: false,
+    isPremiumResolved: true,
     features: { maxSavedItems: 6 },
   }),
 }));

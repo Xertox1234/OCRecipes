@@ -1,0 +1,5 @@
+{
+  "name": "review-dispatch",
+  "version": "0.1.0",
+  "description": "Expands REVIEW-DISPATCH lines into the verbatim reviewer contract, checks hand-written review prompts, and requires code-reviewer as the baseline"
+}

@@ -3,9 +3,10 @@ title: 'Premium feature gating: button lock badge, section lock row, disabled in
 track: knowledge
 category: design-patterns
 module: client
-tags: [react-native, premium, gating, accessibility, ui]
+tags: [react-native, hooks, premium, gating, accessibility, ui]
 applies_to: [client/screens/**/*.tsx, client/components/**/*.tsx]
 created: '2026-05-13'
+last_updated: '2026-11-03'
 ---
 
 # Premium feature gating: button lock badge, section lock row, disabled input overlay
@@ -13,6 +14,33 @@ created: '2026-05-13'
 ## When this applies
 
 When a feature requires premium, extract the condition and provide clear feedback at the UI level. Three flavours apply depending on context: a lock-badge button for individual actions, a `Pressable` lock row replacing an entire premium-only section, and a disabled-input overlay for fields free users should see but not edit.
+
+### Wall only a user KNOWN to be free (owner ruling 2026-11-02)
+
+`usePremiumContext()` reports `isPremium: false` both for a free user and while the status is **unknown**: still loading, or `/api/subscription/status` failed with nothing cached. In both cases `tier` defaults to `"free"`. Any lock, badge, cap or `UpgradeModal` must therefore gate on `isPremiumResolved && !isPremium`, never on `!isPremium` alone. Otherwise a 429/5xx walls a paying user (audit M-crel-6).
+
+Unknown status is **neutral**: no wall, and no premium grant.
+
+- **Tap gate** (a button that would open the `UpgradeModal`): when `!isPremiumResolved`, call `void refreshSubscription()`, show `toast.info("Checking your plan. Try again in a moment.")`, and return. One branch covers both the loading and failed cases, because a refetch is deduped while in flight, and on a failed query with no data it resets the query to pending.
+- **Persistent gate** (a screen or CTA that renders instead of the feature): render a spinner while loading. On `isPremiumStatusError` (the subscription fetch failed with nothing cached; a scan-count failure does not set it), render a "Couldn't check your plan" retry that calls `refreshSubscription`. Never mount the premium feature itself, such as the camera, until `isPremium` is true.
+- **Test mocks:** a `usePremiumContext` mock with no `isPremiumResolved` now hits the unknown branch. Set `isPremiumResolved: true` in every mock that tests a resolved tier.
+
+#### `usePremiumFeature` gates: use `usePlanCheck` (added in #1707)
+
+`usePremiumFeature(key)` returns a plain boolean that reads `false` while the plan is unknown. Don't change the hook, because 20+ callers depend on it. Pair it with `usePlanCheck()` (`client/hooks/usePlanCheck.ts`), which returns `{ planUnknown, recheckPlan }`. `recheckPlan()` is the tap-gate re-check plus toast described above. Don't write that branch inline again.
+
+- **Show a lock** only when the plan is known to be free: `const locked = !planUnknown && !canX`.
+- **At the spend point,** put the unknown branch first: `if (planUnknown) { recheckPlan(); return; }`, then `if (!canX) { openUpgrade(); return; }`.
+- **When one flag drives both the lock and the tap route** (a child such as `RecipeFinderMessage` or `WizardCoverStep` takes a single `canGenerate` or `lockedButtons` prop), pass "unlocked" while the plan is unknown. Then gate the parent's spend handler. For finder actions, gate only the premium ones with `finderActionNeedsPlan(action.type)`, or a free user tapping "None of these" gets the toast.
+- **An auto-sent prompt** (`RecipeChatScreen`'s `initialMessage`) isn't in the input yet. Put it there before returning, so the retry is one tap rather than a retype.
+- **Read-only fields** (GoalSetup macros) can stay non-editable while the plan is unknown, because a free user's values would not save. Drop only the Premium wording: `const upsell = !planUnknown && !canX`.
+- **Test mocks:** `usePlanCheck` lives in its own file, so mock it as one stable object: `vi.mock("@/hooks/usePlanCheck", () => { const p = {…}; return { usePlanCheck: () => p }; })`. A fresh `recheckPlan` per render churns every `useCallback` that lists it, and the CoachChat `renderItem`-stability test failed on exactly that.
+
+#### "Loading" is not "unknown"
+
+Code that assumed premium "while loading" (`isCoachPro || isPremiumLoading`) still fell to free on a **failed** check, because a failed query is not loading. Key on `!isPremiumResolved` instead (#1709, `CoachProScreen` and `AllConversationsScreen`). For a "Couldn't check your plan" screen, use `isPremiumStatusError`, never `isError && !isPremiumResolved`. `isError` also covers the scan-count query, so a scan-count failure showed the subscription error screen while the subscription was still loading.
+
+Precedents: `ReceiptCaptureScreen.tsx` (persistent gate), `AskCoachSection.tsx` (tap gate), `RecipeBrowserScreen.tsx` (ideas CTA), and `ChatStackNavigator.tsx` (mount-once gate; see [isloading-false-on-error-not-resolved](../conventions/isloading-false-on-error-not-resolved-2026-06-12.md)). `usePlanCheck` precedents (#1707): `RecipeChatScreen.tsx`, `CoachChat.tsx` (finder), `CookbookCreateScreen.tsx`, `CookbookCreateWizard.tsx`, `ImportRecipeSheet.tsx`, and `GoalSetupScreen.tsx`.
 
 ## Examples
 
@@ -167,5 +195,8 @@ Free users need to see what they're missing to understand the value of upgrading
 ## Related Files
 
 - `client/hooks/usePremiumFeatures.ts` — `usePremiumFeature` hook
+- `client/context/PremiumContext.tsx` — `isPremiumResolved`, `isPremiumStatusError`
+- `client/screens/ReceiptCaptureScreen.tsx` — persistent gate with unknown-status retry
+- `client/components/AskCoachSection.tsx` — tap gate that re-checks while status is unknown
 - `client/screens/ProfileScreen.tsx` — section-level lock row
 - `client/screens/GoalSetupScreen.tsx` — disabled input gating

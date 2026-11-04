@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, type MutationErrorMeta } from "@/lib/query-client";
+import {
+  TOGGLE_GROCERY_ITEM_KEY,
+  toggleGroceryItemFn,
+  settleGroceryToggle,
+} from "@/lib/mutation-defaults";
 import type { GroceryList, GroceryListItem } from "@shared/schema";
 
 type GroceryListWithItems = GroceryList & { items: GroceryListItem[] };
@@ -63,22 +68,10 @@ export function useToggleGroceryItem() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      listId,
-      itemId,
-      isChecked,
-    }: {
-      listId: number;
-      itemId: number;
-      isChecked: boolean;
-    }): Promise<GroceryListItem> => {
-      const res = await apiRequest(
-        "PUT",
-        `/api/meal-plan/grocery-lists/${listId}/items/${itemId}`,
-        { isChecked },
-      );
-      return res.json();
-    },
+    // Durable across a restart: the key + mutationFn are registered in
+    // client/lib/mutation-defaults.ts.
+    mutationKey: TOGGLE_GROCERY_ITEM_KEY,
+    mutationFn: toggleGroceryItemFn,
     onMutate: async ({ listId, itemId, isChecked }) => {
       await queryClient.cancelQueries({
         queryKey: ["/api/meal-plan/grocery-lists", listId],
@@ -111,11 +104,7 @@ export function useToggleGroceryItem() {
         );
       }
     },
-    onSettled: (_data, _err, { listId }) => {
-      void queryClient.invalidateQueries({
-        queryKey: ["/api/meal-plan/grocery-lists", listId],
-      });
-    },
+    onSettled: (_data, _err, vars) => settleGroceryToggle(queryClient, vars),
   });
 }
 

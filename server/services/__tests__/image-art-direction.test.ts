@@ -190,10 +190,49 @@ describe("resolveArtDirection — LLM enrich + fallback", () => {
     expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
   });
 
-  it("falls back to deterministic on schema violation (oversized field)", async () => {
+  // Owner 2026-11-03: Gemini (the Vertex backup) writes longer phrases than
+  // the caps; one long field must not throw away the whole direction.
+  it("trims an over-long field to its cap instead of discarding the direction", async () => {
     mockCreate.mockResolvedValue(
       llmJson({
         angle: "x".repeat(200),
+        surface: "s",
+        background: "b",
+        lighting: "l",
+        palette: "p",
+        props: "pr",
+        mood: "m",
+      }),
+    );
+    const art = await resolveArtDirection(ctx, "hero");
+    expect(art.angle).toBe("x".repeat(60));
+    expect(art.surface).toBe("s");
+  });
+
+  it("trims at a word boundary when there is one", async () => {
+    const props =
+      "vintage rimmed baking sheet, crumpled parchment paper, small dish of flaky sea salt, fresh dill sprigs";
+    mockCreate.mockResolvedValue(
+      llmJson({
+        angle: "a",
+        surface: "s",
+        background: "b",
+        lighting: "l",
+        palette: "p",
+        props,
+        mood: "m",
+      }),
+    );
+    const art = await resolveArtDirection(ctx, "hero");
+    expect(art.props.length).toBeLessThanOrEqual(100);
+    expect(props.startsWith(art.props)).toBe(true);
+    expect(props[art.props.length]).toBe(" ");
+  });
+
+  it("still falls back to deterministic on an empty field", async () => {
+    mockCreate.mockResolvedValue(
+      llmJson({
+        angle: "",
         surface: "s",
         background: "b",
         lighting: "l",

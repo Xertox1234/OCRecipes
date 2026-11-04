@@ -149,16 +149,38 @@ export default function CookSessionReviewScreen() {
     [editIngredient, nutritionMutation],
   );
 
-  const handleLogMeal = useCallback(async () => {
-    try {
-      await logSession.mutateAsync({});
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
-      AccessibilityInfo.announceForAccessibility("Meal logged successfully");
-      navigation.popTo("Main");
-    } catch {
-      toast.error("Failed to log meal. Please try again.");
+  const submitLog = useCallback(
+    async (confirmMissedLookups: boolean) => {
+      try {
+        await logSession.mutateAsync(
+          confirmMissedLookups ? { confirmMissedLookups: true } : {},
+        );
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        AccessibilityInfo.announceForAccessibility("Meal logged successfully");
+        navigation.popTo("Main");
+      } catch {
+        toast.error("Failed to log meal. Please try again.");
+      }
+    },
+    [logSession, haptics, toast, navigation],
+  );
+
+  const handleLogMeal = useCallback(() => {
+    const missed = nutrition?.missedLookups ?? [];
+    if (missed.length === 0) {
+      void submitLog(false);
+      return;
     }
-  }, [logSession, haptics, toast, navigation]);
+    // No nutrition data for these: they would be saved as 0. Ask first.
+    confirm({
+      title: "Missing nutrition data",
+      message: `No nutrition data was found for ${missed.join(", ")}. They will be counted as 0, so the logged meal will be too low. Log anyway?`,
+      confirmLabel: "Log anyway",
+      onConfirm: () => {
+        void submitLog(true);
+      },
+    });
+  }, [nutrition, confirm, submitLog]);
 
   const handleGenerateRecipe = useCallback(async () => {
     try {
@@ -282,7 +304,6 @@ export default function CookSessionReviewScreen() {
                 style={styles.nutritionRetry}
                 accessibilityRole="button"
                 accessibilityLabel="Retry nutrition calculation"
-                hitSlop={8}
               >
                 <Feather
                   name="refresh-cw"
@@ -298,7 +319,7 @@ export default function CookSessionReviewScreen() {
                 </ThemedText>
               </Pressable>
             </View>
-          ) : null
+          ) : undefined
         }
       />
 
@@ -317,7 +338,8 @@ export default function CookSessionReviewScreen() {
         <Pressable
           style={[styles.actionButton, { backgroundColor: theme.success }]}
           onPress={handleLogMeal}
-          disabled={isActionLoading || ingredients.length === 0}
+          // Not before the summary loads: it is what names missed ingredients.
+          disabled={isActionLoading || ingredients.length === 0 || !nutrition}
           accessibilityLabel="Log meal"
           accessibilityRole="button"
         >
@@ -492,6 +514,16 @@ function NutritionSummaryCard({
           Sodium: {nutrition.total.sodium}mg
         </ThemedText>
       </View>
+
+      {nutrition.missedLookups.length > 0 ? (
+        <ThemedText
+          type="small"
+          style={{ color: theme.error, marginTop: Spacing.sm }}
+        >
+          No nutrition data for {nutrition.missedLookups.join(", ")} (counted as
+          0)
+        </ThemedText>
+      ) : null}
     </Card>
   );
 }
@@ -608,6 +640,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     paddingVertical: Spacing.xs,
     paddingHorizontal: Spacing.sm,
+    minHeight: 44,
   },
   actionHub: {
     position: "absolute",

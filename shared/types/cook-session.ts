@@ -92,6 +92,8 @@ export interface CookSessionNutritionItem {
   sodium: number;
   servingSize: string;
   cookingMethodApplied?: string;
+  /** True when no nutrition source knew this ingredient; its values are 0, not measured. */
+  lookupMissed: boolean;
 }
 
 export interface CookSessionNutritionSummary {
@@ -105,6 +107,8 @@ export interface CookSessionNutritionSummary {
     sodium: number;
   };
   items: CookSessionNutritionItem[];
+  /** Distinct names of ingredients whose lookup missed (counted as 0). Empty when every lookup hit. */
+  missedLookups: string[];
 }
 
 // ============================================================================
@@ -127,6 +131,8 @@ export const nutritionRequestSchema = z.object({
 export const logRequestSchema = z.object({
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
   date: z.string().optional(),
+  /** The user was told which ingredients had no nutrition data and agreed to log anyway. */
+  confirmMissedLookups: z.boolean().optional(),
 });
 
 export const substitutionRequestSchema = z.object({

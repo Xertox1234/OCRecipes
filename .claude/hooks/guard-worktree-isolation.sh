@@ -83,6 +83,18 @@ if [ -n "$REG_DIR" ] && [ -d "$REG_DIR" ] && [ -n "$(ls -A "$REG_DIR" 2>/dev/nul
     esac
   done
   [ -n "$MATCHED" ] && exit 0
+  # A subagent inside its OWN isolation worktree (lib/own-agent-worktree.sh). The helper runs
+  # only inside a subshell, so a missing or broken one (even one that runs `exit 0`) yields no
+  # root, and the deny below stays in force.
+  AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || echo "")
+  OA_LIB="$(dirname "${BASH_SOURCE[0]}")/lib/own-agent-worktree.sh"
+  if [ -n "$AGENT_ID" ]; then
+    OWN=$( { . "$OA_LIB"; } >/dev/null 2>&1 && declare -F own_agent_root >/dev/null && own_agent_root "$CWD" "$AGENT_ID" 2>/dev/null ) || OWN=""
+    case "$OWN" in
+      */.claude/worktrees/agent-"$AGENT_ID")
+        case "$RESOLVED" in "$OWN" | "$OWN"/*) exit 0 ;; esac ;;
+    esac
+  fi
   deny "Worktree contract violation: this session has active worktree assignment(s):${REGISTERED}
 but the edit targets ${RESOLVED} — outside every registered worktree. Re-issue it under the assigned worktree. Escapes: SKIP_WORKTREE_CONTRACT=1 (one command) or scripts/declare-worktree.sh --remove/--clear (assignment ended)."
 fi

@@ -34,7 +34,6 @@ vi.mock("../../storage", () => ({
     updateGroceryListItemPantryFlag: vi.fn(),
     deleteGroceryList: vi.fn(),
     getPantryItems: vi.fn(),
-    createPantryItem: vi.fn(),
     addGroceryItemToPantryAtomically: vi.fn(),
     getUserVerificationStats: vi.fn(),
   },
@@ -689,6 +688,28 @@ describe("Grocery Routes", () => {
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe("CONFLICT");
+    });
+
+    it("returns 400 LIMIT_REACHED when the pantry is full", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
+        ...mockList,
+        items: [createMockGroceryListItem({ name: "Milk" })],
+      });
+      vi.mocked(storage.addGroceryItemToPantryAtomically).mockResolvedValue(
+        "limit_reached",
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists/1/items/1/add-to-pantry")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("LIMIT_REACHED");
     });
 
     it("returns 400 for invalid IDs", async () => {

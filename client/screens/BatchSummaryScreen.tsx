@@ -20,7 +20,10 @@ import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { formatBatchSaveSuccess } from "@/lib/log-success";
+import {
+  formatBatchSaveSuccess,
+  formatPantryFullSkipped,
+} from "@/lib/log-success";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -169,20 +172,24 @@ export default function BatchSummaryScreen() {
 
     setSaving(true);
     try {
-      await batchConfirm.mutateAsync({
+      const result = await batchConfirm.mutateAsync({
         items: resolvedItems,
         destination,
       });
 
       // The toast is the announcer (iOS announce + Android live region) and
       // fires the Success haptic — no separate announceForAccessibility.
-      toast.success(
-        formatBatchSaveSuccess(
-          resolvedItems,
-          destination,
-          getDestinationLabel(destination),
-        ),
-      );
+      if (result.skipped && result.skipped > 0) {
+        toast.info(formatPantryFullSkipped(result.skipped));
+      } else {
+        toast.success(
+          formatBatchSaveSuccess(
+            resolvedItems,
+            destination,
+            getDestinationLabel(destination),
+          ),
+        );
+      }
 
       clearSession();
       navigation.popToTop();
@@ -482,17 +489,19 @@ const BatchItemRow = React.memo(function BatchItemRow({
                 accessibilityRole="button"
                 accessibilityState={{ disabled: item.quantity <= 1 }}
                 accessibilityLabel={`Decrease quantity, currently ${item.quantity}`}
-                hitSlop={8}
                 style={({ pressed }) => [
                   styles.stepperButton,
                   {
-                    borderColor: theme.border,
                     opacity: item.quantity <= 1 ? 0.3 : 1,
                   },
                   pressed && { opacity: 0.7 },
                 ]}
               >
-                <Feather name="minus" size={14} color={theme.text} />
+                <View
+                  style={[styles.stepperGlyph, { borderColor: theme.border }]}
+                >
+                  <Feather name="minus" size={14} color={theme.text} />
+                </View>
               </Pressable>
               <Text
                 style={[styles.quantityText, { color: theme.text }]}
@@ -506,17 +515,19 @@ const BatchItemRow = React.memo(function BatchItemRow({
                 accessibilityRole="button"
                 accessibilityState={{ disabled: item.quantity >= 99 }}
                 accessibilityLabel={`Increase quantity, currently ${item.quantity}`}
-                hitSlop={8}
                 style={({ pressed }) => [
                   styles.stepperButton,
                   {
-                    borderColor: theme.border,
                     opacity: item.quantity >= 99 ? 0.3 : 1,
                   },
                   pressed && { opacity: 0.7 },
                 ]}
               >
-                <Feather name="plus" size={14} color={theme.text} />
+                <View
+                  style={[styles.stepperGlyph, { borderColor: theme.border }]}
+                >
+                  <Feather name="plus" size={14} color={theme.text} />
+                </View>
               </Pressable>
             </View>
           </View>
@@ -568,11 +579,13 @@ const BatchItemRow = React.memo(function BatchItemRow({
                 Failed
               </Text>
               <Pressable
-                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  pressed && { opacity: 0.7 },
+                ]}
                 onPress={() => onRetry(item.id)}
                 accessibilityRole="button"
                 accessibilityLabel="Retry nutrition lookup"
-                hitSlop={8}
               >
                 <Text style={[styles.retryText, { color: theme.link }]}>
                   Retry
@@ -664,9 +677,16 @@ const styles = StyleSheet.create({
   quantityStepper: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
   },
+  // The tap target is a real 44pt box (not hitSlop); the bordered 28pt square
+  // inside it is what you see.
   stepperButton: {
+    width: 44,
+    height: 44,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  stepperGlyph: {
     width: 28,
     height: 28,
     borderRadius: BorderRadius.sm,
@@ -700,6 +720,10 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 13,
+  },
+  retryButton: {
+    minHeight: 44,
+    justifyContent: "center",
   },
   retryText: {
     fontSize: 13,

@@ -57,10 +57,11 @@ Wire `dehydrateOptions.shouldDehydrateMutation: shouldDehydrateResumableMutation
 `onSuccess={handleQueryCacheRestored}` in `App.tsx`. To make a mutation durable across restarts,
 give it a `mutationKey` and register `setMutationDefaults(key, { mutationFn })` — it is then
 persisted and resumed automatically. Only opt in writes that are safe to replay (idempotent);
-the per-mutation opt-in is tracked in `todos/P3-2026-10-30-durable-resume-for-idempotent-mutations.md`.
-
-The gate has zero live consumers until that todo lands — it is intentional: its job today is to
-keep orphans *out* of storage.
+the opt-in registry is `client/lib/mutation-defaults.ts` (four on/off toggles as of 2026-11-01;
+its header classifies every `useMutation` site). Register from `query-client-persistence.ts`,
+never from `query-client.ts` (circular), and export the key and `mutationFn` for the hook to
+share. The registry holds `onSettled`/`onSuccess` too: a restored mutation has only the defaults,
+so the hook's own handlers are gone.
 
 ## Prevention
 
@@ -72,6 +73,7 @@ keep orphans *out* of storage.
 
 ## Related Files
 
+- `client/lib/mutation-defaults.ts` — the opt-in registry
 - `client/lib/query-client-persistence.ts` — `shouldDehydrateResumableMutation`, `handleQueryCacheRestored`, `handleQueryCacheRestoreFailed`, `subscribeToPausedMutations`
 - `client/App.tsx` — `persistOptions.dehydrateOptions`, provider `onSuccess`/`onError`
 - `client/lib/__tests__/query-client-persistence.test.ts`

@@ -346,6 +346,53 @@ export async function sendMealLogReminders(
   }
 }
 
+/**
+ * Run slot for a cron tick: the nearest UTC hour boundary, e.g. "2026-11-01T09".
+ * Both jobs fire on the hour, so two instances ticking a few ms apart (or
+ * straddling the boundary through clock skew) compute the SAME slot — truncating
+ * would split them across two slots and both would run. Exported for testing.
+ */
+export function schedulerRunSlot(now: Date): string {
+  const HOUR_MS = 3_600_000;
+  return new Date(Math.round(now.getTime() / HOUR_MS) * HOUR_MS)
+    .toISOString()
+    .slice(0, 13);
+}
+
+/**
+ * Run `job` only if this instance wins the durable (jobName, slot) claim, so a
+ * tick that fires on several server instances sends once. `now` is taken once
+ * and handed to the job. A failed claim (DB unreachable) skips the run — failing
+ * open would reintroduce the double send, and the senders need the DB anyway.
+ * The claim is consumed even if the run then crashes; commitments stay "active"
+ * and are picked up by the next day's run.
+ */
+async function runIfClaimed(
+  jobName: string,
+  job: (now: Date) => Promise<unknown>,
+): Promise<void> {
+  const now = new Date();
+  let claimed: boolean;
+  try {
+    claimed = await storage.claimSchedulerRun(jobName, schedulerRunSlot(now));
+  } catch (err) {
+    logger.error(
+      { err: toError(err), jobName },
+      "notification-scheduler: failed to claim run, skipping",
+    );
+    reportError(err, `notification-scheduler: claim ${jobName}`);
+    return;
+  }
+  if (!claimed) {
+    logger.info(
+      { jobName },
+      "notification-scheduler: run already claimed by another instance, skipping",
+    );
+    return;
+  }
+  await job(now);
+}
+
 let scheduledTask: ReturnType<typeof cron.schedule> | null = null;
 let localHourTask: ReturnType<typeof cron.schedule> | null = null;
 
@@ -364,7 +411,9 @@ export function startNotificationScheduler(): void {
   scheduledTask = cron.schedule(
     "0 9 * * *",
     () =>
-      sendDueCommitmentReminders().catch((err) => {
+      runIfClaimed("commitment-reminders", () =>
+        sendDueCommitmentReminders(),
+      ).catch((err) => {
         logger.error(
           { err: toError(err) },
           "notification-scheduler: unhandled error in commitment cron",
@@ -380,30 +429,30 @@ export function startNotificationScheduler(): void {
   // Re-runs are idempotent via pending_reminders_user_type_day_idx.
   localHourTask = cron.schedule(
     "0 * * * *",
-    () => {
-      const now = new Date();
-      return Promise.all([
-        sendDailyCheckinReminders({
-          now,
-          localHour: DAILY_CHECKIN_LOCAL_HOUR,
-        }).catch((err) => {
-          logger.error(
-            { err: toError(err) },
-            "notification-scheduler: unhandled error in daily-checkin cron",
-          );
-          reportError(err, "notification-scheduler: daily-checkin cron");
-        }),
-        sendMealLogReminders({ now, localHour: MEAL_LOG_LOCAL_HOUR }).catch(
-          (err) => {
+    () =>
+      runIfClaimed("local-hour-reminders", (now) =>
+        Promise.all([
+          sendDailyCheckinReminders({
+            now,
+            localHour: DAILY_CHECKIN_LOCAL_HOUR,
+          }).catch((err) => {
             logger.error(
               { err: toError(err) },
-              "notification-scheduler: unhandled error in meal-log cron",
+              "notification-scheduler: unhandled error in daily-checkin cron",
             );
-            reportError(err, "notification-scheduler: meal-log cron");
-          },
-        ),
-      ]);
-    },
+            reportError(err, "notification-scheduler: daily-checkin cron");
+          }),
+          sendMealLogReminders({ now, localHour: MEAL_LOG_LOCAL_HOUR }).catch(
+            (err) => {
+              logger.error(
+                { err: toError(err) },
+                "notification-scheduler: unhandled error in meal-log cron",
+              );
+              reportError(err, "notification-scheduler: meal-log cron");
+            },
+          ),
+        ]),
+      ),
     { timezone: "UTC", noOverlap: true, name: "local-hour-reminders" },
   );
 

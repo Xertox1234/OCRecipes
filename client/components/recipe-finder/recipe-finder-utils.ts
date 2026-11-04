@@ -100,9 +100,23 @@ export function finderBlockFromMessageMetadata(
 export function lockedFinderButtons(opts: {
   canSearchOnline: boolean;
   canGenerate: boolean;
+  /** Plan still loading/failed: show no locks (owner ruling 2026-11-02). */
+  planUnknown?: boolean;
 }): FinderButton[] {
   const locked: FinderButton[] = [];
+  if (opts.planUnknown) return locked;
   if (!opts.canSearchOnline) locked.push("search_online");
   if (!opts.canGenerate) locked.push("generate");
   return locked;
+}
+
+/** The premium finder buttons — every button a free account has locked. */
+const PREMIUM_FINDER_BUTTONS: readonly string[] = lockedFinderButtons({
+  canSearchOnline: false,
+  canGenerate: false,
+});
+
+/** Whether a finder action spends a premium feature, so needs a known plan. */
+export function finderActionNeedsPlan(type: string): boolean {
+  return PREMIUM_FINDER_BUTTONS.includes(type);
 }

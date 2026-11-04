@@ -16,6 +16,7 @@ const {
   conversationsState,
   mockCreateConversation,
   routeState,
+  keyboardState,
 } = vi.hoisted(() => ({
   mockAcknowledge: vi.fn(),
   mockUsePremiumFeature: vi.fn(),
@@ -27,7 +28,7 @@ const {
   // Captures the latest callback CoachProScreen's useRefreshOnFocus passes to
   // useFocusEffect, so tests can simulate a refocus by invoking it directly.
   focusEffectCb: { current: null as (() => void) | null },
-  premiumContextState: { isLoading: false },
+  premiumContextState: { isPremiumResolved: true },
   // Mutable conversation list for useChatConversations — defaults to empty
   // (the original harness); the New-thread tests seed an existing thread.
   conversationsState: {
@@ -35,6 +36,11 @@ const {
   },
   mockCreateConversation: vi.fn(),
   routeState: { params: {} as { selectedConversationId?: number } },
+  keyboardState: { visible: false },
+}));
+
+vi.mock("@/hooks/useKeyboardVisible", () => ({
+  useKeyboardVisible: () => keyboardState.visible,
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -45,8 +51,9 @@ vi.mock("@react-navigation/native", () => ({
   },
 }));
 
+// Non-zero so the input bar's tab-bar padding is distinguishable from its own.
 vi.mock("@react-navigation/bottom-tabs", () => ({
-  useBottomTabBarHeight: () => 0,
+  useBottomTabBarHeight: () => 83,
 }));
 
 vi.mock("@/context/PremiumContext", () => ({
@@ -102,17 +109,20 @@ vi.mock("@/components/coach/CoachChat", () => ({
     isCoachPro,
     conversationId,
     onCreateConversation,
+    inputBarStyle,
   }: {
     onMessageSent?: () => void;
     isCoachPro?: boolean;
     conversationId?: number | null;
     onCreateConversation?: () => Promise<number>;
+    inputBarStyle?: { paddingBottom?: number };
   }) => (
     <>
       <button onClick={() => onMessageSent?.()}>mock-send</button>
       <button onClick={() => void onCreateConversation?.()}>mock-create</button>
       <div>{`coach-pro:${String(isCoachPro)}`}</div>
       <div>{`conversation:${String(conversationId)}`}</div>
+      <div>{`input-pad:${String(inputBarStyle?.paddingBottom)}`}</div>
     </>
   ),
 }));
@@ -122,9 +132,10 @@ beforeEach(() => {
   focusEffectCb.current = null;
   mockAcknowledge.mockResolvedValue(undefined);
   // Defaults preserve the original harness: Coach Pro user, premium resolved.
-  premiumContextState.isLoading = false;
+  premiumContextState.isPremiumResolved = true;
   conversationsState.data = [];
   routeState.params = {};
+  keyboardState.visible = false;
   mockUsePremiumFeature.mockReturnValue(true);
   mockUseCoachContext.mockReturnValue({
     data: undefined,
@@ -253,12 +264,12 @@ describe("CoachProScreen — premium gate (coachPro)", () => {
     expect(screen.getByText("coach-pro:true")).toBeTruthy();
   });
 
-  it("keeps the context fetch enabled while premium status is still loading", () => {
-    // contextEnabled = isCoachPro || isPremiumLoading — the screen is only
-    // mounted for Pro users, so it assumes access until premium resolves
-    // rather than flashing a disabled fetch.
+  it("keeps the context fetch enabled while the plan is unknown (loading or a failed check)", () => {
+    // contextEnabled = isCoachPro || !isPremiumResolved — the screen is only
+    // mounted for Pro users, so it assumes access until premium resolves. A
+    // failed check is not "loading", so it is keyed on isPremiumResolved.
     mockUsePremiumFeature.mockReturnValue(false);
-    premiumContextState.isLoading = true;
+    premiumContextState.isPremiumResolved = false;
 
     renderComponent(<CoachProScreen />);
 
@@ -390,5 +401,52 @@ describe("CoachProScreen — loading skeleton screen-reader signal", () => {
     } finally {
       announceSpy.mockRestore();
     }
+  });
+});
+
+// On a Galaxy A37 the open dashboard (453 dp) plus the keyboard (~358 dp) left
+// the chat input under the keyboard (measured 2026-11-02). While typing the
+// dashboard folds, and the input drops the padding that clears the tab bar —
+// the keyboard covers the tab bar then.
+describe("CoachProScreen — typing makes room for the input", () => {
+  const coachContext = {
+    goals: { calories: 1949, protein: 146, carbs: 200, fat: 60 },
+    todayIntake: {
+      totalCalories: 0,
+      totalProtein: 0,
+      totalCarbs: 0,
+      totalFat: 0,
+    },
+    dietaryProfile: null,
+    notebook: [],
+    dueCommitments: [],
+    suggestions: [],
+  };
+
+  beforeEach(() => {
+    mockUseCoachContext.mockReturnValue({
+      data: coachContext,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+  });
+
+  it("keyboard down: the dashboard is open and the input clears the tab bar", () => {
+    renderComponent(<CoachProScreen />);
+    expect(
+      screen.getByRole("button", { name: "Collapse dashboard" }),
+    ).toBeTruthy();
+    expect(screen.getByText("input-pad:83")).toBeTruthy();
+  });
+
+  it("keyboard up: the dashboard folds and the input drops the tab-bar padding", () => {
+    keyboardState.visible = true;
+    renderComponent(<CoachProScreen />);
+    expect(
+      screen.getByRole("button", { name: "Expand dashboard" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("input-pad:83")).toBeNull();
+    expect(screen.getByText("input-pad:8")).toBeTruthy();
   });
 });

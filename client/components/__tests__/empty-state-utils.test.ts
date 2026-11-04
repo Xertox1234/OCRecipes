@@ -1,5 +1,18 @@
 import { describe, it, expect } from "vitest";
-import { getEmptyStateDefaults } from "../empty-state-utils";
+import {
+  getEmptyStateDefaults,
+  isPausedWithoutData,
+} from "../empty-state-utils";
+
+describe("isPausedWithoutData", () => {
+  it("is true only when paused and there is no data", () => {
+    expect(isPausedWithoutData("paused", false)).toBe(true);
+    expect(isPausedWithoutData("paused", true)).toBe(false);
+    expect(isPausedWithoutData("idle", false)).toBe(false);
+    expect(isPausedWithoutData("fetching", false)).toBe(false);
+    expect(isPausedWithoutData(undefined, false)).toBe(false);
+  });
+});
 
 describe("getEmptyStateDefaults", () => {
   it("returns larger icon for firstTime variant", () => {

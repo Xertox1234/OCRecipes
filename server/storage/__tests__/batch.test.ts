@@ -111,12 +111,32 @@ describe("batch storage", () => {
     it("inserts pantry items for each batch entry", async () => {
       const items = [makeItem(), makeItem()];
       const result = await batchCreatePantryItems(items, testUser.id);
-      expect(result).toEqual({ count: 2 });
+      expect(result).toEqual({ count: 2, skipped: 0 });
       const rows = await tx
         .select()
         .from(pantryItems)
         .where(eq(pantryItems.userId, testUser.id));
       expect(rows).toHaveLength(2);
+    });
+
+    it("adds what fits under the 500-item cap and reports the rest as skipped", async () => {
+      await tx.insert(pantryItems).values(
+        Array.from({ length: 498 }, (_, i) => ({
+          userId: testUser.id,
+          name: `Seed ${i}`,
+          quantity: "1",
+        })),
+      );
+      const result = await batchCreatePantryItems(
+        [makeItem(), makeItem(), makeItem()],
+        testUser.id,
+      );
+      expect(result).toEqual({ count: 2, skipped: 1 });
+      const rows = await tx
+        .select({ id: pantryItems.id })
+        .from(pantryItems)
+        .where(eq(pantryItems.userId, testUser.id));
+      expect(rows).toHaveLength(500);
     });
   });
 

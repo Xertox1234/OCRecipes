@@ -47,7 +47,8 @@ import { RecipeCarousel } from "@/components/home/RecipeCarousel";
 import { useDismissReasonSheet } from "@/hooks/useDismissReasonSheet";
 import { CuratedRecipeCarousel } from "@/components/home/CuratedRecipeCarousel";
 import { RecentActionsRow } from "@/components/home/RecentActionsRow";
-import { DiscoveryCarousel } from "@/components/home/DiscoveryCarousel";
+import { FeatureTip } from "@/components/FeatureTip";
+import { useFeatureTip } from "@/hooks/useFeatureTip";
 import { CollapsibleSection } from "@/components/home/CollapsibleSection";
 import { ActionRow } from "@/components/home/ActionRow";
 import { QuickLogDrawer } from "@/components/home/QuickLogDrawer";
@@ -68,7 +69,12 @@ import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { useTheme } from "@/hooks/useTheme";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
-import { Spacing, FAB_CLEARANCE, FontFamily } from "@/constants/theme";
+import {
+  Spacing,
+  FAB_CLEARANCE,
+  FAB_SIZE,
+  FontFamily,
+} from "@/constants/theme";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import {
   ImportRecipeSheetContent,
@@ -143,7 +149,19 @@ export default function HomeScreen() {
   // subscription has loaded, so a premium user never sees the lock flash
   // (the server still enforces the gate).
   const canQuickLog = usePremiumFeature("textFoodParsing");
-  const { isPremiumResolved } = usePremiumContext();
+  const { isPremiumResolved, features } = usePremiumContext();
+
+  // Teaching tip for the + / Scan button (replaces the Discover carousel).
+  // Free users are only told about what their plan scans.
+  const scanTip = useFeatureTip("home-scan", {
+    feature: "scan",
+    eligible: true,
+    ready: isPremiumResolved,
+  });
+  const scanTipText =
+    features.receiptScanner && features.menuScanner
+      ? "Scan a barcode, label, receipt or menu."
+      : "Scan a barcode or nutrition label.";
   const quickLogLocked = isPremiumResolved && !canQuickLog;
   // Pantry uses the same flag as the Profile tile (LibraryGrid) so both
   // entry points lock identically and open the paywall (QA sweep #65).
@@ -663,18 +681,6 @@ export default function HomeScreen() {
           />
         </Animated.View>
 
-        <DiscoveryCarousel
-          onActionPress={handleActionPress}
-          usageCounts={usageCounts}
-        />
-
-        <RecentActionsRow
-          recentActionIds={recentActions}
-          allActions={HOME_ACTIONS}
-          onActionPress={handleActionPress}
-          usageCounts={usageCounts}
-        />
-
         <Animated.View
           entering={
             reducedMotion ? undefined : FadeInDown.delay(100).duration(400)
@@ -682,6 +688,13 @@ export default function HomeScreen() {
         >
           <RecipeCarousel onDismissRequest={openDismissReasonSheet} />
         </Animated.View>
+
+        <RecentActionsRow
+          recentActionIds={recentActions}
+          allActions={HOME_ACTIONS}
+          onActionPress={handleActionPress}
+          usageCounts={usageCounts}
+        />
 
         <Animated.View
           entering={
@@ -754,11 +767,28 @@ export default function HomeScreen() {
       </BottomSheetModal>
 
       <DismissReasonSheet />
+
+      {/* Points down at the + button, which the tab navigator draws
+          bottom-right (ScanFAB: right Spacing.xl, above the tab bar). */}
+      <FeatureTip
+        text={scanTipText}
+        visible={scanTip.visible}
+        onDismiss={scanTip.dismiss}
+        pointer="down"
+        style={[
+          styles.scanTip,
+          { bottom: tabBarHeight + Spacing.lg + FAB_SIZE + Spacing.sm },
+        ]}
+      />
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  scanTip: {
+    position: "absolute",
+    right: Spacing.xl,
+  },
   collapsedBar: {
     position: "absolute",
     top: 0,

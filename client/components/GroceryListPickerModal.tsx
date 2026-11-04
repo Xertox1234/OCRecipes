@@ -207,7 +207,7 @@ export function GroceryListPickerModal({
           </View>
           <Pressable
             onPress={handleClose}
-            hitSlop={8}
+            style={styles.closeButton}
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
@@ -328,6 +328,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.lg,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  // 44pt box, not hitSlop. The negative margins keep the header's height at
+  // the 24pt icon's (the 16pt vertical padding already leaves room for the
+  // box inside the header, so nothing is clipped).
+  closeButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -10,
+    marginRight: -10,
   },
   headerTextGroup: {
     flex: 1,

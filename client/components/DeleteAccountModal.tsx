@@ -1,17 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  Modal,
   StyleSheet,
   View,
   Pressable,
-  KeyboardAvoidingView,
   Platform,
-  ScrollView,
   AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
+import { CenteredDialog } from "@/components/CenteredDialog";
 import { ThemedText } from "@/components/ThemedText";
 import { TextInput } from "@/components/TextInput";
 import { Button } from "@/components/Button";
@@ -25,13 +23,8 @@ import { ApiError } from "@/lib/api-error";
 import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
 import { deleteProofMode } from "@/screens/SignInMethodsScreen-utils";
 import type { SecondFactorInput, SignInMethods } from "@shared/types/auth";
+import { mapReauthError } from "@/lib/second-factor-utils";
 import {
-  isSecondFactorRequired,
-  isTwoStepCheckError,
-  secondFactorErrorMessage,
-} from "@/lib/second-factor-utils";
-import {
-  AbsoluteFill,
   Spacing,
   BorderRadius,
   FontFamily,
@@ -158,29 +151,14 @@ export function DeleteAccountModal({
       else await onConfirm({ password });
       // onConfirm is responsible for any post-deletion navigation/state change.
     } catch (err) {
-      if (isSecondFactorRequired(err)) {
-        // Right password on a 2FA account: keep it, ask for the code too.
-        setNeedsCode(true);
-        setError("Enter the code we email you.");
-        haptics.notification(Haptics.NotificationFeedbackType.Error);
-        setIsDeleting(false);
-        return;
-      }
-      if (isTwoStepCheckError(err)) {
-        setError(secondFactorErrorMessage(err).message);
-        haptics.notification(Haptics.NotificationFeedbackType.Error);
-        setIsDeleting(false);
-        return;
-      }
+      const mapped = mapReauthError(err);
+      // Right password on a 2FA account: keep it, ask for the code too.
+      if (mapped?.needsCode) setNeedsCode(true);
       const message =
         err instanceof Error
           ? err.message
           : "Failed to delete account. Please try again.";
-      // Surface a friendlier message for wrong-password (401) responses.
-      const friendly = /Invalid credentials/i.test(message)
-        ? "Incorrect password. Please try again."
-        : message;
-      setError(friendly);
+      setError(mapped ? mapped.message : message);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setIsDeleting(false);
     }
@@ -205,266 +183,157 @@ export function DeleteAccountModal({
   }, [isDeleting, onClose]);
 
   return (
-    <Modal
+    <CenteredDialog
       visible={visible}
-      transparent
-      animationType="fade"
       onRequestClose={handleCancel}
+      backdropLabel="Close delete account dialog"
+      dialogLabel="Delete account confirmation"
+      icon="alert-triangle"
+      iconTone="error"
+      title="Delete account?"
+      message="This will permanently delete your account and all your data — recipes, meal plans, scans, and history. This cannot be undone."
+      messageGap={Spacing.lg}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.kav}
-      >
-        <Pressable
+      {showSubscriptionWarning && (
+        <View
           style={[
-            styles.backdrop,
-            // hardcoded — modal backdrops use a fixed dim regardless of theme
-            { backgroundColor: "rgba(0,0,0,0.55)" },
+            styles.warningBox,
+            {
+              backgroundColor: withOpacity(theme.warning, 0.08),
+              borderColor: withOpacity(theme.warning, 0.4),
+            },
           ]}
-          onPress={handleCancel}
-          accessibilityLabel="Close delete account dialog"
-          accessibilityRole="button"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        />
-        <View style={styles.centerWrap} pointerEvents="box-none">
-          <View
-            accessibilityViewIsModal
-            accessibilityLabel="Delete account confirmation"
-            style={[
-              styles.card,
-              {
-                backgroundColor: theme.backgroundDefault,
-                borderColor: theme.border,
-              },
-            ]}
+          accessibilityRole="alert"
+        >
+          <Feather
+            name="info"
+            size={16}
+            color={theme.warning}
+            accessible={false}
+          />
+          <ThemedText
+            type="small"
+            style={[styles.warningText, { color: theme.text }]}
           >
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.scrollContent}
-            >
-              <View style={styles.iconContainer}>
-                <View
-                  style={[
-                    styles.iconCircle,
-                    { backgroundColor: withOpacity(theme.error, 0.12) },
-                  ]}
-                >
-                  <Feather
-                    name="alert-triangle"
-                    size={28}
-                    color={theme.error}
-                  />
-                </View>
-              </View>
-
-              <ThemedText
-                type="h4"
-                accessibilityRole="header"
-                style={styles.title}
-              >
-                Delete account?
-              </ThemedText>
-
-              <ThemedText
-                type="body"
-                style={[styles.message, { color: theme.textSecondary }]}
-              >
-                This will permanently delete your account and all your data —
-                recipes, meal plans, scans, and history. This cannot be undone.
-              </ThemedText>
-
-              {showSubscriptionWarning && (
-                <View
-                  style={[
-                    styles.warningBox,
-                    {
-                      backgroundColor: withOpacity(theme.warning, 0.08),
-                      borderColor: withOpacity(theme.warning, 0.4),
-                    },
-                  ]}
-                  accessibilityRole="alert"
-                >
-                  <Feather
-                    name="info"
-                    size={16}
-                    color={theme.warning}
-                    accessible={false}
-                  />
-                  <ThemedText
-                    type="small"
-                    style={[styles.warningText, { color: theme.text }]}
-                  >
-                    You have an active subscription. Cancel it in the App Store
-                    or Play Store before deleting — deletion here does not
-                    cancel platform billing.
-                  </ThemedText>
-                </View>
-              )}
-
-              {mode.kind === "password" ? (
-                <>
-                  <TextInput
-                    leftIcon="lock"
-                    rightIcon={showPassword ? "eye-off" : "eye"}
-                    rightIconAccessibilityLabel={
-                      showPassword ? "Hide password" : "Show password"
-                    }
-                    onRightIconPress={() => setShowPassword((s) => !s)}
-                    label="Password"
-                    value={password}
-                    onChangeText={(text) => {
-                      setPassword(text);
-                      if (error) setError(null);
-                    }}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    autoComplete="current-password"
-                    textContentType="password"
-                    editable={!isDeleting}
-                    accessibilityHint="Enter your current password to confirm account deletion"
-                    // The InlineError below announces the message; repeating
-                    // it as errorMessage made VoiceOver read it twice.
-                    error={!!error}
-                    testID="delete-account-password-input"
-                  />
-                  {needsCode ? (
-                    <ThemedText
-                      type="small"
-                      style={[styles.label, { color: theme.textSecondary }]}
-                    >
-                      Two-step verification code
-                    </ThemedText>
-                  ) : null}
-                  {needsCode ? (
-                    <SecondFactorField
-                      onChange={setFactor}
-                      busy={isDeleting}
-                      autoFocus={!askCode}
-                      emailCode={twoStepEmail}
-                    />
-                  ) : null}
-                </>
-              ) : (
-                <ThemedText
-                  type="small"
-                  style={[styles.label, { color: theme.textSecondary }]}
-                >
-                  {mode.kind === "provider"
-                    ? `Continue with ${providerName} to confirm it's you.`
-                    : mode.kind === "loading"
-                      ? loadError
-                        ? "Couldn't load your sign-in methods. Close this and try again."
-                        : "Loading…"
-                      : "Set up a password in Settings → Sign-in methods first."}
-                </ThemedText>
-              )}
-
-              <InlineError message={error} shakeKey={shakeKey} />
-
-              <View style={styles.buttonRow}>
-                <Button
-                  onPress={handleCancel}
-                  variant="secondary"
-                  disabled={isDeleting}
-                  style={styles.flexButton}
-                  accessibilityLabel="Cancel"
-                >
-                  Cancel
-                </Button>
-                <Pressable
-                  onPress={handleConfirm}
-                  disabled={confirmDisabled}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isDeleting
-                      ? "Deleting account"
-                      : providerName
-                        ? `Confirm with ${providerName}`
-                        : "Delete account"
-                  }
-                  accessibilityState={{
-                    disabled: confirmDisabled,
-                    busy: isDeleting,
-                  }}
-                  style={[
-                    styles.flexButton,
-                    styles.destructiveButton,
-                    {
-                      backgroundColor: theme.error,
-                      opacity: confirmDisabled ? 0.6 : 1,
-                    },
-                  ]}
-                  testID="delete-account-confirm-button"
-                >
-                  <ThemedText
-                    type="body"
-                    style={[
-                      styles.destructiveText,
-                      { color: theme.buttonText },
-                    ]}
-                  >
-                    {isDeleting
-                      ? "Deleting..."
-                      : providerName
-                        ? `Confirm with ${providerName}`
-                        : "Delete"}
-                  </ThemedText>
-                </Pressable>
-              </View>
-            </ScrollView>
-          </View>
+            You have an active subscription. Cancel it in the App Store or Play
+            Store before deleting — deletion here does not cancel platform
+            billing.
+          </ThemedText>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      )}
+
+      {mode.kind === "password" ? (
+        <>
+          <TextInput
+            leftIcon="lock"
+            rightIcon={showPassword ? "eye-off" : "eye"}
+            rightIconAccessibilityLabel={
+              showPassword ? "Hide password" : "Show password"
+            }
+            onRightIconPress={() => setShowPassword((s) => !s)}
+            label="Password"
+            value={password}
+            onChangeText={(text) => {
+              setPassword(text);
+              if (error) setError(null);
+            }}
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            autoComplete="current-password"
+            textContentType="password"
+            editable={!isDeleting}
+            accessibilityHint="Enter your current password to confirm account deletion"
+            // The InlineError below announces the message; repeating
+            // it as errorMessage made VoiceOver read it twice.
+            error={!!error}
+            testID="delete-account-password-input"
+          />
+          {needsCode ? (
+            <ThemedText
+              type="small"
+              style={[styles.label, { color: theme.textSecondary }]}
+            >
+              Two-step verification code
+            </ThemedText>
+          ) : null}
+          {needsCode ? (
+            <SecondFactorField
+              onChange={setFactor}
+              busy={isDeleting}
+              autoFocus={!askCode}
+              emailCode={twoStepEmail}
+            />
+          ) : null}
+        </>
+      ) : (
+        <ThemedText
+          type="small"
+          style={[styles.label, { color: theme.textSecondary }]}
+        >
+          {mode.kind === "provider"
+            ? `Continue with ${providerName} to confirm it's you.`
+            : mode.kind === "loading"
+              ? loadError
+                ? "Couldn't load your sign-in methods. Close this and try again."
+                : "Loading…"
+              : "Set up a password in Settings → Sign-in methods first."}
+        </ThemedText>
+      )}
+
+      <InlineError message={error} shakeKey={shakeKey} />
+
+      <View style={styles.buttonRow}>
+        <Button
+          onPress={handleCancel}
+          variant="secondary"
+          disabled={isDeleting}
+          style={styles.flexButton}
+          accessibilityLabel="Cancel"
+        >
+          Cancel
+        </Button>
+        <Pressable
+          onPress={handleConfirm}
+          disabled={confirmDisabled}
+          accessibilityRole="button"
+          accessibilityLabel={
+            isDeleting
+              ? "Deleting account"
+              : providerName
+                ? `Confirm with ${providerName}`
+                : "Delete account"
+          }
+          accessibilityState={{
+            disabled: confirmDisabled,
+            busy: isDeleting,
+          }}
+          style={[
+            styles.flexButton,
+            styles.destructiveButton,
+            {
+              backgroundColor: theme.error,
+              opacity: confirmDisabled ? 0.6 : 1,
+            },
+          ]}
+          testID="delete-account-confirm-button"
+        >
+          <ThemedText
+            type="body"
+            style={[styles.destructiveText, { color: theme.buttonText }]}
+          >
+            {isDeleting
+              ? "Deleting..."
+              : providerName
+                ? `Confirm with ${providerName}`
+                : "Delete"}
+          </ThemedText>
+        </Pressable>
+      </View>
+    </CenteredDialog>
   );
 }
 
 const styles = StyleSheet.create({
-  kav: {
-    flex: 1,
-  },
-  backdrop: {
-    ...AbsoluteFill,
-  },
-  centerWrap: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 420,
-    maxHeight: "90%",
-    borderRadius: BorderRadius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: "hidden",
-  },
-  scrollContent: {
-    padding: Spacing.xl,
-  },
-  iconContainer: {
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  title: {
-    textAlign: "center",
-    fontFamily: FontFamily.semiBold,
-    marginBottom: Spacing.sm,
-  },
-  message: {
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: Spacing.lg,
-  },
   warningBox: {
     flexDirection: "row",
     alignItems: "flex-start",

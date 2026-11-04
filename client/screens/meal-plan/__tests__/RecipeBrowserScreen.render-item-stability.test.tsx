@@ -136,7 +136,7 @@ vi.mock("@/context/ToastContext", () => ({
 }));
 
 vi.mock("@/context/PremiumContext", () => ({
-  usePremiumContext: () => ({ isPremium: false }),
+  usePremiumContext: () => ({ isPremium: false, isPremiumResolved: true }),
 }));
 
 // Fresh wrapper object every call (faithful to real useMutation), but a

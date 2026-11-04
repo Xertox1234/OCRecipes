@@ -67,6 +67,7 @@ export function register(app: Express): void {
               success: true,
               destination,
               created: result.count,
+              skipped: result.skipped,
             });
           }
           case "grocery_list": {

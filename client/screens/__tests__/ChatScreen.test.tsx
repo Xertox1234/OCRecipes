@@ -26,6 +26,7 @@ const {
   mockAcknowledge,
   mockCreateMutateAsync,
   mockSetParams,
+  mockNavigate,
   mockGoBack,
   mockPopTo,
   mockCanGoBack,
@@ -59,6 +60,7 @@ const {
   mockAcknowledge: vi.fn(),
   mockCreateMutateAsync: vi.fn(),
   mockSetParams: vi.fn(),
+  mockNavigate: vi.fn(),
   // A mutable ref (not a static factory return) so each test can simulate a
   // different deep-link/navigation route.params shape. Typed looser than
   // ChatStackParamList's `Chat` union on purpose: an unparsed query param
@@ -89,6 +91,7 @@ const {
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     setParams: mockSetParams,
+    navigate: mockNavigate,
     goBack: mockGoBack,
     popTo: mockPopTo,
     canGoBack: mockCanGoBack,
@@ -136,6 +139,13 @@ vi.mock("@/hooks/useHaptics", () => ({
 
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
   useAcknowledgeReminders: () => ({ acknowledge: mockAcknowledge }),
+}));
+
+vi.mock("@/components/UpgradeModal", () => ({
+  UpgradeModal: ({ visible }: { visible: boolean }) =>
+    visible
+      ? React.createElement("div", { "data-testid": "upgrade-modal" })
+      : null,
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -405,7 +415,7 @@ describe("ChatScreen — send haptic", () => {
   it("buzzes once when a suggested prompt is tapped", () => {
     renderComponent(<ChatScreen />);
     fireEvent.click(
-      screen.getByLabelText("Suggested prompt: Suggest a healthy snack"),
+      screen.getByLabelText("Suggested prompt: What should I eat today?"),
     );
 
     expect(mockSendMessage).toHaveBeenCalledOnce();
@@ -835,6 +845,72 @@ describe("ChatScreen — Return key", () => {
   });
 });
 
+describe("ChatScreen — teaching and Pro prompts", () => {
+  it("shows four prompts with one Pro badge", () => {
+    renderComponent(<ChatScreen />);
+    expect(screen.getAllByLabelText(/^Suggested prompt:/)).toHaveLength(4);
+    expect(screen.getAllByText("Pro")).toHaveLength(1);
+  });
+
+  it("answers the teaching prompt without sending a message", () => {
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText(
+        "Suggested prompt: What's the fastest way to log a meal?",
+      ),
+    );
+    expect(screen.getByText(/nutrition label/)).toBeDefined();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  // The answer appears without a chat message, so screen readers must be
+  // told; a chip that used to send a message got the chat's announcement.
+  it("announces the teaching answer to screen readers", async () => {
+    const RN = await import("react-native");
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText(
+        "Suggested prompt: What's the fastest way to log a meal?",
+      ),
+    );
+    expect(announce).toHaveBeenCalledWith(
+      expect.stringContaining("nutrition label"),
+    );
+    announce.mockRestore();
+  });
+
+  it("opens the camera from the teaching answer", () => {
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText(
+        "Suggested prompt: What's the fastest way to log a meal?",
+      ),
+    );
+    fireEvent.click(screen.getByLabelText("Open camera"));
+    expect(mockNavigate).toHaveBeenCalledWith("Scan");
+  });
+
+  it("opens the upgrade from the Pro answer without sending a message", () => {
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText("Suggested prompt: How did my week go? (Pro)"),
+    );
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
+    fireEvent.click(screen.getByLabelText("See Coach Pro"));
+    expect(screen.getByTestId("upgrade-modal")).toBeDefined();
+  });
+
+  it("still sends an ordinary prompt to the coach", () => {
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText("Suggested prompt: How can I hit my protein goal?"),
+    );
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+  });
+});
+
 // A failed messages load for an existing conversation used to render the
 // blank new-chat screen (audit 2026-10-29 M-crel-4).
 describe("ChatScreen — messages load failure", () => {
@@ -852,5 +928,24 @@ describe("ChatScreen — messages load failure", () => {
 
     fireEvent.click(screen.getByText("Try Again"));
     expect(mockRefetchMessages).toHaveBeenCalled();
+  });
+});
+
+// Offline cold start: the messages query is paused (not loading, not errored,
+// no data) and used to render the blank new-chat screen (audit M-crel-5).
+describe("ChatScreen — messages query paused offline", () => {
+  it("shows an offline state instead of a blank new chat", () => {
+    mockRouteParams.value = { conversationId: 7 };
+    mockUseChatMessages.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "paused",
+      refetch: vi.fn(),
+    });
+
+    renderComponent(<ChatScreen />);
+
+    expect(screen.getByText("You're offline")).toBeDefined();
   });
 });

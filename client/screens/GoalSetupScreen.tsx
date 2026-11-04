@@ -2,8 +2,8 @@ import React, { useRef, useState } from "react";
 import {
   StyleSheet,
   View,
-  ScrollView,
-  type TextInput as RNTextInput,
+  type ScrollViewInstance,
+  type TextInputInstance,
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,11 +21,16 @@ import { InlineError } from "@/components/InlineError";
 import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
+import {
+  useFieldValidation,
+  type FieldValidation,
+} from "@/hooks/useFieldValidation";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
 import { parseDecimalInput } from "@/lib/number-input";
@@ -187,7 +192,7 @@ function NumberInput({
   unit,
   placeholder,
 }: {
-  inputRef: React.RefObject<RNTextInput | null>;
+  inputRef: React.RefObject<TextInputInstance | null>;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -237,12 +242,14 @@ export default function GoalSetupScreen() {
   const queryClient = useQueryClient();
   const { updateUser } = useAuthContext();
   const canSetMacros = usePremiumFeature("macroGoals");
+  // While the plan is unknown the fields stay read-only (a free user's typed
+  // macros would not save) but say nothing about Premium: the user may be
+  // paying (owner ruling 2026-11-03).
+  const { planUnknown } = usePlanCheck();
+  const macrosUpsell = !planUnknown && !canSetMacros;
   const unit = useMeasurementUnit();
 
   // Form state - these will be entered by the user
-  const [age, setAge] = useState("");
-  const [weight, setWeight] = useState("");
-  const [height, setHeight] = useState("");
   const [gender, setGender] = useState<Gender | null>(null);
   const [activityLevel, setActivityLevel] = useState<ActivityLevel | null>(
     null,
@@ -253,100 +260,81 @@ export default function GoalSetupScreen() {
   const [calculatedGoals, setCalculatedGoals] =
     useState<CalculatedGoals | null>(null);
 
-  // Manual adjustment state
-  const [manualCalories, setManualCalories] = useState("");
-  const [manualProtein, setManualProtein] = useState("");
-  const [manualCarbs, setManualCarbs] = useState("");
-  const [manualFat, setManualFat] = useState("");
+  // A number message first shows on leaving a field or on Calculate/Save,
+  // never while first typing, then is re-checked on every keystroke (spec
+  // §5.1, via useFieldValidation). Before Calculate an empty field gets no
+  // message — the "Still needed" line names it and Calculate focuses it. Once
+  // the targets are showing (Save), an empty field is named too ("Enter
+  // calories"), since that line only sits under Calculate.
+  const fieldCheck = (field: GoalField, value: string) =>
+    (calculatedGoals ? goalSubmitError : goalFieldError)(field, value, unit);
+  const ageField = useFieldValidation((v) => fieldCheck("age", v));
+  const weightField = useFieldValidation((v) => fieldCheck("weight", v));
+  const heightField = useFieldValidation((v) => fieldCheck("height", v));
+  const caloriesField = useFieldValidation((v) => fieldCheck("calories", v));
+  const proteinField = useFieldValidation((v) => fieldCheck("protein", v));
+  const carbsField = useFieldValidation((v) => fieldCheck("carbs", v));
+  const fatField = useFieldValidation((v) => fieldCheck("fat", v));
+  // Destructured, never read as `field.ref` in render: React Compiler treats
+  // an object read through `.ref` as a ref and skips the whole screen.
+  const { ref: ageRef } = ageField;
+  const { ref: weightRef } = weightField;
+  const { ref: heightRef } = heightField;
+  const { ref: caloriesRef } = caloriesField;
+  const { ref: proteinRef } = proteinField;
+  const { ref: carbsRef } = carbsField;
+  const { ref: fatRef } = fatField;
+  const age = ageField.value;
+  const weight = weightField.value;
+  const height = heightField.value;
+  const manualCalories = caloriesField.value;
+  const manualProtein = proteinField.value;
+  const manualCarbs = carbsField.value;
+  const manualFat = fatField.value;
 
-  const scrollViewRef = useRef<ScrollView>(null);
-  // Calculate/Save move focus to the first field they flag (form-fields
-  // spec §5.1). Separate refs, not one object read in render: React Compiler
-  // treats an object holding refs as a ref and would skip this screen.
-  const ageRef = useRef<RNTextInput>(null);
-  const weightRef = useRef<RNTextInput>(null);
-  const heightRef = useRef<RNTextInput>(null);
-  const caloriesRef = useRef<RNTextInput>(null);
-  const proteinRef = useRef<RNTextInput>(null);
-  const carbsRef = useRef<RNTextInput>(null);
-  const fatRef = useRef<RNTextInput>(null);
+  const scrollViewRef = useRef<ScrollViewInstance>(null);
+  /** Event handlers only — the form's fields by name. */
+  const fieldsByName = (): Record<GoalField, FieldValidation> => ({
+    age: ageField,
+    weight: weightField,
+    height: heightField,
+    calories: caloriesField,
+    protein: proteinField,
+    carbs: carbsField,
+    fat: fatField,
+  });
   /** Event handlers only — focuses the field's input. */
   const focusField = (field: GoalField) => {
-    const refs = {
-      age: ageRef,
-      weight: weightRef,
-      height: heightRef,
-      calories: caloriesRef,
-      protein: proteinRef,
-      carbs: carbsRef,
-      fat: fatRef,
-    };
-    refs[field].current?.focus();
-  };
-
-  // A number message first shows on leaving a field or on Calculate/Save,
-  // never while first typing. Once shown, the field is re-checked on every
-  // keystroke: the message updates while the value is still invalid and
-  // clears the moment it is valid (spec §5.1). An empty field gets no
-  // message on leaving it or on Calculate — the "Still needed" line names it
-  // and Calculate focuses it — but Save names it ("Enter calories"), since
-  // that line only sits under Calculate.
-  const [fieldErrors, setFieldErrors] = useState<
-    Partial<Record<GoalField, string>>
-  >({});
-  const fieldValues: Record<GoalField, string> = {
-    age,
-    weight,
-    height,
-    calories: manualCalories,
-    protein: manualProtein,
-    carbs: manualCarbs,
-    fat: manualFat,
+    fieldsByName()[field].ref.current?.focus();
   };
 
   /**
-   * Show (or clear) these fields' messages; one error buzz when any refuses.
-   * Returns the refusing fields, in the order given.
+   * Leaving a field: the hook shows its message (only with text in it); one
+   * error buzz when it refuses. A keystroke never buzzes.
    */
-  const checkFields = (
-    fields: GoalField[],
-    check: typeof goalFieldError = goalFieldError,
-  ): GoalField[] => {
-    const found: Partial<Record<GoalField, string>> = {};
-    for (const field of fields) {
-      const message = check(field, fieldValues[field], unit);
-      if (message) found[field] = message;
+  const blurField = (field: GoalField) => () => {
+    const f = fieldsByName()[field];
+    f.onBlur();
+    if (f.value.trim() !== "" && fieldCheck(field, f.value)) {
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
     }
-    const refused = fields.filter((field) => found[field]);
-    const ok = refused.length === 0;
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      for (const field of fields) delete next[field];
-      return { ...next, ...found };
-    });
-    if (!ok) haptics.notification(Haptics.NotificationFeedbackType.Error);
+  };
+
+  /**
+   * Calculate/Save: show every listed field's message; one error buzz when
+   * any refuses. Returns the refusing fields, in the order given.
+   */
+  const submitFields = (fields: GoalField[]): GoalField[] => {
+    const byName = fieldsByName();
+    for (const field of fields) byName[field].markSubmitted();
+    const refused = fields.filter((field) =>
+      fieldCheck(field, byName[field].value),
+    );
+    if (refused.length > 0) {
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+    }
     return refused;
   };
-
-  /**
-   * While a field shows a message, re-check it on every keystroke: keep (and
-   * update) the message while the value is invalid, clear it once valid. A
-   * keystroke never buzzes — only blur, Calculate and Save do.
-   */
-  const changeField =
-    (field: GoalField, setValue: (value: string) => void) =>
-    (value: string) => {
-      setValue(value);
-      if (fieldErrors[field]) {
-        const message = goalFieldError(field, value, unit);
-        setFieldErrors((prev) => {
-          const next = { ...prev };
-          if (message) next[field] = message;
-          else delete next[field];
-          return next;
-        });
-      }
-    };
 
   /** A value the field check accepted, as the number it reads as. */
   const numberOf = (text: string) => parseDecimalInput(text) ?? NaN;
@@ -377,10 +365,10 @@ export default function GoalSetupScreen() {
     },
     onSuccess: (data) => {
       setCalculatedGoals(data);
-      setManualCalories(data.dailyCalories.toString());
-      setManualProtein(data.dailyProtein.toString());
-      setManualCarbs(data.dailyCarbs.toString());
-      setManualFat(data.dailyFat.toString());
+      caloriesField.setValue(data.dailyCalories.toString());
+      proteinField.setValue(data.dailyProtein.toString());
+      carbsField.setValue(data.dailyCarbs.toString());
+      fatField.setValue(data.dailyFat.toString());
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       // The results render below the fold of a long form — bring them into
       // view (deferred one frame so they have laid out). QA #70.
@@ -442,13 +430,13 @@ export default function GoalSetupScreen() {
   // "Still needed" line keeps naming everything missing.
   const handleCalculate = () => {
     const numberFields: GoalField[] = ["age", "weight", "height"];
-    const refused = checkFields(numberFields);
+    const refused = submitFields(numberFields);
     const target = numberFields.find(
-      (field) => refused.includes(field) || !fieldValues[field],
+      (field) => refused.includes(field) || !fieldsByName()[field].value,
     );
     if (target) focusField(target);
     if (!isFormComplete) {
-      // checkFields already buzzed when a value was refused.
+      // submitFields already buzzed when a value was refused.
       if (refused.length === 0) {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
       }
@@ -474,7 +462,7 @@ export default function GoalSetupScreen() {
       "fat",
     ];
     // Empty fields are named too: the "Still needed" line is gone by now.
-    const [firstRefused] = checkFields(allFields, goalSubmitError);
+    const [firstRefused] = submitFields(allFields);
     if (firstRefused) {
       focusField(firstRefused);
       return;
@@ -534,9 +522,9 @@ export default function GoalSetupScreen() {
                 inputRef={ageRef}
                 label="Age"
                 value={age}
-                onChange={changeField("age", setAge)}
-                onBlur={() => checkFields(["age"])}
-                error={fieldErrors.age ?? null}
+                onChange={ageField.onChangeText}
+                onBlur={blurField("age")}
+                error={ageField.error}
                 unit="years"
                 placeholder="e.g. 25"
               />
@@ -544,9 +532,9 @@ export default function GoalSetupScreen() {
                 inputRef={weightRef}
                 label="Weight"
                 value={weight}
-                onChange={changeField("weight", setWeight)}
-                onBlur={() => checkFields(["weight"])}
-                error={fieldErrors.weight ?? null}
+                onChange={weightField.onChangeText}
+                onBlur={blurField("weight")}
+                error={weightField.error}
                 unit={weightUnitLabel(unit)}
                 placeholder={unit === "imperial" ? "e.g. 154" : "e.g. 70"}
               />
@@ -554,9 +542,9 @@ export default function GoalSetupScreen() {
                 inputRef={heightRef}
                 label="Height"
                 value={height}
-                onChange={changeField("height", setHeight)}
-                onBlur={() => checkFields(["height"])}
-                error={fieldErrors.height ?? null}
+                onChange={heightField.onChangeText}
+                onBlur={blurField("height")}
+                error={heightField.error}
                 unit={heightUnitLabel(unit)}
                 placeholder={unit === "imperial" ? "e.g. 67" : "e.g. 170"}
               />
@@ -721,8 +709,8 @@ export default function GoalSetupScreen() {
                       },
                     ]}
                     value={manualCalories}
-                    onChangeText={changeField("calories", setManualCalories)}
-                    onBlur={() => checkFields(["calories"])}
+                    onChangeText={caloriesField.onChangeText}
+                    onBlur={blurField("calories")}
                     keyboardType="numeric"
                     accessibilityLabel="Daily calorie target"
                   />
@@ -748,12 +736,12 @@ export default function GoalSetupScreen() {
                         },
                       ]}
                       value={manualProtein}
-                      onChangeText={changeField("protein", setManualProtein)}
-                      onBlur={() => checkFields(["protein"])}
+                      onChangeText={proteinField.onChangeText}
+                      onBlur={blurField("protein")}
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
-                        canSetMacros
+                        !macrosUpsell
                           ? "Daily protein target"
                           : "Daily protein target (Premium required)"
                       }
@@ -781,12 +769,12 @@ export default function GoalSetupScreen() {
                         },
                       ]}
                       value={manualCarbs}
-                      onChangeText={changeField("carbs", setManualCarbs)}
-                      onBlur={() => checkFields(["carbs"])}
+                      onChangeText={carbsField.onChangeText}
+                      onBlur={blurField("carbs")}
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
-                        canSetMacros
+                        !macrosUpsell
                           ? "Daily carbs target"
                           : "Daily carbs target (Premium required)"
                       }
@@ -814,12 +802,12 @@ export default function GoalSetupScreen() {
                         },
                       ]}
                       value={manualFat}
-                      onChangeText={changeField("fat", setManualFat)}
-                      onBlur={() => checkFields(["fat"])}
+                      onChangeText={fatField.onChangeText}
+                      onBlur={blurField("fat")}
                       keyboardType="numeric"
                       editable={canSetMacros}
                       accessibilityLabel={
-                        canSetMacros
+                        !macrosUpsell
                           ? "Daily fat target"
                           : "Daily fat target (Premium required)"
                       }
@@ -834,17 +822,20 @@ export default function GoalSetupScreen() {
                 </View>
               </View>
 
-              {(["calories", "protein", "carbs", "fat"] as const).map(
-                (field) => (
-                  <InlineError
-                    key={field}
-                    message={fieldErrors[field] ?? null}
-                    style={styles.goalError}
-                  />
-                ),
-              )}
+              {[
+                caloriesField.error,
+                proteinField.error,
+                carbsField.error,
+                fatField.error,
+              ].map((message, i) => (
+                <InlineError
+                  key={i}
+                  message={message}
+                  style={styles.goalError}
+                />
+              ))}
 
-              {!canSetMacros && (
+              {macrosUpsell && (
                 <View style={styles.premiumNote}>
                   <Feather
                     name="lock"

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import {
   lookupBarcode,
+  UpstreamUnavailableError,
   scaleNutrients,
   extractOffUniversalData,
   offMacrosCorroborateEnergy,
@@ -1795,5 +1796,101 @@ describe("lookupBarcode — OFF per-100g plausibility bounds (R34)", () => {
     const result = await lookupBarcode("5000000000024");
     expect(result!.per100g.calories).toBe(450);
     expect(insertSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("lookupBarcode — upstream outage vs genuine miss (M-rel-5)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  const offMiss = () =>
+    Promise.resolve({ ok: true, json: async () => ({ status: 0 }) });
+  const rateLimited = () =>
+    Promise.resolve({ ok: false, json: async () => ({}) });
+
+  it("throws UpstreamUnavailableError when OFF and USDA both error (429 / 500)", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": rateLimited,
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: false, json: async () => ({}) }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    await expect(lookupBarcode("0000000000001")).rejects.toBeInstanceOf(
+      UpstreamUnavailableError,
+    );
+  });
+
+  it("throws UpstreamUnavailableError when both sources throw (network / timeout)", async () => {
+    mockFetch.mockRejectedValue(new Error("network down"));
+
+    await expect(lookupBarcode("0000000000002")).rejects.toBeInstanceOf(
+      UpstreamUnavailableError,
+    );
+  });
+
+  it("returns null (a genuine miss) when OFF says status 0 and USDA has no match", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": offMiss,
+      "fdc/v1/foods/search": emptyUSDASearch,
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    expect(await lookupBarcode("0000000000003")).toBeNull();
+  });
+
+  it("treats OFF's HTTP 404 with a status-0 body as a definitive miss, not an outage", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: false, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": emptyUSDASearch,
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    expect(await lookupBarcode("0000000000004")).toBeNull();
+  });
+
+  it("returns null when one OFF variant misses definitively and a later one throws", async () => {
+    let offCalls = 0;
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("openfoodfacts.org")) {
+        offCalls += 1;
+        if (offCalls === 1) return offMiss();
+        return Promise.reject(new Error("timeout"));
+      }
+      // USDA errors too: OFF's one definitive miss alone keeps this a miss.
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    });
+
+    expect(await lookupBarcode("12345")).toBeNull();
+    expect(offCalls).toBeGreaterThan(1);
+  });
+
+  it("stays a miss when OFF errored but USDA gave a definitive no-match (mixed case, per AC: every source must error)", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": rateLimited,
+      "fdc/v1/foods/search": emptyUSDASearch,
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    expect(await lookupBarcode("0000000000005")).toBeNull();
+  });
+
+  it("stays a miss when OFF said status 0 and USDA errored", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": offMiss,
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: false, json: async () => ({}) }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    expect(await lookupBarcode("0000000000006")).toBeNull();
   });
 });

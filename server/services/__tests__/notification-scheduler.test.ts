@@ -5,6 +5,7 @@ import {
   sendMealLogReminders,
   startNotificationScheduler,
   stopNotificationScheduler,
+  schedulerRunSlot,
 } from "../notification-scheduler";
 import { storage } from "../../storage";
 import {
@@ -25,6 +26,7 @@ vi.mock("../../storage", () => ({
     getUserProfile: vi.fn(),
     getDailyLogs: vi.fn(),
     getDailySummary: vi.fn(),
+    claimSchedulerRun: vi.fn(),
   },
 }));
 
@@ -57,6 +59,8 @@ beforeEach(() => {
   // Default notify to pushDelivered: true. Tests that check "not delivered"
   // override this per-test.
   vi.mocked(notify).mockResolvedValue({ pushDelivered: true });
+  // Default: this instance wins the run claim (single-instance behavior).
+  vi.mocked(storage.claimSchedulerRun).mockResolvedValue(true);
   stopNotificationScheduler();
 });
 
@@ -668,5 +672,72 @@ describe("local-hour delivery (R31)", () => {
     expect(hourly![2]).toEqual(
       expect.objectContaining({ timezone: "UTC", noOverlap: true }),
     );
+  });
+});
+
+describe("multi-instance run claim", () => {
+  function handlerFor(expr: string) {
+    startNotificationScheduler();
+    const call = vi.mocked(cron.schedule).mock.calls.find((c) => c[0] === expr);
+    expect(call).toBeDefined();
+    return call![1] as unknown as () => Promise<unknown>;
+  }
+
+  it("rounds to the nearest UTC hour so clock skew cannot split a slot", () => {
+    expect(schedulerRunSlot(new Date("2026-11-01T08:59:59.900Z"))).toBe(
+      "2026-11-01T09",
+    );
+    expect(schedulerRunSlot(new Date("2026-11-01T09:00:00.100Z"))).toBe(
+      "2026-11-01T09",
+    );
+    expect(schedulerRunSlot(new Date("2026-11-01T23:59:59.900Z"))).toBe(
+      "2026-11-02T00",
+    );
+  });
+
+  it("commitment job sends when it wins the claim, under its own job name", async () => {
+    vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([]);
+    await handlerFor("0 9 * * *")();
+
+    expect(storage.claimSchedulerRun).toHaveBeenCalledWith(
+      "commitment-reminders",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}$/),
+    );
+    expect(storage.getDueCommitmentsAllUsers).toHaveBeenCalled();
+  });
+
+  it("commitment job does nothing when another instance holds the claim", async () => {
+    vi.mocked(storage.claimSchedulerRun).mockResolvedValue(false);
+    await handlerFor("0 9 * * *")();
+
+    expect(storage.getDueCommitmentsAllUsers).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("local-hour job does nothing when another instance holds the claim", async () => {
+    vi.mocked(storage.claimSchedulerRun).mockResolvedValue(false);
+    await handlerFor("0 * * * *")();
+
+    expect(storage.claimSchedulerRun).toHaveBeenCalledWith(
+      "local-hour-reminders",
+      expect.any(String),
+    );
+    expect(storage.getUserIdPage).not.toHaveBeenCalled();
+  });
+
+  it("local-hour job runs when it wins the claim", async () => {
+    vi.mocked(storage.getUserIdPage).mockResolvedValue([]);
+    await handlerFor("0 * * * *")();
+
+    expect(storage.getUserIdPage).toHaveBeenCalled();
+  });
+
+  it("skips the run (fails closed) when the claim itself errors", async () => {
+    vi.mocked(storage.claimSchedulerRun).mockRejectedValue(
+      new Error("db down"),
+    );
+    await expect(handlerFor("0 9 * * *")()).resolves.toBeUndefined();
+
+    expect(storage.getDueCommitmentsAllUsers).not.toHaveBeenCalled();
   });
 });

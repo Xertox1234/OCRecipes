@@ -45,7 +45,7 @@ Signature verification proves a receipt is authentic. It does not prove the rece
 ## Related Files
 
 - `server/storage/users.ts`: `isRevokedForReceipt`, `applyRenewalInTx`, `claimTransactionAndUpgrade`, `extendSubscriptionByTransactionId`, `revokeSubscriptionByTransactionId`, `expireSubscriptionByTransactionId`, `reinstateSubscriptionByTransactionId`.
-- `shared/schema.ts` + `migrations/0032_transactions_revoked_at.sql`: `transactions.revoked_at`.
+- `shared/schema.ts` + `migrations/0037_transactions_revoked_at.sql`: `transactions.revoked_at`.
 - `server/services/store-notifications.ts`: refund vs expiry routing, `REFUND_REVERSED`.
 - `server/routes/subscription.ts`: the `revoked` decline.
 - `server/services/receipt-validation.ts`: `purchasedAt` from the JWS.

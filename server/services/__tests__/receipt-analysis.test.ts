@@ -244,6 +244,39 @@ describe("Receipt Analysis Service", () => {
   });
 
   describe("analyzeReceiptPhotos", () => {
+    // Gemini (the Vertex backup) writes null for a field it has no value for,
+    // where GPT leaves the key out (PR 4 live gate, 3/3 receipts rejected).
+    it("accepts null for the optional fields and returns them as absent", async () => {
+      const response = {
+        items: [
+          {
+            name: "Tuna Steaks",
+            originalName: "TUNA STEAKS",
+            quantity: 1,
+            unit: null,
+            category: "seafood",
+            isFood: true,
+            estimatedShelfLifeDays: 2,
+            confidence: 0.9,
+          },
+        ],
+        storeName: null,
+        purchaseDate: null,
+        totalAmount: null,
+        isPartialExtraction: false,
+        overallConfidence: 0.9,
+      };
+      mockOpenAIResponse(JSON.stringify(response));
+
+      const result = await analyzeReceiptPhotos(["base64imagedata"]);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].unit).toBeUndefined();
+      expect(result.storeName).toBeUndefined();
+      expect(result.purchaseDate).toBeUndefined();
+      expect(result.totalAmount).toBeUndefined();
+    });
+
     it("analyzes a single receipt photo and returns food items", async () => {
       const response = {
         items: [
