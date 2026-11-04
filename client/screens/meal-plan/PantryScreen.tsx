@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -239,33 +239,18 @@ export default function PantryScreen() {
   // Voice input REPLACES the single-value field with the dictated words.
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  // false once the item is added, so a late final result cannot refill the
-  // field with the item just added.
-  const voiceActiveRef = useRef(false);
-  useEffect(() => {
-    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
-      setNewItemName(transcript);
-    }
-  }, [isListening, isFinal, transcript]);
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({ onTranscript: setNewItemName });
   useEffect(() => {
     if (speechError) toast.error(speechError);
   }, [speechError, toast]);
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceActiveRef.current = true;
-      void startListening();
-    }
-  }, [haptics, isListening, startListening, stopListening]);
+    toggleVoice();
+  }, [haptics, toggleVoice]);
 
   const {
     data: pantryItems,
@@ -281,8 +266,7 @@ export default function PantryScreen() {
     const name = newItemName.trim();
     if (!name) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    voiceActiveRef.current = false;
-    if (isListening) stopListening();
+    releaseVoice();
     createMutation.mutate(
       { name },
       {
@@ -296,7 +280,7 @@ export default function PantryScreen() {
         },
       },
     );
-  }, [haptics, toast, createMutation, newItemName, isListening, stopListening]);
+  }, [haptics, toast, createMutation, newItemName, releaseVoice]);
 
   const handleDeleteItem = useCallback(
     (id: number) => {

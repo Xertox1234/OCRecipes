@@ -14,7 +14,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import { FocusBottomSheetTextInput } from "@/components/FocusBottomSheetTextInput";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -85,47 +85,24 @@ export function BeveragePickerSheet({
 
   // Voice input REPLACES the custom drink field with the dictated words. Its
   // errors use the sheet's own error surface below.
+  // Leaving the custom step (Next, Back, close/reset) ends any capture.
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  // True only while THIS sheet started the session (the shared recognizer is
-  // visible to every mounted instance of the hook).
-  const voiceActiveRef = useRef(false);
-  useEffect(() => {
-    if (
-      step === "custom" &&
-      voiceActiveRef.current &&
-      transcript &&
-      (isListening || isFinal)
-    ) {
-      setCustomInput(transcript.slice(0, MAX_CUSTOM_NAME_LENGTH));
-    }
-  }, [step, isListening, isFinal, transcript]);
+    toggle: toggleVoice,
+  } = useVoiceField({
+    onTranscript: (text) =>
+      setCustomInput(text.slice(0, MAX_CUSTOM_NAME_LENGTH)),
+    enabled: step === "custom",
+  });
   useEffect(() => {
     if (speechError) setError(speechError);
   }, [speechError]);
-  // Leaving the custom step (Next, Back, close/reset) ends any capture.
-  useEffect(() => {
-    if (step !== "custom") {
-      if (voiceActiveRef.current && isListening) stopListening();
-      voiceActiveRef.current = false;
-    }
-  }, [step, isListening, stopListening]);
   const handleVoicePress = useCallback(() => {
     haptics.impact(ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceActiveRef.current = true;
-      void startListening();
-    }
-  }, [haptics, isListening, startListening, stopListening]);
+    toggleVoice();
+  }, [haptics, toggleVoice]);
 
   // iOS only — Android gets the announcement via accessibilityLiveRegion="assertive" on the error View
   useEffect(() => {

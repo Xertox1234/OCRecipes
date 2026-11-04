@@ -547,7 +547,10 @@ export default function HomeScreen() {
               onUsed={() => recordAction(action.id)}
             />
           ) : action.id === "generate-recipe" ? (
-            <GenerateRecipeDrawer onUsed={() => recordAction(action.id)} />
+            <GenerateRecipeDrawer
+              isOpen={isOpen}
+              onUsed={() => recordAction(action.id)}
+            />
           ) : (
             <ThemedText type="small">Coming soon</ThemedText>
           )}

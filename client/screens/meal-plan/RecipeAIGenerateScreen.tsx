@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -16,7 +16,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle, NotificationFeedbackType } from "expo-haptics";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -99,28 +99,16 @@ export default function RecipeAIGenerateScreen() {
   // field's length).
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  // false once submitted/closed, so a late final result cannot refill.
-  const voiceActiveRef = useRef(false);
-  useEffect(() => {
-    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
-      setPrompt(transcript.slice(0, PROMPT_MAX_LENGTH));
-    }
-  }, [isListening, isFinal, transcript, setPrompt]);
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({
+    onTranscript: (text) => setPrompt(text.slice(0, PROMPT_MAX_LENGTH)),
+  });
   const handleVoicePress = () => {
     haptics.impact(ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceActiveRef.current = true;
-      void startListening();
-    }
+    toggleVoice();
   };
 
   const handleChipPress = (chip: string) => {
@@ -142,8 +130,7 @@ export default function RecipeAIGenerateScreen() {
     });
 
     haptics.selection();
-    voiceActiveRef.current = false;
-    if (isListening) stopListening();
+    releaseVoice();
     start(trimmed, returnToMealPlan);
     navigation.goBack();
   };

@@ -10,7 +10,7 @@ import {
 import * as Haptics from "expo-haptics";
 import { FocusTextInput } from "@/components/FocusTextInput";
 import { InlineMicButton } from "@/components/InlineMicButton";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useVoiceField } from "@/hooks/useVoiceField";
 import { FocusField } from "@/components/FocusField";
 import { useFieldFocus } from "@/components/useFieldFocus";
 import { LABELLED_INPUT_TEXT } from "@/components/field-focus-utils";
@@ -199,42 +199,27 @@ export default function RecipeBrowserScreen() {
   // same debounced search as typing.
   const {
     isListening,
-    transcript,
-    isFinal,
     volume,
     error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-  // false once submitted/closed, so a late final result cannot refill.
-  const voiceActiveRef = React.useRef(false);
-  useEffect(() => {
-    if (voiceActiveRef.current && transcript && (isListening || isFinal)) {
-      handleSearchChange(transcript);
-    }
-  }, [isListening, isFinal, transcript, handleSearchChange]);
+    toggle: toggleVoice,
+    release: releaseVoice,
+  } = useVoiceField({ onTranscript: handleSearchChange });
   useEffect(() => {
     if (speechError) toast.error(speechError);
   }, [speechError, toast]);
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isListening) {
-      stopListening();
-    } else {
-      voiceActiveRef.current = true;
-      void startListening();
-    }
-  }, [haptics, isListening, startListening, stopListening]);
+    toggleVoice();
+  }, [haptics, toggleVoice]);
 
   // Flush the debounce immediately when the user presses the keyboard's
   // "Search" key. Without this, returnKeyType="search" is a no-op and the
   // query only commits 300ms after the last keystroke.
   const handleSubmitSearch = useCallback(() => {
-    voiceActiveRef.current = false;
-    if (isListening) stopListening();
+    releaseVoice();
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     setDebouncedQuery(searchText.trim());
-  }, [searchText, isListening, stopListening]);
+  }, [searchText, releaseVoice]);
 
   // Cleanup debounce timer on unmount
   React.useEffect(() => {
@@ -539,11 +524,11 @@ export default function RecipeBrowserScreen() {
 
   const handleClearFilters = useCallback(() => {
     haptics.selection();
-    voiceActiveRef.current = false;
+    releaseVoice();
     setSearchText("");
     setDebouncedQuery("");
     setFilters(DEFAULT_FILTERS);
-  }, [haptics]);
+  }, [haptics, releaseVoice]);
 
   const renderItem = useCallback(
     ({ item }: { item: SearchableRecipe | Suggestion }) => {
@@ -647,7 +632,7 @@ export default function RecipeBrowserScreen() {
           {searchText.length > 0 && (
             <Pressable
               onPress={() => {
-                voiceActiveRef.current = false;
+                releaseVoice();
                 setSearchText("");
                 setDebouncedQuery("");
               }}
