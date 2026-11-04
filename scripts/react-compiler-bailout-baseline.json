@@ -4,7 +4,6 @@
   "client/camera/components/ProductChip.tsx",
   "client/camera/components/ScanReticle.tsx",
   "client/camera/components/ScanSonarRing.tsx",
-  "client/camera/hooks/useCameraFocusAndZoom.ts",
   "client/components/BeveragePickerSheet.tsx",
   "client/components/CoachOverlayContent.tsx",
   "client/components/MealSuggestionsModal.tsx",
