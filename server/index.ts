@@ -338,8 +338,9 @@ function startServer() {
   // registers routes does not start the search index or the cron jobs.
   // Search index: non-blocking — the server starts even if the index fails.
   initSearchIndex().catch((err) => {
-    logger.error({ err: toError(err) }, "Failed to initialize search index");
-    reportError(err, "search index init");
+    const error = toError(err);
+    logger.error({ err: error }, "Failed to initialize search index");
+    reportError(error, "search index init");
   });
 
   // Push notification scheduler (daily 09:00 commitment reminders and the

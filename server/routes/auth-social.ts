@@ -258,8 +258,9 @@ export async function revokeAppleIdentities(
       if (!cfg) throw new Error("Apple not configured; cannot revoke");
       await revokeAppleToken(decryptToken(i.appleRefreshTokenEnc), cfg);
     } catch (err) {
-      logger.error({ err: toError(err) }, "apple token revoke failed");
-      reportError(err, "apple-token-revoke");
+      const error = toError(err);
+      logger.error({ err: error }, "apple token revoke failed");
+      reportError(error, "apple-token-revoke");
     }
   }
 }
@@ -304,8 +305,9 @@ function sweepAbandonedTickets(): void {
       ),
     )
     .catch((err: unknown) => {
-      logger.error({ err: toError(err) }, "sign-in ticket sweep failed");
-      reportError(err, "sign-in-ticket-sweep");
+      const error = toError(err);
+      logger.error({ err: error }, "sign-in ticket sweep failed");
+      reportError(error, "sign-in-ticket-sweep");
     });
 }
 
