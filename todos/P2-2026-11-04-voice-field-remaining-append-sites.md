@@ -13,11 +13,11 @@ github_issue:
 
 ## Summary
 
-Five screens keep their own "this field owns the mic" ref under another name (`voiceBaseRef` / `voiceTargetRef`). It is set when the user taps the mic and cleared only on submit or send, never when the session ends on its own (silence timeout, error). So after a session times out, a later transcript from the shared recognizer can still be written into the old field — the same bug #1735 fixed for the `voiceActiveRef` sites.
+Five screens keep their own "this field owns the mic" ref under another name (`voiceBaseRef` / `voiceTargetRef`). It is set when the user taps the mic and never cleared when the session ends on its own (silence timeout, error): the chat and notebook screens clear it only on submit or send, and the two wizard steps never clear it at all. So after a session times out, a later transcript from the shared recognizer can still be written into the old field — the same bug #1735 fixed for the `voiceActiveRef` sites.
 
 ## Background
 
-#1735 (merged 2026-11-04, 817221669) added `client/hooks/useVoiceField.ts` and moved the nine `voiceActiveRef` sites onto it. Its todo listed these five as "check first, they use other names"; they were out of its file scope. Checked on main at 817221669: all five set the ref on mic start and clear it only on submit (e.g. `ChatScreen.tsx` ~424–460 and ~609; `NotebookEntryScreen.tsx` ~125–151 and ~198), and the write effect still fires on `transcript && (isListening || isFinal)`.
+#1735 (merged 2026-11-04, 817221669) added `client/hooks/useVoiceField.ts` and moved the nine `voiceActiveRef` sites onto it. Its todo listed these five as "check first, they use other names"; they were out of its file scope. Checked on main at 817221669: all five set the ref on mic start. `ChatScreen` (~609), `RecipeChatScreen` (~537) and `NotebookEntryScreen` (~198) clear it only on submit/send; `IngredientsStep` (~169) and `InstructionsStep` (~266) only ever assign it and never reset it. In all five the write effect still fires on `transcript && (isListening || isFinal)`.
 
 ## Acceptance Criteria
 
@@ -30,7 +30,7 @@ Five screens keep their own "this field owns the mic" ref under another name (`v
 ## Implementation Notes
 
 - Files: `client/screens/ChatScreen.tsx`, `client/screens/RecipeChatScreen.tsx`, `client/screens/NotebookEntryScreen.tsx`, `client/components/recipe-wizard/IngredientsStep.tsx`, `client/components/recipe-wizard/InstructionsStep.tsx`, and their tests.
-- `useVoiceField({ onTranscript, enabled })` returns `{ isListening, volume, error, toggle, release }`. Capture the base text in the mic handler before calling `toggle()`, and call `release()` on submit/send.
+- `useVoiceField({ onTranscript, enabled })` returns `{ isListening, volume, error, toggle, release }`. Capture the base text in the mic handler before calling `toggle()`. Chat and notebook: call `release()` on submit/send. Wizard steps have no submit: rely on the hook clearing ownership when the session ends, pass `enabled: false` when the step is hidden, and call `release()` when the target row is removed.
 - The hook may need a small extension only if a site cannot be expressed with `onTranscript` + caller-held base; prefer keeping the hook unchanged.
 
 ## Scope Contract
