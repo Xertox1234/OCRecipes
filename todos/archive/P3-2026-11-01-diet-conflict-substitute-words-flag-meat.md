@@ -36,7 +36,7 @@ no users yet) and outside N7's scope.
 
 - [x] Each "Expected" row above holds, with a test row for each
 - [x] "meat free-range", "beef broth", "chicken" still flag (no new under-warning)
-- [ ] Run the base-vs-head and keyword-present-but-unflagged comparison (N7 tool, once it lands) and
+- [x] Run the base-vs-head and keyword-present-but-unflagged comparison (N7 tool, once it lands) and
       list every changed verdict in the PR
 
 ## Implementation Notes
@@ -52,3 +52,6 @@ no users yet) and outside N7's scope.
   "alternative(s)" and hyphenated "-less" skips. "imitation" counts as a qualifier
   before the keyword. "free from" now flags like "free-range", so "chicken free from
   antibiotics" is poultry.
+- Review fix: a spaced "free" counts only at the end of the phrase, so "chicken free
+  of antibiotics", "chicken free-roaming" and "beef free to roam" still flag. The
+  hyphenated "-free" compound still refuses range/roam/run/from/of/living/to.

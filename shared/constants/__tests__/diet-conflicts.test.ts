@@ -49,6 +49,15 @@ describe("deriveRecipeDietConflicts", () => {
     ["chicken free from antibiotics", "poultry"],
     ["meat free from additives", "meat"],
     ["chicken less salt", "poultry"],
+    ["chicken free of antibiotics", "poultry"],
+    ["chicken free run", "poultry"],
+    ["chicken free-roaming", "poultry"],
+    ["chicken free roaming", "poultry"],
+    ["chicken free-living", "poultry"],
+    ["chicken-free-range", "poultry"],
+    ["chicken-free of hormones", "poultry"],
+    ["beef free to roam", "meat"],
+    ["pork free of nitrates", "meat"],
   ])("flags %s as %s", (ingredient, id) => {
     expect(deriveRecipeDietConflicts([ingredient])).toContain(id);
   });

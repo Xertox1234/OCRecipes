@@ -37,7 +37,8 @@ const CONFLICT_KEYWORDS: Record<DietConflictId, readonly string[]> = {
     "meatball",
     "meatballs",
     // Bare "meat" covers "ground meat" / "meat sauce". Bare "goat" stays out
-    // ("goat cheese"). "meat-free" is skipped per occurrence (SUBSTITUTE_SUFFIX).
+    // ("goat cheese"). "meat-free" and other keyword-free/-less/substitute forms
+    // are skipped per occurrence (SUBSTITUTE_SUFFIX).
     "meat",
     "mutton",
     "rabbit",
@@ -86,13 +87,16 @@ const EGG_SUFFIX = /^[\s-]+eggs?(?:$|[\s,;/()-])/;
 
 /**
  * A negation or substitute word directly after any keyword names a stand-in:
- * "meat-free", "chicken-free", "meat substitute(s)", "meat alternative(s)",
- * "meat-less". "free range" / "free from" follow real meat ("chicken free-range",
- * "chicken free from antibiotics"), so the lookahead refuses them. "less" needs
- * the hyphen: "chicken less salt" is chicken.
+ * "meat-free", "chicken-free nuggets", "meat free", "meat substitute(s)",
+ * "meat alternative(s)", "meat-less". A spaced "free" counts only at the end
+ * of the phrase, because a word after it usually describes real meat
+ * ("chicken free of antibiotics", "beef free to roam"). The hyphenated "-free"
+ * compound may carry a following word but still refuses range/roam/run/from/
+ * of/living/to ("chicken-free-range"). "less" needs the hyphen: "chicken less
+ * salt" is chicken.
  */
 const SUBSTITUTE_SUFFIX =
-  /^(?:[\s-]+(?:free(?![\s-]*(?:range|from))|substitutes?|alternatives?)|-less)(?:$|[\s,;/()-])/;
+  /^(?:-free(?![\s-]*(?:rang|roam|run\b|from\b|of\b|liv|to\b))(?:$|[\s,;/()-])|\s+free(?:$|[,;/()])|[\s-]+(?:substitutes?|alternatives?)(?:$|[\s,;/()-])|-less(?:$|[\s,;/()-]))/;
 
 const QUALIFIER_BEFORE = new RegExp(
   `(?:^|[\\s,;/()\\-])(?:${PLANT_QUALIFIERS.join("|")})[\\s\\-]$`,
