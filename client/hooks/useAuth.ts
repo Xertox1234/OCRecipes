@@ -61,10 +61,16 @@ export const AUTH_ME_TIMEOUT_MS = 10_000;
 /**
  * Retry a server logout that failed (offline, 5xx), using the OLD token kept
  * in pendingRevokeStorage. The server logout bumps the user's tokenVersion,
- * which revokes EVERY token that user holds — so it is never sent while that
- * same user is signed in again (it would end their new session); their record
- * is dropped instead, and the old token simply expires as before. Another
- * user's old token is safe to revoke: tokenVersion is per user.
+ * which revokes EVERY token that user holds — so on this device it is never
+ * sent while that same user is signed in again, or while a sign-in is in
+ * progress (it would end the new session); their record is dropped instead,
+ * and the old token simply expires as before. Another user's old token is safe
+ * to revoke: tokenVersion is per user.
+ *
+ * Known gap (owner ruling 2026-11-04, accepted): a session the same user opened
+ * on ANOTHER device after the failed logout also ends when the retry lands —
+ * as it would have, had the logout succeeded after that sign-in. Closing it
+ * needs a server-side cutoff (revoke only tokens issued before the logout).
  *
  * Plain fetch with the old token, never apiRequest: apiRequest attaches the
  * CURRENT token and its 401 handling would expire the current session. 2xx or
@@ -72,7 +78,27 @@ export const AUTH_ME_TIMEOUT_MS = 10_000;
  * the next launch or foreground. Never throws. Concurrent triggers share one run.
  */
 let pendingRevokeRun: Promise<void> | null = null;
+
+/**
+ * Sign-ins in progress. The server issues the new token BEFORE establishSession
+ * drops the pending record, so a retry and a sign-in must never overlap: a
+ * revoke landing after the login would end the new session. A sign-in first
+ * waits out a retry already on the wire; a retry does not start while a
+ * sign-in is in progress (a later trigger handles the record).
+ */
+let signInsInFlight = 0;
+async function withSignInExclusion<T>(signIn: () => Promise<T>): Promise<T> {
+  signInsInFlight += 1;
+  try {
+    await pendingRevokeRun; // never rejects
+    return await signIn();
+  } finally {
+    signInsInFlight -= 1;
+  }
+}
+
 function retryPendingRevoke(currentUserId: string | undefined): Promise<void> {
+  if (signInsInFlight > 0) return Promise.resolve();
   if (pendingRevokeRun) return pendingRevokeRun;
   pendingRevokeRun = (async () => {
     try {
@@ -478,21 +504,22 @@ export function useAuth() {
    * the code screen, and nothing is stored until the code passes.
    */
   const login = useCallback(
-    async (username: string, password: string): Promise<SessionResult> => {
-      const trustKey = await trustKeyStorage.get();
-      const response = await apiRequest("POST", "/api/auth/login", {
-        username,
-        password,
-        ...(trustKey ? { trustKey } : {}),
-      });
-      const data = (await response.json()) as
-        | MfaChallengeResult
-        | { user: User; token: string };
-      if ("status" in data) return data;
-      const { user, token } = data as { user: User; token: string };
-      await establishSession(user, token);
-      return { status: "signed_in", user, token };
-    },
+    async (username: string, password: string): Promise<SessionResult> =>
+      withSignInExclusion(async () => {
+        const trustKey = await trustKeyStorage.get();
+        const response = await apiRequest("POST", "/api/auth/login", {
+          username,
+          password,
+          ...(trustKey ? { trustKey } : {}),
+        });
+        const data = (await response.json()) as
+          | MfaChallengeResult
+          | { user: User; token: string };
+        if ("status" in data) return data;
+        const { user, token } = data as { user: User; token: string };
+        await establishSession(user, token);
+        return { status: "signed_in", user, token };
+      }),
     [establishSession],
   );
 
@@ -505,16 +532,20 @@ export function useAuth() {
       challenge: string,
       proof: SecondFactorInput,
       trustDevice: boolean,
-    ): Promise<MfaVerifyResult> => {
-      const res = await apiRequest("POST", "/api/auth/mfa/verify", {
-        challenge,
-        secondFactor: proof,
-        trustDevice,
-      });
-      const result = (await res.json()) as MfaVerifyResult;
-      if (result.trustKey) await trustKeyStorage.set(result.trustKey);
-      return result;
-    },
+    ): Promise<MfaVerifyResult> =>
+      withSignInExclusion(async () => {
+        const res = await apiRequest("POST", "/api/auth/mfa/verify", {
+          challenge,
+          secondFactor: proof,
+          trustDevice,
+        });
+        const result = (await res.json()) as MfaVerifyResult;
+        if (result.trustKey) await trustKeyStorage.set(result.trustKey);
+        // The session token exists now; finishSignIn runs outside this
+        // exclusion, so drop this user's record before a retry could send it.
+        await dropPendingRevokeFor(result.user.id);
+        return result;
+      }),
     [],
   );
 
@@ -523,68 +554,72 @@ export function useAuth() {
   // checks the token's nonce claim against sha256(raw). Returns null when the
   // person cancels the sheet.
   const signInWithProvider = useCallback(
-    async (provider: SocialProvider): Promise<SocialSignInResult | null> => {
-      const { nonce, nonceHash } = await fetchNonce("sign_in");
-      const token = await getProviderToken(provider, nonceHash);
-      if (!token) return null;
-      const res = await apiRequest("POST", "/api/auth/social", {
-        provider,
-        nonce,
-        ...token,
-      });
-      const result = (await res.json()) as SocialSignInResult;
-      if (result.status === "signed_in") {
-        await establishSession(result.user, result.token);
-      }
-      return result;
-    },
+    async (provider: SocialProvider): Promise<SocialSignInResult | null> =>
+      withSignInExclusion(async () => {
+        const { nonce, nonceHash } = await fetchNonce("sign_in");
+        const token = await getProviderToken(provider, nonceHash);
+        if (!token) return null;
+        const res = await apiRequest("POST", "/api/auth/social", {
+          provider,
+          nonce,
+          ...token,
+        });
+        const result = (await res.json()) as SocialSignInResult;
+        if (result.status === "signed_in") {
+          await establishSession(result.user, result.token);
+        }
+        return result;
+      }),
     [establishSession],
   );
 
   const completeSocialSignUp = useCallback(
-    async (ticket: string, username: string, ageConfirmed: boolean) => {
-      const res = await apiRequest(
-        "POST",
-        "/api/auth/social/complete-sign-up",
-        // COPPA 13+ attestation — the person's actual checkbox state.
-        { ticket, username, ageConfirmed },
-      );
-      const { user, token } = await res.json();
-      await establishSession(user, token);
-    },
+    async (ticket: string, username: string, ageConfirmed: boolean) =>
+      withSignInExclusion(async () => {
+        const res = await apiRequest(
+          "POST",
+          "/api/auth/social/complete-sign-up",
+          // COPPA 13+ attestation — the person's actual checkbox state.
+          { ticket, username, ageConfirmed },
+        );
+        const { user, token } = await res.json();
+        await establishSession(user, token);
+      }),
     [establishSession],
   );
 
   /** The Connect prompt's password proof; a 2FA account answers with a challenge. */
   const linkWithPassword = useCallback(
-    async (ticket: string, password: string): Promise<SessionResult> => {
-      const res = await apiRequest("POST", "/api/auth/social/link", {
-        ticket,
-        password,
-      });
-      const result = (await res.json()) as SessionResult;
-      if (result.status === "signed_in") {
-        await establishSession(result.user, result.token);
-      }
-      return result;
-    },
+    async (ticket: string, password: string): Promise<SessionResult> =>
+      withSignInExclusion(async () => {
+        const res = await apiRequest("POST", "/api/auth/social/link", {
+          ticket,
+          password,
+        });
+        const result = (await res.json()) as SessionResult;
+        if (result.status === "signed_in") {
+          await establishSession(result.user, result.token);
+        }
+        return result;
+      }),
     [establishSession],
   );
 
   const linkWithProvider = useCallback(
-    async (ticket: string, provider: SocialProvider) => {
-      const { nonce, nonceHash } = await fetchNonce("link");
-      const token = await getProviderToken(provider, nonceHash);
-      if (!token) return;
-      const res = await apiRequest("POST", "/api/auth/social/link", {
-        ticket,
-        provider,
-        nonce,
-        idToken: token.idToken,
-      });
-      const { user, token: session } = await res.json();
-      await establishSession(user, session);
-    },
+    async (ticket: string, provider: SocialProvider) =>
+      withSignInExclusion(async () => {
+        const { nonce, nonceHash } = await fetchNonce("link");
+        const token = await getProviderToken(provider, nonceHash);
+        if (!token) return;
+        const res = await apiRequest("POST", "/api/auth/social/link", {
+          ticket,
+          provider,
+          nonce,
+          idToken: token.idToken,
+        });
+        const { user, token: session } = await res.json();
+        await establishSession(user, session);
+      }),
     [establishSession],
   );
 

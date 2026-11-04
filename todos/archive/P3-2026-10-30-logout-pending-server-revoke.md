@@ -32,7 +32,7 @@ deliberately avoids (`tokenStorage.clear()` on every session-ending path).
 
 - [x] Decide what is persisted for a later revoke (the old token in SecureStore, or a server-issued revocation handle) and confirm it with the owner.
 - [x] A failed server logout records a pending revoke; the next app start / reconnect retries it and clears the record on success.
-- [x] A pending revoke never attaches to, or revokes, the NEXT signed-in user's session.
+- [x] A pending revoke never attaches to, or revokes, the NEXT signed-in user's session on this device (another device: see the 2026-11-04 owner ruling below).
 - [x] Tests cover offline logout, retry success, retry failure, and sign-in of another user before the retry.
 
 ## Implementation Notes
@@ -67,3 +67,5 @@ deliberately avoids (`tokenStorage.clear()` on every session-ending path).
 - Persisted: the OLD session token + its user id, under its own Keychain entry (`pendingRevokeStorage`, same `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY` options as the session token), until a retry revokes it (2xx) or the server says it is already dead (401). A server-issued revocation handle would need a new endpoint (out of the scope contract).
 - The server logout bumps tokenVersion (revokes every token of that user), so a retry is never sent while the same user is signed in again: that user's record is dropped at sign-in and at retry time.
 - Retries: once the session state is known at launch, on every signed-in-user change, and when the app returns from the background. Plain fetch with the old token, never apiRequest.
+- Review round 1 (code-reviewer + security-auditor) found a retry already on the wire could land after the same user signed back in and end the new session — the server issues the token before the record is dropped. Fixed: a sign-in waits out a running retry, a retry never starts during a sign-in, and a two-step sign-in drops the record as soon as the code passes.
+- Owner ruling (after review): the other-device case is ACCEPTED, not fixed. A user who logs out offline on this phone and then signs in on another device is signed out there when this phone's retry lands — as if the logout had succeeded late. Closing it needs a server-side cutoff (revoke only tokens issued before the failed logout); a separate change if ever wanted.

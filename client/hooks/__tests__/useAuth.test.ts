@@ -2327,6 +2327,138 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(true);
     });
 
+    // The server issues the new token BEFORE establishSession drops the record,
+    // so a revoke still on the wire when the same user signs in would land
+    // after the login and end the new session. The two must never overlap.
+    it("a sign-in waits for a revoke already on the wire, so the server sees the revoke first", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockPendingRevokeStorage.get.mockResolvedValue({
+        token: "old-token",
+        userId: "1",
+      });
+      let finishRevoke: (value: unknown) => void = () => {};
+      mockFetch.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRevoke = resolve;
+          }),
+      );
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+      });
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(revokeCalls()).toHaveLength(1));
+
+      let loginDone: Promise<unknown> = Promise.resolve();
+      try {
+        act(() => {
+          loginDone = result.current.login("testuser", "password123");
+        });
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 0));
+        });
+        expect(mockApiRequest).not.toHaveBeenCalled();
+      } finally {
+        finishRevoke({ ok: true, status: 200 });
+        await act(async () => {
+          await loginDone;
+        });
+      }
+
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/login",
+        expect.anything(),
+      );
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    it("a two-step sign-in drops the same user's record as soon as the code passes", async () => {
+      // finishSignIn runs after verifySecondFactor returns, outside the
+      // sign-in exclusion: the record must already be gone by then.
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockPendingRevokeStorage.get.mockResolvedValue({
+        token: "old-token",
+        userId: "1",
+      });
+      mockFetch.mockResolvedValue({ ok: false, status: 503 });
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(revokeCalls()).toHaveLength(1));
+      mockPendingRevokeStorage.clear.mockClear();
+      mockApiRequest.mockResolvedValue({
+        json: () =>
+          Promise.resolve({ status: "signed_in", user: fakeUser, token: "t2" }),
+      });
+
+      await act(async () => {
+        await result.current.verifySecondFactor(
+          "c-1",
+          { code: "123456" },
+          false,
+        );
+      });
+
+      expect(mockPendingRevokeStorage.clear).toHaveBeenCalled();
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+
+    it("never starts a retry while a sign-in is in flight", async () => {
+      let appStateHandler: ((state: AppStateStatus) => void) | undefined;
+      vi.mocked(AppState.addEventListener).mockImplementation(
+        (_event, listener) => {
+          appStateHandler = listener;
+          return { remove: vi.fn() };
+        },
+      );
+      let finishLogin: (value: unknown) => void = () => {};
+      let loginDone: Promise<unknown> = Promise.resolve();
+      try {
+        mockTokenStorage.get.mockResolvedValue(null);
+        mockPendingRevokeStorage.get.mockResolvedValue({
+          token: "old-token",
+          userId: "1",
+        });
+        // Offline at launch: the startup retry fails and the record stays.
+        mockFetch.mockResolvedValue({ ok: false, status: 503 });
+        const { result } = renderHook(() => useAuth());
+        await waitFor(() => expect(revokeCalls()).toHaveLength(1));
+        mockApiRequest.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              finishLogin = resolve;
+            }),
+        );
+
+        act(() => {
+          loginDone = result.current.login("testuser", "password123");
+        });
+        await waitFor(() => expect(mockApiRequest).toHaveBeenCalled());
+        // Back from the background mid-login: the foreground retry must wait.
+        await act(async () => {
+          appStateHandler?.("background");
+          appStateHandler?.("active");
+          await new Promise((r) => setTimeout(r, 0));
+        });
+
+        expect(revokeCalls()).toHaveLength(1);
+      } finally {
+        finishLogin({
+          json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+        });
+        await act(async () => {
+          await loginDone;
+        });
+        vi.mocked(AppState.addEventListener).mockImplementation(() => ({
+          remove: vi.fn(),
+        }));
+      }
+      // Signed in as the same user now: the record is dropped, never sent.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(revokeCalls()).toHaveLength(1);
+    });
+
     it("retries again when the app comes back from the background", async () => {
       let appStateHandler: ((state: AppStateStatus) => void) | undefined;
       vi.mocked(AppState.addEventListener).mockImplementation(
