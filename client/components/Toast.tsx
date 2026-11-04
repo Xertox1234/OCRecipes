@@ -185,7 +185,6 @@ export function Toast({
             onPress={handleAction}
             accessibilityRole="button"
             accessibilityLabel={action.label}
-            hitSlop={8}
             style={({ pressed }) => [
               styles.actionButton,
               {
@@ -235,7 +234,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.xs,
-    minHeight: 32,
+    minWidth: 44,
+    minHeight: 44,
     justifyContent: "center",
   },
   actionLabel: {
