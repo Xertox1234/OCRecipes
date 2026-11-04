@@ -1,6 +1,6 @@
 ---
 title: "Push: check Expo push receipts, and stop a failed chunk from shifting tickets onto the wrong tokens"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-03
 updated: 2026-11-03
@@ -21,10 +21,10 @@ Item R12 of the 2026-10-30 reliability audit. Draft PR #1624 implemented it but 
 
 ## Acceptance Criteria
 
-- [ ] A failed or timed-out chunk does not shift later tickets onto the wrong tokens (test: 2 chunks, first rejects, second returns `DeviceNotRegistered` → only the second chunk's token is deleted)
-- [ ] Push receipts are fetched for the `ok` tickets after Expo's recommended delay (~15 min) and `DeviceNotRegistered` receipts prune their token; other receipt errors are logged
-- [ ] The receipt check never blocks the send path and survives a server restart without crashing (losing pending receipts on restart is acceptable — say so in a comment)
-- [ ] The misleading "indices align" comment is corrected
+- [x] A failed or timed-out chunk does not shift later tickets onto the wrong tokens (test: 2 chunks, first rejects, second returns `DeviceNotRegistered` → only the second chunk's token is deleted)
+- [x] Push receipts are fetched for the `ok` tickets after Expo's recommended delay (~15 min) and `DeviceNotRegistered` receipts prune their token; other receipt errors are logged
+- [x] The receipt check never blocks the send path and survives a server restart without crashing (losing pending receipts on restart is acceptable — say so in a comment)
+- [x] The misleading "indices align" comment is corrected
 
 ## Implementation Notes
 
