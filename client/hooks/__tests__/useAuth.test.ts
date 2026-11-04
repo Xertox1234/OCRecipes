@@ -119,6 +119,16 @@ vi.mock("@/lib/social-sign-in", () => ({
   getProviderToken: (...args: unknown[]) => mockGetProviderToken(...args),
 }));
 
+// The send-once behaviour is covered in lib/__tests__/timezone.test.ts; mocked
+// here so its profile PUT does not interleave with these apiRequest assertions.
+const { mockSendDeviceTimezoneOnce } = vi.hoisted(() => ({
+  mockSendDeviceTimezoneOnce: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/timezone", () => ({
+  sendDeviceTimezoneOnce: (...args: unknown[]) =>
+    mockSendDeviceTimezoneOnce(...args),
+}));
+
 const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch;
 
@@ -288,6 +298,23 @@ describe("useAuth", () => {
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(fakeUser),
       );
+    });
+
+    it("hands the signed-in user to the timezone sender, and a failing sender never blocks sign-in", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+      mockSendDeviceTimezoneOnce.mockRejectedValueOnce(new Error("offline"));
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => {
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+      expect(mockSendDeviceTimezoneOnce).toHaveBeenCalledTimes(1);
+      expect(mockSendDeviceTimezoneOnce).toHaveBeenCalledWith("1");
     });
 
     // Auth audit 2026-10-10 L7: a /me started under token A that finishes after

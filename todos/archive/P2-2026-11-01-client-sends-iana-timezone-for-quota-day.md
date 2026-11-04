@@ -1,9 +1,9 @@
 ---
 title: "App must send the phone's timezone so daily quotas reset at local midnight"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-01
-updated: 2026-11-01
+updated: 2026-11-03
 assignee:
 labels: [deferred, client, auth]
 github_issue:
@@ -21,10 +21,10 @@ The owner approved merging #1671 on 2026-11-01 on condition that this app-side f
 
 ## Acceptance Criteria
 
-- [ ] After sign-in (and on app start when the stored user has no timezone), the app sends `{ timezone }` once via the existing profile update in `client/hooks/useAuth.ts`
-- [ ] It is not re-sent on every launch once the server has a value
-- [ ] A failure to send is silent and retried at the next launch; it never blocks sign-in
-- [ ] Test covers the send-once behaviour
+- [x] After sign-in (and on app start when the stored user has no timezone), the app sends `{ timezone }` once via the existing profile update in `client/hooks/useAuth.ts`
+- [x] It is not re-sent on every launch once the server has a value
+- [x] A failure to send is silent and retried at the next launch; it never blocks sign-in
+- [x] Test covers the send-once behaviour
 
 ## Implementation Notes
 
