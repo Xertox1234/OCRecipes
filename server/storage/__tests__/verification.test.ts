@@ -826,6 +826,8 @@ describe("verification storage", () => {
   // ==========================================================================
 
   describe("lockBarcodes", () => {
+    // setupTestTransaction returns a real NodePgTransaction typed as the db.
+    const lockTx = () => tx as unknown as Parameters<typeof lockBarcodes>[0];
     const heldAdvisoryLocks = async () => {
       const { rows } = await tx.execute<{ n: number }>(
         sql`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()`,
@@ -837,7 +839,14 @@ describe("verification storage", () => {
       const before = await heldAdvisoryLocks();
       const execute = vi.spyOn(tx, "execute");
 
-      await lockBarcodes(tx, ["lb-5", "lb-1", "lb-3", "lb-1", "lb-2", "lb-4"]);
+      await lockBarcodes(lockTx(), [
+        "lb-5",
+        "lb-1",
+        "lb-3",
+        "lb-1",
+        "lb-2",
+        "lb-4",
+      ]);
 
       expect(execute).toHaveBeenCalledTimes(1);
       execute.mockRestore();
@@ -847,7 +856,7 @@ describe("verification storage", () => {
     it("skips the database when there is nothing to lock", async () => {
       const execute = vi.spyOn(tx, "execute");
 
-      await lockBarcodes(tx, []);
+      await lockBarcodes(lockTx(), []);
 
       expect(execute).not.toHaveBeenCalled();
       execute.mockRestore();
