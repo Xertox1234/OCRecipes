@@ -79,7 +79,9 @@ plus three shapes that quote the input mid-message: `value "<input>" is out of
 range for type …` (22003), `time zone "<input>" not recognized` (22023) and
 `invalid value "<input>" for "<fmt>"` (22007 from `to_date`/`to_timestamp`).
 Each is cut greedily up to its fixed suffix, so a quote inside the input
-cannot end the redaction early. Quoted identifiers in other messages
+cannot end the redaction early. The three run BEFORE the `: "` tail cut: an
+input containing `: "` would otherwise let the tail cut remove the suffix
+they match on and leak the input's start. Quoted identifiers in other messages
 (`relation "users" does not exist`) are kept. A new pg message shape that
 quotes user input needs its own pattern and test row. Measured 2026-11-03 with a real `Sentry.init` probe before the fix:
 the input survived the `\nparams:` cut.
