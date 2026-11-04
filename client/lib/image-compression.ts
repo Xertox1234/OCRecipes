@@ -28,6 +28,53 @@ const DEFAULT_OPTIONS: Required<CompressionOptions> = {
   targetSizeKB: 900, // Leave buffer under 1MB limit
 };
 
+// Neither native step takes an AbortSignal and either can fail to settle on
+// iOS (nightly E2E 2026-11-04: a receipt scan sat on "Analyzing receipt…" with
+// no upload sent). Without a bound the caller's spinner never ends.
+export const SIZE_READ_TIMEOUT_MS = 5_000;
+export const RESIZE_TIMEOUT_MS = 30_000;
+
+/**
+ * Settle with `work`, or reject after `ms`. The native call can't be cancelled,
+ * so `onLateResult` receives whatever it produces after the deadline passed.
+ */
+function settleWithin<T>(
+  work: Promise<T>,
+  ms: number,
+  label: string,
+  onLateResult?: (value: T) => void,
+): Promise<T> {
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`${label} timed out after ${ms} ms`));
+    }, ms);
+  });
+  work.then(
+    (value) => {
+      if (timedOut) onLateResult?.(value);
+    },
+    () => {},
+  );
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
+
+/** A resize that missed its deadline still writes a file: delete it. */
+function resizeWithin(
+  uri: string,
+  actions: Action[],
+  compress: number,
+): ReturnType<typeof manipulateAsync> {
+  return settleWithin(
+    manipulateAsync(uri, actions, { compress, format: SaveFormat.JPEG }),
+    RESIZE_TIMEOUT_MS,
+    "Image resize",
+    (late) => void cleanupImage(late.uri),
+  );
+}
+
 /**
  * The resize step that fits the image inside maxWidth × maxHeight without
  * changing its shape. expo-image-manipulator scales to EXACTLY the given box
@@ -43,7 +90,11 @@ async function fitWithinActions(
 ): Promise<Action[]> {
   let size: { width: number; height: number };
   try {
-    size = await Image.getSize(uri);
+    size = await settleWithin(
+      Image.getSize(uri),
+      SIZE_READ_TIMEOUT_MS,
+      "Image size read",
+    );
   } catch {
     return [{ resize: { width: maxWidth } }];
   }
@@ -71,10 +122,7 @@ export async function compressImage(
   const actions = await fitWithinActions(uri, maxWidth, maxHeight);
 
   // First pass: resize and compress
-  let result = await manipulateAsync(uri, actions, {
-    compress: quality,
-    format: SaveFormat.JPEG,
-  });
+  let result = await resizeWithin(uri, actions, quality);
 
   // Check file size
   const fileInfo = await getInfoAsync(result.uri);
@@ -85,10 +133,13 @@ export async function compressImage(
     const newQuality = Math.max(0.3, quality * (targetSizeKB / sizeKB));
 
     const firstPassUri = result.uri;
-    result = await manipulateAsync(uri, actions, {
-      compress: newQuality,
-      format: SaveFormat.JPEG,
-    });
+    try {
+      result = await resizeWithin(uri, actions, newQuality);
+    } catch (error) {
+      // The caller never sees the first pass's uri, so it can't clean it up.
+      await cleanupImage(firstPassUri);
+      throw error;
+    }
     // Callers only clean up the file we return, so drop the discarded one.
     await cleanupImage(firstPassUri);
 
