@@ -78,8 +78,8 @@ describe("lookupBarcode — Open Food Facts User-Agent", () => {
         Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
     });
     await lookupBarcode("0123456789012").catch(() => null);
-    const offCall = mockFetch.mock.calls.find(([url]) =>
-      String(url).includes("openfoodfacts.org"),
+    const offCall = mockFetch.mock.calls.find(
+      ([url]) => new URL(String(url)).hostname === "world.openfoodfacts.org",
     );
     expect(offCall).toBeDefined();
     expect(offCall![1]).toEqual(
