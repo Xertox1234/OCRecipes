@@ -18,7 +18,12 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq, and, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import type * as schema from "@shared/schema";
-import { barcodeVerifications, verificationHistory } from "@shared/schema";
+import {
+  barcodeVerifications,
+  verificationHistory,
+  users,
+} from "@shared/schema";
+import { civilDateString, civilDateToInstant } from "../../lib/civil-date";
 import type { VerificationNutrition } from "@shared/types/verification";
 import type { FrontLabelData } from "@shared/types/front-label";
 
@@ -818,6 +823,77 @@ describe("verification storage", () => {
       const result = await getUserVerificationStats(testUser.id);
       expect(result.count).toBe(1);
       expect(result.streak).toBe(1);
+    });
+
+    // Timezone bucketing — the streak counts civil days in users.timezone.
+    // Two verifications that fall on the SAME UTC day but DIFFERENT local days
+    // (local evening yesterday + local early morning today, west of UTC) must
+    // count as a 2-day streak for that user, not merge into one.
+    describe("user timezone", () => {
+      const LA = "America/Los_Angeles";
+
+      async function seedEveningAndNextMorning(tz: string): Promise<void> {
+        const todayLocal = civilDateString(new Date(), tz);
+        const yesterdayLocal = civilDateString(
+          new Date(
+            civilDateToInstant(todayLocal, tz).getTime() - 12 * 3600_000,
+          ),
+          tz,
+        );
+        const evening = new Date(
+          civilDateToInstant(yesterdayLocal, tz).getTime() + 20 * 3600_000,
+        );
+        const morning = new Date(
+          civilDateToInstant(todayLocal, tz).getTime() + 1 * 3600_000,
+        );
+        for (const at of [evening, morning]) {
+          const b = makeBarcode();
+          await seedBarcodeVerification(b);
+          await tx.insert(verificationHistory).values({
+            barcode: b,
+            userId: testUser.id,
+            extractedNutrition: makeNutrition(),
+            ocrConfidence: "0.95",
+            isMatch: true,
+            createdAt: at,
+          });
+        }
+      }
+
+      it("counts local evening + next local morning as two days", async () => {
+        await tx
+          .update(users)
+          .set({ timezone: LA })
+          .where(eq(users.id, testUser.id));
+        await seedEveningAndNextMorning(LA);
+
+        const result = await getUserVerificationStats(testUser.id);
+        expect(result.count).toBe(2);
+        expect(result.streak).toBe(2);
+      });
+
+      it("falls back to UTC bucketing when the stored timezone is null", async () => {
+        await seedEveningAndNextMorning(LA);
+
+        const result = await getUserVerificationStats(testUser.id);
+        expect(result.count).toBe(2);
+        // Same UTC day (or adjacent days if the instants straddle UTC midnight)
+        // is the pre-existing behaviour; the point is it does not throw.
+        expect(result.streak).toBeGreaterThanOrEqual(1);
+      });
+
+      it("falls back to UTC when the stored timezone is invalid", async () => {
+        await tx
+          .update(users)
+          .set({ timezone: "Not/AZone" })
+          .where(eq(users.id, testUser.id));
+        const barcode = makeBarcode();
+        await seedBarcodeVerification(barcode);
+        await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
+
+        const result = await getUserVerificationStats(testUser.id);
+        expect(result.streak).toBe(1);
+      });
     });
   });
 

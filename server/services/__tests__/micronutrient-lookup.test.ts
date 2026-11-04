@@ -315,6 +315,78 @@ describe("Micronutrient Lookup", () => {
       expect(storage.setMicronutrientCache).toHaveBeenCalled();
     });
 
+    describe("unit reconciliation", () => {
+      const lookupWith = async (
+        nutrients: { nutrientId: number; value: number; unitName?: string }[],
+      ) => {
+        vi.mocked(storage.getMicronutrientCache).mockResolvedValue(null as any);
+        vi.mocked(storage.setMicronutrientCache).mockResolvedValue(
+          undefined as any,
+        );
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              foods: [
+                {
+                  fdcId: 1,
+                  description: "x",
+                  foodNutrients: nutrients.map((n) => ({
+                    nutrientName: "n",
+                    ...n,
+                  })),
+                },
+              ],
+            }),
+        });
+        return lookupMicronutrientsWithCache("unit-test-food");
+      };
+
+      it("keeps a value whose unit matches (case-insensitive)", async () => {
+        const r = await lookupWith([
+          { nutrientId: 1162, value: 53, unitName: "MG" },
+        ]);
+        expect(r).toHaveLength(1);
+        expect(r[0]).toMatchObject({ nutrientName: "Vitamin C", amount: 53 });
+      });
+
+      it("converts mg to the configured mcg", async () => {
+        // Vitamin D is configured in mcg; 0.02 mg = 20 mcg
+        const r = await lookupWith([
+          { nutrientId: 1114, value: 0.02, unitName: "MG" },
+        ]);
+        expect(r[0]).toMatchObject({ nutrientName: "Vitamin D", amount: 20 });
+        expect(r[0].unit).toBe("mcg");
+      });
+
+      it("converts UG / µg to the configured mg", async () => {
+        // Iron is configured in mg; 9000 ug = 9 mg
+        for (const unitName of ["UG", "µg", "μg", "MCG"]) {
+          const r = await lookupWith([
+            { nutrientId: 1089, value: 9000, unitName },
+          ]);
+          expect(r[0]).toMatchObject({ nutrientName: "Iron", amount: 9 });
+          expect(r[0].unit).toBe("mg");
+        }
+      });
+
+      it("converts g to mg", async () => {
+        const r = await lookupWith([
+          { nutrientId: 1087, value: 0.04, unitName: "G" },
+        ]);
+        expect(r[0]).toMatchObject({ nutrientName: "Calcium", amount: 40 });
+      });
+
+      it("skips values with an unknown or missing unit", async () => {
+        const r = await lookupWith([
+          { nutrientId: 1106, value: 500, unitName: "IU" },
+          { nutrientId: 1087, value: 40, unitName: "KCAL" },
+          { nutrientId: 1089, value: 5 },
+        ]);
+        expect(r).toEqual([]);
+      });
+    });
+
     it("returns empty array on USDA API failure", async () => {
       vi.mocked(storage.getMicronutrientCache).mockResolvedValue(null as any);
 
