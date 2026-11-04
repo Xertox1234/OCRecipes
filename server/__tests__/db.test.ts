@@ -44,6 +44,8 @@ describe("database pool", () => {
 
     expect(config.connectionTimeoutMillis).toBe(5_000);
     expect(config.statement_timeout).toBe(30_000);
+    // A leaked open transaction must not hold row locks forever.
+    expect(config.idle_in_transaction_session_timeout).toBe(60_000);
     expect(config.options).toBe("-c timezone=UTC");
   });
 

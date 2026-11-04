@@ -1,6 +1,6 @@
 ---
 title: "Network hardening leftovers: OFF User-Agent, idle-in-transaction timeout, feature flags in the env schema"
-status: backlog
+status: done
 priority: low
 created: 2026-11-03
 updated: 2026-11-04

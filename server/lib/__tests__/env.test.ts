@@ -103,6 +103,40 @@ describe("validateEnv R2 production guard", () => {
   });
 });
 
+describe("validateEnv feature flags", () => {
+  const saved = { ...process.env };
+  const FLAGS = [
+    "RECIPE_FINDER_ENABLED",
+    "RECIPE_OFFER_ENABLED",
+    "RETENTION_CLEANUP_ENABLED",
+  ] as const;
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE };
+    process.env.NODE_ENV = "development";
+    for (const f of FLAGS) delete process.env[f];
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it.each(FLAGS)("%s accepts true, false, blank and unset", async (flag) => {
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
+    for (const v of ["true", "false", ""]) {
+      process.env[flag] = v;
+      expect(() => validateEnv()).not.toThrow();
+    }
+  });
+
+  it.each(FLAGS)("%s rejects a malformed value at boot", async (flag) => {
+    const { validateEnv } = await load();
+    for (const v of ["1", "TRUE", "yes", "ture"]) {
+      process.env[flag] = v;
+      expect(() => validateEnv()).toThrow(new RegExp(flag));
+    }
+  });
+});
+
 describe("validateEnv aggregated missing-vars report", () => {
   const saved = { ...process.env };
   beforeEach(() => {
