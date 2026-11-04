@@ -133,7 +133,13 @@ export async function compressImage(
     const newQuality = Math.max(0.3, quality * (targetSizeKB / sizeKB));
 
     const firstPassUri = result.uri;
-    result = await resizeWithin(uri, actions, newQuality);
+    try {
+      result = await resizeWithin(uri, actions, newQuality);
+    } catch (error) {
+      // The caller never sees the first pass's uri, so it can't clean it up.
+      await cleanupImage(firstPassUri);
+      throw error;
+    }
     // Callers only clean up the file we return, so drop the discarded one.
     await cleanupImage(firstPassUri);
 

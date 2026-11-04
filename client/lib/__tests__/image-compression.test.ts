@@ -249,6 +249,26 @@ describe("compressImage", () => {
       await assertion;
     });
 
+    it("deletes the first pass's file when the smaller second pass never settles", async () => {
+      mockManipulateAsync
+        .mockResolvedValueOnce({
+          uri: "file://first-pass.jpg",
+          width: 1024,
+          height: 768,
+        })
+        .mockReturnValueOnce(new Promise(() => {}));
+      mockGetInfoAsync.mockResolvedValue({ exists: true, size: 1200 * 1024 });
+
+      const pending = compressImage("file://big.jpg");
+      const assertion = expect(pending).rejects.toThrow(/timed out/i);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await assertion;
+
+      expect(mockDeleteAsync).toHaveBeenCalledWith("file://first-pass.jpg", {
+        idempotent: true,
+      });
+    });
+
     it("deletes the file a timed-out resize writes when it finally finishes", async () => {
       let finish!: (r: { uri: string; width: number; height: number }) => void;
       mockManipulateAsync.mockReturnValue(
