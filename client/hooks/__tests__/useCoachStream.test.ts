@@ -13,6 +13,9 @@ import {
   type UseCoachStreamReturn,
 } from "../useCoachStream";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import { AppState } from "react-native";
+import { onlineManager } from "@tanstack/react-query";
+import { RESUME_DEAD_SOCKET_MS } from "@/lib/sse-xhr";
 
 // ── Pure helper tests (no timers, no XHR) ────────────────────────
 
@@ -63,18 +66,24 @@ describe("parseErrorCode", () => {
 
 // ── Hook behaviour tests (fake timers + XHR mock) ─────────────────
 
-const { mockTokenStorage, mockGetApiUrl, mockNotifyStream } = vi.hoisted(
-  () => ({
+const { mockTokenStorage, mockGetApiUrl, mockNotifyStream, mockQueryClient } =
+  vi.hoisted(() => ({
     mockTokenStorage: { get: vi.fn().mockResolvedValue("test-token") },
     mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
     mockNotifyStream: vi.fn(() => Promise.resolve()),
-  }),
-);
+    // Only what pollUntilTurnSettled touches. The last message is the
+    // user's, so the poll keeps going until the test cancels it (unmount).
+    mockQueryClient: {
+      refetchQueries: vi.fn(() => Promise.resolve()),
+      getQueryData: vi.fn(() => [{ role: "user" }]),
+    },
+  }));
 
 vi.mock("@/lib/token-storage", () => ({ tokenStorage: mockTokenStorage }));
 vi.mock("@/lib/query-client", () => ({
   getApiUrl: mockGetApiUrl,
   notifyIfStreamSessionExpired: mockNotifyStream,
+  queryClient: mockQueryClient,
 }));
 // An explicit zone, not the ambient one: a test that reads the runner's own
 // zone passes on a UTC CI box whether or not the header is sent.
@@ -931,5 +940,69 @@ describe("useCoachStream session expiry (R22)", () => {
     });
 
     expect(mockNotifyStream).not.toHaveBeenCalled();
+  });
+});
+
+describe("useCoachStream offline and dead-socket guards", () => {
+  const appStateChange = () => {
+    const calls = vi.mocked(AppState.addEventListener).mock.calls;
+    return calls[calls.length - 1][1] as (s: string) => void;
+  };
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  it("fails promptly with the network-error copy when the device goes offline", async () => {
+    const { result, onError, onDone } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      onlineManager.setOnline(false);
+    });
+    expect(onError).toHaveBeenCalledExactlyOnceWith("Network error", undefined);
+    expect(onDone).not.toHaveBeenCalled();
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("aborts quietly and refetches when a resume sees no bytes for 20 s", async () => {
+    const { result, onError, onDone } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      appStateChange()("background");
+      appStateChange()("active");
+    });
+    act(() => {
+      vi.advanceTimersByTime(RESUME_DEAD_SOCKET_MS);
+    });
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    // onDone is the consumer's reconcile hook (refetch + optimistic cleanup).
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(result.current.isStreaming).toBe(false);
+    expect(mockQueryClient.refetchQueries).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/1/messages"],
+      exact: true,
+    });
+  });
+
+  it("keeps a live socket running when a ping arrives inside the 20 s window", async () => {
+    const { result, onError, onDone } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      appStateChange()("background");
+      appStateChange()("active");
+    });
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+      mockXhr.emitRaw(": ping\n\n");
+    });
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(mockXhr.abort).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(true);
   });
 });

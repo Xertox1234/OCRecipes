@@ -1,6 +1,6 @@
 ---
 title: "Fail coach/chat SSE streams fast on offline or a dead resumed socket"
-status: backlog
+status: done
 priority: low
 created: 2026-10-30
 updated: 2026-11-04
@@ -30,12 +30,12 @@ disconnect, so aborting must refetch rather than show an error).
 
 ## Acceptance Criteria
 
-- [ ] An offline transition (`onlineManager`) during a stream fails it promptly with the existing network-error copy.
-- [ ] The server stream sends an SSE comment keep-alive (`: ping\n\n`) every 15 s while a reply is in flight; the interval is cleared wherever the stream ends (done, error, client disconnect, SSE timeout).
-- [ ] A background → active resume with no bytes (data or ping) received within 20 s of resume aborts the stream quietly — no error copy — and refetches the conversation's messages; a ping or data byte inside the 20 s keeps the stream running.
-- [ ] `useChat`'s stream gets an inactivity watchdog (`inactivityMs`) like the coach stream.
-- [ ] An aborted stream invalidates the conversation's messages query so whatever the server saved appears (recipe: full reply; coach: the partial reply, or the turn refunded), re-checking every 5 s for up to 60 s while nothing has been saved yet.
-- [ ] Tests cover offline, resume-with-dead-socket, resume-with-live-socket (a ping inside 20 s keeps it), and the server ping interval starting and being cleared.
+- [x] An offline transition (`onlineManager`) during a stream fails it promptly with the existing network-error copy.
+- [x] The server stream sends an SSE comment keep-alive (`: ping\n\n`) every 15 s while a reply is in flight; the interval is cleared wherever the stream ends (done, error, client disconnect, SSE timeout).
+- [x] A background → active resume with no bytes (data or ping) received within 20 s of resume aborts the stream quietly — no error copy — and refetches the conversation's messages; a ping or data byte inside the 20 s keeps the stream running.
+- [x] `useChat`'s stream gets an inactivity watchdog (`inactivityMs`) like the coach stream.
+- [x] An aborted stream invalidates the conversation's messages query so whatever the server saved appears (recipe: full reply; coach: the partial reply, or the turn refunded), re-checking every 5 s for up to 60 s while nothing has been saved yet.
+- [x] Tests cover offline, resume-with-dead-socket, resume-with-live-socket (a ping inside 20 s keeps it), and the server ping interval starting and being cleared.
 
 ## Implementation Notes
 

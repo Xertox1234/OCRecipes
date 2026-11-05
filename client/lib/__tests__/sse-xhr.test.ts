@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { streamSse, type SseOutcome } from "../sse-xhr";
+import { AppState } from "react-native";
+import { onlineManager, QueryClient } from "@tanstack/react-query";
+
+import {
+  streamSse,
+  watchStreamHealth,
+  pollUntilTurnSettled,
+  RESUME_DEAD_SOCKET_MS,
+  SETTLE_POLL_INTERVAL_MS,
+  SETTLE_POLL_CAP_MS,
+  type SseOutcome,
+} from "../sse-xhr";
 
 /**
  * Models React Native's XHR event ordering: `abort()` zeroes the status and
@@ -293,5 +304,150 @@ describe("streamSse inactivity", () => {
     const { closes } = start();
     vi.advanceTimersByTime(10 * 60_000);
     expect(closes).toEqual([]);
+  });
+});
+
+describe("streamSse onBytes and ping comments", () => {
+  it("calls onBytes for a `: ping` comment and keeps the inactivity watchdog armed", () => {
+    const onBytes = vi.fn();
+    const closes: SseOutcome[] = [];
+    streamSse({
+      url: "http://x/api",
+      body: "{}",
+      headers: {},
+      timeoutMs: 1,
+      inactivityMs: 1000,
+      signal: new AbortController().signal,
+      onEvent: () => {},
+      onBytes,
+      onClose: (o) => closes.push(o),
+    });
+    const xhr = MockXHR.last;
+    vi.advanceTimersByTime(900);
+    xhr.chunk(": ping\n\n");
+    expect(onBytes).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(900);
+    xhr.chunk(": ping\n\n");
+    vi.advanceTimersByTime(900);
+    expect(closes).toEqual([]);
+    vi.advanceTimersByTime(200);
+    expect(closes).toEqual([{ kind: "inactivity" }]);
+  });
+});
+
+describe("watchStreamHealth", () => {
+  const appStateHandler = () => {
+    const calls = vi.mocked(AppState.addEventListener).mock.calls;
+    return calls[calls.length - 1][1] as (s: string) => void;
+  };
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  it("trips offline when the device goes offline", () => {
+    const onTrip = vi.fn();
+    const h = watchStreamHealth(onTrip);
+    onlineManager.setOnline(false);
+    expect(onTrip).toHaveBeenCalledExactlyOnceWith("offline");
+    h.dispose();
+  });
+
+  it("trips dead-socket when no bytes arrive within 20 s of a resume", () => {
+    const onTrip = vi.fn();
+    const h = watchStreamHealth(onTrip);
+    const change = appStateHandler();
+    change("background");
+    change("active");
+    vi.advanceTimersByTime(RESUME_DEAD_SOCKET_MS - 1);
+    expect(onTrip).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onTrip).toHaveBeenCalledExactlyOnceWith("dead-socket");
+    h.dispose();
+  });
+
+  it("stays quiet when a ping or data byte arrives inside the 20 s window", () => {
+    const onTrip = vi.fn();
+    const h = watchStreamHealth(onTrip);
+    const change = appStateHandler();
+    change("background");
+    change("active");
+    vi.advanceTimersByTime(12_000);
+    h.noteBytes();
+    vi.advanceTimersByTime(60_000);
+    expect(onTrip).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("ignores an active event that was not preceded by leaving the app", () => {
+    const onTrip = vi.fn();
+    const h = watchStreamHealth(onTrip);
+    appStateHandler()("active");
+    vi.advanceTimersByTime(60_000);
+    expect(onTrip).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("stops watching after dispose", () => {
+    const onTrip = vi.fn();
+    const h = watchStreamHealth(onTrip);
+    const change = appStateHandler();
+    change("background");
+    change("active");
+    h.dispose();
+    vi.advanceTimersByTime(60_000);
+    onlineManager.setOnline(false);
+    expect(onTrip).not.toHaveBeenCalled();
+  });
+});
+
+describe("pollUntilTurnSettled", () => {
+  const key = ["/api/chat/conversations/1/messages"];
+
+  function setup(rowsPerFetch: { role: string }[][]) {
+    const qc = new QueryClient();
+    let i = 0;
+    qc.setQueryDefaults(key, {
+      queryFn: async () => rowsPerFetch[Math.min(i++, rowsPerFetch.length - 1)],
+    });
+    qc.setQueryData(key, [{ role: "user" }]);
+    return { qc, fetches: () => i };
+  }
+
+  it("refetches now and every 5 s until the last message is not the user's, then stops", async () => {
+    const { qc, fetches } = setup([
+      [{ role: "user" }],
+      [{ role: "user" }],
+      [{ role: "user" }, { role: "assistant" }],
+    ]);
+    const cancel = pollUntilTurnSettled(qc, key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetches()).toBe(1);
+    await vi.advanceTimersByTimeAsync(SETTLE_POLL_INTERVAL_MS);
+    expect(fetches()).toBe(2);
+    await vi.advanceTimersByTimeAsync(SETTLE_POLL_INTERVAL_MS);
+    expect(fetches()).toBe(3);
+    await vi.advanceTimersByTimeAsync(SETTLE_POLL_INTERVAL_MS * 3);
+    expect(fetches()).toBe(3);
+    cancel();
+  });
+
+  it("gives up after 60 s while nothing is saved", async () => {
+    const { qc, fetches } = setup([[{ role: "user" }]]);
+    pollUntilTurnSettled(qc, key);
+    await vi.advanceTimersByTimeAsync(SETTLE_POLL_CAP_MS + 30_000);
+    const total = fetches();
+    expect(total).toBe(SETTLE_POLL_CAP_MS / SETTLE_POLL_INTERVAL_MS + 1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetches()).toBe(total);
+  });
+
+  it("stops when cancelled (conversation left the screen)", async () => {
+    const { qc, fetches } = setup([[{ role: "user" }]]);
+    const cancel = pollUntilTurnSettled(qc, key);
+    await vi.advanceTimersByTimeAsync(0);
+    cancel();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetches()).toBe(1);
   });
 });
