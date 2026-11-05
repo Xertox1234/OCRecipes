@@ -183,6 +183,23 @@ describe("front-label-analysis", () => {
       expect(imageContent.image_url.detail).toBe("low");
     });
 
+    // Gemini counts reasoning tokens inside max_completion_tokens: at 300 a
+    // Pringles reply stopped at 293 (249 reasoning) as cut-off JSON; at 1300,
+    // 64 of 64 eval samples parsed (todo P2-2026-10-18, 2026-11-05).
+    it("leaves room for Gemini's reasoning tokens in the reply cap", async () => {
+      mockVisionResponse({
+        brand: "Test",
+        productName: null,
+        netWeight: null,
+        claims: [],
+        confidence: 0.5,
+      });
+
+      await analyzeFrontLabel("base64data");
+
+      expect(mockCreate.mock.calls[0][1].max_completion_tokens).toBe(1300);
+    });
+
     it("sanitizes whitespace-only brand to null", async () => {
       mockVisionResponse({
         brand: "   ",

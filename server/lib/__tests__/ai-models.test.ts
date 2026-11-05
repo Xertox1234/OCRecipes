@@ -60,6 +60,15 @@ describe("AI_FEATURES table", () => {
       vision: true,
       adapt: { set: { reasoning_effort: "low" } },
     },
+    // Owner-approved 2026-11-05 after a paired eval (todo
+    // P2-2026-10-18-camera-vision-features-to-gemini, Updates).
+    "front-label-scan": {
+      model: "google/gemini-3.8-flash",
+      vertexBackup: VERTEX_BACKUP,
+      json: true,
+      vision: true,
+      adapt: { set: { reasoning_effort: "low" } },
+    },
     // Owner-approved 2026-11-02 after a paired eval (todo
     // P2-2026-10-17-recipe-chat-row-model-eval-before-switch, Updates).
     "recipe-chat": {
