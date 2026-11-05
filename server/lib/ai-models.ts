@@ -88,7 +88,17 @@ export const AI_FEATURES = {
   // Photo analysis (photo-analysis.ts)
   "photo-recipe": { ...HEAVY, json: true, vision: true }, // analyzeRecipePhoto
   "photo-recipe-text": { ...FAST, json: true, vision: false }, // structureRecipeFromText
-  "photo-label": { ...HEAVY, json: true, vision: true }, // analyzeLabelPhoto
+  // Gemini 3.8 Flash (owner-approved 2026-11-05, paired eval with the
+  // no-invented-zeros prompt 9.01 vs gpt-4o 8.93, faster and ~half the cost;
+  // todo P2-2026-10-18-camera-vision-features-to-gemini). Backup: Vertex
+  // direct (Flash) — spec 2026-11-02-vertex-backup-route-design.
+  "photo-label": {
+    model: "google/gemini-3.8-flash",
+    vertexBackup: VERTEX_BACKUP,
+    json: true,
+    vision: true,
+    adapt: { set: { reasoning_effort: "low" } },
+  }, // analyzeLabelPhoto
   // Gemini 3.8 Flash (owner-approved 2026-10-19, paired eval 7.76 vs gpt-4o
   // 6.90; todo P2-2026-10-18-camera-vision-features-to-gemini). Low reasoning
   // keeps the JSON reply inside its token cap. Backup: Vertex direct (Flash) —
