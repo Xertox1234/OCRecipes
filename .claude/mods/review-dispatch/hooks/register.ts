@@ -3,8 +3,11 @@ import type { Register } from "claude-code";
 // Review dispatch helper (harness diagnosis 2026-10-30, N4). Every Agent call to a
 // roster reviewer passes through here:
 //   - a one-line `REVIEW-DISPATCH worktree=… base=… [pr=N] [mode=uncommitted]` prompt is
-//     expanded into the verbatim contract prompt from docs/AI_WORKFLOW.md, so no skill
-//     hand-copies 8 KB of text (a miscopied contract writes no review record);
+//     refused with the verbatim contract prompt from docs/AI_WORKFLOW.md, filled in, for
+//     the caller to send back as the whole prompt, so no skill hand-copies 8 KB of text (a
+//     miscopied contract writes no review record). It refuses rather than rewriting the
+//     call: auto mode gives no verdict on an input a hook changed after its review, and
+//     refuses the call (docs/harness-residuals.md, 2026-11-04);
 //   - a hand-written prompt must carry every fixed piece of that template, in order;
 //   - a domain reviewer is refused until code-reviewer was dispatched for the same HEAD
 //     (the #1622 baseline skip);
@@ -32,6 +35,12 @@ const OPT_OUT = "NOT-A-REVIEW:";
 // unexpanded line stops; the expansion drops it.
 const UNLOADED = "If you can read this line";
 const HEADING = "#### Dispatch prompt (per selected reviewer)";
+// Appended to an uncommitted-mode expansion; a full prompt carrying it is exempt from the
+// baseline rule, as its REVIEW-DISPATCH line was.
+const UNCOMMITTED =
+  "\n\nThe changes are uncommitted: use the `git diff HEAD` form above.";
+const BEGIN = "----- BEGIN PROMPT -----";
+const END = "----- END PROMPT -----";
 // The placeholders this mod fills. Every other <…> in the template stays literal for the
 // reviewer to fill (its scratchpad, the sha it observes).
 const FILLED = [
@@ -200,8 +209,7 @@ export const register: Register = (on) => {
       pending.set(wtEarly, p);
     }
 
-    const decide = async (): Promise<{ deny: string } | { prompt: string }> => {
-      let prompt = e.prompt;
+    const decide = async (): Promise<{ deny: string } | null> => {
       let head: string;
       // Audit reviews of uncommitted fixes (Phase 3 per fix, Phase 6) skip the baseline
       // rule: they share one HEAD, and Phase 6 always carries code-reviewer over the whole diff.
@@ -238,8 +246,7 @@ export const register: Register = (on) => {
             throw new Refusal(`no changed files in ${wt} — wrong base or tree`);
           if (agent === BASELINE && !d.pr && !d.uncommitted)
             await refuseOverlap(wt, d.base, changed);
-          exempt = d.uncommitted;
-          prompt = fill(await template(wt), {
+          let prompt = fill(await template(wt), {
             "<WORKTREE>": wt,
             "<expected branch>": branch,
             "<short HEAD>": head,
@@ -248,10 +255,13 @@ export const register: Register = (on) => {
             "<base>": d.base,
             "<those files>": files.join(" "),
           });
-          if (d.uncommitted)
-            prompt +=
-              "\n\nThe changes are uncommitted: use the `git diff HEAD` form above.";
+          if (d.uncommitted) prompt += UNCOMMITTED;
           if (d.extra) prompt += `\n\nContext from the dispatcher:\n${d.extra}`;
+          // Nothing is recorded: no reviewer ran, so this is no baseline. The reissue is
+          // checked, and counted, as a full prompt below.
+          return {
+            deny: `${$.plugin.name}: reissue this Agent call with the text between the two marker lines as its whole prompt, copied exactly — same subagent_type, nothing added. Send every reviewer's reissue in one message, code-reviewer first.\n${BEGIN}\n${prompt}\n${END}`,
+          };
         } else {
           const wt = /git -C "(\/[^"]+)"/.exec(e.prompt)?.[1];
           const tree = /must be (\S+)\/([0-9a-f]{7,40}) —/.exec(e.prompt);
@@ -265,6 +275,7 @@ export const register: Register = (on) => {
               `the prompt is missing this contract text: "${missing.slice(0, 160)}…" — send a ${DIRECTIVE} line instead`,
             );
           head = tree[2];
+          exempt = e.prompt.includes(UNCOMMITTED);
         }
       } catch (err) {
         if (!(err instanceof Refusal)) throw err;
@@ -283,20 +294,18 @@ export const register: Register = (on) => {
           };
       }
       dispatched.set(key, (dispatched.get(key) ?? new Set()).add(agent));
-      return { prompt };
+      return null;
     };
 
-    let decision: { deny: string } | { prompt: string };
+    let decision: { deny: string } | null;
     try {
       decision = await decide();
     } finally {
       // Released before next(): a waiting sibling must not wait for the whole review.
       settle();
     }
-    if ("deny" in decision) return decision;
-    return next(
-      decision.prompt === e.prompt ? e : { ...e, prompt: decision.prompt },
-    );
+    // The call goes on exactly as it came: never a changed input (see the top).
+    return decision ?? next(e);
   }).catch(($, e, next) =>
     next.called
       ? next(e)
