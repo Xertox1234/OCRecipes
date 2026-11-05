@@ -12,8 +12,17 @@ import {
   mealSuggestionCaseSchema,
   recipeGenCaseSchema,
   photoAnalysisCaseSchema,
+  labelExtractionCasesSchema,
+  labelExtractionCaseSchema,
+  frontLabelCasesSchema,
+  frontLabelCaseSchema,
 } from "../lib/dataset-schemas";
-import { ALL_PHOTO_ANALYSIS_DIMENSIONS, evalTestCasesSchema } from "../types";
+import {
+  ALL_PHOTO_ANALYSIS_DIMENSIONS,
+  ALL_LABEL_EXTRACTION_DIMENSIONS,
+  ALL_FRONT_LABEL_DIMENSIONS,
+  evalTestCasesSchema,
+} from "../types";
 
 const datasetsDir = path.join(__dirname, "..", "datasets");
 
@@ -116,4 +125,64 @@ describe("schema/runner dimension alignment", () => {
       [...ALL_PHOTO_ANALYSIS_DIMENSIONS].sort(),
     );
   });
+
+  it("label-extraction scoreDimensions enum matches the shared dimension list", () => {
+    const schemaOptions =
+      labelExtractionCaseSchema.shape.scoreDimensions.unwrap().element.options;
+    expect([...schemaOptions].sort()).toEqual(
+      [...ALL_LABEL_EXTRACTION_DIMENSIONS].sort(),
+    );
+  });
+
+  it("front-label scoreDimensions enum matches the shared dimension list", () => {
+    const schemaOptions =
+      frontLabelCaseSchema.shape.scoreDimensions.unwrap().element.options;
+    expect([...schemaOptions].sort()).toEqual(
+      [...ALL_FRONT_LABEL_DIMENSIONS].sort(),
+    );
+  });
+});
+
+describe("label datasets", () => {
+  const files = [
+    ["label-extraction-cases.json", labelExtractionCasesSchema],
+    ["front-label-cases.json", frontLabelCasesSchema],
+  ] as const;
+
+  for (const [filename, schema] of files) {
+    it(`validates ${filename}`, () => {
+      assertDataset(schema, filename);
+    });
+
+    it(`${filename}: ids and image URLs are unique, URLs are https`, () => {
+      const cases = loadDataset(filename) as {
+        id: string;
+        input: { imageUrl: string };
+      }[];
+      expect(new Set(cases.map((c) => c.id)).size).toBe(cases.length);
+      expect(new Set(cases.map((c) => c.input.imageUrl)).size).toBe(
+        cases.length,
+      );
+      for (const c of cases) {
+        expect(c.input.imageUrl.startsWith("https://")).toBe(true);
+      }
+    });
+
+    it(`${filename}: every assertion pattern compiles and every case checks something`, () => {
+      const cases = loadDataset(filename) as {
+        id: string;
+        assertions?: { mustContain?: string[]; mustNotContain?: string[] };
+      }[];
+      for (const c of cases) {
+        const patterns = [
+          ...(c.assertions?.mustContain ?? []),
+          ...(c.assertions?.mustNotContain ?? []),
+        ];
+        expect(patterns.length, `${c.id} has no assertions`).toBeGreaterThan(0);
+        for (const p of patterns) {
+          expect(() => new RegExp(p, "i"), `${c.id}: ${p}`).not.toThrow();
+        }
+      }
+    });
+  }
 });

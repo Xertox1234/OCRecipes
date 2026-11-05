@@ -69,6 +69,8 @@
     "eval:recipe-generation": "EVAL_SKIP_IMAGE_GENERATION=true npx tsx evals/runner-recipe-generation.ts",
     "eval:inspired": "npx tsx evals/runner-inspired-suggestions.ts",
     "eval:photo": "npx tsx evals/runner-photo-analysis.ts",
+    "eval:label": "npx tsx evals/runner-label-extraction.ts",
+    "eval:front-label": "npx tsx evals/runner-front-label.ts",
     "eval:compare": "npx tsx scripts/ci/eval-compare.ts",
     "eval:paired": "npx tsx scripts/ci/eval-compare.ts --paired",
     "eval:all": "npm run eval:coach && npm run eval:recipe-chat && npm run eval:meal-suggestions && npm run eval:recipe-generation && npm run eval:inspired",

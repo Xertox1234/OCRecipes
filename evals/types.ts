@@ -71,6 +71,26 @@ export const ALL_PHOTO_ANALYSIS_DIMENSIONS: PhotoAnalysisDimension[] = [
   "confidence_calibration",
 ];
 
+export type LabelExtractionDimension =
+  | "extraction_accuracy"
+  | "null_discipline"
+  | "confidence_calibration";
+export const ALL_LABEL_EXTRACTION_DIMENSIONS: LabelExtractionDimension[] = [
+  "extraction_accuracy",
+  "null_discipline",
+  "confidence_calibration",
+];
+
+export type FrontLabelDimension =
+  | "field_accuracy"
+  | "claims_fidelity"
+  | "confidence_calibration";
+export const ALL_FRONT_LABEL_DIMENSIONS: FrontLabelDimension[] = [
+  "field_accuracy",
+  "claims_fidelity",
+  "confidence_calibration",
+];
+
 export interface EvalTestCase {
   id: string;
   category:

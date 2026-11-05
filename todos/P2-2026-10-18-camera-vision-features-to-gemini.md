@@ -3,7 +3,7 @@ title: "Move the camera / image-reading AI features from gpt-4o to Gemini (eval-
 status: backlog
 priority: medium
 created: 2026-10-18
-updated: 2026-10-18
+updated: 2026-11-05
 assignee:
 labels: [deferred, ai, camera]
 github_issue:
@@ -112,3 +112,47 @@ That mismatch penalised whichever model read the photo correctly: Gemini scored 
 
 - **Owner: "switch to gemini".** `photo-analyze` now runs `google/gemini-3.8-flash` with `adapt: { set: { reasoning_effort: "low" } }`, and the direct-OpenAI fallback stays `gpt-4o`. `LOG_MAX_TOKENS` went from 1000 to 1500, which covers the cut-off reply measured above. `refineAnalysis` shares that cap. `npm run ai:smoke -- photo-analyze` passed: answered by Google `google/gemini-3.8-flash`, 1/1 rows.
 - **Owner: "park for now"** for the other 8 rows. Each still needs its own eval cases first, using free-to-use photos and descriptions checked against each photo. Start with photo-label and front-label, since allergen detection depends on them. Resume only when the owner asks.
+
+### 2026-11-05: RESUMED; `photo-label` and `front-label-scan` measured (no row switched)
+
+- **Owner: "resume now"** (typed in the orchestrating session on 2026-11-05) lifts the 2026-10-19 park. Per-row approval still holds: this run built eval cases and measured, and **changed no row in `server/lib/ai-models.ts`**.
+- **New eval suites.** `npm run eval:label` (6 cases, `evals/datasets/label-extraction-cases.json`, runner `evals/runner-label-extraction.ts`) and `npm run eval:front-label` (8 cases, `evals/datasets/front-label-cases.json`, runner `evals/runner-front-label.ts`). Images are Wikimedia Commons public-domain/CC files (FDA sample panels, Supplement Facts, phone photos of real packs); no user uploads. Each case's `description` lists what is printed, checked against the pixels (and the full-size photo where a detail was in doubt), plus `mustContain`/`mustNotContain` patterns for the key numbers. Images are converted to JPEG with sharp before sending, as the app uploads. Judge: `anthropic/claude-sonnet-4.6`. 3 samples per case, fallback off, 0 call violations.
+- **Dataset fixes before the final runs** (earlier runs kept locally as `*.INVALID-*.json`, not comparable): the judge read confidence 1.0 as "lowest possible" (rubric now states the 0-1 scale); my `allin` assertions rejected a correct Hebrew `60 גרם` and the spelling `all in`; the Pringles description missed a 'Suitable for vegetarians' badge on the turned can that Argon read correctly.
+
+**`photo-label`** (6 cases x 3; current cap `max_completion_tokens: 800`, detail high):
+
+| Measure                  | gpt-4o (`label-extraction-…T17-58-31`) | Gemini 3.8 Flash, low (`…T17-59-22`) | Argon (`…T18-00-49`) |
+| ------------------------ | -------------------------------------- | ------------------------------------ | -------------------- |
+| Weighted overall         | 8.91                                   | 8.39                                 | 8.40                 |
+| Extraction accuracy      | 9.59                                   | 9.50                                 | 9.67                 |
+| Null discipline          | 9.12                                   | 7.89                                 | 7.92                 |
+| Confidence calibration   | 7.12                                   | 7.17                                 | 6.83                 |
+| Parse / call failures    | 1/18 (Azure error)                     | 0/18                                 | 6/18 invalid data    |
+| Latency p50 / p90 / max  | 5.0 / 5.7 / 43.2 s                     | 3.0 / 3.4 / 4.0 s                    | 6.8 / 7.9 / 8.3 s    |
+| Cost per call (measured) | ~$0.0051                               | ~$0.0020                             | ~$0.0054             |
+
+- **Paired gate** (`eval:paired`, gpt-4o baseline): Gemini FAIL on null discipline (-0.97 [-3.25, 0.31]) and calibration (CI too wide on 6 cases); extraction accuracy equal (0.00). No new hard-assertion failure for Gemini. Argon FAIL, with new hard-assertion failures only because of the parse errors.
+- **Why Gemini loses on null discipline.** It writes `0` for rows the label does not list (saturated fat, trans fat, cholesterol, fiber, calcium, iron on the bilingual carton photo: 2.3/10 vs gpt-4o 9.0) and on the old-format panel copies a percent daily value into calcium/iron. gpt-4o does the second one too (old-format case 4.5/10 for gpt-4o vs 5.0 for Gemini). Both models report 0.85-0.9 confidence on the crumpled, cut-off wrapper (calibration 2.0 and 3.0), which is the miscalibration the allergen-adjacent paths should not trust.
+- **Why Argon fails.** It returns numeric fields as strings ("8g") in 6 of 18 calls, so the existing strict `labelExtractionSchema` rejects them (fail-closed, correctly). Argon would need a prompt or schema-coercion change; not worth it, since it is also slowest and the same price as gpt-4o.
+- **Takeaway.** Same reading accuracy, 40% lower latency, 60% lower cost, but a real regression in null discipline (invented zeros). A move needs a prompt tweak first ("never write 0 for a row that is not printed") and a re-run, and the nutrition values are what a user logs. Nothing was switched.
+
+**`front-label-scan`** (8 cases x 3; current cap `max_completion_tokens: 300`, detail low):
+
+| Measure                  | gpt-4o (`front-label-…T18-18-25`) | Gemini low, cap 300 (`…T18-19-30`) | Gemini low, cap 1300 (`…T18-20-43`) | Argon (`…T18-22-25`) |
+| ------------------------ | --------------------------------- | ---------------------------------- | ----------------------------------- | -------------------- |
+| Weighted overall         | 7.83                              | 8.92                               | 8.86                                | 8.95                 |
+| Field accuracy           | 8.77                              | 9.71                               | 9.71                                | 9.92                 |
+| Claims fidelity          | 7.55                              | 8.71                               | 8.67                                | 8.96                 |
+| Confidence calibration   | 6.50                              | 7.75                               | 7.54                                | 7.00                 |
+| Parse / call failures    | 2/24 (Azure errors)               | 0/24 this run (see below)          | 0/24                                | 0/24                 |
+| Hard-assertion pass rate | 83%                               | 100%                               | 100%                                | 100%                 |
+| Latency p50 / p90 / max  | 3.1 / 3.4 / 3.8 s                 | 2.6 / 4.3 / 4.6 s                  | 2.7 / 4.4 / 9.5 s                   | 5.7 / 10.8 / 18.2 s  |
+| Cost per call (measured) | ~$0.00164                         | ~$0.00085                          | ~$0.00081                           | ~$0.00228            |
+
+- **Paired gate vs gpt-4o:** claims fidelity +0.96 [0.50, 1.67] and field accuracy +0.83 [0.13, 1.79] pass for Gemini (cap 300); calibration +1.12 with CI [-0.96, 3.67] reads FAIL only on the 8-case interval width. Same shape for cap 1300 and Argon (+1.21 claims, +1.04 fields). No new hard-assertion failure for any candidate.
+- **gpt-4o's weak spots.** It invented a net weight for the Marmite jar in 2 of 3 samples in the final run (`225g`; the small print is illegible even at 3369 px, so this is product knowledge, against "do not infer") and reads the unbranded jar with confidence 0.85-0.95 (calibration 1.0).
+- **Token-cap hazard (the one real risk).** With the shipped `max_completion_tokens: 300`, Gemini low on the Pringles photo hit `finish_reason: length` at 293 of 300 tokens (249 of them reasoning) and failed to parse. It happened in 2 of 72 default-cap Gemini eval samples and 1 of 25 direct probes on that photo; reasoning reached 225 of 300 in a clean run. At a 1300 cap, 64 of 64 samples across the 3-sample and 5-sample runs parsed (max 437 completion tokens, 364 reasoning). Any switch must raise this row's cap (the backup leg already adds `VERTEX_BACKUP_REASONING_HEADROOM` = 1000, the OpenRouter-primary leg does not).
+- **Argon** is the best scorer on claims and field accuracy but is 2x the cost and ~2x the latency (p90 10.8 s, max 18.2 s) for +0.2 over Gemini, and the gap is inside the noise.
+- **Consumers.** `analyzeFrontLabel` output is stored as product verification data (brand, name, net weight, claims) through `server/routes/verification.ts`; `analyzeLabelPhoto` feeds the nutrition-label scan in `server/routes/photos.ts`. Neither measurement touched an allergen filter, and no filter was changed. Claims fidelity (only printed claims) is the dimension that matters most for the stored data, and Gemini scored higher than gpt-4o on it.
+- **Spend.** About $2.94 of today's $5 OpenRouter budget for the whole session (all runs, judge calls and 40 direct probes, including the 8 invalidated runs).
+- **Owner decisions needed (one each, per row).** (1) `front-label-scan`: switch to `google/gemini-3.8-flash` + `reasoning_effort: low` with the cap raised to 1300, or keep gpt-4o. The measurements favour switching. (2) `photo-label`: keep gpt-4o for now, or let me try a prompt fix for the invented zeros and re-measure first. No row was switched; the other 7 rows still have no eval cases.
