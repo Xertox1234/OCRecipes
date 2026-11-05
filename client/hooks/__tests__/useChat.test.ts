@@ -7,6 +7,7 @@ import {
   useChatMessages,
   useMarkPendingRecipeTurn,
   useDeleteConversation,
+  useCreateConversation,
   RECIPE_TURN_POLL_INTERVAL_MS,
   RECIPE_TURN_POLL_CAP_MS,
   CHAT_INACTIVITY_MS,
@@ -1320,6 +1321,41 @@ describe("useSendMessage — Coach reply ready (notifyWhenAway)", () => {
       expect(listener).not.toHaveBeenCalled();
       unsubscribe();
     });
+  });
+});
+
+describe("useCreateConversation", () => {
+  // Owner phone check 2026-11-05: a first Coach message sent offline showed
+  // the bubble and nothing else. TanStack's default networkMode "online"
+  // PAUSES a mutation while offline, so mutateAsync never settled and
+  // CoachChat's "Couldn't start the conversation" catch never ran.
+  it("runs and rejects while offline instead of pausing", async () => {
+    const { wrapper } = createQueryWrapper();
+    const networkError = new TypeError("Network request failed");
+    mockApiRequest.mockRejectedValue(networkError);
+    const isOnlineSpy = vi
+      .spyOn(onlineManager, "isOnline")
+      .mockReturnValue(false);
+    try {
+      const { result } = renderHook(() => useCreateConversation(), {
+        wrapper,
+      });
+      let rejection: unknown;
+      act(() => {
+        result.current.mutateAsync({ type: "coach" }).catch((e: unknown) => {
+          rejection = e;
+        });
+      });
+
+      await vi.waitFor(() => expect(rejection).toBe(networkError));
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/chat/conversations",
+        expect.objectContaining({ type: "coach" }),
+      );
+    } finally {
+      isOnlineSpy.mockRestore();
+    }
   });
 });
 
