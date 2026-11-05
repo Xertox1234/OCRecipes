@@ -44,6 +44,9 @@ describe("database pool", () => {
 
     expect(config.connectionTimeoutMillis).toBe(5_000);
     expect(config.statement_timeout).toBe(30_000);
+    // A transaction left open and idle (a leaked client) holds its locks
+    // until Postgres ends the session.
+    expect(config.idle_in_transaction_session_timeout).toBe(60_000);
     expect(config.options).toBe("-c timezone=UTC");
   });
 

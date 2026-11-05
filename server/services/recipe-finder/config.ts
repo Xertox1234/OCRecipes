@@ -1,6 +1,7 @@
 // server/services/recipe-finder/config.ts
 // Read at call time, never at module load: Railway variable flips and tests
-// both change process.env after import.
+// both change process.env after import. server/lib/env.ts rejects any value
+// other than "true" / "false" at boot.
 
 /** Spec §8: the whole finder sits behind this flag, off by default. */
 export function isRecipeFinderEnabled(): boolean {

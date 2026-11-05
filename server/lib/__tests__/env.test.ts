@@ -372,3 +372,40 @@ describe("validateEnv IAP / RTDN configuration", () => {
     expect(ws.filter((w) => /APPLE_|GOOGLE_/.test(w))).toEqual([]);
   });
 });
+
+// Readers treat anything but "true" as off, so a typo like "ture" or "1" would
+// silently disable the feature. The schema makes it fail at boot instead
+// (reliability audit R13, 2026-10-30).
+describe("validateEnv feature flags", () => {
+  const saved = { ...process.env };
+  const FLAGS = [
+    "RECIPE_FINDER_ENABLED",
+    "RECIPE_OFFER_ENABLED",
+    "RETENTION_CLEANUP_ENABLED",
+  ] as const;
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE, NODE_ENV: "development" };
+    for (const flag of FLAGS) delete process.env[flag];
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it("accepts each flag unset, true or false", async () => {
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
+    for (const flag of FLAGS) {
+      for (const value of ["true", "false"]) {
+        process.env[flag] = value;
+        expect(() => validateEnv()).not.toThrow();
+      }
+      delete process.env[flag];
+    }
+  });
+
+  it.each(FLAGS)("rejects a malformed %s at boot", async (flag) => {
+    process.env[flag] = "TRUE";
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).toThrow(new RegExp(flag));
+  });
+});

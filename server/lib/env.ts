@@ -138,6 +138,14 @@ const envSchema = z.object({
   // Admin
   ADMIN_USER_IDS: z.string().optional(),
 
+  // Feature flags — off unless exactly "true". The readers check process.env
+  // at call time (server/services/recipe-finder/config.ts, server/index.ts);
+  // declaring them here only makes a typo such as "TRUE" or "1" fail at boot
+  // instead of silently leaving the feature off.
+  RECIPE_FINDER_ENABLED: z.enum(["true", "false"]).optional(),
+  RECIPE_OFFER_ENABLED: z.enum(["true", "false"]).optional(),
+  RETENTION_CLEANUP_ENABLED: z.enum(["true", "false"]).optional(),
+
   // Logging
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])

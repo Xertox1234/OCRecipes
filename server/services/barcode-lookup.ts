@@ -24,6 +24,9 @@ const log = createServiceLogger("barcode-lookup");
 
 // Timeout for outbound API requests (10 seconds)
 const FETCH_TIMEOUT_MS = 10_000;
+// The OFF API asks every client to name itself (app, version, contact URL);
+// anonymous traffic is the first to be rate-limited or blocked.
+const OFF_USER_AGENT = "OCRecipes/1.0 (https://ocrecipes.com)";
 
 // ---------------------------------------------------------------------------
 // Barcode lookup with cross-validation
@@ -433,7 +436,10 @@ export async function lookupBarcode(
     try {
       const res = await fetch(
         `https://world.openfoodfacts.org/api/v0/product/${variant}.json`,
-        { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+        {
+          headers: { "User-Agent": OFF_USER_AGENT },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
       );
       const json = await res.json();
       if (json.status === 0) offAnswered = true;

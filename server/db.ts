@@ -37,6 +37,11 @@ export const pool = new Pool({
   // and one runaway query can hold a connection indefinitely.
   connectionTimeoutMillis: 5_000,
   statement_timeout: statementTimeoutMs,
+  // A transaction left open and idle (a client never released, an await that
+  // never settles) holds its row locks until Postgres ends the session. Only
+  // IDLE time counts, so a long transaction that keeps running statements —
+  // the scripts/cleanup-junk-* deletes — is unaffected.
+  idle_in_transaction_session_timeout: 60_000,
 });
 
 pool.on("error", (err) => {

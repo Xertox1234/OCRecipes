@@ -1894,3 +1894,34 @@ describe("lookupBarcode — upstream outage vs genuine miss (M-rel-5)", () => {
     expect(await lookupBarcode("0000000000006")).toBeNull();
   });
 });
+
+// The OFF API asks every client to identify itself; anonymous traffic is the
+// first to be rate-limited or blocked (reliability audit N1, 2026-10-30).
+describe("lookupBarcode — Open Food Facts request identity", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("sends an identifying User-Agent to Open Food Facts", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    await lookupBarcode("012345678905");
+
+    const offCalls = mockFetch.mock.calls.filter(([url]) =>
+      String(url).includes("openfoodfacts.org"),
+    );
+    expect(offCalls.length).toBeGreaterThan(0);
+    for (const [, init] of offCalls) {
+      expect(new Headers(init?.headers).get("User-Agent")).toBe(
+        "OCRecipes/1.0 (https://ocrecipes.com)",
+      );
+    }
+  });
+});
