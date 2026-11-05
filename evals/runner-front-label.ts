@@ -83,7 +83,11 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
 
   generateResponse: async (testCase: EvalTestCase) => {
     const i = testCase.input as LabelImageInput;
-    const imageBase64 = await fetchImageAsJpegBase64(i.imageUrl);
+    const imageBase64 = await fetchImageAsJpegBase64(i.imageUrl, {
+      // uploadFrontLabelPhoto in client/lib/photo-upload.ts
+      maxEdge: 1024,
+      quality: 80,
+    });
     const start = Date.now();
     const result = await analyzeFrontLabel(imageBase64);
     const latencyMs = Date.now() - start;
