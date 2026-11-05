@@ -28,9 +28,9 @@ fired the same announcement. #1741 only adds one more way to reach it.
 
 ## Acceptance Criteria
 
-- [ ] "Coach responded" is announced only when the stream ends with a reply
-      (the `onDone` success path), not on error, user abort, or a quiet
-      dead-socket abort
+- [ ] "Coach responded" is not announced on an error or a user abort. A quiet
+      dead-socket abort (which also calls `onDone`, `useCoachStream.ts` ~316)
+      announces it only when the partial text is non-empty
 - [ ] An error end keeps its own announcement (the error toast) and does not
       also say "Coach responded"
 - [ ] A test in `client/components/coach/__tests__/` (or the existing CoachChat

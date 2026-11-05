@@ -8,7 +8,7 @@ assignee:
 labels: [deferred, maintainability, auth]
 github_issue:
 human_led: true
-blocked_reason: "The rest of users.ts is the auth/account sections (sign-in, lockout, sessions). Auth storage is never delegated; same ruling as todos/P3-2026-11-04-shrink-useauth-below-600-lines.md (owner, 2026-11-04). Also wait for PR #1744 to merge first."
+blocked_reason: "The rest of users.ts is the auth/account sections (sign-in, lockout, sessions). Auth storage is never delegated; same ruling as todos/P3-2026-11-04-shrink-useauth-below-600-lines.md (owner, 2026-11-04)."
 ---
 
 # server/storage/users.ts is still ~905 lines after the subscription split
@@ -60,7 +60,7 @@ of the file is the profile and auth/account sections.
 
 ## Dependencies
 
-- PR #1744 (subscription split) merged.
+- PR #1744 (subscription split) — satisfied, merged 2026-11-04.
 
 ## Updates
 
