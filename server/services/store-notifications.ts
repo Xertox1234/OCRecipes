@@ -176,6 +176,17 @@ export async function handleAppleNotification(
         n.revokedAt ?? n.signedAt,
       )
     : await storage.expireSubscriptionByTransactionId(n.originalTransactionId);
+  if (result && "stale" in result && result.stale) {
+    log.warn(
+      {
+        type: n.notificationType,
+        uuid: n.notificationUUID,
+        userId: result.userId,
+      },
+      "apple refund notification is dated at or before a refund already reversed on this row (redelivered) — not revoked",
+    );
+    return;
+  }
   if (result) {
     invalidateTierCache(result.userId);
     log.info(

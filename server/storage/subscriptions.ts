@@ -153,7 +153,7 @@ export async function claimTransactionAndUpgrade(
       .set({
         receipt: data.receipt,
         status: data.status ?? "completed",
-        revokedAt: null,
+        // revokedAt is kept: see revokeSubscriptionByTransactionId.
         updatedAt: new Date(),
       })
       .where(eq(transactions.transactionId, data.transactionId))
@@ -204,7 +204,8 @@ export async function extendSubscriptionByTransactionId( // idor-safe
 
     await tx
       .update(transactions)
-      .set({ status: "completed", revokedAt: null, updatedAt: new Date() })
+      // revokedAt is kept: see revokeSubscriptionByTransactionId.
+      .set({ status: "completed", updatedAt: new Date() })
       .where(eq(transactions.transactionId, transactionId));
     await applyRenewalInTx(tx, txn.userId, "premium", expiresAt);
     return { status: "extended", userId: txn.userId };
@@ -214,12 +215,19 @@ export async function extendSubscriptionByTransactionId( // idor-safe
 /**
  * Revoke a subscription identified by its stable transaction id (Apple
  * `originalTransactionId` / Google `purchaseToken`) — used by the store
- * refund/revoke/expire webhooks. Atomically downgrades the owning user to
- * `free` and marks the transaction `revoked`, recording `revokedAt` — the
- * STORE's revocation time when given (else now). A repeat revoke never moves
- * an existing `revokedAt` later (LEAST). Idempotent: an unknown id is a
- * no-op (returns `null`); re-revoking is a no-op. Returns the affected userId
- * so the caller can evict the tier cache.
+ * refund/revoke webhooks. Atomically downgrades the owning user to `free`
+ * and marks the transaction `revoked`, recording `revokedAt` — the STORE's
+ * revocation time when given (else now). A repeat revoke of a revoked row
+ * never moves `revokedAt` later (LEAST). An unknown id is a no-op (returns
+ * `null`). Returns the affected userId so the caller can evict the tier cache.
+ *
+ * `revokedAt` outlives a re-activation (a reversal, renewal or re-claim sets
+ * the row back to `completed` but keeps it), so on a row that is NOT revoked
+ * it marks the latest refund already undone. A revoke dated at or before it
+ * is that refund (or an older one) arriving again — Apple retries for ~72h —
+ * and is a no-op returning `stale: true`, so the user stays premium. A later
+ * date is a new refund: it revokes and records its own date. A revoke with no
+ * store date (Google) is timed now, so it always applies.
  *
  * Not user-scoped by design (idor-safe): the store calls the webhook, so there
  * is no authenticated user to scope by. The route verifies the Apple JWS /
@@ -230,7 +238,7 @@ export async function extendSubscriptionByTransactionId( // idor-safe
 export async function revokeSubscriptionByTransactionId( // idor-safe
   transactionId: string,
   revokedAt?: Date,
-): Promise<{ userId: string } | null> {
+): Promise<{ userId: string; stale: boolean } | null> {
   return db.transaction(async (tx) => {
     // Row lock: serializes renewal / refund / expiry on this transaction so a
     // renewal never overwrites a concurrently committed refund.
@@ -242,17 +250,29 @@ export async function revokeSubscriptionByTransactionId( // idor-safe
 
     if (!txn) return null;
 
+    const at = revokedAt ?? new Date();
+    const alreadyRevoked = txn.status === "revoked";
+    if (
+      !alreadyRevoked &&
+      txn.revokedAt &&
+      at.getTime() <= txn.revokedAt.getTime()
+    ) {
+      return { userId: txn.userId, stale: true };
+    }
+
     await tx
       .update(transactions)
       .set({
         status: "revoked",
-        revokedAt: sql`LEAST(${transactions.revokedAt}, ${revokedAt ?? new Date()})`,
+        revokedAt: alreadyRevoked
+          ? sql`LEAST(${transactions.revokedAt}, ${at})`
+          : at,
         updatedAt: new Date(),
       })
       .where(eq(transactions.transactionId, transactionId));
 
     await downgradeIfActiveSourceInTx(tx, txn);
-    return { userId: txn.userId };
+    return { userId: txn.userId, stale: false };
   });
 }
 
@@ -338,12 +358,13 @@ export async function expireSubscriptionByTransactionId( // idor-safe
 /**
  * Undo a refund the store REVERSED (Apple REFUND_REVERSED). The caller must
  * pass only store-verified data: the notification's signed transaction, which
- * must no longer be revoked. A `revoked` row goes back to `completed` with
- * `revokedAt` cleared; this skips the purchase-date gate because Apple's
- * signed notification itself authorizes it. Premium is re-applied (monotonic
- * expiry, see applyRenewalInTx) only while `expiresAt` is still in the
- * future — a reversed refund of an already-ended period restores the row
- * status only. A row that is not `revoked` keeps its status. Returns `null`
+ * must no longer be revoked. A `revoked` row goes back to `completed`; this
+ * skips the purchase-date gate because Apple's signed notification itself
+ * authorizes it. `revokedAt` is kept so a redelivered copy of the reversed
+ * refund is ignored (see revokeSubscriptionByTransactionId). Premium is
+ * re-applied (monotonic expiry, see applyRenewalInTx) only while `expiresAt`
+ * is still in the future — a reversed refund of an already-ended period
+ * restores the row status only. A row that is not `revoked` keeps its status. Returns `null`
  * for an unknown id.
  *
  * Out-of-order guard: Apple delivers notifications out of order and retries
@@ -375,7 +396,7 @@ export async function reinstateSubscriptionByTransactionId( // idor-safe
 
     await tx
       .update(transactions)
-      .set({ status: "completed", revokedAt: null, updatedAt: new Date() })
+      .set({ status: "completed", updatedAt: new Date() })
       .where(
         and(
           eq(transactions.transactionId, transactionId),
