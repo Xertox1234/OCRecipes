@@ -105,7 +105,17 @@ export const AI_FEATURES = {
   // Other vision services
   "receipt-scan": { ...HEAVY, json: true, vision: true }, // receipt-analysis analyzeReceiptPhotos
   "menu-scan": { ...HEAVY, json: true, vision: true }, // menu-analysis analyzeMenuPhoto
-  "front-label-scan": { ...HEAVY, json: true, vision: true }, // front-label-analysis analyzeFrontLabel
+  // Gemini 3.8 Flash (owner-approved 2026-11-05, paired eval 8.92 vs gpt-4o
+  // 7.83, claims fidelity +0.96; todo P2-2026-10-18-camera-vision-features-to-
+  // gemini). Needs the 1300 reply cap in analyzeFrontLabel. Backup: Vertex
+  // direct (Flash) — spec 2026-11-02-vertex-backup-route-design.
+  "front-label-scan": {
+    model: "google/gemini-3.8-flash",
+    vertexBackup: VERTEX_BACKUP,
+    json: true,
+    vision: true,
+    adapt: { set: { reasoning_effort: "low" } },
+  }, // front-label-analysis analyzeFrontLabel
   "cooking-ingredient-photo": { ...HEAVY, json: true, vision: true }, // cooking-session analyzeIngredientPhoto
   // Recipes & meals
   // Gemini 4 Argon (owner-approved 2026-10-17, paired eval +1.97 creativity vs

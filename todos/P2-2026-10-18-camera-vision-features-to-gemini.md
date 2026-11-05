@@ -161,3 +161,20 @@ That mismatch penalised whichever model read the photo correctly: Gemini scored 
 
 - **Owner: switch `front-label-scan`** to Gemini 3.8 Flash (low reasoning) with the cap raised to 1300. **Owner: try a prompt fix for `photo-label`** (no invented zeros), then re-measure.
 - **Caveat on the tables above (review of #1755).** Those runs sent each Wikimedia photo at full size (up to 3369 px) at JPEG quality 90. The app shrinks a scan before upload: up to 1536 px at quality 0.85 for nutrition labels (`uploadLabelForAnalysis`), and up to 1024 px at 0.8 for package fronts (`uploadFrontLabelPhoto`), both in `client/lib/photo-upload.ts`. Every model got the same images, so the comparisons hold, but the absolute scores and per-call costs overstate what the app sees, mostly for `photo-label` (`detail: high`). `evals/lib/fetch-image.ts` now applies each path's bound and quality. The app's extra quality step-down for files over its `targetSizeKB` is not reproduced. The follow-up runs use the app-sized photos.
+
+### 2026-11-05: `front-label-scan` switched to Gemini 3.8 Flash (low reasoning), cap 1300
+
+- **Re-checked with app-sized photos** (1024 px, quality 80), the shipped prompt and the new 1300 cap, 8 cases × 3 samples. Judge: claude-sonnet-4.6.
+
+  | Measure           | gpt-4o (`front-label-2026-11-05T19-27-11`) | Gemini Flash, low (`…T19-26-19`) |
+  | ----------------- | ------------------------------------------ | -------------------------------- |
+  | Weighted overall  | 8.2                                        | 8.8                              |
+  | Field accuracy    | 9.3                                        | 9.6                              |
+  | Claims fidelity   | 7.9                                        | 8.7                              |
+  | Calibration       | 6.7                                        | 7.5                              |
+  | Hard assertions   | 95.8%                                      | 100%                             |
+  | Latency avg / max | 3.0 / 4.1 s                                | 3.1 / 8.4 s                      |
+
+- **Paired gate:** claims fidelity +0.83 [0.29, 1.58] and field accuracy +0.33 [-0.17, 0.83] pass. Calibration +0.79 [-0.92, 2.71] reads FAIL on the 8-case interval width only, the same shape as the full-size run. No new hard-assertion failure.
+- **Weak spot both share:** the ambiguous multi-carton Oatly frame gets 0.95 confidence from Gemini (calibration 2/10).
+- **Change:** the row runs `google/gemini-3.8-flash` with `adapt: { set: { reasoning_effort: "low" } }`, and `analyzeFrontLabel`'s `max_completion_tokens` went from 300 to 1300. `npm run ai:smoke -- front-label-scan` passed: Google answered `google/gemini-3.8-flash`, 1/1 rows.

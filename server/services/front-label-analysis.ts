@@ -63,7 +63,9 @@ export async function analyzeFrontLabel(
     response = await aiChat(
       "front-label-scan",
       {
-        max_completion_tokens: 300,
+        // Gemini counts reasoning tokens inside this cap; 300 cut replies off
+        // (todo P2-2026-10-18-camera-vision-features-to-gemini, 2026-11-05).
+        max_completion_tokens: 1300,
         temperature: 0.2,
         messages: [
           {
