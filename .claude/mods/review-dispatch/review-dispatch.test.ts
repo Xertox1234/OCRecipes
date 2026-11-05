@@ -111,7 +111,9 @@ const FULL = TEMPLATE.split("<WORKTREE>")
   .split("<short HEAD>")
   .join("abc1234")
   .split("<domain>")
-  .join("baseline")
+  .join(
+    "cross-cutting baseline (strict TypeScript, Zod, tests, code quality, project conventions)",
+  )
   .split("<changed-file list>")
   .join("a.ts\nb.ts")
   .split("<base>")
@@ -123,14 +125,39 @@ const FULL = TEMPLATE.split("<WORKTREE>")
 const refused = (r: unknown) =>
   typeof (r as { deny?: unknown }).deny === "string";
 const text = (r: unknown) => String((r as { deny?: unknown }).deny ?? "");
+// The filled contract a REVIEW-DISPATCH refusal hands back, between its markers.
+const BEGIN = "----- BEGIN PROMPT -----\n";
+const END = "\n----- END PROMPT -----";
+const expansion = (r: unknown) => {
+  const t = text(r);
+  const at = t.indexOf(BEGIN);
+  const end = t.indexOf(END, at);
+  if (at < 0 || end < 0) throw new Error(`no expanded prompt in: ${t}`);
+  return t.slice(at + BEGIN.length, end);
+};
+type T = Parameters<TestBody>[0];
+// What a caller does: send the line, and on the refusal send back what it hands out.
+const viaReissue = async ($: T, name: string, prompt: string) => {
+  const r = await $.tool.call(agent(name, prompt));
+  return text(r).includes(BEGIN) ? $.tool.call(agent(name, expansion(r))) : r;
+};
 
-test("a REVIEW-DISPATCH line becomes the filled contract", async ($, on) => {
+test("a REVIEW-DISPATCH line is refused with the filled contract to reissue", async ($, on) => {
   const seen = world(on);
   const r = await $.tool.call(
     agent("code-reviewer", `${DIRECTIVE}\nFix: tighten the parser.`),
   );
-  expect(refused(r)).toBe(false);
-  const p = seen[0];
+  // Refused, never rewritten: auto mode gives no verdict on an input a hook changed.
+  expect(refused(r)).toBe(true);
+  expect(seen).toHaveLength(0);
+  expect(text(r)).toMatch(/reissue this Agent call/);
+  const p = expansion(r);
+  expect(p).toBe(
+    `${FULL}\n\nContext from the dispatcher:\nFix: tighten the parser.`,
+  );
+  // Sent back as it was handed out, it passes untouched.
+  expect(refused(await $.tool.call(agent("code-reviewer", p)))).toBe(false);
+  expect(seen).toEqual([p]);
   expect(p).toContain(`git -C "${WT}"`);
   expect(p).toContain("must be chore/x/abc1234 —");
   expect(p).toContain("lens:\na.ts\nb.ts\n");
@@ -148,15 +175,16 @@ test("a REVIEW-DISPATCH line becomes the filled contract", async ($, on) => {
 
 test("pr= takes the file list from gh pr diff; mode=uncommitted from git diff HEAD", async ($, on) => {
   const seen = world(on);
-  await $.tool.call(
-    agent(
-      "code-reviewer",
-      `REVIEW-DISPATCH worktree=${WT} base=origin/main pr=42`,
-    ),
+  await viaReissue(
+    $,
+    "code-reviewer",
+    `REVIEW-DISPATCH worktree=${WT} base=origin/main pr=42`,
   );
   expect(seen[0]).toContain("lens:\np.ts\n");
-  await $.tool.call(
-    agent("code-reviewer", `REVIEW-DISPATCH worktree=${WT} mode=uncommitted`),
+  await viaReissue(
+    $,
+    "code-reviewer",
+    `REVIEW-DISPATCH worktree=${WT} mode=uncommitted`,
   );
   expect(seen[1]).toContain("lens:\nu.ts\n");
   expect(seen[1]).toContain("The changes are uncommitted");
@@ -164,13 +192,19 @@ test("pr= takes the file list from gh pr diff; mode=uncommitted from git diff HE
 
 test("a domain reviewer waits for code-reviewer on the same HEAD", async ($, on) => {
   const seen = world(on);
-  const early = await $.tool.call(agent("server-reviewer", DIRECTIVE));
+  const early = await viaReissue($, "server-reviewer", DIRECTIVE);
   expect(refused(early)).toBe(true);
   expect(text(early)).toMatch(/code-reviewer is the baseline/);
   expect(seen).toHaveLength(0);
 
+  // A refused (unsent) code-reviewer line is not a baseline.
   await $.tool.call(agent("code-reviewer", DIRECTIVE));
-  const later = await $.tool.call(agent("server-reviewer", DIRECTIVE));
+  expect(text(await viaReissue($, "server-reviewer", DIRECTIVE))).toMatch(
+    /code-reviewer is the baseline/,
+  );
+
+  await viaReissue($, "code-reviewer", DIRECTIVE);
+  const later = await viaReissue($, "server-reviewer", DIRECTIVE);
   expect(refused(later)).toBe(false);
   expect(seen).toHaveLength(2);
   expect(seen[1]).toContain("server (routes");
@@ -247,11 +281,10 @@ test("an unexpected error refuses the dispatch (fails closed)", async ($, on) =>
 
 test("files= narrows an audit fix review; uncommitted reviews skip the baseline", async ($, on) => {
   const seen = world(on, { files: "a.ts\nb.ts\n" });
-  const r = await $.tool.call(
-    agent(
-      "security-auditor",
-      `REVIEW-DISPATCH worktree=${WT} mode=uncommitted files=b.ts`,
-    ),
+  const r = await viaReissue(
+    $,
+    "security-auditor",
+    `REVIEW-DISPATCH worktree=${WT} mode=uncommitted files=b.ts`,
   );
   expect(refused(r)).toBe(false);
   expect(seen[0]).toContain("lens:\nb.ts\n");
@@ -268,10 +301,15 @@ test("files= narrows an audit fix review; uncommitted reviews skip the baseline"
 
 test("code-reviewer in the same message counts, whichever call is checked first", async ($, on) => {
   const seen = world(on);
-  // Fired together, as a session runs one message's calls; the domain reviewer is listed first.
-  const [domain, base] = await Promise.all([
+  const [m, c] = await Promise.all([
     $.tool.call(agent("mobile-reviewer", DIRECTIVE)),
     $.tool.call(agent("code-reviewer", DIRECTIVE)),
+  ]);
+  // The reissues fired together, as a session runs one message's calls; the domain
+  // reviewer is listed first.
+  const [domain, base] = await Promise.all([
+    $.tool.call(agent("mobile-reviewer", expansion(m))),
+    $.tool.call(agent("code-reviewer", expansion(c))),
   ]);
   expect(refused(base)).toBe(false);
   expect(refused(domain)).toBe(false);
@@ -296,17 +334,13 @@ test("code-reviewer is refused while origin/main changed a file the branch also 
 
 test("no overlap, or no fresh main, lets the review through", async ($, on) => {
   const seen = world(on, { missed: "z.ts\n" });
-  expect(refused(await $.tool.call(agent("code-reviewer", DIRECTIVE)))).toBe(
-    false,
-  );
+  expect(refused(await viaReissue($, "code-reviewer", DIRECTIVE))).toBe(false);
   expect(seen).toHaveLength(1);
 });
 
 test("a failed fetch skips the overlap check (hygiene, not safety)", async ($, on) => {
   const seen = world(on, { missed: "b.ts\n", fetchFails: true });
-  expect(refused(await $.tool.call(agent("code-reviewer", DIRECTIVE)))).toBe(
-    false,
-  );
+  expect(refused(await viaReissue($, "code-reviewer", DIRECTIVE))).toBe(false);
   expect(seen).toHaveLength(1);
 });
 
@@ -318,7 +352,7 @@ test("pr=, uncommitted and non-origin bases skip the overlap check", async ($, o
     `REVIEW-DISPATCH worktree=${WT} mode=uncommitted`,
     `REVIEW-DISPATCH worktree=${WT} base=HEAD^`,
   ])
-    expect(refused(await $.tool.call(agent("code-reviewer", d)))).toBe(false);
+    expect(refused(await viaReissue($, "code-reviewer", d))).toBe(false);
   expect(seen).toHaveLength(3);
   expect(log.some((a) => a.includes(" fetch "))).toBe(false);
 });

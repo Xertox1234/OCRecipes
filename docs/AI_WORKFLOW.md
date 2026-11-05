@@ -87,8 +87,13 @@ The mod (`.claude/mods/review-dispatch/`, loaded through `CLAUDE_CODE_PLUGIN_DIR
 `~/.claude/settings.json`) reads the branch and short HEAD with `git -C`, takes the file list from
 `gh pr diff <N> --name-only` when given `pr=` (a confirmation pass — see below) or else from
 `git diff <base>...HEAD` (`git diff HEAD` with `mode=uncommitted`, where `base=` may be left out),
-narrowed by `files=` to part of that change (audit Phase 3: one fix's files), and sends the
-template below with every placeholder it can know filled in. It also refuses a hand-written review
+narrowed by `files=` to part of that change (audit Phase 3: one fix's files), and fills in every
+placeholder of the template below that it can know. It hands that back as a refusal, between
+`----- BEGIN PROMPT -----` and `----- END PROMPT -----` lines: reissue the Agent call with that
+text as the whole prompt, copied exactly, sending every reviewer's reissue in one message with
+`code-reviewer` first. It refuses rather than rewriting the call because auto mode gives no verdict
+on an input a hook changed, and refuses the call (`docs/harness-residuals.md`, 2026-11-04); the
+reissue reaches the reviewer unchanged. It also refuses a hand-written review
 prompt that lacks any fixed piece of the template, and refuses a domain reviewer until
 `code-reviewer` was dispatched for the same HEAD (list it first in the same message) — except for
 `mode=uncommitted` audit reviews, where Phase 6 carries `code-reviewer` over the whole diff. A reviewer agent used for

@@ -393,6 +393,17 @@ and Step 10 item 7b (the confirmation dispatch) now say to reissue the quoted in
 refusal. Not yet verified in a fresh `/todo` run: agent files load on
 session start. Options 2 and 3 stay open.
 
+**Option 2 SHIPPED 2026-11-04 (owner: "option 2").** The mod no longer changes the call. A
+`REVIEW-DISPATCH` line is refused with the filled contract between `----- BEGIN PROMPT -----` and
+`----- END PROMPT -----` lines, and the caller reissues that text as the whole prompt. The reissue goes on
+as it came (`next(e)`), so auto mode has nothing to refuse, and Option 1's executor wording was replaced by
+the reissue rule. A refused line records no baseline; the reissued full prompt does. A full prompt carrying
+the uncommitted sentence keeps the `mode=uncommitted` baseline exemption. Measured: 13/13 mod tests; a
+headless `claude -p` probe with only this mod loaded received the 9,911-character expansion and wrote it
+back byte-identical. Cost: every short-form dispatch now takes two calls in every session, auto mode or not,
+because the mod cannot see the permission mode. Before, that was only in auto mode. Not yet seen in a fresh
+`/todo` run: mods and agent files load at session start. Option 3 stays open.
+
 First check if reopened (pick one):
 
 1. One line in `.claude/agents/todo-executor.md` Step 6: "If the dispatch is refused with 'a hook changed
