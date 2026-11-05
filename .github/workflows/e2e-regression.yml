@@ -347,10 +347,23 @@ jobs:
           ')"
           echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
 
+      # The photo e2e/flows/plan/receipt-upload.yaml picks from the gallery. Added here, before the
+      # app or Maestro starts, instead of by the flow's Maestro addMedia: on iOS that command hung
+      # to its 300s timeout (run 41960367024; a 10.5-minute failed attempt on 2026-11-02) and, when the flow's retry ran it again,
+      # left two copies racing the picker. The Android job still uses the flow's addMedia.
+      - name: Add the receipt photo to the simulator's library
+        timeout-minutes: 3
+        run: xcrun simctl addmedia "$IOS_SIMULATOR_UDID" e2e/assets/receipt.jpg
+
       # Start the backend the flows talk to; keep it running for the rest of the job.
       # The OpenAI stand-in answers the receipt-upload flow's AI step (scripts/ci/stub-openai.mjs);
       # every other AI call gets the same 401 sk-stub got from the real API.
+      # LOG_LEVEL info (the workflow default is silent): one server.log line per API request, so a
+      # receipt flow stuck on "Analyzing receipt…" shows whether POST /api/receipt/scan arrived
+      # (run 41799049640's retry: no stub request, and a silent log could not say why).
       - name: Start backend
+        env:
+          LOG_LEVEL: info
         run: |
           node scripts/ci/stub-openai.mjs &
           for i in $(seq 1 15); do
