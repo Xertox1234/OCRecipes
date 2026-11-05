@@ -15,6 +15,7 @@ import {
   computeConsensus,
   CONSENSUS_THRESHOLD,
   compareWithVerifications,
+  parseVerificationNutrition,
 } from "../lib/verification-consensus";
 
 /** Get the verification status for a barcode */
@@ -231,7 +232,7 @@ export async function recomputeAggregatesForBarcodes(
         ),
       );
     const matching = rows.map((r) =>
-      parseHistoryNutrition(r.extractedNutrition),
+      parseVerificationNutrition(r.extractedNutrition),
     );
     const { newLevel, consensusData } = deriveAggregate(matching);
     await tx
@@ -258,20 +259,6 @@ export interface SubmitVerificationResult {
    * divergent rows all as `isMatch = true`.
    */
   isMatch: boolean;
-}
-
-/**
- * Narrow a raw `verification_history.extractedNutrition` JSONB blob into the
- * domain `VerificationNutrition` shape. Mirrors the route's parsing.
- */
-function parseHistoryNutrition(raw: unknown): VerificationNutrition {
-  const n = (raw ?? {}) as Record<string, unknown>;
-  return {
-    calories: typeof n.calories === "number" ? n.calories : null,
-    protein: typeof n.protein === "number" ? n.protein : null,
-    totalCarbs: typeof n.totalCarbs === "number" ? n.totalCarbs : null,
-    totalFat: typeof n.totalFat === "number" ? n.totalFat : null,
-  };
 }
 
 /**
@@ -333,7 +320,7 @@ export async function submitVerification(
         ),
       );
     const existingMatchingNutrition = existingMatchingRows.map((r) =>
-      parseHistoryNutrition(r.extractedNutrition),
+      parseVerificationNutrition(r.extractedNutrition),
     );
 
     // Compare this submission against the committed matching history. First

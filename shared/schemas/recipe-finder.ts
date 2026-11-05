@@ -137,6 +137,25 @@ export const finderBlockSchema = z.discriminatedUnion("type", [
 ]);
 export type FinderBlock = z.infer<typeof finderBlockSchema>;
 
+/**
+ * Read the finder block out of a stored chat message's metadata — the one
+ * parser for the stored contract, used by both client and server. RecipeChef
+ * stores `{metadataVersion, finder}`; Coach stores `{blocks:[…]}`.
+ */
+export function finderBlockFromMetadata(metadata: unknown): FinderBlock | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const m = metadata as Record<string, unknown>;
+  const direct = finderBlockSchema.safeParse(m.finder);
+  if (direct.success) return direct.data;
+  if (Array.isArray(m.blocks)) {
+    for (const b of m.blocks) {
+      const parsed = finderBlockSchema.safeParse(b);
+      if (parsed.success) return parsed.data;
+    }
+  }
+  return null;
+}
+
 export function isFinderBlockType(type: unknown): type is FinderBlock["type"] {
   return (
     type === "recipe_results" ||

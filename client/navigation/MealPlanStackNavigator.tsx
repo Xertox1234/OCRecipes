@@ -17,6 +17,10 @@ import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
 import RecipeEntryHubScreen from "@/screens/meal-plan/RecipeEntryHubScreen";
 import RecipeAIGenerateScreen from "@/screens/meal-plan/RecipeAIGenerateScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
+import {
+  LIBRARY_SCREEN_OPTIONS,
+  cookbookCreateOptions,
+} from "@/navigation/library-screen-options";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
 import type { MealPlanDay } from "@shared/types/meal-plan";
@@ -153,55 +157,32 @@ export default function MealPlanStackNavigator() {
       <Stack.Screen
         name="GroceryLists"
         component={GroceryListsScreen}
-        options={{
-          headerTitle: () => (
-            <HeaderTitle title="Grocery Lists" showIcon={false} />
-          ),
-        }}
+        options={LIBRARY_SCREEN_OPTIONS.GroceryLists}
       />
       <Stack.Screen
         name="GroceryList"
         component={GroceryListScreen}
-        options={{
-          headerTitle: () => (
-            <HeaderTitle title="Grocery List" showIcon={false} />
-          ),
-        }}
+        options={LIBRARY_SCREEN_OPTIONS.GroceryList}
       />
       <Stack.Screen
         name="Pantry"
         component={PantryScreen}
-        options={{
-          headerTitle: () => <HeaderTitle title="Pantry" showIcon={false} />,
-        }}
+        options={LIBRARY_SCREEN_OPTIONS.Pantry}
       />
       <Stack.Screen
         name="CookbookList"
         component={CookbookListScreen}
-        options={{
-          headerTitle: () => <HeaderTitle title="Cookbooks" showIcon={false} />,
-        }}
+        options={LIBRARY_SCREEN_OPTIONS.CookbookList}
       />
       <Stack.Screen
         name="CookbookDetail"
         component={CookbookDetailScreen}
-        options={{
-          headerTitle: () => <HeaderTitle title="Cookbook" showIcon={false} />,
-        }}
+        options={LIBRARY_SCREEN_OPTIONS.CookbookDetail}
       />
       <Stack.Screen
         name="CookbookCreate"
         component={CookbookCreateScreen}
-        options={({ route }) => ({
-          headerTitle: () => (
-            <HeaderTitle
-              title={
-                route.params?.cookbookId ? "Edit Cookbook" : "New Cookbook"
-              }
-              showIcon={false}
-            />
-          ),
-        })}
+        options={cookbookCreateOptions}
       />
       <Stack.Screen
         name="FavouriteRecipes"

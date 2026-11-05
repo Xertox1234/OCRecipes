@@ -13,6 +13,10 @@ import { PressableScale } from "@/components/PressableScale";
 import { FallbackImage } from "@/components/FallbackImage";
 import { CarouselSkeleton } from "./CarouselSkeleton";
 import { CarouselError } from "./CarouselError";
+import {
+  HORIZONTAL_CAROUSEL_LIST_PROPS,
+  carouselStyles,
+} from "./carousel-list";
 import { useTheme } from "@/hooks/useTheme";
 import { useCuratedRecipes } from "@/hooks/useCuratedRecipes";
 import {
@@ -162,17 +166,10 @@ export const CuratedRecipeCarousel = React.memo(
           data={recipes}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
-          horizontal
-          showsHorizontalScrollIndicator={false}
+          {...HORIZONTAL_CAROUSEL_LIST_PROPS}
           snapToInterval={SNAP_INTERVAL}
-          decelerationRate="fast"
           contentContainerStyle={styles.listContent}
           getItemLayout={getItemLayout}
-          windowSize={5}
-          // Clipping detaches off-screen cards from the native tree, so
-          // VoiceOver (and TalkBack) can't move past the second card.
-          // Explicit false: FlatList's default clips on Android.
-          removeClippedSubviews={false}
         />
       </View>
     );
@@ -180,18 +177,7 @@ export const CuratedRecipeCarousel = React.memo(
 );
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: Spacing.lg,
-  },
-  header: {
-    fontFamily: FontFamily.semiBold,
-    fontSize: 17,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
-  },
-  listContent: {
-    paddingHorizontal: Spacing.lg,
-  },
+  ...carouselStyles,
   cardWrapper: {
     width: CURATED_CARD_WIDTH,
     marginRight: Spacing.md,

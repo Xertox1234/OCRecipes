@@ -19,7 +19,7 @@ import {
   type FinderFeatures,
 } from "./run-turn";
 import { finderStatusLabel, type FinderInput } from "./transition";
-import { finderBlockFromMetadata } from "./entry";
+import { finderBlockFromMetadata } from "@shared/schemas/recipe-finder";
 import {
   gateRecipeGeneration,
   buildFinderGenerationMessages,

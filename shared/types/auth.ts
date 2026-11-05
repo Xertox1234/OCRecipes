@@ -18,6 +18,17 @@ export interface User {
   measurementUnit?: MeasurementUnit;
 }
 
+/**
+ * Runtime check for a value that claims to be a `User` (an AsyncStorage blob,
+ * an API echo): the two required fields are present strings. The optional
+ * fields are not re-validated — the server owns them and /me refreshes them.
+ */
+export function isUser(value: unknown): value is User {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.id === "string" && typeof v.username === "string";
+}
+
 // API response types
 export interface AuthResponse {
   user: User;

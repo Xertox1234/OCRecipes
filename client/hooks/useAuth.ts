@@ -28,6 +28,7 @@ import type {
   User,
   EmailCodeSent,
 } from "@shared/types/auth";
+import { isUser } from "@shared/types/auth";
 import { getProviderToken } from "@/lib/social-sign-in";
 import {
   registerPushToken,
@@ -283,7 +284,10 @@ async function resumeFromCachedProfile(): Promise<AuthState> {
   let cachedUser: User | null = null;
   if (stored) {
     try {
-      cachedUser = JSON.parse(stored) as User;
+      const parsed: unknown = JSON.parse(stored);
+      // A parseable but wrong-shaped blob is as unusable as a corrupt one.
+      if (!isUser(parsed)) throw new Error("cached profile is not a user");
+      cachedUser = parsed;
     } catch {
       // Corrupt cache blob. This must NOT log the user out: the session
       // token is still valid — only the convenience cache is unreadable.
@@ -863,8 +867,8 @@ export function useAuth() {
       // Gate OFF echoes the updated user (has an `id`); gate ON returns the
       // neutral pending status with no user object. `data` is the parsed JSON
       // (Response.json → any), matching how updateUser consumes it uncast.
-      if ("id" in data) {
-        const user = data as unknown as User;
+      if (isUser(data)) {
+        const user = data;
         await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
         setState((prev) => ({ ...prev, user }));
         return { status: "updated", user };

@@ -2,27 +2,13 @@
 // When does a message enter the finder? (spec §3.3, §4 "Typed input")
 import type { ChatMessage } from "@shared/schema";
 import {
-  finderBlockSchema,
+  finderBlockFromMetadata,
   type FinderAction,
   type FinderBlock,
 } from "@shared/schemas/recipe-finder";
 import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
 import type { CoachIntent } from "../coach-intent-classifier";
 import type { FinderInput, TypedFinderCommand } from "./transition";
-
-export function finderBlockFromMetadata(metadata: unknown): FinderBlock | null {
-  if (!metadata || typeof metadata !== "object") return null;
-  const m = metadata as Record<string, unknown>;
-  const direct = finderBlockSchema.safeParse(m.finder);
-  if (direct.success) return direct.data;
-  if (Array.isArray(m.blocks)) {
-    for (const b of m.blocks) {
-      const parsed = finderBlockSchema.safeParse(b);
-      if (parsed.success) return parsed.data;
-    }
-  }
-  return null;
-}
 
 function latestAssistant(history: ChatMessage[]): ChatMessage | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
