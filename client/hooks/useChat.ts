@@ -303,6 +303,11 @@ export function useChatMessages(
 export function useCreateConversation(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
   return useMutation({
+    // "always": offline, the request runs and fails at once, so each caller's
+    // create-failure error shows. The default "online" PAUSES the mutation
+    // while offline — mutateAsync never settled and a first Coach message sent
+    // offline sat as a bare bubble with no error (owner phone check 2026-11-05).
+    networkMode: "always",
     mutationFn: async (data?: {
       title?: string;
       type?: "coach" | "recipe" | "remix";
