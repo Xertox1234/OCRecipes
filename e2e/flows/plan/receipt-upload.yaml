@@ -40,8 +40,14 @@ onFlowComplete:
       USERNAME: ${PREMIUM_USERNAME}
       PASSWORD: ${PASSWORD}
 
-- addMedia:
-    - "../../assets/receipt.jpg"
+# iOS gets the photo from e2e-regression.yml ("Add the receipt photo to the simulator's library",
+# xcrun simctl addmedia before Maestro starts): Maestro's addMedia hung there to its 300s timeout.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - addMedia:
+          - "../../assets/receipt.jpg"
 
 - runFlow:
     file: ../../helpers/tap-tab.yaml
