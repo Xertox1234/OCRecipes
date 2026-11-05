@@ -66,6 +66,30 @@ const emptyCNFFR = () => Promise.resolve({ ok: true, json: async () => [] });
 const emptyUSDASearch = () =>
   Promise.resolve({ ok: true, json: async () => ({ foods: [] }) });
 
+describe("lookupBarcode — Open Food Facts User-Agent", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("identifies the app to Open Food Facts", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+    });
+    await lookupBarcode("0123456789012").catch(() => null);
+    const offCall = mockFetch.mock.calls.find(
+      ([url]) => new URL(String(url)).hostname === "world.openfoodfacts.org",
+    );
+    expect(offCall).toBeDefined();
+    expect(offCall![1]).toEqual(
+      expect.objectContaining({
+        headers: { "User-Agent": "OCRecipes/1.0 (https://ocrecipes.com)" },
+      }),
+    );
+  });
+});
+
 describe("lookupBarcode — isServingDataTrusted regression (P2-2026-07-14)", () => {
   beforeEach(() => {
     mockFetch.mockReset();

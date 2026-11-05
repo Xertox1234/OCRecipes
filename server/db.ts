@@ -37,6 +37,10 @@ export const pool = new Pool({
   // and one runaway query can hold a connection indefinitely.
   connectionTimeoutMillis: 5_000,
   statement_timeout: statementTimeoutMs,
+  // A session left idle inside a transaction (leaked client, crashed handler)
+  // would hold its row locks forever. Sessions that keep running statements
+  // are unaffected, so the batch cleanup scripts are safe.
+  idle_in_transaction_session_timeout: 60_000,
 });
 
 pool.on("error", (err) => {

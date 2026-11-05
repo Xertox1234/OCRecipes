@@ -433,7 +433,11 @@ export async function lookupBarcode(
     try {
       const res = await fetch(
         `https://world.openfoodfacts.org/api/v0/product/${variant}.json`,
-        { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+        {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          // OFF's API terms ask for an identifying User-Agent (app + contact).
+          headers: { "User-Agent": "OCRecipes/1.0 (https://ocrecipes.com)" },
+        },
       );
       const json = await res.json();
       if (json.status === 0) offAnswered = true;

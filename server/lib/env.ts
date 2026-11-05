@@ -135,6 +135,14 @@ const envSchema = z.object({
   // reporter contract in client/lib/reporter.ts). See server/lib/error-reporter.ts.
   SENTRY_DSN: z.string().optional(),
 
+  // Feature flags — the readers check `=== "true"` at call time (Railway flips
+  // and tests change process.env after import), so this only rejects typos
+  // like "1" or "TRUE" at boot instead of silently reading as off. A blank
+  // value (empty Railway variable) still reads as off, so it is accepted.
+  RECIPE_FINDER_ENABLED: z.enum(["true", "false", ""]).optional(),
+  RECIPE_OFFER_ENABLED: z.enum(["true", "false", ""]).optional(),
+  RETENTION_CLEANUP_ENABLED: z.enum(["true", "false", ""]).optional(),
+
   // Admin
   ADMIN_USER_IDS: z.string().optional(),
 
