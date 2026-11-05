@@ -388,6 +388,10 @@ What it hit:
 Not the cause: the classifier never judged a call unsafe. Every refusal was the "no verdict" kind, and no
 review was skipped.
 
+**Option 1 SHIPPED 2026-11-04 (owner: "Option 1").** `todo-executor.md` Step 6, item 3 now says to reissue
+the quoted input and never stop on this refusal. Not yet verified in a fresh `/todo` run: agent files load on
+session start. Options 2 and 3 stay open.
+
 First check if reopened (pick one):
 
 1. One line in `.claude/agents/todo-executor.md` Step 6: "If the dispatch is refused with 'a hook changed
