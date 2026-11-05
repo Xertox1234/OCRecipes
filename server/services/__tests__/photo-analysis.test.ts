@@ -571,7 +571,9 @@ describe("getPromptForIntent", () => {
   it("returns intent-specific prompts for the logging-pipeline intents", () => {
     expect(getPromptForIntent("identify").maxTokens).toBe(300);
     expect(getPromptForIntent("recipe").maxTokens).toBe(300);
-    expect(getPromptForIntent("label").maxTokens).toBe(800);
+    // Gemini counts reasoning tokens inside the cap (front labels cut off at 300;
+    // label replies peaked at 405 of 800 on Gemini, 2026-11-05), so labels get 1300.
+    expect(getPromptForIntent("label").maxTokens).toBe(1300);
     // A multi-food answer ran 500 tokens and truncated to invalid JSON (live
     // burger photo, 2026-09-27), so logging gets more room. Gemini Flash names
     // items at more length (790-1000 tokens on a busy board, 1/6 cut off at
@@ -590,6 +592,21 @@ describe("getPromptForIntent", () => {
       expect(getPromptForIntent("recipe").prompt).not.toContain(field);
     },
   );
+
+  // Gemini wrote 0 for rows the label does not print (null discipline 7.9 vs
+  // gpt-4o 9.1), and Argon wrote "8g" strings the number schema rejects; the
+  // old prompt said "Include units" next to a numbers-only template (todo
+  // P2-2026-10-18-camera-vision-features-to-gemini, 2026-11-05).
+  it("tells the label reader a missing row is null, never 0, and numbers carry no units", () => {
+    const { prompt } = getPromptForIntent("label");
+    expect(prompt).toMatch(/not printed[^\n]*null[^\n]*never 0/i);
+    expect(prompt).toMatch(/plain numbers?[^\n]*no unit/i);
+    expect(prompt).not.toMatch(/Include units/i);
+    // client/screens/label-analysis-utils.ts shows vitamin D as mcg and the
+    // minerals as mg, so a %DV-only row must not arrive as a number.
+    expect(prompt).toMatch(/mcg for vitamin D/);
+    expect(prompt).toMatch(/only as a % Daily Value[^\n]*null/);
+  });
 
   it("throws for the menu intent — menus are parsed by analyzeMenuPhoto, not the logging pipeline", () => {
     expect(() => getPromptForIntent("menu")).toThrow(
@@ -762,6 +779,13 @@ describe("photo-analysis failure propagation", () => {
   });
 
   describe("analyzeLabelPhoto", () => {
+    it("sends the label reply cap that leaves room for Gemini reasoning", async () => {
+      mockVisionResponse({ servingSize: "1 cup", confidence: 0.9 });
+      await analyzeLabelPhoto("base64data").catch(() => undefined);
+      expect(mockCreate.mock.calls[0][0]).toBe("photo-label");
+      expect(mockCreate.mock.calls[0][1].max_completion_tokens).toBe(1300);
+    });
+
     it("throws on OpenAI API error", async () => {
       mockCreate.mockRejectedValueOnce(new Error("Vision API down"));
 

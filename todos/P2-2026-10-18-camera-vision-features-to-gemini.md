@@ -178,3 +178,24 @@ That mismatch penalised whichever model read the photo correctly: Gemini scored 
 - **Paired gate:** claims fidelity +0.83 [0.29, 1.58] and field accuracy +0.33 [-0.17, 0.83] pass. Calibration +0.79 [-0.92, 2.71] reads FAIL on the 8-case interval width only, the same shape as the full-size run. No new hard-assertion failure.
 - **Weak spot both share:** the ambiguous multi-carton Oatly frame gets 0.95 confidence from Gemini (calibration 2/10).
 - **Change:** the row runs `google/gemini-3.8-flash` with `adapt: { set: { reasoning_effort: "low" } }`, and `analyzeFrontLabel`'s `max_completion_tokens` went from 300 to 1300. `npm run ai:smoke -- front-label-scan` passed: Google answered `google/gemini-3.8-flash`, 1/1 rows.
+
+### 2026-11-05: `photo-label` prompt fixed and switched to Gemini 3.8 Flash (low reasoning), cap 1300
+
+- **Prompt fix (`LABEL_PROMPT`).** The old rules said "Include units (g, mg, mcg, %)" next to a numbers-only JSON template, which explains Argon's `"8g"` strings, and they never covered a row the label does not print. The new rules say a row that is not printed is null and never 0, that a nutrient is a plain number in the unit the app shows (g for macros, mg for cholesterol, sodium and minerals, mcg for vitamin D, as in `client/screens/label-analysis-utils.ts`), and that a vitamin or mineral printed only as a % Daily Value is null.
+- **Re-measured with app-sized photos** (1536 px, quality 85) and the new prompt, 6 cases × 3 samples:
+
+  | Measure                | gpt-4o (`label-extraction-2026-11-05T19-55-21`) | Gemini Flash, low (`…T19-56-08`) |
+  | ---------------------- | ----------------------------------------------- | -------------------------------- |
+  | Weighted overall       | 8.93                                            | 9.01                             |
+  | Extraction accuracy    | 9.6                                             | 9.7                              |
+  | Null discipline        | 9.1                                             | 9.1 (was 7.9 on the old prompt)  |
+  | Confidence calibration | 7.1                                             | 7.4                              |
+  | Call errors            | 1/18 (36.6 s provider error)                    | 0/18                             |
+  | Latency p50 / max      | 4.7 / 36.6 s                                    | 3.3 / 7.2 s                      |
+  | Cost per call          | ~$0.005 (full-size run)                         | ~$0.002                          |
+
+- **Paired gate:** extraction +0.06 passes. Null discipline -0.06 [-2.06, 1.83] and calibration +0.11 [-0.50, 0.67] read FAIL on interval width only; both means are level. No new hard-assertion failure. The prompt fix did not lower gpt-4o (8.91 → 8.93).
+- **Remaining weak spots.** Gemini still writes 0 for six unprinted rows on the bilingual carton in 2 of 3 samples. gpt-4o turns % Daily Value-only minerals into amounts on the old-format label in 2 of 3 (calcium 0, iron 10 mg). Both cases score 3–5 for null discipline.
+- **Cap.** Gemini's label replies peaked at 405 of 800 tokens (212 reasoning), all `finish_reason: stop`. The cap is now `LABEL_MAX_TOKENS = 1300`, shared by `analyzeLabelPhoto` and the `analyzePhoto` label intent (which already ran on Gemini through `photo-analyze`).
+- **Owner: "switch to Gemini".** `npm run ai:smoke -- photo-label` passed: Google answered `google/gemini-3.8-flash`, 1/1 rows.
+- **Left:** 6 rows still have no eval cases: `photo-classify`, `photo-recipe`, `receipt-scan`, `menu-scan`, `cooking-ingredient-photo` and `recipe-chat-image`.

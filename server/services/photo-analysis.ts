@@ -77,6 +77,14 @@ const CATEGORY_INSTRUCTION = `6. Food category: one of "protein", "vegetable", "
  */
 const LOG_MAX_TOKENS = 1500;
 
+/**
+ * Completion cap for a nutrition-label reply (analyzeLabelPhoto and the
+ * analyzePhoto label intent). Gemini counts reasoning tokens inside it: label
+ * replies peaked at 405 of 800 (212 reasoning), and a front-label reply cut
+ * off at 300, so the cap is 1300 (todo P2-2026-10-18, 2026-11-05).
+ */
+const LABEL_MAX_TOKENS = 1300;
+
 const LOG_PROMPT = `You are a nutrition analysis assistant. Analyze food photos and identify:
 1. Each distinct food item visible
 2. Estimated portion size (e.g., "1 cup", "6 oz", "1 medium")
@@ -177,8 +185,10 @@ Extract:
 
 Rules:
 - Report values exactly as printed on the label
+- A nutrient row that is not printed on the label is null, never 0. Use 0 only when the label prints 0 for that row
 - Use null for any value not visible or unreadable
-- Include units (g, mg, mcg, %)
+- Write each nutrient as a plain number with no unit: grams for fats, carbohydrates, fiber, sugars and protein; mg for cholesterol, sodium, calcium, iron and potassium; mcg for vitamin D. servingSize stays text
+- If a vitamin or mineral is printed only as a % Daily Value, with no amount, it is null
 - If the label is partially obscured or blurry, extract what is readable and set confidence accordingly
 
 ${SYSTEM_PROMPT_BOUNDARY}
@@ -512,7 +522,7 @@ export async function analyzeLabelPhoto(
     response = await aiChat(
       "photo-label",
       {
-        max_completion_tokens: 800,
+        max_completion_tokens: LABEL_MAX_TOKENS,
         temperature: 0.2,
         messages: [
           {
@@ -570,7 +580,7 @@ export function getPromptForIntent(intent: PhotoIntent): {
     case "recipe":
       return { prompt: RECIPE_PROMPT, maxTokens: 300 };
     case "label":
-      return { prompt: LABEL_PROMPT, maxTokens: 800 };
+      return { prompt: LABEL_PROMPT, maxTokens: LABEL_MAX_TOKENS };
     case "log":
     case "calories":
       return { prompt: LOG_PROMPT, maxTokens: LOG_MAX_TOKENS };
