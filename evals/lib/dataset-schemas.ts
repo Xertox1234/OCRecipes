@@ -256,3 +256,61 @@ export const photoAnalysisCaseSchema = z.object({
 
 export const photoAnalysisCasesSchema = z.array(photoAnalysisCaseSchema);
 export type PhotoAnalysisInput = z.infer<typeof photoAnalysisInputSchema>;
+
+// ─── Nutrition label + front-of-package extraction ───────────────────────────
+// The judge never sees the photo. Each case's `description` carries the values
+// printed on the label (checked against the pixels by hand), and `mustContain`
+// patterns check the key numbers deterministically.
+
+const labelCaseCategorySchema = z.enum([
+  "accuracy",
+  "edge-case",
+  "safety",
+  "helpfulness",
+  "personalization",
+  "creativity",
+]);
+
+export const labelImageInputSchema = z.object({
+  imageUrl: z.string().url(),
+});
+export type LabelImageInput = z.infer<typeof labelImageInputSchema>;
+
+const labelCaseAssertionsSchema = z
+  .object({
+    mustContain: z.array(z.string()).optional(),
+    mustNotContain: z.array(z.string()).optional(),
+  })
+  .optional();
+
+export const labelExtractionCaseSchema = z.object({
+  id: z.string().min(1),
+  category: labelCaseCategorySchema,
+  description: z.string(),
+  input: labelImageInputSchema,
+  assertions: labelCaseAssertionsSchema,
+  scoreDimensions: z
+    .array(
+      z.enum([
+        "extraction_accuracy",
+        "null_discipline",
+        "confidence_calibration",
+      ]),
+    )
+    .optional(),
+});
+export const labelExtractionCasesSchema = z.array(labelExtractionCaseSchema);
+
+export const frontLabelCaseSchema = z.object({
+  id: z.string().min(1),
+  category: labelCaseCategorySchema,
+  description: z.string(),
+  input: labelImageInputSchema,
+  assertions: labelCaseAssertionsSchema,
+  scoreDimensions: z
+    .array(
+      z.enum(["field_accuracy", "claims_fidelity", "confidence_calibration"]),
+    )
+    .optional(),
+});
+export const frontLabelCasesSchema = z.array(frontLabelCaseSchema);

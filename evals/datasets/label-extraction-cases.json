@@ -1,0 +1,158 @@
+[
+  {
+    "id": "label-fda2014-clean-01",
+    "category": "accuracy",
+    "description": "Flat, high-contrast FDA sample Nutrition Facts panel (2014 layout), no product name. Printed values: serving size 2/3 cup (55g), 8 servings per container, calories 230, total fat 8g, saturated fat 1g, trans fat 0g, cholesterol 0mg, sodium 160mg, total carbohydrate 37g, dietary fiber 4g, total sugars 1g, added sugars 0g, protein 3g, vitamin D 2mcg, calcium 260mg, iron 8mg, potassium 235mg. Every field is readable, so nothing should be null except productName, and confidence should be high.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c8/FDA_Nutrition_Facts_Label_2014.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "calories: 230\\b",
+        "totalFat: 8\\b",
+        "saturatedFat: 1\\b",
+        "sodium: 160\\b",
+        "totalCarbs: 37\\b",
+        "dietaryFiber: 4\\b",
+        "totalSugars: 1\\b",
+        "protein: 3\\b",
+        "servingsPerContainer: 8\\b"
+      ]
+    },
+    "scoreDimensions": [
+      "extraction_accuracy",
+      "null_discipline",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "label-fda2016-added-sugars-02",
+    "category": "accuracy",
+    "description": "Flat, high-contrast FDA sample Nutrition Facts panel (2016 layout, a PNG converted to JPEG before sending), no product name. Printed values: 8 servings per container, serving size 2/3 cup (55g), calories 230, total fat 8g, saturated fat 1g, trans fat 0g, cholesterol 0mg, sodium 160mg, total carbohydrate 37g, dietary fiber 4g, total sugars 12g, includes 10g added sugars, protein 3g, vitamin D 2mcg, calcium 260mg, iron 8mg, potassium 235mg. The total-versus-added sugar split is the point of this case: totalSugars must be 12 and addedSugars must be 10.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/e/e9/FDA_Nutrition_Facts_Label_2016.png"
+    },
+    "assertions": {
+      "mustContain": [
+        "calories: 230\\b",
+        "totalFat: 8\\b",
+        "sodium: 160\\b",
+        "totalCarbs: 37\\b",
+        "totalSugars: 12\\b",
+        "addedSugars: 10\\b",
+        "protein: 3\\b"
+      ]
+    },
+    "scoreDimensions": [
+      "extraction_accuracy",
+      "null_discipline",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "label-old-format-calories-from-fat-03",
+    "category": "edge-case",
+    "description": "Small (500x450) pre-2016 Nutrition Facts panel with a 'Calories from Fat 45' column, an ingredient list below it and a caption on the right. Printed values: serving size 1/2 cup (52g), servings per container 8, calories 200 (45 of them from fat), total fat 5g, saturated fat 2.5g, trans fat 0g, cholesterol 0mg, sodium 160mg, total carbohydrate 37g, dietary fiber 1g, sugars 17g, protein 2g. No added-sugars line, no vitamin D or potassium row. Vitamin A, vitamin C, calcium, iron, thiamin, riboflavin, niacin, vitamin B6 and folic acid appear only as percent daily values, so vitaminD, potassium and addedSugars must be null; calcium and iron are percent-only (null is right, a bare percent copied into the mg field is wrong). calories must be 200, not 45.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c2/Sample_nutrition_facts.png"
+    },
+    "assertions": {
+      "mustContain": [
+        "calories: 200\\b",
+        "totalFat: 5\\b",
+        "saturatedFat: 2\\.5\\b",
+        "sodium: 160\\b",
+        "totalCarbs: 37\\b",
+        "dietaryFiber: 1\\b",
+        "totalSugars: 17\\b",
+        "protein: 2\\b",
+        "vitaminD: null",
+        "addedSugars: null"
+      ]
+    },
+    "scoreDimensions": [
+      "extraction_accuracy",
+      "null_discipline",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "label-supplement-facts-04",
+    "category": "edge-case",
+    "description": "Narrow 'Supplement Facts' panel from an energy drink (343x650). Printed values: serving size 8.0 fl oz (240 mL), servings per container 2, calories 100, total carb 27g (9% DV), sugars 27g, sodium 180mg (8% DV). It also lists riboflavin, niacin, vitamin B6, vitamin B12, taurine, panax ginseng and an energy blend, none of which are schema fields. Fat, saturated fat, trans fat, cholesterol, fiber, added sugars, protein, vitamin D, calcium, iron and potassium are NOT on the panel and must be null, not 0.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/0/02/Monster_Energy_drink_supplement_facts_nutrition_label.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "calories: 100\\b",
+        "totalCarbs: 27\\b",
+        "totalSugars: 27\\b",
+        "sodium: 180\\b",
+        "servingsPerContainer: 2\\b"
+      ],
+      "mustNotContain": [
+        "totalFat: [0-9]",
+        "saturatedFat: [0-9]",
+        "cholesterol: [0-9]",
+        "protein: [0-9]",
+        "dietaryFiber: [0-9]"
+      ]
+    },
+    "scoreDimensions": [
+      "extraction_accuracy",
+      "null_discipline",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "label-photo-bilingual-carton-05",
+    "category": "accuracy",
+    "description": "Phone photo of a bilingual (English/Spanish) Nutrition Facts panel printed on a yellow juice-drink carton, slightly tilted, with the 'Little Hug' logo upside down above it and an ingredient list beside it. Printed values: serving size 8 fl.oz. (1 bottle), servings per container 40, calories 10, total fat 0g, sodium 80mg (3% DV), total carbohydrate 2g (1% DV), sugars 2g, protein 0g. Vitamin E, niacin, B6, B12, biotin and pantothenic acid are 10% DV only. Saturated fat, trans fat, cholesterol, fiber, added sugars, vitamin D, calcium, iron and potassium are not listed (a footnote says the product is not a significant source of them) and must be null, not 0. productName is 'Little Hug' (or null); it must not be a flavor or an ingredient.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Nutrition_facts_2014-03-17_08-47.jpg/960px-Nutrition_facts_2014-03-17_08-47.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "calories: 10\\b",
+        "totalFat: 0\\b",
+        "sodium: 80\\b",
+        "totalCarbs: 2\\b",
+        "totalSugars: 2\\b",
+        "protein: 0\\b",
+        "servingsPerContainer: 40\\b"
+      ]
+    },
+    "scoreDimensions": [
+      "extraction_accuracy",
+      "null_discipline",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "label-crumpled-partial-06",
+    "category": "edge-case",
+    "description": "Skewed phone photo of a crumpled snack-cake wrapper with glare. Only the middle of the panel is readable: serving size 1 package (94g/3.3 oz) is partly cut off, total fat 28g (43% DV), saturated fat 19g (94% DV), trans fat 0g, polyunsaturated fat 2.5g, sodium 400mg (17% DV), total carbohydrate 47g, dietary fiber 4g, sugars 26g, protein 5g. The calories row, cholesterol row, servings per container (cut off at the edge), added sugars and all vitamin and mineral rows are NOT visible, so those must be null. A model that guesses calories from the macros (for example 440 or 480) is making it up. Confidence should be clearly lower than for a flat label (a value around 0.5 to 0.75 fits; 0.9 or more is overconfident).",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/Nutrition_Facts_label_with_94%25_saturated_fat_per_serving.jpg/960px-Nutrition_Facts_label_with_94%25_saturated_fat_per_serving.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "totalFat: 28\\b",
+        "saturatedFat: 19\\b",
+        "transFat: 0\\b",
+        "sodium: 400\\b",
+        "totalCarbs: 47\\b",
+        "dietaryFiber: 4\\b",
+        "totalSugars: 26\\b",
+        "protein: 5\\b"
+      ],
+      "mustNotContain": ["calories: [0-9]", "cholesterol: [0-9]"]
+    },
+    "scoreDimensions": [
+      "extraction_accuracy",
+      "null_discipline",
+      "confidence_calibration"
+    ]
+  }
+]

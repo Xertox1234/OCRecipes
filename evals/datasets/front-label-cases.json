@@ -1,0 +1,167 @@
+[
+  {
+    "id": "front-label-adams-peanut-butter-01",
+    "category": "accuracy",
+    "description": "Straight-on photo of a jar of Adams peanut butter. Printed on the label: brand 'ADAMS', product '100% Natural Peanut Butter, Crunchy', net weight 'NET WT 16 OZ (1 LB) 454g'. Claims printed on the front: '100% Natural', 'Oil separation is natural - just stir & enjoy', and a yellow badge '8g protein per serving'. A strip at the curved right edge is mostly unreadable (it may say non-GMO / gluten free), so a claim from that strip is neither required nor wrong. 'Organic', 'vegan', 'keto' and 'low sugar' are not printed anywhere and must not appear.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Adams_Peanut_Butter%2C_16_oz.jpg/960px-Adams_Peanut_Butter%2C_16_oz.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "brand: Adams",
+        "netWeight: .*(16 ?oz|454 ?g)",
+        "100% natural"
+      ],
+      "mustNotContain": ["organic", "vegan", "keto", "low sugar"]
+    },
+    "scoreDimensions": [
+      "field_accuracy",
+      "claims_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "front-label-jif-no-weight-02",
+    "category": "edge-case",
+    "description": "Tight crop of a Jif jar on a shelf: brand 'Jif', product 'Creamy Peanut Butter', and a round seal 'Choice of #1 Choosy Moms'. No net weight is readable (only a fragment 'OZ' at the right edge), so netWeight must be null; a weight like '16 oz' or '28 oz' would be invented. The only claim printed is the 'Choice of #1 Choosy Moms' seal. 'Natural', 'gluten free', 'organic', 'non-GMO' and 'vegan' are not printed.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/Jif_Peanut_Butter_-_14938583767.jpg/960px-Jif_Peanut_Butter_-_14938583767.jpg"
+    },
+    "assertions": {
+      "mustContain": ["brand: Jif", "creamy"],
+      "mustNotContain": [
+        "netWeight: [0-9]",
+        "natural",
+        "gluten",
+        "organic",
+        "non-gmo",
+        "vegan"
+      ]
+    },
+    "scoreDimensions": [
+      "field_accuracy",
+      "claims_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "front-label-marmite-peanut-butter-03",
+    "category": "accuracy",
+    "description": "Photo of a Marmite Crunchy Peanut Butter jar on a wooden table, dark background. Printed: brand 'MARMITE', product 'Crunchy Peanut Butter', and the green banner 'RICH IN B VITAMINS - NO ADDED SUGAR'. No net weight is readable (the side text is too small and blurred), so netWeight must be null. Claims are 'Rich in B vitamins' and 'No added sugar' only; 'vegan', 'organic', 'gluten free' and 'high protein' are not printed.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bb/Marmite_Peanut_Butter_%2851268398415%29.jpg/960px-Marmite_Peanut_Butter_%2851268398415%29.jpg"
+    },
+    "assertions": {
+      "mustContain": ["brand: Marmite", "no added sugar", "b vitamins"],
+      "mustNotContain": [
+        "netWeight: [0-9]",
+        "vegan",
+        "organic",
+        "gluten",
+        "high protein"
+      ]
+    },
+    "scoreDimensions": [
+      "field_accuracy",
+      "claims_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "front-label-pringles-three-cans-04",
+    "category": "edge-case",
+    "description": "Three Pringles Sour Cream & Onion cans on a white sheet: two 165g cans on the left (one turned slightly) and one 134g can on the right. Brand 'Pringles', product 'Sour Cream & Onion'. Either 165g or 134g is a defensible netWeight because both are printed on visible cans. The yellow price flash '2.99' and 'Scan POP Play' are promotions, not dietary claims. The turned left can has a 'Suitable for vegetarians' badge and a Halal mark on its side (visible only in the full-size photo), so a vegetarian or halal claim is acceptable but not required; claims must otherwise be empty or limited to what is really printed; 'vegan', 'gluten free', 'keto' and 'organic' are not printed. Overall confidence may be moderate because three cans are shown.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b9/Pringles-165g-to-134g.jpg/960px-Pringles-165g-to-134g.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "brand: Pringles",
+        "sour cream",
+        "netWeight: .*(134|165) ?g"
+      ],
+      "mustNotContain": ["vegan", "gluten", "keto", "organic"]
+    },
+    "scoreDimensions": [
+      "field_accuracy",
+      "claims_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "front-label-oatly-cartons-05",
+    "category": "edge-case",
+    "description": "Three stacked 1 L Oatly oat-drink cartons: the top one reads 'Hafer Haver Calcium' (blue), the lower left one reads 'Hafer Haver Barista Edition' (grey), and the right one shows only a side panel ('Hey food industry, show us your numbers'). Brand 'Oatly' (printed OAT-LY!, 'The Original'). Net volume '1L' is printed on the front of two cartons. Claims printed: '100% cool for vegans', 'No milk. No soy. No...eh...whatever.', and a climate footprint badge (0.29 and 0.42 kg CO2e/kg). Either carton's variant name is acceptable as productName. This is an ambiguous multi-product frame, so confidence should not be near 1.0.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Oatly_Plant_Milk.jpg/960px-Oatly_Plant_Milk.jpg"
+    },
+    "assertions": {
+      "mustContain": ["brand: oat-?ly", "netWeight: .*1 ?l"],
+      "mustNotContain": ["organic", "gluten", "keto"]
+    },
+    "scoreDimensions": [
+      "field_accuracy",
+      "claims_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "front-label-oatly-ice-cream-06",
+    "category": "accuracy",
+    "description": "A hand holding a 500 ml Oatly ice-cream tub outdoors. Printed: brand 'OATLY!' (The Original), product 'Really Posh Salty Caramel and Hazelnut Ice Cream' ('Salted' is an acceptable misreading), net volume '500 ml', claim '100% vegan', and 'WOW NO COW!' printed on the lid. 'Organic', 'gluten free', 'keto' and 'low sugar' are not printed.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Oatly_Salty_Caramel_Hazelnut.jpg/960px-Oatly_Salty_Caramel_Hazelnut.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "brand: oat-?ly",
+        "salt(y|ed) caramel",
+        "netWeight: .*500 ?ml",
+        "vegan"
+      ],
+      "mustNotContain": ["organic", "gluten", "keto", "low sugar"]
+    },
+    "scoreDimensions": [
+      "field_accuracy",
+      "claims_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "front-label-allin-protein-bar-07",
+    "category": "edge-case",
+    "description": "Angled close-up of a box of 'allin' protein bars with Hebrew and English text on a dark-blue wrapper. Printed: brand 'allin' (the logo reads 'all in' to some readers, either spelling is fine), product 'Protein Bar Banana Toffee Flavor' (English line on the second bar; the Hebrew line is the same product, so listing both is fine), net weight 60 g (printed '60 גרם', Hebrew for grams, so '60 גרם' is a correct reading), and the badges 'PROTEIN - per bar: protein 18g' and 'NO ADDED SUGAR'. Claims allowed: 'No added sugar' and a protein-per-bar claim (18g). 'Vegan', 'gluten free', 'organic' and 'keto' are not printed.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Protein_bars_in_product_packaging.jpg/960px-Protein_bars_in_product_packaging.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "brand: all ?in",
+        "no added sugar",
+        "netWeight: .*60 ?(g|גרם)"
+      ],
+      "mustNotContain": ["vegan", "gluten", "keto", "organic"]
+    },
+    "scoreDimensions": [
+      "field_accuracy",
+      "claims_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "front-label-unbranded-jar-08",
+    "category": "edge-case",
+    "description": "Blurry, badly lit phone photo of an old unlabeled glass jar with a red metal lid whose only printing is 'PEANUT BUTTER'. There is no brand, no net weight and no claim anywhere. brand and netWeight must be null and claims must be an empty list. productName may be 'Peanut Butter' or null. Confidence should be low (around 0.2 to 0.6); 0.8 or more would be overconfident. Any brand name, weight or claim would be invented.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Three_lb_peanut_butter_jar.jpg/960px-Three_lb_peanut_butter_jar.jpg"
+    },
+    "assertions": {
+      "mustContain": ["brand: null", "netWeight: null", "claims: \\(none\\)"]
+    },
+    "scoreDimensions": [
+      "field_accuracy",
+      "claims_fidelity",
+      "confidence_calibration"
+    ]
+  }
+]
