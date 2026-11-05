@@ -1643,9 +1643,11 @@ export const transactions = pgTable(
     platform: text("platform").notNull(),
     productId: text("product_id").notNull(),
     status: text("status").default("pending").notNull(),
-    // The STORE's revocation time (Apple revocationDate) for a refunded/revoked
-    // row; a receipt purchased at or before it is refused. Null when the row is
-    // not revoked (cleared on re-activation).
+    // The STORE's revocation time (Apple revocationDate) of the most recent
+    // refund applied to this row, even if later reversed. While the row is
+    // `revoked`, a receipt purchased at or before it is refused. Kept when the
+    // row is re-activated, so a redelivered copy of that refund is ignored.
+    // Null when the row was never refunded.
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)

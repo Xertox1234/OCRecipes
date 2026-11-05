@@ -57,6 +57,7 @@ describe("handleAppleNotification", () => {
     });
     vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
       userId: "user-1",
+      stale: false,
     });
 
     await handleAppleNotification("signed-payload");
@@ -80,6 +81,7 @@ describe("handleAppleNotification", () => {
       });
       vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
         userId: "user-1",
+        stale: false,
       });
 
       await handleAppleNotification("signed-payload");
@@ -100,6 +102,7 @@ describe("handleAppleNotification", () => {
     });
     vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
       userId: "user-1",
+      stale: false,
     });
 
     await handleAppleNotification("signed-payload");
@@ -108,6 +111,23 @@ describe("handleAppleNotification", () => {
       "orig-123",
       signedAt,
     );
+  });
+
+  it("leaves the cache alone when the refund was already reversed (redelivered copy)", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND",
+      originalTransactionId: "orig-123",
+      revokedAt: new Date(Date.now() - 60 * 60 * 1000),
+      signedAt: new Date(),
+    });
+    vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
+      userId: "user-1",
+      stale: true,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(invalidateCache).not.toHaveBeenCalled();
   });
 
   it.each(["EXPIRED", "GRACE_PERIOD_EXPIRED"])(
@@ -394,6 +414,7 @@ describe("handleGoogleNotification", () => {
   it("revokes on SUBSCRIPTION_REVOKED (12), keyed by purchaseToken", async () => {
     vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
       userId: "user-g",
+      stale: false,
     });
 
     await handleGoogleNotification({

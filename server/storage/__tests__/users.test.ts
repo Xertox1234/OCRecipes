@@ -1144,7 +1144,8 @@ describe("users storage", () => {
       expect(user!.subscriptionTier).toBe("premium");
       const txn = await getTransaction("orig_store_time_1");
       expect(txn!.status).toBe("completed");
-      expect(txn!.revokedAt).toBeNull();
+      // Kept on re-activation: a redelivered copy of that refund is then ignored.
+      expect(txn!.revokedAt?.getTime()).toBe(storeRevokedAt.getTime());
     });
 
     it("refuses a receipt purchased before the store revocation", async () => {
@@ -1178,7 +1179,7 @@ describe("users storage", () => {
       expect(result.status).toBe("revoked");
     });
 
-    it("re-activates from a renewal purchased after the store revocation and clears revokedAt", async () => {
+    it("re-activates from a renewal purchased after the store revocation and keeps revokedAt", async () => {
       const result = await extendSubscriptionByTransactionId(
         "orig_store_time_1",
         future,
@@ -1188,7 +1189,8 @@ describe("users storage", () => {
       expect(result).toEqual({ status: "extended", userId: testUser.id });
       const txn = await getTransaction("orig_store_time_1");
       expect(txn!.status).toBe("completed");
-      expect(txn!.revokedAt).toBeNull();
+      // Kept on re-activation: a redelivered copy of that refund is then ignored.
+      expect(txn!.revokedAt?.getTime()).toBe(storeRevokedAt.getTime());
     });
 
     it("stamps the processing time when the store gives no revocation time", async () => {
@@ -1333,7 +1335,7 @@ describe("users storage", () => {
 
       const result = await revokeSubscriptionByTransactionId("txn_revoke_1");
 
-      expect(result).toEqual({ userId: testUser.id });
+      expect(result).toEqual({ userId: testUser.id, stale: false });
       const user = await getUser(testUser.id);
       expect(user!.subscriptionTier).toBe("free");
     });
@@ -1361,7 +1363,7 @@ describe("users storage", () => {
       await revokeSubscriptionByTransactionId("txn_revoke_2");
       const second = await revokeSubscriptionByTransactionId("txn_revoke_2");
 
-      expect(second).toEqual({ userId: testUser.id });
+      expect(second).toEqual({ userId: testUser.id, stale: false });
       const user = await getUser(testUser.id);
       expect(user!.subscriptionTier).toBe("free");
     });
@@ -1396,7 +1398,7 @@ describe("users storage", () => {
 
       // The old transaction is found, but the user keeps premium because the
       // newer completed subscription is still active.
-      expect(result).toEqual({ userId: testUser.id });
+      expect(result).toEqual({ userId: testUser.id, stale: false });
       const user = await getUser(testUser.id);
       expect(user!.subscriptionTier).toBe("premium");
     });
@@ -1553,7 +1555,8 @@ describe("users storage", () => {
       expect(result).toEqual({ userId: testUser.id, stale: false });
       const txn = await getTransaction("orig_reversed_1");
       expect(txn!.status).toBe("completed");
-      expect(txn!.revokedAt).toBeNull();
+      // Kept: it records the reversed refund, so a redelivered copy is ignored.
+      expect(txn!.revokedAt?.getTime()).toBe(refundedAt.getTime());
       const user = await getUser(testUser.id);
       expect(user!.subscriptionTier).toBe("premium");
       expect(user!.subscriptionExpiresAt?.getTime()).toBe(future.getTime());
@@ -1581,7 +1584,8 @@ describe("users storage", () => {
       expect(result).toEqual({ userId: testUser.id, stale: false });
       const txn = await getTransaction("orig_reversed_1");
       expect(txn!.status).toBe("completed");
-      expect(txn!.revokedAt).toBeNull();
+      // Kept: it records the reversed refund, so a redelivered copy is ignored.
+      expect(txn!.revokedAt?.getTime()).toBe(refundedAt.getTime());
       const user = await getUser(testUser.id);
       expect(user!.subscriptionTier).toBe("free");
       expect(user!.subscriptionExpiresAt).toBeNull();
@@ -1734,6 +1738,114 @@ describe("users storage", () => {
       expect(result).toEqual({ userId: testUser.id, stale: false });
       const user = await getUser(testUser.id);
       expect(user!.subscriptionExpiresAt?.getTime()).toBe(later.getTime());
+    });
+
+    // Apple retries a notification for ~72h, so the REFUND a reversal undid
+    // can arrive again after it. That copy must not downgrade the user.
+    describe("a refund delivered again after its reversal", () => {
+      const reverse = () =>
+        reinstateSubscriptionByTransactionId(
+          "orig_reversed_1",
+          future,
+          signedAt,
+        );
+
+      const expectStillPremium = async () => {
+        const txn = await getTransaction("orig_reversed_1");
+        expect(txn!.status).toBe("completed");
+        const user = await getUser(testUser.id);
+        expect(user!.subscriptionTier).toBe("premium");
+        expect(user!.subscriptionExpiresAt?.getTime()).toBe(future.getTime());
+      };
+
+      it("leaves the row completed and the user premium", async () => {
+        await reverse();
+
+        const result = await revokeSubscriptionByTransactionId(
+          "orig_reversed_1",
+          refundedAt,
+        );
+
+        await expectStillPremium();
+        expect(result).toEqual({ userId: testUser.id, stale: true });
+        // The user's own pre-refund receipt still restores.
+        const reclaim = await claim(originalPurchase);
+        expect(reclaim.status).toBe("renewed");
+      });
+
+      it("is ignored when its revocationDate is earlier than the reversed refund", async () => {
+        await reverse();
+
+        const result = await revokeSubscriptionByTransactionId(
+          "orig_reversed_1",
+          new Date(refundedAt.getTime() - 1 * day),
+        );
+
+        await expectStillPremium();
+        expect(result).toEqual({ userId: testUser.id, stale: true });
+      });
+
+      it("is still ignored after a renewal notification", async () => {
+        await reverse();
+        await extendSubscriptionByTransactionId(
+          "orig_reversed_1",
+          future,
+          new Date(),
+        );
+
+        const result = await revokeSubscriptionByTransactionId(
+          "orig_reversed_1",
+          refundedAt,
+        );
+
+        await expectStillPremium();
+        expect(result).toEqual({ userId: testUser.id, stale: true });
+      });
+
+      it("is still ignored after the user re-sends their receipt", async () => {
+        await reverse();
+        await claim(originalPurchase);
+
+        const result = await revokeSubscriptionByTransactionId(
+          "orig_reversed_1",
+          refundedAt,
+        );
+
+        await expectStillPremium();
+        expect(result).toEqual({ userId: testUser.id, stale: true });
+      });
+
+      it("a new refund with a later revocationDate still revokes", async () => {
+        await reverse();
+        const secondRefund = new Date(signedAt.getTime() + 60 * 60 * 1000);
+
+        const result = await revokeSubscriptionByTransactionId(
+          "orig_reversed_1",
+          secondRefund,
+        );
+
+        expect(result).toEqual({ userId: testUser.id, stale: false });
+        const txn = await getTransaction("orig_reversed_1");
+        expect(txn!.status).toBe("revoked");
+        expect(txn!.revokedAt?.getTime()).toBe(secondRefund.getTime());
+        const user = await getUser(testUser.id);
+        expect(user!.subscriptionTier).toBe("free");
+        const replay = await claim(originalPurchase);
+        expect(replay.status).toBe("revoked");
+      });
+
+      it("a refund with no store date (Google, or none sent) still revokes", async () => {
+        await reverse();
+
+        const result =
+          await revokeSubscriptionByTransactionId("orig_reversed_1");
+
+        expect(result).toEqual({ userId: testUser.id, stale: false });
+        const txn = await getTransaction("orig_reversed_1");
+        expect(txn!.status).toBe("revoked");
+        const user = await getUser(testUser.id);
+        expect(user!.subscriptionTier).toBe("free");
+      });
     });
   });
 

@@ -154,7 +154,7 @@ describe("subscription renewal vs refund — concurrent multi-connection safety"
           renewal,
         ]);
 
-        expect(revokeResult).toEqual({ userId });
+        expect(revokeResult).toEqual({ userId, stale: false });
         expect(renewalStatus).toBe("revoked");
         const [txn] = await db
           .select()

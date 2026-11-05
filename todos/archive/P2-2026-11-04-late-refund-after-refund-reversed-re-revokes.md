@@ -1,9 +1,9 @@
 ---
 title: "A refund notification that arrives after its REFUND_REVERSED downgrades the user again"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-05
 assignee:
 labels: [iap, reliability, deferred-finding]
 github_issue:
@@ -30,3 +30,7 @@ The revoke has to know a reversal already happened for this refund. Options:
 
 - A real-Postgres test of REFUND(T1) → REFUND_REVERSED → REFUND(T1) redelivered leaves the row `completed` and the user premium.
 - A genuinely new refund (a later revocationDate) after a reversal still revokes.
+
+## Resolution
+
+Option B (no migration). `revokedAt` now outlives a re-activation: a reversal, a renewal notification and a same-user re-claim set the row back to `completed` and keep the date. `revokeSubscriptionByTransactionId` skips a revoke on a row that is not `revoked` when the incoming date is at or before that `revokedAt`, returning `stale: true`; a later date revokes and records its own date. Readers re-checked: `isRevokedForReceipt` only reads it on `revoked` rows, and the reinstate stale check stays correct. Real-Postgres tests in `server/storage/__tests__/users.test.ts` ("a refund delivered again after its reversal").
