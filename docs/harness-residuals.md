@@ -355,3 +355,46 @@ a path with spaces or non-ASCII bytes (`diff --git "a/client/a b.ts" "b/client/a
 split inside the quotes, and an upload change in such a file reads as not in scope (reviewer measured
 rc 1). No such path exists under `client/`, `patches/`, `plugins/` or `modules/` today. First check if
 reopened: read the path from the `+++ b/…` line (or `git diff --no-prefix -z`) instead of the header.
+
+### HIT IN REAL USE 2026-11-04 — auto mode gives "no verdict" on every hook-rewritten call, so each short-form review dispatch costs two calls and one executor stopped (#1738–#1746)
+
+Observed in one auto-mode session (`/todo` run plus PR review). The review-dispatch mod
+(`.claude/mods/review-dispatch/hooks/register.ts`, ~line 298) expands a one-line `REVIEW-DISPATCH …`
+prompt into the full AI_WORKFLOW contract. It does this by returning a changed input
+(`{ ...e, prompt: decision.prompt }`). The auto-mode classifier then refuses the call with "a hook changed
+this call's input after auto mode reviewed it, so the review does not cover what would run". The refusal
+quotes the expanded input and asks for it to be reissued, exactly, in a response of its own. A reissue of
+the full prompt passes, because the mod returns an unchanged input (`e`) when the prompt already equals its
+expansion.
+
+What it hit:
+
+- All 10 short-form reviewer dispatches in the session were refused, then accepted on the exact reissue
+  (10/10): #1738 ×2, the storage split, #1743's confirmation, 4 parallel domain reviewers (#1741, #1743,
+  #1744, #1745), #1746 ×2. Each refusal carries the ~8 KB expanded prompt, so every dispatch costs two
+  calls and the prompt twice.
+- "Put nothing else in that response" turns a parallel batch into a second all-reissue turn. The 4 domain
+  reviewers needed two turns.
+- **One `/todo` executor stopped** (storage split, #1744). Its `code-reviewer` dispatch was refused. It
+  retried with its own short form, not the quoted expansion, was refused again, and stopped before pushing,
+  as the error tells it to. The orchestrator then ran the review and resumed it. A later executor, told in
+  its dispatch prompt to reissue the quoted input, got through (#1743).
+- The same family hit Bash calls that the RTK hook rewrites (a plain read or filter rewritten to its `rtk`
+  form): "no verdict", and once a second, untouched call in the same response was voided with "another call
+  in this response was changed by a hook". The exact reissue passed each time.
+- Prose in a Bash heredoc also tripped `guard-outward-cli` ("verb is not literal text") while this entry was
+  being written. The text was appended with the Edit tool instead.
+
+Not the cause: the classifier never judged a call unsafe. Every refusal was the "no verdict" kind, and no
+review was skipped.
+
+First check if reopened (pick one):
+
+1. One line in `.claude/agents/todo-executor.md` Step 6: "If the dispatch is refused with 'a hook changed
+   this call's input', reissue the Agent call with exactly the quoted input." No CI time; fixes the stopped
+   executor.
+2. Have the mod DENY with the expanded prompt in the reason instead of rewriting. The agent sends the full
+   prompt once, so the classifier reviews what actually runs. Still one wasted call, but no "no verdict" and
+   no executor stop.
+3. An auto-mode allow rule for `Agent` calls to the roster reviewers (read-only agents). This needs the
+   owner's settings change, not a repo edit.
