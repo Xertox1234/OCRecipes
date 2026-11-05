@@ -1,6 +1,6 @@
 ---
 title: "VoiceOver/TalkBack says 'Coach responded' when a coach reply failed or was cut off"
-status: backlog
+status: done
 priority: low
 created: 2026-11-04
 updated: 2026-11-04
@@ -28,12 +28,12 @@ fired the same announcement. #1741 only adds one more way to reach it.
 
 ## Acceptance Criteria
 
-- [ ] "Coach responded" is not announced on an error or a user abort. A quiet
+- [x] "Coach responded" is not announced on an error or a user abort. A quiet
       dead-socket abort (which also calls `onDone`, `useCoachStream.ts` ~316)
       announces it only when the partial text is non-empty
-- [ ] An error end keeps its own announcement (the error toast) and does not
+- [x] An error end keeps its own announcement (the error toast) and does not
       also say "Coach responded"
-- [ ] A test in `client/components/coach/__tests__/` (or the existing CoachChat
+- [x] A test in `client/components/coach/__tests__/` (or the existing CoachChat
       test file) asserts `AccessibilityInfo.announceForAccessibility` is called
       with "Coach responded" on success and not on error
 
@@ -61,3 +61,7 @@ fired the same announcement. #1741 only adds one more way to reach it.
 ### 2026-11-04
 
 - Filed from the #1741 review (pre-existing, low).
+
+### 2026-11-05
+
+- Done: `replyArrivedRef` in CoachChat.tsx, set by onDone when the text (trimmed) or blocks are non-empty; six announcement tests in CoachChat.test.tsx.
