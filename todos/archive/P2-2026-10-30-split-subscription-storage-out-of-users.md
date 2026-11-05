@@ -1,6 +1,6 @@
 ---
 title: "Split subscription storage out of server/storage/users.ts"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-30
 updated: 2026-11-04
@@ -30,12 +30,12 @@ The `client/hooks/useAuth.ts` half of the original todo was split off on
 
 ## Acceptance Criteria
 
-- [ ] The subscription/transaction functions (`createTransaction`,
+- [x] The subscription/transaction functions (`createTransaction`,
       `claimTransactionAndUpgrade`, `extendSubscriptionByTransactionId`,
       `revokeSubscriptionByTransactionId`, `isRevokedForReceipt`,
       `applyRenewalInTx`, related types) live in `server/storage/subscriptions.ts`,
       re-exported/composed through `server/storage/index.ts` with no caller change
-- [ ] Existing tests pass unchanged (move tests alongside if needed)
+- [x] Existing tests pass unchanged (move tests alongside if needed)
 
 ## Implementation Notes
 
@@ -67,3 +67,7 @@ The `client/hooks/useAuth.ts` half of the original todo was split off on
   is raised to medium (renamed from P3) so its PR waits for owner review instead
   of auto-merging — it moves IAP transaction code. The useAuth.ts half moved to
   `todos/P3-2026-11-04-shrink-useauth-below-600-lines.md`, human-led.
+
+### 2026-11-04 (executed)
+
+- Moved the TRANSACTIONS section (getTransaction, createTransaction, ClaimResult, isRevokedForReceipt, applyRenewalInTx, claim/extend/revoke/expire/reinstate, downgradeIfActiveSourceInTx) to `server/storage/subscriptions.ts`; composed through `server/storage/index.ts`. `getSubscriptionStatus`, `getEffectiveTierForUser` and `updateSubscription` stay in `users.ts` because `nutrition.ts` and `favourite-recipes.ts` import `getEffectiveTierForUser` from `./users` (changing them is out of scope). `users.ts` is now about 905 lines (was 1297), still above the 600 bar. The concurrent subscription test now imports from `../subscriptions`.

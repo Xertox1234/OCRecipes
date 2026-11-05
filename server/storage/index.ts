@@ -9,6 +9,7 @@
  */
 
 import * as users from "./users";
+import * as subscriptions from "./subscriptions";
 import * as passwordReset from "./password-reset";
 import * as passwordChange from "./password-change";
 import * as identities from "./identities";
@@ -142,14 +143,17 @@ export const storage = {
   getSubscriptionStatus: users.getSubscriptionStatus,
   getEffectiveTierForUser: users.getEffectiveTierForUser,
   updateSubscription: users.updateSubscription,
-  getTransaction: users.getTransaction,
-  createTransaction: users.createTransaction,
-  claimTransactionAndUpgrade: users.claimTransactionAndUpgrade,
-  revokeSubscriptionByTransactionId: users.revokeSubscriptionByTransactionId,
-  expireSubscriptionByTransactionId: users.expireSubscriptionByTransactionId,
+  getTransaction: subscriptions.getTransaction,
+  createTransaction: subscriptions.createTransaction,
+  claimTransactionAndUpgrade: subscriptions.claimTransactionAndUpgrade,
+  revokeSubscriptionByTransactionId:
+    subscriptions.revokeSubscriptionByTransactionId,
+  expireSubscriptionByTransactionId:
+    subscriptions.expireSubscriptionByTransactionId,
   reinstateSubscriptionByTransactionId:
-    users.reinstateSubscriptionByTransactionId,
-  extendSubscriptionByTransactionId: users.extendSubscriptionByTransactionId,
+    subscriptions.reinstateSubscriptionByTransactionId,
+  extendSubscriptionByTransactionId:
+    subscriptions.extendSubscriptionByTransactionId,
 
   // Nutrition (scanned items, daily logs, saved items)
   getScannedItems: nutrition.getScannedItems,

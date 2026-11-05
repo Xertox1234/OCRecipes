@@ -27,7 +27,7 @@ import {
   claimTransactionAndUpgrade,
   extendSubscriptionByTransactionId,
   revokeSubscriptionByTransactionId,
-} from "../users";
+} from "../subscriptions";
 
 const DAY = 24 * 60 * 60 * 1000;
 const createdUserIds: string[] = [];
