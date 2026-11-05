@@ -214,6 +214,9 @@ export default function CoachChat({
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
   const prevStreamingRef = useRef(false);
+  // Set by onDone when the turn produced something to read. An error or a
+  // user stop also ends the stream, without a reply: no "Coach responded".
+  const replyArrivedRef = useRef(false);
   const lastAnnouncedIndexRef = useRef(0);
   const activeConvIdRef = useRef<number | null>(null);
   const usedQuickRepliesRef = useRef<Set<string>>(new Set());
@@ -260,7 +263,10 @@ export default function CoachChat({
     statusText,
     isStreaming,
   } = useCoachStream({
-    onDone: (_fullText, blocks) => {
+    onDone: (fullText, blocks) => {
+      // A dead-socket abort also lands here, with whatever partial text came.
+      replyArrivedRef.current =
+        fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
       // Finder blocks render from the refetched message (with the right
       // active state); keeping them in the footer too would show two lists.
       const liveBlocks = (blocks ?? []).filter(
@@ -323,9 +329,12 @@ export default function CoachChat({
     if (isStreaming && !wasStreaming) {
       // Streaming just started
       lastAnnouncedIndexRef.current = 0;
+      replyArrivedRef.current = false;
       AccessibilityInfo.announceForAccessibility("Coach is thinking...");
-    } else if (!isStreaming && wasStreaming) {
-      // Streaming just finished
+    } else if (!isStreaming && wasStreaming && replyArrivedRef.current) {
+      // Streaming just finished with a reply. onDone runs in the same tick
+      // that clears isStreaming, so the ref is already set when this runs.
+      replyArrivedRef.current = false;
       AccessibilityInfo.announceForAccessibility("Coach responded");
     }
   }, [isStreaming]);

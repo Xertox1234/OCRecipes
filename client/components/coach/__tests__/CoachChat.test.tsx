@@ -31,7 +31,7 @@ const {
   streamState,
 } = vi.hoisted(() => ({
   a11y: { reducedMotion: false, screenReaderEnabled: false },
-  streamState: { content: "" },
+  streamState: { content: "", isStreaming: false },
   coachStreamRef: {
     onError: null as ((message: string, code?: string) => void) | null,
     onDone: null as ((fullText: string, blocks?: unknown[]) => void) | null,
@@ -54,7 +54,7 @@ vi.mock("@/hooks/useCoachStream", () => ({
       abortStream: vi.fn(),
       streamingContent: streamState.content,
       statusText: "",
-      isStreaming: false,
+      isStreaming: streamState.isStreaming,
     };
   },
 }));
@@ -768,5 +768,78 @@ describe("CoachChat — keyboard offset", () => {
     const { container } = renderCoachChat();
     const kav = container.querySelector("[keyboardverticaloffset]");
     expect(kav?.getAttribute("keyboardverticaloffset")).toBe("0");
+  });
+});
+
+// "Coach responded" used to fire on every isStreaming true → false, so a
+// screen-reader user heard it for an errored or aborted reply too.
+describe("CoachChat — 'Coach responded' announcement", () => {
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+  // A fresh element each time: rerendering the same element object lets React
+  // skip the render, so the isStreaming flip would go unseen.
+  const chat = () => (
+    <CoachChat
+      conversationId={1}
+      onCreateConversation={vi.fn().mockResolvedValue(1)}
+      isCoachPro={false}
+      warmUpHook={warmUpHook}
+    />
+  );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    streamState.isStreaming = false;
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    streamState.isStreaming = false;
+    announceSpy.mockRestore();
+  });
+
+  /** Start a stream, run `end` (the hook's callbacks), then stop streaming. */
+  function streamThenEnd(end: () => void) {
+    streamState.isStreaming = true;
+    const { rerender } = renderComponent(chat());
+    act(() => {
+      end();
+      streamState.isStreaming = false;
+      rerender(chat());
+    });
+  }
+
+  it("announces when the reply arrives", () => {
+    streamThenEnd(() => coachStreamRef.onDone?.("Here you go"));
+    expect(announceSpy).toHaveBeenCalledWith("Coach responded");
+  });
+
+  it("announces a reply made only of blocks", () => {
+    streamThenEnd(() =>
+      coachStreamRef.onDone?.("", [{ type: "quick_replies", options: [] }]),
+    );
+    expect(announceSpy).toHaveBeenCalledWith("Coach responded");
+  });
+
+  it("does not announce when the stream errors", () => {
+    streamThenEnd(() =>
+      coachStreamRef.onError?.("500: internal", "INTERNAL_ERROR"),
+    );
+    expect(announceSpy).not.toHaveBeenCalledWith("Coach responded");
+  });
+
+  it("does not announce when the user stops the reply", () => {
+    // abortStream ends the stream with neither onDone nor onError.
+    streamThenEnd(() => {});
+    expect(announceSpy).not.toHaveBeenCalledWith("Coach responded");
+  });
+
+  it("does not announce a dead-socket abort that received no text", () => {
+    streamThenEnd(() => coachStreamRef.onDone?.(""));
+    expect(announceSpy).not.toHaveBeenCalledWith("Coach responded");
+  });
+
+  it("announces a dead-socket abort that kept partial text", () => {
+    streamThenEnd(() => coachStreamRef.onDone?.("Here is half"));
+    expect(announceSpy).toHaveBeenCalledWith("Coach responded");
   });
 });
