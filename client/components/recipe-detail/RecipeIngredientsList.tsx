@@ -68,13 +68,15 @@ export function RecipeIngredientsList({
   }, [allergenCheckFailed]);
 
   // Build a lookup: ingredient name → allergen match (for per-row badges)
+  const allergenMatches = allergenResult?.matches;
+  const allergenSubstitutions = allergenResult?.substitutions;
   const allergenMatchMap = useMemo(() => {
     const map = new Map<
       string,
       { allergenId: string; severity: AllergySeverity; label: string }
     >();
-    if (!allergenResult?.matches) return map;
-    for (const m of allergenResult.matches) {
+    if (!allergenMatches) return map;
+    for (const m of allergenMatches) {
       if (!map.has(m.ingredientName)) {
         const def = ALLERGEN_INGREDIENT_MAP[m.allergenId];
         map.set(m.ingredientName, {
@@ -85,24 +87,24 @@ export function RecipeIngredientsList({
       }
     }
     return map;
-  }, [allergenResult?.matches]);
+  }, [allergenMatches]);
 
   // Build a lookup: ingredient name → substitution suggestions
   const substitutionsByName = useMemo(() => {
     type SubArray = NonNullable<typeof allergenResult>["substitutions"];
     const map = new Map<string, SubArray>();
-    if (!allergenResult?.substitutions || !allergenResult?.matches) return map;
+    if (!allergenSubstitutions || !allergenMatches) return map;
 
     const uniqueNames: string[] = [];
     const seen = new Set<string>();
-    for (const m of allergenResult.matches) {
+    for (const m of allergenMatches) {
       if (!seen.has(m.ingredientName)) {
         seen.add(m.ingredientName);
         uniqueNames.push(m.ingredientName);
       }
     }
 
-    for (const s of allergenResult.substitutions) {
+    for (const s of allergenSubstitutions) {
       const idxStr = s.originalIngredientId.replace("allergen-check-", "");
       const idx = parseInt(idxStr, 10);
       const name = !isNaN(idx) ? uniqueNames[idx] : undefined;
@@ -113,7 +115,7 @@ export function RecipeIngredientsList({
       map.set(name, existing);
     }
     return map;
-  }, [allergenResult?.substitutions, allergenResult?.matches]);
+  }, [allergenSubstitutions, allergenMatches]);
 
   return (
     <View style={styles.section}>

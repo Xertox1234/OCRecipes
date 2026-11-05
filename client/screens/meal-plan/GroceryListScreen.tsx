@@ -357,10 +357,11 @@ export default function GroceryListScreen() {
   }, [haptics, list]);
 
   // Group items by category for SectionList
+  const listItems = list?.items;
   const sections = React.useMemo(() => {
-    if (!list?.items) return [];
+    if (!listItems) return [];
     const grouped = new Map<string, GroceryListItem[]>();
-    for (const item of list.items) {
+    for (const item of listItems) {
       const cat = item.category || "other";
       if (!grouped.has(cat)) grouped.set(cat, []);
       grouped.get(cat)!.push(item);
@@ -369,7 +370,7 @@ export default function GroceryListScreen() {
       title: title.charAt(0).toUpperCase() + title.slice(1),
       data,
     }));
-  }, [list?.items]);
+  }, [listItems]);
 
   const allChecked =
     list?.items != null &&

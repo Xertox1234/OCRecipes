@@ -146,15 +146,16 @@ function QuickAddSheetContentInner(
   const addItemMutation = useAddMealPlanItem();
   const isAdding = useRef(false);
 
+  const frequent = data?.frequent;
   const frequentRecipes: RecipeRow[] = useMemo(() => {
-    if (!data?.frequent.length || debouncedQuery) return [];
-    return data.frequent.map((r) => ({
+    if (!frequent?.length || debouncedQuery) return [];
+    return frequent.map((r) => ({
       id: r.id,
       title: r.title,
       calories: r.caloriesPerServing,
       source: "personal" as const,
     }));
-  }, [data?.frequent, debouncedQuery]);
+  }, [frequent, debouncedQuery]);
 
   const recipes: RecipeRow[] = useMemo(() => {
     if (!data) return [];

@@ -499,16 +499,6 @@ export default function ChatScreen() {
     });
   }, [isStreaming]);
 
-  // Auto-send initial message from cross-tab navigation (e.g. Ask Coach)
-  const didSendInitialRef = useRef(false);
-  useEffect(() => {
-    if (initialMessage && !didSendInitialRef.current) {
-      didSendInitialRef.current = true;
-      void handleSend(initialMessage);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialMessage]);
-
   // The messages query isn't refetched until the reply finishes, so the
   // text just sent is held locally until the saved copy lands. Keyed on the
   // saved user-message count at send time, not on matching text, so
@@ -667,6 +657,16 @@ export default function ChatScreen() {
       toast,
     ],
   );
+
+  // Auto-send initial message from cross-tab navigation (e.g. Ask Coach)
+  const didSendInitialRef = useRef(false);
+  useEffect(() => {
+    if (initialMessage && !didSendInitialRef.current) {
+      didSendInitialRef.current = true;
+      void handleSend(initialMessage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage]);
 
   const [showUpgrade, setShowUpgrade] = useState(false);
   const handleOpenCamera = useCallback(() => {

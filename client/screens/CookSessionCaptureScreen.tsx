@@ -101,15 +101,6 @@ export default function CookSessionCaptureScreen() {
     return sessionPromiseRef.current;
   }, [sessionId, createSession]);
 
-  // Handle initial photo from PhotoIntentScreen
-  useEffect(() => {
-    if (route.params?.initialPhotoUri) {
-      void handleAnalyzePhoto(route.params.initialPhotoUri);
-    }
-    // Only run on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const handleAnalyzePhoto = useCallback(
     async (photoUri: string) => {
       setIsAnalyzing(true);
@@ -137,6 +128,15 @@ export default function CookSessionCaptureScreen() {
     },
     [ensureSession, addPhoto, haptics, toast],
   );
+
+  // Handle initial photo from PhotoIntentScreen
+  useEffect(() => {
+    if (route.params?.initialPhotoUri) {
+      void handleAnalyzePhoto(route.params.initialPhotoUri);
+    }
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCapture = useCallback(async () => {
     if (isCapturing || photos.length >= MAX_PHOTOS || isAnalyzing) return;

@@ -1,6 +1,6 @@
 ---
 title: "Enable react-hooks/preserve-manual-memoization (React Compiler lint rules, next rule)"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-23
 updated: 2026-11-04
@@ -29,14 +29,14 @@ already runs: a site these rules flag is often one the compiler skips.
 
 ## Acceptance Criteria
 
-- [ ] `react-hooks/preserve-manual-memoization` is enabled in `eslint.config.js`
+- [x] `react-hooks/preserve-manual-memoization` is enabled in `eslint.config.js`
       and `npx eslint client` reports zero sites for it.
-- [ ] Each of the 11 sites is fixed, or — only where the current form is really
+- [x] Each of the 11 sites is fixed, or — only where the current form is really
       needed — carries an inline
       `// eslint-disable-next-line react-hooks/preserve-manual-memoization -- <reason>`.
-- [ ] `eslint-plugin-ocrecipes/__tests__/rules.test.ts` ("keeps react-hooks to
+- [x] `eslint-plugin-ocrecipes/__tests__/rules.test.ts` ("keeps react-hooks to
       the two pre-compiler rules") lists exactly the enabled rules.
-- [ ] One PR, this rule only. Do NOT start `set-state-in-effect`, `immutability`
+- [x] One PR, this rule only. Do NOT start `set-state-in-effect`, `immutability`
       or `refs` — they live in the human-led
       `todos/P3-2026-11-04-react-compiler-lint-remaining-rules.md`.
 
@@ -75,3 +75,15 @@ already runs: a site these rules flag is often one the compiler skips.
   that really needs its current form gets an inline eslint-disable with a
   reason. The remaining rules moved to the human-led
   `todos/P3-2026-11-04-react-compiler-lint-remaining-rules.md`.
+
+### 2026-11-04 (implemented)
+
+- Rule enabled. It flagged 7 sites in 6 files (the 11 counted earlier had
+  shrunk). No inline disables were needed.
+- QuickAddSheet, RecipeIngredientsList (x2), GroceryListScreen: the memo read
+  `x?.y` but the compiler inferred `x`; the property is now read into a local
+  before the memo and the local is the dep (same recompute frequency).
+- CoachChat, ChatScreen, CookSessionCaptureScreen: an effect called
+  `handleSend`/`handleAnalyzePhoto` before its `useCallback` was declared; the
+  effect now sits after the callback (no other effect in between acts on mount).
+- Bailout baseline shrank by 2 (RecipeIngredientsList, GroceryListScreen).

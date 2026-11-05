@@ -22,7 +22,6 @@
   "client/components/home/RecentActionsRow.tsx",
   "client/components/meal-plan/QuickAddSheet.tsx",
   "client/components/meal-plan/SimpleEntrySheet.tsx",
-  "client/components/recipe-detail/RecipeIngredientsList.tsx",
   "client/components/recipe-wizard/WizardShell.tsx",
   "client/context/BatchScanContext.tsx",
   "client/context/OnboardingContext.tsx",
@@ -65,7 +64,6 @@
   "client/screens/TasteProfileScreen.tsx",
   "client/screens/VerifyEmailScreen.tsx",
   "client/screens/meal-plan/CookbookCreateScreen.tsx",
-  "client/screens/meal-plan/GroceryListScreen.tsx",
   "client/screens/meal-plan/MealPlanHomeScreen.tsx",
   "client/screens/meal-plan/RecipeBrowserScreen.tsx",
   "client/screens/onboarding/TastePicksScreen.tsx"
