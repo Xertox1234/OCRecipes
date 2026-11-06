@@ -11,6 +11,7 @@ import {
   savedItems,
   recipeDismissals,
   verificationHistory,
+  transactions,
 } from "@shared/schema";
 import {
   isValidSubscriptionTier,
@@ -497,7 +498,8 @@ export const DELETE_USER_LOCK_THRESHOLD = 1000;
 
 /**
  * Permanently delete a user and all associated data.
- * Relies on ON DELETE CASCADE foreign keys to clean up child tables.
+ * Relies on ON DELETE CASCADE foreign keys to clean up child tables, except
+ * store purchases (`transactions`), which are kept anonymised (see below).
  * Community recipes (which use SET NULL) are explicitly deleted first.
  */
 export async function deleteUser(id: string): Promise<boolean> {
@@ -573,6 +575,16 @@ export async function deleteUser(id: string): Promise<boolean> {
     // Past the threshold no barcode lock is held here, so there is nothing
     // for that submit to deadlock against.
     if (recomputeHere) await lockBarcodes(tx, votedBarcodes);
+
+    // Store purchases outlive the account (migration 0038: the FK sets
+    // user_id NULL) so a refunded purchase cannot be replayed on a new
+    // account. Keep only the store transaction id and its refund state.
+    // updatedAt is left alone: a legacy revoked row without revokedAt uses it
+    // as its refund cutoff (isRevokedForReceipt).
+    await tx
+      .update(transactions)
+      .set({ receipt: "" })
+      .where(eq(transactions.userId, id));
 
     const result = await tx
       .delete(users)

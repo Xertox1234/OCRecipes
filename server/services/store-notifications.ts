@@ -58,6 +58,13 @@ async function applyRenewal(
     );
     return;
   }
+  if (result.status === "ownerless") {
+    log.info(
+      { source },
+      "renewal notification for a deleted account's purchase — nothing to extend",
+    );
+    return;
+  }
   invalidateTierCache(result.userId);
   log.info(
     { source, userId: result.userId },
@@ -121,7 +128,7 @@ export async function handleAppleNotification(
       );
       return;
     }
-    invalidateTierCache(reinstated.userId);
+    if (reinstated.userId !== null) invalidateTierCache(reinstated.userId);
     log.info(
       { type: n.notificationType, userId: reinstated.userId },
       "apple notification: refund reversed, entitlement reinstated",
@@ -188,7 +195,8 @@ export async function handleAppleNotification(
     return;
   }
   if (result) {
-    invalidateTierCache(result.userId);
+    // An ownerless row (deleted account) still records the refund/expiry.
+    if (result.userId !== null) invalidateTierCache(result.userId);
     log.info(
       { type: n.notificationType, userId: result.userId },
       "apple notification: entitlement revoke processed",
@@ -357,7 +365,7 @@ export async function handleGoogleNotification(
       ? await storage.revokeSubscriptionByTransactionId(sub.purchaseToken)
       : await storage.expireSubscriptionByTransactionId(sub.purchaseToken);
   if (result) {
-    invalidateTierCache(result.userId);
+    if (result.userId !== null) invalidateTierCache(result.userId);
     log.info(
       { type: sub.notificationType, userId: result.userId },
       "google rtdn: entitlement revoke processed",

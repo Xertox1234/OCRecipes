@@ -45,3 +45,12 @@ Never delegate (CLAUDE.md: IAP receipt validation is excluded from cheap workers
 ### 2026-10-29
 
 - Initial creation (pre-launch audit, overnight run)
+
+### 2026-11-06: owner rulings on M-obs-4 and L-data-8
+
+- **M-obs-4 — owner: report once per app session.** Done in its own PR (`fix/iap-unclaimed-purchase-report`): an unsolicited store purchase reaches Sentry at most once per session (StoreKit also redelivers renewals this way).
+- **L-data-8 — owner: keep anonymised records, refined version.** The literal "never re-claimable" option would also stop a user restoring a subscription they still pay for after deleting their account and signing up again. The actual abuse is narrower and Apple-only: refund → delete the account (which cascaded the refund record away) → replay the pre-refund receipt on a new account. Google needs nothing (a claim re-reads Play's live state). Implemented on `fix/iap-ledger-keep-on-delete`:
+  - Migration `0038_transactions_keep_on_account_delete.sql`: `transactions.user_id` nullable, FK `ON DELETE SET NULL`. `deleteUser` blanks the row's `receipt` first (the app never sets `appAccountToken`, so the receipt carries no account link anyway).
+  - `claimTransactionAndUpgrade`: an ownerless row is taken over by the claiming account (`created`) unless it was refunded and the receipt predates the refund (`revoked`); the row lock makes a second concurrent claimant a `conflict`.
+  - Store notifications on an ownerless row still record refunds/expiries; a renewal returns `ownerless` and extends no one.
+  - **Prod migration must be applied and verified BEFORE that PR merges** (owner runs or authorises it).

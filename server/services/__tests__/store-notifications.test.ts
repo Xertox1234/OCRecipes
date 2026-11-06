@@ -214,6 +214,23 @@ describe("handleAppleNotification", () => {
     expect(invalidateCache).not.toHaveBeenCalled();
   });
 
+  // Migration 0038: a deleted account's purchase row stays, with no owner.
+  it("records a refund on an ownerless row without touching the tier cache", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "REFUND",
+      originalTransactionId: "orig-ownerless",
+    });
+    vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue({
+      userId: null,
+      stale: false,
+    });
+
+    await expect(
+      handleAppleNotification("signed-payload"),
+    ).resolves.toBeUndefined();
+    expect(invalidateCache).not.toHaveBeenCalled();
+  });
+
   it("propagates a signature-verification error (caller maps to 5xx so Apple retries)", async () => {
     vi.mocked(verifyAppleNotification).mockRejectedValue(
       new Error("bad signature"),
@@ -512,6 +529,23 @@ describe("handleAppleNotification renewals", () => {
     );
     expect(invalidateCache).toHaveBeenCalledWith("user-r1");
     expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("does not touch the tier cache for a renewal of an ownerless row", async () => {
+    vi.mocked(verifyAppleNotification).mockResolvedValue({
+      notificationType: "DID_RENEW",
+      originalTransactionId: "orig-ownerless",
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      revoked: false,
+    });
+    vi.mocked(storage.extendSubscriptionByTransactionId).mockResolvedValue({
+      status: "ownerless",
+      userId: null,
+    });
+
+    await handleAppleNotification("signed-payload");
+
+    expect(invalidateCache).not.toHaveBeenCalled();
   });
 
   it("extends on a DID_RENEW BILLING_RECOVERY too", async () => {
