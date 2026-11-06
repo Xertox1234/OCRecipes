@@ -51,14 +51,11 @@ export function useCollapsibleHeight(
     if (!hasMeasured.current) return;
 
     if (reducedMotion) {
-      animatedHeight.value = isExpanded ? contentHeight.value : 0;
+      animatedHeight.set(isExpanded ? contentHeight.get() : 0);
     } else if (isExpanded) {
-      animatedHeight.value = withTiming(
-        contentHeight.value,
-        expandTimingConfig,
-      );
+      animatedHeight.set(withTiming(contentHeight.get(), expandTimingConfig));
     } else {
-      animatedHeight.value = withTiming(0, collapseTimingConfig);
+      animatedHeight.set(withTiming(0, collapseTimingConfig));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs
   }, [isExpanded, reducedMotion]);

@@ -191,12 +191,12 @@ export function SuggestionCard({
       setCardState("loading");
       // Animate to approximate height while loading
       if (!reducedMotion) {
-        animatedHeight.value = withTiming(200, expandTimingConfig);
+        animatedHeight.set(withTiming(200, expandTimingConfig));
       }
     } else if (cardState === "expanded") {
       setCardState("collapsed");
       if (!reducedMotion) {
-        animatedHeight.value = withTiming(0, collapseTimingConfig);
+        animatedHeight.set(withTiming(0, collapseTimingConfig));
       }
     }
     // Don't allow toggle while loading
@@ -208,7 +208,7 @@ export function SuggestionCard({
       if (height > 0 && height !== contentHeight) {
         setContentHeight(height);
         if (cardState === "expanded" && !reducedMotion) {
-          animatedHeight.value = withTiming(height, contentRevealTimingConfig);
+          animatedHeight.set(withTiming(height, contentRevealTimingConfig));
         }
       }
     },

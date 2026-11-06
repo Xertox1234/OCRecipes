@@ -127,20 +127,22 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
 
   const getItems = useCallback(() => [...itemsRef.current], []);
 
-  // Process the next queued lookup when a slot opens
-  const processQueue = useCallback(() => {
-    while (
-      inFlightRef.current < MAX_CONCURRENT_LOOKUPS &&
-      lookupQueueRef.current.length > 0
-    ) {
-      const next = lookupQueueRef.current.shift()!;
-      void performLookup(next.id, next.barcode);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // The lookup and the queue drain call each other, so both live in one
+  // closure: two useCallbacks naming each other is a use-before-declare to
+  // the React Compiler.
+  const performLookup = useCallback((itemId: string, barcode: string) => {
+    // Process the next queued lookup when a slot opens
+    const processQueue = () => {
+      while (
+        inFlightRef.current < MAX_CONCURRENT_LOOKUPS &&
+        lookupQueueRef.current.length > 0
+      ) {
+        const next = lookupQueueRef.current.shift()!;
+        void lookup(next.id, next.barcode);
+      }
+    };
 
-  const performLookup = useCallback(
-    async (itemId: string, barcode: string) => {
+    const lookup = async (itemId: string, barcode: string) => {
       const controller = new AbortController();
       abortControllersRef.current.set(itemId, controller);
       inFlightRef.current++;
@@ -200,9 +202,10 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
         inFlightRef.current--;
         processQueue();
       }
-    },
-    [processQueue],
-  );
+    };
+
+    return lookup(itemId, barcode);
+  }, []);
 
   const startSession = useCallback(() => {
     itemsRef.current = [];

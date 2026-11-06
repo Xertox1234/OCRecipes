@@ -66,13 +66,13 @@ export function CoverActionButton({
 
   const handlePressIn = () => {
     if (!reducedMotion && !isDisabled) {
-      scale.value = withSpring(0.98, pressSpringConfig);
+      scale.set(withSpring(0.98, pressSpringConfig));
     }
   };
 
   const handlePressOut = () => {
     if (!reducedMotion && !isDisabled) {
-      scale.value = withSpring(1, pressSpringConfig);
+      scale.set(withSpring(1, pressSpringConfig));
     }
   };
 
