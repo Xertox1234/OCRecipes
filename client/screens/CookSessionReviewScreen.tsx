@@ -59,6 +59,7 @@ import {
   logConfirmMessage,
   incompleteNutritionNote,
 } from "./CookSessionReviewScreen-utils";
+import { isDuplicateInFlight } from "@/lib/api-error";
 
 export default function CookSessionReviewScreen() {
   const insets = useSafeAreaInsets();
@@ -167,7 +168,10 @@ export default function CookSessionReviewScreen() {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         AccessibilityInfo.announceForAccessibility("Meal logged successfully");
         navigation.popTo("Main");
-      } catch {
+      } catch (err) {
+        // A double tap's second log: the first is still saving and owns the
+        // result. A real refusal (e.g. incomplete nutrition) still toasts.
+        if (isDuplicateInFlight(err)) return;
         toast.error("Failed to log meal. Please try again.");
       }
     },

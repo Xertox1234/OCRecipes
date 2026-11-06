@@ -32,7 +32,7 @@ export function createInFlightGuard(): InFlightGuard {
 }
 
 /**
- * Express middleware: answers 409 CONFLICT to a request whose key is already
+ * Express middleware: answers 409 REQUEST_IN_FLIGHT to a request whose key is already
  * in flight, without running the handler. The key is released when the
  * response closes (sent, errored or the client went away). Mount it after
  * requireAuth and choose a key that names the write — the user plus the
@@ -43,7 +43,12 @@ export function rejectOverlapping(keyOf: (req: Request) => string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const key = keyOf(req);
     if (!guard.claim(key)) {
-      sendError(res, 409, "This is already being saved", ErrorCode.CONFLICT);
+      sendError(
+        res,
+        409,
+        "This is already being saved",
+        ErrorCode.REQUEST_IN_FLIGHT,
+      );
       return;
     }
     res.on("close", () => guard.release(key));

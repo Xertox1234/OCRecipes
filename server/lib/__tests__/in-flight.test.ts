@@ -59,7 +59,7 @@ describe("rejectOverlapping", () => {
     const second = await request(t.app).post("/save").send({ id: 1 });
 
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe("CONFLICT");
+    expect(second.body.code).toBe("REQUEST_IN_FLIGHT");
     t.finishAll();
     expect((await first).status).toBe(201);
     expect(t.handledCount()).toBe(1);

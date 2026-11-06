@@ -19,6 +19,8 @@ export const ErrorCode = {
   /** The new password appears in a known breach (HIBP range check). */
   PASSWORD_BREACHED: "PASSWORD_BREACHED",
   CONFLICT: "CONFLICT",
+  /** A duplicate of a write still in flight (a double tap) — the first request owns the result; clients stay quiet. */
+  REQUEST_IN_FLIGHT: "REQUEST_IN_FLIGHT",
   INTERNAL_ERROR: "INTERNAL_ERROR",
   API_KEY_INVALID: "API_KEY_INVALID",
   API_KEY_REVOKED: "API_KEY_REVOKED",

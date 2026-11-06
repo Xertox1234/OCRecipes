@@ -24,7 +24,7 @@ import {
 } from "@/lib/photo-upload";
 import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import { formatLogSuccess } from "@/lib/log-success";
-import { ApiError } from "@/lib/api-error";
+import { ApiError, isDuplicateInFlight } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { useToast } from "@/context/ToastContext";
 import { logger } from "@/lib/logger";
@@ -345,6 +345,7 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
       .filter((pm) => pm.method !== "As Served");
 
     setIsConfirming(true);
+    let duplicate = false;
     try {
       await confirmPhotoAnalysis({
         sessionId,
@@ -368,6 +369,12 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
       toast.success(formatLogSuccess(totals.calories));
       navigation.goBack();
     } catch (err) {
+      // A double tap's second confirm: the first is still saving and owns
+      // the result (and the button state), so show nothing here.
+      if (isDuplicateInFlight(err)) {
+        duplicate = true;
+        return;
+      }
       // Never surface err.message — it can carry raw server or network text.
       // /api/photos/confirm emits RATE_LIMITED (crudRateLimit); everything
       // else (validation, storage, network, missing token) is generic.
@@ -378,7 +385,8 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
       );
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
-      setIsConfirming(false);
+      // The first request still owns the button state.
+      if (!duplicate) setIsConfirming(false);
     }
   };
 
