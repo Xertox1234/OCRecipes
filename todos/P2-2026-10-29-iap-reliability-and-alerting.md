@@ -46,6 +46,21 @@ Never delegate (CLAUDE.md: IAP receipt validation is excluded from cheap workers
 
 - Initial creation (pre-launch audit, overnight run)
 
+### 2026-11-06: code fixes (owner unlocked this human-led todo for the code part, interactive /goal session)
+
+Each item checked against the code first:
+
+- **M-obs-2 — already fixed** before this run: the Google token fetch logs, reports to Sentry and returns `STORE_API_ERROR`.
+- **M-rel-7 — already fixed**: `iapConfigWarnings` in `server/lib/env.ts` warns on half-configured Apple/Google IAP, a missing bundle id, `APPLE_ENVIRONMENT` not "production" in production, and missing Pub/Sub audience/email.
+- **M-rel-6 — fixed (Apple half).** Google outages already answered `STORE_API_ERROR`. Apple `RETRYABLE_VERIFICATION_FAILURE` and unexpected errors now do too (were `INVALID_RECEIPT`). The client already keeps every non-success transaction unfinished (`entitlementError` in `client/lib/iap/purchase-utils.ts`), and shows "store unavailable" for this code.
+- **L-rel-9 — fixed**: the Google OAuth token exchange is single-flight; a failed exchange is not cached.
+- **M-obs-3 — fixed**: a failed Pub/Sub OIDC check is reported to Sentry, at most once an hour. Apple verification failures were already `log.error` (Sentry).
+- **L-cq-1 — fixed**: Zod on the decoded RTDN payload.
+- **L-rel-8 — fixed (Apple)**: a REFUND/REVOKE with no local row throws so Apple redelivers. Google needs nothing: a later claim re-reads Play's live state, which is already revoked.
+- **M-obs-4 — NOT changed, owner decision.** The "store delivered a purchase with none pending" path also catches unsolicited deliveries such as iOS renewal transactions at launch, so making it `logger.error` could page Sentry on every renewal. Options: leave it, or report it once per session.
+- **L-data-8 — NOT changed, owner decision.** Account deletion cascades the `transactions` ledger, so a store transaction can be re-claimed by a new account. Fixing it needs a migration (keep or anonymise ledger rows on delete) and a data-retention ruling for the right-to-erasure path.
+- **Still open**: the sandbox purchase/restore/refund checks (launch-gated), M-obs-4, L-data-8.
+
 ### 2026-11-06: owner rulings on M-obs-4 and L-data-8
 
 - **M-obs-4 — owner: report once per app session.** Done in its own PR (`fix/iap-unclaimed-purchase-report`): an unsolicited store purchase reaches Sentry at most once per session (StoreKit also redelivers renewals this way).
@@ -54,3 +69,4 @@ Never delegate (CLAUDE.md: IAP receipt validation is excluded from cheap workers
   - `claimTransactionAndUpgrade`: an ownerless row is taken over by the claiming account (`created`) unless it was refunded and the receipt predates the refund (`revoked`); the row lock makes a second concurrent claimant a `conflict`.
   - Store notifications on an ownerless row still record refunds/expiries; a renewal returns `ownerless` and extends no one.
   - **Prod migration must be applied and verified BEFORE that PR merges** (owner runs or authorises it).
+- **Landed 2026-11-06:** #1765 (server fixes) and #1766 (M-obs-4) merged. Prod migration 0038 applied (owner-authorised via the Railway CLI); prod verify printed `YES|n`. #1767 carries L-data-8. **Left on this todo: only the launch-gated sandbox purchase/restore/refund checks.**

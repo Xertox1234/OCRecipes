@@ -8,10 +8,12 @@
  * the user.
  */
 import { OAuth2Client } from "google-auth-library";
+import { z } from "zod";
 import { verifyAppleNotification, validateReceipt } from "./receipt-validation";
 import { storage } from "../storage";
 import { invalidateCache as invalidateTierCache } from "./subscription-tier-cache";
 import { createServiceLogger, toError } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 
 const log = createServiceLogger("store-notifications");
 
@@ -79,8 +81,9 @@ async function applyRenewal(
  * DID_RENEW; every other
  * type is informational
  * (notably DID_CHANGE_RENEWAL_STATUS/AUTO_RENEW_DISABLED, which is NOT a
- * revoke — the sub is active until it actually EXPIRES). Throws only when the
- * signature cannot be verified, so the caller maps that to 5xx and Apple retries.
+ * revoke — the sub is active until it actually EXPIRES). Throws when the
+ * signature cannot be verified, or when a REFUND/REVOKE matches no local
+ * transaction yet; the caller maps either to 5xx and Apple retries.
  */
 export async function handleAppleNotification(
   signedPayload: string,
@@ -201,16 +204,50 @@ export async function handleAppleNotification(
       { type: n.notificationType, userId: result.userId },
       "apple notification: entitlement revoke processed",
     );
-  } else {
-    log.warn(
-      { type: n.notificationType },
-      "apple revoke notification: no matching local transaction",
+    return;
+  }
+  if (isRefund) {
+    // The phone's receipt is a pre-refund snapshot (it carries no
+    // revocationDate), so a refund dropped here could never be applied: a
+    // later claim of that receipt would grant premium. Throw → 5xx → Apple
+    // redelivers over the next hours, by when the receipt flow has stored the
+    // row. A purchase never claimed here exhausts Apple's retries harmlessly.
+    throw new Error(
+      `apple refund for an unknown transaction (${n.notificationType}, uuid ${n.notificationUUID ?? "none"}) — retry requested`,
     );
   }
+  log.warn(
+    { type: n.notificationType },
+    "apple expiry notification: no matching local transaction",
+  );
 }
 
 /** Reused client for verifying Pub/Sub push OIDC tokens. */
 const googleOAuthClient = new OAuth2Client();
+
+/** At most one push-verification report per hour (forged pushes can repeat). */
+const PUSH_VERIFICATION_ALERT_INTERVAL_MS = 60 * 60 * 1000;
+let lastPushVerificationAlertAt = 0;
+
+/**
+ * Report a failed Pub/Sub push verification to Sentry, rate-limited. A wrong
+ * GOOGLE_PUBSUB_AUDIENCE / GOOGLE_PUBSUB_SA_EMAIL fails EVERY real push, so
+ * Play refunds and renewals silently stop applying; one report an hour is
+ * enough to see it without letting forged pushes flood Sentry.
+ */
+function alertPushVerificationFailure(error: Error): void {
+  const now = Date.now();
+  if (now - lastPushVerificationAlertAt < PUSH_VERIFICATION_ALERT_INTERVAL_MS) {
+    return;
+  }
+  lastPushVerificationAlertAt = now;
+  reportError(error, "google-pubsub-oidc");
+}
+
+/** Reset the push-verification alert throttle (exported for tests). */
+export function resetPushVerificationAlert(): void {
+  lastPushVerificationAlertAt = 0;
+}
 
 /** Google RTDN notificationType values that REMOVE entitlement. */
 const GOOGLE_REVOKED = 12; // SUBSCRIPTION_REVOKED — refund-class, blocks
@@ -232,6 +269,16 @@ const GOOGLE_RENEWAL_RETRY_CODES = new Set([
   "PLATFORM_NOT_CONFIGURED",
   "NOT_IMPLEMENTED",
 ]);
+
+/** The decoded RTDN DeveloperNotification fields this handler reads. */
+const rtdnPayloadSchema = z.object({
+  subscriptionNotification: z
+    .object({
+      notificationType: z.number().int(),
+      purchaseToken: z.string().min(1),
+    })
+    .optional(),
+});
 
 interface PubSubPushBody {
   message?: { data?: string; messageId?: string };
@@ -262,13 +309,23 @@ export async function verifyGooglePushToken(
       audience,
     });
     const payload = ticket.getPayload();
-    return (
+    const ok =
       !!payload &&
       payload.email === expectedEmail &&
-      payload.email_verified === true
-    );
+      payload.email_verified === true;
+    if (!ok) {
+      log.warn("google pub/sub token is not from the configured push account");
+      alertPushVerificationFailure(
+        new Error(
+          "google pub/sub token is not from the configured push account",
+        ),
+      );
+    }
+    return ok;
   } catch (err) {
-    log.warn({ err: toError(err) }, "google pub/sub oidc verification failed");
+    const error = toError(err);
+    log.warn({ err: error }, "google pub/sub oidc verification failed");
+    alertPushVerificationFailure(error);
     return false;
   }
 }
@@ -292,23 +349,21 @@ export async function handleGoogleNotification(
   const data = body.message?.data;
   if (!data) return; // e.g. a Pub/Sub test publish — nothing to do.
 
-  let decoded: {
-    subscriptionNotification?: {
-      notificationType?: number;
-      purchaseToken?: string;
-    };
-  };
+  let raw: unknown;
   try {
-    decoded = JSON.parse(Buffer.from(data, "base64").toString("utf8"));
+    raw = JSON.parse(Buffer.from(data, "base64").toString("utf8"));
   } catch (err) {
     log.warn({ err: toError(err) }, "google rtdn: undecodable message data");
     return;
   }
 
-  const sub = decoded.subscriptionNotification;
-  if (sub?.notificationType === undefined || !sub.purchaseToken) {
+  const decoded = rtdnPayloadSchema.safeParse(raw);
+  const sub = decoded.success
+    ? decoded.data.subscriptionNotification
+    : undefined;
+  if (!sub) {
     log.info(
-      "google rtdn: non-subscription or incomplete notification, ignored",
+      "google rtdn: non-subscription or malformed notification, ignored",
     );
     return;
   }
