@@ -68,9 +68,13 @@ export default function ReceiptCaptureScreen() {
 
   // Mirrors `photos` for the unmount cleanup below — a `[]`-deps effect
   // cleanup closes over the value from the initial render, so a live ref is
-  // the only way for it to see the latest captured list.
+  // the only way for it to see the latest captured list. Mirrored in an
+  // effect (React Compiler rejects a render-body write); its readers — the
+  // unmount cleanup and handleRemovePhoto (a tap) — both run after commit.
   const photosRef = useRef(photos);
-  photosRef.current = photos;
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
   // Set right before navigation.replace("ReceiptReview", ...) hands the
   // photos off — `replace` unmounts this screen, and without this flag the
   // unmount cleanup below would delete the files ReceiptReview just received.

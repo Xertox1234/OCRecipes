@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -63,7 +63,10 @@ export default function ProfileScreen() {
 
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
-  const hasAnimated = useRef(false);
+  // State, not a ref: it is read during render (getEntering). Flipping it after
+  // mount re-renders once, which is inert — Reanimated reads `entering` only
+  // when a view is constructed, so already-mounted views keep their animation.
+  const [hasAnimated, setHasAnimated] = useState(false);
 
   const { scrollHandler, scrollY, headerAnimatedStyle, isBarVisible } =
     useScrollLinkedHeader({
@@ -96,13 +99,13 @@ export default function ProfileScreen() {
 
   // Gate entrance animations — play only on first mount
   const getEntering = (index: number) => {
-    if (hasAnimated.current || reducedMotion) return undefined;
+    if (hasAnimated || reducedMotion) return undefined;
     return FadeInDown.delay(index * STAGGER_DELAY).duration(400);
   };
 
   // Mark animated after first render
   React.useEffect(() => {
-    hasAnimated.current = true;
+    setHasAnimated(true);
   }, []);
 
   // Announce the error transition for screen readers (cross-platform — the

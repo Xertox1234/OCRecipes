@@ -19,7 +19,9 @@ interface Props {
 
 export function ScanSonarRing({ cx, cy, onComplete }: Props) {
   const onCompleteRef = useRef(onComplete);
-  onCompleteRef.current = onComplete;
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   const r = useSharedValue(1);
   const opacity = useSharedValue(1);
