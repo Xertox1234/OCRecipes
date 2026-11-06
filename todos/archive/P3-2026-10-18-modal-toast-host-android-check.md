@@ -1,9 +1,9 @@
 ---
 title: "Verify the modal toast host on Android (toast over an open RN Modal sheet)"
-status: backlog
+status: done
 priority: low
 created: 2026-10-18
-updated: 2026-10-31
+updated: 2026-11-06
 assignee:
 labels: [deferred, mobile, android, verification, toast]
 github_issue:
@@ -25,7 +25,7 @@ On iOS the root toast host lives in a `FullWindowOverlay`, which sits below an R
 
 - [x] (by equivalence, see 2026-10-28) On an Android device or emulator, open the recipe generation sheet, start a background generation, reopen the sheet, and confirm the "Recipe ready" toast is visible over the sheet and tapping it opens the recipe.
 - [x] The toast sits a small margin below the sheet's top edge, not under the status bar and not pushed down by a status-bar-height gap.
-- [ ] With TalkBack on, the toast is announced exactly once.
+- [x] With TalkBack on, the toast is announced exactly once.
 - [x] Repeat the visibility check for `CookbookPickerModal` and `GroceryListPickerModal` (any toast fired while they are open).
 
 ## Implementation Notes
@@ -71,3 +71,8 @@ On iOS the root toast host lives in a `FullWindowOverlay`, which sits below an R
 ### 2026-10-31
 
 - Owner ruling 2026-10-31: the Android device checks for the P3 todos run as ONE owner phone session after the camera and gesture-handler PRs merge (agent drives adb; owner holds the phone, scans a barcode, listens to TalkBack). The TalkBack count (last open AC) runs there. Still human-led; gate fields unchanged.
+
+### 2026-11-06
+
+- TalkBack PASSED on the owner's Galaxy A37: the "Coach replied — tap to open" toast appeared over the open CookbookPickerModal, TalkBack moved focus to it, and the owner heard it announced exactly once. All criteria met.
+- Lessons for the next TalkBack run: (1) never poll with `uiautomator dump` while TalkBack is on — it detaches accessibility services and TalkBack flickers on and off; use `screencap` only. (2) The coach request times out after 150 s (`CHAT_XHR_TIMEOUT_MS`), so the `kill -STOP` window must stay well under that — toggle TalkBack from adb (`settings put secure enabled_accessibility_services com.google.android.marvin.talkback/com.google.android.marvin.talkback.TalkBackService` + `accessibility_enabled 1`) instead of waiting on the owner. (3) Tap Send with the keyboard dismissed (`keyevent 111`) or the tap misses. While frozen, the recipe screen correctly shows "Unable to check this recipe against your allergies" — expected.

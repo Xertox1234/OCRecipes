@@ -66,4 +66,4 @@ Found while verifying PR 1 of the recipe-generate → Argon project. Deferred be
 ### 2026-10-18 — orchestrator
 
 - **AC3 (sim check) done.** iPhone 17 Pro simulator, dev-client build, real generation with the server paused (`kill -STOP`), sheet reopened, server resumed, `xcrun simctl io` screenshot loop: the "Recipe ready — tap to open" toast was fully visible over the reopened `RecipeGenerationModal` ~5–9 s after `kill -CONT`. Record: PR #1503 comment (issuecomment-6253399895). The toast first settled over the sheet's header row because `Toast` read the root safe-area top inside a pageSheet; fixed in PR #1505 (`topInset` prop, host passes 0) and re-verified the same way: toast at the sheet's top edge, title and Close visible.
-- Remount re-announce and the Android check are filed as `todos/P3-2026-10-18-toast-remount-across-modal-hosts-re-announces.md` and `todos/P3-2026-10-18-modal-toast-host-android-check.md`.
+- Remount re-announce and the Android check are filed as `todos/P3-2026-10-18-toast-remount-across-modal-hosts-re-announces.md` and `todos/archive/P3-2026-10-18-modal-toast-host-android-check.md`.
