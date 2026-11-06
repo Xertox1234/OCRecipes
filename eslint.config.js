@@ -19,6 +19,7 @@ const KEPT_REACT_HOOKS_RULES = new Set([
   "react-hooks/rules-of-hooks",
   "react-hooks/exhaustive-deps",
   "react-hooks/globals",
+  "react-hooks/immutability",
   "react-hooks/preserve-manual-memoization",
 ]);
 const reactHooksPlugin = expoConfig.find((c) => c.plugins?.["react-hooks"])

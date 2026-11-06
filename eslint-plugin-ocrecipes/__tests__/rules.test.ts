@@ -1073,6 +1073,7 @@ describe("eslint.config.js wiring", () => {
     expect(enabled).toEqual([
       "react-hooks/exhaustive-deps",
       "react-hooks/globals",
+      "react-hooks/immutability",
       "react-hooks/preserve-manual-memoization",
       "react-hooks/rules-of-hooks",
     ]);

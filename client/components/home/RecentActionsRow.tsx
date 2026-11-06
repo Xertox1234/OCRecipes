@@ -54,12 +54,12 @@ function RecentActionChip({
       onPress={onPress}
       onPressIn={() => {
         if (!reducedMotion) {
-          scale.value = withSpring(0.95, pressSpringConfig);
+          scale.set(withSpring(0.95, pressSpringConfig));
         }
       }}
       onPressOut={() => {
         if (!reducedMotion) {
-          scale.value = withSpring(1, pressSpringConfig);
+          scale.set(withSpring(1, pressSpringConfig));
         }
       }}
       accessibilityRole="button"

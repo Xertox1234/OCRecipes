@@ -108,17 +108,19 @@ export function Toast({
   const swipeGesture = usePanGesture({
     onUpdate: (e) => {
       if (e.translationY < 0) {
-        translateY.value = e.translationY;
+        translateY.set(e.translationY);
       }
     },
     onDeactivate: (e) => {
       if (e.translationY < SWIPE_DISMISS_THRESHOLD) {
-        translateY.value = withTiming(-200, toastExitTimingConfig);
-        opacity.value = withTiming(0, toastExitTimingConfig, (finished) => {
-          if (finished) scheduleOnRN(onDismiss);
-        });
+        translateY.set(withTiming(-200, toastExitTimingConfig));
+        opacity.set(
+          withTiming(0, toastExitTimingConfig, (finished) => {
+            if (finished) scheduleOnRN(onDismiss);
+          }),
+        );
       } else {
-        translateY.value = withSpring(0, toastSpringConfig);
+        translateY.set(withSpring(0, toastSpringConfig));
       }
     },
   });

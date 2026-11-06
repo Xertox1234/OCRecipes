@@ -51,9 +51,11 @@ export function useSuccessPop(peakScale = 1.4): {
       // Instant state change — no animation
       return;
     }
-    scale.value = withSequence(
-      withSpring(peakScale, successPopConfig),
-      withSpring(1, successPopConfig),
+    scale.set(
+      withSequence(
+        withSpring(peakScale, successPopConfig),
+        withSpring(1, successPopConfig),
+      ),
     );
   }, [reducedMotion, scale, peakScale]);
 
@@ -62,11 +64,11 @@ export function useSuccessPop(peakScale = 1.4): {
   useEffect(() => {
     if (reducedMotion) {
       cancelAnimation(scale);
-      scale.value = 1;
+      scale.set(1);
     }
     return () => {
       cancelAnimation(scale);
-      scale.value = 1;
+      scale.set(1);
     };
   }, [reducedMotion, scale]);
 

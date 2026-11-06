@@ -70,8 +70,8 @@ export default function BatchScanScreen() {
     (message: string) => {
       setToastText(message);
       cancelAnimation(toastOpacity);
-      toastOpacity.value = 1;
-      toastOpacity.value = withTiming(0, { duration: 1500 });
+      toastOpacity.set(1);
+      toastOpacity.set(withTiming(0, { duration: 1500 }));
     },
     [toastOpacity],
   );

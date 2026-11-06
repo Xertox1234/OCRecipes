@@ -56,7 +56,7 @@ export function useScrollLinkedHeader({
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
+      scrollY.set(event.contentOffset.y);
       // Reduced motion keeps the collapsed bar at opacity 0 forever — the
       // visibility flag must stay false too, or consumers flip
       // pointerEvents to "auto" on an invisible full-width Pressable.
@@ -64,8 +64,8 @@ export function useScrollLinkedHeader({
       // Only cross the UI→JS bridge when the boolean transitions, not every frame
       const barShouldBeVisible =
         event.contentOffset.y > collapseThreshold * 0.5;
-      if (barShouldBeVisible !== lastBarVisible.value) {
-        lastBarVisible.value = barShouldBeVisible;
+      if (barShouldBeVisible !== lastBarVisible.get()) {
+        lastBarVisible.set(barShouldBeVisible);
         scheduleOnRN(updateBarVisibility, barShouldBeVisible);
       }
     },
