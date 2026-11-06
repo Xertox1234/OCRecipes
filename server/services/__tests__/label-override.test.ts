@@ -344,17 +344,18 @@ it("decline #2b: compared is false when the label serving disagrees >4x with a t
   expect(r.compared).toBe(false);
 });
 
-it("decline #3: compared is false when the record has no counterpart for any field the label read", () => {
+it("no counterpart: compared stays false when the record has none of the fields the label read", () => {
   // Serving parses and the ratio is fine, so we get all the way to the
   // comparison loop — but the DB per-100g has none of calories/sugar/fat, so
-  // nothing is ever compared. Without `compared` this is indistinguishable from
-  // the agreement case above, and the client would open the gate on a record it
-  // never verified.
+  // nothing is ever compared. Since 2026-11-06 the label is ADOPTED here
+  // (owner ruling: a readable label beats an empty record), but `compared`
+  // stays false: nothing cross-checked the label, so the client keeps the
+  // log gate shut until the user reviews the values.
   const db = cherryCokeDb();
   db.per100g = { caffeine: 10 };
   const r = buildLabelConflict(db, goodLabel);
-  expect(r.conflict).toBe(false);
-  expect(r.fields).toEqual([]);
+  expect(r.conflict).toBe(true);
+  expect(r.labelResult).toBeDefined();
   expect(r.compared).toBe(false);
 });
 
@@ -1008,4 +1009,68 @@ it("the clamp does not disturb the ordinary 30 g serving the floor exists for", 
     saturatedFat: 1.5,
   });
   expect(r.conflict).toBe(false);
+});
+
+// A record that exists (OFF found the product) but carries NO nutrition for
+// any compared field — device-observed 2026-11-06 on Vanilla Coca-Cola
+// (06722908): CNF, USDA and API Ninjas all missed, so the screen showed "—"
+// everywhere while the user's readable label photo was dropped as "no
+// conflict".
+function emptyRecordDb(): BarcodeLookupResult {
+  return {
+    productName: "Vanilla Coca-Cola",
+    barcode: "06722908",
+    per100g: {},
+    perServing: {},
+    servingInfo: { displayLabel: "100g", grams: 100, wasCorrected: false },
+    isServingDataTrusted: false,
+    source: "openfoodfacts",
+    allergenDataAvailable: true,
+    novaGroup: 4,
+    categoriesTags: ["en:colas"],
+  };
+}
+
+it("empty record: a readable label is ADOPTED, with the label's serving", () => {
+  const r = buildLabelConflict(emptyRecordDb(), goodLabel);
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["calories", "sugar", "fat"]);
+  expect(r.labelResult).toBeDefined();
+  expect(r.labelResult!.servingInfo.grams).toBe(355);
+  expect(r.labelResult!.servingInfo.displayLabel).toBe("355 mL");
+  expect(r.labelResult!.perServing.calories).toBe(150);
+  expect(r.labelResult!.perServing.sugar).toBeCloseTo(39, 5);
+  expect(r.labelResult!.isServingDataTrusted).toBe(true);
+  // Nothing cross-checked the label, so the client's log gate stays shut
+  // until the user reviews the values (owner, 2026-11-06).
+  expect(r.compared).toBe(false);
+  // OFF enrichment is kept.
+  expect(r.labelResult!.novaGroup).toBe(4);
+});
+
+it("empty record: the record's own non-compared values are kept, not blanked", () => {
+  const db = emptyRecordDb();
+  db.per100g = { protein: 3 };
+  const r = buildLabelConflict(db, goodLabel);
+  expect(r.conflict).toBe(true);
+  expect(r.labelResult!.per100g.protein).toBe(3);
+});
+
+it("empty record: an unreadable label is still refused", () => {
+  const r = buildLabelConflict(emptyRecordDb(), {
+    ...goodLabel,
+    servingSize: "1 bottle",
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.labelResult).toBeUndefined();
+  expect(r.compared).toBe(false);
+});
+
+it("a record with ONE compared field present is not 'empty' — agreement path unchanged", () => {
+  const db = emptyRecordDb();
+  // 150 kcal / 355 ml = 42.25 per 100 — agrees with the label.
+  db.per100g = { calories: 42 };
+  const r = buildLabelConflict(db, goodLabel);
+  expect(r.conflict).toBe(false);
+  expect(r.labelResult).toBeUndefined();
 });
