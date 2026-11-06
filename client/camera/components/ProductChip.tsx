@@ -137,8 +137,12 @@ export function ProductChip({
         getChipAnnounceText(variant, phase),
       );
     } else {
-      translateY.value = withSpring(OFF_SCREEN_Y, CHIP_SPRING, () => {
-        scheduleOnRN(setShouldRender, false);
+      // Unmount only when the exit spring settles. A variant that returns
+      // mid-exit starts the enter spring above, which cancels this one and
+      // fires the callback with finished=false; hiding then would hide a
+      // chip that is showing a variant.
+      translateY.value = withSpring(OFF_SCREEN_Y, CHIP_SPRING, (finished) => {
+        if (finished) scheduleOnRN(setShouldRender, false);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref; `phase` is read only to build the announce string for the current variant and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers a meaningful change).
