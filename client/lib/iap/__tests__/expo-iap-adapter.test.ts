@@ -8,7 +8,7 @@ import type {
   PurchaseIOS,
 } from "expo-iap";
 
-import { useExpoIAP } from "../expo-iap-adapter";
+import { useExpoIAP, resetUnclaimedPurchaseReport } from "../expo-iap-adapter";
 
 const SKU = "com.ocrecipes.premium.annual";
 
@@ -53,6 +53,8 @@ vi.mock("expo-iap", () => ({
 vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+const { mockReportError } = vi.hoisted(() => ({ mockReportError: vi.fn() }));
+vi.mock("@/lib/reporter", () => ({ reportError: mockReportError }));
 
 function iosTrialSubscription(
   overrides: Partial<ProductSubscriptionIOS> = {},
@@ -355,6 +357,25 @@ describe("useExpoIAP — restoring", () => {
 
     expect(restored?.transactionId).toBe("unclaimed");
     expect(storeMock.getAvailablePurchases).not.toHaveBeenCalled();
+  });
+
+  // A charged purchase the server never confirmed must be visible off-device,
+  // but iOS also redelivers renewals this way: once per app session.
+  it("reports an unsolicited purchase to Sentry at most once per session", async () => {
+    resetUnclaimedPurchaseReport();
+    await connectedWithProduct();
+    act(() =>
+      callbacks.onPurchaseSuccess?.(iosPurchase({ transactionId: "first" })),
+    );
+    act(() =>
+      callbacks.onPurchaseSuccess?.(iosPurchase({ transactionId: "second" })),
+    );
+
+    expect(mockReportError).toHaveBeenCalledTimes(1);
+    expect(mockReportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      "iap-unclaimed-purchase",
+    );
   });
 
   it("returns the newest completed purchase of ours", async () => {
