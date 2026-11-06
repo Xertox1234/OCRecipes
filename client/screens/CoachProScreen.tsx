@@ -1,3 +1,7 @@
+// The rule is still off globally until every batch lands (todo
+// P3-2026-11-04-react-compiler-lint-remaining-rules); enabled here so the
+// eslint-disable below counts as used and lint-staged --fix keeps it.
+/* eslint react-hooks/set-state-in-effect: "error" */
 import React, {
   useCallback,
   useEffect,
@@ -151,6 +155,7 @@ export default function CoachProScreen() {
   useEffect(() => {
     const selectedId = route.params?.selectedConversationId;
     if (selectedId !== undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- consumes a one-shot navigation param; the state must land together with the navigation.setParams clear below
       setIsNewDraft(false);
       setConversationId(selectedId);
       navigation.setParams({ selectedConversationId: undefined });
