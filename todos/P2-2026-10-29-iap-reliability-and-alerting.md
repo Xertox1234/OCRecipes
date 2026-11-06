@@ -60,3 +60,13 @@ Each item checked against the code first:
 - **M-obs-4 — NOT changed, owner decision.** The "store delivered a purchase with none pending" path also catches unsolicited deliveries such as iOS renewal transactions at launch, so making it `logger.error` could page Sentry on every renewal. Options: leave it, or report it once per session.
 - **L-data-8 — NOT changed, owner decision.** Account deletion cascades the `transactions` ledger, so a store transaction can be re-claimed by a new account. Fixing it needs a migration (keep or anonymise ledger rows on delete) and a data-retention ruling for the right-to-erasure path.
 - **Still open**: the sandbox purchase/restore/refund checks (launch-gated), M-obs-4, L-data-8.
+
+### 2026-11-06: owner rulings on M-obs-4 and L-data-8
+
+- **M-obs-4 — owner: report once per app session.** Done in its own PR (`fix/iap-unclaimed-purchase-report`): an unsolicited store purchase reaches Sentry at most once per session (StoreKit also redelivers renewals this way).
+- **L-data-8 — owner: keep anonymised records, refined version.** The literal "never re-claimable" option would also stop a user restoring a subscription they still pay for after deleting their account and signing up again. The actual abuse is narrower and Apple-only: refund → delete the account (which cascaded the refund record away) → replay the pre-refund receipt on a new account. Google needs nothing (a claim re-reads Play's live state). Implemented on `fix/iap-ledger-keep-on-delete`:
+  - Migration `0038_transactions_keep_on_account_delete.sql`: `transactions.user_id` nullable, FK `ON DELETE SET NULL`. `deleteUser` blanks the row's `receipt` first (the app never sets `appAccountToken`, so the receipt carries no account link anyway).
+  - `claimTransactionAndUpgrade`: an ownerless row is taken over by the claiming account (`created`) unless it was refunded and the receipt predates the refund (`revoked`); the row lock makes a second concurrent claimant a `conflict`.
+  - Store notifications on an ownerless row still record refunds/expiries; a renewal returns `ownerless` and extends no one.
+  - **Prod migration must be applied and verified BEFORE that PR merges** (owner runs or authorises it).
+- **Landed 2026-11-06:** #1765 (server fixes) and #1766 (M-obs-4) merged. Prod migration 0038 applied (owner-authorised via the Railway CLI); prod verify printed `YES|n`. #1767 carries L-data-8. **Left on this todo: only the launch-gated sandbox purchase/restore/refund checks.**

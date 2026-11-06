@@ -5,7 +5,8 @@
  * Like verification.concurrent.test.ts, this file deliberately does NOT mock
  * `../../db` or use `test/db-test-utils` (savepoint isolation forces one
  * connection and cannot race). It commits real rows on the real pool and
- * removes them in `afterAll` (transactions FK-cascade from users).
+ * removes them in `afterAll` — transactions first: they outlive a deleted user
+ * (FK ON DELETE SET NULL, migration 0038).
  *
  * The interleaving is forced, not left to timing:
  *  1. A raw client C locks the user's row (`SELECT ... FOR UPDATE`).
@@ -18,7 +19,7 @@
  * pre-refund `completed` snapshot and overwrote the committed refund.
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import pg from "pg";
 import { db, pool } from "../../db";
@@ -31,8 +32,14 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000;
 const createdUserIds: string[] = [];
+const createdTransactionIds: string[] = [];
 
 afterAll(async () => {
+  if (createdTransactionIds.length > 0) {
+    await db
+      .delete(transactions)
+      .where(inArray(transactions.transactionId, createdTransactionIds));
+  }
   for (const userId of createdUserIds) {
     await db.delete(users).where(eq(users.id, userId));
   }
@@ -40,6 +47,7 @@ afterAll(async () => {
 });
 
 async function createPremiumUserWithTxn(transactionId: string) {
+  createdTransactionIds.push(transactionId);
   const [user] = await db
     .insert(users)
     .values({
