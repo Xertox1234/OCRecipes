@@ -71,6 +71,16 @@ describe("Voice Transcription", () => {
       );
     });
 
+    it("keeps the original API error as the cause", async () => {
+      const apiError = new Error("API rate limited");
+      mockTranscribe.mockRejectedValue(apiError);
+
+      const err = await transcribeAudio(Buffer.from("fake audio")).catch(
+        (e: unknown) => e,
+      );
+      expect((err as Error).cause).toBe(apiError);
+    });
+
     it("throws on empty transcription response", async () => {
       mockTranscribe.mockResolvedValue({ text: "" } as any);
 

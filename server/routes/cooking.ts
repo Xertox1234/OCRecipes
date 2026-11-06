@@ -32,7 +32,6 @@ import {
 } from "../lib/cook-session-merge";
 import {
   analyzeIngredientPhoto,
-  IngredientAnalysisError,
   calculateSessionNutrition,
 } from "../services/cooking-session";
 import { generateRecipeContent } from "../services/recipe-generation";
@@ -229,23 +228,18 @@ export function register(app: Express): void {
 
         const photoId = crypto.randomUUID();
 
-        let newIngredients: CookingSessionIngredient[];
-        try {
-          // requireValidImage guaranteed req.file is present above.
-          newIngredients = await analyzeIngredientPhoto(
+        // An IngredientAnalysisError falls through to handleRouteError below
+        // (logged, reported, fixed message) — its text is internal detail.
+        // requireValidImage guaranteed req.file is present above.
+        const newIngredients: CookingSessionIngredient[] =
+          await analyzeIngredientPhoto(
             imageBase64,
             req.file!.mimetype,
             session.photos.length,
           );
-          // Set the real photoId on each detected ingredient
-          for (const ingredient of newIngredients) {
-            ingredient.photoId = photoId;
-          }
-        } catch (error) {
-          if (error instanceof IngredientAnalysisError) {
-            return sendError(res, 500, error.message, ErrorCode.INTERNAL_ERROR);
-          }
-          throw error;
+        // Set the real photoId on each detected ingredient
+        for (const ingredient of newIngredients) {
+          ingredient.photoId = photoId;
         }
 
         session.ingredients = mergeDetectedIngredients(

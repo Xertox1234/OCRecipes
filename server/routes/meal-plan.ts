@@ -598,8 +598,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        logger.error({ err: toError(error) }, "meal confirmation failed");
-        sendError(res, 500, "Failed to confirm meal", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "confirm meal");
       }
     },
   );

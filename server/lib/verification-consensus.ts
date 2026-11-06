@@ -134,3 +134,25 @@ export function compareWithVerifications(
   // (consensus builds from pairwise agreement)
   return { isMatch: matchCount > 0, matchCount };
 }
+
+/**
+ * Narrow a raw `verification_history.extractedNutrition` JSONB blob (or a
+ * freshly extracted label) into the `VerificationNutrition` shape. Null-safe:
+ * a missing or non-object blob yields all-null fields rather than throwing.
+ * Shared by the verification route and storage so the two cannot drift.
+ */
+export function parseVerificationNutrition(
+  raw: unknown,
+): VerificationNutrition {
+  const n =
+    typeof raw === "object" && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {};
+  const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
+  return {
+    calories: num(n.calories),
+    protein: num(n.protein),
+    totalCarbs: num(n.totalCarbs),
+    totalFat: num(n.totalFat),
+  };
+}

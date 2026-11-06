@@ -49,6 +49,8 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+vi.mock("../../lib/error-reporter", () => ({ reportError: vi.fn() }));
+
 const { mockAiConfigured } = vi.hoisted(() => ({
   mockAiConfigured: { current: true },
 }));
@@ -474,6 +476,32 @@ describe("Cooking Routes", () => {
         .attach("photo", Buffer.from("fake"), "test.jpg");
 
       expect(res.status).toBe(500);
+    });
+
+    it("reports an analysis failure to Sentry and hides the internal message", async () => {
+      const { reportError } = await import("../../lib/error-reporter");
+      vi.mocked(reportError).mockClear();
+      const sessionId = "report-analysis-session";
+      cookingSessionStore._internals.store.set(sessionId, {
+        id: sessionId,
+        userId: "1",
+        ingredients: [],
+        photos: [],
+        createdAt: Date.now(),
+      });
+      const error = new IngredientAnalysisError(
+        "No response from ingredient analysis",
+      );
+      vi.mocked(analyzeIngredientPhoto).mockRejectedValue(error);
+
+      const res = await request(app)
+        .post(`/api/cooking/sessions/${sessionId}/photos`)
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Failed to add cooking photo");
+      expect(reportError).toHaveBeenCalledWith(error, "add cooking photo");
     });
 
     it("returns allergen warnings when user has allergies", async () => {

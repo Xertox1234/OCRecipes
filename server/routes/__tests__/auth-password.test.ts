@@ -31,6 +31,27 @@ vi.mock("../../storage", () => ({
 }));
 vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
+
+const mockLog = vi.hoisted(() => {
+  const log: Record<string, unknown> = {};
+  for (const level of ["error", "warn", "info", "debug", "trace", "fatal"]) {
+    log[level] = vi.fn();
+  }
+  log.child = () => log;
+  return log as Record<
+    "error" | "warn" | "info" | "debug" | "trace" | "fatal",
+    ReturnType<typeof vi.fn>
+  >;
+});
+vi.mock("../../lib/logger", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../lib/logger")>();
+  return {
+    ...orig,
+    logger: mockLog,
+    rootLogger: mockLog,
+    createServiceLogger: () => mockLog,
+  };
+});
 vi.mock("../../lib/pwned-password", () => ({
   isBreached: vi.fn().mockResolvedValue(false),
 }));
@@ -412,6 +433,10 @@ describe("POST /api/auth/change-password", () => {
         user.username,
         [],
       ),
+    );
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining("sign-in methods lookup failed"),
     );
   });
 

@@ -1,24 +1,12 @@
 import React, { forwardRef } from "react";
 import {
-  StyleSheet,
   type StyleProp,
   type TextInputInstance,
   type TextStyle,
 } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 
-import { FocusField } from "./FocusField";
-import {
-  FIELD_INPUT_FILL,
-  labelFieldText,
-  splitFieldStyle,
-} from "./field-focus-utils";
-import {
-  resolveInputAccessibilityLabel,
-  resolvePlaceholder,
-  shouldFloatLabel,
-} from "./text-input-utils";
-import { useFieldFocus } from "./useFieldFocus";
+import { FocusInputShell } from "./FocusInputShell";
 
 type SheetInputProps = React.ComponentProps<typeof BottomSheetTextInput>;
 type SheetInputRef = React.Ref<React.ComponentRef<typeof BottomSheetTextInput>>;
@@ -49,54 +37,25 @@ interface FocusBottomSheetTextInputProps
 export const FocusBottomSheetTextInput = forwardRef<
   TextInputInstance,
   FocusBottomSheetTextInputProps
->(({ style, onFocus, onBlur, focusRing = true, label, ...props }, ref) => {
-  const field = useFieldFocus({ onFocus, onBlur });
+>(({ style, onFocus, onBlur, focusRing, label, ...props }, ref) => {
   // gorhom 5.2 still types its ref with gesture-handler 2's TextInput; under
   // gesture-handler 3 the ref it hands back is RN's TextInputInstance.
   const sheetRef = ref as SheetInputRef;
 
-  if (!focusRing) {
-    return (
-      <BottomSheetTextInput
-        ref={sheetRef}
-        {...props}
-        style={style}
-        onFocus={onFocus}
-        onBlur={onBlur}
-      />
-    );
-  }
-
-  const { box, text: ownText } = splitFieldStyle(
-    StyleSheet.flatten(style) ?? {},
-  );
-  const labelled = label ? labelFieldText(ownText) : null;
-  const text = labelled?.text ?? ownText;
   return (
-    <FocusField
-      focus={field}
-      style={box}
+    <FocusInputShell
+      style={style}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      focusRing={focusRing}
       label={label}
-      hasValue={(props.value?.length ?? 0) > 0}
-      labelLeft={labelled?.labelLeft}
-    >
-      <BottomSheetTextInput
-        ref={sheetRef}
-        {...props}
-        placeholder={resolvePlaceholder(
-          label,
-          props.placeholder,
-          shouldFloatLabel(field.focused, props.value),
-        )}
-        accessibilityLabel={resolveInputAccessibilityLabel(
-          props.accessibilityLabel,
-          label,
-        )}
-        style={{ ...text, ...FIELD_INPUT_FILL }}
-        onFocus={field.onFocus}
-        onBlur={field.onBlur}
-      />
-    </FocusField>
+      value={props.value}
+      placeholder={props.placeholder}
+      accessibilityLabel={props.accessibilityLabel}
+      renderInput={(shellProps) => (
+        <BottomSheetTextInput ref={sheetRef} {...props} {...shellProps} />
+      )}
+    />
   );
 });
 

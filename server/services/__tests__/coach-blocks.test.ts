@@ -1,5 +1,5 @@
 // server/services/__tests__/coach-blocks.test.ts
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   validateBlocks,
   parseBlocksFromContent,
@@ -11,8 +11,23 @@ import {
   mealPlanCardSchema,
 } from "@shared/schemas/coach-blocks";
 import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
+import { logger } from "../../lib/logger";
 
 describe("Coach Blocks Service", () => {
+  it("warns with the parse error when a coach_blocks fence holds malformed JSON", () => {
+    const warn = vi.spyOn(logger, "warn");
+    const result = parseBlocksFromContent(
+      "Here you go\n```coach_blocks\n[{not json\n```",
+    );
+    expect(result.blocks).toEqual([]);
+    expect(result.text).toBe("Here you go");
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining("coach blocks JSON"),
+    );
+    warn.mockRestore();
+  });
+
   it("validates valid blocks array", () => {
     const blocks = [
       {

@@ -8,6 +8,7 @@ import {
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { createServiceLogger, toError } from "../lib/logger";
 import { handleRouteError, formatZodError } from "./_helpers";
 import { changePasswordCodeLimiter, reauthLimiter } from "./_rate-limiters";
 import { changePasswordSchema } from "./_schemas";
@@ -24,6 +25,8 @@ import {
   sendPasswordChangeCode,
   sendPasswordChangedNotice,
 } from "../services/email";
+
+const logger = createServiceLogger("auth-password");
 
 export const CODE_LIMIT_MESSAGE =
   "You've requested too many codes today. Try again tomorrow, or use Google/Apple.";
@@ -162,7 +165,15 @@ export function register(app: Express): void {
           "password-changed-notice",
           (async () => {
             // A failed lookup must not cost the notice itself.
-            const ids = await storage.listIdentities(user.id).catch(() => []);
+            const ids = await storage
+              .listIdentities(user.id)
+              .catch((err: unknown) => {
+                logger.warn(
+                  { err: toError(err) },
+                  "password-changed notice: sign-in methods lookup failed",
+                );
+                return [];
+              });
             await sendPasswordChangedNotice(
               user.email,
               user.username,

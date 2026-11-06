@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { ChatMessage } from "@shared/schema";
-import type { FinderBlock } from "@shared/schemas/recipe-finder";
 import {
   finderBlockFromMetadata,
+  type FinderBlock,
+} from "@shared/schemas/recipe-finder";
+import {
   getLatestFinderBlock,
   isActionCurrent,
   matchTypedFinderCommand,

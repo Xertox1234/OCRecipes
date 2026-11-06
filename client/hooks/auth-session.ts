@@ -17,6 +17,7 @@ import { tokenStorage, pendingRevokeStorage } from "@/lib/token-storage";
 import { fetchWithTimeout } from "@/lib/fetch-timeout";
 import { logger } from "@/lib/logger";
 import type { User } from "@shared/types/auth";
+import { isUser } from "@shared/types/auth";
 import { registerPushToken } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
@@ -264,7 +265,10 @@ async function resumeFromCachedProfile(): Promise<AuthState> {
   let cachedUser: User | null = null;
   if (stored) {
     try {
-      cachedUser = JSON.parse(stored) as User;
+      const parsed: unknown = JSON.parse(stored);
+      // A parseable but wrong-shaped blob is as unusable as a corrupt one.
+      if (!isUser(parsed)) throw new Error("cached profile is not a user");
+      cachedUser = parsed;
     } catch {
       // Corrupt cache blob. This must NOT log the user out: the session
       // token is still valid — only the convenience cache is unreadable.

@@ -1,8 +1,6 @@
 // Pure helpers for the recipe finder's chat components (spec 2026-09-28 §5).
 import {
-  finderBlockSchema,
   type FinderAnswer,
-  type FinderBlock,
   type FinderButton,
   type FinderItem,
   type FinderNotice,
@@ -78,23 +76,6 @@ export function finderItemNavParams(
   return item.source === "inspired"
     ? null
     : { recipeId: item.id, recipeType: "community" };
-}
-
-/** RecipeChef stores `{metadataVersion, finder}`; Coach stores `{blocks:[…]}`. */
-export function finderBlockFromMessageMetadata(
-  metadata: unknown,
-): FinderBlock | null {
-  if (!metadata || typeof metadata !== "object") return null;
-  const m = metadata as Record<string, unknown>;
-  const direct = finderBlockSchema.safeParse(m.finder);
-  if (direct.success) return direct.data;
-  if (Array.isArray(m.blocks)) {
-    for (const b of m.blocks) {
-      const parsed = finderBlockSchema.safeParse(b);
-      if (parsed.success) return parsed.data;
-    }
-  }
-  return null;
 }
 
 export function lockedFinderButtons(opts: {
