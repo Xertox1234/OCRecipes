@@ -1,6 +1,6 @@
 ---
 title: "A photographed nutrition label is ignored when the database has no nutrition for the barcode"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-06
 updated: 2026-11-06
@@ -23,10 +23,10 @@ Cause (read from the code, not yet proven by a test): `buildLabelConflict` in `s
 
 ## Acceptance Criteria
 
-- [ ] A failing test first: a DB result whose per-100 calories (and the other compared fields) are null, plus a readable label (calories + parseable serving) → the response carries the label's values and serving, not the empty record.
-- [ ] When the DB has none of the compared nutrients, a readable label is adopted (scaled from the label's own serving), with the same flag recompute and wording the conflict path uses.
-- [ ] A DB record with real values keeps today's behaviour (adopt only on a material conflict) — existing `label-override` tests unchanged.
-- [ ] The screen no longer says the values come from the database when they came from the label.
+- [x] A failing test first: a DB result whose per-100 calories (and the other compared fields) are null, plus a readable label (calories + parseable serving) → the response carries the label's values and serving, not the empty record.
+- [x] When the DB has none of the compared nutrients, a readable label is adopted (scaled from the label's own serving), with the same flag recompute and wording the conflict path uses.
+- [x] A DB record with real values keeps today's behaviour (adopt only on a material conflict) — existing `label-override` tests unchanged.
+- [x] The screen no longer says the values come from the database when they came from the label.
 
 ## Implementation Notes
 
@@ -45,3 +45,4 @@ Cause (read from the code, not yet proven by a test): `buildLabelConflict` in `s
 ### 2026-11-06
 
 - Filed from the owner's Android phone session.
+- Fixed the same day (owner: "fix it now"). `buildLabelConflict` now treats a record that has no value for any compared field as empty. It adopts a readable label through the conflict path and keeps the record's other values. `compared` stays false there, so the log gate still asks the user to review. The gate's screen-reader text now says the values came from the label (`valuesFromLabel` on `LogGate`), not the database. The old "decline #3" test pinned the dropped-label behaviour, so it was rewritten.
