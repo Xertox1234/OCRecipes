@@ -5,7 +5,6 @@ priority: medium
 created: 2026-07-25
 updated: 2026-08-08
 archived: 2026-08-08
-archived_with_residual: "AC #5's Android barcode DECODE was never verified. The upgrade is LIVE on main and everything else is confirmed — including, on Android, that the app builds, installs, launches, mounts the camera and loads the bundled MLKit barcode module. What was never observed is a barcode actually decoding through useBarcodeScannerOutput on Android. It needs a REAL ANDROID DEVICE; the emulator was proven insufficient over two sessions (adb cannot aim the virtual-scene camera, and mouse drag and WASD are both inert while the app holds the camera). Archived by explicit decision 2026-08-08 rather than left open indefinitely, because no further progress is possible without hardware that does not exist here. If Android barcode scanning is ever reported broken, THIS is the untested path — start here, not at a regression hunt."
 assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
@@ -869,3 +868,7 @@ moved to `192.168.0.103`; corrected in place (backup `.env.bak`, both gitignored
 `192.168.0.103` is the right value rather than `localhost` — `localhost` works for
 the Android emulator via `adb reverse` but breaks a physical iPhone, which needs
 the LAN IP. This trap is exactly `reference_sim_dev_loop_gotchas`.
+
+### 2026-11-06 — Android decode verified (residual closed)
+
+- A barcode DECODES on a physical Android phone (Samsung Galaxy A37, Android 16): Barcode mode locked on a Vanilla Coca-Cola can and `GET /api/nutrition/barcode/06722908` resolved the product. AC #5 is now fully verified; `archived_with_residual` removed. Details: `todos/archive/P3-2026-08-08-android-barcode-decode-never-verified.md`.
