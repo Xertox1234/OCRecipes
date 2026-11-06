@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { rejectOverlapping } from "../lib/in-flight";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -60,6 +61,8 @@ export function register(app: Express): void {
     "/api/meal-plan/grocery-lists",
     requireAuth,
     mealPlanRateLimit,
+    // A double tap would create the list twice.
+    rejectOverlapping((req) => `grocery-list-create:${req.userId}`),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = generateGroceryListSchema.safeParse(req.body);

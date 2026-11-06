@@ -50,6 +50,7 @@ import {
   ipKeyGenerator,
 } from "./_rate-limiters";
 import { upload, createImageUpload } from "./_upload";
+import { rejectOverlapping } from "../lib/in-flight";
 import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 
 // Higher file size limit for label photos (5MB for text readability)
@@ -437,6 +438,10 @@ export function register(app: Express): void {
     "/api/photos/confirm",
     requireAuth,
     crudRateLimit,
+    // A double tap would log the meal twice (the session is optional here).
+    rejectOverlapping(
+      (req) => `photo-confirm:${req.userId}:${String(req.body?.sessionId)}`,
+    ),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = confirmPhotoSchema.parse(req.body);

@@ -233,6 +233,33 @@ describe("POST /api/meal-plan/recipes/import-url (premium)", () => {
     expect(importRecipeFromUrl).not.toHaveBeenCalled();
   });
 
+  it("imports once when a double tap sends the same URL twice", async () => {
+    const pending: (() => void)[] = [];
+    vi.mocked(importRecipeFromUrl).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          pending.push(() =>
+            resolve({ success: false, error: "FETCH_FAILED" }),
+          );
+        }),
+    );
+    const send = (url: string) =>
+      request(app)
+        .post("/api/meal-plan/recipes/import-url")
+        .set("Authorization", "Bearer token")
+        .send({ url })
+        .then((r) => r);
+
+    const first = send("https://example.com/recipe");
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    const second = await send("https://example.com/recipe");
+    pending.splice(0).forEach((go) => go());
+    await first;
+
+    expect(second.status).toBe(409);
+    expect(importRecipeFromUrl).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 400 when url is missing", async () => {
     const res = await request(app)
       .post("/api/meal-plan/recipes/import-url")

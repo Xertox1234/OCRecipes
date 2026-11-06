@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { rejectOverlapping } from "../lib/in-flight";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage, BatchStorageError } from "../storage";
 import { sendError } from "../lib/api-errors";
@@ -20,6 +21,10 @@ export function register(app: Express): void {
     "/api/batch/save",
     requireAuth,
     batchSaveRateLimit,
+    // A double tap would save the whole batch twice.
+    rejectOverlapping(
+      (req) => `batch-save:${req.userId}:${String(req.body?.destination)}`,
+    ),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const parsed = batchSaveRequestSchema.safeParse(req.body);

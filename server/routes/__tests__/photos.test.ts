@@ -544,6 +544,52 @@ describe("Photos Routes", () => {
   });
 
   describe("POST /api/photos/confirm", () => {
+    it("logs once when a double tap sends two overlapping confirms", async () => {
+      const pending: (() => void)[] = [];
+      vi.mocked(storage.createScannedItemWithLog).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            pending.push(() =>
+              resolve(
+                createMockScannedItem({
+                  id: 11,
+                  userId: "1",
+                  sourceType: "photo",
+                }),
+              ),
+            );
+          }),
+      );
+      const body = {
+        sessionId: "double-tap-photo",
+        foods: [
+          {
+            name: "Apple",
+            quantity: "1",
+            calories: 95,
+            protein: 0,
+            carbs: 25,
+            fat: 0,
+          },
+        ],
+      };
+      const send = () =>
+        request(app)
+          .post("/api/photos/confirm")
+          .set("Authorization", "Bearer token")
+          .send(body)
+          .then((r) => r);
+
+      const first = send();
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      const second = await send();
+      pending.splice(0).forEach((go) => go());
+
+      expect(second.status).toBe(409);
+      expect((await first).status).toBe(201);
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledTimes(1);
+    });
+
     it("returns 400 for invalid body", async () => {
       const res = await request(app)
         .post("/api/photos/confirm")

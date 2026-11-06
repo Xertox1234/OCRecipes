@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { rejectOverlapping } from "../lib/in-flight";
 import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -112,6 +113,10 @@ export function register(app: Express): void {
     "/api/beverages/log",
     requireAuth,
     crudRateLimit,
+    // A double tap would log the drink twice; a different drink is a different key.
+    rejectOverlapping(
+      (req) => `beverage:${req.userId}:${JSON.stringify(req.body)}`,
+    ),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = logBeverageSchema.parse(req.body);

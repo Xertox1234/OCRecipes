@@ -311,6 +311,41 @@ describe("Receipt Routes", () => {
   });
 
   describe("POST /api/receipt/confirm", () => {
+    it("adds the items once when a double tap sends two overlapping confirms", async () => {
+      setupPremiumMock();
+      const pending: (() => void)[] = [];
+      vi.mocked(storage.createPantryItemsUnderCap).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            pending.push(() => resolve({ created: [], skipped: 0 }));
+          }),
+      );
+      const send = () =>
+        request(app)
+          .post("/api/receipt/confirm")
+          .set("Authorization", "Bearer token")
+          .send({
+            items: [
+              {
+                name: "Milk",
+                quantity: 1,
+                category: "dairy",
+                estimatedShelfLifeDays: 14,
+              },
+            ],
+          })
+          .then((r) => r);
+
+      const first = send();
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      const second = await send();
+      pending.splice(0).forEach((go) => go());
+
+      expect(second.status).toBe(409);
+      expect((await first).status).toBe(200);
+      expect(storage.createPantryItemsUnderCap).toHaveBeenCalledTimes(1);
+    });
+
     it("creates pantry items from confirmed receipt items", async () => {
       setupPremiumMock();
 

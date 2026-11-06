@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { rejectOverlapping } from "../lib/in-flight";
 import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
@@ -137,6 +138,8 @@ export function register(app: Express): void {
     "/api/receipt/confirm",
     requireAuth,
     crudRateLimit,
+    // A double tap would add every receipt item to the pantry twice.
+    rejectOverlapping((req) => `receipt-confirm:${req.userId}`),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(

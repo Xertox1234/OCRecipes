@@ -43,6 +43,7 @@ import {
 } from "@shared/constants/allergens";
 
 import { storage, type CookingSession } from "../storage";
+import { rejectOverlapping } from "../lib/in-flight";
 
 // ============================================================================
 // MULTER CONFIG (5MB for ingredient photos)
@@ -429,6 +430,8 @@ export function register(app: Express): void {
     "/api/cooking/sessions/:id/log",
     requireAuth,
     crudRateLimit,
+    // A double tap would log the meal twice; the session is cleared only after the write.
+    rejectOverlapping((req) => `cook-log:${req.userId}:${req.params.id}`),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
