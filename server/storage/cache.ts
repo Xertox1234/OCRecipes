@@ -48,25 +48,38 @@ export async function createSuggestionCache(
   suggestions: SuggestionData[],
   expiresAt: Date,
 ): Promise<{ id: number }> {
-  const [result] = await db
-    .insert(suggestionCache)
-    .values({
-      scannedItemId,
-      userId,
-      profileHash,
-      suggestions,
-      expiresAt,
-    })
-    .onConflictDoUpdate({
-      target: [
-        suggestionCache.scannedItemId,
-        suggestionCache.userId,
-        suggestionCache.profileHash,
-      ],
-      set: { suggestions, expiresAt, hitCount: 0 },
-    })
-    .returning({ id: suggestionCache.id });
-  return result;
+  return db.transaction(async (tx) => {
+    const [result] = await tx
+      .insert(suggestionCache)
+      .values({
+        scannedItemId,
+        userId,
+        profileHash,
+        suggestions,
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          suggestionCache.scannedItemId,
+          suggestionCache.userId,
+          suggestionCache.profileHash,
+        ],
+        set: { suggestions, expiresAt, hitCount: 0 },
+      })
+      .returning({ id: suggestionCache.id });
+    // The upsert keeps the row id, so instructions cached for the old
+    // suggestions would otherwise be served for the new ones at the same index.
+    await tx
+      .delete(instructionCache)
+      .where(eq(instructionCache.suggestionCacheId, result.id));
+    return result;
+  });
+}
+
+/** The caller's own suggestion row for this item — a client-sent cacheId is only honoured inside it. */
+export interface InstructionCacheScope {
+  userId: string;
+  scannedItemId: number;
 }
 
 export async function incrementSuggestionCacheHit(id: number): Promise<void> {
@@ -83,6 +96,7 @@ export async function incrementSuggestionCacheHit(id: number): Promise<void> {
 export async function getInstructionCache(
   suggestionCacheId: number,
   suggestionIndex: number,
+  scope: InstructionCacheScope,
 ): Promise<{ id: number; instructions: string } | undefined> {
   const [cached] = await db
     .select({
@@ -98,35 +112,54 @@ export async function getInstructionCache(
       and(
         eq(instructionCache.suggestionCacheId, suggestionCacheId),
         eq(instructionCache.suggestionIndex, suggestionIndex),
+        eq(suggestionCache.userId, scope.userId),
+        eq(suggestionCache.scannedItemId, scope.scannedItemId),
         gt(suggestionCache.expiresAt, new Date()),
       ),
     );
   return cached || undefined;
 }
 
+/** Writes nothing when the cacheId is not the caller's suggestion row for this item. */
 export async function createInstructionCache(
   suggestionCacheId: number,
   suggestionIndex: number,
+  scope: InstructionCacheScope,
   suggestionTitle: string,
   suggestionType: string,
   instructions: string,
 ): Promise<void> {
-  await db
-    .insert(instructionCache)
-    .values({
-      suggestionCacheId,
-      suggestionIndex,
-      suggestionTitle,
-      suggestionType,
-      instructions,
-    })
-    .onConflictDoUpdate({
-      target: [
-        instructionCache.suggestionCacheId,
-        instructionCache.suggestionIndex,
-      ],
-      set: { instructions, suggestionTitle, suggestionType },
-    });
+  await db.transaction(async (tx) => {
+    const [owned] = await tx
+      .select({ id: suggestionCache.id })
+      .from(suggestionCache)
+      .where(
+        and(
+          eq(suggestionCache.id, suggestionCacheId),
+          eq(suggestionCache.userId, scope.userId),
+          eq(suggestionCache.scannedItemId, scope.scannedItemId),
+        ),
+      )
+      .for("share");
+    if (!owned) return;
+
+    await tx
+      .insert(instructionCache)
+      .values({
+        suggestionCacheId,
+        suggestionIndex,
+        suggestionTitle,
+        suggestionType,
+        instructions,
+      })
+      .onConflictDoUpdate({
+        target: [
+          instructionCache.suggestionCacheId,
+          instructionCache.suggestionIndex,
+        ],
+        set: { instructions, suggestionTitle, suggestionType },
+      });
+  });
 }
 
 export async function incrementInstructionCacheHit(id: number): Promise<void> {
@@ -199,6 +232,11 @@ export async function createMealSuggestionCacheWithLimitCheck(
   dailyLimit: number,
 ): Promise<MealSuggestionCacheEntry | null> {
   return db.transaction(async (tx) => {
+    // Serialise this user's limit checks: under READ COMMITTED two requests
+    // would otherwise both count limit - 1 and both insert.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${"meal-suggestions:" + userId}, 0))`,
+    );
     const { startOfDay, endOfDay } = await quotaDayBounds(tx, userId);
 
     const countResult = await tx
@@ -217,9 +255,16 @@ export async function createMealSuggestionCacheWithLimitCheck(
       return null;
     }
 
+    // An expired row with this key lingers until the purge job, so the
+    // regeneration replaces it. createdAt moves to now so the new AI call
+    // counts toward today's limit.
     const [created] = await tx
       .insert(mealSuggestionCache)
       .values({ cacheKey, userId, suggestions, expiresAt })
+      .onConflictDoUpdate({
+        target: mealSuggestionCache.cacheKey,
+        set: { suggestions, expiresAt, createdAt: new Date(), hitCount: 0 },
+      })
       .returning();
     return created;
   });
