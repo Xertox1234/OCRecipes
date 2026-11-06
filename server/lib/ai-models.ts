@@ -111,7 +111,16 @@ export const AI_FEATURES = {
     adapt: { set: { reasoning_effort: "low" } },
   }, // analyzePhoto
   "photo-refine": { ...HEAVY, json: true, vision: false }, // refineAnalysis
-  "photo-classify": { ...FAST, json: true, vision: true }, // classifyAndAnalyze
+  // Gemini 3.8 Flash (owner-approved 2026-11-06, accuracy 10.0 = 10.0 at the 1000 cap classifyPhoto now sends; gpt-4o-mini retires 2027; todo
+  // P2-2026-10-18-camera-vision-features-to-gemini). Backup: Vertex direct
+  // (Flash) — spec 2026-11-02-vertex-backup-route-design.
+  "photo-classify": {
+    model: "google/gemini-3.8-flash",
+    vertexBackup: VERTEX_BACKUP,
+    json: true,
+    vision: true,
+    adapt: { set: { reasoning_effort: "low" } },
+  }, // classifyPhoto (classifyAndAnalyze step 1)
   // Other vision services
   "receipt-scan": { ...HEAVY, json: true, vision: true }, // receipt-analysis analyzeReceiptPhotos
   "menu-scan": { ...HEAVY, json: true, vision: true }, // menu-analysis analyzeMenuPhoto
@@ -126,7 +135,16 @@ export const AI_FEATURES = {
     vision: true,
     adapt: { set: { reasoning_effort: "low" } },
   }, // front-label-analysis analyzeFrontLabel
-  "cooking-ingredient-photo": { ...HEAVY, json: true, vision: true }, // cooking-session analyzeIngredientPhoto
+  // Gemini 3.8 Flash (owner-approved 2026-11-06, paired eval 8.12 vs gpt-4o 6.81, 0/15 failures vs 2/15, ~60% cheaper; todo
+  // P2-2026-10-18-camera-vision-features-to-gemini). Backup: Vertex direct
+  // (Flash) — spec 2026-11-02-vertex-backup-route-design.
+  "cooking-ingredient-photo": {
+    model: "google/gemini-3.8-flash",
+    vertexBackup: VERTEX_BACKUP,
+    json: true,
+    vision: true,
+    adapt: { set: { reasoning_effort: "low" } },
+  }, // cooking-session analyzeIngredientPhoto
   // Recipes & meals
   // Gemini 4 Argon (owner-approved 2026-10-17, paired eval +1.97 creativity vs
   // gpt-4o, 0/36 assertion failures; spec 2026-10-17-recipe-generate-argon-

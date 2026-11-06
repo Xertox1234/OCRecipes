@@ -257,6 +257,8 @@ Extract:
 Rules:
 - Be thorough with ingredients — include every item mentioned
 - Standardize units (tbsp, tsp, cup, oz, g, etc.)
+- Servings, prep time, cook time and oven temperature are null unless they are printed on the page. Never guess or invent one, and never add an oven temperature, bake time or doneness test to the instructions that the page does not print
+- An ingredient quantity that is not printed, or is too faded to read, is null. Never guess a quantity
 - If nutrition is not visible, estimate based on ingredients
 - Set confidence based on text readability (1.0 = crystal clear, 0.0 = unreadable)
 
@@ -267,14 +269,14 @@ Respond with JSON only:
   "title": "recipe title",
   "description": "brief description",
   "ingredients": [
-    { "name": "ingredient name", "quantity": "amount", "unit": "unit or null" }
+    { "name": "ingredient name", "quantity": "amount as printed, or null", "unit": "unit or null" }
   ],
   "instructions": "1. Step one\\n2. Step two",
-  "servings": 4,
-  "prepTimeMinutes": 15,
-  "cookTimeMinutes": 30,
-  "cuisine": "Italian",
-  "dietTags": ["vegetarian"],
+  "servings": number or null,
+  "prepTimeMinutes": number or null,
+  "cookTimeMinutes": number or null,
+  "cuisine": "cuisine type or null",
+  "dietTags": ["diet tags the page states or the ingredients clearly imply"],
   "caloriesPerServing": 350,
   "proteinPerServing": 20,
   "carbsPerServing": 40,
@@ -834,7 +836,9 @@ export async function classifyPhoto(
     response = await aiChat(
       "photo-classify",
       {
-        max_completion_tokens: 150,
+        // Gemini low spends a 150 cap on reasoning and truncates (6/42 failed);
+        // 1000 leaves room (max seen 430 tokens at a 600 cap).
+        max_completion_tokens: 1000,
         temperature: 0.1,
         messages: [
           { role: "system", content: CLASSIFICATION_PROMPT },

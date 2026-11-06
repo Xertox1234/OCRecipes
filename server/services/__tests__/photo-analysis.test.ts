@@ -813,6 +813,24 @@ describe("photo-analysis failure propagation", () => {
       );
     });
 
+    // Both models wrote servings, a prep time and a flour quantity the card
+    // did not print, and the old JSON example (servings 4, prep 15) invited it
+    // (todo P2-2026-10-18-camera-vision-features-to-gemini, 2026-11-06).
+    it("tells the recipe reader a field the page does not print is null, with no example values", async () => {
+      mockVisionResponse({ title: "Soup", ingredients: [], confidence: 0.9 });
+      await analyzeRecipePhoto("base64data");
+      const messages = mockCreate.mock.calls[0][1].messages;
+      const system = String(messages[0].content);
+      expect(system).toMatch(
+        /servings[^\n]*prep[^\n]*cook[^\n]*oven[^\n]*null unless[^\n]*printed/i,
+      );
+      expect(system).toMatch(/quantity[^\n]*not printed[^\n]*null/i);
+      expect(system).toMatch(/never (guess|invent|infer)/i);
+      expect(system).not.toMatch(/"servings": 4/);
+      expect(system).not.toMatch(/"prepTimeMinutes": 15/);
+      expect(system).not.toMatch(/"cookTimeMinutes": 30/);
+    });
+
     it("throws on a Zod-invalid response", async () => {
       mockVisionResponse({ noTitle: true });
 
@@ -972,6 +990,20 @@ describe("photo-analysis failure propagation", () => {
 
       expect(result.contentType).toBe("nutrition_label");
       expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+
+    // Gemini low spends a 150 cap on reasoning (6/42 `length` failures; at 600
+    // 10/10 parsed, max 430 tokens): todo P2-2026-10-18-camera-vision-features-
+    // to-gemini, 2026-11-06.
+    it("gives the classifier room for Gemini's reasoning tokens (cap 1000)", async () => {
+      mockCreate.mockClear();
+      mockVisionResponse({
+        contentType: "nutrition_label",
+        confidence: 0.95,
+        barcode: null,
+      });
+      await classifyPhoto("base64data");
+      expect(mockCreate.mock.calls[0][1].max_completion_tokens).toBe(1000);
     });
   });
 
