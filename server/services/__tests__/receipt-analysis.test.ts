@@ -189,6 +189,80 @@ describe("Receipt Analysis Service", () => {
     });
   });
 
+  describe("estimatedShelfLifeDays on a non-food line", () => {
+    it("accepts null (Gemini writes null where GPT writes a number)", () => {
+      const item = {
+        name: "Napkins",
+        originalName: "NAPKINS",
+        category: "other",
+        isFood: false,
+        estimatedShelfLifeDays: null,
+        confidence: 0.8,
+      };
+      const result = receiptItemSchema.safeParse(item);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.estimatedShelfLifeDays).toBeUndefined();
+      }
+    });
+
+    it("still rejects an out-of-range number", () => {
+      const item = {
+        name: "Milk",
+        originalName: "MLK",
+        category: "dairy",
+        isFood: true,
+        estimatedShelfLifeDays: 0,
+        confidence: 0.8,
+      };
+      expect(receiptItemSchema.safeParse(item).success).toBe(false);
+    });
+
+    it("keeps the food lines of a receipt that has a null non-food line", async () => {
+      mockOpenAIResponse(
+        JSON.stringify({
+          items: [
+            {
+              name: "Milk",
+              originalName: "MLK",
+              quantity: 1,
+              category: "dairy",
+              isFood: true,
+              estimatedShelfLifeDays: 10,
+              confidence: 0.9,
+            },
+            {
+              name: "Napkins",
+              originalName: "NAPKINS",
+              quantity: 1,
+              category: "other",
+              isFood: false,
+              estimatedShelfLifeDays: null,
+              confidence: 0.9,
+            },
+            {
+              name: "Bread",
+              originalName: "BRD",
+              quantity: 1,
+              category: "bakery",
+              isFood: true,
+              estimatedShelfLifeDays: null,
+              confidence: 0.9,
+            },
+          ],
+          overallConfidence: 0.9,
+        }),
+      );
+      const result = await analyzeReceiptPhotos(["abc"]);
+      expect(result.items.map((i) => i.name)).toEqual(["Milk", "Bread"]);
+      // A food line with no estimate gets the same 7-day default the review
+      // screen uses, so the confirm route's integer requirement still holds.
+      expect(result.items.map((i) => i.estimatedShelfLifeDays)).toEqual([
+        10, 7,
+      ]);
+    });
+  });
+
   describe("receiptAnalysisSchema", () => {
     it("validates a complete analysis result", () => {
       const valid = {

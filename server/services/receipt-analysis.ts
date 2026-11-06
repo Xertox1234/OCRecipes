@@ -32,7 +32,8 @@ const receiptItemSchema = z.object({
     "other",
   ]),
   isFood: z.boolean(),
-  estimatedShelfLifeDays: z.number().int().min(1).max(730),
+  // Gemini writes null on non-food lines, where GPT writes a number.
+  estimatedShelfLifeDays: absentAsUndefined(z.number().int().min(1).max(730)),
   confidence: z.number().min(0).max(1),
 });
 
@@ -45,7 +46,17 @@ const receiptAnalysisSchema = z.object({
   overallConfidence: z.number().min(0).max(1),
 });
 
-export type ReceiptAnalysisResult = z.infer<typeof receiptAnalysisSchema>;
+type ParsedReceipt = z.infer<typeof receiptAnalysisSchema>;
+
+// What the service returns: only food lines, each with a shelf-life estimate.
+export type ReceiptAnalysisResult = Omit<ParsedReceipt, "items"> & {
+  items: (Omit<ParsedReceipt["items"][number], "estimatedShelfLifeDays"> & {
+    estimatedShelfLifeDays: number;
+  })[];
+};
+
+// Same default the review screen uses for a line it has no estimate for.
+const DEFAULT_SHELF_LIFE_DAYS = 7;
 
 const RECEIPT_ANALYSIS_PROMPT = `You are a grocery receipt analysis assistant. Analyze the receipt photo(s) and extract all purchased items.
 
@@ -173,11 +184,17 @@ export async function analyzeReceiptPhotos(
     );
   }
 
-  const validated = result.data;
-  // Filter to food items only
-  validated.items = validated.items.filter((item) => item.isFood);
-
-  return validated;
+  // Filter to food items only; a food line without an estimate gets the default
+  return {
+    ...result.data,
+    items: result.data.items
+      .filter((item) => item.isFood)
+      .map((item) => ({
+        ...item,
+        estimatedShelfLifeDays:
+          item.estimatedShelfLifeDays ?? DEFAULT_SHELF_LIFE_DAYS,
+      })),
+  };
 }
 
 // Export schemas for testing
