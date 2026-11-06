@@ -44,7 +44,6 @@
   "client/screens/LabelAnalysisScreen.tsx",
   "client/screens/LoginScreen.tsx",
   "client/screens/MenuScanResultScreen.tsx",
-  "client/screens/NotebookEntryScreen.tsx",
   "client/screens/ReceiptCaptureScreen.tsx",
   "client/screens/ReceiptReviewScreen.tsx",
   "client/screens/RecipeChatScreen.tsx",

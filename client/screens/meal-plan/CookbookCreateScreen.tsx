@@ -165,14 +165,14 @@ function CookbookEditForm() {
     [],
   );
 
-  // Pre-populate the form once the cookbook loads.
-  useEffect(() => {
-    if (existingCookbook && !initialized) {
-      setName(existingCookbook.name);
-      setDescription(existingCookbook.description || "");
-      setInitialized(true);
-    }
-  }, [existingCookbook, initialized, setName]);
+  // Pre-populate the form once the cookbook loads. Adjusted during render
+  // rather than in an effect, so no frame shows an empty form over a loaded
+  // cookbook; `initialized` keeps a refetch from overwriting the person's edits.
+  if (existingCookbook && !initialized) {
+    setName(existingCookbook.name);
+    setDescription(existingCookbook.description || "");
+    setInitialized(true);
+  }
 
   const trimmedName = name.trim();
   // The name is not in here: an empty name is a press that says what's

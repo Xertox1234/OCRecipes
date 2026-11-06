@@ -238,6 +238,7 @@ export default function ScanScreen() {
   // Coach hint escalation timer
   useEffect(() => {
     if (scanPhase.type === "HUNTING") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- camera coach-hint timer: the reset stays with the interval it restarts on each HUNTING entry (and with its clear on leaving), kept as one effect rather than restructuring camera lifecycle
       setElapsedSeconds(0);
       elapsedTimerRef.current = setInterval(
         () => setElapsedSeconds((s) => s + 1),
@@ -273,6 +274,7 @@ export default function ScanScreen() {
     sessionNavigatedRef.current = true;
 
     if (!reducedMotion) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- once-per-session SESSION_COMPLETE orchestration (confetti, barcode fetch, navigation) guarded by a ref; it starts external work, so it cannot run during render
       setShowConfetti(true);
     }
 

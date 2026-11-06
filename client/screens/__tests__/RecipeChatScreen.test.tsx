@@ -679,6 +679,42 @@ describe("RecipeChatScreen — haptics route through useHaptics()", () => {
 // with its object (content + recipe) payload — a passing hook unit test
 // alone doesn't prove that
 // (docs/solutions/conventions/pure-utils-extraction-tests-dont-prove-wiring-2026-07-14.md).
+describe("RecipeChatScreen — optimistic user message", () => {
+  beforeEach(() => {
+    mockRouteParams.value = { conversationId: 1 };
+  });
+
+  const streaming = (isStreaming: boolean) => {
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      isStreaming,
+    };
+  };
+
+  it("shows the sent text while streaming, and drops it once the stream ends", async () => {
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+    fireEvent.change(screen.getByLabelText("Recipe request"), {
+      target: { value: "Something with leeks" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalled());
+
+    streaming(true);
+    rerender(<RecipeChatScreen />);
+    expect(screen.queryByText("Something with leeks")).not.toBeNull();
+
+    streaming(false);
+    rerender(<RecipeChatScreen />);
+    expect(screen.queryByText("Something with leeks")).toBeNull();
+
+    // Cleared, not just hidden: a later stream with no new send (the
+    // message was never persisted) does not bring the old text back.
+    streaming(true);
+    rerender(<RecipeChatScreen />);
+    expect(screen.queryByText("Something with leeks")).toBeNull();
+  });
+});
+
 describe("RecipeChatScreen — pending assistant bubble (stream-end bridge)", () => {
   const seedUserMessage: ChatMessage = {
     id: 1,

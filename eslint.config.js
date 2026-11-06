@@ -8,12 +8,13 @@ const path = require("path");
 
 // eslint-plugin-react-hooks 7 (from eslint-config-expo 56) puts the React
 // Compiler rules in its recommended set, which expoConfig spreads in. They
-// flagged ~100 existing call sites at the SDK 56 upgrade, so they stay off
-// until adopted one by one; the two pre-compiler hooks rules plus each adopted
-// compiler rule (globals, preserve-manual-memoization, refs) stay on. Rules
-// left off, and why:
-//   set-state-in-effect (50), immutability (27): behavioural rewrites
-//     (derive/key changes) that need per-site judgement and a UI check.
+// flagged ~100 existing call sites at the SDK 56 upgrade; the ones adopted
+// since, one by one, with their sites fixed, are globals, immutability,
+// preserve-manual-memoization, refs and set-state-in-effect. Those plus the two
+// pre-compiler hooks rules are on. Every other rule in that set
+// (static-components, use-memo, purity, set-state-in-render, error-boundaries,
+// incompatible-library, unsupported-syntax, config, gating, and any a plugin
+// upgrade adds) is turned off below until it is adopted here.
 // The plugin is read from expoConfig, which owns that dependency.
 const KEPT_REACT_HOOKS_RULES = new Set([
   "react-hooks/rules-of-hooks",
@@ -22,6 +23,7 @@ const KEPT_REACT_HOOKS_RULES = new Set([
   "react-hooks/immutability",
   "react-hooks/preserve-manual-memoization",
   "react-hooks/refs",
+  "react-hooks/set-state-in-effect",
 ]);
 const reactHooksPlugin = expoConfig.find((c) => c.plugins?.["react-hooks"])
   .plugins["react-hooks"];

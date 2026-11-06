@@ -1,6 +1,6 @@
 ---
 title: "docs/rules/hooks.md says any react-hooks eslint-disable skips React Compiler"
-status: backlog
+status: done
 priority: low
 created: 2026-11-06
 updated: 2026-11-06
@@ -21,8 +21,8 @@ Found by the react-hooks/set-state-in-effect batch B (PR #1770, 2026-11-06). The
 
 ## Acceptance Criteria
 
-- [ ] The claim is checked against `node_modules/babel-plugin-react-compiler` (DEFAULT_ESLINT_SUPPRESSIONS) and `babel-preset-expo`'s compiler options.
-- [ ] `docs/rules/hooks.md` states the accurate list, and `npm run build:copilot-instructions` is run and committed.
+- [x] The claim is checked against `node_modules/babel-plugin-react-compiler` (DEFAULT_ESLINT_SUPPRESSIONS) and `babel-preset-expo`'s compiler options.
+- [x] `docs/rules/hooks.md` states the accurate list, and `npm run build:copilot-instructions` is run and committed.
 
 ## Implementation Notes
 
@@ -39,3 +39,7 @@ Found by the react-hooks/set-state-in-effect batch B (PR #1770, 2026-11-06). The
 ### 2026-11-06
 
 - Filed from the set-state-in-effect batch B report.
+
+### 2026-11-06 (fixed)
+
+- Verified: `node_modules/babel-plugin-react-compiler` `DEFAULT_ESLINT_SUPPRESSIONS` = `react-hooks/exhaustive-deps`, `react-hooks/rules-of-hooks`; `babel-preset-expo` and `babel.config.js` set no `eslintSuppressionRules`. `docs/rules/hooks.md` corrected; `npm run build:copilot-instructions` regenerates no change (hooks.md is not part of it).

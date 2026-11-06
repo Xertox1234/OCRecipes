@@ -1,7 +1,3 @@
-// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
-// enabled here so the justified disables below count as used and survive `eslint --fix`.
-// Delete these four lines when the rule is turned on globally.
-/* eslint react-hooks/set-state-in-effect: "error" */
 // client/hooks/useRecipeExtractionFlow.ts
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RecipePhotoResult } from "@/lib/photo-upload";

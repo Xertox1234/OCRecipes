@@ -370,10 +370,15 @@ export default function RecipeChatScreen() {
     announce: { message: "Recipe response received", always: false },
   });
 
-  // Clear optimistic user message once streaming completes
-  useEffect(() => {
+  // Clear optimistic user message once streaming completes. Adjusted during
+  // render on the isStreaming transition (React's "store the previous prop"
+  // pattern) rather than in an effect; seeded from isStreaming, so mount is a
+  // no-op, as the effect's first run was (the message starts null).
+  const [prevIsStreaming, setPrevIsStreaming] = useState(isStreaming);
+  if (prevIsStreaming !== isStreaming) {
+    setPrevIsStreaming(isStreaming);
     if (!isStreaming) setPendingUserMessage(null);
-  }, [isStreaming]);
+  }
 
   // isStreaming and conversationId mirrored to refs so the unmount cleanup
   // below reads their freshest values without needing either in the effect's
