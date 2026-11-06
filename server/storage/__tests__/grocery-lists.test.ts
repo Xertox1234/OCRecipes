@@ -227,6 +227,29 @@ describe("grocery-lists storage", () => {
   });
 
   describe("updateGroceryListItemChecked", () => {
+    it("sets addedToPantry in the same update when given", async () => {
+      const list = await createGroceryList({
+        userId: testUser.id,
+        title: "Shop",
+        dateRangeStart: "2025-06-15",
+        dateRangeEnd: "2025-06-21",
+      });
+      const item = await addGroceryListItem({
+        groceryListId: list.id,
+        name: "Milk",
+      });
+
+      const updated = await updateGroceryListItemChecked(
+        item.id,
+        list.id,
+        true,
+        testUser.id,
+        { addedToPantry: true },
+      );
+      expect(updated!.isChecked).toBe(true);
+      expect(updated!.addedToPantry).toBe(true);
+    });
+
     it("checks an item and sets checkedAt", async () => {
       const list = await createGroceryList({
         userId: testUser.id,

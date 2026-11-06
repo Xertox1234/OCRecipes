@@ -374,12 +374,11 @@ describe("Grocery Routes", () => {
       expect(res.status).toBe(404);
     });
 
-    it("handles isChecked + addedToPantry combo", async () => {
+    // Both flags in one UPDATE: two separate writes could leave the item
+    // half-updated (checked but not flagged) if the second failed.
+    it("applies isChecked + addedToPantry in a single write", async () => {
       vi.mocked(storage.verifyGroceryListOwnership).mockResolvedValue(true);
       vi.mocked(storage.updateGroceryListItemChecked).mockResolvedValue(
-        createMockGroceryListItem({ isChecked: true }),
-      );
-      vi.mocked(storage.updateGroceryListItemPantryFlag).mockResolvedValue(
         createMockGroceryListItem({ isChecked: true, addedToPantry: true }),
       );
 
@@ -390,6 +389,14 @@ describe("Grocery Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.addedToPantry).toBe(true);
+      expect(storage.updateGroceryListItemChecked).toHaveBeenCalledWith(
+        1,
+        1,
+        true,
+        "1",
+        { addedToPantry: true },
+      );
+      expect(storage.updateGroceryListItemPantryFlag).not.toHaveBeenCalled();
     });
   });
 

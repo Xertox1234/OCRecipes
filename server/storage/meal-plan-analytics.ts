@@ -17,6 +17,7 @@ import {
   inArray,
   notInArray,
   isNull,
+  getTableColumns,
 } from "drizzle-orm";
 
 // ============================================================================
@@ -89,10 +90,17 @@ export async function getPlannedNutritionSummary(
           0
         ) * COALESCE(CAST(${mealPlanItems.servings} AS DECIMAL), 1)
       ), 0)`,
-      plannedItemCount: sql<number>`COUNT(${mealPlanItems.id})`,
+      plannedItemCount: sql<number>`COUNT(${mealPlanItems.id}) FILTER (WHERE ${mealPlanItems.recipeId} IS NULL OR ${mealPlanRecipes.id} IS NOT NULL)`,
     })
     .from(mealPlanItems)
-    .leftJoin(mealPlanRecipes, eq(mealPlanItems.recipeId, mealPlanRecipes.id))
+    // A soft-deleted recipe's plan items are not planned meals any more.
+    .leftJoin(
+      mealPlanRecipes,
+      and(
+        eq(mealPlanItems.recipeId, mealPlanRecipes.id),
+        isNull(mealPlanRecipes.deletedAt),
+      ),
+    )
     .leftJoin(
       scannedItems,
       and(
@@ -137,9 +145,18 @@ export async function getMealPlanIngredientsForDateRange(
 
   if (recipeIds.length === 0) return [];
 
+  // Only live recipes: a soft-deleted recipe's ingredients don't belong on
+  // a grocery list.
   return db
-    .select()
+    .select(getTableColumns(recipeIngredients))
     .from(recipeIngredients)
+    .innerJoin(
+      mealPlanRecipes,
+      and(
+        eq(recipeIngredients.recipeId, mealPlanRecipes.id),
+        isNull(mealPlanRecipes.deletedAt),
+      ),
+    )
     .where(inArray(recipeIngredients.recipeId, recipeIds));
 }
 

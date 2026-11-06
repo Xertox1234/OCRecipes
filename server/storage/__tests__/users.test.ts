@@ -1,4 +1,11 @@
 import {
+  addToIndex,
+  getDocumentStore,
+  getIndex,
+  mealPlanToSearchable,
+  resetSearchIndex,
+} from "../../lib/search-index";
+import {
   describe,
   it,
   expect,
@@ -28,6 +35,7 @@ import {
   transactions,
   barcodeVerifications,
   verificationHistory,
+  mealPlanRecipes,
 } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -2012,6 +2020,29 @@ describe("users storage", () => {
       expect(dismissed).toHaveLength(0);
     });
   });
+  describe("deleteUser — search index", () => {
+    // Personal recipes stayed indexed until the next restart: deleteUser
+    // evicted only the author's community recipes.
+    it("evicts the user's personal recipes from the in-memory search index", async () => {
+      const owner = await createTestUser(tx);
+      const [recipe] = await tx
+        .insert(mealPlanRecipes)
+        .values({ userId: owner.id, title: "Owner's soup" })
+        .returning();
+      getIndex(); // creates the index, so addToIndex is not a no-op
+      try {
+        addToIndex(mealPlanToSearchable(recipe, []));
+        expect(getDocumentStore().has(`personal:${recipe.id}`)).toBe(true);
+
+        expect(await deleteUser(owner.id)).toBe(true);
+
+        expect(getDocumentStore().has(`personal:${recipe.id}`)).toBe(false);
+      } finally {
+        resetSearchIndex();
+      }
+    });
+  });
+
   describe("deleteUser — barcode verification aggregates", () => {
     // verification_history cascades with the user, but the barcode's stored
     // level/count/consensus used to keep counting the deleted user's vote

@@ -301,30 +301,18 @@ export function register(app: Express): void {
           return;
         }
 
-        // Handle isChecked toggle
+        // Handle isChecked toggle (and addedToPantry with it, in one write)
         if (parsed.data.isChecked !== undefined) {
           const updated = await storage.updateGroceryListItemChecked(
             itemId,
             listId,
             parsed.data.isChecked,
             req.userId,
+            { addedToPantry: parsed.data.addedToPantry },
           );
           if (!updated) {
             sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
             return;
-          }
-          // Also handle addedToPantry if provided in same request
-          if (parsed.data.addedToPantry !== undefined) {
-            const flagged = await storage.updateGroceryListItemPantryFlag(
-              itemId,
-              listId,
-              parsed.data.addedToPantry,
-              req.userId,
-            );
-            if (flagged) {
-              res.json(flagged);
-              return;
-            }
           }
           res.json(updated);
           return;

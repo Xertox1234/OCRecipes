@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import {
   describe,
   it,
@@ -105,6 +106,30 @@ describe("meal-plan-analytics storage", () => {
       expect(Number(summary.plannedCalories)).toBe(800);
       expect(Number(summary.plannedProtein)).toBe(60);
       expect(Number(summary.plannedItemCount)).toBe(1);
+    });
+
+    it("does not count a plan item whose recipe was soft-deleted", async () => {
+      const recipe = await createRecipe(testUser.id, {
+        caloriesPerServing: "400",
+      });
+      await tx.insert(mealPlanItems).values({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-15",
+        mealType: "lunch",
+      });
+      await tx
+        .update(mealPlanRecipes)
+        .set({ deletedAt: new Date() })
+        .where(eq(mealPlanRecipes.id, recipe.id));
+
+      const summary = await getPlannedNutritionSummary(
+        testUser.id,
+        "2026-05-15",
+        [],
+      );
+      expect(Number(summary.plannedCalories)).toBe(0);
+      expect(Number(summary.plannedItemCount)).toBe(0);
     });
 
     it("excludes items already confirmed via the confirmedIds parameter", async () => {
@@ -230,6 +255,30 @@ describe("meal-plan-analytics storage", () => {
       );
       const names = ings.map((i) => i.name).sort();
       expect(names).toEqual(["flour", "sugar"]);
+    });
+
+    it("skips a soft-deleted recipe's ingredients", async () => {
+      const recipe = await createRecipe(testUser.id);
+      await tx
+        .insert(recipeIngredients)
+        .values([{ recipeId: recipe.id, name: "flour", displayOrder: 0 }]);
+      await tx.insert(mealPlanItems).values({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2026-05-16",
+        mealType: "dinner",
+      });
+      await tx
+        .update(mealPlanRecipes)
+        .set({ deletedAt: new Date() })
+        .where(eq(mealPlanRecipes.id, recipe.id));
+
+      const ings = await getMealPlanIngredientsForDateRange(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-22",
+      );
+      expect(ings).toEqual([]);
     });
   });
 

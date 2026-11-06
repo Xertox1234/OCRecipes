@@ -136,11 +136,33 @@ export async function getMealPlanItemById(
   return { ...item, recipe, scannedItem };
 }
 
+/**
+ * Returns undefined when `item.recipeId` is not the user's live (not
+ * soft-deleted) recipe. The check runs in the write's own transaction under a
+ * FOR SHARE lock, so a soft delete can't commit between check and insert — the
+ * FK no longer refuses a soft-deleted recipe.
+ */
 export async function addMealPlanItem(
   item: InsertMealPlanItem,
-): Promise<MealPlanItem> {
-  const [created] = await db.insert(mealPlanItems).values(item).returning();
-  return created;
+): Promise<MealPlanItem | undefined> {
+  return db.transaction(async (tx) => {
+    if (item.recipeId != null) {
+      const [live] = await tx
+        .select({ id: mealPlanRecipes.id })
+        .from(mealPlanRecipes)
+        .where(
+          and(
+            eq(mealPlanRecipes.id, item.recipeId),
+            eq(mealPlanRecipes.userId, item.userId),
+            isNull(mealPlanRecipes.deletedAt),
+          ),
+        )
+        .for("share");
+      if (!live) return undefined;
+    }
+    const [created] = await tx.insert(mealPlanItems).values(item).returning();
+    return created;
+  });
 }
 
 export async function removeMealPlanItem(

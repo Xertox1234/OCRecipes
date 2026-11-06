@@ -47,6 +47,9 @@ export async function getUserCookbooks(
       OR
       (cr.recipe_type = 'community' AND EXISTS (
         SELECT 1 FROM ${communityRecipes} WHERE community_recipes.id = cr.recipe_id
+          -- Visible to the owner, as the cookbook's list shows it: a recipe
+          -- its author made private since is hidden there, so not counted.
+          AND (community_recipes.is_public = true OR community_recipes.author_id = ${userId})
       ))
     )
   )`;
@@ -127,6 +130,7 @@ export async function addRecipeToCookbook(
             WHERE ${mealPlanRecipes.id} = ${recipeId}
               AND ${mealPlanRecipes.userId} = ${userId}
               AND ${mealPlanRecipes.deletedAt} IS NULL
+            FOR SHARE
           )`
         : sql`AND EXISTS (
             SELECT 1 FROM ${communityRecipes}
@@ -135,8 +139,12 @@ export async function addRecipeToCookbook(
                 ${communityRecipes.isPublic} = true
                 OR ${communityRecipes.authorId} = ${userId}
               )
+            FOR SHARE
           )`;
 
+    // FOR SHARE on the recipe row: a concurrent recipe delete either waits
+    // for this insert (its junction cleanup then removes the row) or commits
+    // first and the guard finds nothing — never an orphan junction row.
     // Single-statement INSERT...SELECT guarded by a WHERE EXISTS on
     // `cookbooks.user_id` (cookbook ownership) AND the recipe-access guard
     // above (target visibility) — the row is inserted only when both hold.

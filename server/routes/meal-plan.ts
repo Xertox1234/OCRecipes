@@ -442,6 +442,11 @@ export function register(app: Express): void {
           ...itemData,
           userId: req.userId,
         });
+        // The recipe was deleted between the check above and the write.
+        if (!mealPlanItem) {
+          sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
+          return;
+        }
 
         res.status(201).json(mealPlanItem);
       } catch (error) {
