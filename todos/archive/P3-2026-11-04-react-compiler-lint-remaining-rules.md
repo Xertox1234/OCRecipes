@@ -1,9 +1,9 @@
 ---
 title: "React Compiler lint rules still off: set-state-in-effect, immutability, refs"
-status: backlog
+status: done
 priority: low
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-06
 assignee:
 labels: [deferred, react-native]
 github_issue:
@@ -29,9 +29,9 @@ the P2 todo.
 
 ## Acceptance Criteria
 
-- [ ] Each rule is either enabled in `eslint.config.js` with its call sites
+- [x] Each rule is either enabled in `eslint.config.js` with its call sites
       fixed, or left off with a one-line reason next to `KEPT_REACT_HOOKS_RULES`.
-- [ ] `eslint-plugin-ocrecipes/__tests__/rules.test.ts` lists exactly the
+- [x] `eslint-plugin-ocrecipes/__tests__/rules.test.ts` lists exactly the
       enabled rules.
 
 ## Implementation Notes
@@ -56,3 +56,21 @@ the P2 todo.
 
 - Split off from the P2 todo (owner ruling 2026-11-04), human-led until the
   preserve-manual-memoization PR is reviewed.
+
+### 2026-11-06
+
+- Owner unlocked the todo; all three rules are now enabled in
+  `KEPT_REACT_HOOKS_RULES`, none left off, and `rules.test.ts` lists exactly
+  the enabled set.
+- `refs`: #1768 (11 sites). `immutability`: #1769 (24 sites).
+- `set-state-in-effect`: #1770 batch B (15), #1771 batch A (14), #1772 batch
+  C1 (11), and the final batch `chore/set-state-in-effect-final` (13: the last
+  12 inventoried sites plus ProfileScreen's first-mount flag, which #1768 had
+  turned into state), which also turns the rule on globally and drops the 11
+  per-file `/* eslint react-hooks/set-state-in-effect: "error" */` headers.
+- Final state on `client/` (`ESLINT_NO_TYPE_AWARE=1 npx eslint client
+--report-unused-disable-directives`): 0 errors, 0 set-state-in-effect
+  reports, 0 unused directives; 22 justified
+  `eslint-disable-next-line react-hooks/set-state-in-effect` lines across 17
+  files. Bailout baseline 55 files (NotebookEntryScreen dropped; it compiles
+  since #1772).

@@ -96,7 +96,33 @@ export default function ReceiptReviewScreen() {
   const confirmMutation = useReceiptConfirm();
   const toast = useToast();
 
-  const [items, setItems] = useState<EditableItem[]>([]);
+  // Local OCR parse for an instant skeleton preview (the AI scan below races
+  // it). ocrTexts is fixed for the screen's lifetime, so this runs once, as
+  // the initial state, rather than filling the list from a mount effect.
+  const [localPreview] = useState(() => {
+    if (!ocrTexts || ocrTexts.length === 0) return null;
+    const parsed = parseReceiptItemsFromOCR(ocrTexts);
+    if (parsed.confidence < 0.5 || parsed.items.length === 0) return null;
+    return {
+      localItems: parsed.items,
+      items: parsed.items.map(
+        (item, i): EditableItem => ({
+          name: item.rawName,
+          originalName: item.rawName,
+          quantity: item.quantity,
+          unit: "each",
+          category: "other",
+          isFood: true,
+          estimatedShelfLifeDays: 7,
+          confidence: 0.5,
+          id: `local-${i}-${item.rawName}`,
+        }),
+      ),
+    };
+  });
+  const [items, setItems] = useState<EditableItem[]>(
+    () => localPreview?.items ?? [],
+  );
   // Text the person is typing in each quantity box, keyed by item id. Absent
   // = show the committed quantity. Lets "1." and "" survive mid-edit.
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
@@ -118,33 +144,12 @@ export default function ReceiptReviewScreen() {
     AccessibilityInfo.announceForAccessibility("Items added to pantry");
   }, [showMealPlanPrompt, triggerCheckPop]);
 
-  const dataSourceRef = useRef<"local" | "ai" | null>(null);
-  const localItemsRef = useRef<LocalReceiptItem[]>([]);
-
-  // Parse local OCR for instant skeleton preview
-  useEffect(() => {
-    if (!ocrTexts || ocrTexts.length === 0) return;
-    const parsed = parseReceiptItemsFromOCR(ocrTexts);
-    if (parsed.confidence >= 0.5 && parsed.items.length > 0) {
-      localItemsRef.current = parsed.items;
-      setItems(
-        parsed.items.map((item, i) => ({
-          name: item.rawName,
-          originalName: item.rawName,
-          quantity: item.quantity,
-          unit: "each",
-          category: "other",
-          isFood: true,
-          estimatedShelfLifeDays: 7,
-          confidence: 0.5,
-          id: `local-${i}-${item.rawName}`,
-        })),
-      );
-      dataSourceRef.current = "local";
-    }
-    // ocrTexts is stable for the lifetime of this screen
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const dataSourceRef = useRef<"local" | "ai" | null>(
+    localPreview ? "local" : null,
+  );
+  const localItemsRef = useRef<LocalReceiptItem[]>(
+    localPreview?.localItems ?? [],
+  );
 
   // Trigger AI scan on mount (races with local preview)
   useEffect(() => {
