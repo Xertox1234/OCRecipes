@@ -405,7 +405,9 @@ export function useQuickLogSession({
   // guard sees the stale value just as a submit starts — corrupting onError's
   // failedIndices vs the submitted array. Assigning at render time is the
   // React-sanctioned "store latest value" pattern (idempotent, deterministic,
-  // Strict-mode-safe). See docs/rules/hooks.md exception.
+  // Strict-mode-safe). See docs/rules/hooks.md exception. Cost: React Compiler
+  // skips this hook (it stays in scripts/react-compiler-bailout-baseline.json).
+  // eslint-disable-next-line react-hooks/refs -- hooks.md exception: isPending is not ours to wrap; an effect mirror leaves removeItem's sync guard stale for a frame
   isSubmittingRef.current = logAllMutation.isPending;
 
   const submitLog = useCallback(() => {

@@ -116,9 +116,13 @@ export function useRecipeForm(
   options?: UseRecipeFormOptions,
 ) {
   // Keep the latest onDirtyChange in a ref so transitions fire with the
-  // current callback without adding it to every action's deps.
-  const onDirtyChangeRef = useRef(options?.onDirtyChange);
-  onDirtyChangeRef.current = options?.onDirtyChange;
+  // current callback without adding it to every action's deps. Mirrored in an
+  // effect: the ref is read only from user-driven actions, after paint.
+  const onDirtyChange = options?.onDirtyChange;
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
+  }, [onDirtyChange]);
 
   // ── Title & Description ──
   const [title, setTitle] = useState(prefill?.title || "");
