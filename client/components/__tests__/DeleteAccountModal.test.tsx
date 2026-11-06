@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import * as RN from "react-native";
 import type { SignInMethods } from "@shared/types/auth";
 import { ApiError } from "@/lib/api-error";
 import { renderComponent } from "../../../test/utils/render-component";
@@ -38,6 +39,69 @@ function renderModal(
 
 beforeEach(() => {
   onConfirm.mockReset();
+});
+
+describe("DeleteAccountModal — reopening starts clean", () => {
+  const passwordAccount = { password: true, google: null, apple: relay };
+  const ui = (visible: boolean) => (
+    <DeleteAccountModal
+      visible={visible}
+      onClose={vi.fn()}
+      onConfirm={onConfirm}
+      signInMethods={passwordAccount}
+    />
+  );
+
+  it("clears the password and hides it again", () => {
+    const { rerender } = renderComponent(ui(true));
+    fireEvent.click(screen.getByLabelText("Show password"));
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+    expect(screen.getByLabelText("Hide password")).toBeTruthy();
+
+    rerender(ui(false));
+    rerender(ui(true));
+
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
+      "",
+    );
+    expect(screen.getByLabelText("Show password")).toBeTruthy();
+  });
+
+  it("clears the error from the last attempt", () => {
+    const { rerender } = renderComponent(ui(true));
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    expect(screen.getByText("Password is required")).toBeTruthy();
+
+    rerender(ui(false));
+    rerender(ui(true));
+
+    expect(screen.queryByText("Password is required")).toBeNull();
+  });
+
+  it("announces each opening to VoiceOver on iOS", () => {
+    const originalOS = RN.Platform.OS;
+    RN.Platform.OS = "ios";
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { rerender } = renderComponent(ui(false));
+      expect(announceSpy).not.toHaveBeenCalled();
+      rerender(ui(true));
+      rerender(ui(false));
+      rerender(ui(true));
+      expect(announceSpy).toHaveBeenCalledTimes(2);
+      expect(announceSpy).toHaveBeenCalledWith(
+        "Delete account confirmation. Confirm it's you to continue.",
+      );
+    } finally {
+      RN.Platform.OS = originalOS;
+      announceSpy.mockRestore();
+    }
+  });
 });
 
 describe("DeleteAccountModal", () => {

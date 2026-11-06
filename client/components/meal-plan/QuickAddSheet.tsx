@@ -127,13 +127,16 @@ function QuickAddSheetContentInner(
 
   // Reset search state whenever the sheet is opened for a meal type. Keyed on
   // mealType only: depending on isListening here would re-run it when
-  // recognition starts and wipe the dictation.
-  useEffect(() => {
+  // recognition starts and wipe the dictation. Set during render when
+  // mealType changes (React's "adjust state when a prop changes" pattern).
+  const [prevMealType, setPrevMealType] = useState(mealType);
+  if (mealType !== prevMealType) {
+    setPrevMealType(mealType);
     if (mealType) {
       setSearchQuery("");
       setDebouncedQuery("");
     }
-  }, [mealType]);
+  }
 
   const queryParams = useMemo(() => {
     const p: Record<string, string> = {};

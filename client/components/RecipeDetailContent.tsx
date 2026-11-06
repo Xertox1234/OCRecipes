@@ -142,9 +142,13 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
     }
   }, [props.isCanonical]);
 
-  useEffect(() => {
+  // Another recipe starts with every step collapsed (set during render when
+  // the id changes — React's "adjust state when a prop changes" pattern).
+  const [prevRecipeId, setPrevRecipeId] = useState(props.recipeId);
+  if (props.recipeId !== prevRecipeId) {
+    setPrevRecipeId(props.recipeId);
     setExpandedStep(null);
-  }, [props.recipeId]);
+  }
 
   const hasShownHintRef = useRef(hasShownHint);
   useEffect(() => {

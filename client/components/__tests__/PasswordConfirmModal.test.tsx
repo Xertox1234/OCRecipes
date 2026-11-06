@@ -115,3 +115,45 @@ describe("PasswordConfirmModal — shake on validation reject", () => {
     expect(onSubmit).toHaveBeenCalledWith("pw-1");
   });
 });
+
+describe("PasswordConfirmModal — reopening starts clean", () => {
+  const ui = (visible: boolean) => (
+    <PasswordConfirmModal
+      visible={visible}
+      title="Connect Apple"
+      message="Enter your password to confirm it's you."
+      busy={false}
+      error={null}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn()}
+    />
+  );
+
+  it("clears the password and hides it again", () => {
+    const { rerender } = renderComponent(ui(true));
+    fireEvent.click(screen.getByLabelText("Show password"));
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "pw-1" },
+    });
+    expect(screen.getByLabelText("Hide password")).toBeTruthy();
+
+    rerender(ui(false));
+    rerender(ui(true));
+
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
+      "",
+    );
+    expect(screen.getByLabelText("Show password")).toBeTruthy();
+  });
+
+  it("clears the reject message", () => {
+    const { rerender } = renderComponent(ui(true));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Enter your password.")).toBeTruthy();
+
+    rerender(ui(false));
+    rerender(ui(true));
+
+    expect(screen.queryByText("Enter your password.")).toBeNull();
+  });
+});

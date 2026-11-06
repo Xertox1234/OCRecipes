@@ -1,3 +1,7 @@
+// The rule is still off globally until every batch lands (todo
+// P3-2026-11-04-react-compiler-lint-remaining-rules); enabled here so the
+// eslint-disable below counts as used and lint-staged --fix keeps it.
+/* eslint react-hooks/set-state-in-effect: "error" */
 import React, {
   useCallback,
   useEffect,
@@ -391,11 +395,13 @@ export default function CoachChat({
     lastAssistantMessageId !== pendingSave.after;
   const showLiveReply = isStreaming || (pendingSave !== null && !turnSaved);
 
-  useEffect(() => {
-    if (!turnSaved) return;
+  // The saved reply has arrived: drop the live turn in this same render. It
+  // is derived-state cleanup, so it runs during render (not in an effect);
+  // clearing pendingSave makes turnSaved false, which ends the re-render.
+  if (turnSaved) {
     setPendingSave(null);
     setOptimisticMessage(null);
-  }, [turnSaved]);
+  }
 
   const chatItems = useMemo<ChatListItem[]>(() => {
     const items: ChatListItem[] = (messages ?? []).map((message) => ({
@@ -485,15 +491,17 @@ export default function CoachChat({
     return () => clearTimeout(timer);
   }, [streamBlocksEntering, streamBlocks]);
 
-  useEffect(() => {
-    if (heldReplyId !== null && (reducedMotion || !streamBlocksEntering)) {
-      setStreamBlocks([]);
-    }
-  }, [heldReplyId, reducedMotion, streamBlocksEntering]);
+  // Hand the blocks over to the saved copy during render (derived-state
+  // cleanup, not an effect); emptying streamBlocks makes heldReplyId null,
+  // which ends the re-render.
+  if (heldReplyId !== null && (reducedMotion || !streamBlocksEntering)) {
+    setStreamBlocks([]);
+  }
 
   // Show interim transcript in input field while listening
   useEffect(() => {
     if (isListening && transcript) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs the speech recognizer's interim transcript into the field and its ref mirror, alongside the warm-up network call; this file is already compiler-exempt (try/finally)
       setInputText(transcript);
       // Send warm-up for interim transcript
       if (isCoachPro) {

@@ -63,8 +63,12 @@ vi.mock("@/hooks/useTrendingSearches", () => ({
   }),
 }));
 
+const { mockRecent } = vi.hoisted(() => ({
+  mockRecent: { value: [] as string[] },
+}));
+
 vi.mock("@/lib/recent-recipe-searches-storage", () => ({
-  getRecentSearches: () => [],
+  getRecentSearches: () => mockRecent.value,
   pushRecentSearch: vi.fn(),
 }));
 
@@ -79,6 +83,39 @@ function flattenDeep(style: unknown): Record<string, unknown> {
 
 beforeEach(() => {
   viewProps.length = 0;
+  mockRecent.value = [];
+});
+
+describe("RecipeSearchDrawer open/close", () => {
+  it("closing clears the typed search", () => {
+    const { rerender } = renderComponent(
+      <RecipeSearchDrawer isOpen onUsed={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByLabelText("Search recipes"), {
+      target: { value: "soup" },
+    });
+
+    rerender(<RecipeSearchDrawer isOpen={false} onUsed={vi.fn()} />);
+    rerender(<RecipeSearchDrawer isOpen onUsed={vi.fn()} />);
+
+    expect(
+      (screen.getByLabelText("Search recipes") as HTMLInputElement).value,
+    ).toBe("");
+  });
+
+  it("opening shows searches saved while it was closed", () => {
+    const { rerender } = renderComponent(
+      <RecipeSearchDrawer isOpen={false} onUsed={vi.fn()} />,
+    );
+    expect(screen.queryByText("tacos")).toBeNull();
+
+    mockRecent.value = ["tacos"];
+    rerender(<RecipeSearchDrawer isOpen={false} onUsed={vi.fn()} />);
+    expect(screen.queryByText("tacos")).toBeNull();
+
+    rerender(<RecipeSearchDrawer isOpen onUsed={vi.fn()} />);
+    expect(screen.getByText("tacos")).toBeTruthy();
+  });
 });
 
 describe("RecipeSearchDrawer search field", () => {

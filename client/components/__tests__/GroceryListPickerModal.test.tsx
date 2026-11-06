@@ -236,3 +236,33 @@ describe("GroceryListPickerModal — new list name label", () => {
     );
   });
 });
+
+describe("GroceryListPickerModal — closing resets the new-list input", () => {
+  beforeEach(() => {
+    mockUseGroceryLists.mockReturnValue({ data: mockLists, isLoading: false });
+  });
+
+  it("reopening shows the New List button again with an empty name", () => {
+    const ui = (visible: boolean) => (
+      <GroceryListPickerModal
+        visible={visible}
+        onClose={() => {}}
+        itemName="Eggs"
+      />
+    );
+    const { rerender } = renderComponent(ui(true));
+    fireEvent.click(screen.getByLabelText("Create new grocery list"));
+    fireEvent.change(screen.getByLabelText("List name"), {
+      target: { value: "Picnic" },
+    });
+
+    rerender(ui(false));
+    rerender(ui(true));
+
+    expect(screen.queryByLabelText("List name")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Create new grocery list"));
+    expect((screen.getByLabelText("List name") as HTMLInputElement).value).toBe(
+      "",
+    );
+  });
+});

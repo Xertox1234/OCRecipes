@@ -69,4 +69,24 @@ describe("FallbackImage", () => {
     expect(screen.queryByTestId("thumb")).toBeNull();
     expect(screen.getByText("image")).toBeTruthy();
   });
+
+  it("tries again with the image when the uri changes after a failure, even back to the failed one", () => {
+    const ui = (uri: string) => (
+      <FallbackImage source={{ uri }} testID="thumb" />
+    );
+    const { rerender } = renderComponent(ui("https://example.com/a.jpg"));
+    fireEvent.error(screen.getByTestId("thumb"));
+    expect(screen.queryByTestId("thumb")).toBeNull();
+
+    rerender(ui("https://example.com/b.jpg"));
+    expect(screen.getByTestId("thumb").getAttribute("src")).toBe(
+      "https://example.com/b.jpg",
+    );
+
+    // Back to the uri that failed: a fresh attempt, not the old failure.
+    rerender(ui("https://example.com/a.jpg"));
+    expect(screen.getByTestId("thumb").getAttribute("src")).toBe(
+      "https://example.com/a.jpg",
+    );
+  });
 });

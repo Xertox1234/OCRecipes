@@ -20,6 +20,26 @@ vi.mock("@react-navigation/native", () => ({
   useIsFocused: () => true,
 }));
 
+const { mockSpeech } = vi.hoisted(() => ({
+  mockSpeech: {
+    value: {
+      isListening: false,
+      transcript: "",
+      isFinal: false,
+      volume: 0,
+      error: null as string | null,
+    },
+  },
+}));
+
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    ...mockSpeech.value,
+    startListening: vi.fn(),
+    stopListening: vi.fn(),
+  }),
+}));
+
 // Expected error message from the calorie validation branch
 // (MAX_CUSTOM_CALORIES = 5000, defined in BeveragePickerSheet.tsx)
 const CALORIE_ERROR = "Calories must be between 0 and 5000";
@@ -114,5 +134,37 @@ describe("BeveragePickerSheet — iOS a11y-leaf fix", () => {
     expect(
       screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
     ).toBe("false");
+  });
+});
+
+describe("BeveragePickerSheet — voice input errors", () => {
+  afterEach(() => {
+    mockSpeech.value = { ...mockSpeech.value, error: null };
+  });
+
+  it("shows each new voice error once; the sheet's own clear removes it", () => {
+    const sheetRef = { current: null } as React.RefObject<null>;
+    const optionsRef: React.RefObject<BeverageSheetOptions | null> = {
+      current: { mealType: null, onLogged: vi.fn() },
+    };
+    const ui = () => (
+      <BeveragePickerSheet sheetRef={sheetRef} optionsRef={optionsRef} />
+    );
+    const { rerender } = renderComponent(ui());
+    fireEvent.click(screen.getByRole("button", { name: /custom beverage/i }));
+
+    mockSpeech.value = { ...mockSpeech.value, error: "Microphone is off" };
+    rerender(ui());
+    expect(screen.getByText("Microphone is off")).toBeTruthy();
+
+    // Back clears the sheet's error; the same voice error must not return.
+    fireEvent.click(screen.getByLabelText("Go back"));
+    rerender(ui());
+    expect(screen.queryByText("Microphone is off")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /custom beverage/i }));
+    mockSpeech.value = { ...mockSpeech.value, error: "No speech heard" };
+    rerender(ui());
+    expect(screen.getByText("No speech heard")).toBeTruthy();
   });
 });

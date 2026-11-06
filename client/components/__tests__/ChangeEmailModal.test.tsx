@@ -2,6 +2,7 @@
 import React from "react";
 import { act, screen, fireEvent } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { reactProps } from "../../../test/utils/react-props";
 import { ChangeEmailModal } from "../ChangeEmailModal";
@@ -257,6 +258,86 @@ describe("ChangeEmailModal — reopening starts clean", () => {
     expect(screen.queryByText("Enter a valid email address")).toBeNull();
     expect(screen.queryByText("Enter your new email address")).toBeNull();
     expect(input.getAttribute("aria-invalid")).toBeNull();
+  });
+
+  const ui = (
+    visible: boolean,
+    onConfirm: () => Promise<void>,
+    askCode = false,
+  ) => (
+    <ChangeEmailModal
+      visible={visible}
+      onClose={vi.fn()}
+      onConfirm={onConfirm}
+      askCode={askCode}
+    />
+  );
+
+  async function failOnce(onConfirm: ReturnType<typeof vi.fn>) {
+    type("New email address", "a@b.com");
+    type("Confirm new email address", "a@b.com");
+    type("Current password", "wrongpass");
+    submit();
+    await screen.findByText("Incorrect password. Please try again.");
+    expect(onConfirm).toHaveBeenCalledOnce();
+  }
+
+  it("clears the server error and hides the password again", async () => {
+    const onConfirm = vi
+      .fn()
+      .mockRejectedValue(new Error("401: Invalid credentials"));
+    const { rerender } = renderComponent(ui(true, onConfirm));
+    fireEvent.click(screen.getByLabelText("Show password"));
+    await failOnce(onConfirm);
+    expect(screen.getByLabelText("Hide password")).toBeTruthy();
+
+    rerender(ui(false, onConfirm));
+    rerender(ui(true, onConfirm));
+
+    expect(
+      screen.queryByText("Incorrect password. Please try again."),
+    ).toBeNull();
+    expect(screen.getByLabelText("Show password")).toBeTruthy();
+  });
+
+  it("starts clean again when two-step turns on while it is open", async () => {
+    const onConfirm = vi
+      .fn()
+      .mockRejectedValue(new Error("401: Invalid credentials"));
+    const { rerender } = renderComponent(ui(true, onConfirm));
+    await failOnce(onConfirm);
+    expect(screen.queryByLabelText("6-digit code")).toBeNull();
+
+    rerender(ui(true, onConfirm, true));
+
+    expect(
+      screen.queryByText("Incorrect password. Please try again."),
+    ).toBeNull();
+    expect(screen.getByLabelText("6-digit code")).toBeTruthy();
+  });
+
+  it("announces each opening to VoiceOver on iOS", () => {
+    const originalOS = RN.Platform.OS;
+    RN.Platform.OS = "ios";
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const onConfirm = vi.fn();
+      const { rerender } = renderComponent(ui(false, onConfirm));
+      expect(announceSpy).not.toHaveBeenCalled();
+      rerender(ui(true, onConfirm));
+      rerender(ui(false, onConfirm));
+      rerender(ui(true, onConfirm));
+      expect(announceSpy).toHaveBeenCalledTimes(2);
+      expect(announceSpy).toHaveBeenCalledWith(
+        "Change email. Enter your new email and current password.",
+      );
+    } finally {
+      RN.Platform.OS = originalOS;
+      announceSpy.mockRestore();
+    }
   });
 });
 

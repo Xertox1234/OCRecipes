@@ -260,5 +260,50 @@ describe("QuickAddSheet — search field label", () => {
         (screen.getByLabelText("Search recipes") as HTMLInputElement).value,
       ).toBe("chicken soup");
     });
+
+    it("opening for a meal type starts with an empty search; closing keeps it", () => {
+      mockSpeech.value = {
+        isListening: false,
+        transcript: "",
+        isFinal: false,
+        volume: 0,
+        error: null,
+      };
+      const { rerender } = renderComponent(
+        <QuickAddSheetContent {...defaultProps} />,
+      );
+      const search = () =>
+        screen.getByLabelText("Search recipes") as HTMLInputElement;
+      fireEvent.change(search(), { target: { value: "oats" } });
+
+      // Closing (no meal type) does not clear it on its own.
+      rerender(
+        <QuickAddSheetContent
+          {...defaultProps}
+          mealType={null}
+          onDismiss={vi.fn()}
+        />,
+      );
+      expect(search().value).toBe("oats");
+
+      rerender(
+        <QuickAddSheetContent
+          {...defaultProps}
+          mealType="lunch"
+          onDismiss={vi.fn()}
+        />,
+      );
+      expect(search().value).toBe("");
+
+      fireEvent.change(search(), { target: { value: "wrap" } });
+      rerender(
+        <QuickAddSheetContent
+          {...defaultProps}
+          mealType="dinner"
+          onDismiss={vi.fn()}
+        />,
+      );
+      expect(search().value).toBe("");
+    });
   });
 });

@@ -112,9 +112,17 @@ export function ProductChip({
   const prevProductNameRef = useRef<string | undefined>(undefined);
   const prevTopFlagTitleRef = useRef<string | undefined>(undefined);
 
+  // Mount the chip on each change into a non-null variant — set during render
+  // (React's "adjust state when a prop changes" pattern), so the chip is in
+  // the same commit as the variant. Unmounting waits for the exit spring below.
+  const [prevVariant, setPrevVariant] = useState(variant);
+  if (variant !== prevVariant) {
+    setPrevVariant(variant);
+    if (variant !== null) setShouldRender(true);
+  }
+
   useEffect(() => {
     if (variant !== null) {
-      setShouldRender(true);
       translateY.value = withSpring(0, CHIP_SPRING);
       // Announce every transition INTO a non-null variant on BOTH platforms.
       // The chip no longer carries a container `accessibilityLiveRegion` (it

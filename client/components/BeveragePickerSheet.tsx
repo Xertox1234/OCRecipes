@@ -96,9 +96,13 @@ export function BeveragePickerSheet({
       setCustomInput(text.slice(0, MAX_CUSTOM_NAME_LENGTH)),
     enabled: step === "custom",
   });
-  useEffect(() => {
+  // Copy each new voice error into the sheet's error once (set during render
+  // when it changes), so the sheet's own setError(null) still clears it.
+  const [prevSpeechError, setPrevSpeechError] = useState<string | null>(null);
+  if (speechError !== prevSpeechError) {
+    setPrevSpeechError(speechError);
     if (speechError) setError(speechError);
-  }, [speechError]);
+  }
   const handleVoicePress = useCallback(() => {
     haptics.impact(ImpactFeedbackStyle.Medium);
     toggleVoice();
