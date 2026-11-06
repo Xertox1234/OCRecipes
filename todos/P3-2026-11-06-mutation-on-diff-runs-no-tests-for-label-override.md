@@ -13,7 +13,7 @@ github_issue:
 
 ## Summary
 
-The advisory `Mutation-on-diff` CI check failed on PR #1783 because Stryker ran zero tests against `server/services/label-override.ts`. It printed `ConfigError: No tests were executed. Stryker will exit prematurely.`, yet the module's tests exist and pass (`server/services/__tests__/label-override.test.ts`, 53 tests).
+The advisory `Mutation-on-diff` CI check failed on PR #1783 because Stryker ran zero tests against `server/services/label-override.ts`. It printed `ConfigError: No tests were executed. Stryker will exit prematurely.`, yet the module's tests exist and pass (`server/services/__tests__/label-override.test.ts`).
 
 ## Background
 
