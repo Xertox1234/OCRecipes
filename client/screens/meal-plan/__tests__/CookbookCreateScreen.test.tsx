@@ -375,6 +375,31 @@ describe("CookbookCreateScreen — edit-mode load guard", () => {
     expect(mockAnnounce).not.toHaveBeenCalled();
   });
 
+  it("fills the form when the cookbook arrives after mount, and only once", async () => {
+    mockRouteParams.mockReturnValue({ cookbookId: 3 });
+    mockCookbookDetail.mockReturnValue({ ...idleDetail, isLoading: true });
+    const { rerender } = renderComponent(<CookbookCreateScreen />);
+
+    mockLoadedCookbook();
+    rerender(<CookbookCreateScreen />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Sunday Bakes II" },
+    });
+
+    // A refetch with different data must not overwrite the person's edit.
+    mockLoadedCookbook({ name: "Renamed elsewhere", description: "Other" });
+    rerender(<CookbookCreateScreen />);
+    fireEvent.click(screen.getByLabelText("Save changes"));
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith({
+        id: 3,
+        name: "Sunday Bakes II",
+        description: "Weekend baking",
+      }),
+    );
+  });
+
   it("leaves the cover actions usable when the cookbook loaded", () => {
     // Positive control for the destructive-cover guard below.
     mockLoadedCookbook({ coverImageUrl: "https://cdn.test/c.png" });

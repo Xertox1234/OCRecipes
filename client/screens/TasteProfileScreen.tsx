@@ -57,6 +57,7 @@ export default function TasteProfileScreen() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch of the saved picks; its setState calls run after the request's await, which the rule cannot see through the call
     void loadPicks();
   }, [loadPicks]);
 
@@ -90,6 +91,7 @@ export default function TasteProfileScreen() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch of the first candidates page; loadCandidates also serves paging and retry, and its only synchronous set clears a load error that is already false on mount
     void loadCandidates(1);
   }, [loadCandidates]);
 

@@ -74,6 +74,7 @@ export default function TastePicksScreen() {
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetches the first candidates page on mount and when the diet changes; loadCandidates also serves paging and retry, and its synchronous set only clears the previous load error
     void loadCandidates(1);
   }, [loadCandidates]);
 

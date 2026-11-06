@@ -105,6 +105,7 @@ export default function ProfileScreen() {
 
   // Mark animated after first render
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- must flip after the first commit: the mount render's views take their entering animation at construction; set during render, they would never animate
     setHasAnimated(true);
   }, []);
 

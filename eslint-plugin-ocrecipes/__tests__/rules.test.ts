@@ -1053,10 +1053,11 @@ describe("eslint.config.js wiring", () => {
   });
 
   // eslint-plugin-react-hooks 7 (SDK 56) adds the React Compiler rules to its
-  // recommended set, which eslint-config-expo spreads in. They stay off until
-  // adopted one by one; the two hooks rules we already enforced stay on, plus
-  // each compiler rule adopted so far (globals, preserve-manual-memoization,
-  // refs).
+  // recommended set, which eslint-config-expo spreads in. They were adopted
+  // one by one; on are the two hooks rules we already enforced plus the
+  // adopted compiler rules (globals, immutability, preserve-manual-memoization,
+  // refs, set-state-in-effect). Every other compiler rule in that set stays
+  // off until adopted.
   it("keeps react-hooks to the two pre-compiler rules plus the adopted compiler rules", async () => {
     const config = await new ESLint({}).calculateConfigForFile(
       "client/screens/ScanScreen.tsx",
@@ -1067,6 +1068,8 @@ describe("eslint.config.js wiring", () => {
     expect(rules["react-hooks/globals"]).toEqual([2]);
     expect(rules["react-hooks/preserve-manual-memoization"]).toEqual([2]);
     expect(rules["react-hooks/refs"]).toEqual([2]);
+    expect(rules["react-hooks/immutability"]).toEqual([2]);
+    expect(rules["react-hooks/set-state-in-effect"]).toEqual([2]);
     const enabled = Object.entries(rules)
       .filter(([name]) => name.startsWith("react-hooks/"))
       .filter(([, value]) => (value as unknown[])[0] !== 0)
@@ -1079,6 +1082,7 @@ describe("eslint.config.js wiring", () => {
       "react-hooks/preserve-manual-memoization",
       "react-hooks/refs",
       "react-hooks/rules-of-hooks",
+      "react-hooks/set-state-in-effect",
     ]);
   });
 });

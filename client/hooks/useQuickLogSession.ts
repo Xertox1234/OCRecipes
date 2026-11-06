@@ -121,6 +121,7 @@ export function useQuickLogSession({
   // Stream transcript into text input while listening
   useEffect(() => {
     if (isListening && transcript) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the speech recognizer's transcript into an editable field; the person can edit the text, so it is state, not derived
       setInputText(transcript);
     }
   }, [isListening, transcript]);
