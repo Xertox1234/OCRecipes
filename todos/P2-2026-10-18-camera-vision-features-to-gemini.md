@@ -315,3 +315,8 @@ That mismatch penalised whichever model read the photo correctly: Gemini scored 
 - **Next:** after the budget resets, re-run both models on `npm run eval:recipe-photo` (3 samples, with `--candidate "photo-recipe=google/gemini-3.8-flash;reasoning_effort=low"` for Gemini), then decide the row. Calibration of gpt-4o is still near 1.7: it reports 1.0 on every card.
 - **Spend:** about $1.0 of today's OpenRouter budget this session (daily usage went 3.12 to 4.14 plus the retry).
 - **Still open:** `menu-scan` and `recipe-chat-image` remain unmeasured.
+
+### 2026-11-06: receipt category normalised; receipt-scan and photo-recipe re-measures still to run
+
+- **Fix (orchestrator, same branch).** The one Gemini receipt failure above was `category: "deli"`, outside the enum, which failed the whole receipt — the same shape as the shelf-life null, and live today on the Vertex backup route. `receiptItemSchema.category` now trims and lowercases the value and files anything still unknown (or missing) under `"other"` instead of rejecting the item. Tests: unknown → other, `" Produce "` → produce, null/undefined/number → other.
+- **Still to do (owner ruling 2026-11-06: switch receipt-scan only if Gemini wins with 0 failures).** Re-measure receipt-scan on Gemini after the fix, and re-run photo-recipe on both models with the new prompt; both blocked on the OpenRouter budget (HTTP 402 mid-run on 2026-11-06).

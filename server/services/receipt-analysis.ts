@@ -16,21 +16,29 @@ const receiptItemSchema = z.object({
   originalName: z.string(),
   quantity: z.number().min(0).default(1),
   unit: absentAsUndefined(z.string()),
-  category: z.enum([
-    "produce",
-    "meat",
-    "seafood",
-    "dairy",
-    "bakery",
-    "grains",
-    "canned",
-    "condiments",
-    "spices",
-    "frozen",
-    "beverages",
-    "snacks",
-    "other",
-  ]),
+  // Gemini writes categories outside the list ("deli") or in another letter
+  // case; one such line must not fail the whole receipt, so normalise the case
+  // and file anything still unknown under "other".
+  category: z
+    .preprocess(
+      (v) => (typeof v === "string" ? v.trim().toLowerCase() : v),
+      z.enum([
+        "produce",
+        "meat",
+        "seafood",
+        "dairy",
+        "bakery",
+        "grains",
+        "canned",
+        "condiments",
+        "spices",
+        "frozen",
+        "beverages",
+        "snacks",
+        "other",
+      ]),
+    )
+    .catch("other"),
   isFood: z.boolean(),
   // Gemini writes null on non-food lines, where GPT writes a number.
   estimatedShelfLifeDays: absentAsUndefined(z.number().int().min(1).max(730)),
