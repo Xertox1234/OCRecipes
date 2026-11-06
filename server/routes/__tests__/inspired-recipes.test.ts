@@ -12,6 +12,7 @@ import {
 } from "../../services/recipe-generation";
 import { createMockCommunityRecipe } from "../../__tests__/factories";
 import { register } from "../inspired-recipes";
+import { logger } from "../../lib/logger";
 import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 import {
   listingResponseSchema,
@@ -417,9 +418,40 @@ describe("POST /api/inspired/suggestions/:id/make", () => {
     );
     vi.mocked(storage.claimInspiredSuggestionMade).mockResolvedValue(false);
     vi.mocked(storage.deleteCommunityRecipe).mockRejectedValue(new Error("db"));
+    const warn = vi.spyOn(logger, "warn");
     const res = await make();
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ recipeId: 77 });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining("duplicate recipe cleanup failed"),
+    );
+    warn.mockRestore();
+  });
+  it("logs (but survives) failed cleanup and lock release when the claim throws", async () => {
+    vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(row());
+    vi.mocked(generateFullRecipe).mockResolvedValue(generated);
+    vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue(
+      createMockCommunityRecipe({ id: 88, title: "Bean Tacos" }),
+    );
+    vi.mocked(storage.claimInspiredSuggestionMade).mockRejectedValue(
+      new Error("db down"),
+    );
+    vi.mocked(storage.deleteCommunityRecipe).mockRejectedValue(new Error("db"));
+    vi.mocked(storage.abandonMakingSuggestion).mockRejectedValue(
+      new Error("db"),
+    );
+    const warn = vi.spyOn(logger, "warn");
+    const res = await make();
+    expect(res.status).toBe(500);
+    const messages = warn.mock.calls.map((c) => String(c[1]));
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("orphan recipe cleanup failed"),
+        expect.stringContaining("making-lock release failed"),
+      ]),
+    );
+    warn.mockRestore();
   });
   it("deletes the new recipe and releases the lock when the claim throws", async () => {
     vi.mocked(storage.getInspiredSuggestion).mockResolvedValue(row());

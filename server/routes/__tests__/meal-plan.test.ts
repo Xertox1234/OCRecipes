@@ -54,6 +54,8 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+vi.mock("../../lib/error-reporter", () => ({ reportError: vi.fn() }));
+
 vi.mock("../../services/pantry-meal-plan", async () => {
   const actual = await vi.importActual<
     typeof import("../../services/pantry-meal-plan")
@@ -944,6 +946,22 @@ describe("Meal Plan Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(500);
+    });
+
+    it("reports a non-conflict 500 to Sentry via handleRouteError", async () => {
+      const { reportError } = await import("../../lib/error-reporter");
+      vi.mocked(reportError).mockClear();
+      mockPremium();
+      const error = new Error("DB error");
+      vi.mocked(storage.getMealPlanItemById).mockRejectedValue(error);
+
+      const res = await request(app)
+        .post("/api/meal-plan/items/1/confirm")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Failed to confirm meal");
+      expect(reportError).toHaveBeenCalledWith(error, "confirm meal");
     });
   });
 

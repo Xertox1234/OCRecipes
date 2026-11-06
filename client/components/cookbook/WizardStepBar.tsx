@@ -1,16 +1,11 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  withTiming,
-} from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
-import { useAccessibility } from "@/hooks/useAccessibility";
 import { FontFamily, Spacing } from "@/constants/theme";
-import { contentRevealTimingConfig } from "@/constants/animations";
+import { ProgressSegment } from "@/components/ProgressSegment";
 import { WIZARD_STEPS, type WizardStep } from "./cookbook-wizard-utils";
 
 export const STEP_LABELS: Record<WizardStep, string> = {
@@ -20,7 +15,6 @@ export const STEP_LABELS: Record<WizardStep, string> = {
   review: "Review",
 };
 
-const SEGMENT_HEIGHT = 4;
 const SEGMENT_GAP = 6;
 /**
  * Each label cell is a full 44pt touch target in its own right — RN clips
@@ -72,7 +66,7 @@ export function WizardStepBar({
         }}
       >
         {WIZARD_STEPS.map((s, i) => (
-          <StepSegment
+          <ProgressSegment
             key={s}
             filled={i <= furthest}
             filledColor={theme.link}
@@ -134,32 +128,6 @@ export function WizardStepBar({
   );
 }
 
-function StepSegment({
-  filled,
-  filledColor,
-  unfilledColor,
-}: {
-  filled: boolean;
-  filledColor: string;
-  unfilledColor: string;
-}) {
-  const { reducedMotion } = useAccessibility();
-
-  // Same idiom as OnboardingProgressBar: the colour fades in on reveal, and
-  // reduced motion snaps it to the end value rather than dropping the change.
-  const animatedStyle = useAnimatedStyle(() => {
-    const targetColor = filled ? filledColor : unfilledColor;
-    if (reducedMotion) {
-      return { backgroundColor: targetColor };
-    }
-    return {
-      backgroundColor: withTiming(targetColor, contentRevealTimingConfig),
-    };
-  }, [filled, filledColor, unfilledColor, reducedMotion]);
-
-  return <Animated.View style={[styles.segment, animatedStyle]} />;
-}
-
 const styles = StyleSheet.create({
   container: {
     gap: Spacing.xs / 2,
@@ -167,11 +135,6 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     gap: SEGMENT_GAP,
-  },
-  segment: {
-    flex: 1,
-    height: SEGMENT_HEIGHT,
-    borderRadius: SEGMENT_HEIGHT / 2,
   },
   cell: {
     flex: 1,

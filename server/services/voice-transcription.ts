@@ -28,6 +28,7 @@ export async function transcribeAudio(
   } catch (error) {
     throw new Error(
       `Voice transcription failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      { cause: error },
     );
   }
 

@@ -1,6 +1,5 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { Card } from "@/components/Card";
@@ -8,13 +7,8 @@ import { ThemedText } from "@/components/ThemedText";
 import { NutriScoreChip } from "@/components/NutriScoreChip";
 import type { NutriScoreGrade } from "@/components/nutri-score-chip-utils";
 import { useTheme } from "@/hooks/useTheme";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
-import { BADGE_SEVERITY_FILL_OPACITY } from "@/components/badge-severity-visuals";
+import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
+import { BandDot, BandPill } from "./BandIndicators";
 import {
   bandTagText,
   bandVisuals,
@@ -255,7 +249,6 @@ export function NutritionSummaryCard({
  * `ThemedText` is the whole of what a screen reader hears.
  */
 function StandoutRow({ standout }: { standout: Standout }) {
-  const { theme } = useTheme();
   const tag = bandTagText(standout);
   const visuals = bandVisuals(standout);
 
@@ -263,13 +256,9 @@ function StandoutRow({ standout }: { standout: Standout }) {
     <View style={styles.standoutRow}>
       <View style={styles.dotColumn}>
         {visuals ? (
-          <View
+          <BandDot
+            visuals={visuals}
             testID={`standout-indicator-${standout.nutrient}`}
-            accessible={false}
-            importantForAccessibility="no"
-            accessibilityElementsHidden
-            aria-hidden
-            style={[styles.dot, { backgroundColor: theme[visuals.colorKey] }]}
           />
         ) : null}
       </View>
@@ -278,35 +267,7 @@ function StandoutRow({ standout }: { standout: Standout }) {
         {standoutCopy(standout)}
       </ThemedText>
 
-      {tag && visuals ? (
-        <View
-          style={[
-            styles.pill,
-            {
-              backgroundColor: withOpacity(
-                theme[visuals.colorKey],
-                BADGE_SEVERITY_FILL_OPACITY,
-              ),
-            },
-          ]}
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-          aria-hidden
-        >
-          <Feather
-            name={visuals.icon}
-            size={12}
-            color={theme[visuals.colorKey]}
-            accessible={false}
-          />
-          <ThemedText
-            type="caption"
-            style={[styles.tagText, { color: theme[visuals.colorKey] }]}
-          >
-            {tag}
-          </ThemedText>
-        </View>
-      ) : null}
+      {tag && visuals ? <BandPill visuals={visuals} tag={tag} /> : null}
     </View>
   );
 }
@@ -354,24 +315,8 @@ const styles = StyleSheet.create({
     width: 12,
     alignItems: "center",
   },
-  dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
   standoutText: {
     flex: 1,
-  },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-  },
-  tagText: {
-    fontWeight: "600",
   },
   macroTiles: {
     flexDirection: "row",

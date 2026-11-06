@@ -11,11 +11,11 @@ import {
   noticeText,
   answersLabel,
   finderItemNavParams,
-  finderBlockFromMessageMetadata,
   finderActionNeedsPlan,
   lockedFinderButtons,
   resultsHeader,
 } from "../recipe-finder-utils";
+import { finderBlockFromMetadata } from "@shared/schemas/recipe-finder";
 
 const item = (over: Partial<FinderItem> = {}): FinderItem => ({
   id: 12,
@@ -135,10 +135,10 @@ describe("recipe-finder-utils", () => {
 
   it("reads a finder block from RecipeChef or Coach metadata", () => {
     expect(
-      finderBlockFromMessageMetadata({ metadataVersion: 1, finder: block }),
+      finderBlockFromMetadata({ metadataVersion: 1, finder: block }),
     ).toEqual(block);
-    expect(finderBlockFromMessageMetadata({ blocks: [block] })).toEqual(block);
-    expect(finderBlockFromMessageMetadata({ recipe: {} })).toBeNull();
+    expect(finderBlockFromMetadata({ blocks: [block] })).toEqual(block);
+    expect(finderBlockFromMetadata({ recipe: {} })).toBeNull();
   });
 
   it("locks the buttons the account lacks (§6 premium)", () => {

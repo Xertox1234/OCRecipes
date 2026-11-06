@@ -1,15 +1,14 @@
 import React, { useCallback, useMemo, useState } from "react";
-import {
-  FlatList,
-  StyleSheet,
-  View,
-  type ListRenderItemInfo,
-} from "react-native";
+import { FlatList, View, type ListRenderItemInfo } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
 import { CarouselRecipeCard, CARD_WIDTH } from "./CarouselRecipeCard";
 import { CarouselSkeleton } from "./CarouselSkeleton";
 import { CarouselError } from "./CarouselError";
+import {
+  HORIZONTAL_CAROUSEL_LIST_PROPS,
+  carouselStyles as styles,
+} from "./carousel-list";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useCarouselRecipes } from "@/hooks/useCarouselRecipes";
@@ -17,7 +16,7 @@ import {
   useFavouriteRecipeIds,
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
-import { Spacing, FontFamily } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 import type { CarouselRecipeCard as CarouselCardType } from "@shared/types/carousel";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 
@@ -144,36 +143,14 @@ export const RecipeCarousel = React.memo(function RecipeCarousel({
         data={cards}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        horizontal
-        showsHorizontalScrollIndicator={false}
+        {...HORIZONTAL_CAROUSEL_LIST_PROPS}
         snapToInterval={SNAP_INTERVAL}
-        decelerationRate="fast"
         contentContainerStyle={styles.listContent}
         getItemLayout={getItemLayout}
         // Rows only re-render when data or extraData changes — without this a
         // tap opens the card in state but it keeps its old shape on screen.
         extraData={expandedId}
-        windowSize={5}
-        // Clipping detaches off-screen cards from the native tree, so VoiceOver
-        // (and TalkBack) can't move past the second card. Explicit false:
-        // FlatList's default clips on Android.
-        removeClippedSubviews={false}
       />
     </View>
   );
-});
-
-const styles = StyleSheet.create({
-  container: {
-    marginBottom: Spacing.lg,
-  },
-  header: {
-    fontFamily: FontFamily.semiBold,
-    fontSize: 17,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
-  },
-  listContent: {
-    paddingHorizontal: Spacing.lg,
-  },
 });

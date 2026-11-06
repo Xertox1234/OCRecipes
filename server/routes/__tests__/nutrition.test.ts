@@ -39,6 +39,8 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+vi.mock("../../lib/error-reporter", () => ({ reportError: vi.fn() }));
+
 vi.mock("../../services/nutrition-lookup", () => ({
   lookupNutrition: vi.fn(),
 }));
@@ -794,6 +796,21 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(500);
       expect(res.body.error).toBeDefined();
+    });
+
+    it("reports the 500 to Sentry and keeps the TOGGLE_FAILED code", async () => {
+      const { reportError } = await import("../../lib/error-reporter");
+      vi.mocked(reportError).mockClear();
+      const error = new Error("DB error");
+      vi.mocked(storage.toggleFavouriteScannedItem).mockRejectedValue(error);
+
+      const res = await request(app)
+        .post("/api/scanned-items/1/favourite")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("TOGGLE_FAILED");
+      expect(reportError).toHaveBeenCalledWith(error, "toggle favourite");
     });
   });
 

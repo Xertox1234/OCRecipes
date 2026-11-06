@@ -161,7 +161,8 @@ afterAll(() => {
   globalThis.fetch = originalFetch;
 });
 
-const fakeUser = { id: 1, username: "testuser", createdAt: "2024-01-01" };
+// `users.id` is a varchar (UUID in prod) — a string, as `isUser` requires.
+const fakeUser = { id: "1", username: "testuser", createdAt: "2024-01-01" };
 
 describe("useAuth", () => {
   beforeEach(() => {
@@ -600,6 +601,24 @@ describe("useAuth", () => {
       // The poison blob is removed so it stops re-throwing on later reads.
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBeUndefined();
       // Offline + no usable cache → unauthenticated, but recoverable.
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.user).toBeNull();
+    });
+
+    it("treats a parseable but wrong-shaped cached blob like a corrupt one", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockRejectedValue(new Error("Network error"));
+      // Valid JSON, but not a user: must not resume as an authenticated session.
+      mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify({ username: 42 });
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+      expect(mockAsyncStorage["@ocrecipes_auth"]).toBeUndefined();
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
     });
@@ -1677,6 +1696,34 @@ describe("useAuth", () => {
 
       expect(outcome).toEqual({ status: "verification_pending" });
       expect(result.current.user).toEqual(refreshedUser);
+    });
+
+    it("never persists a response that only looks like a user (id but no username)", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => {
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+      const cachedBefore = mockAsyncStorage["@ocrecipes_auth"];
+
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ id: 7 }),
+      });
+
+      let outcome;
+      await act(async () => {
+        outcome = await result.current.changeEmail("new@example.com", "pw");
+      });
+
+      // Not a user → the server's truth is re-read from /me instead.
+      expect(outcome).toEqual({ status: "verification_pending" });
+      expect(result.current.user).toEqual(fakeUser);
+      expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(cachedBefore);
     });
 
     it("propagates a wrong-password error to the caller without changing state", async () => {

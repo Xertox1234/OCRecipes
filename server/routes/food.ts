@@ -13,7 +13,6 @@ import {
 import { foodParseRateLimit } from "./_rate-limiters";
 import { parseNaturalLanguageFood } from "../services/food-nlp";
 import { transcribeAudio } from "../services/voice-transcription";
-import { logger, toError } from "../lib/logger";
 import { detectAudioMimeType } from "../lib/audio-mime";
 
 const parseTextSchema = z.object({
@@ -117,13 +116,7 @@ export function register(app: Express): void {
           items,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "voice transcription error");
-        sendError(
-          res,
-          500,
-          "Failed to transcribe and parse audio",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "transcribe and parse audio");
       }
     },
   );

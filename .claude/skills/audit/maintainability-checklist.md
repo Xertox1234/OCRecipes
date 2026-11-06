@@ -178,3 +178,13 @@ cosmetic notes.
   `barcode-lookup` → `barcode-policy`).
 - **Before proposing a new shared hook's home, grep for wholesale `vi.mock` of
   that module** — see `docs/solutions/conventions/extract-shared-hook-to-its-own-file-when-its-home-is-mocked-wholesale-2026-10-26.md`.
+- **Before proposing to fold repeated declarations into a helper, grep
+  `scripts/__tests__/` for a guard that parses them from source** (learned
+  2026-11-05). Navigator `<Stack.Screen name=…>` lines are read as text by the
+  route-reachability and sheet-provider guards, so a registration helper blinds
+  both — share the options instead. See
+  `docs/solutions/conventions/share-navigator-screen-options-not-registrations-2026-11-05.md`.
+- **Owner directive (2026-11-05): "unused" is not "remove".** An unreferenced
+  export or component may be unfinished work. Report it as "built but not
+  connected — confirm intent", never as a deletion; code-judo deletes
+  _duplicate copies_, not features.

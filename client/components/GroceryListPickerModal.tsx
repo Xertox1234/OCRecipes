@@ -3,30 +3,23 @@ import { toLocalDateString } from "@shared/lib/date";
 import {
   StyleSheet,
   View,
-  Modal,
   Pressable,
   FlatList,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
 } from "react-native";
-import { FocusTextInput } from "@/components/FocusTextInput";
 import { Feather } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { pageSheetHeaderPaddingTop } from "./page-sheet-utils";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
-import { ModalToastHost } from "@/context/ToastContext";
+import {
+  PickerCreateFooter,
+  PickerSheet,
+  pickerRowStyles,
+} from "@/components/PickerSheet";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+import { Spacing, FontFamily, withOpacity } from "@/constants/theme";
 import {
   useGroceryLists,
   useCreateGroceryList,
@@ -47,7 +40,6 @@ export function GroceryListPickerModal({
   itemName,
 }: GroceryListPickerModalProps) {
   const { theme } = useTheme();
-  const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const { data: lists, isLoading, isError } = useGroceryLists();
   // Both mutations' onError below already shows an Alert — opt out so the
@@ -136,7 +128,7 @@ export function GroceryListPickerModal({
           onPress={() => handleAddToList(item.id)}
           disabled={isAdding}
           style={({ pressed }) => [
-            styles.listItem,
+            pickerRowStyles.listItem,
             { backgroundColor: withOpacity(theme.text, 0.04) },
             pressed && { opacity: 0.7 },
             isAdding && !isThisAdding && { opacity: 0.4 },
@@ -144,7 +136,7 @@ export function GroceryListPickerModal({
           accessibilityRole="button"
           accessibilityLabel={`Add to ${item.title}`}
         >
-          <View style={styles.listItemContent}>
+          <View style={pickerRowStyles.listItemContent}>
             <Feather
               name="shopping-cart"
               size={18}
@@ -166,214 +158,66 @@ export function GroceryListPickerModal({
     [theme, handleAddToList, isAdding, addingToListId],
   );
 
+  const handleShowNewListInput = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    setShowNewListInput(true);
+  }, [haptics]);
+
   return (
-    <Modal
+    <PickerSheet
       visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={handleClose}
+      onClose={handleClose}
+      title="Add to Grocery List"
+      subtitle={itemName}
+      isLoading={isLoading}
+      accentColor={theme.success}
+      footer={
+        <PickerCreateFooter
+          showInput={showNewListInput}
+          onShowInput={handleShowNewListInput}
+          showNewButton
+          newButtonLabel="New List"
+          newButtonAccessibilityLabel="Create new grocery list"
+          inputLabel="List name"
+          placeholder="Optional, e.g. Weekend shop"
+          name={newListTitle}
+          onChangeName={setNewListTitle}
+          onCreate={handleCreateAndAdd}
+          isCreating={isCreating}
+          createAccessibilityLabel="Create list and add item"
+          accentColor={theme.success}
+          fillColor={theme.success}
+        />
+      }
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        accessibilityViewIsModal
-        style={[
-          styles.container,
-          {
-            backgroundColor: theme.backgroundRoot,
-            paddingBottom: Math.max(insets.bottom, Spacing.xl) + Spacing.md,
-          },
-        ]}
-      >
-        {/* Header */}
-        <View
-          style={[
-            styles.header,
-            {
-              borderBottomColor: theme.border,
-              paddingTop: pageSheetHeaderPaddingTop(insets.top),
-            },
-          ]}
-        >
-          <View style={styles.headerTextGroup}>
-            <ThemedText style={styles.headerTitle}>
-              Add to Grocery List
-            </ThemedText>
-            <ThemedText
-              style={[styles.headerSubtitle, { color: theme.textSecondary }]}
-              numberOfLines={1}
-            >
-              {itemName}
-            </ThemedText>
-          </View>
-          <Pressable
-            onPress={handleClose}
-            style={styles.closeButton}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <Feather name="x" size={24} color={theme.text} />
-          </Pressable>
-        </View>
-
-        {/* List of grocery lists */}
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.success} />
-          </View>
-        ) : (
-          <FlatList
-            {...FLATLIST_DEFAULTS}
-            data={lists || []}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={renderListItem}
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Feather
-                  name={isError ? "alert-circle" : "shopping-cart"}
-                  size={40}
-                  color={withOpacity(theme.text, 0.2)}
-                />
-                <ThemedText
-                  style={[styles.emptyText, { color: theme.textSecondary }]}
-                >
-                  {isError
-                    ? "Couldn't load your grocery lists. Check your connection, or create a new one below."
-                    : "No grocery lists yet. Create one to get started."}
-                </ThemedText>
-              </View>
-            }
-          />
-        )}
-
-        {/* New list input */}
-        {showNewListInput ? (
-          <View
-            style={[styles.newListInputRow, { borderTopColor: theme.border }]}
-          >
-            <FocusTextInput
-              label="List name"
-              style={[
-                styles.newListInput,
-                {
-                  color: theme.text,
-                  borderColor: withOpacity(theme.text, 0.15),
-                  backgroundColor: withOpacity(theme.text, 0.04),
-                },
-              ]}
-              value={newListTitle}
-              onChangeText={setNewListTitle}
-              placeholder="Optional, e.g. Weekend shop"
-              placeholderTextColor={theme.textSecondary}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleCreateAndAdd}
+      <FlatList
+        {...FLATLIST_DEFAULTS}
+        data={lists || []}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderListItem}
+        contentContainerStyle={pickerRowStyles.listContent}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Feather
+              name={isError ? "alert-circle" : "shopping-cart"}
+              size={40}
+              color={withOpacity(theme.text, 0.2)}
             />
-            <Pressable
-              onPress={handleCreateAndAdd}
-              disabled={isCreating}
-              style={[
-                styles.createButton,
-                {
-                  backgroundColor: theme.success,
-                  opacity: isCreating ? 0.6 : 1,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Create list and add item"
+            <ThemedText
+              style={[styles.emptyText, { color: theme.textSecondary }]}
             >
-              {isCreating ? (
-                <ActivityIndicator size="small" color={theme.buttonText} />
-              ) : (
-                <ThemedText style={{ color: theme.buttonText }}>
-                  Create
-                </ThemedText>
-              )}
-            </Pressable>
+              {isError
+                ? "Couldn't load your grocery lists. Check your connection, or create a new one below."
+                : "No grocery lists yet. Create one to get started."}
+            </ThemedText>
           </View>
-        ) : (
-          <View style={[styles.footer, { borderTopColor: theme.border }]}>
-            <Pressable
-              onPress={() => {
-                haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-                setShowNewListInput(true);
-              }}
-              style={[styles.newListButton, { borderColor: theme.success }]}
-              accessibilityRole="button"
-              accessibilityLabel="Create new grocery list"
-            >
-              <Feather name="plus" size={18} color={theme.success} />
-              <ThemedText
-                style={[styles.newListButtonText, { color: theme.success }]}
-              >
-                New List
-              </ThemedText>
-            </Pressable>
-          </View>
-        )}
-        <ModalToastHost />
-      </KeyboardAvoidingView>
-    </Modal>
+        }
+      />
+    </PickerSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  // 44pt box, not hitSlop. The negative margins keep the header's height at
-  // the 24pt icon's (the 16pt vertical padding already leaves room for the
-  // box inside the header, so nothing is clipped).
-  closeButton: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    marginVertical: -10,
-    marginRight: -10,
-  },
-  headerTextGroup: {
-    flex: 1,
-    marginRight: Spacing.md,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontFamily: FontFamily.semiBold,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  listContent: {
-    padding: Spacing.lg,
-  },
-  listItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.card,
-    marginBottom: Spacing.sm,
-  },
-  listItemContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    marginRight: Spacing.sm,
-  },
   listItemTitle: {
     fontSize: 15,
     fontFamily: FontFamily.semiBold,
@@ -389,48 +233,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: Spacing.md,
     lineHeight: 20,
-  },
-  footer: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  newListButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1.5,
-    gap: Spacing.sm,
-  },
-  newListButtonText: {
-    fontSize: 15,
-    fontFamily: FontFamily.semiBold,
-  },
-  newListInputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: Spacing.sm,
-  },
-  newListInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: BorderRadius.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: 14,
-  },
-  createButton: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm + 2,
-    borderRadius: BorderRadius.full,
-    minWidth: 80,
-    alignItems: "center",
   },
 });

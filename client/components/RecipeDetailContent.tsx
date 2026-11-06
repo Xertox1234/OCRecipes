@@ -35,7 +35,6 @@ import { RecipeCommunityStats } from "@/components/RecipeCommunityStats";
 import { RecipeAttributeRow } from "@/components/RecipeAttributeRow";
 import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
 import {
-  STEP_TEXT_LINE_HEIGHT,
   toDisplayedDietTags,
   uniqueTagsIgnoringCase,
 } from "@/components/recipe-detail/recipe-detail-utils";
@@ -438,115 +437,62 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
         {/* 8. Food Facts (outside content padding — components handle own padding) */}
         <FoodFacts ingredientNames={ingredientNames} />
 
-        {/* 9. Structured Instructions */}
-        {props.isCanonical && (props.instructions ?? []).length > 0 ? (
-          <View
-            style={styles.instructionsSection}
-            accessibilityRole="list"
-            accessibilityLabel={`Instructions, ${(props.instructions ?? []).length} steps`}
-          >
-            <ThemedText
-              type="h4"
-              style={styles.instructionsSectionTitle}
-              accessibilityRole="header"
-            >
-              Instructions
-            </ThemedText>
-            {(props.instructions ?? []).map((step, i) => {
-              const detail = props.instructionDetails?.[i];
-              const isExpandable = !!detail;
-              const isExpanded = expandedStep === i;
-              return (
+        {/* 9. Instructions — curated recipes get expandable steps, the hold
+            hint and Tools Required */}
+        <RecipeInstructions
+          instructions={props.instructions ?? []}
+          expandable={
+            props.isCanonical
+              ? {
+                  details: props.instructionDetails,
+                  expandedStep,
+                  onToggleStep: handleStepLongPress,
+                  showHint: !hasShownHint,
+                }
+              : undefined
+          }
+        >
+          {/* Tools Required (curated only) */}
+          {props.isCanonical && (props.toolsRequired?.length ?? 0) > 0 && (
+            <View style={styles.toolsSection}>
+              <ThemedText type="h4" style={styles.toolsSectionTitle}>
+                Tools Required
+              </ThemedText>
+              {props.toolsRequired!.map((tool, i) => (
                 <Pressable
                   key={i}
                   onPress={
-                    isExpandable ? () => handleStepLongPress(i) : undefined
-                  }
-                  onLongPress={
-                    isExpandable ? () => handleStepLongPress(i) : undefined
-                  }
-                  delayLongPress={300}
-                  style={[
-                    styles.stepCard,
-                    { backgroundColor: withOpacity(theme.text, 0.04) },
-                  ]}
-                  accessible
-                  accessibilityLabel={`Step ${i + 1} of ${(props.instructions ?? []).length}: ${step}${isExpandable ? ". Tap for more detail." : ""}`}
-                >
-                  <View
-                    style={[
-                      styles.stepCircle,
-                      { backgroundColor: theme.accentSolid },
-                    ]}
-                    accessible={false}
-                  >
-                    <ThemedText style={styles.stepNumber}>{i + 1}</ThemedText>
-                  </View>
-                  <View style={styles.stepBody}>
-                    <ThemedText style={styles.stepText}>{step}</ThemedText>
-                    {isExpanded && detail && (
-                      <ThemedText style={styles.stepDetail}>
-                        {detail}
-                      </ThemedText>
-                    )}
-                  </View>
-                </Pressable>
-              );
-            })}
-            {!hasShownHint && (
-              <ThemedText
-                style={[styles.stepHint, { color: theme.textSecondary }]}
-              >
-                Hold any step for more detail
-              </ThemedText>
-            )}
-
-            {/* Tools Required */}
-            {(props.toolsRequired?.length ?? 0) > 0 && (
-              <View style={styles.toolsSection}>
-                <ThemedText type="h4" style={styles.toolsSectionTitle}>
-                  Tools Required
-                </ThemedText>
-                {props.toolsRequired!.map((tool, i) => (
-                  <Pressable
-                    key={i}
-                    onPress={
-                      tool.affiliateUrl
-                        ? () => {
-                            WebBrowser.openBrowserAsync(
-                              tool.affiliateUrl!,
-                            ).catch(() => {
+                    tool.affiliateUrl
+                      ? () => {
+                          WebBrowser.openBrowserAsync(tool.affiliateUrl!).catch(
+                            () => {
                               toast.error(
                                 "Couldn't open link. Please try again.",
                               );
-                            });
-                          }
-                        : undefined
-                    }
-                    style={styles.toolRow}
-                    accessibilityRole={tool.affiliateUrl ? "link" : "text"}
-                    accessibilityLabel={
-                      tool.affiliateUrl
-                        ? `${tool.name}, tap to view`
-                        : tool.name
-                    }
-                  >
-                    <ThemedText style={styles.toolName}>{tool.name}</ThemedText>
-                    {tool.affiliateUrl && (
-                      <Feather
-                        name="external-link"
-                        size={14}
-                        color={theme.textSecondary}
-                      />
-                    )}
-                  </Pressable>
-                ))}
-              </View>
-            )}
-          </View>
-        ) : (
-          <RecipeInstructions instructions={props.instructions ?? []} />
-        )}
+                            },
+                          );
+                        }
+                      : undefined
+                  }
+                  style={styles.toolRow}
+                  accessibilityRole={tool.affiliateUrl ? "link" : "text"}
+                  accessibilityLabel={
+                    tool.affiliateUrl ? `${tool.name}, tap to view` : tool.name
+                  }
+                >
+                  <ThemedText style={styles.toolName}>{tool.name}</ThemedText>
+                  {tool.affiliateUrl && (
+                    <Feather
+                      name="external-link"
+                      size={14}
+                      color={theme.textSecondary}
+                    />
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </RecipeInstructions>
 
         {/* 9b. Chef's Notes (curated only) */}
         {props.isCanonical &&
@@ -620,57 +566,6 @@ const styles = StyleSheet.create({
   heroImage: {
     width: "100%",
     height: HERO_IMAGE_HEIGHT,
-  },
-  // Expandable instructions (curated)
-  instructionsSection: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  instructionsSectionTitle: {
-    marginBottom: Spacing.md,
-  },
-  stepCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
-    marginBottom: Spacing.sm,
-  },
-  stepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Spacing.md,
-    flexShrink: 0,
-  },
-  stepNumber: {
-    color: "#FFFFFF", // hardcoded: white on themed link-color circle
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 18,
-  },
-  stepBody: {
-    flex: 1,
-  },
-  stepText: {
-    flexShrink: 1,
-    fontSize: 14,
-    // Not a plain 20: see STEP_TEXT_LINE_HEIGHT for why (QA #30).
-    lineHeight: STEP_TEXT_LINE_HEIGHT,
-    paddingTop: 4,
-  },
-  stepDetail: {
-    marginTop: 6,
-    opacity: 0.75,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  stepHint: {
-    fontSize: 12,
-    marginTop: 4,
-    fontStyle: "italic",
   },
   // Tools Required (curated)
   toolsSection: {
