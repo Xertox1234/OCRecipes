@@ -1977,6 +1977,139 @@ describe("users storage", () => {
     });
   });
 
+  // Account deletion used to cascade the store-purchase ledger, so a refunded
+  // purchase's record vanished and its pre-refund receipt could be replayed on
+  // a new account (audit 2026-10-29 L-data-8; owner ruling 2026-11-06: keep an
+  // anonymised record; one new account may take it over unless it was
+  // refunded after the receipt's purchase).
+  describe("deleteUser — store purchase ledger", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const future = new Date(Date.now() + 30 * DAY);
+    const claimAs = (userId: string, purchasedAt?: Date | null) =>
+      claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_ledger_1",
+          userId,
+          receipt: `receipt_${userId}`,
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+        purchasedAt,
+      );
+
+    async function deletedOwnerOfPurchase(purchasedAt: Date) {
+      const owner = await createTestUser(tx);
+      expect((await claimAs(owner.id, purchasedAt)).status).toBe("created");
+      expect(await deleteUser(owner.id)).toBe(true);
+    }
+
+    it("keeps the purchase record with no owner and no receipt", async () => {
+      await deletedOwnerOfPurchase(new Date(Date.now() - 2 * DAY));
+
+      const txn = await getTransaction("orig_ledger_1");
+      expect(txn).toBeDefined();
+      expect(txn!.userId).toBeNull();
+      expect(txn!.receipt).toBe("");
+    });
+
+    it("lets one new account take over a deleted account's purchase", async () => {
+      await deletedOwnerOfPurchase(new Date(Date.now() - 2 * DAY));
+
+      const result = await claimAs(testUser.id, new Date(Date.now() - 2 * DAY));
+
+      expect(result.status).toBe("created");
+      const txn = await getTransaction("orig_ledger_1");
+      expect(txn!.userId).toBe(testUser.id);
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+    });
+
+    it("refuses a second new account once the purchase was taken over", async () => {
+      await deletedOwnerOfPurchase(new Date(Date.now() - 2 * DAY));
+      await claimAs(testUser.id, new Date(Date.now() - 2 * DAY));
+      const third = await createTestUser(tx);
+
+      const result = await claimAs(third.id, new Date(Date.now() - 2 * DAY));
+
+      expect(result.status).toBe("conflict");
+      const user = await getUser(third.id);
+      expect(user!.subscriptionTier).not.toBe("premium");
+    });
+
+    it("refuses to hand a refunded purchase to a new account (pre-refund receipt replay)", async () => {
+      const purchasedAt = new Date(Date.now() - 3 * DAY);
+      await deletedOwnerOfPurchase(purchasedAt);
+      // The refund lands on the anonymised record after the account is gone.
+      await revokeSubscriptionByTransactionId(
+        "orig_ledger_1",
+        new Date(Date.now() - DAY),
+      );
+
+      const result = await claimAs(testUser.id, purchasedAt);
+
+      expect(result.status).toBe("revoked");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+      const txn = await getTransaction("orig_ledger_1");
+      expect(txn!.userId).toBeNull();
+    });
+
+    it("keeps a refund recorded before the account was deleted", async () => {
+      const owner = await createTestUser(tx);
+      const purchasedAt = new Date(Date.now() - 3 * DAY);
+      await claimAs(owner.id, purchasedAt);
+      await revokeSubscriptionByTransactionId(
+        "orig_ledger_1",
+        new Date(Date.now() - DAY),
+      );
+      await deleteUser(owner.id);
+
+      const result = await claimAs(testUser.id, purchasedAt);
+
+      expect(result.status).toBe("revoked");
+    });
+
+    it("lets a new account take over a purchase re-subscribed after its refund", async () => {
+      await deletedOwnerOfPurchase(new Date(Date.now() - 3 * DAY));
+      await revokeSubscriptionByTransactionId(
+        "orig_ledger_1",
+        new Date(Date.now() - 2 * DAY),
+      );
+
+      const result = await claimAs(testUser.id, new Date(Date.now() - DAY));
+
+      expect(result.status).toBe("created");
+      const txn = await getTransaction("orig_ledger_1");
+      expect(txn!.status).toBe("completed");
+      expect(txn!.userId).toBe(testUser.id);
+    });
+
+    it("records store notifications on an ownerless record without touching any user", async () => {
+      await deletedOwnerOfPurchase(new Date(Date.now() - 2 * DAY));
+
+      const extended = await extendSubscriptionByTransactionId(
+        "orig_ledger_1",
+        future,
+        new Date(Date.now() - DAY),
+      );
+      expect(extended).toEqual({ status: "ownerless", userId: null });
+
+      const expired = await expireSubscriptionByTransactionId("orig_ledger_1");
+      expect(expired).toEqual({ userId: null });
+      expect((await getTransaction("orig_ledger_1"))!.status).toBe("expired");
+
+      const revoked = await revokeSubscriptionByTransactionId(
+        "orig_ledger_1",
+        new Date(),
+      );
+      expect(revoked).toEqual({ userId: null, stale: false });
+      expect((await getTransaction("orig_ledger_1"))!.status).toBe("revoked");
+    });
+  });
+
   describe("deleteUser — the author's community recipes", () => {
     // Saved items and dismissals reference a community recipe with no FK
     // (polymorphic); deleteCommunityRecipe removes them, deleteUser did not

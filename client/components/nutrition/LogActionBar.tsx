@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { StyleSheet, View, AccessibilityInfo } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -66,13 +66,19 @@ export function LogActionBar({
   // needlessly discard an acknowledgement about the same product.
   //
   // Keyed on those two PRIMITIVE fields, not on `logGate`/`nutrition` themselves —
-  // the hook returns fresh objects each render, so depending on them would re-fire
+  // the hook returns fresh objects each render, so comparing them would reset on
   // every render and wipe the acknowledgement the instant it was given, leaving
   // the log button permanently unreachable.
+  //
+  // Reset during render (React's "store the previous prop" pattern), not in an
+  // effect, so the render that swaps the product never paints with the old
+  // acknowledgement still applied.
   const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false);
-  useEffect(() => {
+  const [ackKey, setAckKey] = useState({ kind: logGate.kind, productName });
+  if (ackKey.kind !== logGate.kind || ackKey.productName !== productName) {
+    setAckKey({ kind: logGate.kind, productName });
     setAcknowledgedUnverified(false);
-  }, [logGate.kind, productName]);
+  }
 
   const state = deriveLogBarState({
     logGate,

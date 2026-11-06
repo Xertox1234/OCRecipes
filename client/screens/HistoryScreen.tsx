@@ -125,13 +125,13 @@ const HistoryItem = React.memo(function HistoryItem({
 
   const handlePressIn = () => {
     if (!reducedMotion) {
-      scale.value = withSpring(0.98, pressSpringConfig);
+      scale.set(withSpring(0.98, pressSpringConfig));
     }
   };
 
   const handlePressOut = () => {
     if (!reducedMotion) {
-      scale.value = withSpring(1, pressSpringConfig);
+      scale.set(withSpring(1, pressSpringConfig));
     }
   };
 

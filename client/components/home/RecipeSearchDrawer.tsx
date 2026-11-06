@@ -1,5 +1,5 @@
 // client/components/home/RecipeSearchDrawer.tsx
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { InlineMicButton } from "@/components/InlineMicButton";
@@ -94,14 +94,18 @@ export function RecipeSearchDrawer({
     toggleVoice();
   };
 
-  // Refresh recent list whenever the drawer opens
-  useEffect(() => {
+  // Refresh recent list whenever the drawer opens; clear the field when it
+  // closes (set during render when `isOpen` changes — React's "adjust state
+  // when a prop changes" pattern).
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
     if (isOpen) {
       setRecent(getRecentSearches());
     } else {
       setText("");
     }
-  }, [isOpen]);
+  }
 
   const trending = useTrendingSearches(isOpen);
   const resolved = resolveTrendingSource(

@@ -1,3 +1,7 @@
+// The rule is still off globally until every batch lands (todo
+// P3-2026-11-04-react-compiler-lint-remaining-rules); enabled here so the
+// eslint-disable below counts as used and lint-staged --fix keeps it.
+/* eslint react-hooks/set-state-in-effect: "error" */
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   StyleSheet,
@@ -116,6 +120,7 @@ export default function CookSessionReviewScreen() {
   // Fetch nutrition on mount and when ingredients change
   useEffect(() => {
     if (ingredients.length > 0 && sessionId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- starts the nutrition request when ingredients change; the setStates are its loading/error flags
       fetchNutrition();
     }
     // Only re-fetch when ingredients change

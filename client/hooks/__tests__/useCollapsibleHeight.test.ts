@@ -9,9 +9,23 @@ vi.mock("react-native-reanimated", () => {
   return {
     useSharedValue: (initial: number) => {
       // Use useRef so the same object persists across re-renders (like real Reanimated)
-      const ref = useRef(null as { value: number } | null);
+      const ref = useRef(
+        null as {
+          value: number;
+          get: () => number;
+          set: (next: number) => void;
+        } | null,
+      );
       if (ref.current === null) {
-        ref.current = { value: initial };
+        // get/set mirror Reanimated 4's React-Compiler-safe accessors
+        const sv = {
+          value: initial,
+          get: () => sv.value,
+          set: (next: number) => {
+            sv.value = next;
+          },
+        };
+        ref.current = sv;
       }
       return ref.current;
     },

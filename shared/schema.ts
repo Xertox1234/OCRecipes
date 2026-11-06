@@ -1641,9 +1641,13 @@ export const transactions = pgTable(
   "transactions",
   {
     id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    // NULL once the account is deleted: the row outlives it (receipt blanked)
+    // so a refunded purchase cannot be replayed on a new account. Migration
+    // 0038; see claimTransactionAndUpgrade for how an ownerless row is taken
+    // over.
+    userId: varchar("user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     transactionId: text("transaction_id").notNull().unique(),
     receipt: text("receipt").notNull(),
     platform: text("platform").notNull(),

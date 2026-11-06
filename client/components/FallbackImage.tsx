@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   type StyleProp,
@@ -85,10 +85,14 @@ export function FallbackImage({
   const { theme } = useTheme();
   const [hasError, setHasError] = useState(false);
 
+  // A new uri gets a fresh attempt (set during render when the uri changes —
+  // React's "adjust state when a prop changes" pattern).
   const sourceUri = source?.uri;
-  useEffect(() => {
+  const [prevSourceUri, setPrevSourceUri] = useState(sourceUri);
+  if (sourceUri !== prevSourceUri) {
+    setPrevSourceUri(sourceUri);
     setHasError(false);
-  }, [sourceUri]);
+  }
 
   const handleError = useCallback(
     (event: ImageErrorEventData) => {

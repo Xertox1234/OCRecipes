@@ -137,32 +137,34 @@ export function ScanReticle({ phase, reducedMotion }: Props) {
     if (phase.type === "BARCODE_TRACKING") {
       if (isFirstDetection.current) {
         // Teleport on first detection — "snap then settle"
-        cx.value = target.cx;
-        cy.value = target.cy;
+        cx.set(target.cx);
+        cy.set(target.cy);
         isFirstDetection.current = false;
       } else {
-        cx.value = withSpring(target.cx, SPRING_TRACK);
-        cy.value = withSpring(target.cy, SPRING_TRACK);
+        cx.set(withSpring(target.cx, SPRING_TRACK));
+        cy.set(withSpring(target.cy, SPRING_TRACK));
       }
     } else {
       if (phase.type !== "BARCODE_LOCKED") {
         isFirstDetection.current = true;
       }
-      cx.value = withSpring(target.cx, SPRING_MORPH);
-      cy.value = withSpring(target.cy, SPRING_MORPH);
+      cx.set(withSpring(target.cx, SPRING_MORPH));
+      cy.set(withSpring(target.cy, SPRING_MORPH));
     }
 
     // HUNTING breathing (effect above) owns rw — don't overwrite it here
     if (phase.type !== "HUNTING") {
-      rw.value = withSpring(target.width / 2, SPRING_MORPH);
+      rw.set(withSpring(target.width / 2, SPRING_MORPH));
     }
-    rh.value = withSpring(target.height / 2, SPRING_MORPH);
-    confidence.value = withTiming(conf, { duration: 80 });
+    rh.set(withSpring(target.height / 2, SPRING_MORPH));
+    confidence.set(withTiming(conf, { duration: 80 }));
 
     if (phase.type === "BARCODE_LOCKED") {
-      cornerScale.value = withSpring(1.1, SPRING_SNAP, () => {
-        cornerScale.value = withSpring(1, reticleSettleSpringConfig);
-      });
+      cornerScale.set(
+        withSpring(1.1, SPRING_SNAP, () => {
+          cornerScale.set(withSpring(1, reticleSettleSpringConfig));
+        }),
+      );
     }
   }, [phase, cx, cy, rw, rh, confidence, cornerScale, sw, sh]);
 

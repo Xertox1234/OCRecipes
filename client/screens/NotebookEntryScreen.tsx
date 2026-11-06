@@ -151,7 +151,15 @@ export default function NotebookEntryScreen() {
       : null,
   );
 
-  useEffect(() => {
+  // Re-seed the form when entry?.id changes (adjusted during render, not in an
+  // effect). Keyed on entry?.id (not entryId) so a cold deep-link populates
+  // once the entry actually loads — entryId is set at mount but entry resolves
+  // later. A same-id background refetch keeps the id stable, so in-progress
+  // edits are not clobbered. The initial value matches the useState seeds
+  // above, so mount itself changes nothing.
+  const [seededEntryId, setSeededEntryId] = useState(entry?.id);
+  if (entry?.id !== seededEntryId) {
+    setSeededEntryId(entry?.id);
     if (entry) {
       setType(entry.type);
       setContent(entry.content);
@@ -161,12 +169,7 @@ export default function NotebookEntryScreen() {
           : null,
       );
     }
-    // Depend on entry?.id (not entryId) so a cold deep-link populates once the
-    // entry actually loads — entryId is set at mount but entry resolves later.
-    // A same-id background refetch keeps this dep stable, so in-progress edits
-    // are not clobbered.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry?.id]);
+  }
 
   const createEntry = useCreateNotebookEntry();
   const updateEntry = useUpdateNotebookEntry();

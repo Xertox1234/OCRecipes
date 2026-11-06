@@ -221,6 +221,34 @@ describe("NotebookEntryScreen — cold-load valid entry", () => {
     renderComponent(<NotebookEntryScreen />);
     expect(screen.getByText("Save")).toBeDefined();
   });
+
+  it("populates the form once an entry that was still loading at mount arrives", () => {
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([], { isLoading: true });
+    const { rerender } = renderComponent(<NotebookEntryScreen />);
+
+    setupEntries([
+      makeEntry({ id: 42, content: "Arrived late", type: "insight" }),
+    ]);
+    rerender(<NotebookEntryScreen />);
+
+    expect(screen.getByDisplayValue("Arrived late")).toBeDefined();
+  });
+
+  it("a same-id background refetch does not overwrite an in-progress edit", () => {
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([makeEntry({ id: 42, content: "Original" })]);
+    const { rerender } = renderComponent(<NotebookEntryScreen />);
+
+    fireEvent.change(screen.getByDisplayValue("Original"), {
+      target: { value: "My edit" },
+    });
+    setupEntries([makeEntry({ id: 42, content: "Refetched copy" })]);
+    rerender(<NotebookEntryScreen />);
+
+    expect(screen.getByDisplayValue("My edit")).toBeDefined();
+    expect(screen.queryByDisplayValue("Refetched copy")).toBeNull();
+  });
 });
 
 describe("NotebookEntryScreen — safe back navigation", () => {

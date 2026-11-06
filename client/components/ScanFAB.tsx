@@ -64,13 +64,13 @@ export function ScanFAB({ menuOpen, onOpen, onClose }: ScanFABProps) {
 
   const handlePressIn = () => {
     if (!reducedMotion) {
-      scale.value = withSpring(0.9, pressSpringConfig);
+      scale.set(withSpring(0.9, pressSpringConfig));
     }
   };
 
   const handlePressOut = () => {
     if (!reducedMotion) {
-      scale.value = withSpring(1, pressSpringConfig);
+      scale.set(withSpring(1, pressSpringConfig));
     }
   };
 
@@ -81,7 +81,7 @@ export function ScanFAB({ menuOpen, onOpen, onClose }: ScanFABProps) {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
       onOpen();
       if (!reducedMotion) {
-        rotation.value = withSpring(45, pressSpringConfig);
+        rotation.set(withSpring(45, pressSpringConfig));
       }
     }
   };
@@ -89,7 +89,7 @@ export function ScanFAB({ menuOpen, onOpen, onClose }: ScanFABProps) {
   const closeMenu = useCallback(() => {
     onClose();
     if (!reducedMotion) {
-      rotation.value = withSpring(0, pressSpringConfig);
+      rotation.set(withSpring(0, pressSpringConfig));
     }
   }, [onClose, reducedMotion, rotation]);
 

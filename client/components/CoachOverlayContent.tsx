@@ -164,10 +164,15 @@ export function CoachOverlayContent({
   }, []);
 
   // Send initial question once conversation is created
+  // The ref is the effect guard (StrictMode re-runs the effect with the same
+  // closure, so state alone would start the stream twice); `didSend` is its
+  // render-side mirror for the optimistic bubble below.
   const didSendRef = useRef(false);
+  const [didSend, setDidSend] = useState(false);
   useEffect(() => {
     if (!conversationId || didSendRef.current) return;
     didSendRef.current = true;
+    setDidSend(true);
 
     startStream(conversationId, question.question, { screenContext });
 
@@ -193,7 +198,7 @@ export function CoachOverlayContent({
 
   // Build display messages — show optimistic user bubble before server messages load
   const serverMessages = (messages ?? []).filter((m) => m.role !== "system");
-  const showOptimisticUser = serverMessages.length === 0 && didSendRef.current;
+  const showOptimisticUser = serverMessages.length === 0 && didSend;
 
   const displayMessages = [
     ...(showOptimisticUser
@@ -269,6 +274,7 @@ export function CoachOverlayContent({
   const handleRetry = useCallback(() => {
     setCreateError(false);
     didSendRef.current = false;
+    setDidSend(false);
     createConversation
       .mutateAsync({ title: question.text.slice(0, 50) })
       .then((conv) => {

@@ -73,31 +73,36 @@ export function useTTS(): UseTTSReturn {
   }, []);
 
   const speakNextSentence = useCallback(() => {
-    const queue = sentenceQueueRef.current;
-    if (!activeRef.current || queue.length === 0) {
-      setIsSpeaking(false);
-      setSpeakingMessageId(null);
-      activeRef.current = false;
-      return;
-    }
-    const sentence = queue.shift()!;
-    Speech.speak(sentence, {
-      language: "en-US",
-      onDone: () => {
-        if (activeRef.current) speakNextSentence();
-      },
-      onStopped: () => {
-        activeRef.current = false;
+    // Recursion goes through a local function: a useCallback that names
+    // itself is a use-before-declare to the React Compiler.
+    const speakNext = () => {
+      const queue = sentenceQueueRef.current;
+      if (!activeRef.current || queue.length === 0) {
         setIsSpeaking(false);
         setSpeakingMessageId(null);
-      },
-      onError: () => {
         activeRef.current = false;
-        setIsSpeaking(false);
-        setSpeakingMessageId(null);
-        toast.error("Couldn't read this aloud. Please try again.");
-      },
-    });
+        return;
+      }
+      const sentence = queue.shift()!;
+      Speech.speak(sentence, {
+        language: "en-US",
+        onDone: () => {
+          if (activeRef.current) speakNext();
+        },
+        onStopped: () => {
+          activeRef.current = false;
+          setIsSpeaking(false);
+          setSpeakingMessageId(null);
+        },
+        onError: () => {
+          activeRef.current = false;
+          setIsSpeaking(false);
+          setSpeakingMessageId(null);
+          toast.error("Couldn't read this aloud. Please try again.");
+        },
+      });
+    };
+    speakNext();
   }, [toast]);
 
   const speak = useCallback(

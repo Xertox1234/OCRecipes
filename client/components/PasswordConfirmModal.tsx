@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { CenteredDialog } from "@/components/CenteredDialog";
@@ -53,15 +53,18 @@ export function PasswordConfirmModal({
   // Bumped on each validation reject (never a server error) to shake it.
   const [shakeKey, setShakeKey] = useState(0);
 
-  // Start clean every time it opens.
-  useEffect(() => {
+  // Start clean every time it opens (set during render when `visible`
+  // changes — React's "adjust state when a prop changes" pattern).
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
     if (visible) {
       setPassword("");
       setShowPassword(false);
       setFactor(null);
       setRejectError(null);
     }
-  }, [visible]);
+  }
 
   // The button stays pressable: an empty field waits for it, then says
   // what's missing (form-fields spec §5.1, as ConnectAccount does).

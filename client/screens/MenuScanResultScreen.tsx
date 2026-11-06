@@ -222,34 +222,35 @@ export default function MenuScanResultScreen() {
     _isLocal?: boolean;
   };
 
-  const [items, setItems] = useState<DisplayItem[]>([]);
-  const [restaurantName, setRestaurantName] = useState<string | null>(null);
+  // Local OCR parse for an instant preview, computed once from the mount-time
+  // param (initial state, not an effect). The param never changes while this
+  // screen is mounted: nothing navigates MenuScanResult to itself, and the
+  // stack has no getId, so a later navigate("MenuScanResult") pushes a new one.
+  const [localPreview] = useState(() => {
+    if (!localOCRText) return null;
+    const parsed = parseMenuFromOCR(localOCRText);
+    return parsed.confidence >= 0.5 && parsed.items.length > 0 ? parsed : null;
+  });
+
+  const [items, setItems] = useState<DisplayItem[]>(() =>
+    localPreview
+      ? localPreview.items.map((i) => ({ ...i, _isLocal: true }))
+      : [],
+  );
+  const [restaurantName, setRestaurantName] = useState<string | null>(
+    localPreview?.restaurantName || null,
+  );
   const [cuisine, setCuisine] = useState<string | undefined>(undefined);
-  const [isAnalyzing, setIsAnalyzing] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(localPreview === null);
   const [showUpdatedToast, setShowUpdatedToast] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dataSourceRef = useRef<"local" | "ai" | null>(null);
-  const localItemsRef = useRef<LocalMenuItem[]>([]);
+  const dataSourceRef = useRef<"local" | "ai" | null>(
+    localPreview ? "local" : null,
+  );
+  const localItemsRef = useRef<LocalMenuItem[]>(localPreview?.items ?? []);
 
   const { mutate: scanMenu } = useMenuScan();
-
-  // Parse local OCR text for instant preview
-  useEffect(() => {
-    if (!localOCRText) return;
-    const parsed = parseMenuFromOCR(localOCRText);
-    if (parsed.confidence >= 0.5 && parsed.items.length > 0) {
-      const localDisplayItems = parsed.items.map((i) => ({
-        ...i,
-        _isLocal: true,
-      }));
-      setItems(localDisplayItems);
-      localItemsRef.current = parsed.items;
-      dataSourceRef.current = "local";
-      if (parsed.restaurantName) setRestaurantName(parsed.restaurantName);
-      setIsAnalyzing(false);
-    }
-  }, [localOCRText]);
 
   // Fetch AI analysis (always runs — races with local preview)
   useEffect(() => {

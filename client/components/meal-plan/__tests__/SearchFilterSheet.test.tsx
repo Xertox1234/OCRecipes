@@ -1,8 +1,20 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { SearchFilterSheet } from "../SearchFilterSheet";
+
+interface MockSliderProps {
+  testID?: string;
+  onValueChange?: (val: number) => void;
+  accessibilityValue?: { text?: string };
+}
+
+// Latest props each slider rendered with, keyed by testID, so a test can drive
+// a drag (onValueChange) and read the announced accessibilityValue.
+const { sliderProps } = vi.hoisted(() => ({
+  sliderProps: new Map<string, MockSliderProps>(),
+}));
 
 vi.mock("@react-native-community/slider", () => {
   // `require` is used here instead of `import` because vi.mock factories are
@@ -12,8 +24,12 @@ vi.mock("@react-native-community/slider", () => {
   const React = require("react");
   return {
     __esModule: true,
-    default: (props: { testID?: string }) =>
-      React.createElement("div", { "data-testid": props.testID ?? "slider" }),
+    default: (props: MockSliderProps) => {
+      sliderProps.set(props.testID ?? "slider", props);
+      return React.createElement("div", {
+        "data-testid": props.testID ?? "slider",
+      });
+    },
   };
 });
 
@@ -142,6 +158,92 @@ describe("SearchFilterSheet — chip haptics", () => {
       fireEvent.click(screen.getByText(label));
       expect(onFiltersChange).toHaveBeenCalledOnce();
       expect(mockSelection).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
+describe("SearchFilterSheet — live slider value follows committed filters", () => {
+  const baseFilters = {
+    sort: "relevance" as const,
+    maxPrepTime: undefined,
+    maxCalories: undefined,
+    minProtein: undefined,
+    source: "all" as const,
+  };
+
+  function renderSheet(filters: typeof baseFilters | Record<string, unknown>) {
+    return renderComponent(
+      <SearchFilterSheet
+        filters={filters as typeof baseFilters}
+        onFiltersChange={vi.fn()}
+        onReset={vi.fn()}
+        activeFilterCount={0}
+      />,
+    );
+  }
+
+  function announced(testID: string) {
+    return sliderProps.get(testID)?.accessibilityValue?.text;
+  }
+
+  it.each([
+    [
+      "prep-time-slider",
+      "maxPrepTime",
+      30,
+      "30 minutes",
+      60,
+      "60 minutes",
+      "Any prep time",
+    ],
+    [
+      "calories-slider",
+      "maxCalories",
+      400,
+      "400 calories",
+      800,
+      "800 calories",
+      "Any calories",
+    ],
+    [
+      "protein-slider",
+      "minProtein",
+      20,
+      "20 grams",
+      40,
+      "40 grams",
+      "Any protein",
+    ],
+  ] as const)(
+    "%s: a drag updates the announcement; an external change (e.g. Reset) overrides it",
+    (testID, key, committed, committedText, dragged, draggedText, anyText) => {
+      const { rerender } = renderSheet({ ...baseFilters, [key]: committed });
+      expect(announced(testID)).toBe(committedText);
+
+      act(() => sliderProps.get(testID)?.onValueChange?.(dragged));
+      expect(announced(testID)).toBe(draggedText);
+
+      // An unrelated filter change leaves the live (dragged) value alone.
+      rerender(
+        <SearchFilterSheet
+          filters={{ ...baseFilters, [key]: committed, sort: "newest" }}
+          onFiltersChange={vi.fn()}
+          onReset={vi.fn()}
+          activeFilterCount={0}
+        />,
+      );
+      expect(announced(testID)).toBe(draggedText);
+
+      // Reset clears the committed value: the announcement snaps back.
+      rerender(
+        <SearchFilterSheet
+          filters={baseFilters}
+          onFiltersChange={vi.fn()}
+          onReset={vi.fn()}
+          activeFilterCount={0}
+        />,
+      );
+      expect(announced(testID)).toBe(anyText);
     },
   );
 });

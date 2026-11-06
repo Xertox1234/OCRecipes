@@ -189,3 +189,33 @@ describe("CookbookPickerModal — empty state actions", () => {
     expect(screen.queryByText("Save to Favourites")).toBeNull();
   });
 });
+
+describe("CookbookPickerModal — closing resets the new-cookbook input", () => {
+  it("reopening shows the New Cookbook button again with an empty name", () => {
+    vi.mocked(useFavouriteRecipesModule.useIsRecipeFavourited).mockReturnValue(
+      false,
+    );
+    vi.mocked(useCookbooksModule.useCookbooks).mockReturnValue({
+      data: [existingCookbook],
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useCookbooksModule.useCookbooks>);
+    const ui = (visible: boolean) => (
+      <CookbookPickerModal {...baseProps} visible={visible} onClose={vi.fn()} />
+    );
+    const { rerender } = renderComponent(ui(true));
+    fireEvent.click(screen.getByLabelText("Create new cookbook"));
+    fireEvent.change(screen.getByLabelText("Cookbook name"), {
+      target: { value: "Brunch" },
+    });
+
+    rerender(ui(false));
+    rerender(ui(true));
+
+    expect(screen.queryByLabelText("Cookbook name")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Create new cookbook"));
+    expect(
+      (screen.getByLabelText("Cookbook name") as HTMLInputElement).value,
+    ).toBe("");
+  });
+});
