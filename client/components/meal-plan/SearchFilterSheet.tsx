@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { StyleSheet, View, Pressable } from "react-native";
 import Slider from "@react-native-community/slider";
 
@@ -74,15 +74,24 @@ export function SearchFilterSheet({
   // Sync live state when committed filter values change externally (e.g., Reset).
   // Without this, onReset() resets parent state but live values remain stale,
   // causing accessibilityValue.text to mismatch the slider's visual position.
-  useEffect(() => {
+  // Adjusted during render (React's "store the previous prop" pattern), not in
+  // an effect: each compare is on the raw committed value, exactly the old
+  // effect deps, so it fires on the same changes, one commit earlier.
+  const [prevMaxPrepTime, setPrevMaxPrepTime] = useState(filters.maxPrepTime);
+  if (prevMaxPrepTime !== filters.maxPrepTime) {
+    setPrevMaxPrepTime(filters.maxPrepTime);
     setLiveMaxPrepTime(filters.maxPrepTime ?? 0);
-  }, [filters.maxPrepTime]);
-  useEffect(() => {
+  }
+  const [prevMaxCalories, setPrevMaxCalories] = useState(filters.maxCalories);
+  if (prevMaxCalories !== filters.maxCalories) {
+    setPrevMaxCalories(filters.maxCalories);
     setLiveMaxCalories(filters.maxCalories ?? 0);
-  }, [filters.maxCalories]);
-  useEffect(() => {
+  }
+  const [prevMinProtein, setPrevMinProtein] = useState(filters.minProtein);
+  if (prevMinProtein !== filters.minProtein) {
+    setPrevMinProtein(filters.minProtein);
     setLiveMinProtein(filters.minProtein ?? 0);
-  }, [filters.minProtein]);
+  }
 
   // Chips tick on their own; only the sliders buzz here, on release.
   const updateFilter = useCallback(

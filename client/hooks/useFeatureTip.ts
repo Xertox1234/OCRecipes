@@ -1,3 +1,7 @@
+// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
+// enabled here so the justified disables below count as used and survive `eslint --fix`.
+// Delete these four lines when the rule is turned on globally.
+/* eslint react-hooks/set-state-in-effect: "error" */
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -55,6 +59,7 @@ export function useFeatureTip(
     if (visible || dismissed || !ready || !eligible || !storageReady) return;
     if (hasSeenTip(id) || hasUsedFeature(feature)) return;
     if (!claimTipSlot(id)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- showing the tip claims a module-level tip slot and persists seen-state; neither may run in a render React can discard
     setVisible(true);
     void markTipSeen(id);
   }, [id, feature, eligible, ready, storageReady, visible, dismissed]);

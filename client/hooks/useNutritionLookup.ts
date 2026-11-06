@@ -1,3 +1,7 @@
+// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
+// enabled here so the justified disables below count as used and survive `eslint --fix`.
+// Delete these four lines when the rule is turned on globally.
+/* eslint react-hooks/set-state-in-effect: "error" */
 import {
   useState,
   useEffect,
@@ -352,6 +356,7 @@ export function useNutritionLookup(params: {
   useEffect(() => {
     if (barcode) {
       const controller = new AbortController();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- marks the start of the barcode fetch this effect owns (aborted in cleanup); the loading state belongs with the request it describes
       setLookup(beginLookup);
       void (async () => {
         const outcome = await lookupBarcode(

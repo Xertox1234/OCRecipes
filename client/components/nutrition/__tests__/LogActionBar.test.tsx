@@ -133,4 +133,43 @@ describe("LogActionBar", () => {
     fireEvent.click(getByRole("button"));
     expect(onAddToLog).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps an acknowledgement across re-renders with a fresh but equal gate object", () => {
+    const { getByRole, getByText, rerender } = renderComponent(
+      <LogActionBar {...baseProps({ logGate: NEEDS_ACK })} />,
+    );
+    fireEvent.click(getByRole("button"));
+    expect(getByText("Add to Today")).toBeTruthy();
+
+    rerender(<LogActionBar {...baseProps({ logGate: { ...NEEDS_ACK } })} />);
+    expect(getByText("Add to Today")).toBeTruthy();
+  });
+
+  it("drops the acknowledgement when the product changes", () => {
+    const { getByRole, getByText, queryByText, rerender } = renderComponent(
+      <LogActionBar {...baseProps({ logGate: NEEDS_ACK })} />,
+    );
+    fireEvent.click(getByRole("button"));
+    expect(getByText("Add to Today")).toBeTruthy();
+
+    rerender(
+      <LogActionBar
+        {...baseProps({ logGate: NEEDS_ACK, productName: "Diet Coke" })}
+      />,
+    );
+    expect(getByText("Review values before logging")).toBeTruthy();
+    expect(queryByText("Add to Today")).toBeNull();
+  });
+
+  it("drops the acknowledgement when the gate kind changes and comes back", () => {
+    const { getByRole, getByText, rerender } = renderComponent(
+      <LogActionBar {...baseProps({ logGate: NEEDS_ACK })} />,
+    );
+    fireEvent.click(getByRole("button"));
+    expect(getByText("Add to Today")).toBeTruthy();
+
+    rerender(<LogActionBar {...baseProps({ logGate: OPEN })} />);
+    rerender(<LogActionBar {...baseProps({ logGate: NEEDS_ACK })} />);
+    expect(getByText("Review values before logging")).toBeTruthy();
+  });
 });

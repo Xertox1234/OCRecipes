@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { IngredientItem } from "@/components/recipe-detail";
 import { scaleIngredientQuantity } from "@/lib/serving-scale";
 
@@ -16,10 +16,14 @@ export function useServingAdjuster(
   const safeOriginal = originalServings || 1;
   const [servingCount, setServingCount] = useState(safeOriginal);
 
-  // Reset serving count when the recipe changes (e.g., navigation reuse)
-  useEffect(() => {
+  // Reset serving count when the recipe changes (e.g., navigation reuse).
+  // Adjusted during render (React's "store the previous prop" pattern) rather
+  // than in an effect, so no render shows the old count against the new recipe.
+  const [prevOriginal, setPrevOriginal] = useState(safeOriginal);
+  if (prevOriginal !== safeOriginal) {
+    setPrevOriginal(safeOriginal);
     setServingCount(safeOriginal);
-  }, [safeOriginal]);
+  }
 
   const isAdjusted = servingCount !== safeOriginal;
   const ratio = servingCount / safeOriginal;
