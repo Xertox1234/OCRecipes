@@ -43,6 +43,7 @@ import {
   parseStringParam,
   requireValidImage,
   formatZodError,
+  claimAiCallOrReject,
 } from "./_helpers";
 import {
   photoRateLimit,
@@ -203,6 +204,18 @@ export function register(app: Express): void {
 
         const imageBase64 = requireValidImage(req, res);
         if (!imageBase64) return;
+
+        // Claimed before the AI call: the scan limit above counts LOGGED
+        // items, so analyses that are never confirmed need their own cap.
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "photoAnalysis",
+            "photo analysis",
+          ))
+        )
+          return;
 
         // Parse intent from multipart form parameters (default: "log")
         // Supports "auto" for smart scan classification
@@ -606,6 +619,18 @@ export function register(app: Express): void {
 
         const imageBase64 = requireValidImage(req, res);
         if (!imageBase64) return;
+
+        // Claimed before the AI call: the scan limit above counts LOGGED
+        // items, so analyses that are never confirmed need their own cap.
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "photoAnalysis",
+            "photo analysis",
+          ))
+        )
+          return;
 
         const barcodeRaw = req.body?.barcode as string | undefined;
         const barcode = barcodeRaw

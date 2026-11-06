@@ -92,6 +92,14 @@ export const AI_DAILY_CAPS = {
   recipeChatImage: 20,
   /** Premium item suggestions + instructions, cache misses only. */
   itemSuggestion: 40,
+  /**
+   * Meal-photo and nutrition-label vision analyses (free and premium). A cost
+   * cap only: maxDailyScans counts LOGGED items, so an analysis that is never
+   * confirmed would otherwise be unbounded. Owner ruling 2026-11-05.
+   */
+  photoAnalysis: 100,
+  /** Receipt scans, claimed before the AI call (the monthly cap counts saved scans). */
+  receiptScan: 20,
 } as const;
 
 export type AiCallKind = keyof typeof AI_DAILY_CAPS;

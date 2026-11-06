@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import {
   analyzePhoto,
+  analyzeLabelPhoto,
   analyzeRecipePhoto,
   structureRecipeFromText,
   refineAnalysis,
@@ -37,6 +38,7 @@ vi.mock("../../storage", async () => {
       getSubscriptionStatus: vi.fn(),
       getEffectiveTierForUser: vi.fn(),
       getDailyScanCount: vi.fn(),
+      claimDailyAiCall: vi.fn().mockResolvedValue(true),
       createScannedItem: vi.fn(),
       createDailyLog: vi.fn(),
       createScannedItemWithLog: vi.fn(),
@@ -65,6 +67,7 @@ vi.mock("../../lib/openai", () => ({
 
 vi.mock("../../services/photo-analysis", () => ({
   analyzePhoto: vi.fn(),
+  analyzeLabelPhoto: vi.fn(),
   analyzeRecipePhoto: vi.fn(),
   structureRecipeFromText: vi.fn(),
   refineAnalysis: vi.fn(),
@@ -150,6 +153,53 @@ describe("Photos Routes", () => {
     _testInternals.labelSessionTimeouts.clear();
     _testInternals.userLabelSessionCount.clear();
     app = createApp();
+  });
+
+  describe("photo analysis daily cost cap", () => {
+    // Unconfirmed analyses never count toward maxDailyScans (that counts
+    // logged items), so a separate claim-before-call cap bounds AI spend.
+    it("refuses /api/photos/analyze once the daily analysis cap is spent, before calling the AI", async () => {
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      vi.mocked(storage.claimDailyAiCall).mockResolvedValueOnce(false);
+
+      const res = await request(app)
+        .post("/api/photos/analyze")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "test.jpg");
+
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "photoAnalysis",
+        expect.any(Number),
+      );
+      expect(analyzePhoto).not.toHaveBeenCalled();
+    });
+
+    it("refuses /api/photos/analyze-label once the daily analysis cap is spent", async () => {
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+      vi.mocked(storage.claimDailyAiCall).mockResolvedValueOnce(false);
+
+      const res = await request(app)
+        .post("/api/photos/analyze-label")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "label.jpg");
+
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
+      expect(analyzeLabelPhoto).not.toHaveBeenCalled();
+    });
   });
 
   describe("POST /api/photos/analyze", () => {
