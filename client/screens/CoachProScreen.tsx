@@ -140,11 +140,11 @@ export default function CoachProScreen() {
   // Cleared when a thread is picked or the draft's first message creates one.
   const [isNewDraft, setIsNewDraft] = useState(false);
 
-  useEffect(() => {
-    if (conversationId || isNewDraft || threadBarConversations.length === 0)
-      return;
+  // Adjusted during render (guarded: once an id is set it stops), not in an
+  // effect.
+  if (!conversationId && !isNewDraft && threadBarConversations.length > 0) {
     setConversationId(threadBarConversations[0].id);
-  }, [conversationId, isNewDraft, threadBarConversations]);
+  }
 
   // Apply a conversation selected from AllConversationsScreen (navigation param pattern
   // replaces the non-serializable onSelect callback that was previously passed as a route param).

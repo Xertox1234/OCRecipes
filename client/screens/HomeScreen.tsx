@@ -493,9 +493,9 @@ export default function HomeScreen() {
   // opened the Quick Log row (isPremiumResolved arrives late). Without this,
   // the header repaints locked but the body stays open with a live input,
   // and the next tap closes the drawer instead of showing the upgrade flow.
-  useEffect(() => {
-    if (quickLogLocked && openDrawerId === "quick-log") setOpenDrawerId(null);
-  }, [quickLogLocked, openDrawerId]);
+  // Adjusted during render (guarded, so it settles in one extra pass) — the
+  // tap handlers read openDrawerId, so the state itself must be cleared.
+  if (quickLogLocked && openDrawerId === "quick-log") setOpenDrawerId(null);
 
   useEffect(() => {
     const uid = user?.id != null ? String(user.id) : null;
