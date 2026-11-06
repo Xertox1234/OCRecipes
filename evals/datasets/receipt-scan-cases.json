@@ -1,0 +1,128 @@
+[
+  {
+    "id": "receipt-walmart-voided-entries-01",
+    "category": "edge-case",
+    "description": "Phone photo of a crumpled, skewed Walmart receipt (WM Supercenter, Cameron MO, dated 09/11/21, total 31.53, subtotal 29.47, tax 2.06, '# ITEMS SOLD 7'). The line items are cryptic abbreviations with UPC numbers: 'SR CRM ONION', 'KING SIZE', 'CHOLULA ORI', 'SBX PPR GR 7', 'TATE GF CNUT', 'NV OH/PB 30C' and 'QUEST'. TWO lines are voided: each is preceded by the marker '** VOIDED ENTRY **' and has no price: 'QTIPS 300 CT' (cotton swabs, non-food) and 'SH FN 2CT BK'. The voided lines were NOT purchased, so a correct extraction has exactly the 7 priced items and does not list Q-tips. Plausible decodings (several are guesses from the abbreviation, so accept any plausible food reading): sour cream and onion (snack), king size (candy bar), Cholula Original hot sauce, Starbucks ground coffee, Tate's gluten-free coconut (cookies), Nature Valley oats and honey / peanut butter bars (30 count), Quest (protein bar or chips). All 7 purchased lines are food. The text under the photo is largely legible but the cryptic names, creases and mirror-image bleed-through from the back of the paper mean confidence should be moderate, not near 1.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Walmart_Food_Receipt_11_Sep_2021.jpeg/1280px-Walmart_Food_Receipt_11_Sep_2021.jpeg"
+    },
+    "assertions": {
+      "mustContain": ["cholula", "quest", "walmart", "31\\.53"],
+      "mustNotContain": ["q-?tips|cotton swab|cotton bud"]
+    },
+    "scoreDimensions": [
+      "item_decoding",
+      "food_classification",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "receipt-walmart-weighed-bananas-02",
+    "category": "accuracy",
+    "description": "Phone photo of a creased Walmart receipt (WM Supercenter, Cameron MO, dated 09/08/21, subtotal 27.13, tax 1.89, total 29.02, '# ITEMS SOLD 7'). Seven abbreviated food lines: 'HUMMUS W/RO' (hummus, with a flavour abbreviation), 'BANANAS' with a weight line '2.21 lb. @ 1 lb. /0.46' (so quantity 2.21 and unit lb, priced by weight), 'DEVILED EGG', 'CASHEW R/S' (roasted and salted cashews), 'GV BANANA CH' (Great Value banana chips), 'GRN GOODNESS' (a green juice or smoothie drink) and 'PRG CHED SC' (cheddar sour cream flavoured snack, probably Pringles). Every line is food and none is voided; the 2.21 lb line belongs to the bananas, it is not a separate item. A diagonal fold crosses the right-hand price column but the item names stay legible. Names are abbreviations, so moderate-to-high confidence fits.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/Walmart_Food_Receipt_8_Sep_2021.jpeg/1280px-Walmart_Food_Receipt_8_Sep_2021.jpeg"
+    },
+    "assertions": {
+      "mustContain": [
+        "hummus",
+        "banana",
+        "cashew",
+        "deviled egg",
+        "qty=2\\.21",
+        "29\\.02"
+      ]
+    },
+    "scoreDimensions": [
+      "item_decoding",
+      "food_classification",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "receipt-tesco-1994-faded-03",
+    "category": "edge-case",
+    "description": "Scan of a faded dot-matrix Tesco receipt (black-and-white, grey ink), 'TESCO - EVERY LITTLE HELPS', prices in pounds. Ten lines, all food: '6 JAM DOUGHNTS' (reduced price) twice, 'MLD WHT CHDR' (mild white cheddar) 1.45, 'RICH TEA' (biscuits) 0.39, 'C/CHP COOKIE' (chocolate chip cookie) 0.44, '4 TEACAKES' (reduced price) 0.50, '18 BROWN ROLLS' (reduced price) 0.85, 'TUNA STEAKS' 0.55, 'L/GRAIN RICE' (long grain rice) 0.64 and 'ORANGE NET' (a net of oranges) 0.79. The two jam-doughnut lines have faint prices; they are separate lines (two packs of 6, or a quantity of 2). Footer: 'TOTAL 6.71', '10 ITEMS', 'CASH 7.00', 'CHANGE DUE 0.29', 'THANK YOU FOR SHOPPING AT TESCO FINCHLEY BRANCH', date '19/04/94' (19 April 1994, 19:04). 'REDUCED PRICE' is a marker under an item, not a product. Total 6.71 (pounds). The faded grey print makes the doughnut prices hard to read, so confidence should be lower than for a crisp receipt.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/4/45/Tesco_grocery_receipt_Finchley_1994.jpg"
+    },
+    "assertions": {
+      "mustContain": ["doughnut|donut", "cheddar", "tuna", "rice", "tesco"],
+      "mustNotContain": ["name=\"?reduced price"]
+    },
+    "scoreDimensions": [
+      "item_decoding",
+      "food_classification",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "receipt-hofer-vienna-german-04",
+    "category": "accuracy",
+    "description": "Phone photo of a crumpled German-language receipt from HOFER KG, Karl-Popper-Strasse 2, 1100 Wien, dated 25.03.2024 (18:00), prices in EUR. Nine food lines: 'Ziegenkaese-Spez.' (goat cheese speciality) 2,19; 'Schnitzelsortiment' (schnitzel assortment) 5,99; 'TK Iglo Ofenbackf.' (frozen Iglo oven-baked fish or similar) 5,99; 'Ger. Forellenfil.' (smoked trout fillet) 1,99; 'Roulade 400g' 2,19; 'BIO OVALTOMATEN' (organic oval tomatoes) 1,99; 'Naturjoghurt 3,6%' 0,39; 'Esl Vollmilch 1l' (extended-shelf-life whole milk, 1 litre) 1,29; and a second 'Naturjoghurt 3,6%' 0,39 (so two yogurt lines, or one yogurt with quantity 2). Footer: '9 Artikel', total 22,41 EUR (HOFER PREIS 22,41), 'Total-EFT EUR 22,41', 'A 10,0% Netto 20,37 MwSt 2,04'. A promotional paragraph about HOFER online delivery sits above the store name and is not a product. No line is non-food. Names are in German, so decoded names may be English or German; a partial decode of 'Ofenbackf.' is acceptable. Legible print on a crumpled page.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Grocery_Store_Receipt_in_Vienna.jpg/1280px-Grocery_Store_Receipt_in_Vienna.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "hofer",
+        "yogh?urt|joghurt",
+        "milk|vollmilch",
+        "22[.,]41",
+        "trout|forelle"
+      ]
+    },
+    "scoreDimensions": [
+      "item_decoding",
+      "food_classification",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "receipt-alexanders-mixed-nonfood-05",
+    "category": "safety",
+    "description": "Scan of a long US supermarket receipt from 'ALEXANDER'S HANOVER ST. THE \"SUPER\" MARKET', dot-matrix blue ink on cream paper, dated 11/18 12:21PM (no year), store 10. 28 printed lines mixing food and non-food, with abbreviated names. FOOD: 'HOOD HOODSIE CUP' (ice cream cup) twice at 1.99; 'HF ORANGE JC 64Z' (orange juice, 64 oz) 1.29; 'BC WHITE CAKE 18' (Betty Crocker white cake mix, 18 oz) twice at .73; 'SLICE D/MAN OR2L' (Slice orange soda, 2 L) .89; 'SLICE CHR COLA2L' (Slice cherry cola, 2 L) 1.39; 'LOOSE BULKY RLS' (rolls) .89; 'TUNA SALAD SAND' (sandwich) 1.99; 'WHITE MT. BREAD' .99; 'FRT WRNKLS LEMON' (Fruit Wrinkles lemon fruit snacks) 1.79; 'BEEF PATTIES 75%' 2.21; 'SNK FRT/S CHRY8' (cherry fruit snacks, 8 pack) 1.89; 'CARTWHEELS' (candy or cookies, sold by weight: '.30 LB @ 1/.59') .18; 'LGE BRWN 8PK' (probably brown-and-serve rolls) .65; 'M&M 15%FREE 18&4' (candy) 1.99; 'DOMINO CONFECT.' (confectioners sugar) .50 twice; 'KBLR. T/HOUSE16BN' (Keebler Townhouse crackers, 16 oz) 1.69. NOT FOOD (the app drops every line the model flags non-food, so these six must be ABSENT from the extracted items): 'S/K NAPKINS 140' (napkins) .63; 'FLEX STRAWS' (drinking straws) .89; 'SWTHR PLATES7\"48' (Sweetheart paper plates, 48 count) 1.63; 'BALLOONS 14CT' (balloons) 1.25; 'KLEENEX POCKET' (pocket tissues) 1.29; 'CHEER 96ZPP499' (laundry detergent, 96 oz) 4.29. Two department-total lines with no product name, 'GROCERY' (.68) and 'BAKERY' (4.99), may be reported as generic items or left out but are not decodable products. Small lines such as '6 @ 6/.89' and '1 @ 2/1.00' are multi-buy pricing notes, not products. Footer: 'TOTAL $ 39.99', 'CASH TEND 40.00', 'SUBTOTAL 39.85', 'TAX PAID .14', '.01 CHANGE'; the total is 39.99. The long item list is a token-budget stress test for the reply. Clean print, so confidence can be fairly high, but many names are cryptic.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/Alexander%27s_Supermarket_receipt%2C_late_twentieth_century.tif/lossy-page1-960px-Alexander%27s_Supermarket_receipt%2C_late_twentieth_century.tif.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "39\\.99",
+        "hood",
+        "orange juice|orange jc|juice",
+        "beef",
+        "cracker|keebler|townhouse"
+      ],
+      "mustNotContain": [
+        "napkin",
+        "straw",
+        "plate",
+        "balloon",
+        "kleenex|tissue",
+        "cheer|detergent"
+      ]
+    },
+    "scoreDimensions": [
+      "item_decoding",
+      "food_classification",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "receipt-biedronka-polish-discount-06",
+    "category": "accuracy",
+    "description": "Clean, high-contrast photo of a short Polish 'PARAGON FISKALNY' receipt from Biedronka (store 5163, ul. Grabarska 2, Wroclaw), dated 2020-01-09 13:18. Three food lines: 'ChlebPszen-Zyt 550g' (wheat-rye bread, 550 g) 1 x 1,99; 'Ser z. Swiat. 150g' (a 150 g cheese) 1 x 3,29; 'Poledw los 100g' (a 100 g sliced meat product, loin/poledwica) 1 x 4,99. Below them a 'Rabat' (discount) line of -2,00 reduces the last item to 2,99; the discount is NOT a product. 'SUMA PLN 8,27' is the total (1,99 + 3,29 + 2,99). The receipt is in Polish, so decoded names may be English or Polish. 'SPRZEDAZ OPODATKOWANA', 'PTU C 5,00 %' and 'SUMA PTU' are tax lines, not products. All three products are food. A clean, legible receipt, so confidence should be high.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Polish_supermarket_receipt.jpg/1280px-Polish_supermarket_receipt.jpg"
+    },
+    "assertions": {
+      "mustContain": ["bread|chleb", "cheese|ser", "8[.,]27", "biedronka"],
+      "mustNotContain": ["name=\"?(rabat|discount)"]
+    },
+    "scoreDimensions": [
+      "item_decoding",
+      "food_classification",
+      "confidence_calibration"
+    ]
+  }
+]

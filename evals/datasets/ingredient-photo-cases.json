@@ -1,0 +1,94 @@
+[
+  {
+    "id": "ingredient-photo-baking-staples-labelled-01",
+    "category": "accuracy",
+    "description": "Close-up of baking staples lined up against a wall under warm light, every package labelled. Left: a red paper bag of Bi-Lo Plain Flour, '1kg NET'. Centre: a translucent plastic bottle with a yellow cap, Pura 'Light Start' milk, '1% Fat 99% Taste' (volume not legible, it looks like about 2 litres). Right: a blue-and-white bag of CSR White Sugar (size not legible). Front row: a red block of Bi-Lo Unsalted Butter, '250g NET'; a white tin of McKenzie's Excelsior Baking Powder; and four brown eggs (three in the front row, one behind the milk bottle). So the ingredients are plain flour (1 kg), milk, white sugar, unsalted butter (250 g), baking powder and 4 eggs. Everything is clearly labelled, so confidence should be high; the sugar and milk sizes are not printed legibly, so those quantities are estimates.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/1-2-3-4_Cake_ingredients.JPG/1920px-1-2-3-4_Cake_ingredients.JPG"
+    },
+    "assertions": {
+      "mustContain": [
+        "flour",
+        "sugar",
+        "butter",
+        "egg",
+        "milk",
+        "baking powder"
+      ],
+      "mustNotContain": ["cheese", "yogh?urt", "honey", "baking soda"]
+    },
+    "scoreDimensions": [
+      "item_identification",
+      "quantity_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "ingredient-photo-lemon-cake-sunlight-02",
+    "category": "edge-case",
+    "description": "Sunlit kitchen counter with strong shadows (high contrast). Left: an open grey cardboard egg carton holding white eggs (about a dozen, roughly 11 or 12 are visible, the lower ones cut off by the frame). Centre: three whole yellow lemons on a wooden board. Right: a pale dish holding a block of butter cut into pieces, with a knife resting in it; below it a white fluted ramekin heaped with a fine white powder (powdered or icing sugar). At the top: a glass measuring cup with a white powdery ingredient, probably flour, and the loops of a wire whisk in the top-right corner. The whisk, knife, dish and carton are not ingredients. No milk, cream, oil or other fruit is in the picture. The flour in the measuring cup is partly in shadow, so it is a plausible but less certain identification.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Ingredients_for_a_lemon_cake.jpg/1920px-Ingredients_for_a_lemon_cake.jpg"
+    },
+    "assertions": {
+      "mustContain": ["egg", "lemon", "butter", "sugar"],
+      "mustNotContain": ["orange", "lime", "cream", "cheese", "whisk", "knife"]
+    },
+    "scoreDimensions": [
+      "item_identification",
+      "quantity_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "ingredient-photo-veg-board-peppercorns-03",
+    "category": "edge-case",
+    "description": "Shallow-depth-of-field photo of vegetables and herbs on a light wooden chopping board, background blurred. Front centre: a red onion cut in half (one half shows its white-and-purple layers). Scattered in front: a mix of whole peppercorns (black, white or green, and red or pink). Behind and to the right: two long, pale parsnip-like roots (parsnip or parsley root, the picture does not settle which), pale green Savoy or Chinese cabbage leaves, and the end of an orange carrot at the far right edge. Behind: a large bunch of flat-leaf parsley, with some long green leaves (chives or spring onion) at the left. The cut surface of a pale bulb behind the onion could be celeriac, cabbage heart or another onion and is not identifiable. So the main identifiable ingredients are red onion, peppercorns (mixed), parsley, a parsnip or parsley root, cabbage, and carrot; the root identification is genuinely ambiguous, so confidence on it should be lower than for the red onion.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Onion_and_a_group_of_vegetables_on_a_cutting_board.jpg/1920px-Onion_and_a_group_of_vegetables_on_a_cutting_board.jpg"
+    },
+    "assertions": {
+      "mustContain": ["red onion", "pepper", "parsley", "carrot"],
+      "mustNotContain": ["potato", "tomato", "broccoli", "beet"]
+    },
+    "scoreDimensions": [
+      "item_identification",
+      "quantity_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "ingredient-photo-mirepoix-diced-04",
+    "category": "accuracy",
+    "description": "Overhead-angle phone photo of a large wooden cutting board with four piles of finely diced vegetables and two knives (a small black-handled paring knife on the left and a large chef's knife at the lower right; knives are not ingredients). The largest pile at the front is diced orange carrot. Behind it: a pile of diced pale-green celery (top left), a pile of finely diced white onion (right), and chopped green and pale-yellow leek (top right, dark green slices of the leek top). So the ingredients are diced carrot (a large pile, very roughly 2 to 3 medium carrots' worth), diced celery (about 2 to 3 stalks), diced white onion (about 1 medium to large onion) and chopped leek (about 1 leek). These are prepared pieces, but the species are unmistakable and the picture is sharp, so confidence should be high.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Mirepoix_on_cutting_board.jpg/1920px-Mirepoix_on_cutting_board.jpg"
+    },
+    "assertions": {
+      "mustContain": ["carrot", "celery", "onion", "leek"],
+      "mustNotContain": ["potato", "pepper", "garlic", "zucchini|courgette"]
+    },
+    "scoreDimensions": [
+      "item_identification",
+      "quantity_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "ingredient-photo-recaito-herbs-peppers-05",
+    "category": "edge-case",
+    "description": "Overhead photo of a white square plate of fresh sofrito-base ingredients (labelled 'ingredients for recaito' on Commons) on a granite counter. Top left: a large bunch of cilantro (coriander). Across the middle: two long, dark-green, serrated-edged leaves of culantro (recao, long coriander), an uncommon herb that is easily mistaken for lettuce or a weed. Top right: one large whole yellow-brown onion. Behind the culantro: a small round smooth green vegetable, probably a tomatillo or small green bell pepper. Lower left: a long, thick, light-green cubanelle (Italian frying) pepper. Centre bottom: one whole bulb of garlic seen from the root end. Lower right: four small wrinkled sweet peppers (aji dulce or habanero-like), three green and dark-olive and one bright red. The culantro, the small green round vegetable and the small peppers are the ambiguous items (a hot habanero versus a sweet aji dulce cannot be told apart from the photo), so confidence on them should be lower than on the onion, garlic and cilantro.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Ingredients_for_reca%C3%ADto.jpg/1920px-Ingredients_for_reca%C3%ADto.jpg"
+    },
+    "assertions": {
+      "mustContain": ["cilantro|coriander", "garlic", "onion", "pepper"],
+      "mustNotContain": ["carrot", "tomato(?!llo)", "celery", "lettuce"]
+    },
+    "scoreDimensions": [
+      "item_identification",
+      "quantity_plausibility",
+      "confidence_calibration"
+    ]
+  }
+]

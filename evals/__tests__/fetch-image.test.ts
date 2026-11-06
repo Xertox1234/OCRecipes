@@ -63,4 +63,22 @@ describe("fetchImageAsJpegBase64", () => {
       1024,
     );
   });
+
+  it("applies the EXIF orientation, as the app's image manipulator does", async () => {
+    // A landscape 600x300 JPEG tagged "rotate 90 degrees" is a portrait photo.
+    const tagged = await sharp({
+      create: { width: 600, height: 300, channels: 3, background: "#00ff00" },
+    })
+      .jpeg()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    stubFetch(tagged);
+    const b64 = await fetchImageAsJpegBase64("https://example.test/exif.jpg", {
+      maxEdge: 1536,
+      quality: 85,
+    });
+    const meta = await sharp(Buffer.from(b64, "base64")).metadata();
+    expect(meta.width).toBe(300);
+    expect(meta.height).toBe(600);
+  });
 });

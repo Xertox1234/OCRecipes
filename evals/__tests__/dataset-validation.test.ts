@@ -16,11 +16,23 @@ import {
   labelExtractionCaseSchema,
   frontLabelCasesSchema,
   frontLabelCaseSchema,
+  recipePhotoCasesSchema,
+  recipePhotoCaseSchema,
+  receiptScanCasesSchema,
+  receiptScanCaseSchema,
+  ingredientPhotoCasesSchema,
+  ingredientPhotoCaseSchema,
+  photoClassifyCasesSchema,
+  photoClassifyCaseSchema,
 } from "../lib/dataset-schemas";
 import {
   ALL_PHOTO_ANALYSIS_DIMENSIONS,
   ALL_LABEL_EXTRACTION_DIMENSIONS,
   ALL_FRONT_LABEL_DIMENSIONS,
+  ALL_RECIPE_PHOTO_DIMENSIONS,
+  ALL_RECEIPT_SCAN_DIMENSIONS,
+  ALL_INGREDIENT_PHOTO_DIMENSIONS,
+  ALL_PHOTO_CLASSIFY_DIMENSIONS,
   evalTestCasesSchema,
 } from "../types";
 
@@ -141,12 +153,48 @@ describe("schema/runner dimension alignment", () => {
       [...ALL_FRONT_LABEL_DIMENSIONS].sort(),
     );
   });
+
+  it("recipe-photo scoreDimensions enum matches the shared dimension list", () => {
+    const schemaOptions =
+      recipePhotoCaseSchema.shape.scoreDimensions.unwrap().element.options;
+    expect([...schemaOptions].sort()).toEqual(
+      [...ALL_RECIPE_PHOTO_DIMENSIONS].sort(),
+    );
+  });
+
+  it("receipt-scan scoreDimensions enum matches the shared dimension list", () => {
+    const schemaOptions =
+      receiptScanCaseSchema.shape.scoreDimensions.unwrap().element.options;
+    expect([...schemaOptions].sort()).toEqual(
+      [...ALL_RECEIPT_SCAN_DIMENSIONS].sort(),
+    );
+  });
+
+  it("ingredient-photo scoreDimensions enum matches the shared dimension list", () => {
+    const schemaOptions =
+      ingredientPhotoCaseSchema.shape.scoreDimensions.unwrap().element.options;
+    expect([...schemaOptions].sort()).toEqual(
+      [...ALL_INGREDIENT_PHOTO_DIMENSIONS].sort(),
+    );
+  });
+
+  it("photo-classify scoreDimensions enum matches the shared dimension list", () => {
+    const schemaOptions =
+      photoClassifyCaseSchema.shape.scoreDimensions.unwrap().element.options;
+    expect([...schemaOptions].sort()).toEqual(
+      [...ALL_PHOTO_CLASSIFY_DIMENSIONS].sort(),
+    );
+  });
 });
 
 describe("label datasets", () => {
   const files = [
     ["label-extraction-cases.json", labelExtractionCasesSchema],
     ["front-label-cases.json", frontLabelCasesSchema],
+    ["recipe-photo-cases.json", recipePhotoCasesSchema],
+    ["receipt-scan-cases.json", receiptScanCasesSchema],
+    ["ingredient-photo-cases.json", ingredientPhotoCasesSchema],
+    ["photo-classify-cases.json", photoClassifyCasesSchema],
   ] as const;
 
   for (const [filename, schema] of files) {

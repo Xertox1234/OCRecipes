@@ -14,7 +14,8 @@ const cache = new Map<string, Promise<string>>();
  * `client/lib/image-compression.ts` bounds both edges and re-encodes at the
  * path's quality, so the caller passes that path's values (see
  * `client/lib/photo-upload.ts`). The app's further quality step-down for
- * files over its `targetSizeKB` is not reproduced. A PNG source is flattened
+ * files over its `targetSizeKB` is not reproduced. EXIF orientation is
+ * applied (phone photos arrive sideways otherwise). A PNG source is flattened
  * onto white. Wikimedia asks for a descriptive User-Agent and answers 429
  * under bursts, so a 429 is retried a few times.
  */
@@ -34,13 +35,14 @@ export function fetchImageAsJpegBase64(
 
 async function load(url: string, size: UploadSize): Promise<string> {
   let lastStatus = 0;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     const response = await fetch(url, {
       headers: { "User-Agent": "OCRecipes-eval/1.0 (dev eval fixtures)" },
     });
     if (response.ok) {
       const input = Buffer.from(await response.arrayBuffer());
       const jpeg = await sharp(input)
+        .rotate() // apply EXIF orientation first, as the app's compressImage does
         .flatten({ background: "#ffffff" })
         .resize({
           width: size.maxEdge,
@@ -54,7 +56,7 @@ async function load(url: string, size: UploadSize): Promise<string> {
     }
     lastStatus = response.status;
     if (response.status !== 429) break;
-    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
   }
   throw new Error(`Failed to fetch image from ${url}: HTTP ${lastStatus}`);
 }

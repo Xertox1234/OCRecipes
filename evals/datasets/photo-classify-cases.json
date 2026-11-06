@@ -1,0 +1,146 @@
+[
+  {
+    "id": "classify-burger-meal-01",
+    "category": "accuracy",
+    "description": "Side-on photo of a tall double cheeseburger against a dark background: two beef patties with melted cheese and sauce, tomato, pickle, onion ring and lettuce in a sesame bun, on a wooden surface. A prepared dish. Expected category: prepared_meal.",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=1024"
+    },
+    "assertions": { "mustContain": ["contentType: prepared_meal"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-sushi-meal-02",
+    "category": "accuracy",
+    "description": "Overhead photo of a long black plate holding eight pieces of nigiri sushi in a row (crab stick, tempura or egg, eel, avocado, salmon, tuna, white fish or squid, shrimp), with a small bowl of soy sauce with sesame seeds and a pair of chopsticks, all on a black surface. Prepared food. Expected category: prepared_meal.",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1617196034796-73dfa7b1fd56?w=1024"
+    },
+    "assertions": { "mustContain": ["contentType: prepared_meal"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-nutrition-label-flat-03",
+    "category": "accuracy",
+    "description": "Flat, high-contrast FDA sample Nutrition Facts panel (2014 layout) filling the picture, no product, no food. Expected category: nutrition_label.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c8/FDA_Nutrition_Facts_Label_2014.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: nutrition_label"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-nutrition-label-carton-04",
+    "category": "edge-case",
+    "description": "Phone photo of a bilingual (English/Spanish) Nutrition Facts panel printed on a yellow juice-drink carton, slightly skewed, with some carton around it. The nutrition panel is the subject. Expected category: nutrition_label.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Nutrition_facts_2014-03-17_08-47.jpg/960px-Nutrition_facts_2014-03-17_08-47.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: nutrition_label"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-raw-vegetables-05",
+    "category": "accuracy",
+    "description": "Wooden cutting board with four piles of raw diced vegetables (carrot, celery, white onion, chopped leek) and two knives. Uncooked ingredients, not a plated meal. Expected category: raw_ingredients.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Mirepoix_on_cutting_board.jpg/1920px-Mirepoix_on_cutting_board.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: raw_ingredients"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-raw-herbs-peppers-06",
+    "category": "accuracy",
+    "description": "White plate of fresh raw produce: cilantro, culantro leaves, a yellow onion, a garlic bulb, a long green pepper and small peppers, on a granite counter. Uncooked ingredients. Expected category: raw_ingredients.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Ingredients_for_reca%C3%ADto.jpg/1920px-Ingredients_for_reca%C3%ADto.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: raw_ingredients"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-raw-meat-board-07",
+    "category": "edge-case",
+    "description": "Round wooden board with raw beef steaks and raw beef strips, a raw minced-beef patty, and three sausages or frankfurters, with rosemary, a bowl of black peppercorns, a bowl of coriander seeds, cherry tomatoes on the vine and a bunch of parsley, between two logs. Mostly uncooked meat laid out as ingredients. Expected category: raw_ingredients; prepared_meal is a weaker but defensible alternative because of the styled platter and cooked-looking sausages.",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=1024"
+    },
+    "assertions": {
+      "mustContain": ["contentType: (raw_ingredients|prepared_meal)"]
+    },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-grocery-receipt-walmart-08",
+    "category": "accuracy",
+    "description": "Phone photo of a creased Walmart (WM Supercenter) grocery receipt with seven abbreviated food lines (hummus, bananas, cashews, banana chips and others), a subtotal, tax and total. A supermarket receipt, not a restaurant bill. Expected category: grocery_receipt.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/Walmart_Food_Receipt_8_Sep_2021.jpeg/1280px-Walmart_Food_Receipt_8_Sep_2021.jpeg"
+    },
+    "assertions": { "mustContain": ["contentType: grocery_receipt"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-grocery-receipt-tesco-09",
+    "category": "edge-case",
+    "description": "Faded grey scan of a 1994 Tesco supermarket receipt: ten grocery lines (jam doughnuts, cheddar, rich tea, tuna steaks, rice, a net of oranges and others), total, cash and change, 'Thank you for shopping at Tesco'. Expected category: grocery_receipt.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/4/45/Tesco_grocery_receipt_Finchley_1994.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: grocery_receipt"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-restaurant-receipt-bar-10",
+    "category": "edge-case",
+    "description": "Scan of a dot-matrix bill from the Cave Bar of the Petra Guest House Hotel, dated Nov 10 '21 7:18PM: five drink and snack lines (a beer, herbal tea, a Sauvignon wine, Jordanian mezzeh, Jagermeister), subtotal, sales tax, service charge, 'Your Bill Is 65.205', and a 'for room charge only' signature block. A hotel bar/restaurant bill, not a supermarket receipt. Expected category: restaurant_receipt.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/7/75/Cave_Bar_Petra_receipt_2021.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: restaurant_receipt"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-menu-coffee-partial-11",
+    "category": "edge-case",
+    "description": "Phone photo of one corner of a printed restaurant menu: a dark crest 'RESTAURANTE TRES COROAS desde 1970' at the top left and the heading 'Cafetaria / Coffee' with Portuguese and English item names (Expresso, Cafe com leite / White coffee, Abatanado / Black coffee, Galao / Big white coffee, Cafe irlandes / Irish coffee, Cafe baileys); the prices on the right are cut off. Only the coffee section is visible. Expected category: restaurant_menu.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/3/3d/%E2%80%9CExpresso%E2%80%9D_coffee_menu_Portugal.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: restaurant_menu"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-non-food-cat-12",
+    "category": "safety",
+    "description": "A tabby cat with green eyes sitting upright on a whitewashed wall, bare branches and sky blurred behind it. No food at all. Expected category: non_food.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Cat_November_2010-1a.jpg/1280px-Cat_November_2010-1a.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: non_food"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-non-food-bicycle-13",
+    "category": "safety",
+    "description": "A green Bianchi city bicycle with a black saddle and a rear rack carrying a folded red and yellow cloth, leaning on a textured brown wall. No food. Expected category: non_food.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/Green_bicycle_leaning_on_the_wall.jpg/1280px-Green_bicycle_leaning_on_the_wall.jpg"
+    },
+    "assertions": { "mustContain": ["contentType: non_food"] },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  },
+  {
+    "id": "classify-barcode-ean13-14",
+    "category": "accuracy",
+    "description": "Extreme close-up, slightly blurred, of an EAN-13 barcode printed on a candy package filling the whole picture, with the digits underneath reading 4 620017 455554 (13 digits: 4620017455554). No food visible, only the barcode. Expected category: has_barcode, with barcode 4620017455554 (a model that misreads a digit is wrong on the barcode; the app uses the digits for a product lookup).",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/EAN-13_barcode_on_a_gummy_candy_package.jpg/1920px-EAN-13_barcode_on_a_gummy_candy_package.jpg"
+    },
+    "assertions": {
+      "mustContain": ["contentType: has_barcode", "barcode: 4620017455554"]
+    },
+    "scoreDimensions": ["classification_accuracy", "confidence_calibration"]
+  }
+]

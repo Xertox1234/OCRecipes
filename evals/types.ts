@@ -91,6 +91,44 @@ export const ALL_FRONT_LABEL_DIMENSIONS: FrontLabelDimension[] = [
   "confidence_calibration",
 ];
 
+export type RecipePhotoDimension =
+  | "ingredient_fidelity"
+  | "method_fidelity"
+  | "confidence_calibration";
+export const ALL_RECIPE_PHOTO_DIMENSIONS: RecipePhotoDimension[] = [
+  "ingredient_fidelity",
+  "method_fidelity",
+  "confidence_calibration",
+];
+
+export type ReceiptScanDimension =
+  | "item_decoding"
+  | "food_classification"
+  | "confidence_calibration";
+export const ALL_RECEIPT_SCAN_DIMENSIONS: ReceiptScanDimension[] = [
+  "item_decoding",
+  "food_classification",
+  "confidence_calibration",
+];
+
+export type IngredientPhotoDimension =
+  | "item_identification"
+  | "quantity_plausibility"
+  | "confidence_calibration";
+export const ALL_INGREDIENT_PHOTO_DIMENSIONS: IngredientPhotoDimension[] = [
+  "item_identification",
+  "quantity_plausibility",
+  "confidence_calibration",
+];
+
+export type PhotoClassifyDimension =
+  | "classification_accuracy"
+  | "confidence_calibration";
+export const ALL_PHOTO_CLASSIFY_DIMENSIONS: PhotoClassifyDimension[] = [
+  "classification_accuracy",
+  "confidence_calibration",
+];
+
 export interface EvalTestCase {
   id: string;
   category:
