@@ -27,6 +27,23 @@ describe("numericStringField", () => {
     },
   );
 
+  // z.coerce.number() is Number(v): it would turn these into "0"/"1"/"5"
+  // and store a silent 0 kcal. Only numbers and numeric strings count.
+  it.each([null, true, [], [5], {}, "0x10", "2 cups", "1/2"])(
+    "rejects non-numeric input %o instead of coercing it",
+    (value) => {
+      expect(numericStringField.safeParse(value).success).toBe(false);
+    },
+  );
+
+  it("treats a whitespace-only string as absent, not 0", () => {
+    expect(numericStringField.parse("  ")).toBeUndefined();
+  });
+
+  it("trims a padded numeric string", () => {
+    expect(numericStringField.parse(" 12.5 ")).toBe("12.5");
+  });
+
   it("rejects a value too big for a decimal(10,2) column", () => {
     expect(numericStringField.safeParse(100_000_000).success).toBe(false);
   });
@@ -43,8 +60,12 @@ describe("nullableNumericStringField", () => {
     expect(nullableNumericStringField.parse("3")).toBe("3");
   });
 
-  it.each(["NaN", "x", "-0.5", "Infinity"])("rejects %s", (value) => {
+  it.each(["NaN", "x", "-0.5", "Infinity", true, []])("rejects %o", (value) => {
     expect(nullableNumericStringField.safeParse(value).success).toBe(false);
+  });
+
+  it("treats a whitespace-only string as null, not 0", () => {
+    expect(nullableNumericStringField.parse("  ")).toBeNull();
   });
 });
 
