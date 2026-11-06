@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { rejectOverlapping } from "../lib/in-flight";
 import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
@@ -15,6 +16,7 @@ import {
   checkAiConfigured,
   formatZodError,
   handleRouteError,
+  claimAiCallOrReject,
 } from "./_helpers";
 import { detectImageMimeType } from "../lib/image-mime";
 
@@ -44,6 +46,9 @@ export function register(app: Express): void {
     "/api/receipt/scan",
     requireAuth,
     receiptRateLimit,
+    // One scan at a time per user: the monthly cap counts saved scans, which
+    // exist only after the AI call, so overlapping scans would all pass it.
+    rejectOverlapping((req) => `receipt-scan:${req.userId}`),
     receiptUpload.array("photos", 3),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
@@ -93,6 +98,13 @@ export function register(app: Express): void {
 
         if (!checkAiConfigured(res)) return;
 
+        // Claimed before the AI call: a failed or low-confidence scan never
+        // becomes a saved scan, so the monthly cap alone doesn't bound spend.
+        if (
+          !(await claimAiCallOrReject(req, res, "receiptScan", "receipt scan"))
+        )
+          return;
+
         const imagesBase64 = files.map((f) => f.buffer.toString("base64"));
 
         let result: ReceiptAnalysisResult;
@@ -137,6 +149,8 @@ export function register(app: Express): void {
     "/api/receipt/confirm",
     requireAuth,
     crudRateLimit,
+    // A double tap would add every receipt item to the pantry twice.
+    rejectOverlapping((req) => `receipt-confirm:${req.userId}`),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(

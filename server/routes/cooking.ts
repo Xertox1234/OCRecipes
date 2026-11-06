@@ -43,6 +43,7 @@ import {
 } from "@shared/constants/allergens";
 
 import { storage, type CookingSession } from "../storage";
+import { rejectOverlapping } from "../lib/in-flight";
 
 // ============================================================================
 // MULTER CONFIG (5MB for ingredient photos)
@@ -429,6 +430,8 @@ export function register(app: Express): void {
     "/api/cooking/sessions/:id/log",
     requireAuth,
     crudRateLimit,
+    // A double tap would log the meal twice; the session is cleared only after the write.
+    rejectOverlapping((req) => `cook-log:${req.userId}:${req.params.id}`),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
@@ -459,18 +462,25 @@ export function register(app: Express): void {
 
         // The same totals the nutrition summary showed — including each
         // ingredient's preparation method — not the raw sum.
-        const { total: totals, missedLookups } =
-          await calculateSessionNutrition(session.ingredients);
+        const {
+          total: totals,
+          missedLookups,
+          unweighedIngredients,
+        } = await calculateSessionNutrition(session.ingredients);
 
-        // Ingredients with no nutrition data count as 0. The user is told
-        // which ones and must agree before the meal is stored.
-        if (missedLookups.length > 0 && !parsed.data.confirmMissedLookups) {
+        // Ingredients with no nutrition data count as 0, and ones whose unit
+        // has no weight ("6 egg") as 100 g. The user is told which ones and
+        // must agree before the meal is stored.
+        if (
+          (missedLookups.length > 0 || unweighedIngredients.length > 0) &&
+          !parsed.data.confirmMissedLookups
+        ) {
           return sendError(
             res,
             409,
-            "Some ingredients have no nutrition data and would be logged as 0",
+            "Some ingredients have no nutrition data or no weight",
             ErrorCode.CONFLICT,
-            { missedLookups },
+            { missedLookups, unweighedIngredients },
           );
         }
 

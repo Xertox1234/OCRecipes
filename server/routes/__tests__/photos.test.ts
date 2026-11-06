@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import {
   analyzePhoto,
+  analyzeLabelPhoto,
   analyzeRecipePhoto,
   structureRecipeFromText,
   refineAnalysis,
@@ -37,6 +38,7 @@ vi.mock("../../storage", async () => {
       getSubscriptionStatus: vi.fn(),
       getEffectiveTierForUser: vi.fn(),
       getDailyScanCount: vi.fn(),
+      claimDailyAiCall: vi.fn().mockResolvedValue(true),
       createScannedItem: vi.fn(),
       createDailyLog: vi.fn(),
       createScannedItemWithLog: vi.fn(),
@@ -65,6 +67,7 @@ vi.mock("../../lib/openai", () => ({
 
 vi.mock("../../services/photo-analysis", () => ({
   analyzePhoto: vi.fn(),
+  analyzeLabelPhoto: vi.fn(),
   analyzeRecipePhoto: vi.fn(),
   structureRecipeFromText: vi.fn(),
   refineAnalysis: vi.fn(),
@@ -150,6 +153,53 @@ describe("Photos Routes", () => {
     _testInternals.labelSessionTimeouts.clear();
     _testInternals.userLabelSessionCount.clear();
     app = createApp();
+  });
+
+  describe("photo analysis daily cost cap", () => {
+    // Unconfirmed analyses never count toward maxDailyScans (that counts
+    // logged items), so a separate claim-before-call cap bounds AI spend.
+    it("refuses /api/photos/analyze once the daily analysis cap is spent, before calling the AI", async () => {
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      vi.mocked(storage.claimDailyAiCall).mockResolvedValueOnce(false);
+
+      const res = await request(app)
+        .post("/api/photos/analyze")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "test.jpg");
+
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
+      expect(storage.claimDailyAiCall).toHaveBeenCalledWith(
+        "1",
+        "photoAnalysis",
+        expect.any(Number),
+      );
+      expect(analyzePhoto).not.toHaveBeenCalled();
+    });
+
+    it("refuses /api/photos/analyze-label once the daily analysis cap is spent", async () => {
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+      vi.mocked(storage.claimDailyAiCall).mockResolvedValueOnce(false);
+
+      const res = await request(app)
+        .post("/api/photos/analyze-label")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "label.jpg");
+
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("DAILY_LIMIT_REACHED");
+      expect(analyzeLabelPhoto).not.toHaveBeenCalled();
+    });
   });
 
   describe("POST /api/photos/analyze", () => {
@@ -544,6 +594,52 @@ describe("Photos Routes", () => {
   });
 
   describe("POST /api/photos/confirm", () => {
+    it("logs once when a double tap sends two overlapping confirms", async () => {
+      const pending: (() => void)[] = [];
+      vi.mocked(storage.createScannedItemWithLog).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            pending.push(() =>
+              resolve(
+                createMockScannedItem({
+                  id: 11,
+                  userId: "1",
+                  sourceType: "photo",
+                }),
+              ),
+            );
+          }),
+      );
+      const body = {
+        sessionId: "double-tap-photo",
+        foods: [
+          {
+            name: "Apple",
+            quantity: "1",
+            calories: 95,
+            protein: 0,
+            carbs: 25,
+            fat: 0,
+          },
+        ],
+      };
+      const send = () =>
+        request(app)
+          .post("/api/photos/confirm")
+          .set("Authorization", "Bearer token")
+          .send(body)
+          .then((r) => r);
+
+      const first = send();
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      const second = await send();
+      pending.splice(0).forEach((go) => go());
+
+      expect(second.status).toBe(409);
+      expect((await first).status).toBe(201);
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledTimes(1);
+    });
+
     it("returns 400 for invalid body", async () => {
       const res = await request(app)
         .post("/api/photos/confirm")
@@ -767,6 +863,67 @@ describe("Photos Routes", () => {
         "label cache seeding failed",
       );
       warnSpy.mockRestore();
+    });
+
+    const label = (overrides: Record<string, number | null>) => ({
+      servingSize: "1 cup",
+      servingsPerContainer: 2,
+      calories: 100,
+      totalFat: 2,
+      saturatedFat: 0,
+      transFat: 0,
+      cholesterol: 0,
+      sodium: 50,
+      totalCarbs: 10,
+      dietaryFiber: 1,
+      totalSugars: 3,
+      addedSugars: 0,
+      protein: 5,
+      vitaminD: 0,
+      calcium: 0,
+      iron: 0,
+      potassium: 0,
+      confidence: 0.9,
+      productName: "Label Food",
+      ...overrides,
+    });
+
+    it("refuses a label whose calories were not read instead of logging 0 kcal", async () => {
+      const sessionId = storage.createLabelSession(
+        "1",
+        label({ calories: null }),
+        undefined,
+      );
+
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId, servingsConsumed: 1 });
+
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe("CALORIES_UNREADABLE");
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
+    it("caps a misread huge label value instead of overflowing the column", async () => {
+      const sessionId = storage.createLabelSession(
+        "1",
+        label({ protein: 1e9, sodium: 1e9 }),
+        undefined,
+      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem({ id: 10, userId: "1", sourceType: "label" }),
+      );
+
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId, servingsConsumed: 1 });
+
+      expect(res.status).toBe(201);
+      const [item] = vi.mocked(storage.createScannedItemWithLog).mock.calls[0];
+      expect(Number(item.protein)).toBe(5_000);
+      expect(Number(item.sodium)).toBe(100_000);
     });
 
     it("returns 404 for a missing label session", async () => {

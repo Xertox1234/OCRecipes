@@ -43,6 +43,7 @@ import {
   parseStringParam,
   requireValidImage,
   formatZodError,
+  claimAiCallOrReject,
 } from "./_helpers";
 import {
   photoRateLimit,
@@ -50,6 +51,8 @@ import {
   ipKeyGenerator,
 } from "./_rate-limiters";
 import { upload, createImageUpload } from "./_upload";
+import { rejectOverlapping } from "../lib/in-flight";
+import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 
 // Higher file size limit for label photos (5MB for text readability)
 const labelUpload = createImageUpload(5 * 1024 * 1024);
@@ -232,6 +235,17 @@ export function register(app: Express): void {
             return sendError(res, 429, earlyCheck.reason, earlyCheck.code);
           }
 
+          // Claimed right before the paid call (after every cheap refusal): the
+          // scan limit counts LOGGED items, so unconfirmed analyses need their own cap.
+          if (
+            !(await claimAiCallOrReject(
+              req,
+              res,
+              "photoAnalysis",
+              "photo analysis",
+            ))
+          )
+            return;
           const classified = await classifyAndAnalyze(imageBase64);
 
           // If full analysis was performed (high confidence + mapped intent),
@@ -321,6 +335,17 @@ export function register(app: Express): void {
         }
 
         // Analyze photo with Vision API (intent-aware prompt)
+        // Claimed right before the paid call (after every cheap refusal): the
+        // scan limit counts LOGGED items, so unconfirmed analyses need their own cap.
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "photoAnalysis",
+            "photo analysis",
+          ))
+        )
+          return;
         const analysisResult = await analyzePhoto(imageBase64, intent);
 
         // Conditionally look up nutrition data
@@ -436,6 +461,10 @@ export function register(app: Express): void {
     "/api/photos/confirm",
     requireAuth,
     crudRateLimit,
+    // A double tap would log the meal twice (the session is optional here).
+    rejectOverlapping(
+      (req) => `photo-confirm:${req.userId}:${String(req.body?.sessionId)}`,
+    ),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = confirmPhotoSchema.parse(req.body);
@@ -622,6 +651,17 @@ export function register(app: Express): void {
           );
         }
 
+        // Claimed right before the paid call (after every cheap refusal): the
+        // scan limit counts LOGGED items, so unconfirmed analyses need their own cap.
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "photoAnalysis",
+            "photo analysis",
+          ))
+        )
+          return;
         const labelData = await analyzeLabelPhoto(imageBase64);
 
         // Atomic check+create eliminates the TOCTOU window (L12 fix).
@@ -674,8 +714,21 @@ export function register(app: Express): void {
         const { labelData, barcode } = session;
         const servings = validated.servingsConsumed;
 
-        // Clamp negative AI values to 0 (defense-in-depth for DB CHECK constraints)
-        const clamp = (v: number | null) => Math.max(v ?? 0, 0);
+        // An unread calories line is not 0 kcal: refuse, so the user rescans
+        // instead of logging a food that silently drops out of the day total.
+        if (labelData.calories == null) {
+          return sendError(
+            res,
+            422,
+            "The calories on this label couldn't be read",
+            ErrorCode.CALORIES_UNREADABLE,
+          );
+        }
+
+        // Clamp misread AI values into [0, cap]: a negative breaks the DB CHECK
+        // constraints and a huge one overflows numeric(10,2).
+        const clamp = (v: number | null, max: number = NUTRITION_CAPS.grams) =>
+          Math.min(Math.max(v ?? 0, 0), max);
 
         // `scannedItems` stores UNSCALED per-serving values — matching the
         // label's own `servingSize` string, never a multiple of it. The
@@ -687,13 +740,19 @@ export function register(app: Express): void {
         // fixes: it produced a row whose stored ratio no longer matched its
         // own declared serving. See todos/archive/
         // P2-2026-08-13-label-scan-scales-nutrition-by-servings-but-stores-serving-size-unscaled.md
-        const perServingCalories = clamp(labelData.calories);
+        const perServingCalories = clamp(
+          labelData.calories,
+          NUTRITION_CAPS.calories,
+        );
         const perServingProtein = clamp(labelData.protein);
         const perServingCarbs = clamp(labelData.totalCarbs);
         const perServingFat = clamp(labelData.totalFat);
         const perServingFiber = clamp(labelData.dietaryFiber);
         const perServingSugar = clamp(labelData.totalSugars);
-        const perServingSodium = clamp(labelData.sodium);
+        const perServingSodium = clamp(
+          labelData.sodium,
+          NUTRITION_CAPS.sodiumMg,
+        );
 
         const productName = labelData.productName || "Nutrition label scan";
 

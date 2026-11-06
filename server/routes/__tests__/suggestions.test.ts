@@ -266,6 +266,38 @@ describe("Suggestions Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.instructions).toContain("Mix yogurt");
+      // The client-sent cacheId is looked up only inside the caller's own row.
+      expect(storage.getInstructionCache).toHaveBeenCalledWith(10, 0, {
+        userId: "1",
+        scannedItemId: mockItem.id,
+      });
+    });
+
+    it("scopes the instruction cache write to the caller and item", async () => {
+      vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
+      vi.mocked(storage.getInstructionCache).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(generateInstructions).mockResolvedValue("Step 1: Mix...");
+      vi.mocked(storage.createInstructionCache).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/items/1/suggestions/0/instructions")
+        .set("Authorization", "Bearer token")
+        .send({
+          suggestionTitle: "Yogurt Bowl",
+          suggestionType: "recipe",
+          cacheId: 10,
+        });
+
+      expect(res.status).toBe(200);
+      expect(storage.createInstructionCache).toHaveBeenCalledWith(
+        10,
+        0,
+        { userId: "1", scannedItemId: mockItem.id },
+        "Yogurt Bowl",
+        "recipe",
+        "Step 1: Mix...",
+      );
     });
 
     it("refuses the (N+1)th instruction generation with 429 before calling the AI service", async () => {

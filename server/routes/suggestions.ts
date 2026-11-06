@@ -180,12 +180,16 @@ export function register(app: Express): void {
         }
 
         const { suggestionTitle, suggestionType, cacheId } = parsed.data;
+        // cacheId comes from the client: storage honours it only inside the
+        // caller's own suggestion row for this item.
+        const cacheScope = { userId: req.userId, scannedItemId: item.id };
 
         // Check instruction cache if cacheId provided
         if (cacheId) {
           const cachedInstruction = await storage.getInstructionCache(
             cacheId,
             suggestionIndex,
+            cacheScope,
           );
           if (cachedInstruction) {
             // Increment hit count in background
@@ -227,6 +231,7 @@ export function register(app: Express): void {
             storage.createInstructionCache(
               cacheId,
               suggestionIndex,
+              cacheScope,
               suggestionTitle,
               suggestionType,
               instructions,

@@ -84,9 +84,31 @@ export function buildSuggestionCacheKey(
   profileHash: string,
   planHash: string,
   dismissedHash: string,
+  budgetHash: string,
 ): string {
-  const raw = `${userId}:${date}:${mealType}:${profileHash}:${planHash}:${dismissedHash}`;
+  const raw = `${userId}:${date}:${mealType}:${profileHash}:${planHash}:${dismissedHash}:${budgetHash}`;
   return crypto.createHash("sha256").update(raw).digest("hex");
+}
+
+/**
+ * The remaining-budget part of the cache key. Suggestions are sized to what is
+ * left of the day, so logging food or changing goals must miss the cache.
+ * Bucketed (calories to 50, macros to 5 g) so a small snack doesn't spend a
+ * fresh AI call.
+ */
+export function buildBudgetHash(remaining: {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}): string {
+  const bucket = (v: number, step: number) => Math.round(v / step) * step;
+  return [
+    bucket(remaining.calories, 50),
+    bucket(remaining.protein, 5),
+    bucket(remaining.carbs, 5),
+    bucket(remaining.fat, 5),
+  ].join(":");
 }
 
 /**

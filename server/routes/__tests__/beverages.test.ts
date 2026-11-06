@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../beverages";
+import { createMockScannedItem } from "../../__tests__/factories";
 import { UpstreamUnavailableError } from "../../services/usda-lookup";
 import {
   lookupNutrition,
@@ -85,6 +86,57 @@ describe("Beverages Routes", () => {
   });
 
   describe("POST /api/beverages/log", () => {
+    it("logs once when a double tap sends two overlapping requests", async () => {
+      const pending: (() => void)[] = [];
+      vi.mocked(storage.createScannedItemWithLog)
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              pending.push(() =>
+                resolve(
+                  createMockScannedItem({
+                    id: 12,
+                    userId: "1",
+                    sourceType: "beverage",
+                  }),
+                ),
+              );
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              pending.push(() =>
+                resolve(
+                  createMockScannedItem({
+                    id: 12,
+                    userId: "1",
+                    sourceType: "beverage",
+                  }),
+                ),
+              );
+            }),
+        );
+      const send = (size: string) =>
+        request(app)
+          .post("/api/beverages/log")
+          .send({ beverageType: "water", size })
+          .then((r) => r);
+
+      const first = send("medium");
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      const duplicate = await send("medium");
+      // A different drink is a different write and goes through.
+      const other = send("large");
+      await vi.waitFor(() => expect(pending).toHaveLength(2));
+      pending.splice(0).forEach((go) => go());
+
+      expect(duplicate.status).toBe(409);
+      expect((await first).status).toBe(201);
+      expect((await other).status).toBe(201);
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledTimes(2);
+    });
+
     it("logs water with zero calories (no lookup)", async () => {
       const res = await request(app).post("/api/beverages/log").send({
         beverageType: "water",

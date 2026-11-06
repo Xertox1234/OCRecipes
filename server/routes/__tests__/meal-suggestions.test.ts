@@ -3,7 +3,11 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import { generateMealSuggestions } from "../../services/meal-suggestions";
+import {
+  generateMealSuggestions,
+  buildBudgetHash,
+  buildSuggestionCacheKey,
+} from "../../services/meal-suggestions";
 import { register } from "../meal-suggestions";
 import {
   createMockUser,
@@ -58,6 +62,7 @@ vi.mock("../../lib/openai", () => ({ isAiConfigured: true }));
 vi.mock("../../services/meal-suggestions", () => ({
   generateMealSuggestions: vi.fn(),
   buildSuggestionCacheKey: vi.fn(() => "cache-key"),
+  buildBudgetHash: vi.fn(() => "budget-hash"),
 }));
 
 vi.mock("../../utils/profile-hash", () => ({
@@ -133,8 +138,17 @@ describe("Meal Suggestions Routes", () => {
       vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(1);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ dailyCalorieGoal: 2000 }),
+      );
       vi.mocked(storage.getMealPlanItems).mockResolvedValue([]);
+      vi.mocked(storage.getDailySummary).mockResolvedValue({
+        totalCalories: 500,
+        totalProtein: 20,
+        totalCarbs: 60,
+        totalFat: 15,
+        itemCount: 2,
+      });
       vi.mocked(storage.getMealSuggestionCache).mockResolvedValue(
         createMockMealSuggestionCache({
           id: 1,
@@ -171,6 +185,16 @@ describe("Meal Suggestions Routes", () => {
       expect(res.body.popularPicks).toEqual([]);
       expect(generateMealSuggestions).not.toHaveBeenCalled();
       expect(storage.getCommunityRecipeTitlesByIds).not.toHaveBeenCalled();
+      // The cache key carries what's left of the day, so it is computed
+      // before the cache lookup.
+      expect(buildBudgetHash).toHaveBeenCalledWith(
+        expect.objectContaining({ calories: expect.any(Number) }),
+      );
+      const remaining = vi.mocked(buildBudgetHash).mock.calls[0][0];
+      expect(remaining.calories).toBe(2000 - 500);
+      expect(vi.mocked(buildSuggestionCacheKey).mock.calls[0][6]).toBe(
+        "budget-hash",
+      );
     });
 
     it("returns 403 for free tier", async () => {

@@ -6,6 +6,7 @@ import {
   users,
   userProfiles,
   communityRecipes,
+  mealPlanRecipes,
   cookbookRecipes,
   favouriteRecipes,
   savedItems,
@@ -512,6 +513,10 @@ export async function deleteUser(id: string): Promise<boolean> {
     .select({ id: communityRecipes.id })
     .from(communityRecipes)
     .where(eq(communityRecipes.authorId, id));
+  const personalRecipes = await db
+    .select({ id: mealPlanRecipes.id })
+    .from(mealPlanRecipes)
+    .where(eq(mealPlanRecipes.userId, id));
 
   let votedBarcodes: string[] = [];
   const deleted = await db.transaction(async (tx) => {
@@ -617,9 +622,12 @@ export async function deleteUser(id: string): Promise<boolean> {
 
   // Post-commit: evict deleted recipes from the MiniSearch index so they
   // stop surfacing in search results. Only fires when the transaction succeeded.
-  if (deleted && orphanedRecipes.length > 0) {
+  if (deleted) {
     for (const recipe of orphanedRecipes) {
       removeFromIndex(`community:${recipe.id}`);
+    }
+    for (const recipe of personalRecipes) {
+      removeFromIndex(`personal:${recipe.id}`);
     }
   }
 

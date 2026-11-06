@@ -6,6 +6,7 @@ import type {
   ImportedRecipeData,
 } from "@shared/types/recipe-import";
 import { createServiceLogger } from "../lib/logger";
+import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 import {
   schemaOrgRecipeSchema,
   type SchemaOrgRecipe,
@@ -114,14 +115,17 @@ export function parseIngredientString(raw: string): ParsedIngredient {
  * Handles kJ → kcal conversion: "1046 kJ" → "250" (÷ 4.184, rounded).
  * Logs a warning for negative values (returns null instead of storing them).
  */
-function parseNutritionValue(value: string | undefined): string | null {
+function parseNutritionValue(
+  value: string | undefined,
+  max: number = NUTRITION_CAPS.grams,
+): string | null {
   if (!value) return null;
   // Thousands separators ("1,046 kJ") are stripped; a comma not followed by
   // exactly three digits is a decimal comma ("1,5 g").
   const cleaned = value
     .replace(/(\d),(?=\d{3}(?!\d))/g, "$1")
     .replace(/(\d),(\d)/g, "$1.$2");
-  const match = cleaned.match(/([\d.]+)\s*(kJ|KJ)?/i);
+  const match = cleaned.match(/([\d.]+)\s*(kJ|kilojoules?)?/i);
   if (!match) return null;
   let num = parseFloat(match[1]);
   if (!Number.isFinite(num)) return null;
@@ -132,6 +136,12 @@ function parseNutritionValue(value: string | undefined): string | null {
   // Convert kilojoules to kilocalories
   if (match[2]) {
     num = Math.round(num / 4.184);
+  }
+  // A garbled value no serving can have would overflow numeric(10,2) and fail
+  // the whole import — drop just this field instead.
+  if (num > max) {
+    log.warn({ value }, "implausible nutrition value in LD+JSON — ignoring");
+    return null;
   }
   return String(num);
 }
@@ -533,7 +543,10 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
     ingredients: (recipe.recipeIngredient || []).map(parseIngredientString),
     instructions: normalizeInstructions(recipe.recipeInstructions),
     imageUrl,
-    caloriesPerServing: parseNutritionValue(recipe.nutrition?.calories),
+    caloriesPerServing: parseNutritionValue(
+      recipe.nutrition?.calories,
+      NUTRITION_CAPS.calories,
+    ),
     proteinPerServing: parseNutritionValue(recipe.nutrition?.proteinContent),
     carbsPerServing: parseNutritionValue(recipe.nutrition?.carbohydrateContent),
     fatPerServing: parseNutritionValue(recipe.nutrition?.fatContent),

@@ -9,6 +9,7 @@ import { calculateProfileHash } from "../utils/profile-hash";
 import {
   generateMealSuggestions,
   buildSuggestionCacheKey,
+  buildBudgetHash,
 } from "../services/meal-suggestions";
 import type {
   MealSuggestion,
@@ -131,43 +132,6 @@ export function register(app: Express): void {
         const dismissedHash = JSON.stringify(
           [...dismissedIds].sort((a, b) => a - b),
         );
-        const cacheKey = buildSuggestionCacheKey(
-          req.userId,
-          parsed.data.date,
-          parsed.data.mealType,
-          profileHash,
-          planHash,
-          dismissedHash,
-        );
-
-        // Cache check
-        const cached = await storage.getMealSuggestionCache(cacheKey);
-        if (cached) {
-          await storage.incrementMealSuggestionCacheHit(cached.id);
-          const remaining = features.dailyAiSuggestions - dailyCount;
-          const cachedSuggestions = cached.suggestions;
-          const popularPicks = await fetchDeduplicatedPopularPicks(
-            req.userId,
-            parsed.data.mealType,
-            cachedSuggestions,
-          );
-          res.json({
-            suggestions: cachedSuggestions,
-            popularPicks,
-            remainingToday: remaining,
-          });
-          return;
-        }
-
-        // Resolve dismissed IDs → titles AFTER cache miss (no point hitting the DB if cache hit)
-        const titlesMap = await storage.getCommunityRecipeTitlesByIds(
-          dismissedIds,
-          req.userId,
-        );
-        const dismissedRecipeTitles = dismissedIds
-          .map((id) => titlesMap.get(id))
-          .filter((t): t is string => t !== undefined);
-
         // Calculate remaining budget
         const dailyTargets = {
           calories: user?.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories,
@@ -221,6 +185,46 @@ export function register(app: Express): void {
           carbs: Math.max(0, dailyTargets.carbs - consumedCarbs),
           fat: Math.max(0, dailyTargets.fat - consumedFat),
         };
+
+        const cacheKey = buildSuggestionCacheKey(
+          req.userId,
+          parsed.data.date,
+          parsed.data.mealType,
+          profileHash,
+          planHash,
+          dismissedHash,
+          // Suggestions are sized to what's left of the day: logging food or
+          // changing goals must miss the cache.
+          buildBudgetHash(remainingBudget),
+        );
+
+        // Cache check
+        const cached = await storage.getMealSuggestionCache(cacheKey);
+        if (cached) {
+          await storage.incrementMealSuggestionCacheHit(cached.id);
+          const remaining = features.dailyAiSuggestions - dailyCount;
+          const cachedSuggestions = cached.suggestions;
+          const popularPicks = await fetchDeduplicatedPopularPicks(
+            req.userId,
+            parsed.data.mealType,
+            cachedSuggestions,
+          );
+          res.json({
+            suggestions: cachedSuggestions,
+            popularPicks,
+            remainingToday: remaining,
+          });
+          return;
+        }
+
+        // Resolve dismissed IDs → titles AFTER cache miss (no point hitting the DB if cache hit)
+        const titlesMap = await storage.getCommunityRecipeTitlesByIds(
+          dismissedIds,
+          req.userId,
+        );
+        const dismissedRecipeTitles = dismissedIds
+          .map((id) => titlesMap.get(id))
+          .filter((t): t is string => t !== undefined);
 
         if (!checkAiConfigured(res)) return;
 

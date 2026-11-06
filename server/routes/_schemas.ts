@@ -22,18 +22,63 @@ import {
 // proved later (sign-in, re-auth, linking).
 const PASSWORD_INPUT_MAX_UNITS = 512;
 
-/** Zod schema: accepts string or number, coerces to string. Returns undefined if absent. */
-export const numericStringField = z
-  .union([z.string(), z.number()])
-  .optional()
-  .transform((v) => v?.toString());
+/** The largest value a decimal(10,2) column holds. */
+const DECIMAL_10_2_MAX = 99_999_999.99;
 
-/** Zod schema: accepts string or number, coerces to string. Returns null if absent. */
-export const nullableNumericStringField = z
-  .union([z.string(), z.number()])
-  .optional()
-  .nullable()
-  .transform((v) => v?.toString() ?? null);
+/** A blank or whitespace-only string means "not given" — never 0. */
+const blankToAbsent = (v: unknown) => {
+  if (typeof v !== "string") return v;
+  const trimmed = v.trim();
+  return trimmed === "" ? undefined : trimmed;
+};
+
+/**
+ * Only a number or a plain decimal string (optionally with an exponent, as
+ * Number#toString writes very small/large values) is a number here. Never
+ * z.coerce.number() on its own: it is Number(v), which turns null, true, []
+ * and "0x10" into numbers and stores a silent 0 kcal.
+ */
+const DECIMAL_STRING = /^\d*\.?\d+(e[-+]?\d+)?$/i;
+
+/**
+ * Zod schema for a decimal column sent as a string or number: a finite number
+ * in [0, max], passed on as a string. "NaN" must never reach the column — a
+ * `>= 0` CHECK lets it through (Postgres sorts NaN above every number) and one
+ * NaN row turns a whole day's SUM into NaN. zod 3's `z.number()` accepts
+ * Infinity, hence `.finite()`; a blank string is treated as absent, not 0.
+ */
+export function boundedNumericStringField(
+  max: number,
+  options: { nullable: true },
+): z.ZodType<string | null, z.ZodTypeDef, unknown>;
+export function boundedNumericStringField(
+  max: number,
+  options?: { nullable?: false },
+): z.ZodType<string | undefined, z.ZodTypeDef, unknown>;
+export function boundedNumericStringField(
+  max: number,
+  options: { nullable?: boolean } = {},
+): z.ZodType<string | null | undefined, z.ZodTypeDef, unknown> {
+  const value = z
+    .union([z.number(), z.string().regex(DECIMAL_STRING).transform(Number)])
+    .pipe(z.number().finite().min(0).max(max));
+  return options.nullable
+    ? z
+        .preprocess(blankToAbsent, value.nullable().optional())
+        .transform((v) => (v == null ? null : v.toString()))
+    : z
+        .preprocess(blankToAbsent, value.optional())
+        .transform((v) => v?.toString());
+}
+
+/** A decimal(10,2) value as a string. Returns undefined if absent. */
+export const numericStringField = boundedNumericStringField(DECIMAL_10_2_MAX);
+
+/** A decimal(10,2) value as a string. Returns null if absent. */
+export const nullableNumericStringField = boundedNumericStringField(
+  DECIMAL_10_2_MAX,
+  { nullable: true },
+);
 
 // Login validation schema - lighter than registration (no format rules, just
 // bounds). `username` holds EITHER a username or an email (the route branches

@@ -1,3 +1,4 @@
+import { deriveRecipeAllergens } from "@shared/constants/allergens";
 import type { DietTag } from "@/components/recipe-wizard/types";
 
 const CUISINE_KEYWORDS: Record<string, string[]> = {
@@ -176,28 +177,6 @@ const DAIRY_KEYWORDS = [
   "paneer",
 ];
 
-const GLUTEN_KEYWORDS = [
-  "flour",
-  "bread",
-  "pasta",
-  "noodle",
-  "breadcrumb",
-  "wheat",
-  "tortilla",
-  "crouton",
-  "couscous",
-  "barley",
-  "rye",
-  "soy sauce",
-  "beer",
-  "pie crust",
-  "pizza dough",
-  "pita",
-  "naan",
-  "croissant",
-  "brioche",
-];
-
 const EGG_KEYWORDS = ["egg", "eggs", "egg white", "egg yolk", "mayonnaise"];
 
 export function inferCuisine(
@@ -224,6 +203,14 @@ export function inferCuisine(
 
   return bestScore >= 1 ? bestCuisine : null;
 }
+
+/**
+ * Wheat foods the old wizard list caught that the shared allergen list does
+ * not name yet. Adding them there also needs an OTA, a prod allergen backfill
+ * and a restart (oats ruling, 2026-10-16) — tracked as a todo; until then the
+ * wizard keeps them so these recipes are never tagged "Gluten Free".
+ */
+const WHEAT_TERMS_MISSING_FROM_SHARED = ["pie crust", "pizza dough", "brioche"];
 
 /**
  * Infer diet tags from an ingredient list.
@@ -254,7 +241,13 @@ export function inferDietTags(ingredientNames: string[]): DietTag[] {
 
   const hasMeat = MEAT_KEYWORDS.some((kw) => allText.includes(kw));
   const hasDairy = DAIRY_KEYWORDS.some((kw) => allText.includes(kw));
-  const hasGluten = GLUTEN_KEYWORDS.some((kw) => allText.includes(kw));
+  // The allergen checks' own wheat/gluten list and whole-word matcher: oats
+  // count (owner ruling 2026-10-16) and "goat" is not "oat". A private list
+  // here drifted and tagged oat, semolina and cracker recipes "Gluten Free".
+  const hasGluten =
+    deriveRecipeAllergens(ingredientNames).some(
+      (allergen) => allergen.id === "wheat",
+    ) || WHEAT_TERMS_MISSING_FROM_SHARED.some((kw) => allText.includes(kw));
   const hasEggs = EGG_KEYWORDS.some((kw) => allText.includes(kw));
 
   const tags: DietTag[] = [];

@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { rejectOverlapping } from "../lib/in-flight";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -93,6 +94,10 @@ export function register(app: Express): void {
     "/api/meal-plan/recipes/import-url",
     requireAuth,
     urlImportRateLimit,
+    // A double tap would save the recipe and generate its image twice.
+    rejectOverlapping(
+      (req) => `url-import:${req.userId}:${String(req.body?.url)}`,
+    ),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         // Gate before triggering fire-and-forget Runware image generation

@@ -5,7 +5,9 @@ import {
   shouldReplaceWithAI,
   getLogButtonPresentation,
   scaleByServings,
+  labelLogErrorMessage,
 } from "../label-analysis-utils";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type { LabelExtractionResult } from "@/lib/photo-upload";
 import type { LocalNutritionData } from "@/lib/nutrition-ocr-parser";
 
@@ -245,5 +247,28 @@ describe("scaleByServings", () => {
 
   it("removes float artifacts", () => {
     expect(scaleByServings(0.1, 3, 1)).toBe(0.3);
+  });
+});
+
+describe("labelLogErrorMessage", () => {
+  it("asks for a rescan when the label's calories couldn't be read", () => {
+    expect(labelLogErrorMessage(ErrorCode.CALORIES_UNREADABLE)).toBe(
+      "We couldn't read the calories on this label. Please scan it again.",
+    );
+  });
+
+  it("keeps the expired-session and rate-limit messages", () => {
+    expect(labelLogErrorMessage(ErrorCode.NOT_FOUND)).toBe(
+      "This scan expired. Please scan the label again.",
+    );
+    expect(labelLogErrorMessage(ErrorCode.RATE_LIMITED)).toBe(
+      "Too many requests. Please wait a moment and try again.",
+    );
+  });
+
+  it("falls back to a generic message for any other failure", () => {
+    expect(labelLogErrorMessage(undefined)).toBe(
+      "Couldn't log this item. Please try again.",
+    );
   });
 });

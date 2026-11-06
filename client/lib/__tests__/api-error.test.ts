@@ -1,4 +1,5 @@
-import { ApiError } from "../api-error";
+import { ApiError, isDuplicateInFlight } from "../api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 describe("ApiError", () => {
   it("creates error with message", () => {
@@ -49,5 +50,26 @@ describe("ApiError", () => {
       // Should not reach here
       expect(true).toBe(false);
     }
+  });
+});
+
+describe("isDuplicateInFlight", () => {
+  // A double tap's second request is refused while the first is still saving;
+  // the first owns the result, so the second must not show an error.
+  it("is true only for the server's REQUEST_IN_FLIGHT refusal", () => {
+    expect(
+      isDuplicateInFlight(
+        new ApiError("409: busy", ErrorCode.REQUEST_IN_FLIGHT, 409),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false for a real conflict and for other errors", () => {
+    // The cook log's incomplete-nutrition 409 must still be shown.
+    expect(
+      isDuplicateInFlight(new ApiError("409: x", ErrorCode.CONFLICT, 409)),
+    ).toBe(false);
+    expect(isDuplicateInFlight(new Error("network"))).toBe(false);
+    expect(isDuplicateInFlight(undefined)).toBe(false);
   });
 });

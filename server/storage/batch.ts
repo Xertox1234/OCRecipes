@@ -125,7 +125,12 @@ export async function batchCreateGroceryItems(
         throw new BatchStorageError("Grocery list not found", "NOT_FOUND");
       }
     } else {
-      // Auto-create grocery list
+      // Auto-create grocery list. Same lock key as
+      // createGroceryListWithLimitCheck, so the two create paths serialise
+      // with each other and the count below is not raced.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${"grocery-lists:" + userId}, 0))`,
+      );
       const [countResult] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(groceryLists)

@@ -29,7 +29,8 @@ import { createNutrientUnavailableFlag } from "@shared/types/scan-flags";
 import { parseUserAllergies } from "@shared/constants/allergens";
 import { isBeverageCategory } from "@shared/constants/nutrition-bands";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
-import { numericStringField } from "./_schemas";
+import { boundedNumericStringField } from "./_schemas";
+import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 import {
   handleRouteError,
   parsePositiveIntParam,
@@ -79,13 +80,13 @@ const scannedItemInputSchema = insertScannedItemSchema.extend({
     .default("Unknown Product"),
   brandName: nullishString,
   servingSize: nullishString,
-  calories: numericStringField,
-  protein: numericStringField,
-  carbs: numericStringField,
-  fat: numericStringField,
-  fiber: numericStringField,
-  sugar: numericStringField,
-  sodium: numericStringField,
+  calories: boundedNumericStringField(NUTRITION_CAPS.calories),
+  protein: boundedNumericStringField(NUTRITION_CAPS.grams),
+  carbs: boundedNumericStringField(NUTRITION_CAPS.grams),
+  fat: boundedNumericStringField(NUTRITION_CAPS.grams),
+  fiber: boundedNumericStringField(NUTRITION_CAPS.grams),
+  sugar: boundedNumericStringField(NUTRITION_CAPS.grams),
+  sodium: boundedNumericStringField(NUTRITION_CAPS.sodiumMg),
 });
 
 // Builds the client response body for one BarcodeLookupResult: allergen +

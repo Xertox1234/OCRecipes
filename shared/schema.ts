@@ -1216,6 +1216,9 @@ export const mealPlanRecipes = pgTable(
     check("mpr_protein_gte0", sql`${table.proteinPerServing} >= 0`),
     check("mpr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
     check("mpr_fat_gte0", sql`${table.fatPerServing} >= 0`),
+    check("mpr_fiber_gte0", sql`${table.fiberPerServing} >= 0`),
+    check("mpr_sugar_gte0", sql`${table.sugarPerServing} >= 0`),
+    check("mpr_sodium_gte0", sql`${table.sodiumPerServing} >= 0`),
     check("mpr_servings_gt0", sql`${table.servings} > 0`),
     index("meal_plan_recipes_diet_tags_gin_idx").using("gin", table.dietTags),
     index("meal_plan_recipes_meal_types_gin_idx").using("gin", table.mealTypes),
@@ -1235,7 +1238,10 @@ export const recipeIngredients = pgTable(
     category: text("category").default("other"),
     displayOrder: integer("display_order").default(0),
   },
-  (table) => [index("recipe_ingredients_recipe_id_idx").on(table.recipeId)],
+  (table) => [
+    index("recipe_ingredients_recipe_id_idx").on(table.recipeId),
+    check("recipe_ingredients_quantity_gte0", sql`${table.quantity} >= 0`),
+  ],
 );
 
 export const mealPlanItems = pgTable(
@@ -1718,7 +1724,10 @@ export const groceryListItems = pgTable(
     addedToPantry: boolean("added_to_pantry").default(false),
     checkedAt: timestamp("checked_at", { withTimezone: true }),
   },
-  (table) => [index("grocery_list_items_list_id_idx").on(table.groceryListId)],
+  (table) => [
+    index("grocery_list_items_list_id_idx").on(table.groceryListId),
+    check("grocery_list_items_quantity_gte0", sql`${table.quantity} >= 0`),
+  ],
 );
 
 export const groceryListsRelations = relations(
@@ -1768,6 +1777,7 @@ export const pantryItems = pgTable(
   (table) => [
     index("pantry_items_user_id_idx").on(table.userId),
     index("pantry_items_user_expires_idx").on(table.userId, table.expiresAt),
+    check("pantry_items_quantity_gte0", sql`${table.quantity} >= 0`),
   ],
 );
 

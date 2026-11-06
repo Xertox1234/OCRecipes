@@ -915,6 +915,64 @@ describe("Cooking Routes", () => {
       expect(cookingSessionStore._internals.store.has(sessionId)).toBe(false);
     });
 
+    it("logs once when a double tap sends two overlapping requests", async () => {
+      const sessionId = "double-tap-session";
+      cookingSessionStore._internals.store.set(sessionId, {
+        id: sessionId,
+        userId: "1",
+        ingredients: [{ ...mockIngredient }],
+        photos: [],
+        createdAt: Date.now(),
+      });
+      // Hold the nutrition lookup open so the second tap arrives mid-flight.
+      const pendingLookups: (() => void)[] = [];
+      const releaseLookups = () => pendingLookups.forEach((go) => go());
+      vi.mocked(batchNutritionLookup).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            pendingLookups.push(() =>
+              resolve(
+                new Map<string, NutritionData | null>([
+                  [
+                    "chicken breast",
+                    createMockNutritionData({ calories: 165 }),
+                  ],
+                ]),
+              ),
+            );
+          }),
+      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem({
+          id: 43,
+          userId: "1",
+          sourceType: "cook_session",
+        }),
+      );
+
+      const first = request(app)
+        .post(`/api/cooking/sessions/${sessionId}/log`)
+        .set("Authorization", "Bearer token")
+        .send({ mealType: "dinner" })
+        .then((r) => r);
+      await vi.waitFor(() => expect(pendingLookups).toHaveLength(1));
+      const secondRequest = request(app)
+        .post(`/api/cooking/sessions/${sessionId}/log`)
+        .set("Authorization", "Bearer token")
+        .send({ mealType: "dinner" })
+        .then((r) => r);
+      // Unfixed, the second tap also reaches the lookup; release whatever
+      // is pending once it has had the chance to.
+      await new Promise((r) => setTimeout(r, 50));
+      releaseLookups();
+      const second = await secondRequest;
+      releaseLookups();
+
+      expect(second.status).toBe(409);
+      expect((await first).status).toBe(201);
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledTimes(1);
+    });
+
     // The summary applies each ingredient's preparation method; the log used
     // the raw totals, so the stored meal differed from the one the user saw
     // (audit 2026-10-29 M-data-4).
@@ -991,6 +1049,46 @@ describe("Cooking Routes", () => {
         .send({});
 
       expect(res.status).toBe(404);
+    });
+
+    it("asks for confirmation before logging a count unit counted as 100 g", async () => {
+      cookingSessionStore._internals.store.set("unweighed", {
+        id: "unweighed",
+        userId: "1",
+        ingredients: [
+          {
+            ...mockIngredient,
+            id: "ing-egg",
+            name: "egg",
+            quantity: 6,
+            unit: "piece",
+          },
+        ],
+        photos: [],
+        createdAt: Date.now(),
+      });
+      vi.mocked(batchNutritionLookup).mockResolvedValue(
+        new Map<string, NutritionData | null>([
+          ["egg", createMockNutritionData({ calories: 143 })],
+        ]),
+      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem(),
+      );
+
+      const refused = await request(app)
+        .post("/api/cooking/sessions/unweighed/log")
+        .set("Authorization", "Bearer token")
+        .send({});
+      expect(refused.status).toBe(409);
+      expect(refused.body.unweighedIngredients).toEqual(["egg"]);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+
+      const confirmed = await request(app)
+        .post("/api/cooking/sessions/unweighed/log")
+        .set("Authorization", "Bearer token")
+        .send({ confirmMissedLookups: true });
+      expect(confirmed.status).toBe(201);
     });
 
     describe("missed nutrition lookups", () => {

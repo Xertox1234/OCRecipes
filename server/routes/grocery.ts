@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { rejectOverlapping } from "../lib/in-flight";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -60,6 +61,8 @@ export function register(app: Express): void {
     "/api/meal-plan/grocery-lists",
     requireAuth,
     mealPlanRateLimit,
+    // A double tap would create the list twice.
+    rejectOverlapping((req) => `grocery-list-create:${req.userId}`),
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = generateGroceryListSchema.safeParse(req.body);
@@ -298,30 +301,18 @@ export function register(app: Express): void {
           return;
         }
 
-        // Handle isChecked toggle
+        // Handle isChecked toggle (and addedToPantry with it, in one write)
         if (parsed.data.isChecked !== undefined) {
           const updated = await storage.updateGroceryListItemChecked(
             itemId,
             listId,
             parsed.data.isChecked,
             req.userId,
+            { addedToPantry: parsed.data.addedToPantry },
           );
           if (!updated) {
             sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
             return;
-          }
-          // Also handle addedToPantry if provided in same request
-          if (parsed.data.addedToPantry !== undefined) {
-            const flagged = await storage.updateGroceryListItemPantryFlag(
-              itemId,
-              listId,
-              parsed.data.addedToPantry,
-              req.userId,
-            );
-            if (flagged) {
-              res.json(flagged);
-              return;
-            }
           }
           res.json(updated);
           return;

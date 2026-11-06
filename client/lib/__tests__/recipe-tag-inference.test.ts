@@ -74,6 +74,28 @@ describe("inferDietTags", () => {
     expect(tags).not.toContain("Gluten Free");
   });
 
+  // Owner ruling 2026-10-16: oats are a gluten risk everywhere. The wizard
+  // reads the same wheat/gluten list as the allergen checks.
+  it.each([
+    ["rolled oats", "milk", "honey"],
+    ["oatmeal", "banana"],
+    ["semolina", "water"],
+    ["bulgur wheat", "parsley"],
+    ["seitan", "soy sauce"],
+    ["malt extract", "flour"],
+    ["crackers", "cheese"],
+    // Caught by the wizard's old list but not the shared allergen list.
+    ["pie crust", "apples"],
+    ["pizza dough", "tomato"],
+    ["brioche", "eggs"],
+  ])("does not suggest Gluten Free for %s", (...ingredients) => {
+    expect(inferDietTags(ingredients)).not.toContain("Gluten Free");
+  });
+
+  it("still suggests Gluten Free for goat cheese (whole-word match, not 'oat')", () => {
+    expect(inferDietTags(["goat cheese", "beets"])).toContain("Gluten Free");
+  });
+
   it("suggests Dairy Free when no dairy ingredients", () => {
     const tags = inferDietTags(["chicken", "rice", "soy sauce"]);
     expect(tags).toContain("Dairy Free");

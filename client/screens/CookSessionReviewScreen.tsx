@@ -55,6 +55,11 @@ import type {
   CookingSessionIngredient,
   CookSessionNutritionSummary,
 } from "@shared/types/cook-session";
+import {
+  logConfirmMessage,
+  incompleteNutritionNote,
+} from "./CookSessionReviewScreen-utils";
+import { isDuplicateInFlight } from "@/lib/api-error";
 
 export default function CookSessionReviewScreen() {
   const insets = useSafeAreaInsets();
@@ -163,7 +168,10 @@ export default function CookSessionReviewScreen() {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         AccessibilityInfo.announceForAccessibility("Meal logged successfully");
         navigation.popTo("Main");
-      } catch {
+      } catch (err) {
+        // A double tap's second log: the first is still saving and owns the
+        // result. A real refusal (e.g. incomplete nutrition) still toasts.
+        if (isDuplicateInFlight(err)) return;
         toast.error("Failed to log meal. Please try again.");
       }
     },
@@ -171,15 +179,15 @@ export default function CookSessionReviewScreen() {
   );
 
   const handleLogMeal = useCallback(() => {
-    const missed = nutrition?.missedLookups ?? [];
-    if (missed.length === 0) {
+    // Missed lookups count as 0 and units with no weight as 100 g: ask first.
+    const message = nutrition ? logConfirmMessage(nutrition) : null;
+    if (!message) {
       void submitLog(false);
       return;
     }
-    // No nutrition data for these: they would be saved as 0. Ask first.
     confirm({
-      title: "Missing nutrition data",
-      message: `No nutrition data was found for ${missed.join(", ")}. They will be counted as 0, so the logged meal will be too low. Log anyway?`,
+      title: "Incomplete nutrition data",
+      message,
       confirmLabel: "Log anyway",
       onConfirm: () => {
         void submitLog(true);
@@ -478,6 +486,7 @@ function NutritionSummaryCard({
   nutrition: CookSessionNutritionSummary;
   theme: ReturnType<typeof useTheme>["theme"];
 }) {
+  const incompleteNote = incompleteNutritionNote(nutrition);
   return (
     <Card
       style={styles.nutritionCard}
@@ -520,13 +529,12 @@ function NutritionSummaryCard({
         </ThemedText>
       </View>
 
-      {nutrition.missedLookups.length > 0 ? (
+      {incompleteNote ? (
         <ThemedText
           type="small"
           style={{ color: theme.error, marginTop: Spacing.sm }}
         >
-          No nutrition data for {nutrition.missedLookups.join(", ")} (counted as
-          0)
+          {incompleteNote}
         </ThemedText>
       ) : null}
     </Card>

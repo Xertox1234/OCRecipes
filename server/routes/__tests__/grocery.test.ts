@@ -91,6 +91,38 @@ describe("Grocery Routes", () => {
   });
 
   describe("POST /api/meal-plan/grocery-lists", () => {
+    it("creates one list when a double tap sends two overlapping requests", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ subscriptionTier: "premium" }),
+      );
+      vi.mocked(storage.getMealPlanIngredientsForDateRange).mockResolvedValue(
+        [],
+      );
+      vi.mocked(generateGroceryItems).mockReturnValue([]);
+      const pending: (() => void)[] = [];
+      vi.mocked(storage.createGroceryListWithLimitCheck).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            pending.push(() => resolve({ list: mockList, items: [] }));
+          }),
+      );
+      const send = () =>
+        request(app)
+          .post("/api/meal-plan/grocery-lists")
+          .set("Authorization", "Bearer token")
+          .send({ startDate: "2025-01-01", endDate: "2025-01-07" })
+          .then((r) => r);
+
+      const first = send();
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      const second = await send();
+      pending.splice(0).forEach((go) => go());
+
+      expect(second.status).toBe(409);
+      expect((await first).status).toBe(201);
+      expect(storage.createGroceryListWithLimitCheck).toHaveBeenCalledTimes(1);
+    });
+
     it("creates a grocery list from date range", async () => {
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ subscriptionTier: "premium" }),
@@ -342,12 +374,11 @@ describe("Grocery Routes", () => {
       expect(res.status).toBe(404);
     });
 
-    it("handles isChecked + addedToPantry combo", async () => {
+    // Both flags in one UPDATE: two separate writes could leave the item
+    // half-updated (checked but not flagged) if the second failed.
+    it("applies isChecked + addedToPantry in a single write", async () => {
       vi.mocked(storage.verifyGroceryListOwnership).mockResolvedValue(true);
       vi.mocked(storage.updateGroceryListItemChecked).mockResolvedValue(
-        createMockGroceryListItem({ isChecked: true }),
-      );
-      vi.mocked(storage.updateGroceryListItemPantryFlag).mockResolvedValue(
         createMockGroceryListItem({ isChecked: true, addedToPantry: true }),
       );
 
@@ -358,6 +389,14 @@ describe("Grocery Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.addedToPantry).toBe(true);
+      expect(storage.updateGroceryListItemChecked).toHaveBeenCalledWith(
+        1,
+        1,
+        true,
+        "1",
+        { addedToPantry: true },
+      );
+      expect(storage.updateGroceryListItemPantryFlag).not.toHaveBeenCalled();
     });
   });
 

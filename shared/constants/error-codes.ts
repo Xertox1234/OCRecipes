@@ -19,6 +19,8 @@ export const ErrorCode = {
   /** The new password appears in a known breach (HIBP range check). */
   PASSWORD_BREACHED: "PASSWORD_BREACHED",
   CONFLICT: "CONFLICT",
+  /** A duplicate of a write still in flight (a double tap) — the first request owns the result; clients stay quiet. */
+  REQUEST_IN_FLIGHT: "REQUEST_IN_FLIGHT",
   INTERNAL_ERROR: "INTERNAL_ERROR",
   API_KEY_INVALID: "API_KEY_INVALID",
   API_KEY_REVOKED: "API_KEY_REVOKED",
@@ -39,6 +41,8 @@ export const ErrorCode = {
   IMAGE_GENERATION_FAILED: "IMAGE_GENERATION_FAILED",
   ALREADY_CONFIRMED: "ALREADY_CONFIRMED",
   NUTRITION_LOOKUP_FAILED: "NUTRITION_LOOKUP_FAILED",
+  /** A nutrition label scan whose calories line could not be read — rescan rather than log 0 kcal. */
+  CALORIES_UNREADABLE: "CALORIES_UNREADABLE",
   // Recipe import error codes — mirror the ImportError union in recipe-import.ts
   FETCH_FAILED: "FETCH_FAILED",
   NO_RECIPE_DATA: "NO_RECIPE_DATA",
