@@ -1,9 +1,9 @@
 ---
 title: "Verify a barcode actually DECODES on Android (VisionCamera 5.1.1 + MLKit 9)"
-status: backlog
+status: done
 priority: low
 created: 2026-08-08
-updated: 2026-10-31
+updated: 2026-11-06
 assignee:
 labels: [camera, barcode, android, verification, deferred]
 github_issue:
@@ -50,12 +50,12 @@ so an iOS pass says nothing about this.
 
 ## Acceptance Criteria
 
-- [ ] On a **physical Android device**, scanning a real product barcode in the
+- [x] On a **physical Android device**, scanning a real product barcode in the
       app's Barcode mode produces a lock — i.e. `useBarcodeScannerOutput`
       actually yields a value.
-- [ ] The scanned barcode resolves to a product against the backend (proves the
+- [x] The scanned barcode resolves to a product against the backend (proves the
       decoded value is correct, not merely that _something_ fired).
-- [ ] The result is recorded in the archived todo's Updates section, and its
+- [x] The result is recorded in the archived todo's Updates section, and its
       `archived_with_residual` frontmatter field is cleared or amended.
 
 ## Implementation Notes
@@ -107,3 +107,9 @@ so an iOS pass says nothing about this.
 ### 2026-10-31
 
 - The owner has an Android phone (Samsung Galaxy A37) since 2026-10-27. Owner ruling 2026-10-31: the Android device checks for the P3 todos run as ONE owner phone session after the camera and gesture-handler PRs merge (agent drives adb; owner holds the phone, scans a barcode, listens to TalkBack). Still human-led; gate fields unchanged.
+
+### 2026-11-06
+
+- PASSED on the owner's Samsung Galaxy A37 (Android 16), dev build from 2026-11-02 (no native changes since), local server. The owner held a Vanilla Coca-Cola can to Barcode mode; the camera locked on its own and showed the product card. Server log: `GET /api/nutrition/barcode/06722908` → 200, "barcode found in OFF", product "Vanilla Coca-Cola" — the decoded value is a real UPC-E that resolves, so `useBarcodeScannerOutput` yields correct values on Android.
+- Recorded in `todos/archive/P2-2026-07-25-mlkit-9-unblock-visioncamera-511.md`; its `archived_with_residual` is cleared.
+- Side finding (not this todo's scope): the product had no nutrition in any database and the photographed label was not used either — filed as `todos/P2-2026-11-06-label-ignored-when-database-has-no-nutrition.md`.
