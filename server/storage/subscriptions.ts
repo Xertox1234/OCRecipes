@@ -96,6 +96,10 @@ async function applyRenewalInTx(
  *  - a different user claims it   → `conflict` (no writes; the caller rejects)
  *  - same user, row was refunded/revoked and the receipt was purchased before
  *    that (`purchasedAt`)          → `revoked` (no writes; fail closed)
+ *  - the row has no owner (its account was deleted; migration 0038) → taken
+ *    over by this user as `created`, unless it was refunded/revoked and the
+ *    receipt was purchased before that → `revoked`. The row lock below makes
+ *    a concurrent second claimant see the new owner → `conflict`.
  *
  * Atomic: the transaction write and the user upgrade succeed or roll back
  * together. `onConflictDoNothing()` (no target — the only non-PK unique is
@@ -107,6 +111,10 @@ export async function claimTransactionAndUpgrade(
   expiresAt: Date | null,
   purchasedAt?: Date | null,
 ): Promise<ClaimResult> {
+  const userId = data.userId;
+  if (!userId) {
+    throw new Error("claimTransactionAndUpgrade needs the claiming userId");
+  }
   return db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(transactions)
@@ -118,12 +126,10 @@ export async function claimTransactionAndUpgrade(
       const [user] = await tx
         .update(users)
         .set({ subscriptionTier: tier, subscriptionExpiresAt: expiresAt })
-        .where(eq(users.id, data.userId))
+        .where(eq(users.id, userId))
         .returning();
       if (!user) {
-        throw new Error(
-          `User ${data.userId} not found during subscription claim`,
-        );
+        throw new Error(`User ${userId} not found during subscription claim`);
       }
       return { status: "created", transaction: inserted, user };
     }
@@ -136,8 +142,37 @@ export async function claimTransactionAndUpgrade(
       .where(eq(transactions.transactionId, data.transactionId))
       .for("update");
 
+    // Ownerless (the account that claimed it was deleted): this account may
+    // take it over — unless it was refunded and this receipt predates the
+    // refund, the replay the kept row exists to stop.
+    if (existing && existing.userId === null) {
+      if (isRevokedForReceipt(existing, purchasedAt)) {
+        return { status: "revoked" };
+      }
+      const [txn] = await tx
+        .update(transactions)
+        .set({
+          userId,
+          receipt: data.receipt,
+          status: data.status ?? "completed",
+          // revokedAt is kept: see revokeSubscriptionByTransactionId.
+          updatedAt: new Date(),
+        })
+        .where(eq(transactions.transactionId, data.transactionId))
+        .returning();
+      const [user] = await tx
+        .update(users)
+        .set({ subscriptionTier: tier, subscriptionExpiresAt: expiresAt })
+        .where(eq(users.id, userId))
+        .returning();
+      if (!user) {
+        throw new Error(`User ${userId} not found during subscription claim`);
+      }
+      return { status: "created", transaction: txn, user };
+    }
+
     // Different account (or a vanished row) — never grant entitlement.
-    if (!existing || existing.userId !== data.userId) {
+    if (!existing || existing.userId !== userId) {
       return { status: "conflict", existingUserId: existing?.userId ?? "" };
     }
 
@@ -158,7 +193,7 @@ export async function claimTransactionAndUpgrade(
       })
       .where(eq(transactions.transactionId, data.transactionId))
       .returning();
-    const user = await applyRenewalInTx(tx, data.userId, tier, expiresAt);
+    const user = await applyRenewalInTx(tx, userId, tier, expiresAt);
     return { status: "renewed", transaction: txn, user };
   });
 }
@@ -186,7 +221,12 @@ export async function extendSubscriptionByTransactionId( // idor-safe
   transactionId: string,
   expiresAt: Date,
   purchasedAt?: Date | null,
-): Promise<{ status: "extended" | "revoked"; userId: string } | null> {
+): Promise<
+  | { status: "extended"; userId: string }
+  | { status: "revoked"; userId: string | null }
+  | { status: "ownerless"; userId: null }
+  | null
+> {
   return db.transaction(async (tx) => {
     // Row lock: serializes renewal / refund / expiry on this transaction so a
     // renewal never overwrites a concurrently committed refund.
@@ -200,6 +240,11 @@ export async function extendSubscriptionByTransactionId( // idor-safe
 
     if (isRevokedForReceipt(txn, purchasedAt)) {
       return { status: "revoked", userId: txn.userId };
+    }
+    // The account was deleted: there is no one to extend. The row keeps its
+    // state for whoever takes the purchase over (claimTransactionAndUpgrade).
+    if (txn.userId === null) {
+      return { status: "ownerless", userId: null };
     }
 
     await tx
@@ -238,7 +283,7 @@ export async function extendSubscriptionByTransactionId( // idor-safe
 export async function revokeSubscriptionByTransactionId( // idor-safe
   transactionId: string,
   revokedAt?: Date,
-): Promise<{ userId: string; stale: boolean } | null> {
+): Promise<{ userId: string | null; stale: boolean } | null> {
   return db.transaction(async (tx) => {
     // Row lock: serializes renewal / refund / expiry on this transaction so a
     // renewal never overwrites a concurrently committed refund.
@@ -284,6 +329,10 @@ async function downgradeIfActiveSourceInTx(
   tx: Tx,
   txn: Transaction,
 ): Promise<void> {
+  // An ownerless row (deleted account) still records the refund/expiry; there
+  // is no user to downgrade.
+  const userId = txn.userId;
+  if (userId === null) return;
   // Downgrade the owning user ONLY if this transaction was their active
   // entitlement source. Assumption: single-tier app, at most one active
   // subscription at a time, so the newest non-revoked `completed` transaction
@@ -297,7 +346,7 @@ async function downgradeIfActiveSourceInTx(
     .from(transactions)
     .where(
       and(
-        eq(transactions.userId, txn.userId),
+        eq(transactions.userId, userId),
         eq(transactions.status, "completed"),
         gt(transactions.createdAt, txn.createdAt),
       ),
@@ -308,7 +357,7 @@ async function downgradeIfActiveSourceInTx(
     await tx
       .update(users)
       .set({ subscriptionTier: "free", subscriptionExpiresAt: null })
-      .where(eq(users.id, txn.userId));
+      .where(eq(users.id, userId));
   }
 }
 
@@ -327,7 +376,7 @@ async function downgradeIfActiveSourceInTx(
  */
 export async function expireSubscriptionByTransactionId( // idor-safe
   transactionId: string,
-): Promise<{ userId: string } | null> {
+): Promise<{ userId: string | null } | null> {
   return db.transaction(async (tx) => {
     // Row lock: serializes renewal / refund / expiry on this transaction so a
     // renewal never overwrites a concurrently committed refund.
@@ -380,7 +429,7 @@ export async function reinstateSubscriptionByTransactionId( // idor-safe
   transactionId: string,
   expiresAt: Date | null,
   signedAt: Date,
-): Promise<{ userId: string; stale: boolean } | null> {
+): Promise<{ userId: string | null; stale: boolean } | null> {
   return db.transaction(async (tx) => {
     const [txn] = await tx
       .select()
@@ -408,7 +457,7 @@ export async function reinstateSubscriptionByTransactionId( // idor-safe
         ),
       );
 
-    if (expiresAt && expiresAt.getTime() > Date.now()) {
+    if (txn.userId !== null && expiresAt && expiresAt.getTime() > Date.now()) {
       await applyRenewalInTx(tx, txn.userId, "premium", expiresAt);
     }
 

@@ -1,5 +1,11 @@
 // client/components/recipe-wizard/WizardShell.tsx
-import React, { useState, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -88,10 +94,14 @@ export default function WizardShell({
   const headerInset = useHeaderContentInset();
   // Stable refs so useRecipeForm + handleSave always see the latest callbacks
   // without re-invoking their internal callbacks on every render.
+  // Mirrored in an effect (not the render body, which React Compiler rejects):
+  // both are read only from form actions and handleSave, after paint.
   const onDirtyChangeRef = useRef(onDirtyChange);
-  onDirtyChangeRef.current = onDirtyChange;
   const onSavingChangeRef = useRef(onSavingChange);
-  onSavingChangeRef.current = onSavingChange;
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
+    onSavingChangeRef.current = onSavingChange;
+  }, [onDirtyChange, onSavingChange]);
 
   // Action-driven dirty propagation: useRecipeForm fires onDirtyChange when
   // isDirty actually transitions. No derived useEffect needed.
