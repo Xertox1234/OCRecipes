@@ -1,6 +1,6 @@
 ---
 title: "ProductChip: a cancelled exit spring can hide a chip whose variant came back"
-status: backlog
+status: done
 priority: low
 created: 2026-11-06
 updated: 2026-11-06
@@ -21,8 +21,8 @@ Found by the react-hooks/set-state-in-effect batch A (PR #1771, 2026-11-06), whi
 
 ## Acceptance Criteria
 
-- [ ] A test (fake timers / mocked Reanimated callback with `finished: false`) shows the chip stays rendered when the variant returns mid-exit.
-- [ ] The exit callback only unmounts when the spring finished (`finished === true`) and no variant is set.
+- [x] A test (fake timers / mocked Reanimated callback with `finished: false`) shows the chip stays rendered when the variant returns mid-exit.
+- [x] The exit callback only unmounts when the spring finished (`finished === true`) and no variant is set.
 
 ## Implementation Notes
 
@@ -39,3 +39,7 @@ Found by the react-hooks/set-state-in-effect batch A (PR #1771, 2026-11-06), whi
 ### 2026-11-06
 
 - Filed from the set-state-in-effect batch A report.
+
+### 2026-11-06 (fixed)
+
+- The exit spring's callback now unmounts only when `finished` is true (`ProductChip.tsx`); a returning variant starts the enter spring, which cancels the exit spring (`finished: false`), so the chip stays. The "no variant set" half holds through that cancel: the worklet cannot read React state. Test: `__tests__/ProductChip.test.tsx` → "exit spring completion". Real-device check still open (camera screens cannot run in the simulator).
