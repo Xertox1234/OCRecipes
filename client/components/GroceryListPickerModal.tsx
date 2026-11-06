@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { toLocalDateString } from "@shared/lib/date";
 import {
   StyleSheet,
@@ -53,14 +53,17 @@ export function GroceryListPickerModal({
   const [newListTitle, setNewListTitle] = useState("");
   const [addingToListId, setAddingToListId] = useState<number | null>(null);
 
-  // Reset local state when modal is dismissed
-  useEffect(() => {
+  // Reset local state when modal is dismissed (set during render when
+  // `visible` changes — React's "adjust state when a prop changes" pattern)
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
     if (!visible) {
       setShowNewListInput(false);
       setNewListTitle("");
       setAddingToListId(null);
     }
-  }, [visible]);
+  }
 
   const handleAddToList = useCallback(
     (listId: number) => {

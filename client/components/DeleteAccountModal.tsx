@@ -91,9 +91,13 @@ export function DeleteAccountModal({
   const [needsCode, setNeedsCode] = useState(askCode);
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
 
-  // Reset state every time the modal opens so re-opening after a wrong-password
-  // attempt starts clean.
-  useEffect(() => {
+  // Reset state every time the modal opens (or two-step changes while it is
+  // open) so re-opening after a wrong-password attempt starts clean. Set
+  // during render when those props change (React's "adjust state when a prop
+  // changes" pattern).
+  const [prevOpen, setPrevOpen] = useState({ visible, askCode });
+  if (prevOpen.visible !== visible || prevOpen.askCode !== askCode) {
+    setPrevOpen({ visible, askCode });
     if (visible) {
       setPassword("");
       setShowPassword(false);
@@ -101,6 +105,10 @@ export function DeleteAccountModal({
       setIsDeleting(false);
       setNeedsCode(askCode);
       setFactor(null);
+    }
+  }
+  useEffect(() => {
+    if (visible) {
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(
           "Delete account confirmation. Confirm it's you to continue.",

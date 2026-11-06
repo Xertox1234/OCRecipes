@@ -101,15 +101,22 @@ export function ChangeEmailModal({
   const [needsCode, setNeedsCode] = useState(askCode);
   const [factor, setFactor] = useState<SecondFactorInput | null>(null);
 
-  // Reset every time the modal opens so a re-open after a failed attempt starts
-  // clean.
-  useEffect(() => {
+  // Reset every time the modal opens (or two-step changes while it is open) so
+  // a re-open after a failed attempt starts clean. Set during render when
+  // those props change (React's "adjust state when a prop changes" pattern).
+  const [prevOpen, setPrevOpen] = useState({ visible, askCode });
+  if (prevOpen.visible !== visible || prevOpen.askCode !== askCode) {
+    setPrevOpen({ visible, askCode });
     if (visible) {
       setShowPassword(false);
       setError(null);
       setIsSubmitting(false);
       setNeedsCode(askCode);
       setFactor(null);
+    }
+  }
+  useEffect(() => {
+    if (visible) {
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(
           "Change email. Enter your new email and current password.",

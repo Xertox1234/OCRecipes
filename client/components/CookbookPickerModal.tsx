@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -65,14 +65,17 @@ export function CookbookPickerModal({
   const [newName, setNewName] = useState("");
   const [addingToId, setAddingToId] = useState<number | null>(null);
 
-  // Reset local state when modal is dismissed
-  useEffect(() => {
+  // Reset local state when modal is dismissed (set during render when
+  // `visible` changes — React's "adjust state when a prop changes" pattern)
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
     if (!visible) {
       setShowNewInput(false);
       setNewName("");
       setAddingToId(null);
     }
-  }, [visible]);
+  }
 
   const handleAddToCookbook = useCallback(
     (cookbookId: number) => {
