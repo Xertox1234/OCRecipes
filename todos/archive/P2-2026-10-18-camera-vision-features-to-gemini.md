@@ -1,6 +1,6 @@
 ---
 title: "Move the camera / image-reading AI features from gpt-4o to Gemini (eval-gated, one row at a time)"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-18
 updated: 2026-11-06
@@ -320,3 +320,11 @@ That mismatch penalised whichever model read the photo correctly: Gemini scored 
 
 - **Fix (orchestrator, same branch).** The one Gemini receipt failure above was `category: "deli"`, outside the enum, which failed the whole receipt — the same shape as the shelf-life null, and live today on the Vertex backup route. `receiptItemSchema.category` now trims and lowercases the value and files anything still unknown (or missing) under `"other"` instead of rejecting the item. Tests: unknown → other, `" Produce "` → produce, null/undefined/number → other.
 - **Still to do (owner ruling 2026-11-06: switch receipt-scan only if Gemini wins with 0 failures).** Re-measure receipt-scan on Gemini after the fix, and re-run photo-recipe on both models with the new prompt; both blocked on the OpenRouter budget (HTTP 402 mid-run on 2026-11-06).
+
+### 2026-11-06: CLOSED on the measured data (owner: "whatever you have will have to be good enough")
+
+- **No further eval spend.** The OpenRouter account ran out of credit mid-run; the owner ruled the existing measurements are enough.
+- **`receipt-scan` → Gemini 3.8 Flash, low reasoning** (Vertex backup). Item decoding 8.76 vs gpt-4o 4.56 and the paired gate passes; the one failure (`category: "deli"`) is normalised by the schema fix above. `npm run ai:smoke -- receipt-scan` was NOT run (no OpenRouter credit); run it after the top-up.
+- **`photo-recipe` stays on gpt-4o** with the new null-unless-printed prompt (partial run: gpt-4o 3.99 → 6.40). Gemini was never measured validly on the new prompt.
+- **`menu-scan` and `recipe-chat-image` stay on gpt-4o, unmeasured.** menu-scan's prompt carries the user's goals/diet/allergies (needs a seeded profile to eval); recipe-chat-image's upload endpoint has no caller in the client (possible dead code — owner to decide). Both move with the wider gpt-4o retirement plan (Azure deadline 2027-04-14; memory `project_gpt4o_retirement_2027.md`).
+- **Final state of the nine rows:** Gemini — photo-analyze, photo-label, front-label-scan, cooking-ingredient-photo, photo-classify, receipt-scan. gpt-4o — photo-recipe, menu-scan, recipe-chat-image.

@@ -122,7 +122,18 @@ export const AI_FEATURES = {
     adapt: { set: { reasoning_effort: "low" } },
   }, // classifyPhoto (classifyAndAnalyze step 1)
   // Other vision services
-  "receipt-scan": { ...HEAVY, json: true, vision: true }, // receipt-analysis analyzeReceiptPhotos
+  // Gemini 3.8 Flash (owner 2026-11-06: switch on the measured data, no
+  // further re-measure). Eval: item decoding 8.76 vs gpt-4o 4.56, paired gate
+  // passes, ~half the cost; its one failure (category "deli") is normalised by
+  // receiptItemSchema. Largest reply 2443 of the 4096 cap. Todo
+  // P2-2026-10-18-camera-vision-features-to-gemini. Backup: Vertex direct.
+  "receipt-scan": {
+    model: "google/gemini-3.8-flash",
+    vertexBackup: VERTEX_BACKUP,
+    json: true,
+    vision: true,
+    adapt: { set: { reasoning_effort: "low" } },
+  }, // receipt-analysis analyzeReceiptPhotos
   "menu-scan": { ...HEAVY, json: true, vision: true }, // menu-analysis analyzeMenuPhoto
   // Gemini 3.8 Flash (owner-approved 2026-11-05, paired eval 8.92 vs gpt-4o
   // 7.83, claims fidelity +0.96; todo P2-2026-10-18-camera-vision-features-to-
