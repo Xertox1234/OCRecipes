@@ -86,21 +86,37 @@ export default function LabelAnalysisScreen() {
 
   const { imageUri, barcode, verificationMode, verifyBarcode } = route.params;
 
+  // Local OCR parse for an instant preview, computed once from the mount-time
+  // param (initial state, not an effect). The param never changes while this
+  // screen is mounted: nothing navigates LabelAnalysis to itself, and the
+  // stack has no getId, so a later navigate("LabelAnalysis") pushes a new one.
+  const [localPreview] = useState<LabelExtractionResult | null>(() => {
+    if (!route.params.localOCRText) return null;
+    const localData = parseNutritionFromOCR(route.params.localOCRText);
+    return localData.confidence >= 0.6
+      ? localDataToExtractionResult(localData)
+      : null;
+  });
+
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [labelData, setLabelData] = useState<LabelExtractionResult | null>(
-    null,
+    localPreview,
   );
   const [servings, setServings] = useState(1);
-  const [isAnalyzing, setIsAnalyzing] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(localPreview === null);
   const [error, setError] = useState<string | null>(null);
   const [showMicros, setShowMicros] = useState(false);
-  const [dataSource, setDataSource] = useState<"local" | "ai" | null>(null);
+  const [dataSource, setDataSource] = useState<"local" | "ai" | null>(
+    localPreview ? "local" : null,
+  );
   const [showUpdatedToast, setShowUpdatedToast] = useState(false);
   const [uploadFailed, setUploadFailed] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
 
-  const dataSourceRef = useRef<"local" | "ai" | null>(null);
-  const labelDataRef = useRef<LabelExtractionResult | null>(null);
+  const dataSourceRef = useRef<"local" | "ai" | null>(
+    localPreview ? "local" : null,
+  );
+  const labelDataRef = useRef<LabelExtractionResult | null>(localPreview);
   const prevSessionIdRef = useRef<string | null>(null);
   const prevShowUpdatedToastRef = useRef(false);
 
@@ -139,9 +155,9 @@ export default function LabelAnalysisScreen() {
   // or on an unrelated re-render.
   // The banner has no edge of its own: it is spoken only when one of the other
   // two fires, so it can never become a second same-commit announce. That
-  // holds because labelData is written only by the local-preview effect below
-  // (at mount, before any session) and by the upload success path, in the same
-  // commit as sessionId — a later path that changed labelData after the
+  // holds because labelData is written only by the local-preview initial state
+  // above (at mount, before any session) and by the upload success path, in
+  // the same commit as sessionId — a later path that changed labelData after the
   // session landed would NOT be re-announced. What is spoken is whatever
   // banner is showing at that edge, so when the AI merely confirms a
   // medium-tier local preview (labelData stays the local parse) that banner is
@@ -174,21 +190,6 @@ export default function LabelAnalysisScreen() {
     verifyBarcode,
     confidenceBannerMessage,
   ]);
-
-  // Parse local OCR data for instant preview (if available)
-  useEffect(() => {
-    if (route.params.localOCRText) {
-      const localData = parseNutritionFromOCR(route.params.localOCRText);
-      if (localData.confidence >= 0.6) {
-        const extractionResult = localDataToExtractionResult(localData);
-        setLabelData(extractionResult);
-        labelDataRef.current = extractionResult;
-        setDataSource("local");
-        dataSourceRef.current = "local";
-        setIsAnalyzing(false);
-      }
-    }
-  }, [route.params.localOCRText]);
 
   // Delete the captured temp photo when this flow ends. Unmount only — never
   // useFocusEffect: the front-label CTA below keeps LabelAnalysis ON the stack

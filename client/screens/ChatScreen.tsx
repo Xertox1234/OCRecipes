@@ -530,26 +530,25 @@ export default function ChatScreen() {
     pendingUser !== null &&
     pendingUser.conversationId === conversationId &&
     savedUserCount > pendingUser.savedUserCount;
-  useEffect(() => {
-    if (pendingUserSaved) setPendingUser(null);
-  }, [pendingUserSaved]);
-
+  // Both pending-copy updates below are adjusted during render (each guarded,
+  // so they settle) rather than in effects. `else`: a saved copy is dropped
+  // outright — the failure branch must not queue an update on top of that.
+  if (pendingUserSaved) {
+    setPendingUser(null);
+  }
   // A request that failed before any reply (requestError) never triggers the
   // refetch that would replace the local copy, so drop it here and give the
   // draft back for a resend.
-  useEffect(() => {
-    if (!pendingUser) return;
+  else if (pendingUser) {
     if (pendingUser.staleError !== null) {
       if (requestError === null) {
         setPendingUser({ ...pendingUser, staleError: null });
       }
-      return;
-    }
-    if (requestError) {
+    } else if (requestError) {
       setPendingUser(null);
       setInputText((current) => current || pendingUser.content);
     }
-  }, [requestError, pendingUser]);
+  }
 
   // Build display messages from fetched messages only; streaming renders in
   // ListFooterComponent so token updates do not invalidate visible rows.

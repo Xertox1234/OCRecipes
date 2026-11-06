@@ -1,3 +1,7 @@
+// The rule is still off globally until every batch lands (todo
+// P3-2026-11-04-react-compiler-lint-remaining-rules); enabled here so the
+// eslint-disable below counts as used and lint-staged --fix keeps it.
+/* eslint react-hooks/set-state-in-effect: "error" */
 import React, {
   useCallback,
   useEffect,
@@ -140,17 +144,18 @@ export default function CoachProScreen() {
   // Cleared when a thread is picked or the draft's first message creates one.
   const [isNewDraft, setIsNewDraft] = useState(false);
 
-  useEffect(() => {
-    if (conversationId || isNewDraft || threadBarConversations.length === 0)
-      return;
+  // Adjusted during render (guarded: once an id is set it stops), not in an
+  // effect.
+  if (!conversationId && !isNewDraft && threadBarConversations.length > 0) {
     setConversationId(threadBarConversations[0].id);
-  }, [conversationId, isNewDraft, threadBarConversations]);
+  }
 
   // Apply a conversation selected from AllConversationsScreen (navigation param pattern
   // replaces the non-serializable onSelect callback that was previously passed as a route param).
   useEffect(() => {
     const selectedId = route.params?.selectedConversationId;
     if (selectedId !== undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- consumes a one-shot navigation param; the state must land together with the navigation.setParams clear below
       setIsNewDraft(false);
       setConversationId(selectedId);
       navigation.setParams({ selectedConversationId: undefined });
