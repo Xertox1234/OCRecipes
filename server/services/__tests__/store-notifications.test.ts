@@ -10,6 +10,7 @@ import {
   handleAppleNotification,
   handleGoogleNotification,
   verifyGooglePushToken,
+  resetPushVerificationAlert,
 } from "../store-notifications";
 
 vi.mock("../receipt-validation", () => ({
@@ -27,6 +28,8 @@ vi.mock("../../storage", () => ({
 vi.mock("../subscription-tier-cache", () => ({
   invalidateCache: vi.fn(),
 }));
+const { mockReportError } = vi.hoisted(() => ({ mockReportError: vi.fn() }));
+vi.mock("../../lib/error-reporter", () => ({ reportError: mockReportError }));
 const { mockVerifyIdToken } = vi.hoisted(() => ({
   mockVerifyIdToken: vi.fn(),
 }));
@@ -200,19 +203,26 @@ describe("handleAppleNotification", () => {
     expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
   });
 
-  it("does not invalidate the cache when no local transaction matches", async () => {
-    vi.mocked(verifyAppleNotification).mockResolvedValue({
-      notificationType: "REFUND",
-      originalTransactionId: "orig-unknown",
-    });
-    vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue(
-      null,
-    );
+  // The phone's receipt is a pre-refund snapshot, so a refund that arrives
+  // before the receipt flow stored the row must not be dropped: throw → 5xx →
+  // Apple redelivers (over hours), by when the row exists and is revoked.
+  it.each(["REFUND", "REVOKE"])(
+    "throws (so Apple retries) when a %s matches no local transaction yet",
+    async (notificationType) => {
+      vi.mocked(verifyAppleNotification).mockResolvedValue({
+        notificationType,
+        originalTransactionId: "orig-unknown",
+      });
+      vi.mocked(storage.revokeSubscriptionByTransactionId).mockResolvedValue(
+        null,
+      );
 
-    await handleAppleNotification("signed-payload");
-
-    expect(invalidateCache).not.toHaveBeenCalled();
-  });
+      await expect(handleAppleNotification("signed-payload")).rejects.toThrow(
+        /^apple refund for an unknown transaction/,
+      );
+      expect(invalidateCache).not.toHaveBeenCalled();
+    },
+  );
 
   it("propagates a signature-verification error (caller maps to 5xx so Apple retries)", async () => {
     vi.mocked(verifyAppleNotification).mockRejectedValue(
@@ -393,6 +403,47 @@ describe("verifyGooglePushToken", () => {
     await expect(verifyGooglePushToken("Bearer forged")).resolves.toBe(false);
   });
 
+  describe("alerting", () => {
+    beforeEach(() => {
+      resetPushVerificationAlert();
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-11-06T00:00:00Z"));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("reports a failed signature check, at most once an hour", async () => {
+      mockVerifyIdToken.mockRejectedValue(new Error("wrong audience"));
+
+      await verifyGooglePushToken("Bearer a");
+      await verifyGooglePushToken("Bearer b");
+      expect(mockReportError).toHaveBeenCalledTimes(1);
+      expect(mockReportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "google-pubsub-oidc",
+      );
+
+      vi.setSystemTime(new Date("2026-11-06T01:00:01Z"));
+      await verifyGooglePushToken("Bearer c");
+      expect(mockReportError).toHaveBeenCalledTimes(2);
+    });
+
+    it("reports a token from an unexpected service account", async () => {
+      mockVerifyIdToken.mockResolvedValue({
+        getPayload: () => ({ email: "other@x.iam", email_verified: true }),
+      });
+
+      await expect(verifyGooglePushToken("Bearer x")).resolves.toBe(false);
+      expect(mockReportError).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not report a missing Authorization header (internet noise)", async () => {
+      await verifyGooglePushToken(undefined);
+      expect(mockReportError).not.toHaveBeenCalled();
+    });
+  });
+
   it("rejects a missing / non-Bearer Authorization header", async () => {
     await expect(verifyGooglePushToken(undefined)).resolves.toBe(false);
     expect(mockVerifyIdToken).not.toHaveBeenCalled();
@@ -460,6 +511,45 @@ describe("handleGoogleNotification", () => {
       message: { data: rtdnMessage(3, "tok-3") },
     });
 
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("ignores a notification whose type is not a number (schema-checked)", async () => {
+    const data = Buffer.from(
+      JSON.stringify({
+        subscriptionNotification: {
+          notificationType: "12",
+          purchaseToken: "tok-1",
+        },
+      }),
+    ).toString("base64");
+
+    await handleGoogleNotification({ message: { data } });
+
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+    expect(storage.expireSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("ignores a purchaseToken that is not a string (never reaches storage)", async () => {
+    const data = Buffer.from(
+      JSON.stringify({
+        subscriptionNotification: { notificationType: 12, purchaseToken: 123 },
+      }),
+    ).toString("base64");
+
+    await handleGoogleNotification({ message: { data } });
+
+    expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
+  });
+
+  it("ignores a decoded payload that is not an object", async () => {
+    const data = Buffer.from(JSON.stringify(["not", "an", "object"])).toString(
+      "base64",
+    );
+
+    await expect(
+      handleGoogleNotification({ message: { data } }),
+    ).resolves.toBeUndefined();
     expect(storage.revokeSubscriptionByTransactionId).not.toHaveBeenCalled();
   });
 
