@@ -1,25 +1,10 @@
 import {
   type User,
   type InsertUser,
-  type UserProfile,
   type InsertUserProfile,
   users,
   userProfiles,
-  communityRecipes,
-  cookbookRecipes,
-  favouriteRecipes,
-  savedItems,
-  recipeDismissals,
-  verificationHistory,
-  transactions,
 } from "@shared/schema";
-import {
-  isValidSubscriptionTier,
-  resolveEffectiveTier,
-  subscriptionTierSchema,
-  type SubscriptionTier,
-} from "@shared/types/premium";
-import type { ReminderMutes } from "@shared/types/reminders";
 import { db } from "../db";
 import {
   eq,
@@ -32,11 +17,8 @@ import {
   isNotNull,
   isNull,
 } from "drizzle-orm";
-import { logger, toError } from "../lib/logger";
-import { removeFromIndex } from "../lib/search-index";
 import { CLEARED_RESET_CODE } from "./password-reset";
 import { deleteAllPushTokensForUser } from "./push-tokens";
-import { lockBarcodes, recomputeAggregatesForBarcodes } from "./verification";
 
 // ============================================================================
 // USER CRUD
@@ -489,144 +471,6 @@ export async function touchLastActive(userId: string): Promise<void> {
 }
 
 /**
- * Most barcodes `deleteUser` locks inside the deletion transaction. Each lock
- * holds a slot in Postgres's shared lock table until commit; past this a
- * deletion could fail with "out of shared memory", so the aggregates are
- * recomputed after commit instead, this many barcodes per transaction.
- */
-export const DELETE_USER_LOCK_THRESHOLD = 1000;
-
-/**
- * Permanently delete a user and all associated data.
- * Relies on ON DELETE CASCADE foreign keys to clean up child tables, except
- * store purchases (`transactions`), which are kept anonymised (see below).
- * Community recipes (which use SET NULL) are explicitly deleted first.
- */
-export async function deleteUser(id: string): Promise<boolean> {
-  // Collect recipe IDs before the transaction so we can evict from the
-  // in-memory search index AFTER commit — side effects inside the callback
-  // fire before the transaction commits and can't be rolled back if the
-  // subsequent tx.delete(users) throws. (See docs/legacy-patterns/database.md
-  // "Side-Effect Ordering Around db.transaction".)
-  const orphanedRecipes = await db
-    .select({ id: communityRecipes.id })
-    .from(communityRecipes)
-    .where(eq(communityRecipes.authorId, id));
-
-  let votedBarcodes: string[] = [];
-  const deleted = await db.transaction(async (tx) => {
-    if (orphanedRecipes.length > 0) {
-      const recipeIds = orphanedRecipes.map((r) => r.id);
-      await tx
-        .delete(cookbookRecipes)
-        .where(
-          and(
-            inArray(cookbookRecipes.recipeId, recipeIds),
-            eq(cookbookRecipes.recipeType, "community"),
-          ),
-        );
-      await tx
-        .delete(favouriteRecipes)
-        .where(
-          and(
-            inArray(favouriteRecipes.recipeId, recipeIds),
-            eq(favouriteRecipes.recipeType, "community"),
-          ),
-        );
-      // Same polymorphic cleanup as deleteCommunityRecipe — these rows
-      // belong to OTHER users and have no FK to cascade.
-      await tx
-        .delete(savedItems)
-        .where(
-          and(
-            inArray(savedItems.recipeId, recipeIds),
-            eq(savedItems.recipeType, "community"),
-          ),
-        );
-      await tx
-        .delete(recipeDismissals)
-        .where(
-          and(
-            inArray(recipeDismissals.recipeIdentifier, recipeIds.map(String)),
-            eq(recipeDismissals.source, "community"),
-          ),
-        );
-      await tx
-        .delete(communityRecipes)
-        .where(eq(communityRecipes.authorId, id));
-    }
-
-    // verification_history cascades with the user; remember which barcodes
-    // that touches so their stored aggregates can be recomputed after.
-    votedBarcodes = [
-      ...new Set(
-        (
-          await tx
-            .select({ barcode: verificationHistory.barcode })
-            .from(verificationHistory)
-            .where(eq(verificationHistory.userId, id))
-        ).map((r) => r.barcode),
-      ),
-    ];
-    const recomputeHere = votedBarcodes.length <= DELETE_USER_LOCK_THRESHOLD;
-
-    // Lock before the user-row delete: a concurrent submitVerification holds
-    // this lock and then needs a key-share on the user row we are deleting.
-    // Past the threshold no barcode lock is held here, so there is nothing
-    // for that submit to deadlock against.
-    if (recomputeHere) await lockBarcodes(tx, votedBarcodes);
-
-    // Store purchases outlive the account (migration 0038: the FK sets
-    // user_id NULL) so a refunded purchase cannot be replayed on a new
-    // account. Keep only the store transaction id and its refund state.
-    // updatedAt is left alone: a legacy revoked row without revokedAt uses it
-    // as its refund cutoff (isRevokedForReceipt).
-    await tx
-      .update(transactions)
-      .set({ receipt: "" })
-      .where(eq(transactions.userId, id));
-
-    const result = await tx
-      .delete(users)
-      .where(eq(users.id, id))
-      .returning({ id: users.id });
-    if (result.length > 0 && recomputeHere && votedBarcodes.length > 0) {
-      await recomputeAggregatesForBarcodes(tx, votedBarcodes);
-    }
-    return result.length > 0;
-  });
-
-  // Past the threshold: the user's history rows are gone, so each batch
-  // recomputes from what remains under its own locks. The account is already
-  // deleted, so a failed batch is logged (its aggregates stay stale) rather
-  // than failing the request.
-  if (deleted && votedBarcodes.length > DELETE_USER_LOCK_THRESHOLD) {
-    const sorted = [...votedBarcodes].sort();
-    for (let i = 0; i < sorted.length; i += DELETE_USER_LOCK_THRESHOLD) {
-      const batch = sorted.slice(i, i + DELETE_USER_LOCK_THRESHOLD);
-      try {
-        await db.transaction((tx) => recomputeAggregatesForBarcodes(tx, batch));
-      } catch (err) {
-        logger.error(
-          { err: toError(err), userId: id, barcodes: batch.length },
-          "deleteUser: barcode aggregate recompute failed",
-        );
-      }
-    }
-  }
-
-  // Post-commit: evict deleted recipes from the MiniSearch index so they
-  // stop surfacing in search results. Only fires when the transaction succeeded.
-  if (deleted && orphanedRecipes.length > 0) {
-    for (const recipe of orphanedRecipes) {
-      removeFromIndex(`community:${recipe.id}`);
-    }
-  }
-
-  return deleted;
-}
-
-/**
  * Fetch a page of user IDs ordered by id for cursor-based iteration.
  * Pass `afterId: null` to start from the beginning; pass the last ID from the
  * previous page to advance the cursor. Returns an empty array when exhausted.
@@ -674,244 +518,18 @@ export async function getUserTimezones( // idor-safe
   return new Map(rows.map((r) => [r.id, r.timezone]));
 }
 
-// ============================================================================
-// USER PROFILES
-// ============================================================================
-
-export async function getUserProfile(
-  userId: string,
-): Promise<UserProfile | undefined> {
-  const [profile] = await db
-    .select()
-    .from(userProfiles)
-    .where(eq(userProfiles.userId, userId));
-  return profile || undefined;
-}
-
-export async function createUserProfile(
-  profile: InsertUserProfile,
-): Promise<UserProfile> {
-  const [newProfile] = await db
-    .insert(userProfiles)
-    .values(profile)
-    .returning();
-  return newProfile;
-}
-
-/** Whitelist of fields callers may update on a user profile.
- *  `userId` is excluded — it's a foreign key and immutable after creation.
- *  `healthDataConsentAt` is excluded — it's a legally significant timestamp
- *  generated internally; callers signal intent via the `recordConsent` flag. */
-type UpdatableProfileFields = Pick<
-  InsertUserProfile,
-  | "allergies"
-  | "healthConditions"
-  | "dietType"
-  | "foodDislikes"
-  | "primaryGoal"
-  | "activityLevel"
-  | "householdSize"
-  | "cuisinePreferences"
-  | "cookingSkillLevel"
-  | "cookingTimeAvailable"
-  | "glp1Mode"
-  | "glp1Medication"
-  | "glp1StartDate"
-  | "reminderMutes"
->;
-
-export async function updateUserProfile(
-  userId: string,
-  updates: Partial<UpdatableProfileFields>,
-  recordConsent = false,
-): Promise<UserProfile | undefined> {
-  // Append-only consent: SQL `COALESCE(existing, new)` keeps the first
-  // non-null `healthDataConsentAt` so a re-stamp request cannot overwrite
-  // the original consent record. The timestamp is generated here from
-  // `new Date()` rather than accepted as a parameter so callers cannot
-  // supply (or accidentally forward) a backdated value.
-  //
-  // Runtime strip: even though `UpdatableProfileFields` excludes the column
-  // at compile time, defensively destructure it out of the spread so a
-  // caller that bypasses TS (`as any`, JS scripts, malformed objects)
-  // cannot smuggle a `Date` into the SET clause.
-  const { healthDataConsentAt: _strip, ...safeUpdates } =
-    updates as Partial<UpdatableProfileFields> & {
-      healthDataConsentAt?: Date | null;
-    };
-  void _strip;
-  const setClause: Record<string, unknown> = {
-    ...safeUpdates,
-    updatedAt: new Date(),
-  };
-  if (recordConsent) {
-    setClause.healthDataConsentAt = sql`COALESCE(${userProfiles.healthDataConsentAt}, ${new Date()})`;
-  }
-  const [profile] = await db
-    .update(userProfiles)
-    .set(setClause)
-    .where(eq(userProfiles.userId, userId))
-    .returning();
-  return profile || undefined;
-}
-
-/**
- * Merges reminder mutes into the user's profile, creating a bare profile row
- * (every other column defaults) when none exists yet — a plain UPDATE would
- * match nothing for a profile-less account and silently drop the change.
- * Returns the stored mutes after the merge.
- */
-export async function saveReminderMutes(
-  userId: string,
-  mutes: Partial<ReminderMutes>,
-): Promise<ReminderMutes> {
-  const [row] = await db
-    .insert(userProfiles)
-    .values({ userId, reminderMutes: mutes })
-    .onConflictDoUpdate({
-      target: userProfiles.userId,
-      set: {
-        reminderMutes: sql`${userProfiles.reminderMutes} || excluded.reminder_mutes`,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ reminderMutes: userProfiles.reminderMutes });
-  return row.reminderMutes;
-}
-
-/**
- * Atomically upserts a user profile and marks onboarding as complete.
- * Used by the POST /api/user/dietary-profile onboarding endpoint.
- *
- * `healthDataConsentAt` is omitted from `profileData` because the timestamp
- * is generated internally; callers signal intent via `recordConsent`.
- */
-export async function upsertProfileWithOnboarding(
-  userId: string,
-  profileData: Omit<InsertUserProfile, "userId" | "healthDataConsentAt">,
-  recordConsent = false,
-): Promise<UserProfile> {
-  // Runtime strip: the parameter type excludes `healthDataConsentAt` at
-  // compile time, but defensively destructure it out of the spread so a
-  // caller that bypasses TS (`as any`, JS scripts, malformed objects)
-  // cannot smuggle a `Date` into the upsert.
-  const { healthDataConsentAt: _strip, ...safeProfileData } =
-    profileData as Omit<InsertUserProfile, "userId" | "healthDataConsentAt"> & {
-      healthDataConsentAt?: Date | null;
-    };
-  void _strip;
-
-  return db.transaction(async (tx) => {
-    const [existing] = await tx
-      .select()
-      .from(userProfiles)
-      .where(eq(userProfiles.userId, userId));
-
-    let result: UserProfile;
-    if (existing) {
-      // Append-only consent: never overwrite a previously recorded
-      // `healthDataConsentAt`. Once consent has been captured, replays of
-      // this onboarding endpoint preserve the original timestamp as the
-      // legally significant record of agreement. The timestamp is generated
-      // here from `new Date()` so callers cannot supply a backdated value.
-      const safeData: Omit<InsertUserProfile, "userId"> =
-        recordConsent && !existing.healthDataConsentAt
-          ? { ...safeProfileData, healthDataConsentAt: new Date() }
-          : safeProfileData;
-      [result] = await tx
-        .update(userProfiles)
-        .set({ ...safeData, updatedAt: new Date() })
-        .where(eq(userProfiles.userId, userId))
-        .returning();
-    } else {
-      const insertData: Omit<InsertUserProfile, "userId"> = recordConsent
-        ? { ...safeProfileData, healthDataConsentAt: new Date() }
-        : safeProfileData;
-      [result] = await tx
-        .insert(userProfiles)
-        .values({ ...insertData, userId })
-        .returning();
-    }
-
-    await tx
-      .update(users)
-      .set({ onboardingCompleted: true })
-      .where(eq(users.id, userId));
-
-    return result;
-  });
-}
-
-// ============================================================================
-// SUBSCRIPTION
-// ============================================================================
-
-export async function getSubscriptionStatus(userId: string): Promise<
-  | {
-      tier: SubscriptionTier;
-      expiresAt: Date | null;
-    }
-  | undefined
-> {
-  const [user] = await db
-    .select({
-      tier: users.subscriptionTier,
-      expiresAt: users.subscriptionExpiresAt,
-    })
-    .from(users)
-    .where(eq(users.id, userId));
-
-  if (!user) return undefined;
-
-  // Validate tier with Zod schema, fallback to "free" if invalid
-  const parsedTier = subscriptionTierSchema.safeParse(user.tier);
-  return {
-    tier: parsedTier.success ? parsedTier.data : "free",
-    expiresAt: user.expiresAt,
-  };
-}
-
-/**
- * Resolve the *effective* subscription tier for a user, accounting for
- * premium expiry. The raw `users.subscriptionTier` is NOT reset on expiry, so
- * indexing `TIER_FEATURES` with it directly grants paid features/limits to
- * lapsed subscribers (revenue leak). This helper is the canonical path: a
- * single `users` select + `resolveEffectiveTier`, with no cache and no
- * additional dependencies. Use it everywhere a feature gate needs the user's
- * current tier — route gates, storage limit checks, inline feature reads.
- *
- * Returns `"free"` for unknown users or invalid stored tiers (fail-closed).
- *
- * EXEMPTION: B2B `ApiTier` (api-key) sites must NOT pass through this helper —
- * they have no expiry concept.
- */
-export async function getEffectiveTierForUser(
-  userId: string,
-): Promise<SubscriptionTier> {
-  const [row] = await db
-    .select({
-      tier: users.subscriptionTier,
-      expiresAt: users.subscriptionExpiresAt,
-    })
-    .from(users)
-    .where(eq(users.id, userId));
-  const storedTier = row?.tier ?? "free";
-  const { effectiveTier } = resolveEffectiveTier(
-    isValidSubscriptionTier(storedTier) ? storedTier : "free",
-    row?.expiresAt ?? null,
-  );
-  return effectiveTier;
-}
-
-export async function updateSubscription(
-  userId: string,
-  tier: SubscriptionTier,
-  expiresAt: Date | null,
-): Promise<User | undefined> {
-  const [user] = await db
-    .update(users)
-    .set({ subscriptionTier: tier, subscriptionExpiresAt: expiresAt })
-    .where(eq(users.id, userId))
-    .returning();
-  return user || undefined;
-}
+// Moved out of this file (pure move); re-exported so the storage facade
+// (`import * as users`) and existing importers need no change.
+export { DELETE_USER_LOCK_THRESHOLD, deleteUser } from "./user-deletion";
+export {
+  getUserProfile,
+  createUserProfile,
+  updateUserProfile,
+  saveReminderMutes,
+  upsertProfileWithOnboarding,
+} from "./user-profiles";
+export {
+  getSubscriptionStatus,
+  getEffectiveTierForUser,
+  updateSubscription,
+} from "./subscription-status";

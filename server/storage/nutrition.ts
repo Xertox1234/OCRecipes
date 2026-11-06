@@ -21,7 +21,7 @@ import { eq, desc, and, gte, lt, lte, sql, isNull, inArray } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 import { quotaDayBounds } from "./quota-day";
 import { isUniqueViolation } from "../lib/db-errors";
-import { getEffectiveTierForUser } from "./users";
+import { getEffectiveTierForUser } from "./subscription-status";
 
 // ============================================================================
 // SCANNED ITEMS

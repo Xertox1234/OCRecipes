@@ -11,7 +11,7 @@ import { toTotalTimeMinutes } from "@shared/lib/recipe-time";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { isUniqueViolation } from "../lib/db-errors";
 import { incrementRecipePopularity } from "./canonical-recipes";
-import { getEffectiveTierForUser } from "./users";
+import { getEffectiveTierForUser } from "./subscription-status";
 
 export async function toggleFavouriteRecipe(
   userId: string,

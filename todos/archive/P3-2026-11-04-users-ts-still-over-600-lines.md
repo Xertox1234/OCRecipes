@@ -1,9 +1,9 @@
 ---
 title: "server/storage/users.ts is still ~905 lines after the subscription split"
-status: backlog
+status: done
 priority: low
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-06
 assignee:
 labels: [deferred, maintainability, auth]
 github_issue:
@@ -32,11 +32,11 @@ of the file is the profile and auth/account sections.
 
 ## Acceptance Criteria
 
-- [ ] `server/storage/users.ts` is under 600 lines, split by sub-domain behind
+- [x] `server/storage/users.ts` is under 600 lines, split by sub-domain behind
       the existing `server/storage/index.ts` facade with no caller change
-- [ ] Sub-modules import shared symbols from the sibling that defines them,
+- [x] Sub-modules import shared symbols from the sibling that defines them,
       never from the barrel (`docs/rules/architecture.md`)
-- [ ] Existing tests pass unchanged (move tests alongside if needed)
+- [x] Existing tests pass unchanged (move tests alongside if needed)
 
 ## Implementation Notes
 
@@ -68,3 +68,11 @@ of the file is the profile and auth/account sections.
 
 - Filed from the `/todo` run's deferred warnings (PR #1744). Human-led
   because the remaining sections are auth storage.
+
+### 2026-11-06
+
+- Done in a human-led session (owner approved, auth storage not delegated). Pure move, every moved block byte-identical to `main`: `users.ts` 917 → 553 lines.
+  - `server/storage/user-deletion.ts`: `DELETE_USER_LOCK_THRESHOLD`, `deleteUser`.
+  - `server/storage/user-profiles.ts`: the USER PROFILES section.
+  - `server/storage/subscription-status.ts`: `getSubscriptionStatus`, `getEffectiveTierForUser`, `updateSubscription`; `nutrition.ts` and `favourite-recipes.ts` now import `getEffectiveTierForUser` from it.
+- `users.ts` re-exports all moved symbols, so `server/storage/index.ts` (`import * as users`) and the existing tests are unchanged. The auth/account CRUD stays in `users.ts`.
