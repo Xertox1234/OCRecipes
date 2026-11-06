@@ -124,11 +124,11 @@ function SimpleEntrySheetContentInner(
     [haptics],
   );
 
-  // Reset state when the sheet opens for a meal type, and stop any
-  // in-progress voice capture when it closes.
+  // Reset state when the sheet opens for a meal type. Keyed on mealType
+  // alone: listening changes must not wipe the form mid-entry.
   useEffect(() => {
     if (mealType) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset also clears two refs and stops the external speech session, which cannot run during render; kept as one effect so its run order before the transcript effects is unchanged
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset also clears two refs, which cannot run during render; stays an effect declared before the transcript effects so it runs before them, as before
       setDishName("");
       setServings(1);
       setError(null);
@@ -136,7 +136,12 @@ function SimpleEntrySheetContentInner(
       setShowUpgrade(false);
       isAddingRef.current = false;
       createdRecipeRef.current = null;
-    } else if (isListening) {
+    }
+  }, [mealType]);
+
+  // Stop any in-progress voice capture when the sheet closes.
+  useEffect(() => {
+    if (!mealType && isListening) {
       stopListening();
     }
   }, [mealType, isListening, stopListening]);
