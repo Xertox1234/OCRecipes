@@ -185,6 +185,23 @@ describe("nutrition-detail-utils", () => {
       });
     });
 
+    // The label was adopted because the database had no nutrition at all, so
+    // nothing cross-checked it: still gated, but the values on screen are the
+    // label's, and the bar must not claim they came from the database.
+    it("marks a gate over label values that could not be cross-checked", () => {
+      expect(
+        deriveLogGate({
+          ocrText: "Calories 150",
+          labelUsed: false,
+          valuesFromLabel: true,
+        }),
+      ).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+        valuesFromLabel: true,
+      });
+    });
+
     it("stays open for a barcode-only session even if labelUsed is somehow true", () => {
       expect(deriveLogGate({ ocrText: undefined, labelUsed: true })).toEqual({
         kind: "open",

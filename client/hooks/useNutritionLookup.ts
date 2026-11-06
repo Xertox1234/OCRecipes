@@ -588,7 +588,11 @@ export function useNutritionLookup(params: {
     addToLogMutation.mutate(lookup.nutrition);
   };
 
-  const logGate = deriveLogGate({ ocrText, labelUsed: lookup.labelUsed });
+  const logGate = deriveLogGate({
+    ocrText,
+    labelUsed: lookup.labelUsed,
+    valuesFromLabel: lookup.activeSource === "label",
+  });
 
   return {
     logGate,

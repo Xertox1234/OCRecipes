@@ -13,7 +13,11 @@
  */
 export type LogBarGate =
   | { kind: "open"; buttonLabel?: string }
-  | { kind: "needsAcknowledgement"; buttonLabel: string };
+  | {
+      kind: "needsAcknowledgement";
+      buttonLabel: string;
+      valuesFromLabel?: true;
+    };
 
 export interface LogBarState {
   mode: "acknowledge" | "log";
@@ -44,7 +48,9 @@ export function deriveLogBarState(params: {
     return {
       mode: "acknowledge",
       label,
-      accessibilityLabel: `${label}. These values come from the product database, not the label you photographed.`,
+      accessibilityLabel: logGate.valuesFromLabel
+        ? `${label}. These values come from the label you photographed and could not be checked against the product database.`
+        : `${label}. These values come from the product database, not the label you photographed.`,
       accessibilityHint: "Reveals the Add to Today button",
     };
   }

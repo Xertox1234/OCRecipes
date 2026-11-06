@@ -51,7 +51,13 @@ export function isUnknownProduct(
 
 export type LogGate =
   | { kind: "open" }
-  | { kind: "needsAcknowledgement"; buttonLabel: string };
+  | {
+      kind: "needsAcknowledgement";
+      buttonLabel: string;
+      /** The gated values are the photographed label's (adopted because the
+       *  database had no nutrition to check them against), not the database's. */
+      valuesFromLabel?: true;
+    };
 
 /**
  * Whether the user may log this item in one tap.
@@ -69,13 +75,15 @@ export type LogGate =
 export function deriveLogGate(params: {
   ocrText: string | null | undefined;
   labelUsed: boolean;
+  valuesFromLabel?: boolean;
 }): LogGate {
-  const { ocrText, labelUsed } = params;
+  const { ocrText, labelUsed, valuesFromLabel } = params;
   if (ocrText === undefined) return { kind: "open" };
   if (labelUsed) return { kind: "open" };
   return {
     kind: "needsAcknowledgement",
     buttonLabel: "Review values before logging",
+    ...(valuesFromLabel ? { valuesFromLabel: true as const } : {}),
   };
 }
 
