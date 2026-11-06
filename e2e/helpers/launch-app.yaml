@@ -108,6 +108,22 @@ appId: com.ocrecipes.app
 #    screen sits under every load in the tree (run 40604313571's
 #    error-screen dump contains "DEVELOPMENT SERVERS"), so it would match
 #    during a normal load.
+#
+# 7. Closing the dev menu must be VERIFIED, not assumed. In run 41960367024
+#    ("Home - View item detail from history", both attempts) the app was
+#    signed out on "Welcome! Sign in to continue" with the dev-client menu
+#    sheet ("Runtime version: 5.0.0", Reload, Go home, TOOLS) still covering
+#    it. The gated `tapOn: Close` ran and reported COMPLETED in commands.json,
+#    yet the next screenshot (step-018) still showed the menu, so
+#    login.yaml's 60s wait for (Sign In|Hello.*|Not Now) saw only the menu's
+#    nodes and timed out. "Close" is present in the hierarchy as
+#    accessibilityText, so the tap most likely landed during the sheet's open
+#    animation or the menu reopened. The block at the end therefore loops
+#    (max 3) while "Runtime version.*" is visible: tap Close, then wait up to
+#    3s for the sheet to be gone. Both inner steps stay optional; a menu that
+#    survives all 3 rounds still fails loud at the caller's next wait. (The
+#    same run's attempt 2 died elsewhere, with launch-app's optional "Not Now"
+#    tap still running at log end and no hierarchy dump; unexplained.)
 ---
 - runFlow:
     when:
@@ -180,16 +196,21 @@ appId: com.ocrecipes.app
 
 # Dev menu sheet — either left open under the banner just dismissed, or open
 # from an earlier flow. Give it a beat to settle after the banner tap, then
-# close it. The inner tap stays optional: the `when:` gate only guards entry,
-# it does not soften a failing command inside.
+# close it, retrying until it is gone — see header (7). The inner steps stay
+# optional so a missing control never fails the helper itself.
 - extendedWaitUntil:
     visible: "Runtime version.*"
     timeout: 3000
     optional: true
-- runFlow:
-    when:
+- repeat:
+    times: 3
+    while:
       visible: "Runtime version.*"
     commands:
       - tapOn:
           text: "Close"
+          optional: true
+      - extendedWaitUntil:
+          notVisible: "Runtime version.*"
+          timeout: 3000
           optional: true
