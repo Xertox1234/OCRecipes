@@ -11,6 +11,7 @@ import {
 } from "expo-iap";
 import type { ProductSubscription, Purchase } from "expo-iap";
 import { logger } from "../logger";
+import { reportError } from "../reporter";
 import { PRODUCT_IDS } from "./constants";
 import {
   freeTrialOfferIOS,
@@ -21,6 +22,18 @@ import {
 import type { IAPProduct, IAPPurchaseResult, UseIAPResult } from "./types";
 
 const SKU = PRODUCT_IDS.ANNUAL_PREMIUM;
+
+/**
+ * Whether this app session already reported an unsolicited purchase. A charged
+ * purchase the server never confirmed must be visible off-device, but StoreKit
+ * also redelivers renewals this way, so report it once per session at most.
+ */
+let unclaimedPurchaseReported = false;
+
+/** Reset the once-per-session report (exported for tests). */
+export function resetUnclaimedPurchaseReport(): void {
+  unclaimedPurchaseReported = false;
+}
 
 interface PendingPurchase {
   resolve: (result: IAPPurchaseResult) => void;
@@ -116,6 +129,15 @@ export function useExpoIAP(): UseIAPResult {
         logger.warn(
           "Store delivered a purchase with none pending; kept for restore",
         );
+        if (!unclaimedPurchaseReported) {
+          unclaimedPurchaseReported = true;
+          reportError(
+            new Error(
+              "Store delivered a purchase with none pending; kept for restore",
+            ),
+            "iap-unclaimed-purchase",
+          );
+        }
         unclaimed.current = result;
       }
     },
