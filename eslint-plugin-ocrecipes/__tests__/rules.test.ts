@@ -1053,11 +1053,11 @@ describe("eslint.config.js wiring", () => {
   });
 
   // eslint-plugin-react-hooks 7 (SDK 56) adds the React Compiler rules to its
-  // recommended set, which eslint-config-expo spreads in. They were adopted
-  // one by one; on are the two hooks rules we already enforced plus the
-  // adopted compiler rules (globals, immutability, preserve-manual-memoization,
-  // refs, set-state-in-effect). Every other compiler rule in that set stays
-  // off until adopted.
+  // recommended set, which eslint-config-expo spreads in. On are the two hooks
+  // rules we already enforced plus the compiler rules adopted since, one by
+  // one (globals, immutability, preserve-manual-memoization, refs,
+  // set-state-in-effect). Every other compiler rule in that set stays off
+  // until adopted.
   it("keeps react-hooks to the two pre-compiler rules plus the adopted compiler rules", async () => {
     const config = await new ESLint({}).calculateConfigForFile(
       "client/screens/ScanScreen.tsx",
