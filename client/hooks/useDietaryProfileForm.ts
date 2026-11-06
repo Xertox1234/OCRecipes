@@ -1,3 +1,7 @@
+// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
+// enabled here so the justified disables below count as used and survive `eslint --fix`.
+// Delete these four lines when the rule is turned on globally.
+/* eslint react-hooks/set-state-in-effect: "error" */
 import { useState, useEffect } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -72,6 +76,7 @@ export function useDietaryProfileForm() {
   // Initialize form state from fetched profile
   useEffect(() => {
     if (profile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates the editable form from each profile object the query cache delivers; kept as an effect so what gets saved (allergen/diet data) is unchanged
       setAllergies(profile.allergies || []);
       setHealthConditions(profile.healthConditions || []);
       setDietType(profile.dietType || null);

@@ -1,3 +1,7 @@
+// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
+// enabled here so the justified disables below count as used and survive `eslint --fix`.
+// Delete these four lines when the rule is turned on globally.
+/* eslint react-hooks/set-state-in-effect: "error" */
 // The real store path: implements the app's UseIAPResult on top of expo-iap
 // 6.x. Loaded only outside __DEV__ (see ./index.ts), because importing
 // expo-iap loads its native module. TypeScript checks this module against
@@ -164,6 +168,7 @@ export function useExpoIAP(): UseIAPResult {
   useEffect(() => {
     const subscription = subscriptions.find((item) => item.id === SKU);
     if (!subscription) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs products from the store connection's subscription list (an external system); purchase code, deliberately not restructured
       setProducts([]);
       return;
     }

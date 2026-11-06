@@ -117,4 +117,21 @@ describe("useServingAdjuster", () => {
     );
     expect(result.current.servingCount).toBe(1);
   });
+
+  it("resets the serving count when the recipe's servings change", () => {
+    const { result, rerender } = renderHook(
+      ({ servings }) => useServingAdjuster(servings, SAMPLE_INGREDIENTS),
+      { initialProps: { servings: 4 } },
+    );
+    act(() => result.current.increment());
+    expect(result.current.servingCount).toBe(5);
+
+    // Same servings: the user's adjustment stays.
+    rerender({ servings: 4 });
+    expect(result.current.servingCount).toBe(5);
+
+    rerender({ servings: 2 });
+    expect(result.current.servingCount).toBe(2);
+    expect(result.current.isAdjusted).toBe(false);
+  });
 });

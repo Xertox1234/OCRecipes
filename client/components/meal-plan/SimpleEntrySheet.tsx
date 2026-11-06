@@ -1,3 +1,7 @@
+// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
+// enabled here so the justified disables below count as used and survive `eslint --fix`.
+// Delete these four lines when the rule is turned on globally.
+/* eslint react-hooks/set-state-in-effect: "error" */
 import React, {
   useCallback,
   useEffect,
@@ -128,6 +132,7 @@ function SimpleEntrySheetContentInner(
   // in-progress voice capture when it closes.
   useEffect(() => {
     if (mealType) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the reset also clears two refs and stops the external speech session, which cannot run during render; kept as one effect so its run order before the transcript effects is unchanged
       setDishName("");
       setServings(1);
       setError(null);
@@ -143,6 +148,7 @@ function SimpleEntrySheetContentInner(
   // Auto-fill dish name from streaming transcript
   useEffect(() => {
     if (isListening && transcript) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the speech recognizer's transcript into an editable field; must stay an effect so it runs after the open/reset effect above, as before
       setDishName(transcript);
     }
   }, [isListening, transcript]);
@@ -150,6 +156,7 @@ function SimpleEntrySheetContentInner(
   // Set final transcript when recognition completes
   useEffect(() => {
     if (isFinal && transcript) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the recognizer's final transcript (re-fires on the isFinal flip even with an unchanged transcript); must stay an effect so it runs after the reset effect, as before
       setDishName(transcript);
     }
   }, [isFinal, transcript]);
@@ -157,6 +164,7 @@ function SimpleEntrySheetContentInner(
   // Show speech errors
   useEffect(() => {
     if (speechError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reacts to an error from the external speech recognizer; showError also fires a haptic, a side effect that cannot run during render
       showError(speechError);
     }
   }, [speechError, showError]);

@@ -1,3 +1,7 @@
+// set-state-in-effect is still off globally (eslint.config.js, KEPT_REACT_HOOKS_RULES);
+// enabled here so the justified disables below count as used and survive `eslint --fix`.
+// Delete these four lines when the rule is turned on globally.
+/* eslint react-hooks/set-state-in-effect: "error" */
 // client/hooks/useRecipeExtractionFlow.ts
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RecipePhotoResult } from "@/lib/photo-upload";
@@ -63,6 +67,7 @@ export function useRecipeExtractionFlow<TInput>({
   }, [input, mutationFn, gateCheck, gateFailureMessage, errorCopy]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- starts the extraction request on mount; run()'s synchronous resets are no-ops here (initial state) and exist for retry
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
   }, []);

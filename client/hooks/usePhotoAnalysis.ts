@@ -149,7 +149,14 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
   );
 
   // Initialize all items as selected when foods array populates.
-  useEffect(() => {
+  // Intentionally keyed on foods.length, not foods: avoids resetting the user's
+  // selections/prep edits when food names change. Adjusted during render
+  // (React's "store the previous value" pattern) rather than in an effect;
+  // `foods` starts empty, so seeding the previous length with 0 matches the
+  // old effect's mount run.
+  const [prevFoodsLength, setPrevFoodsLength] = useState(0);
+  if (prevFoodsLength !== foods.length) {
+    setPrevFoodsLength(foods.length);
     if (foods.length > 0) {
       setSelectedItems(new Set(foods.map((_, i) => i)));
       // Initialize prep methods to "As Served" for each food
@@ -159,8 +166,7 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
       });
       setPrepMethods(initialPrep);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on foods.length, not foods: avoids resetting user's selections/prep edits when food names change
-  }, [foods.length]);
+  }
 
   // Upload and analyze photo
   useEffect(() => {

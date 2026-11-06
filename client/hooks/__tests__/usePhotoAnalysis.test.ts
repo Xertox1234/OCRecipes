@@ -206,6 +206,39 @@ describe("usePhotoAnalysis — logging the selected foods", () => {
     return hook;
   }
 
+  it("selects every food and sets each prep to As Served once the foods arrive", async () => {
+    const { result } = await renderAnalyzed();
+    expect([...result.current.selectedItems]).toEqual([0, 1]);
+    expect(result.current.prepMethods).toEqual({
+      0: "As Served",
+      1: "As Served",
+    });
+  });
+
+  it("keeps the user's selection through a same-count edit; re-selects all when the count changes", async () => {
+    const { submitFollowUp } = await import("@/lib/photo-upload");
+    vi.mocked(submitFollowUp).mockResolvedValue(
+      makeResponse({
+        foods: [food, { ...food, name: "Butter" }, { ...food, name: "Jam" }],
+      }),
+    );
+    const { result } = await renderAnalyzed();
+
+    act(() => result.current.toggleItemSelection(0));
+    act(() => result.current.handleEditFood(1, "name", "Salted butter"));
+    expect([...result.current.selectedItems]).toEqual([1]);
+
+    await act(async () => {
+      await result.current.handleFollowUpAnswer("How much?", "Two");
+    });
+    expect([...result.current.selectedItems].sort()).toEqual([0, 1, 2]);
+    expect(result.current.prepMethods).toEqual({
+      0: "As Served",
+      1: "As Served",
+      2: "As Served",
+    });
+  });
+
   // R48: these direct-call catch blocks bypass MutationCache.onError, so a
   // systematic 5xx / contract break was invisible off-device.
   it("reports a failed prep-method lookup (keeps the previous nutrition)", async () => {
