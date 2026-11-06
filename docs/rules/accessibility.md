@@ -2,7 +2,7 @@
 
 > Binding directives only; embedded whole on every a11y-domain edit (cap: `scripts/check-rules-file-size.js`). **Add new depth to the solution the bullet cites, not here.**
 
-- All `fullScreenModal` and `modal` screens need `accessibilityViewIsModal={true}` on the root container — VoiceOver navigates behind the modal without it
+- All `fullScreenModal` and `modal` screens need `accessibilityViewIsModal={true}` on the root container of EVERY return path (loading, error, empty, permission early returns too) — VoiceOver navigates behind the modal without it. See `docs/solutions/logic-errors/modal-screen-early-returns-skip-accessibility-view-is-modal-2026-11-06.md`
 - Decorative content (icons inside labeled Pressables, emoji in a `Text`, badges inside a parent with an `accessibilityLabel`) gets `accessible={false}` — otherwise VoiceOver double-focuses or reads it literally
 - `Pressable` with `disabled={true}` auto-propagates to `accessibilityState.disabled` on RN 0.81 — an explicit `accessibilityState={{ disabled: true }}` is only required on NON-Pressable touchables (TouchableOpacity, custom Views)
 - Error messages use `accessibilityLiveRegion="assertive"` not `"polite"` — use the `InlineError` component, not `Alert.alert()`

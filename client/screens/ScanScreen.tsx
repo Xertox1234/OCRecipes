@@ -113,6 +113,16 @@ export default function ScanScreen() {
   const haptics = useHaptics();
   const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const { isPremium, remainingScans } = usePremiumCamera();
+  // The scan-count pill is plain text; speak the limit once, on the edge
+  // from scans-left to none (silent when the camera opens already at it).
+  const prevRemainingScansRef = useRef(remainingScans);
+  useEffect(() => {
+    const prev = prevRemainingScansRef.current;
+    prevRemainingScansRef.current = remainingScans;
+    if (!isPremium && prev !== null && prev > 0 && remainingScans === 0) {
+      AccessibilityInfo.announceForAccessibility("Daily scan limit reached");
+    }
+  }, [isPremium, remainingScans]);
   const { refreshScanCount, features, canGenerateRecipe } = usePremiumContext();
   const queryClient = useQueryClient();
 

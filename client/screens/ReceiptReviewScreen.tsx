@@ -28,6 +28,7 @@ import { SwipeableRow } from "@/components/SwipeableRow";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useSuccessPop } from "@/hooks/useSuccessAnimation";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 import {
   useReceiptScan,
   useReceiptConfirm,
@@ -173,15 +174,26 @@ export default function ReceiptReviewScreen() {
           if (dataSourceRef.current === "local") {
             setShowUpdatedToast(true);
             toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
+            // The toast's live region covers Android only.
+            if (Platform.OS === "ios") {
+              AccessibilityInfo.announceForAccessibility(
+                "Updated with AI analysis",
+              );
+            }
           }
         }
         dataSourceRef.current = "ai";
       },
       onError: () => {
         if (cancelled) return;
-        // No state updates needed — scanMutation.isError drives the render path.
-        // The cancelled guard is retained so any future state writes added here
-        // are automatically safe against unmounted-component updates.
+        // scanMutation.isError drives the render path. The failure screen only
+        // shows when there is no local OCR preview to fall back on, so only
+        // then is the failure spoken (no live region on that screen).
+        if (localItemsRef.current.length === 0) {
+          AccessibilityInfo.announceForAccessibility(
+            "Could not read the receipt. Try taking a clearer photo.",
+          );
+        }
       },
     });
 
@@ -364,10 +376,14 @@ export default function ReceiptReviewScreen() {
     [separatorColor],
   );
 
+  const isBlockingLoad = scanMutation.isPending && items.length === 0;
+  useDelayedLoadingAnnouncement(isBlockingLoad);
+
   // Loading state — only block if no local preview items yet
-  if (scanMutation.isPending && items.length === 0) {
+  if (isBlockingLoad) {
     return (
       <View
+        accessibilityViewIsModal
         style={[
           styles.centered,
           { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
@@ -392,6 +408,7 @@ export default function ReceiptReviewScreen() {
   if (scanMutation.isError && items.length === 0) {
     return (
       <View
+        accessibilityViewIsModal
         style={[
           styles.centered,
           { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
@@ -424,6 +441,7 @@ export default function ReceiptReviewScreen() {
   if (showMealPlanPrompt) {
     return (
       <View
+        accessibilityViewIsModal
         style={[
           styles.centered,
           { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
@@ -468,6 +486,7 @@ export default function ReceiptReviewScreen() {
   if (scanMutation.isSuccess && items.length === 0) {
     return (
       <View
+        accessibilityViewIsModal
         style={[
           styles.centered,
           { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },

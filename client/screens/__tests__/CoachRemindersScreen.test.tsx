@@ -26,9 +26,9 @@ function mockProfile(profile: unknown) {
 function switchStates() {
   return Object.fromEntries(
     LABELS.map((label) => {
-      const input = screen
-        .getByRole("switch", { name: label })
-        .querySelector("input") as HTMLInputElement;
+      const input = screen.getByRole("switch", {
+        name: label,
+      }) as HTMLInputElement;
       return [label, input.checked];
     }),
   );
@@ -46,11 +46,8 @@ describe("CoachRemindersScreen", () => {
     // Switches are enabled only once the query has settled successfully.
     await waitFor(() =>
       expect(
-        (
-          screen
-            .getByRole("switch", { name: LABELS[0] })
-            .querySelector("input") as HTMLInputElement
-        ).disabled,
+        (screen.getByRole("switch", { name: LABELS[0] }) as HTMLInputElement)
+          .disabled,
       ).toBe(false),
     );
     expect(
@@ -61,6 +58,19 @@ describe("CoachRemindersScreen", () => {
       "Commitment follow-ups": true,
       "Daily check-in": true,
     });
+  });
+
+  // A non-pressable View with role "switch" around the real Switch made
+  // VoiceOver announce a switch whose double-tap did nothing (audit
+  // 2026-11-06 C2). The named switch must be the Switch control itself.
+  it("each named switch is the Switch control, not a row wrapper around it", async () => {
+    mockProfile(null);
+    renderComponent(<CoachRemindersScreen />);
+
+    await waitFor(() => screen.getAllByRole("switch"));
+    const meal = screen.getByRole("switch", { name: LABELS[0] });
+    expect(meal.textContent).not.toContain(LABELS[0]);
+    expect(meal.textContent).not.toContain("Reminder at noon");
   });
 
   it("shows a muted category as off", async () => {

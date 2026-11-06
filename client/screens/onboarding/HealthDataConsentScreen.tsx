@@ -316,6 +316,10 @@ const styles = StyleSheet.create({
   },
   skipButton: {
     alignSelf: "center",
+    // ≥44pt tap target (body text + sm padding was ~36pt).
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: "center",
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.lg,
   },

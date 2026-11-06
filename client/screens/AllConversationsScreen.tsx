@@ -168,91 +168,97 @@ export default function AllConversationsScreen() {
   );
 
   const renderRow = useCallback(
-    (conv: ChatConversation) => (
-      <Pressable
-        key={conv.id}
-        style={[styles.row, { borderBottomColor: theme.border }]}
-        onPress={() => {
-          if (activeSegment === "recipe") {
-            navigation.navigate("RecipeChat", { conversationId: conv.id });
-          } else {
-            // This is a root-stack screen; CoachPro lives only in the Coach
-            // tab's nested ChatStack. A bare navigate("CoachPro") is never
-            // handled (navigationInChildEnabled is off), so name the path.
-            // `pop: true` returns to the EXISTING Main route below this modal;
-            // without it the root StackRouter pushes a second Main on top.
-            // Free-tier rows open the plain Chat screen (as ChatListScreen
-            // does). While the plan is unknown, keep CoachPro so a Coach Pro
-            // user is never routed to Chat (CoachProScreen assumes access
-            // until the plan is known too).
-            navigation.navigate(
-              "Main",
-              {
-                screen: "CoachTab",
-                params: showCoachPro
-                  ? {
-                      screen: "CoachPro",
-                      params: { selectedConversationId: conv.id },
-                    }
-                  : {
-                      screen: "Chat",
-                      params: { conversationId: conv.id },
-                      pop: true,
-                    },
-              },
-              { pop: true },
-            );
-          }
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={`Open conversation: ${conv.title}`}
-      >
-        <View style={styles.rowContent}>
-          <ThemedText type="small" numberOfLines={1} style={styles.rowTitle}>
-            {conv.title ||
-              (activeSegment === "recipe"
-                ? "Recipe chat"
-                : "Coach conversation")}
-          </ThemedText>
-          <ThemedText
-            type="caption"
-            style={[styles.rowMeta, { color: theme.textSecondary }]}
-          >
-            {formatRelativeDate(conv.updatedAt)}
-          </ThemedText>
-        </View>
-        <View style={styles.rowActions}>
+    (conv: ChatConversation) => {
+      const displayTitle =
+        conv.title ||
+        (activeSegment === "recipe" ? "Recipe chat" : "Coach conversation");
+      return (
+        // A plain View, not a Pressable: an accessible row would make VoiceOver
+        // treat it as one leaf and hide the pin / delete buttons inside it.
+        <View
+          key={conv.id}
+          style={[styles.row, { borderBottomColor: theme.border }]}
+        >
           <Pressable
-            onPress={() => handleTogglePin(conv)}
-            style={styles.rowAction}
+            style={styles.rowContent}
+            onPress={() => {
+              if (activeSegment === "recipe") {
+                navigation.navigate("RecipeChat", { conversationId: conv.id });
+              } else {
+                // This is a root-stack screen; CoachPro lives only in the Coach
+                // tab's nested ChatStack. A bare navigate("CoachPro") is never
+                // handled (navigationInChildEnabled is off), so name the path.
+                // `pop: true` returns to the EXISTING Main route below this modal;
+                // without it the root StackRouter pushes a second Main on top.
+                // Free-tier rows open the plain Chat screen (as ChatListScreen
+                // does). While the plan is unknown, keep CoachPro so a Coach Pro
+                // user is never routed to Chat (CoachProScreen assumes access
+                // until the plan is known too).
+                navigation.navigate(
+                  "Main",
+                  {
+                    screen: "CoachTab",
+                    params: showCoachPro
+                      ? {
+                          screen: "CoachPro",
+                          params: { selectedConversationId: conv.id },
+                        }
+                      : {
+                          screen: "Chat",
+                          params: { conversationId: conv.id },
+                          pop: true,
+                        },
+                  },
+                  { pop: true },
+                );
+              }
+            }}
             accessibilityRole="button"
-            accessibilityLabel={
-              conv.isPinned ? "Unpin conversation" : "Pin conversation"
-            }
+            accessibilityLabel={`Open conversation: ${displayTitle}`}
           >
-            <Feather
-              name="bookmark"
-              size={18}
-              color={conv.isPinned ? theme.link : theme.textSecondary}
-              accessible={false}
-            />
+            <ThemedText type="small" numberOfLines={1} style={styles.rowTitle}>
+              {displayTitle}
+            </ThemedText>
+            <ThemedText
+              type="caption"
+              style={[styles.rowMeta, { color: theme.textSecondary }]}
+            >
+              {formatRelativeDate(conv.updatedAt)}
+            </ThemedText>
           </Pressable>
-          <Pressable
-            onPress={() => handleDelete(conv)}
-            style={styles.rowAction}
-            accessibilityRole="button"
-            accessibilityLabel="Delete conversation"
-          >
-            <Feather
-              name="trash-2"
-              size={18}
-              color={theme.textSecondary}
-              accessible={false}
-            />
-          </Pressable>
+          <View style={styles.rowActions}>
+            <Pressable
+              onPress={() => handleTogglePin(conv)}
+              style={styles.rowAction}
+              accessibilityRole="button"
+              accessibilityLabel={
+                conv.isPinned ? "Unpin conversation" : "Pin conversation"
+              }
+            >
+              <Feather
+                name="bookmark"
+                size={18}
+                color={conv.isPinned ? theme.link : theme.textSecondary}
+                accessible={false}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => handleDelete(conv)}
+              style={styles.rowAction}
+              accessibilityRole="button"
+              accessibilityLabel="Delete conversation"
+            >
+              <Feather
+                name="trash-2"
+                size={18}
+                color={theme.textSecondary}
+                accessible={false}
+              />
+            </Pressable>
+          </View>
         </View>
-      </Pressable>
-    ),
+      );
+    },
     [
       activeSegment,
       handleDelete,
@@ -491,7 +497,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowContent: { flex: 1 },
+  // Stretch to the row height (≥44pt from the action buttons) so the open
+  // button keeps the whole row's tap area, not just the text lines.
+  rowContent: { flex: 1, alignSelf: "stretch", justifyContent: "center" },
   rowTitle: { fontFamily: FontFamily.medium },
   rowMeta: { marginTop: 2 },
   rowAction: {

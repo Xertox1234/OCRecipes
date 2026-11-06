@@ -126,7 +126,8 @@ export default function AllergiesScreen() {
                 shape="row"
                 key={allergen.id}
                 onPress={() => toggleAllergen(allergen.id)}
-                accessibilityLabel={`${allergen.name}${selected ? `, selected${severity ? `, severity: ${severity}` : ""}` : ""}`}
+                // Selection is spoken by the checkbox's checked state, not the label.
+                accessibilityLabel={`${allergen.name}${selected && severity ? `, severity: ${severity}` : ""}`}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: selected }}
                 style={[

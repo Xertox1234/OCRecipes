@@ -410,7 +410,7 @@ export default function PhotoAnalysisScreen() {
 
   if (isAnalyzing) {
     return (
-      <ThemedView style={styles.container}>
+      <ThemedView style={styles.container} accessibilityViewIsModal>
         <View style={headerPaddingStyle}>
           <ScanFlowStepIndicator currentStep={3} totalSteps={3} />
         </View>
@@ -461,7 +461,7 @@ export default function PhotoAnalysisScreen() {
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} accessibilityViewIsModal>
       <View style={headerPaddingStyle}>
         <ScanFlowStepIndicator currentStep={3} totalSteps={3} />
       </View>
@@ -490,7 +490,9 @@ export default function PhotoAnalysisScreen() {
               source={{ uri: imageUri }}
               style={styles.productImage}
               resizeMode="cover"
-              accessibilityLabel="Photo being analyzed"
+              // Decorative: the user just took this photo.
+              accessible={false}
+              importantForAccessibility="no"
             />
           </Animated.View>
 

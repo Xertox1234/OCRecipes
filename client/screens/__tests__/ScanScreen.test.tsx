@@ -169,8 +169,11 @@ vi.mock("@react-navigation/native", () => ({
 vi.mock("expo-file-system/legacy", () => ({
   deleteAsync: mockDeleteAsync,
 }));
+const mockPremiumCamera = vi.hoisted(() => ({
+  value: { isPremium: true, remainingScans: null as number | null },
+}));
 vi.mock("@/hooks/usePremiumFeatures", () => ({
-  usePremiumCamera: () => ({ isPremium: true, remainingScans: null }),
+  usePremiumCamera: () => mockPremiumCamera.value,
 }));
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
@@ -1983,5 +1986,38 @@ describe("ScanScreen — teaching tips", () => {
   it("marks the camera as used when the screen opens", () => {
     renderComponent(<ScanScreen />);
     expect(mockMarkFeatureUsed).toHaveBeenCalledWith("scan");
+  });
+});
+
+// Accessibility audit 2026-11-06 L5: the scan-count pill flipping to "Daily
+// limit reached" was silent — speak it once, on the edge into the limit.
+describe("ScanScreen — daily scan limit announcement", () => {
+  let announce: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    announce.mockRestore();
+    mockPremiumCamera.value = { isPremium: true, remainingScans: null };
+  });
+
+  it("announces when the last free scan is used", () => {
+    mockPremiumCamera.value = { isPremium: false, remainingScans: 1 };
+    const { rerender } = renderComponent(<ScanScreen />);
+    expect(announce).not.toHaveBeenCalledWith("Daily scan limit reached");
+
+    mockPremiumCamera.value = { isPremium: false, remainingScans: 0 };
+    act(() => {
+      rerender(<ScanScreen />);
+    });
+    expect(announce).toHaveBeenCalledWith("Daily scan limit reached");
+  });
+
+  it("does not announce on opening the camera already at the limit", () => {
+    mockPremiumCamera.value = { isPremium: false, remainingScans: 0 };
+    renderComponent(<ScanScreen />);
+    expect(announce).not.toHaveBeenCalledWith("Daily scan limit reached");
   });
 });

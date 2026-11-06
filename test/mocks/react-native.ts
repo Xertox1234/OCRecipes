@@ -454,12 +454,23 @@ TouchableOpacity.displayName = "TouchableOpacity";
 
 export const Switch = React.forwardRef<unknown, Record<string, unknown>>(
   (
-    { value, onValueChange, testID, disabled, accessibilityLabel, ...rest },
+    {
+      value,
+      onValueChange,
+      testID,
+      disabled,
+      accessibilityLabel,
+      accessibilityHint,
+      ...rest
+    },
     ref,
   ) =>
     React.createElement("input", {
       ref,
       type: "checkbox",
+      // A native RN Switch exposes the switch role on iOS and Android.
+      role: "switch",
+      "aria-hint": accessibilityHint,
       checked: !!value,
       onChange: onValueChange
         ? () => (onValueChange as (v: boolean) => void)(!value)
