@@ -1,9 +1,9 @@
 ---
 title: "Shrink client/hooks/useAuth.ts below 600 lines"
-status: backlog
+status: done
 priority: low
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-06
 assignee:
 labels: [deferred, maintainability, auth]
 github_issue:
@@ -28,10 +28,10 @@ Human-led because it touches client token handling and session restore.
 
 ## Acceptance Criteria
 
-- [ ] `client/hooks/useAuth.ts` is under 600 lines (e.g. extract the
+- [x] `client/hooks/useAuth.ts` is under 600 lines (e.g. extract the
       cached-session restore and the `checkAuth` body into a sibling
       module/hook)
-- [ ] Existing tests in `client/hooks/__tests__/useAuth.test.ts` pass unchanged
+- [x] Existing tests in `client/hooks/__tests__/useAuth.test.ts` pass unchanged
       (move tests alongside if needed)
 
 ## Implementation Notes
@@ -51,3 +51,9 @@ Human-led because it touches client token handling and session restore.
 ### 2026-11-04
 
 - Split off from the storage todo (owner ruling 2026-11-04), human-led.
+
+## Updates
+
+### 2026-11-06
+
+- Owner unlocked this human-led todo in the 2026-11-05 interactive /goal session. `useAuth.ts` 1001 → 514 lines: the module-level session plumbing and the `checkAuth` body moved verbatim to `client/hooks/auth-session.ts` (`runAuthCheck(setState)`), and the state-free account-security callbacks to `client/hooks/useAccountSecurityActions.ts`. `useAuth.ts` re-exports `AUTH_ME_TIMEOUT_MS` and the proof types, so no caller changed. `useAuth.test.ts` unchanged, 187/187 with the AuthContext tests.
