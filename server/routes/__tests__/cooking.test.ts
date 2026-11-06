@@ -1051,6 +1051,46 @@ describe("Cooking Routes", () => {
       expect(res.status).toBe(404);
     });
 
+    it("asks for confirmation before logging a count unit counted as 100 g", async () => {
+      cookingSessionStore._internals.store.set("unweighed", {
+        id: "unweighed",
+        userId: "1",
+        ingredients: [
+          {
+            ...mockIngredient,
+            id: "ing-egg",
+            name: "egg",
+            quantity: 6,
+            unit: "piece",
+          },
+        ],
+        photos: [],
+        createdAt: Date.now(),
+      });
+      vi.mocked(batchNutritionLookup).mockResolvedValue(
+        new Map<string, NutritionData | null>([
+          ["egg", createMockNutritionData({ calories: 143 })],
+        ]),
+      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem(),
+      );
+
+      const refused = await request(app)
+        .post("/api/cooking/sessions/unweighed/log")
+        .set("Authorization", "Bearer token")
+        .send({});
+      expect(refused.status).toBe(409);
+      expect(refused.body.unweighedIngredients).toEqual(["egg"]);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+
+      const confirmed = await request(app)
+        .post("/api/cooking/sessions/unweighed/log")
+        .set("Authorization", "Bearer token")
+        .send({ confirmMissedLookups: true });
+      expect(confirmed.status).toBe(201);
+    });
+
     describe("missed nutrition lookups", () => {
       const addSession = (id: string, names: string[]) => {
         cookingSessionStore._internals.store.set(id, {

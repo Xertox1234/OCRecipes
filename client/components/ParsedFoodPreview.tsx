@@ -5,7 +5,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
-import { formatMacroLine } from "./parsed-food-preview-utils";
+import { nutritionCaption } from "./parsed-food-preview-utils";
 import type { ParsedFoodItem } from "@/hooks/useFoodParse";
 import { formatIngredientLine } from "@/lib/format";
 
@@ -44,16 +44,9 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
             <ThemedText style={styles.itemName}>
               {formatIngredientLine(item.quantity, item.unit, item.name)}
             </ThemedText>
-            {item.calories != null && (
-              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                {formatMacroLine(
-                  item.calories,
-                  item.protein,
-                  item.carbs,
-                  item.fat,
-                )}
-              </ThemedText>
-            )}
+            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+              {nutritionCaption(item)}
+            </ThemedText>
           </View>
           <Pressable
             onPress={() => onRemoveItem(index)}
