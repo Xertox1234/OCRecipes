@@ -204,6 +204,7 @@ export default function TasteProfileScreen() {
               onPress={handleRetry}
               accessibilityLabel="Retry loading recipes"
               accessibilityRole="button"
+              style={styles.textLink}
             >
               <ThemedText type="body" style={{ color: theme.link }}>
                 Try again
@@ -236,6 +237,13 @@ export default function TasteProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ≥44pt tap target for a text link (no hitSlop; see touch-targets tests).
+  textLink: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   container: { flex: 1 },
   header: {
     paddingHorizontal: Spacing.xl,

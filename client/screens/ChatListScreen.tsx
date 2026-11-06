@@ -241,7 +241,7 @@ export default function ChatListScreen() {
             ]}
             accessibilityRole="button"
             accessibilityLabel={`Chat: ${item.title}. ${formatRelativeTime(item.updatedAt)}`}
-            accessibilityHint="Swipe left to delete, or long press"
+            accessibilityHint="Opens the chat. Long press to delete"
           >
             <View
               style={[

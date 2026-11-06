@@ -150,7 +150,7 @@ export default function CoachRemindersScreen() {
             onPress={() => void refetch()}
             accessibilityRole="button"
             accessibilityLabel="Retry loading reminder settings"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.textLink}
           >
             <ThemedText style={[styles.retryText, { color: theme.link }]}>
               Retry
@@ -168,13 +168,10 @@ export default function CoachRemindersScreen() {
 
             return (
               <View key={item.key}>
-                <View
-                  style={styles.row}
-                  accessible
-                  accessibilityRole="switch"
-                  accessibilityLabel={item.label}
-                  accessibilityValue={{ text: isEnabled ? "on" : "off" }}
-                >
+                {/* Layout only: the Switch below is the accessible control.
+                    A role="switch" View here announced a switch whose
+                    double-tap hit the label, not the toggle. */}
+                <View style={styles.row}>
                   <View style={styles.labelContainer}>
                     <ThemedText style={styles.label}>{item.label}</ThemedText>
                     <ThemedText
@@ -187,6 +184,8 @@ export default function CoachRemindersScreen() {
                     </ThemedText>
                   </View>
                   <Switch
+                    accessibilityLabel={item.label}
+                    accessibilityHint={item.description}
                     value={isEnabled}
                     onValueChange={() => handleToggle(item.key, isMuted)}
                     trackColor={{
@@ -219,6 +218,13 @@ export default function CoachRemindersScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ≥44pt tap target for a text link (no hitSlop; see touch-targets tests).
+  textLink: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   container: {
     padding: Spacing.lg,
     gap: Spacing.md,

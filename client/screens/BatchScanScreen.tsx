@@ -6,6 +6,7 @@ import {
   StyleSheet,
   AccessibilityInfo,
   Linking,
+  Platform,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -96,10 +97,17 @@ export default function BatchScanScreen() {
         addItemAndLookup(result.data);
         announcementCountRef.current++;
         const count = announcementCountRef.current;
+        // The count badge's polite live region speaks the new count on
+        // Android, so these count announces are iOS-only (no double read).
+        const announceCount = (message: string) => {
+          if (Platform.OS === "ios") {
+            AccessibilityInfo.announceForAccessibility(message);
+          }
+        };
 
         if (count >= MAX_ITEMS) {
           showScanToast(`Maximum ${MAX_ITEMS} items reached`);
-          AccessibilityInfo.announceForAccessibility(
+          announceCount(
             `Maximum ${MAX_ITEMS} items reached. Tap Done to review.`,
           );
         } else {
@@ -107,13 +115,9 @@ export default function BatchScanScreen() {
 
           // Announce 1st, then every 5th
           if (count === 1) {
-            AccessibilityInfo.announceForAccessibility(
-              `First item scanned. ${count} item total.`,
-            );
+            announceCount(`First item scanned. ${count} item total.`);
           } else if (count % 5 === 0) {
-            AccessibilityInfo.announceForAccessibility(
-              `${count} items scanned.`,
-            );
+            announceCount(`${count} items scanned.`);
           }
         }
       }

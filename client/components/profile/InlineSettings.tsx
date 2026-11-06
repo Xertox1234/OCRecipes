@@ -1,11 +1,5 @@
 import React from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  AccessibilityInfo,
-  Platform,
-} from "react-native";
+import { StyleSheet, View, Pressable, AccessibilityInfo } from "react-native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -43,11 +37,10 @@ export const InlineSettings = React.memo(function InlineSettings({
 
   const handleThemeToggle = () => {
     onThemeToggle();
-    if (Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(
-        `Appearance changed to ${THEME_LABELS[nextMode]}`,
-      );
-    }
+    // Ungated: the row has no live region, so Android needs this too.
+    AccessibilityInfo.announceForAccessibility(
+      `Appearance changed to ${THEME_LABELS[nextMode]}`,
+    );
   };
 
   return (

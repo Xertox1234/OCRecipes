@@ -22,6 +22,8 @@ import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
+import { getNutritionAnnouncement } from "./CookSessionReviewScreen-utils";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -93,6 +95,8 @@ export default function CookSessionReviewScreen() {
   );
 
   const { mutateAsync: fetchNutritionAsync } = nutritionMutation;
+  // "Calculating nutrition..." footer text has no live region; speak it.
+  useDelayedLoadingAnnouncement(isLoadingNutrition);
 
   const fetchNutrition = useCallback(() => {
     setNutritionError(false);
@@ -100,9 +104,15 @@ export default function CookSessionReviewScreen() {
     fetchNutritionAsync({})
       .then((data) => {
         setNutrition(data);
+        AccessibilityInfo.announceForAccessibility(
+          getNutritionAnnouncement(data.total, "calculated"),
+        );
       })
       .catch(() => {
         setNutritionError(true);
+        AccessibilityInfo.announceForAccessibility(
+          "Unable to calculate nutrition.",
+        );
       })
       .finally(() => {
         setIsLoadingNutrition(false);
@@ -146,6 +156,9 @@ export default function CookSessionReviewScreen() {
       // Re-fetch nutrition
       const data = await nutritionMutation.mutateAsync({});
       setNutrition(data);
+      AccessibilityInfo.announceForAccessibility(
+        getNutritionAnnouncement(data.total, "updated"),
+      );
     },
     [editIngredient, nutritionMutation],
   );
@@ -153,6 +166,7 @@ export default function CookSessionReviewScreen() {
   const submitLog = useCallback(
     async (confirmMissedLookups: boolean) => {
       try {
+        AccessibilityInfo.announceForAccessibility("Logging meal");
         await logSession.mutateAsync(
           confirmMissedLookups ? { confirmMissedLookups: true } : {},
         );
@@ -185,6 +199,7 @@ export default function CookSessionReviewScreen() {
 
   const handleGenerateRecipe = useCallback(async () => {
     try {
+      AccessibilityInfo.announceForAccessibility("Generating recipe");
       const recipe = await recipeMutation.mutateAsync();
       Alert.alert(recipe.title, recipe.description);
     } catch {
@@ -194,6 +209,7 @@ export default function CookSessionReviewScreen() {
 
   const handleSubstitutions = useCallback(async () => {
     try {
+      AccessibilityInfo.announceForAccessibility("Finding substitutions");
       const result = await substitutionsMutation.mutateAsync({});
       navigation.replace("SubstitutionResult", {
         sessionId,
