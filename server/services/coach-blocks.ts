@@ -4,7 +4,7 @@ import {
   type CoachBlock,
 } from "@shared/schemas/coach-blocks";
 import { isFinderBlockType } from "@shared/schemas/recipe-finder";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
   const valid: CoachBlock[] = [];
@@ -68,8 +68,10 @@ export function parseBlocksFromContent(content: string): {
       if (Array.isArray(rawBlocks)) {
         allBlocks.push(...validateBlocks(rawBlocks));
       }
-    } catch {
-      logger.debug("Failed to parse coach blocks JSON");
+    } catch (err) {
+      // warn, not debug: persistent model drift here silently strips every
+      // interactive block, and debug is off in production.
+      logger.warn({ err: toError(err) }, "Failed to parse coach blocks JSON");
     }
   }
 

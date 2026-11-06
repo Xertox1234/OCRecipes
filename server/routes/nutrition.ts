@@ -9,6 +9,7 @@ import { isUniqueViolation } from "../lib/db-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { insertScannedItemSchema } from "@shared/schema";
 import { logger, toError } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 import { lookupNutrition } from "../services/nutrition-lookup";
 import {
   lookupBarcode,
@@ -726,6 +727,9 @@ export function register(app: Express): void {
         res.json({ isFavourited });
       } catch (error) {
         logger.error({ err: toError(error) }, "toggle favourite failed");
+        // Responds directly (keeps TOGGLE_FAILED), so report the handled 5xx
+        // here — same chokepoint duty handleRouteError carries.
+        reportError(error, "toggle favourite");
         sendError(
           res,
           500,

@@ -12,6 +12,7 @@ import { invalidateCache as invalidateTierCache } from "../services/subscription
 import { detectReformulation } from "../services/reformulation-detection";
 import { analyzeFrontLabel } from "../services/front-label-analysis";
 import { consensusNutritionSchema } from "@shared/types/verification";
+import { parseVerificationNutrition } from "../lib/verification-consensus";
 import { frontLabelDataSchema } from "@shared/types/front-label";
 import {
   checkAiConfigured,
@@ -171,15 +172,10 @@ export function register(app: Express): void {
               userId: string;
               isMatch: boolean | null;
             }) => {
-              const n = h.extractedNutrition as Record<string, unknown>;
               return {
-                extractedNutrition: {
-                  calories: typeof n.calories === "number" ? n.calories : null,
-                  protein: typeof n.protein === "number" ? n.protein : null,
-                  totalCarbs:
-                    typeof n.totalCarbs === "number" ? n.totalCarbs : null,
-                  totalFat: typeof n.totalFat === "number" ? n.totalFat : null,
-                },
+                extractedNutrition: parseVerificationNutrition(
+                  h.extractedNutrition,
+                ),
                 userId: h.userId,
                 isMatch: h.isMatch ?? true,
               };

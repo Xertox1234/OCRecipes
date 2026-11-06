@@ -15,6 +15,7 @@ import {
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { logger, toError } from "../lib/logger";
 import {
   addMadeRecipeIdToSavedItems,
   addMadeRecipeToSavedItems,
@@ -41,6 +42,12 @@ const idsQuerySchema = z.object({
     .regex(/^\d{1,9}(,\d{1,9}){0,19}$/)
     .transform((s) => s.split(",").map(Number)),
 });
+
+/** Best-effort cleanup stays non-fatal, but a failure must leave a trace. */
+function warnCleanupFailed(message: string): (err: unknown) => void {
+  return (err) =>
+    logger.warn({ err: toError(err) }, `inspired-recipes: ${message}`);
+}
 
 export function register(app: Express): void {
   // POST /api/inspired/suggestions — create a listing (premium)
@@ -286,7 +293,7 @@ export function register(app: Express): void {
             // drop it (best effort) so it does not linger as a duplicate.
             await storage
               .deleteCommunityRecipe(recipe.id, req.userId)
-              .catch(() => undefined);
+              .catch(warnCleanupFailed("orphan recipe cleanup failed"));
             throw claimError;
           }
           settled = true;
@@ -298,7 +305,7 @@ export function register(app: Express): void {
             if (winner?.madeRecipeId && winner.madeRecipeId !== recipe.id) {
               await storage
                 .deleteCommunityRecipe(recipe.id, req.userId)
-                .catch(() => undefined);
+                .catch(warnCleanupFailed("duplicate recipe cleanup failed"));
             }
             res
               .status(200)
@@ -310,7 +317,7 @@ export function register(app: Express): void {
             // Best effort: a failed release self-heals after MAKING_STALE_MS.
             await storage
               .abandonMakingSuggestion(id, lockToken)
-              .catch(() => undefined);
+              .catch(warnCleanupFailed("making-lock release failed"));
           }
         }
 

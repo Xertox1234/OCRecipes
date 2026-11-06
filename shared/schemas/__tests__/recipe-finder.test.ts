@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   finderBlockSchema,
+  finderBlockFromMetadata,
   finderActionSchema,
   recipeFinderMetadataSchema,
   isFinderBlockType,
@@ -201,4 +202,27 @@ describe("offer/adjust schema", () => {
       }).success,
     ).toBe(true);
   });
+});
+
+describe("finderBlockFromMetadata (stored message-metadata contract)", () => {
+  it("reads RecipeChef `{finder}` metadata", () => {
+    expect(
+      finderBlockFromMetadata({ metadataVersion: 1, finder: resultsBlock }),
+    ).toEqual(resultsBlock);
+  });
+
+  it("reads the first finder block among Coach `{blocks}`", () => {
+    expect(
+      finderBlockFromMetadata({
+        blocks: [{ type: "quick_replies", options: [] }, resultsBlock],
+      }),
+    ).toEqual(resultsBlock);
+  });
+
+  it.each([null, undefined, "x", { recipe: {} }, { blocks: "nope" }])(
+    "returns null for %s",
+    (metadata) => {
+      expect(finderBlockFromMetadata(metadata)).toBeNull();
+    },
+  );
 });

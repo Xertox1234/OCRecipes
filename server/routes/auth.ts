@@ -690,7 +690,13 @@ export function register(app: Express): void {
             // A failed lookup must not cost the notice itself.
             const ids = await storage
               .listIdentities(reserved.id)
-              .catch(() => []);
+              .catch((err: unknown) => {
+                logger.warn(
+                  { err: toError(err) },
+                  "password-changed notice: sign-in methods lookup failed",
+                );
+                return [];
+              });
             await sendPasswordChangedNotice(
               reserved.email,
               reserved.username,

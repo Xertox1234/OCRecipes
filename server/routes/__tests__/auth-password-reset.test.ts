@@ -246,6 +246,10 @@ describe("POST /api/auth/reset-password", () => {
       "realuser",
       [],
     );
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining("sign-in methods lookup failed"),
+    );
   });
 
   it("wrong code, no live code, and lost completion race all give the identical 400", async () => {

@@ -1,14 +1,13 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { Card } from "@/components/Card";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 import { roundToOneDecimal } from "@/screens/nutrition-detail-utils";
-import { BADGE_SEVERITY_FILL_OPACITY } from "@/components/badge-severity-visuals";
+import { BandDot, BandPill } from "./BandIndicators";
 import {
   bandTagText,
   bandVisuals,
@@ -102,14 +101,7 @@ function NutrientRow({
       {quiet ? null : (
         <View style={styles.dotColumn}>
           {visuals ? (
-            <View
-              testID={`band-indicator-${row.key}`}
-              accessible={false}
-              importantForAccessibility="no"
-              accessibilityElementsHidden
-              aria-hidden
-              style={[styles.dot, { backgroundColor: theme[visuals.colorKey] }]}
-            />
+            <BandDot visuals={visuals} testID={`band-indicator-${row.key}`} />
           ) : null}
         </View>
       )}
@@ -138,35 +130,7 @@ function NutrientRow({
         )}
       </View>
 
-      {tag && visuals ? (
-        <View
-          style={[
-            styles.pill,
-            {
-              backgroundColor: withOpacity(
-                theme[visuals.colorKey],
-                BADGE_SEVERITY_FILL_OPACITY,
-              ),
-            },
-          ]}
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-          aria-hidden
-        >
-          <Feather
-            name={visuals.icon}
-            size={12}
-            color={theme[visuals.colorKey]}
-            accessible={false}
-          />
-          <ThemedText
-            type="caption"
-            style={[styles.tagText, { color: theme[visuals.colorKey] }]}
-          >
-            {tag}
-          </ThemedText>
-        </View>
-      ) : null}
+      {tag && visuals ? <BandPill visuals={visuals} tag={tag} /> : null}
     </View>
   );
 }
@@ -191,11 +155,6 @@ const styles = StyleSheet.create({
     width: 12,
     alignItems: "center",
   },
-  dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
   label: {
     flex: 1,
   },
@@ -203,17 +162,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   value: {
-    fontWeight: "600",
-  },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-  },
-  tagText: {
     fontWeight: "600",
   },
   divider: {

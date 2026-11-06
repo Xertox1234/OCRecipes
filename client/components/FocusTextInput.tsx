@@ -1,6 +1,5 @@
 import React, { forwardRef } from "react";
 import {
-  StyleSheet,
   TextInput as RNTextInput,
   type TextInputInstance,
   type StyleProp,
@@ -8,18 +7,7 @@ import {
   type TextStyle,
 } from "react-native";
 
-import { FocusField } from "./FocusField";
-import {
-  FIELD_INPUT_FILL,
-  labelFieldText,
-  splitFieldStyle,
-} from "./field-focus-utils";
-import {
-  resolveInputAccessibilityLabel,
-  resolvePlaceholder,
-  shouldFloatLabel,
-} from "./text-input-utils";
-import { useFieldFocus } from "./useFieldFocus";
+import { FocusInputShell } from "./FocusInputShell";
 
 interface FocusTextInputProps extends Omit<TextInputProps, "style"> {
   style?: StyleProp<TextStyle>;
@@ -49,52 +37,20 @@ interface FocusTextInputProps extends Omit<TextInputProps, "style"> {
 export const FocusTextInput = forwardRef<
   TextInputInstance,
   FocusTextInputProps
->(({ style, onFocus, onBlur, focusRing = true, label, ...props }, ref) => {
-  const field = useFieldFocus({ onFocus, onBlur });
-
-  if (!focusRing) {
-    return (
-      <RNTextInput
-        ref={ref}
-        {...props}
-        style={style}
-        onFocus={onFocus}
-        onBlur={onBlur}
-      />
-    );
-  }
-
-  const { box, text: ownText } = splitFieldStyle(
-    StyleSheet.flatten(style) ?? {},
-  );
-  const labelled = label ? labelFieldText(ownText) : null;
-  const text = labelled?.text ?? ownText;
-  return (
-    <FocusField
-      focus={field}
-      style={box}
-      label={label}
-      hasValue={(props.value?.length ?? 0) > 0}
-      labelLeft={labelled?.labelLeft}
-    >
-      <RNTextInput
-        ref={ref}
-        {...props}
-        placeholder={resolvePlaceholder(
-          label,
-          props.placeholder,
-          shouldFloatLabel(field.focused, props.value),
-        )}
-        accessibilityLabel={resolveInputAccessibilityLabel(
-          props.accessibilityLabel,
-          label,
-        )}
-        style={{ ...text, ...FIELD_INPUT_FILL }}
-        onFocus={field.onFocus}
-        onBlur={field.onBlur}
-      />
-    </FocusField>
-  );
-});
+>(({ style, onFocus, onBlur, focusRing, label, ...props }, ref) => (
+  <FocusInputShell
+    style={style}
+    onFocus={onFocus}
+    onBlur={onBlur}
+    focusRing={focusRing}
+    label={label}
+    value={props.value}
+    placeholder={props.placeholder}
+    accessibilityLabel={props.accessibilityLabel}
+    renderInput={(shellProps) => (
+      <RNTextInput ref={ref} {...props} {...shellProps} />
+    )}
+  />
+));
 
 FocusTextInput.displayName = "FocusTextInput";

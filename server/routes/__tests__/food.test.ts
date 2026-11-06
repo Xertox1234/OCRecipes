@@ -23,6 +23,8 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+vi.mock("../../lib/error-reporter", () => ({ reportError: vi.fn() }));
+
 vi.mock("../../lib/openai", () => ({ isAiConfigured: true }));
 
 vi.mock("../../services/food-nlp", () => ({
@@ -257,6 +259,33 @@ describe("Food Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("Could not transcribe audio");
+    });
+
+    it("reports a transcription failure to Sentry via handleRouteError", async () => {
+      const { reportError } = await import("../../lib/error-reporter");
+      vi.mocked(reportError).mockClear();
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      const error = new Error("Voice transcription failed");
+      vi.mocked(transcribeAudio).mockRejectedValue(error);
+
+      const res = await request(app)
+        .post("/api/food/transcribe")
+        .set("Authorization", "Bearer token")
+        .attach("audio", VALID_M4A_HEADER, {
+          filename: "test.m4a",
+          contentType: "audio/m4a",
+        });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Failed to transcribe and parse audio");
+      expect(reportError).toHaveBeenCalledWith(
+        error,
+        "transcribe and parse audio",
+      );
     });
   });
 });

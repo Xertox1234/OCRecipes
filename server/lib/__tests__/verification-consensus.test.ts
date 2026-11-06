@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { VerificationNutrition } from "@shared/types/verification";
 import {
+  parseVerificationNutrition,
   valuesMatch,
   nutritionMatches,
   compareWithVerifications,
@@ -248,4 +249,24 @@ describe("compareWithVerifications", () => {
       matchCount: 1,
     });
   });
+});
+
+describe("parseVerificationNutrition", () => {
+  it("keeps numeric fields and nulls the rest", () => {
+    expect(
+      parseVerificationNutrition({ calories: 200, protein: "10", totalFat: 8 }),
+    ).toEqual({ calories: 200, protein: null, totalCarbs: null, totalFat: 8 });
+  });
+
+  it.each([null, undefined, 42, "x"])(
+    "returns all-null for a non-object blob (%s) instead of throwing",
+    (raw) => {
+      expect(parseVerificationNutrition(raw)).toEqual({
+        calories: null,
+        protein: null,
+        totalCarbs: null,
+        totalFat: null,
+      });
+    },
+  );
 });

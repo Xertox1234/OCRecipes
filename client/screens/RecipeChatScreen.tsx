@@ -69,7 +69,6 @@ import { RecipeCard } from "@/components/recipe-chat/RecipeCard";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMessage";
 import {
-  finderBlockFromMessageMetadata,
   finderItemNavParams,
   finderActionNeedsPlan,
   lockedFinderButtons,
@@ -83,6 +82,7 @@ import type {
   FinderBlock,
   FinderItem,
 } from "@shared/schemas/recipe-finder";
+import { finderBlockFromMetadata } from "@shared/schemas/recipe-finder";
 import { generateRemixChips, type RemixChip } from "@/lib/remix-chips";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
@@ -764,7 +764,7 @@ export default function RecipeChatScreen() {
       const allergenWarning = metadata?.allergenWarning as string | undefined;
       const isError = !!metadata?.isError;
       // A finder message's text is the old-client fallback; the block replaces it.
-      const finder = finderBlockFromMessageMetadata(metadata);
+      const finder = finderBlockFromMetadata(metadata);
       const isPendingAssistant = item.id === -5;
       const savedRecipeId =
         savedMessageIdsRef.current.get(item.id) ??
