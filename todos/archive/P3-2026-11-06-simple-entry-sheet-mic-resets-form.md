@@ -1,6 +1,6 @@
 ---
 title: "SimpleEntrySheet: pressing the mic re-runs the open/reset effect"
-status: backlog
+status: done
 priority: low
 created: 2026-11-06
 updated: 2026-11-06
@@ -21,9 +21,9 @@ Found by the react-hooks/set-state-in-effect batch B (PR #1770, 2026-11-06), whi
 
 ## Acceptance Criteria
 
-- [ ] A test pins that toggling dictation while the sheet is open keeps servings, error and dish name.
-- [ ] The reset runs only when the sheet opens (or the meal type changes), not on listening changes.
-- [ ] Stopping speech on close still happens.
+- [x] A test pins that toggling dictation while the sheet is open keeps servings, error and dish name.
+- [x] The reset runs only when the sheet opens (or the meal type changes), not on listening changes.
+- [x] Stopping speech on close still happens.
 
 ## Implementation Notes
 
@@ -40,3 +40,7 @@ Found by the react-hooks/set-state-in-effect batch B (PR #1770, 2026-11-06), whi
 ### 2026-11-06
 
 - Filed from the set-state-in-effect batch B report.
+
+### 2026-11-06 (fixed)
+
+- Split the effect: the reset now keys on `mealType` alone, and a separate effect stops listening when the sheet closes. Tests in `SimpleEntrySheet.test.tsx` pin that toggling dictation keeps servings, error and dish name, that closing stops dictation, and that reopening resets. The owner's pending voice phone check (#1735/#1739) still applies.
