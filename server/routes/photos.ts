@@ -205,18 +205,6 @@ export function register(app: Express): void {
         const imageBase64 = requireValidImage(req, res);
         if (!imageBase64) return;
 
-        // Claimed before the AI call: the scan limit above counts LOGGED
-        // items, so analyses that are never confirmed need their own cap.
-        if (
-          !(await claimAiCallOrReject(
-            req,
-            res,
-            "photoAnalysis",
-            "photo analysis",
-          ))
-        )
-          return;
-
         // Parse intent from multipart form parameters (default: "log")
         // Supports "auto" for smart scan classification
         // "menu" is intentionally NOT accepted here — restaurant menus are
@@ -247,6 +235,17 @@ export function register(app: Express): void {
             return sendError(res, 429, earlyCheck.reason, earlyCheck.code);
           }
 
+          // Claimed right before the paid call (after every cheap refusal): the
+          // scan limit counts LOGGED items, so unconfirmed analyses need their own cap.
+          if (
+            !(await claimAiCallOrReject(
+              req,
+              res,
+              "photoAnalysis",
+              "photo analysis",
+            ))
+          )
+            return;
           const classified = await classifyAndAnalyze(imageBase64);
 
           // If full analysis was performed (high confidence + mapped intent),
@@ -336,6 +335,17 @@ export function register(app: Express): void {
         }
 
         // Analyze photo with Vision API (intent-aware prompt)
+        // Claimed right before the paid call (after every cheap refusal): the
+        // scan limit counts LOGGED items, so unconfirmed analyses need their own cap.
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "photoAnalysis",
+            "photo analysis",
+          ))
+        )
+          return;
         const analysisResult = await analyzePhoto(imageBase64, intent);
 
         // Conditionally look up nutrition data
@@ -620,18 +630,6 @@ export function register(app: Express): void {
         const imageBase64 = requireValidImage(req, res);
         if (!imageBase64) return;
 
-        // Claimed before the AI call: the scan limit above counts LOGGED
-        // items, so analyses that are never confirmed need their own cap.
-        if (
-          !(await claimAiCallOrReject(
-            req,
-            res,
-            "photoAnalysis",
-            "photo analysis",
-          ))
-        )
-          return;
-
         const barcodeRaw = req.body?.barcode as string | undefined;
         const barcode = barcodeRaw
           ? z
@@ -653,6 +651,17 @@ export function register(app: Express): void {
           );
         }
 
+        // Claimed right before the paid call (after every cheap refusal): the
+        // scan limit counts LOGGED items, so unconfirmed analyses need their own cap.
+        if (
+          !(await claimAiCallOrReject(
+            req,
+            res,
+            "photoAnalysis",
+            "photo analysis",
+          ))
+        )
+          return;
         const labelData = await analyzeLabelPhoto(imageBase64);
 
         // Atomic check+create eliminates the TOCTOU window (L12 fix).

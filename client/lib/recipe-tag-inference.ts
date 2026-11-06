@@ -205,6 +205,14 @@ export function inferCuisine(
 }
 
 /**
+ * Wheat foods the old wizard list caught that the shared allergen list does
+ * not name yet. Adding them there also needs an OTA, a prod allergen backfill
+ * and a restart (oats ruling, 2026-10-16) — tracked as a todo; until then the
+ * wizard keeps them so these recipes are never tagged "Gluten Free".
+ */
+const WHEAT_TERMS_MISSING_FROM_SHARED = ["pie crust", "pizza dough", "brioche"];
+
+/**
  * Infer diet tags from an ingredient list.
  *
  * Coverage of `DIET_TAG_OPTIONS` (see `components/recipe-wizard/types.ts`):
@@ -236,9 +244,10 @@ export function inferDietTags(ingredientNames: string[]): DietTag[] {
   // The allergen checks' own wheat/gluten list and whole-word matcher: oats
   // count (owner ruling 2026-10-16) and "goat" is not "oat". A private list
   // here drifted and tagged oat, semolina and cracker recipes "Gluten Free".
-  const hasGluten = deriveRecipeAllergens(ingredientNames).some(
-    (allergen) => allergen.id === "wheat",
-  );
+  const hasGluten =
+    deriveRecipeAllergens(ingredientNames).some(
+      (allergen) => allergen.id === "wheat",
+    ) || WHEAT_TERMS_MISSING_FROM_SHARED.some((kw) => allText.includes(kw));
   const hasEggs = EGG_KEYWORDS.some((kw) => allText.includes(kw));
 
   const tags: DietTag[] = [];

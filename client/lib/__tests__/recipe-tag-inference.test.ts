@@ -84,6 +84,10 @@ describe("inferDietTags", () => {
     ["seitan", "soy sauce"],
     ["malt extract", "flour"],
     ["crackers", "cheese"],
+    // Caught by the wizard's old list but not the shared allergen list.
+    ["pie crust", "apples"],
+    ["pizza dough", "tomato"],
+    ["brioche", "eggs"],
   ])("does not suggest Gluten Free for %s", (...ingredients) => {
     expect(inferDietTags(ingredients)).not.toContain("Gluten Free");
   });
