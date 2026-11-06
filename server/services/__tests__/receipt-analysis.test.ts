@@ -74,16 +74,48 @@ describe("Receipt Analysis Service", () => {
       }
     });
 
-    it("rejects invalid category", () => {
+    // Gemini (the Vertex backup, and the eval candidate) invents categories
+    // such as "deli"; one such line used to fail the whole receipt.
+    it("maps an unknown category to other instead of rejecting the item", () => {
       const item = {
-        name: "Product",
-        originalName: "PROD",
-        category: "electronics",
+        name: "Sliced Turkey",
+        originalName: "DELI TRKY",
+        category: "deli",
         isFood: true,
-        estimatedShelfLifeDays: 30,
-        confidence: 0.5,
+        estimatedShelfLifeDays: 5,
+        confidence: 0.8,
       };
-      expect(receiptItemSchema.safeParse(item).success).toBe(false);
+      const result = receiptItemSchema.safeParse(item);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.category).toBe("other");
+    });
+
+    it("normalises a known category written in another letter case", () => {
+      const item = {
+        name: "Bananas",
+        originalName: "BANANAS",
+        category: " Produce ",
+        isFood: true,
+        estimatedShelfLifeDays: 7,
+        confidence: 0.9,
+      };
+      const result = receiptItemSchema.safeParse(item);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.category).toBe("produce");
+    });
+
+    it("maps a missing or non-string category to other", () => {
+      const base = {
+        name: "Bag",
+        originalName: "BAG",
+        isFood: false,
+        confidence: 0.9,
+      };
+      for (const category of [null, undefined, 3]) {
+        const result = receiptItemSchema.safeParse({ ...base, category });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.category).toBe("other");
+      }
     });
 
     it("rejects shelf life below 1", () => {
@@ -186,6 +218,80 @@ describe("Receipt Analysis Service", () => {
         confidence: 0.8,
       };
       expect(receiptItemSchema.safeParse(item).success).toBe(true);
+    });
+  });
+
+  describe("estimatedShelfLifeDays on a non-food line", () => {
+    it("accepts null (Gemini writes null where GPT writes a number)", () => {
+      const item = {
+        name: "Napkins",
+        originalName: "NAPKINS",
+        category: "other",
+        isFood: false,
+        estimatedShelfLifeDays: null,
+        confidence: 0.8,
+      };
+      const result = receiptItemSchema.safeParse(item);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.estimatedShelfLifeDays).toBeUndefined();
+      }
+    });
+
+    it("still rejects an out-of-range number", () => {
+      const item = {
+        name: "Milk",
+        originalName: "MLK",
+        category: "dairy",
+        isFood: true,
+        estimatedShelfLifeDays: 0,
+        confidence: 0.8,
+      };
+      expect(receiptItemSchema.safeParse(item).success).toBe(false);
+    });
+
+    it("keeps the food lines of a receipt that has a null non-food line", async () => {
+      mockOpenAIResponse(
+        JSON.stringify({
+          items: [
+            {
+              name: "Milk",
+              originalName: "MLK",
+              quantity: 1,
+              category: "dairy",
+              isFood: true,
+              estimatedShelfLifeDays: 10,
+              confidence: 0.9,
+            },
+            {
+              name: "Napkins",
+              originalName: "NAPKINS",
+              quantity: 1,
+              category: "other",
+              isFood: false,
+              estimatedShelfLifeDays: null,
+              confidence: 0.9,
+            },
+            {
+              name: "Bread",
+              originalName: "BRD",
+              quantity: 1,
+              category: "bakery",
+              isFood: true,
+              estimatedShelfLifeDays: null,
+              confidence: 0.9,
+            },
+          ],
+          overallConfidence: 0.9,
+        }),
+      );
+      const result = await analyzeReceiptPhotos(["abc"]);
+      expect(result.items.map((i) => i.name)).toEqual(["Milk", "Bread"]);
+      // A food line with no estimate gets the same 7-day default the review
+      // screen uses, so the confirm route's integer requirement still holds.
+      expect(result.items.map((i) => i.estimatedShelfLifeDays)).toEqual([
+        10, 7,
+      ]);
     });
   });
 
