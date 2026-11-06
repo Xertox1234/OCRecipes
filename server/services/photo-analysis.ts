@@ -821,20 +821,14 @@ export interface ClassifiedAnalysisResult {
 }
 
 /**
- * Auto-classify a photo and optionally run full analysis.
- *
- * Step 1: Lightweight classification (detail: "low", ~85 tokens)
- * Step 2: If confidence >= 0.7 and content type maps to a PhotoIntent,
- *         run full analysis with the resolved intent
- *
- * Returns classification + optional analysis in a single call.
+ * Classify a photo into a content type (one lightweight call, detail "low").
+ * Step 1 of classifyAndAnalyze, exported so the eval can measure it alone.
  */
-export async function classifyAndAnalyze(
+export async function classifyPhoto(
   imageBase64: string,
-): Promise<ClassifiedAnalysisResult> {
+): Promise<ClassifiedResult> {
   const startTime = Date.now();
 
-  // Step 1: Classify
   let response;
   try {
     response = await aiChat(
@@ -885,17 +879,35 @@ export async function classifyAndAnalyze(
     classification.barcode = null;
   }
 
-  const resolvedIntent = CONTENT_TYPE_TO_INTENT[classification.contentType];
-
   log.debug(
     {
       contentType: classification.contentType,
       confidence: classification.confidence,
-      resolvedIntent: resolvedIntent ?? "none",
+      resolvedIntent:
+        CONTENT_TYPE_TO_INTENT[classification.contentType] ?? "none",
       duration: Date.now() - startTime,
     },
     "classification completed",
   );
+
+  return classification;
+}
+
+/**
+ * Auto-classify a photo and optionally run full analysis.
+ *
+ * Step 1: Lightweight classification (detail: "low", ~85 tokens)
+ * Step 2: If confidence >= 0.7 and content type maps to a PhotoIntent,
+ *         run full analysis with the resolved intent
+ *
+ * Returns classification + optional analysis in a single call.
+ */
+export async function classifyAndAnalyze(
+  imageBase64: string,
+): Promise<ClassifiedAnalysisResult> {
+  // Step 1: Classify
+  const classification = await classifyPhoto(imageBase64);
+  const resolvedIntent = CONTENT_TYPE_TO_INTENT[classification.contentType];
 
   // Step 2: If high confidence and we have a mapped intent, run full analysis
   if (classification.confidence >= CONFIDENCE_THRESHOLD && resolvedIntent) {

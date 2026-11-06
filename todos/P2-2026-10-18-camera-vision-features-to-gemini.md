@@ -3,7 +3,7 @@ title: "Move the camera / image-reading AI features from gpt-4o to Gemini (eval-
 status: backlog
 priority: medium
 created: 2026-10-18
-updated: 2026-11-05
+updated: 2026-11-06
 assignee:
 labels: [deferred, ai, camera]
 github_issue:
@@ -199,3 +199,87 @@ That mismatch penalised whichever model read the photo correctly: Gemini scored 
 - **Cap.** Gemini's label replies peaked at 405 of 800 tokens (212 reasoning), all `finish_reason: stop`. The cap is now `LABEL_MAX_TOKENS = 1300`, shared by `analyzeLabelPhoto` and the `analyzePhoto` label intent (which already ran on Gemini through `photo-analyze`).
 - **Owner: "switch to Gemini".** `npm run ai:smoke -- photo-label` passed: Google answered `google/gemini-3.8-flash`, 1/1 rows.
 - **Left:** 6 rows still have no eval cases: `photo-classify`, `photo-recipe`, `receipt-scan`, `menu-scan`, `cooking-ingredient-photo` and `recipe-chat-image`.
+
+### 2026-11-06: `photo-recipe`, `receipt-scan`, `cooking-ingredient-photo`, `photo-classify` measured (no row switched)
+
+- **Run constraints.** The orchestrator said to switch no row; this run built eval suites and measured. `server/lib/ai-models.ts` is unchanged. Judge `anthropic/claude-sonnet-4.6`, fallback off, 3 samples per case, candidate `google/gemini-3.8-flash` with `reasoning_effort: low`, 0 call violations. Result files are gitignored (`evals/results/`). Earlier runs with dataset or assertion defects are kept locally as `*.INVALID-*.json`.
+- **New suites** (Wikimedia Commons public-domain/CC files, plus Unsplash photos already used by the photo-analysis suite; no user uploads; each `description` transcribes what is in the picture, checked against the pixels and, for receipts and cards, at 2x zoom): `npm run eval:recipe-photo` (7 cases), `eval:receipt` (6), `eval:ingredient-photo` (5), `eval:photo-classify` (14).
+- **App-sized images.** Each runner sizes the photo like the screen's upload (inline `maxEdge`/`quality` at the call site, as the label runners do, with the client function named in a comment): `photo-recipe` 1536 px / quality 85 (`uploadRecipePhotoForAnalysis`), `receipt-scan` 1536 / 85 (`useReceiptScan`), `cooking-ingredient-photo` 1536 / 85 (`useAddCookPhoto`), `photo-classify` 1024 / 70 (`uploadPhotoForAnalysis` calls `compressImage(uri)` with the defaults in `client/lib/image-compression.ts`). `fetch-image.ts` now also applies the EXIF orientation (the app's image manipulator does; phone photos otherwise arrive sideways) and retries a Wikimedia 429 for longer.
+- **Like-for-like.** Each runner calls the service, so it sends what the service sends: `analyzeRecipePhoto` detail high, cap 2000; `analyzeReceiptPhotos` detail high, cap 4096; `analyzeIngredientPhoto` detail high for a first photo, cap 1000; `classifyPhoto` detail low, cap 150.
+- **Privacy.** `analyzeRecipePhoto`, `analyzeReceiptPhotos`, `analyzeIngredientPhoto` and the classification call take only the image(s) (plus a mime type and photo count). No profile or health fields go in those prompts.
+- **Two rows not measured.** `menu-scan`: `analyzeMenuPhoto(image, userId)` reads the user's goals, diet, allergies and dislikes from storage and puts them in the prompt, so it needs a database and sends health data; not eval-safe here. `recipe-chat-image`: `POST /api/chat/conversations/:id/upload-image` has no caller in `client/` or `shared/` (grep for `upload-image`), so there is no app upload bound and the row serves no screen. The owner may want to drop the endpoint rather than move the row.
+- **Service change (out of contract, for the `photo-classify` eval).** `classifyAndAnalyze`'s step 1 is now an exported `classifyPhoto` (behaviour unchanged, test added). Without it the eval also ran the follow-on analysis rows, and a failure there threw away a good classification (first attempt, kept locally as `*.INVALID-step2-failures-and-429.json`).
+
+**`photo-recipe`** (7 cards and pages x 3; gpt-4o `recipe-photo-2026-11-06T00-35-30`, Gemini `…T00-40-21`):
+
+| Measure                  | gpt-4o             | Gemini 3.8 Flash, low |
+| ------------------------ | ------------------ | --------------------- |
+| Weighted overall         | 3.99               | 4.31                  |
+| Ingredient fidelity      | 4.9                | 5.2                   |
+| Method fidelity          | 4.5                | 3.5                   |
+| Confidence calibration   | 1.1                | 4.0                   |
+| Parse / call failures    | 0/21               | 0/21                  |
+| Hard-assertion pass rate | 85.7%              | 85.7%                 |
+| Latency p50 / p90 / max  | 6.7 / 9.2 / 10.5 s | 6.9 / 9.0 / 13.3 s    |
+| Cost per call (measured) | ~$0.0079           | ~$0.0038              |
+
+- **Paired gate:** calibration +2.95 [1.10, 4.90] pass; ingredient fidelity +0.33 [-1.10, 2.43] and method fidelity -1.00 [-3.10, 0.95] read FAIL on interval width (7 cases). No new hard-assertion failure.
+- **What both models get wrong.** Both invent servings and a prep time on every card that prints none (the prompt's JSON example shows `servings: 4`, `prepTimeMinutes: 15`), and both guess the flour quantity on the card where it is missing. gpt-4o reports confidence 1.0 on every card, handwritten or faded. Gemini reads quantities better (gingerbread ingredients 8.7 vs 2.7: gpt-4o turned 2 1/2 c flour into 2 2/3) but writes more into the method: on the card with no oven temperature it added 350F, a 30 to 35 minute bake and a toothpick test (method fidelity 1.0).
+- **Token cap.** Gemini replies peaked at 997 of 2000 tokens (reasoning 389 at most); every call ended `stop`. gpt-4o peaked at 711.
+- **Takeaway.** Same accuracy within noise, half the cost, much better calibrated, but neither model is trustworthy on printed-versus-invented fields. A prompt fix ("servings and times are null unless the page prints them; a missing quantity is null") should come before any row move, as it did for `photo-label`. **Owner decision:** let me try that prompt fix and re-measure both models, or leave `photo-recipe` on gpt-4o for now.
+
+**`receipt-scan`** (6 receipts x 3; gpt-4o `receipt-scan-2026-11-06T01-06-07`, Gemini `…T01-09-29`):
+
+| Measure                  | gpt-4o            | Gemini 3.8 Flash, low                     |
+| ------------------------ | ----------------- | ----------------------------------------- |
+| Weighted overall         | 6.43              | 8.85 (12 of 18 samples scored)            |
+| Item decoding            | 4.8               | 9.2                                       |
+| Food classification      | 8.5               | 10.0                                      |
+| Confidence calibration   | 5.5               | 5.9                                       |
+| Parse / call failures    | 0/18              | **6/18 (2 receipts, all 3 samples each)** |
+| Hard-assertion pass rate | 50.0%             | 66.7% (failures count as misses)          |
+| Latency p50 / p90 / max  | 8.3 / 9.2 / 9.8 s | 5.8 / 7.1 / 7.2 s                         |
+| Cost per call (measured) | ~$0.0102          | ~$0.0041                                  |
+
+- **Gemini fails the whole receipt when it has a non-food line.** It writes `estimatedShelfLifeDays: null` for lines it marks `isFood: false` (napkins, straws, plates, balloons, tissues, detergent), and `receiptItemSchema` requires an integer, so `analyzeReceiptPhotos` throws "Receipt analysis returned unexpected data" before it drops the non-food lines. I reproduced it on the Alexander's receipt (27 lines, 6 nulls on exactly the 6 non-food lines, twice) and it also fails the Walmart receipt with voided entries. Most real grocery receipts have a non-food line. **The Vertex backup route runs Gemini on this row today, so it has the same failure whenever it fires.** The fix is a one-line schema change (`estimatedShelfLifeDays` nullish, like `unit`); I did not make it here.
+- **Paired gate** (the 4 receipts Gemini returned): item decoding +2.92 [1.33, 4.50] and food classification +0.17 [0.00, 0.50] pass; calibration -0.33 [-0.75, 0.00] reads FAIL (4 cases). No new hard-assertion failure among them.
+- **gpt-4o's weak spots.** On the 28-line Alexander's receipt it returns 8 to 10 items and hallucinates names (cherry fruit snacks became "Snack Fries Chaya"); it drops 2 of 7 lines on the voided-entries receipt and invents "Greek Yogurt" and "German Lentils" on the Vienna receipt. Both models report 0.85 to 0.95 confidence on crumpled or faded receipts (calibration 3 to 6).
+- **Food-only output.** The service drops every line the model flags non-food, so the suite checks that non-food products are absent from the result (the first runs asserted `isFood=false` on the returned items, which can never appear; they are invalidated).
+- **Token cap.** Gemini's largest successful reply was 949 of 4096 tokens; the failing 27-line receipt used about 2430, with no reasoning tokens.
+- **Takeaway.** On the receipts Gemini returns it is far better and 60% cheaper, but with the current schema it throws on any receipt with a non-food line. **Owner decision:** approve the `estimatedShelfLifeDays` nullish fix (then I re-measure) before moving the row; it also repairs the backup route.
+
+**`cooking-ingredient-photo`** (5 photos x 3; gpt-4o `ingredient-photo-2026-11-06T01-23-07`, Gemini `…T00-49-17`):
+
+| Measure                  | gpt-4o                | Gemini 3.8 Flash, low |
+| ------------------------ | --------------------- | --------------------- |
+| Weighted overall         | 6.81                  | 8.12                  |
+| Item identification      | 8.0                   | 9.0                   |
+| Quantity plausibility    | 5.9                   | 6.9                   |
+| Confidence calibration   | 5.4                   | 7.5                   |
+| Parse / call failures    | 2/15 (Azure 502, 504) | 0/15                  |
+| Hard-assertion pass rate | 66.7%                 | 100%                  |
+| Latency p50 / p90 / max  | 6.2 / 6.7 / 7.3 s     | 4.7 / 7.1 / 8.3 s     |
+| Cost per call (measured) | ~$0.0065              | ~$0.0026              |
+
+- An earlier gpt-4o run (`…T00-46-26`, overlapped with other runs) had 3/15 "Request timed out" errors and scored 6.92; the sequential re-run still had 2/15 Azure errors, so these are provider failures, not load from my runs.
+- **Paired gate** (vs the sequential baseline): calibration +2.13 [1.40, 2.87], quantity +1.10 [0.17, 2.07] and identification +0.80 [-0.33, 2.07] all pass. No new hard-assertion failure. gpt-4o missed the carrot end in the vegetable-board photo 3 of 3 times and scored 5.0 on the herb-and-pepper plate.
+- **Token cap.** Gemini replies peaked at 546 of 1000 tokens (reasoning 263 at most), all `stop`.
+- **Takeaway.** Better on all three dimensions, 60% cheaper, slightly lower p50. **Owner decision:** switch `cooking-ingredient-photo` to `google/gemini-3.8-flash` + `reasoning_effort: low`, keeping the 1000 cap (about 45% headroom) or raising it to be safe. The measurements favour switching.
+
+**`photo-classify`** (14 pictures x 3, classification call alone; gpt-4o-mini `photo-classify-2026-11-06T01-13-11`, Gemini `…T01-16-49`):
+
+| Measure                  | gpt-4o-mini       | Gemini 3.8 Flash, low              |
+| ------------------------ | ----------------- | ---------------------------------- |
+| Weighted overall         | 9.92              | 9.85 (36 of 42 samples scored)     |
+| Classification accuracy  | 10.0              | 10.0                               |
+| Confidence calibration   | 9.7               | 9.4                                |
+| Parse / call failures    | 0/42              | **6/42** (`finish_reason: length`) |
+| Hard-assertion pass rate | 100%              | 85.7% (failures count as misses)   |
+| Latency p50 / p90 / max  | 2.4 / 2.8 / 3.1 s | 2.5 / 3.4 / 4.6 s                  |
+| Cost per call (measured) | ~$0.0005          | ~$0.0008                           |
+
+- **Token-cap hazard.** With the shipped `max_completion_tokens: 150`, Gemini low spends the cap on reasoning: on the bilingual carton photo 9 of 10 direct probes ended `length` at 143 to 146 of 150 tokens (140 to 145 of them reasoning) and failed to parse (6 of 42 in the eval). At a 600 cap, 10 of 10 parsed (largest reply 430 tokens, 387 reasoning). A move needs a cap of 1000 or more.
+- **Paired gate:** accuracy 0.00 [0.00, 0.00] and calibration -0.19 [-0.48, 0.00] pass; the 4 "new hard-assertion failures" are the length-truncated samples. gpt-4o-mini classified all 14 pictures correctly in all 3 samples, including the partial menu, the faded 1994 receipt, the hotel bar bill and the blurred EAN-13 (read exactly).
+- **Takeaway.** No accuracy gain to buy: gpt-4o-mini is already perfect on this set, cheaper and as fast. **Owner decision:** keep `photo-classify` on gpt-4o-mini until the gpt-4o family retires, or switch with a cap of at least 1000 (cost rises about 60%, still under a tenth of a cent).
+- **Not measured:** multi-photo receipts (the screen sends 1 to 3), `menu-scan`, `recipe-chat-image` (above), a default-reasoning Gemini run, `gemini-4-argon`.
+- **Spend.** About $3.1 of today's OpenRouter budget (all runs, judge calls, probes and the invalidated runs).

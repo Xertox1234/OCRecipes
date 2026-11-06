@@ -6,6 +6,7 @@ import {
   analyzeRecipePhoto,
   structureRecipeFromText,
   classifyAndAnalyze,
+  classifyPhoto,
   getPromptForIntent,
   refineAnalysis,
 } from "../photo-analysis";
@@ -955,6 +956,22 @@ describe("photo-analysis failure propagation", () => {
       await expect(structureRecipeFromText(["some text"])).rejects.toThrow(
         "Recipe text extraction returned invalid data",
       );
+    });
+  });
+
+  describe("classifyPhoto", () => {
+    it("returns the classification alone and makes exactly one AI call", async () => {
+      mockCreate.mockClear();
+      mockVisionResponse({
+        contentType: "nutrition_label",
+        confidence: 0.95,
+        barcode: null,
+      });
+
+      const result = await classifyPhoto("base64data");
+
+      expect(result.contentType).toBe("nutrition_label");
+      expect(mockCreate).toHaveBeenCalledTimes(1);
     });
   });
 

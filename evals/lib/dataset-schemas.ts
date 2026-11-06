@@ -314,3 +314,88 @@ export const frontLabelCaseSchema = z.object({
     .optional(),
 });
 export const frontLabelCasesSchema = z.array(frontLabelCaseSchema);
+
+// ─── Written / printed recipe photo extraction ──────────────────────────────
+// Same convention as the label suites: `description` transcribes what is
+// printed (checked against the pixels) and `mustContain` patterns check key
+// facts. Nutrition is estimated by the model, not printed, so it is not scored.
+
+export const recipePhotoCaseSchema = z.object({
+  id: z.string().min(1),
+  category: labelCaseCategorySchema,
+  description: z.string(),
+  input: labelImageInputSchema,
+  assertions: labelCaseAssertionsSchema,
+  scoreDimensions: z
+    .array(
+      z.enum([
+        "ingredient_fidelity",
+        "method_fidelity",
+        "confidence_calibration",
+      ]),
+    )
+    .optional(),
+});
+export const recipePhotoCasesSchema = z.array(recipePhotoCaseSchema);
+
+// ─── Grocery receipt extraction ─────────────────────────────────────────────
+// `description` lists each printed line item (as printed, with the decoding the
+// reader should reach) and which lines are not food; shelf life is estimated
+// by the model, not printed, so it is not scored.
+
+export const receiptScanCaseSchema = z.object({
+  id: z.string().min(1),
+  category: labelCaseCategorySchema,
+  description: z.string(),
+  input: labelImageInputSchema,
+  assertions: labelCaseAssertionsSchema,
+  scoreDimensions: z
+    .array(
+      z.enum([
+        "item_decoding",
+        "food_classification",
+        "confidence_calibration",
+      ]),
+    )
+    .optional(),
+});
+export const receiptScanCasesSchema = z.array(receiptScanCaseSchema);
+
+// ─── Cooking-session ingredient photos ──────────────────────────────────────
+// `description` lists every ingredient visible in the picture (checked against
+// the pixels) with counts and package sizes where they can be read.
+
+export const ingredientPhotoCaseSchema = z.object({
+  id: z.string().min(1),
+  category: labelCaseCategorySchema,
+  description: z.string(),
+  input: labelImageInputSchema,
+  assertions: labelCaseAssertionsSchema,
+  scoreDimensions: z
+    .array(
+      z.enum([
+        "item_identification",
+        "quantity_plausibility",
+        "confidence_calibration",
+      ]),
+    )
+    .optional(),
+});
+export const ingredientPhotoCasesSchema = z.array(ingredientPhotoCaseSchema);
+
+// ─── Photo content-type classification ──────────────────────────────────────
+// `description` states what the picture is and the category the classifier
+// should pick (plus any category that is also acceptable); `mustContain`
+// patterns check `contentType:` deterministically.
+
+export const photoClassifyCaseSchema = z.object({
+  id: z.string().min(1),
+  category: labelCaseCategorySchema,
+  description: z.string(),
+  input: labelImageInputSchema,
+  assertions: labelCaseAssertionsSchema,
+  scoreDimensions: z
+    .array(z.enum(["classification_accuracy", "confidence_calibration"]))
+    .optional(),
+});
+export const photoClassifyCasesSchema = z.array(photoClassifyCaseSchema);

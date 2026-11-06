@@ -1,0 +1,165 @@
+[
+  {
+    "id": "recipe-photo-apple-cake-handwritten-01",
+    "category": "edge-case",
+    "description": "Two ruled index cards scanned one above the other, blue-ink cursive handwriting, no printed text. Card 1 title 'Apple Cake' with '(M Wittmann)' in brackets at the right. Ingredients in the order written: '1 1/2 c flour' and '1 T baking powder' (bracketed together with the note 'sift together'); '1/4 lb butter' (written 1/4 with a pound sign), '2/3 c sugar', '1/2 lemon rind' and '3 eggs separated' (bracketed together with the note 'cream'). Method: 'Add flour + milk alternately (1/4 c milk). Fold in beaten egg whites.' Card 2: 'Place apple slices on top. Bake 45 mins in 350 degree oven.' then 'Glaze - sugar - 1 t vanilla - water.' The glaze has no amounts for sugar or water (so those quantities are null), the milk appears only inside the method (1/4 c), and the apples have no quantity at all. The card prints no servings, no prep time and no oven type; the only time is the 45-minute bake. Capital 'T' for baking powder and lowercase 't' for vanilla are as written. Handwriting makes this the hardest legibility case: confidence should be clearly below a clean typed card.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/1/16/Apple_cake_recipe_card_-_Michigan_circa_1950.jpg"
+    },
+    "assertions": {
+      "mustContain": ["apple cake", "baking powder", "butter", "egg", "350"],
+      "mustNotContain": ["cinnamon", "walnut", "servings: [0-9]", "nutmeg"]
+    },
+    "scoreDimensions": [
+      "ingredient_fidelity",
+      "method_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "recipe-photo-lemon-sponge-typed-02",
+    "category": "accuracy",
+    "description": "Two typewritten ruled index cards scanned one above the other (clean, high contrast). Title 'LEMON SPONGE CAKE'. Ingredients as typed: '2 t butter' (lowercase t), '1 c sugar', '3 eggs - seperated' (sic), '1/4 c flour', 'Pinch salt', 'Rind of 1 lemon', '5 T fresh lemon juice' (capital T), '1 1/2 c milk'. Method: 'Cream butter and sugar, add 3 egg yolks, flour, salt, lemon rind and juice, and 1/2 c milk.' Second card: 'Beat whites until peaks form, add milk and fold into batter. Put in well greased 1 1/2-2 qt baking dish - place in shallow water and bake 350 degree oven for 30-40 mins.' No servings and no prep time are printed. The lowercase 't' (butter) and capital 'T' (lemon juice) are different units as typed; a model that turns the 2 t of butter into 2 tablespoons, or writes 5 t of juice, misreads the card. Vanilla and baking powder are not on the card.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/8/81/Lemon_sponge_cake_recipe_card_-_Michigan_circa_1950.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "lemon sponge",
+        "lemon juice",
+        "salt",
+        "350",
+        "30-40|30 to 40|30–40"
+      ],
+      "mustNotContain": ["baking powder", "vanilla", "servings: [0-9]"]
+    },
+    "scoreDimensions": [
+      "ingredient_fidelity",
+      "method_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "recipe-photo-red-velvet-printed-card-03",
+    "category": "edge-case",
+    "description": "A printed promotional recipe card (Adams Extract) photographed as one image, two panels. Top panel: a red cover with the words 'RED VELVET the cake of a wife time' and 'Betty Adams RECIPE ON BACK' beside a photo of a red velvet cake slice. Bottom panel: 'RED VELVET CAKE RECIPE', ingredients in two columns. Left column: '1/2 Cup Shortening', '1 1/2 Cups Sugar', '2 Eggs', '1 tsp. \"Adams Best\" Vanilla', '1 tsp. Adams Butter Flavor', 'Two 1/2 oz. bottles Adams Red Color'. Right column: '3 Tbl. (level) Cocoa', '2 1/2 Cups sifted Cake Flour', '1 tsp. Salt', '1 tsp. Soda', '1 Cup Buttermilk', '1 Tbl. Vinegar'. Cake method: cream shortening, add sugar gradually and cream until light and fluffy; add eggs one at a time, beating vigorously after each; add flavors; make a paste of cocoa and food coloring and blend in; sift dry ingredients together and add alternately with buttermilk; add vinegar with the last half of the buttermilk; beat only until smooth; bake in 3 greased and floured 8 inch or 9 inch pans for 20-25 minutes at 350 degrees, or until a cake tester comes out clean; cool 10 minutes, remove from pans and cool completely. A second recipe, 'NO-COOK ICING': '1 lb. Confectioners Sugar (Sifted)', '1/2 Cup Shortening', '1 Tbl. \"Adams Best\" Vanilla', '1/4 tsp. Adams Butter Flavor', '1/2 tsp. Salt', '5 Tbl. Milk (Approx.)'; method: sift confectioners sugar, blend about half the sugar with the shortening, flavors and salt, alternately add the rest of the sugar and enough milk for a smooth spreading icing. The small print of the icing quantities is the least legible part of the card (the photo is only 669 px wide). No servings are printed. The title is the cake (a Red Velvet Cake), not the cover slogan.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/1/1d/Original_Red_Velvet_Recipe_Card.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "red velvet",
+        "cocoa",
+        "buttermilk",
+        "vinegar",
+        "350",
+        "confectioners|powdered|icing"
+      ],
+      "mustNotContain": ["baking powder", "cream cheese", "servings: [0-9]"]
+    },
+    "scoreDimensions": [
+      "ingredient_fidelity",
+      "method_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "recipe-photo-hamburger-web-page-04",
+    "category": "accuracy",
+    "description": "A full printed web page (Wikibooks 'Cookbook:Hamburger', printed to a portrait page with a header line and a hamburger photo at the right). Title 'Hamburger'. Info box at the right: 'Category: Beef recipes', 'Servings: 4-6', 'Energy: Hamburger 680 Cal / 2845 kJ, Cheeseburger 790 Cal / 3305 kJ', 'Time: 20 minutes', 'Difficulty' dots. Ingredients: '500g (1.1 lb) minced (ground) beef', 'herbs and spices (optional)', 'cheese (optional)', 'salad (lettuce, spinach, alfalfa sprouts, tomato, onion etc. - optional)', '1 hamburger bun for each burger'. Procedure, 8 numbered steps: 1 add the beef to a food processor for approximately 10 seconds; 2 add herbs and/or spices to taste (optionally some beef stock to improve the flavour); 3 mix in the food processor for another 30 seconds or until fully mixed; 4 if the beef was already ground, mix the seasonings in well (may add garlic, onion flakes, soy sauce, worcestershire sauce and/or olive oil, and 2 tsp of hot sauce), squeezing out extra juice if liquids are added; 5 shape by hand into burgers (4-6 burgers from 500g); 6 fry (about 5 mins on each side for burgers which aren't too thick), grill (same times) or barbeque; 7 ensure the burgers are fully cooked through, cutting one open if unsure; 8 serve each burger on a bun (sesame seed preferably), optionally with relish, sliced pickles, ketchup, mayonnaise, mustard, ranch dressing, cheese, lettuce, tomato and/or onion. Below are 'Notes, tips and variations' (not part of the method) and a footer 'This page was last modified 07:38, 17 November 2005'. Servings 4-6 and time 20 minutes are printed, so servings 4 or 6 (or 5) and a 20-minute total are both correct; no prep/cook split is printed. Clean print, so confidence should be high.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/0/0b/Wikibooks_hamburger_recipe.png"
+    },
+    "assertions": {
+      "mustContain": [
+        "hamburger",
+        "qty=500|500 ?g|1\\.1",
+        "bun",
+        "ground|minced"
+      ],
+      "mustNotContain": ["breadcrumb", "egg yolk", "tomato paste", "bacon"]
+    },
+    "scoreDimensions": [
+      "ingredient_fidelity",
+      "method_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "recipe-photo-russian-salad-prose-05",
+    "category": "edge-case",
+    "description": "A tight crop of one printed paragraph from a Victorian cookery book, serif type, with a few worn letters ('ounces' starts with a damaged letter, 'meat' reads like 'mcat'). Heading: 'SUPPER.-Russian Salad.' The whole recipe is one paragraph of prose, no ingredient list: pick four ounces of meat from the guinea fowl (cooked veal or any white meat could be used); cut into small pieces one pound of cold boiled potatoes and four sardines, and mince finely a sour apple, pared and cored, and a tea-spoonful of capers; slice thinly an inch of German sausage and six pickled gherkins; put all into a dish and mix thoroughly; toss them up just before serving with a quarter of a pint of Mayonnaise sauce; garnish with hard-boiled egg and strips of boiled beetroot; if more convenient, ham can be used instead of German sausage, and anchovies instead of sardines. So the ingredients are: 4 oz guinea fowl meat, 1 lb cold boiled potatoes, 4 sardines, 1 sour apple, 1 teaspoon capers, 1 inch German sausage, 6 pickled gherkins, 1/4 pint mayonnaise, hard-boiled egg and boiled beetroot (the last two with no quantity). No servings, prep time, cook time or oven are given. The text is large and clean, so confidence should be high, but a recipe with no times/servings should not get invented ones.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/f/fc/Years_Cookery_Russian_Salad.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "russian salad",
+        "potato",
+        "sardine",
+        "gherkin",
+        "mayonnaise",
+        "caper"
+      ],
+      "mustNotContain": ["carrot", "olive", "cookTimeMinutes: [1-9]"]
+    },
+    "scoreDimensions": [
+      "ingredient_fidelity",
+      "method_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "recipe-photo-pound-cake-missing-quantity-06",
+    "category": "safety",
+    "description": "A single ruled index card, typewritten in faded pink/brown ink (low contrast but readable). Title 'POUND CAKE' with the attribution 'B. Tate' at the right. Ingredients: '1 lb. pure butter', '1 lb XXX sugar', '6 large eggs, 3 at a time', 'c flour' (the quantity before 'c flour' is MISSING: there is only a faint speck where a number should be, so the flour quantity is unknown and must be null, never a guess such as 3 or 4 cups), '1/3 c pineapple juice'. Method: 'Mix in order given, except when adding flour - add 1 cup, mix well, then juice and mix well, then remaining flour. Grease 1 tube pan or 2 loaf pans, sprinkle with flour and shake out loose flour. Place cake in pre-heated 350 degree oven and bake for 1 hour.' So the oven is 350 degrees and the bake time is 60 minutes; the method mentions '1 cup' of flour as the first addition but never states the total. No servings or prep time. Because a quantity is missing and the ink is faded, confidence should be clearly lower than on a clean card.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Pound_cake_recipe_card_-_Handwritten_2024-05-21_103943_page_1.jpg"
+    },
+    "assertions": {
+      "mustContain": ["pound cake", "butter", "pineapple", "350", "egg"],
+      "mustNotContain": [
+        "qty=[0-9][^\\n]* name=[^\\n]*flour",
+        "baking powder",
+        "vanilla",
+        "servings: [0-9]"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_fidelity",
+      "method_fidelity",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "recipe-photo-gingerbread-no-temp-07",
+    "category": "accuracy",
+    "description": "One typewritten index card on orange-tan card stock, two ingredient columns. Title 'SPICY GINGERBREAD' with '(Shirley G)' in red at the right. Left column: '2 eggs', '3/4 c brown sugar', '3/4 c molasses', '3/4 c melted shortening', '2 1/2 c flour', '1/2 t cloves'. Right column: '1/2 t baking powder', '2 t soda', '2 t ginger', '1 1/2 t cinnamon', '1/2 t nutmeg', '1 c boiling water'. Method (the whole text): 'Add beaten eggs to sugar, molasses and shortening. Add dry ingredients. Add hot water. Bake in moderate oven.' The card gives NO oven temperature, NO bake time, no servings and no pan size, so cookTimeMinutes, prepTimeMinutes and servings must be null and no temperature such as 350 may be written into the method. 'moderate oven' is as printed. Clean typed text, so confidence should be high.",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c8/Spicy_Gingerbread_%28Shirley_G.%29_Handwritten_2024-05-21_103943_page_1.jpg"
+    },
+    "assertions": {
+      "mustContain": [
+        "gingerbread",
+        "molasses",
+        "cloves",
+        "nutmeg",
+        "boiling water|hot water",
+        "moderate"
+      ],
+      "mustNotContain": [
+        "350",
+        "375",
+        "325",
+        "cookTimeMinutes: [1-9]",
+        "servings: [0-9]",
+        "vanilla"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_fidelity",
+      "method_fidelity",
+      "confidence_calibration"
+    ]
+  }
+]
