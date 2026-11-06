@@ -899,6 +899,24 @@ describe("Nutrition Routes", () => {
       expect(res.status).toBe(400);
     });
 
+    // A "NaN" passes the column's `>= 0` CHECK and turns the day's SUM into
+    // NaN, so the boundary must refuse it (and any value no food can have).
+    it.each([
+      { calories: "NaN" },
+      { calories: "-5" },
+      { protein: "abc" },
+      { calories: 50_001 },
+      { sodium: "Infinity" },
+    ])("returns 400 for nutrition value %o", async (nutrition) => {
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .send({ productName: "Test Item", ...nutrition });
+
+      expect(res.status).toBe(400);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
     it("returns 400 for non-numeric barcode", async () => {
       const res = await request(app)
         .post("/api/scanned-items")

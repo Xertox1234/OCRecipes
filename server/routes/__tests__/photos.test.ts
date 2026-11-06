@@ -769,6 +769,67 @@ describe("Photos Routes", () => {
       warnSpy.mockRestore();
     });
 
+    const label = (overrides: Record<string, number | null>) => ({
+      servingSize: "1 cup",
+      servingsPerContainer: 2,
+      calories: 100,
+      totalFat: 2,
+      saturatedFat: 0,
+      transFat: 0,
+      cholesterol: 0,
+      sodium: 50,
+      totalCarbs: 10,
+      dietaryFiber: 1,
+      totalSugars: 3,
+      addedSugars: 0,
+      protein: 5,
+      vitaminD: 0,
+      calcium: 0,
+      iron: 0,
+      potassium: 0,
+      confidence: 0.9,
+      productName: "Label Food",
+      ...overrides,
+    });
+
+    it("refuses a label whose calories were not read instead of logging 0 kcal", async () => {
+      const sessionId = storage.createLabelSession(
+        "1",
+        label({ calories: null }),
+        undefined,
+      );
+
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId, servingsConsumed: 1 });
+
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe("CALORIES_UNREADABLE");
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
+    it("caps a misread huge label value instead of overflowing the column", async () => {
+      const sessionId = storage.createLabelSession(
+        "1",
+        label({ protein: 1e9, sodium: 1e9 }),
+        undefined,
+      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem({ id: 10, userId: "1", sourceType: "label" }),
+      );
+
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId, servingsConsumed: 1 });
+
+      expect(res.status).toBe(201);
+      const [item] = vi.mocked(storage.createScannedItemWithLog).mock.calls[0];
+      expect(Number(item.protein)).toBe(5_000);
+      expect(Number(item.sodium)).toBe(100_000);
+    });
+
     it("returns 404 for a missing label session", async () => {
       const res = await request(app)
         .post("/api/photos/confirm-label")

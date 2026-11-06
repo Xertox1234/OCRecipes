@@ -762,6 +762,33 @@ describe("Recipe Import", () => {
           expect(result.data.proteinPerServing).toBe("1.5");
         }
       });
+
+      it("converts energy written out as kilojoules", async () => {
+        mockPage({
+          "@type": "Recipe",
+          name: "Kilojoules",
+          nutrition: { calories: "1046 kilojoules" },
+        });
+        const result = await importRecipeFromUrl("https://example.com/kj");
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.caloriesPerServing).toBe("250");
+        }
+      });
+
+      it("drops a garbled huge value instead of failing the whole import", async () => {
+        mockPage({
+          "@type": "Recipe",
+          name: "Garbled",
+          nutrition: { calories: "99999999999 calories", fatContent: "12 g" },
+        });
+        const result = await importRecipeFromUrl("https://example.com/huge");
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.caloriesPerServing).toBeNull();
+          expect(result.data.fatPerServing).toBe("12");
+        }
+      });
     });
 
     it("parses full recipe with nutrition, keywords, and all optional fields", async () => {

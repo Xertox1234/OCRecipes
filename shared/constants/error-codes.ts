@@ -39,6 +39,8 @@ export const ErrorCode = {
   IMAGE_GENERATION_FAILED: "IMAGE_GENERATION_FAILED",
   ALREADY_CONFIRMED: "ALREADY_CONFIRMED",
   NUTRITION_LOOKUP_FAILED: "NUTRITION_LOOKUP_FAILED",
+  /** A nutrition label scan whose calories line could not be read — rescan rather than log 0 kcal. */
+  CALORIES_UNREADABLE: "CALORIES_UNREADABLE",
   // Recipe import error codes — mirror the ImportError union in recipe-import.ts
   FETCH_FAILED: "FETCH_FAILED",
   NO_RECIPE_DATA: "NO_RECIPE_DATA",

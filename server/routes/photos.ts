@@ -50,6 +50,7 @@ import {
   ipKeyGenerator,
 } from "./_rate-limiters";
 import { upload, createImageUpload } from "./_upload";
+import { NUTRITION_CAPS } from "@shared/constants/nutrition";
 
 // Higher file size limit for label photos (5MB for text readability)
 const labelUpload = createImageUpload(5 * 1024 * 1024);
@@ -674,8 +675,21 @@ export function register(app: Express): void {
         const { labelData, barcode } = session;
         const servings = validated.servingsConsumed;
 
-        // Clamp negative AI values to 0 (defense-in-depth for DB CHECK constraints)
-        const clamp = (v: number | null) => Math.max(v ?? 0, 0);
+        // An unread calories line is not 0 kcal: refuse, so the user rescans
+        // instead of logging a food that silently drops out of the day total.
+        if (labelData.calories == null) {
+          return sendError(
+            res,
+            422,
+            "The calories on this label couldn't be read",
+            ErrorCode.CALORIES_UNREADABLE,
+          );
+        }
+
+        // Clamp misread AI values into [0, cap]: a negative breaks the DB CHECK
+        // constraints and a huge one overflows numeric(10,2).
+        const clamp = (v: number | null, max: number = NUTRITION_CAPS.grams) =>
+          Math.min(Math.max(v ?? 0, 0), max);
 
         // `scannedItems` stores UNSCALED per-serving values — matching the
         // label's own `servingSize` string, never a multiple of it. The
@@ -687,13 +701,19 @@ export function register(app: Express): void {
         // fixes: it produced a row whose stored ratio no longer matched its
         // own declared serving. See todos/archive/
         // P2-2026-08-13-label-scan-scales-nutrition-by-servings-but-stores-serving-size-unscaled.md
-        const perServingCalories = clamp(labelData.calories);
+        const perServingCalories = clamp(
+          labelData.calories,
+          NUTRITION_CAPS.calories,
+        );
         const perServingProtein = clamp(labelData.protein);
         const perServingCarbs = clamp(labelData.totalCarbs);
         const perServingFat = clamp(labelData.totalFat);
         const perServingFiber = clamp(labelData.dietaryFiber);
         const perServingSugar = clamp(labelData.totalSugars);
-        const perServingSodium = clamp(labelData.sodium);
+        const perServingSodium = clamp(
+          labelData.sodium,
+          NUTRITION_CAPS.sodiumMg,
+        );
 
         const productName = labelData.productName || "Nutrition label scan";
 

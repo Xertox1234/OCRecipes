@@ -1139,6 +1139,20 @@ describe("Meal Plan Routes", () => {
       );
     });
 
+    it.each([
+      { caloriesPerServing: 1e21 },
+      { caloriesPerServing: 50_001 },
+      { proteinPerServing: 5_001 },
+    ])("returns 400 for an out-of-range %o", async (nutrition) => {
+      const res = await request(app)
+        .post("/api/meal-plan/save-generated")
+        .set("Authorization", "Bearer token")
+        .send({ meals: [{ ...validMeal, ...nutrition }] });
+
+      expect(res.status).toBe(400);
+      expect(storage.createMealPlanFromSuggestions).not.toHaveBeenCalled();
+    });
+
     it("returns 400 for empty meals array", async () => {
       const res = await request(app)
         .post("/api/meal-plan/save-generated")

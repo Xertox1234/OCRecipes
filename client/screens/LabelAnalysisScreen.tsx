@@ -63,6 +63,7 @@ import {
   shouldReplaceWithAI,
   getLogButtonPresentation,
   scaleByServings,
+  labelLogErrorMessage,
 } from "./label-analysis-utils";
 import { frontLabelSavedKey } from "./FrontLabelConfirmScreen";
 
@@ -307,19 +308,14 @@ export default function LabelAnalysisScreen() {
     onError: (err) => {
       // Never surface the raw error.message — confirmLabelAnalysis throws a
       // code-carrying ApiError. Branch on the codes /api/photos/confirm-label
-      // actually emits: NOT_FOUND (session expired) and RATE_LIMITED.
+      // actually emits: NOT_FOUND (session expired), RATE_LIMITED and
+      // CALORIES_UNREADABLE (the label's calories line was not read).
       // Toast, not setError: by the time this mutation can fire, the screen
       // is always past the `error && !labelData` early-return below, so
       // setError here would never render.
-      let msg = "Couldn't log this item. Please try again.";
-      if (err instanceof ApiError) {
-        if (err.code === ErrorCode.NOT_FOUND) {
-          msg = "This scan expired. Please scan the label again.";
-        } else if (err.code === ErrorCode.RATE_LIMITED) {
-          msg = "Too many requests. Please wait a moment and try again.";
-        }
-      }
-      toast.error(msg);
+      toast.error(
+        labelLogErrorMessage(err instanceof ApiError ? err.code : undefined),
+      );
     },
     // The onError above already toasts on failure.
     meta: { silentError: true },
