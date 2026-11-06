@@ -169,6 +169,10 @@ function mapVerificationError(status: VerificationStatus): string {
       return "INVALID_ENVIRONMENT";
     case VerificationStatus.INVALID_CERTIFICATE:
       return "INVALID_CERTIFICATE";
+    // Apple's online (OCSP) check could not be completed — an outage, not a
+    // bad receipt; the client keeps the transaction and retries.
+    case VerificationStatus.RETRYABLE_VERIFICATION_FAILURE:
+      return "STORE_API_ERROR";
     default:
       return "INVALID_RECEIPT";
   }
@@ -190,8 +194,15 @@ async function validateAppleReceipt(
       );
       return { valid: false, errorCode };
     }
-    log.error({ err: toError(err) }, "Apple receipt verification error");
-    return { valid: false, errorCode: "INVALID_RECEIPT" };
+    // Not a verdict on the receipt (a network failure, a missing
+    // APPLE_BUNDLE_ID, an unreadable root CA): answer "store unavailable" so
+    // the client keeps the transaction, and report it — every Apple purchase
+    // fails here until it is fixed. One Error object for both: Sentry skips an
+    // object it already captured.
+    const error = toError(err);
+    log.error({ err: error }, "Apple receipt verification error");
+    reportError(error, "apple-receipt-verification");
+    return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 
   if (expectedProductId && payload.productId !== expectedProductId) {
@@ -324,15 +335,31 @@ const googleSubscriptionResponseSchema = z.object({
     .optional(),
 });
 
+/** The token exchange in flight, shared by concurrent callers. */
+let googleTokenRequest: Promise<string> | null = null;
+
+/**
+ * A cached Google OAuth access token, or one exchange shared by every caller
+ * that arrives while it runs (single-flight). A failed exchange is not cached:
+ * the next caller starts a new one.
+ */
+function getGoogleAccessToken(): Promise<string> {
+  if (googleAccessToken && Date.now() < googleTokenExpiresAt) {
+    return Promise.resolve(googleAccessToken);
+  }
+  if (!googleTokenRequest) {
+    googleTokenRequest = fetchGoogleAccessToken().finally(() => {
+      googleTokenRequest = null;
+    });
+  }
+  return googleTokenRequest;
+}
+
 /**
  * Build a JWT for Google service account authentication and exchange it
  * for an OAuth2 access token. Caches the token until expiry.
  */
-async function getGoogleAccessToken(): Promise<string> {
-  if (googleAccessToken && Date.now() < googleTokenExpiresAt) {
-    return googleAccessToken;
-  }
-
+async function fetchGoogleAccessToken(): Promise<string> {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL!;
   const privateKeyPem = process.env.GOOGLE_SERVICE_ACCOUNT_KEY!.replace(
     /\\n/g,
@@ -397,6 +424,7 @@ async function getGoogleAccessToken(): Promise<string> {
 export function resetGoogleTokenCache(): void {
   googleAccessToken = null;
   googleTokenExpiresAt = 0;
+  googleTokenRequest = null;
 }
 
 async function validateGoogleReceipt(

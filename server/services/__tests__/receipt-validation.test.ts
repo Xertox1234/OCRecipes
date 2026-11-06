@@ -349,10 +349,54 @@ describe("Receipt Validation", () => {
       expect(result.errorCode).toBe("BUNDLE_MISMATCH");
     });
 
-    it("returns INVALID_RECEIPT for non-VerificationException errors", async () => {
+    // Apple's online (OCSP) check failing is an outage, not a bad receipt: the
+    // client must hear "store unavailable, try later" (STORE_API_ERROR).
+    it("returns STORE_API_ERROR for a RETRYABLE_VERIFICATION_FAILURE", async () => {
+      const { VerificationException } = await import(
+        "@apple/app-store-server-library"
+      );
+      mockVerifyAndDecodeTransaction.mockRejectedValue(
+        new VerificationException(
+          VerificationStatus.RETRYABLE_VERIFICATION_FAILURE,
+        ),
+      );
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("receipt-during-ocsp-outage", "ios");
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("STORE_API_ERROR");
+    });
+
+    it("keeps a permanent VERIFICATION_FAILURE as INVALID_RECEIPT", async () => {
+      const { VerificationException } = await import(
+        "@apple/app-store-server-library"
+      );
+      mockVerifyAndDecodeTransaction.mockRejectedValue(
+        new VerificationException(VerificationStatus.VERIFICATION_FAILURE),
+      );
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("tampered-receipt", "ios");
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("INVALID_RECEIPT");
+    });
+
+    it("returns STORE_API_ERROR and reports one Error for non-VerificationException errors", async () => {
       mockVerifyAndDecodeTransaction.mockRejectedValue(
         new Error("Network timeout"),
       );
+      mockLog.error.mockClear();
+      mockReportError.mockClear();
 
       vi.resetModules();
       const { validateReceipt: validate, resetAppleVerifier } = await import(
@@ -362,7 +406,14 @@ describe("Receipt Validation", () => {
 
       const result = await validate("bad-receipt", "ios");
       expect(result.valid).toBe(false);
-      expect(result.errorCode).toBe("INVALID_RECEIPT");
+      expect(result.errorCode).toBe("STORE_API_ERROR");
+      // Same Error object to the log and the reporter: Sentry skips an Error
+      // it already captured, so this stays one event.
+      const logged = (mockLog.error.mock.calls[0]?.[0] as { err?: unknown })
+        ?.err;
+      expect(logged).toBeInstanceOf(Error);
+      expect(mockReportError).toHaveBeenCalledTimes(1);
+      expect(mockReportError.mock.calls[0]?.[0]).toBe(logged);
     });
 
     it("accepts non-subscription purchase (no expiresDate)", async () => {
@@ -659,6 +710,77 @@ describe("Receipt Validation", () => {
 
       const result = await mod.validateReceipt("purchase-token-123", "android");
       expect(result.errorCode).toBe("STORE_API_ERROR");
+
+      fetchSpy.mockRestore();
+    });
+
+    it("shares one OAuth token exchange between concurrent validations", async () => {
+      const { validate, fetchSpy } = await setupGoogleTest({
+        subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+        lineItems: [
+          {
+            productId: "premium_monthly",
+            expiryTime: new Date(FUTURE_EXPIRY).toISOString(),
+          },
+        ],
+      });
+
+      const [a, b] = await Promise.all([
+        validate("purchase-token-a", "android"),
+        validate("purchase-token-b", "android"),
+      ]);
+      expect(a.valid).toBe(true);
+      expect(b.valid).toBe(true);
+      const oauthCalls = fetchSpy.mock.calls.filter(
+        ([url]) =>
+          new URL(typeof url === "string" ? url : url.toString()).hostname ===
+          "oauth2.googleapis.com",
+      );
+      expect(oauthCalls).toHaveLength(1);
+
+      fetchSpy.mockRestore();
+    });
+
+    it("lets the next validation retry the token exchange after one fails", async () => {
+      vi.resetModules();
+      const mod = await import("../receipt-validation");
+      mod.resetGoogleTokenCache();
+
+      let oauthAttempts = 0;
+      const fetchSpy = vi
+        .spyOn(global, "fetch")
+        .mockImplementation(async (url) => {
+          const host = new URL(typeof url === "string" ? url : url.toString())
+            .hostname;
+          if (host === "oauth2.googleapis.com") {
+            oauthAttempts += 1;
+            if (oauthAttempts === 1) {
+              return new Response("unavailable", { status: 503 });
+            }
+            return new Response(
+              JSON.stringify({ access_token: "tok", expires_in: 3600 }),
+              { status: 200 },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+              lineItems: [
+                {
+                  productId: "premium_monthly",
+                  expiryTime: new Date(FUTURE_EXPIRY).toISOString(),
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        });
+
+      const first = await mod.validateReceipt("purchase-token-1", "android");
+      expect(first.errorCode).toBe("STORE_API_ERROR");
+      const second = await mod.validateReceipt("purchase-token-1", "android");
+      expect(second.valid).toBe(true);
+      expect(oauthAttempts).toBe(2);
 
       fetchSpy.mockRestore();
     });
