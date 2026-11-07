@@ -7,6 +7,7 @@
  * predicates so a regex drift in stryker.targets.mjs shows up here.
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   isApprovedExclusion,
   isHardExclusion,
@@ -487,5 +488,23 @@ describe("rowFromRun", () => {
       result: null,
       error: "unreadable report",
     });
+  });
+});
+
+describe("mutation-on-diff.yml", () => {
+  // A module whose import chain reaches server/db.ts (label-override ->
+  // barcode-lookup -> storage) throws at import without DATABASE_URL, so the
+  // test file never loads and Stryker reports "No tests were executed"
+  // (PR #1783, run 42296601188). db.ts only builds a lazy pool, so a set URL
+  // with no Postgres behind it is enough; a test that queries fails fast.
+  it("gives the Mutation-on-diff step a local placeholder DATABASE_URL", () => {
+    const workflow = readFileSync(
+      ".github/workflows/mutation-on-diff.yml",
+      "utf8",
+    );
+    const step =
+      workflow.split("- name: Mutation-on-diff\n")[1]?.split("- name:")[0] ??
+      "";
+    expect(step).toMatch(/DATABASE_URL: postgresql:\/\/[^\s]*@localhost[:/]/);
   });
 });
