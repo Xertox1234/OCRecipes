@@ -152,11 +152,37 @@ export const chatBubbleEntrySpring = {
   stiffness: 150,
 } as const;
 
+/** A message you just sent settling into place: a short fade with a small
+ *  rise on a strong ease-out — present, not a swoop across the screen. */
+export const chatSentEntrance = {
+  duration: 250,
+  /** Starting offset below the resting position, in points. */
+  rise: 6,
+  easing: Easing.bezier(0.22, 1, 0.36, 1),
+} as const;
+
+/** Milliseconds for a Coach reply's text to fade in beside its avatar dot.
+ *  Only the text fades: the dot stays where the thinking dot was, so the
+ *  reply takes over in place rather than arriving from off-screen. */
+export const chatReplyTextFadeMs = 200;
+
 /** How long a finished Coach reply's live blocks stay on screen before the
  *  saved copy takes over — long enough for the `chatBubbleEntrySpring`
  *  entrance to settle (within 1% at ~540ms at damping 18 / mass 1 /
  *  stiffness 150). */
 export const streamBlockEntranceHoldMs = 600;
+
+/** How a streamed Coach reply is revealed (see
+ *  `client/components/coach/stream-reveal-utils.ts`): whole words at a calm
+ *  base speed — about 10–12 words a second, a conversational pace rather
+ *  than a pasted block — speeding up in proportion to a large backlog so a
+ *  long reply never trails far behind the network. The single place to tune
+ *  how fast the Coach "talks". */
+export const coachRevealPacing = {
+  baseCharsPerSec: 60,
+  catchUpMs: 1500,
+  tailFlushMs: 120,
+} as const;
 
 /** Spring parameters for the chat send button popping in as typing starts
  *  (builder API). */
