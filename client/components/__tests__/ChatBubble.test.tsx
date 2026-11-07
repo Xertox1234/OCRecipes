@@ -2,7 +2,13 @@
 import React from "react";
 import { screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
-import { SlideInLeft, SlideInRight } from "react-native-reanimated";
+import {
+  FadeIn,
+  FadeInUp,
+  SlideInLeft,
+  SlideInRight,
+} from "react-native-reanimated";
+import { chatReplyTextFadeMs, chatSentEntrance } from "@/constants/animations";
 import { ChatBubble } from "../ChatBubble";
 
 const { a11y } = vi.hoisted(() => ({ a11y: { reducedMotion: false } }));
@@ -63,46 +69,59 @@ describe("ChatBubble", () => {
 });
 
 describe("ChatBubble — entrance", () => {
-  type Spied = { springify: () => unknown };
-  let userSpring: ReturnType<typeof vi.spyOn>;
-  let assistantSpring: ReturnType<typeof vi.spyOn>;
+  type Spied = { duration: () => unknown; springify: () => unknown };
+  let sentFade: ReturnType<typeof vi.spyOn>;
+  let replyFade: ReturnType<typeof vi.spyOn>;
+  let slides: ReturnType<typeof vi.spyOn>[];
   beforeEach(() => {
     a11y.reducedMotion = false;
-    userSpring = vi.spyOn(SlideInRight as unknown as Spied, "springify");
-    assistantSpring = vi.spyOn(SlideInLeft as unknown as Spied, "springify");
+    sentFade = vi.spyOn(FadeInUp as unknown as Spied, "duration");
+    replyFade = vi.spyOn(FadeIn as unknown as Spied, "duration");
+    slides = [
+      vi.spyOn(SlideInRight as unknown as Spied, "springify"),
+      vi.spyOn(SlideInLeft as unknown as Spied, "springify"),
+    ];
   });
   afterEach(() => {
-    userSpring.mockRestore();
-    assistantSpring.mockRestore();
+    sentFade.mockRestore();
+    replyFade.mockRestore();
+    slides.forEach((s) => s.mockRestore());
   });
 
   // Positive controls: a live copy (just sent, or the reply streaming in)
-  // slides in from its own side.
-  it("slides a live user message in from the right", () => {
+  // settles in quietly — a short fade, not a slide across the screen.
+  it("fades a live user message up into place", () => {
     renderComponent(<ChatBubble role="user" content="Hi" animateEntry />);
-    expect(userSpring).toHaveBeenCalled();
+    expect(sentFade).toHaveBeenCalledWith(chatSentEntrance.duration);
+    for (const s of slides) expect(s).not.toHaveBeenCalled();
   });
 
-  it("slides a live reply in from the left", () => {
+  it("fades a live reply's text in, without sliding the row", () => {
     renderComponent(
       <ChatBubble role="assistant" content="Hello" animateEntry />,
     );
-    expect(assistantSpring).toHaveBeenCalled();
+    expect(replyFade).toHaveBeenCalledWith(chatReplyTextFadeMs);
+    for (const s of slides) expect(s).not.toHaveBeenCalled();
   });
 
   // Saved messages (history load, scrolling back, the swap once a reply is
-  // saved) appear in place instead of replaying the slide.
-  it("does not slide by default", () => {
+  // saved) appear in place instead of replaying the entrance.
+  it("does not animate by default", () => {
     renderComponent(<ChatBubble role="assistant" content="Hello" />);
     renderComponent(<ChatBubble role="user" content="Hi" />);
-    expect(assistantSpring).not.toHaveBeenCalled();
-    expect(userSpring).not.toHaveBeenCalled();
+    expect(sentFade).not.toHaveBeenCalled();
+    expect(replyFade).not.toHaveBeenCalled();
   });
 
-  it("does not slide under reduced motion", () => {
+  it("does not animate under reduced motion", () => {
     a11y.reducedMotion = true;
     renderComponent(<ChatBubble role="user" content="Hi" animateEntry />);
-    expect(userSpring).not.toHaveBeenCalled();
+    renderComponent(
+      <ChatBubble role="assistant" content="Hello" animateEntry />,
+    );
+    expect(sentFade).not.toHaveBeenCalled();
+    expect(replyFade).not.toHaveBeenCalled();
     expect(screen.getByText("Hi")).toBeDefined();
+    expect(screen.getByText("Hello")).toBeDefined();
   });
 });

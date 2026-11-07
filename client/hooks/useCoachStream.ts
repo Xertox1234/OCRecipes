@@ -18,14 +18,20 @@ import {
   createFenceScanState,
   filterValidBlocks,
 } from "@/components/coach/coach-chat-utils";
+import {
+  initialRevealState,
+  nextReveal,
+} from "@/components/coach/stream-reveal-utils";
+import { coachRevealPacing } from "@/constants/animations";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import type { FinderAction } from "@shared/schemas/recipe-finder";
 
-// Exported so tests can import and verify against them
+// Exported so tests can import and verify against them. How much text each
+// tick reveals is decided by `nextReveal` (stream-reveal-utils.ts), tuned by
+// `coachRevealPacing`.
 export const HOLD_GATE_MS = 700;
 export const DRAIN_INTERVAL_MS = 50;
-export const CHARS_PER_TICK = 20;
 
 // Termination ceilings. Order: server SSE_TIMEOUT_MS (shared/constants/sse.ts,
 // enforced by server/routes/chat.ts) < STREAM_INACTIVITY_MS < XHR_TIMEOUT_MS.
@@ -43,20 +49,6 @@ export const STREAM_INACTIVITY_MS = SSE_TIMEOUT_MS + 5_000;
 // A backstop in case the JS timer is starved. On Android, xhr.timeout is an
 // OkHttp total-call cap, not an idle one.
 export const XHR_TIMEOUT_MS = STREAM_INACTIVITY_MS + 25_000;
-
-/**
- * Pure helper — returns the slice of buffer to release this drain tick.
- * Returns "" when the hold gate has not elapsed yet.
- */
-export function charsToRelease(
-  buffer: string,
-  elapsedMs: number,
-  holdGateMs: number,
-  charsPerTick: number,
-): string {
-  if (elapsedMs < holdGateMs) return "";
-  return buffer.slice(0, charsPerTick);
-}
 
 /**
  * Extract the machine-readable `code` from a non-200 stream response body.
@@ -148,6 +140,8 @@ export function useCoachStream({
   // Aborting it stops the in-flight request and its inactivity watchdog.
   const abortRef = useRef<AbortController | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const revealStateRef = useRef(initialRevealState()); // word-pacing credit
+  const lastTickAtRef = useRef(0); // Date.now() of the previous drain tick
   // Offline / dead-socket guard for the in-flight stream, and the post-abort
   // messages poll. Both end with the stream, a new stream, or unmount.
   const disposeHealthRef = useRef<(() => void) | null>(null);
@@ -166,14 +160,26 @@ export function useCoachStream({
 
   const startDrain = useCallback(() => {
     if (drainIntervalRef.current !== null) return; // already running
+    revealStateRef.current = initialRevealState();
+    lastTickAtRef.current = Date.now();
     drainIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - startedAtRef.current;
-      const chunk = charsToRelease(
-        bufferRef.current,
-        elapsed,
-        HOLD_GATE_MS,
-        CHARS_PER_TICK,
-      );
+      const now = Date.now();
+      const elapsed = now - startedAtRef.current;
+      // A starved JS timer must not turn into one big catch-up burst.
+      const dt = Math.min(now - lastTickAtRef.current, DRAIN_INTERVAL_MS * 4);
+      lastTickAtRef.current = now;
+      let chunk = "";
+      if (elapsed >= HOLD_GATE_MS) {
+        const step = nextReveal(
+          bufferRef.current,
+          dt,
+          isDoneRef.current,
+          revealStateRef.current,
+          coachRevealPacing,
+        );
+        revealStateRef.current = step.state;
+        chunk = step.release;
+      }
 
       if (chunk.length === 0) {
         // Nothing to drain this tick

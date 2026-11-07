@@ -7,7 +7,7 @@ import {
   waitFor,
   act,
 } from "@testing-library/react";
-import { SlideInRight } from "react-native-reanimated";
+import { FadeInUp } from "react-native-reanimated";
 import { renderComponent } from "../../../test/utils/render-component";
 import { reactProps } from "../../../test/utils/react-props";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
@@ -356,16 +356,16 @@ describe("ChatScreen — bubble entrance", () => {
   let userSpring: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     userSpring = vi.spyOn(
-      SlideInRight as unknown as { springify: () => unknown },
-      "springify",
+      FadeInUp as unknown as { duration: () => unknown },
+      "duration",
     );
   });
   afterEach(() => {
     userSpring.mockRestore();
   });
 
-  // Positive control: the message just sent slides in.
-  it("slides in the message you just sent", () => {
+  // Positive control: the message just sent fades up into place.
+  it("animates in the message you just sent", () => {
     mockSendMessage.mockReturnValue(new Promise(() => {}));
     renderComponent(<ChatScreen />);
     fireEvent.change(screen.getByPlaceholderText("Ask NutriCoach..."), {
@@ -377,7 +377,7 @@ describe("ChatScreen — bubble entrance", () => {
     expect(userSpring).toHaveBeenCalled();
   });
 
-  it("shows saved messages without sliding them in", () => {
+  it("shows saved messages without animating them in", () => {
     mockUseChatMessages.mockReturnValue({
       data: [
         {

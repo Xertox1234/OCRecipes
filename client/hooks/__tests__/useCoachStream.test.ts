@@ -3,45 +3,28 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
 import {
-  charsToRelease,
   parseErrorCode,
   HOLD_GATE_MS,
-  CHARS_PER_TICK,
   DRAIN_INTERVAL_MS,
   STREAM_INACTIVITY_MS,
   XHR_TIMEOUT_MS,
   type UseCoachStreamReturn,
 } from "../useCoachStream";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import { coachRevealPacing } from "@/constants/animations";
 import { AppState } from "react-native";
 import { onlineManager } from "@tanstack/react-query";
 import { RESUME_DEAD_SOCKET_MS } from "@/lib/sse-xhr";
 
+// A lone word with nothing after it ("Hello", stream not done) may be half
+// of a token-split word, so the reveal holds it up to tailFlushMs before
+// showing it anyway. Advance this far to see it.
+const TAIL_SHOWN_MS =
+  HOLD_GATE_MS + coachRevealPacing.tailFlushMs + DRAIN_INTERVAL_MS;
+
 // ── Pure helper tests (no timers, no XHR) ────────────────────────
-
-describe("charsToRelease", () => {
-  it("returns empty string when elapsed < holdGateMs", () => {
-    expect(charsToRelease("hello world", 300, 700, CHARS_PER_TICK)).toBe("");
-    expect(charsToRelease("hello world", 699, 700, CHARS_PER_TICK)).toBe("");
-  });
-
-  it("returns up to charsPerTick when elapsed >= holdGateMs", () => {
-    expect(charsToRelease("hello world", 700, 700, CHARS_PER_TICK)).toBe(
-      "hello world".slice(0, CHARS_PER_TICK),
-    );
-    expect(charsToRelease("hello world", 1500, 700, CHARS_PER_TICK)).toBe(
-      "hello world".slice(0, CHARS_PER_TICK),
-    );
-  });
-
-  it("returns entire buffer when buffer shorter than charsPerTick", () => {
-    expect(charsToRelease("x", 700, 700, CHARS_PER_TICK)).toBe("x");
-  });
-
-  it("returns empty string for empty buffer regardless of elapsed", () => {
-    expect(charsToRelease("", 5000, 700, CHARS_PER_TICK)).toBe("");
-  });
-});
+// The reveal pacing itself is unit-tested in
+// client/components/coach/__tests__/stream-reveal-utils.test.ts.
 
 describe("parseErrorCode", () => {
   it("extracts the code from a standard error body", () => {
@@ -255,31 +238,44 @@ describe("useCoachStream hold gate", () => {
   });
 });
 
-describe("useCoachStream throttle rate", () => {
-  it("drains approximately CHARS_PER_TICK chars per DRAIN_INTERVAL_MS tick", async () => {
+describe("useCoachStream reveal pacing", () => {
+  it("reveals whole words, gradually, never cutting a finished word", async () => {
     const { result } = await setupHook();
 
     await startAndFlush(result);
+    const text = "steady words arrive ".repeat(10); // 200 chars
     act(() => {
-      mockXhr.emit({ content: "A".repeat(400) });
+      mockXhr.emit({ content: text });
     });
 
-    // Advance past hold gate — the tick firing exactly at HOLD_GATE_MS also
-    // releases chars (elapsed >= holdGateMs), so we get 1 extra tick here.
     act(() => {
-      vi.advanceTimersByTime(HOLD_GATE_MS);
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 5);
     });
-    const afterGate = result.current.streamingContent.length;
+    const shown = result.current.streamingContent;
 
-    // Now advance 5 drain ticks beyond the gate
+    // Some text is up, but not the whole reply in a quarter second.
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.length).toBeLessThan(text.length / 2);
+    // It stops at a word boundary: the next unshown char is whitespace.
+    expect(text.startsWith(shown)).toBe(true);
+    expect(/\s/.test(text.charAt(shown.length))).toBe(true);
+  });
+
+  it("finishes the whole reply and calls onDone", async () => {
+    const { result, onDone } = await setupHook();
+
+    await startAndFlush(result);
+    const text = "steady words arrive ".repeat(10).trim();
     act(() => {
-      vi.advanceTimersByTime(DRAIN_INTERVAL_MS * 5);
+      mockXhr.emit({ content: text });
+      mockXhr.emit({ done: true });
     });
 
-    // Should have drained exactly 5 additional CHARS_PER_TICK chars after gate
-    expect(result.current.streamingContent.length).toBe(
-      afterGate + 5 * CHARS_PER_TICK,
-    );
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + 10_000);
+    });
+    expect(onDone).toHaveBeenCalledWith(text, undefined);
+    expect(result.current.isStreaming).toBe(false);
   });
 });
 
@@ -309,7 +305,7 @@ describe("useCoachStream status text", () => {
     expect(result.current.statusText).toBe("Thinking…");
 
     act(() => {
-      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS);
+      vi.advanceTimersByTime(TAIL_SHOWN_MS);
     });
     expect(result.current.statusText).toBe("");
   });
@@ -323,7 +319,7 @@ describe("useCoachStream status text", () => {
 
     // Drain the first char
     act(() => {
-      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS);
+      vi.advanceTimersByTime(TAIL_SHOWN_MS);
     });
     expect(result.current.statusText).toBe("");
 
