@@ -48,7 +48,9 @@ export function NutritionCard({ nutrition }: { nutrition: NutritionData }) {
 
   return (
     <View style={styles.section}>
-      <ThemedText style={styles.sectionTitle}>Nutrition per serving</ThemedText>
+      <ThemedText accessibilityRole="header" style={styles.sectionTitle}>
+        Nutrition per serving
+      </ThemedText>
       <View
         style={[
           styles.nutritionCard,

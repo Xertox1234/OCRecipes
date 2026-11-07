@@ -354,7 +354,9 @@ export default function FrontLabelConfirmScreen() {
 
         {/* Extracted data card */}
         <Card style={styles.dataCard}>
-          <ThemedText style={styles.sectionTitle}>Product Details</ThemedText>
+          <ThemedText accessibilityRole="header" style={styles.sectionTitle}>
+            Product Details
+          </ThemedText>
 
           <DataRow label="Brand" value={data.brand} theme={theme} />
           <DataRow label="Product" value={data.productName} theme={theme} />

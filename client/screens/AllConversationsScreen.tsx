@@ -388,6 +388,7 @@ export default function AllConversationsScreen() {
           {pinned.length > 0 && (
             <>
               <ThemedText
+                accessibilityRole="header"
                 type="caption"
                 style={[styles.sectionLabel, { color: theme.link }]}
               >
@@ -399,6 +400,7 @@ export default function AllConversationsScreen() {
           {unpinned.length > 0 && (
             <>
               <ThemedText
+                accessibilityRole="header"
                 type="caption"
                 style={[styles.sectionLabel, { color: theme.textSecondary }]}
               >

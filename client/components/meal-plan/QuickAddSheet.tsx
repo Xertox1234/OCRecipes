@@ -299,6 +299,7 @@ function QuickAddSheetContentInner(
         {frequentRecipes.length > 0 && (
           <>
             <ThemedText
+              accessibilityRole="header"
               style={[styles.sectionTitle, { color: theme.textSecondary }]}
             >
               {frequentLabel}
@@ -340,6 +341,7 @@ function QuickAddSheetContentInner(
           </>
         )}
         <ThemedText
+          accessibilityRole="header"
           style={[
             styles.sectionTitle,
             { color: theme.textSecondary },

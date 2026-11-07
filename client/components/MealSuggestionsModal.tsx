@@ -422,6 +422,7 @@ export function MealSuggestionsModal({
                     color={theme.textSecondary}
                   />
                   <ThemedText
+                    accessibilityRole="header"
                     style={[
                       styles.sectionHeaderText,
                       { color: theme.textSecondary },

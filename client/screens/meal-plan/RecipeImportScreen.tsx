@@ -154,7 +154,9 @@ export default function RecipeImportScreen() {
                 color={withOpacity(theme.text, 0.2)}
               />
             </View>
-            <ThemedText style={styles.heading}>Import from URL</ThemedText>
+            <ThemedText accessibilityRole="header" style={styles.heading}>
+              Import from URL
+            </ThemedText>
             <ThemedText
               style={[styles.subtitle, { color: theme.textSecondary }]}
             >
@@ -221,7 +223,9 @@ export default function RecipeImportScreen() {
             >
               <Feather name="alert-circle" size={32} color={theme.error} />
             </View>
-            <ThemedText style={styles.heading}>Import Failed</ThemedText>
+            <ThemedText accessibilityRole="header" style={styles.heading}>
+              Import Failed
+            </ThemedText>
             <ThemedText
               style={[styles.errorText, { color: theme.textSecondary }]}
             >

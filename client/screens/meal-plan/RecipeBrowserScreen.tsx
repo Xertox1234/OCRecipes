@@ -804,6 +804,7 @@ export default function RecipeBrowserScreen() {
           renderItem={renderItem}
           renderSectionHeader={({ section }) => (
             <ThemedText
+              accessibilityRole="header"
               type="caption"
               style={[styles.sectionHeader, { color: theme.textSecondary }]}
             >

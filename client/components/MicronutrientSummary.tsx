@@ -116,6 +116,7 @@ export default function MicronutrientSummary({
       {displayVitamins.length > 0 && (
         <View style={{ marginTop: Spacing.md }}>
           <Text
+            accessibilityRole="header"
             style={[
               styles.sectionLabel,
               { color: theme.textSecondary, marginBottom: Spacing.sm },
@@ -138,6 +139,7 @@ export default function MicronutrientSummary({
       {displayMinerals.length > 0 && (
         <View style={{ marginTop: Spacing.md }}>
           <Text
+            accessibilityRole="header"
             style={[
               styles.sectionLabel,
               { color: theme.textSecondary, marginBottom: Spacing.sm },

@@ -87,7 +87,10 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
 
       {/* Diet Tags section */}
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.link }]}>
+        <Text
+          accessibilityRole="header"
+          style={[styles.sectionLabel, { color: theme.link }]}
+        >
           DIET TAGS
         </Text>
         <View style={styles.chipsGrid}>

@@ -119,7 +119,9 @@ export function RecipeIngredientsList({
 
   return (
     <View style={styles.section}>
-      <ThemedText style={styles.sectionTitle}>Ingredients</ThemedText>
+      <ThemedText accessibilityRole="header" style={styles.sectionTitle}>
+        Ingredients
+      </ThemedText>
 
       {allergenCheckFailed && (
         <Pressable
