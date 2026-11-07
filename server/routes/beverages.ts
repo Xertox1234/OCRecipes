@@ -9,9 +9,9 @@ import { lookupNutrition } from "../services/nutrition-lookup";
 import { UpstreamUnavailableError } from "../services/usda-lookup";
 import {
   scaleToGrams,
-  type NutrientValues,
+  sumNutrients,
+  type NutrientTotals,
 } from "../services/portion-nutrition";
-import { roundToOneDecimal } from "../lib/math";
 import {
   BEVERAGE_TYPES,
   BEVERAGE_SIZES,
@@ -70,22 +70,6 @@ async function lookupDrinkNutrition(
   }
 
   return sumNutrients(parts);
-}
-
-type NutrientTotals = Record<keyof NutrientValues, number>;
-
-function sumNutrients(parts: NutrientValues[]): NutrientTotals {
-  const total = (key: keyof NutrientValues) =>
-    roundToOneDecimal(parts.reduce((sum, part) => sum + (part[key] ?? 0), 0));
-  return {
-    calories: Math.round(total("calories")),
-    protein: total("protein"),
-    carbs: total("carbs"),
-    fat: total("fat"),
-    fiber: total("fiber"),
-    sugar: total("sugar"),
-    sodium: total("sodium"),
-  };
 }
 
 function buildProductName(

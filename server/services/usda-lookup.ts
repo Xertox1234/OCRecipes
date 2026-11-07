@@ -82,9 +82,13 @@ const usdaUpcResponseSchema = z.object({
   foods: z.array(usdaUpcFoodSchema),
 });
 
+/** The USDA FoodData Central key, read at call time; DEMO_KEY when unset. */
+export function getUsdaApiKey(): string {
+  return process.env.USDA_API_KEY || "DEMO_KEY";
+}
+
 // Warn at startup if using USDA DEMO_KEY (severe rate limits: 40 req/hour)
-const USDA_API_KEY = process.env.USDA_API_KEY || "DEMO_KEY";
-if (USDA_API_KEY === "DEMO_KEY") {
+if (getUsdaApiKey() === "DEMO_KEY") {
   log.warn("USDA_API_KEY not set — using DEMO_KEY with 40 requests/hour limit");
 }
 
@@ -255,7 +259,7 @@ async function fetchUSDA(
 export async function lookupUSDA(query: string): Promise<NutritionData | null> {
   try {
     const response = await fetchUSDA(
-      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${USDA_API_KEY}`,
+      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${getUsdaApiKey()}`,
     );
 
     const json = await response.json();
@@ -350,7 +354,7 @@ export async function lookupUSDAByUPC(code: string): Promise<{
   for (const variant of variants) {
     try {
       const response = await fetchUSDA(
-        `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${USDA_API_KEY}`,
+        `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${getUsdaApiKey()}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -156,7 +156,7 @@ export function register(app: Express): void {
       keyGenerator: ipKeyGenerator,
       message: {
         error: "Too many requests. Please wait.",
-        code: "RATE_LIMITED",
+        code: ErrorCode.RATE_LIMITED,
       },
     }),
   );

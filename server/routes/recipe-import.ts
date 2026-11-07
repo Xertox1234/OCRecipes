@@ -3,8 +3,7 @@ import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { AI_DAILY_CAPS } from "@shared/types/premium";
-import { generateRecipeImage } from "../services/recipe-generation";
+import { autoGenerateRecipeImage } from "../services/recipe-auto-image";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { importRecipeFromUrl } from "../services/recipe-import";
@@ -198,24 +197,7 @@ export function register(app: Express): void {
         if (!recipe.imageUrl) {
           fireAndForget(
             "recipe-image-gen",
-            (async () => {
-              const claimed = await storage.claimDailyAiCall(
-                req.userId,
-                "recipeAutoImage",
-                AI_DAILY_CAPS.recipeAutoImage,
-              );
-              if (!claimed) return;
-              const imageUrl = await generateRecipeImage({
-                title: recipe.title,
-                cuisine: recipe.cuisine,
-                mealTypes: recipe.mealTypes,
-              });
-              if (imageUrl) {
-                await storage.updateMealPlanRecipe(recipe.id, req.userId, {
-                  imageUrl,
-                });
-              }
-            })(),
+            autoGenerateRecipeImage(recipe, req.userId),
           );
         }
 

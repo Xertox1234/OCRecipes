@@ -31,10 +31,7 @@ import {
   writeNutritionCache,
   type NutritionData,
 } from "../services/nutrition-lookup";
-import {
-  scaleToGrams,
-  type NutrientValues,
-} from "../services/portion-nutrition";
+import { portionNutrition } from "../services/portion-nutrition";
 import {
   handleRouteError,
   checkPremiumFeature,
@@ -118,49 +115,6 @@ async function attachNutrition<
       nutrition: nutrition ? portionNutrition(nutrition, food) : null,
     };
   });
-}
-
-/**
- * The lookup answers per 100 g (or per serving, for API Ninjas); scale it to
- * the food's estimated weight. With no estimate, keep per-100 g values under a
- * marked serving size, as Quick Log does; a basis that can't be weighed
- * ("1 serving") keeps its own values and label.
- */
-function portionNutrition(
-  nutrition: NutritionData,
-  food: { quantity: string; grams?: number },
-): NutritionData {
-  if (food.grams) {
-    const portion = scaleToGrams(nutrition, food.grams);
-    if (portion) {
-      const grams = Math.round(food.grams);
-      return withValues(nutrition, portion, `${food.quantity} (${grams} g)`);
-    }
-  } else {
-    const per100g = scaleToGrams(nutrition, 100);
-    if (per100g) {
-      return withValues(nutrition, per100g, "100 g (portion unknown)");
-    }
-  }
-  return nutrition;
-}
-
-function withValues(
-  nutrition: NutritionData,
-  values: NutrientValues,
-  servingSize: string,
-): NutritionData {
-  return {
-    ...nutrition,
-    calories: values.calories ?? 0,
-    protein: values.protein ?? 0,
-    carbs: values.carbs ?? 0,
-    fat: values.fat ?? 0,
-    fiber: values.fiber ?? 0,
-    sugar: values.sugar ?? 0,
-    sodium: values.sodium ?? 0,
-    servingSize,
-  };
 }
 
 export function register(app: Express): void {
