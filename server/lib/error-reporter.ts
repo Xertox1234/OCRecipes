@@ -322,7 +322,7 @@ export function initErrorReporter(): void {
       }),
       // Every logger.error becomes a handled Sentry event. Handled failures
       // never reach Sentry otherwise: the cron/interval catches and the SSE
-      // chat-stream catch log and swallow, and onUnhandledRejection only sees
+      // chat-turn catch log and swallow, and onUnhandledRejection only sees
       // UNhandled rejections. (fireAndForget also calls reportError with the
       // same Error it logs, so that capture is deduped, not doubled.) Error level
       // only (warn stays log-only); `log` levels are inert because
