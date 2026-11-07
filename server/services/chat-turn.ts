@@ -124,7 +124,7 @@ export async function runTurn(input: TurnInput): Promise<void> {
   const { res, conversationId: id } = input;
   openSse(res);
 
-  // Client disconnect aborts the OpenAI stream via this controller (M8).
+  // Client disconnect aborts the model stream via this controller (M8).
   // Listen on `res`, not `req`: express.json() already consumed the body, so
   // the request's "close" fired before this line. `!res.writableFinished`
   // separates a dropped client from our own res.end(). Coach path only: a
@@ -161,7 +161,7 @@ export async function runTurn(input: TurnInput): Promise<void> {
       sink.send({ done: true });
     }
   } catch (error) {
-    // A client disconnect aborts the OpenAI stream, which throws —
+    // A client disconnect aborts the model stream, which throws —
     // the expected exit, so log it at debug rather than error.
     if (state.clientDisconnected) {
       logger.debug(
