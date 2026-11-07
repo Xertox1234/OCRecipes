@@ -506,7 +506,9 @@ describe("stryker.explore.conf.mjs", () => {
       const { default: config } = await import(
         "../../stryker.explore.conf.mjs"
       );
-      expect(config.vitest?.related).toBe(false);
+      // Stryker types plugin options (`vitest`) as `{}`.
+      const vitest = config.vitest as { related?: boolean } | undefined;
+      expect(vitest?.related).toBe(false);
     } finally {
       vi.unstubAllEnvs();
     }
