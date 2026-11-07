@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { hashSignInCode } from "../../password-reset-code";
+import { hashSignInCode } from "../../../lib/password-reset-code";
 
 const { storage, sendSignInCode } = vi.hoisted(() => ({
   storage: { issueMfaEmailCode: vi.fn() },

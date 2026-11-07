@@ -33,7 +33,7 @@ Lock order: when two transactions take `users` and a child row in opposite order
 
 ## Related Files
 
-- `server/storage/mfa.ts`, `server/storage/identities.ts`, `server/routes/auth-social.ts`
+- `server/storage/mfa.ts`, `server/storage/identities.ts`, `server/routes/auth-social.ts`, `server/services/auth-session.ts`
 
 ## See Also
 

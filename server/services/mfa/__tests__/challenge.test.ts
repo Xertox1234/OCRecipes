@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { sha256Hex } from "../../social-identity/nonce";
-import { hashChallengeToken } from "../mfa-secrets";
+import { sha256Hex } from "../../../lib/social-identity/nonce";
+import { hashChallengeToken } from "../../../lib/mfa/mfa-secrets";
 
 const { storage, sendMfaEmailCode } = vi.hoisted(() => ({
   storage: { createMfaChallenge: vi.fn() },

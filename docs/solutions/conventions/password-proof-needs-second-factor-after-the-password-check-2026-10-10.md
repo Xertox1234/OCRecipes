@@ -4,7 +4,7 @@ track: knowledge
 category: conventions
 tags: [security, api, architecture]
 module: server
-applies_to: ["server/routes/auth*.ts", "server/lib/mfa/**", "server/lib/social-identity/**"]
+applies_to: ["server/routes/auth*.ts", "server/services/mfa/**", "server/lib/mfa/**", "server/lib/social-identity/**"]
 created: 2026-10-10
 ---
 
@@ -29,8 +29,8 @@ created: 2026-10-10
 
 ## Examples
 
-- `server/lib/mfa/password-proof-gate.ts` — the one helper all three routes call
-- `server/lib/mfa/challenge.ts` (`startMfaChallenge`), and the login branch in `server/routes/auth.ts`
+- `server/services/mfa/password-proof-gate.ts` — the one helper all three routes call
+- `server/services/mfa/challenge.ts` (`startMfaChallenge`), and the login branch in `server/routes/auth.ts`
 - `server/routes/auth-mfa.ts` `POST /api/auth/mfa/verify` — a dead challenge (expired, spent, out of attempts, `tokenVersion` moved) answers `401 MFA_CHALLENGE_EXPIRED`
 - `test/integration/auth-routes.itest.ts` — the end-to-end journey
 
@@ -41,7 +41,7 @@ created: 2026-10-10
 
 ## Related Files
 
-- `server/lib/mfa/**`, `server/routes/auth.ts`, `server/routes/auth-social.ts`, `server/routes/auth-mfa.ts`, `server/routes/__tests__/auth-route-wiring.test.ts` (the public verify route is allow-listed)
+- `server/services/mfa/**`, `server/lib/mfa/mfa-secrets.ts`, `server/routes/auth.ts`, `server/routes/auth-social.ts`, `server/routes/auth-mfa.ts`, `server/routes/__tests__/auth-route-wiring.test.ts` (the public verify route is allow-listed)
 
 ## See Also
 

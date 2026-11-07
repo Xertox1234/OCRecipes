@@ -121,8 +121,8 @@ vi.mock("../../services/email", () => ({
 }));
 
 // Every two-step challenge emails a code; stub only the send.
-vi.mock("../../lib/mfa/email-code", async (orig) => ({
-  ...(await orig<typeof import("../../lib/mfa/email-code")>()),
+vi.mock("../../services/mfa/email-code", async (orig) => ({
+  ...(await orig<typeof import("../../services/mfa/email-code")>()),
   sendMfaEmailCode: vi.fn().mockResolvedValue("issued"),
 }));
 
@@ -130,7 +130,7 @@ vi.mock("../../lib/mfa/email-code", async (orig) => ({
 const { mockVerifySecondFactor } = vi.hoisted(() => ({
   mockVerifySecondFactor: vi.fn(),
 }));
-vi.mock("../../lib/mfa/verify-second-factor", () => ({
+vi.mock("../../services/mfa/verify-second-factor", () => ({
   verifySecondFactor: mockVerifySecondFactor,
 }));
 
