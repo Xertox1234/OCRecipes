@@ -13,6 +13,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { detectImageMimeType } from "../lib/image-mime";
 import { saveAvatar, deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { deleteAccount } from "../services/account-deletion";
 import { handleRouteError, formatZodError } from "./_helpers";
 import { emailVerificationEnabled } from "../lib/email-config";
 import {
@@ -75,10 +76,7 @@ import { startMfaChallenge } from "../services/mfa/challenge";
 import { hashTrustKey } from "../lib/mfa/mfa-secrets";
 import { secondFactor } from "../lib/social-identity/sign-in-gates";
 import { serializeUser } from "../lib/serialize-user";
-import {
-  reauthenticate,
-  revokeAppleIdentities,
-} from "../services/auth-session";
+import { reauthenticate } from "../services/auth-session";
 
 export { serializeUser };
 
@@ -999,50 +997,9 @@ export function register(app: Express): void {
         if (!gate.ok)
           return sendError(res, gate.status, gate.message, gate.code);
 
-        // Revoke Apple tokens BEFORE the delete cascades the identity rows
-        // away (App Store 5.1.1(v)); a revoke failure never blocks deletion.
-        await revokeAppleIdentities(await storage.listIdentities(req.userId));
-        // ...and the Apple tokens on link tickets aimed at this account, which
-        // the delete would otherwise cascade away unrevoked (audit L17).
-        await revokeAppleIdentities(
-          (await storage.takeAppleTokensOnTicketsTargeting(req.userId)).map(
-            (appleRefreshTokenEnc) => ({
-              provider: "apple",
-              appleRefreshTokenEnc,
-            }),
-          ),
-        );
-
-        // Read the account's stored images while its rows still exist; the
-        // delete below cascades them away.
-        const ownedImages = await storage.collectUserImageUrls(req.userId);
-
-        // Delete user (cascades to all child tables via FK constraints)
-        await storage.deleteUser(req.userId);
-
-        // Invalidate token cache so any in-flight requests are rejected
-        invalidateTokenVersionCache(req.userId);
+        await deleteAccount(user);
 
         res.json({ success: true });
-
-        // Clean up stored images after responding (fire-and-forget; account
-        // is already gone, so a storage cleanup failure must not affect the
-        // response or add ~50-300ms of R2 latency to it)
-        fireAndForget(
-          "account-deletion-avatar-cleanup",
-          deleteImage(user.avatarUrl, "avatar"),
-        );
-        // Filter AFTER the delete: any reference left belongs to another
-        // account (a shared copy, or a crafted meal-plan imageUrl), and
-        // deleteImage keeps its per-kind prefix guard.
-        fireAndForget(
-          "account-deletion-image-cleanup",
-          storage
-            .filterUnreferencedImageUrls(ownedImages)
-            .then((images) =>
-              Promise.all(images.map((i) => deleteImage(i.url, i.kind))),
-            ),
-        );
       } catch (error) {
         handleRouteError(res, error, "delete account");
       }
