@@ -1,6 +1,6 @@
 ---
 title: "Auth layering: move session/MFA/account-deletion logic out of routes and lib into services; split users + identities storage"
-status: backlog
+status: done
 priority: medium
 created: 2026-11-06
 updated: 2026-11-06
@@ -27,14 +27,22 @@ Deferred, not fixed in the audit PR, because the project rule says auth work is 
 
 ## Acceptance Criteria
 
-- [ ] `issueSession`, `reauthenticate`, `revokeAppleIdentities` and `HttpFailure` live in `server/services/` (e.g. `auth-session.ts`); no route file imports another route file for them
-- [ ] `server/lib/mfa/{challenge,email-code,verify-second-factor}.ts` move to `server/services/mfa/`; `server/lib/` has no runtime import of `storage` or `services`
-- [ ] Account deletion's ordered cleanup is one service function with its own unit test pinning the order
-- [ ] `users.ts` and `identities.ts` are each under 500 lines, split as pure moves behind re-exports (precedent #1782); moved code byte-identical to main
-- [ ] Existing auth route and storage tests pass unchanged; real-DB auth integration green in CI
+- [x] `issueSession`, `reauthenticate`, `revokeAppleIdentities` and `HttpFailure` live in `server/services/` (e.g. `auth-session.ts`); no route file imports another route file for them
+- [x] `server/lib/mfa/{challenge,email-code,verify-second-factor}.ts` move to `server/services/mfa/`; `server/lib/` has no runtime import of `storage` or `services`
+- [x] Account deletion's ordered cleanup is one service function with its own unit test pinning the order
+- [x] `users.ts` and `identities.ts` are each under 500 lines, split as pure moves behind re-exports (precedent #1782); moved code byte-identical to main
+- [x] Existing auth route and storage tests pass unchanged; real-DB auth integration green in CI
 
 ## Implementation Notes
 
 - Pure moves first, one commit per finding, so each review sees a byte-identical move.
 - Check `vi.mock("../auth-social")`-style mocks in the route tests before moving symbols. They must follow the new path.
 - Files: `server/routes/auth-social.ts`, `auth.ts`, `auth-password.ts`, `auth-mfa.ts`, `server/lib/mfa/*`, `server/storage/users.ts`, `server/storage/identities.ts`, and their `__tests__`.
+
+## Resolution (2026-11-06)
+
+- M4: `users.ts` 535 → 356 (`user-email.ts`, `user-columns.ts`); `identities.ts` 521 → 456 (`apple-tokens.ts`). Pure moves, re-exported.
+- M2: `challenge`, `email-code`, `verify-second-factor` and `password-proof-gate` (it calls verify-second-factor) moved to `server/services/mfa/`; `mfa-secrets` stays in lib. `server/lib/` has no runtime import of storage or services.
+- M1: `server/services/auth-session.ts` owns `HttpFailure`, `issueSession`, `reauthenticate`, `revokeAppleIdentities` and their helpers; `serializeUser` moved to `server/lib/serialize-user.ts`. Kept edges: services → `middleware/auth` (`generateToken`, `invalidateTokenVersionCache`) and a type-only `ReauthProof` import from `routes/_schemas`.
+- L1: `server/services/account-deletion.ts` `deleteAccount()` with an order-pinning unit test.
+- Last box: the auth route and storage tests pass locally; real-DB CI is pending on the PR.
