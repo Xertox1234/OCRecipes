@@ -10,7 +10,7 @@ import {
   isActionCurrent,
   classifyTurn,
 } from "../../services/recipe-finder";
-import { openSse, type TurnFeatures } from "../chat-stream";
+import type { TurnFeatures } from "../../services/chat-turn";
 import { admitTurn, type AdmitTurnArgs } from "../chat-admit";
 
 vi.mock("../../storage", () => ({
@@ -30,8 +30,7 @@ vi.mock("../../services/recipe-finder", () => ({
   classifyTurn: vi.fn(),
 }));
 
-vi.mock("../chat-stream", () => ({
-  openSse: vi.fn(),
+vi.mock("../../services/chat-turn", () => ({
   CONVERSATION_CONFIG: {
     coach: {
       dailyLimit: () => 10,
@@ -60,6 +59,8 @@ function fakeRes() {
     json: vi.fn(),
     write: vi.fn(),
     end: vi.fn(),
+    setHeader: vi.fn(),
+    flushHeaders: vi.fn(),
   };
   res.status.mockReturnValue(res);
   return res;
@@ -124,7 +125,7 @@ describe("admitTurn — finder action", () => {
     const a = args({ finderAction: action });
 
     expect(await admitTurn(a)).toBeNull();
-    expect(openSse).toHaveBeenCalledWith(a.res);
+    expect(resOf(a).flushHeaders).toHaveBeenCalled();
     expect(resOf(a).write).toHaveBeenCalledWith(
       `data: ${JSON.stringify({ done: true })}\n\n`,
     );

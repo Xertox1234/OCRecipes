@@ -1,33 +1,32 @@
 /**
- * Streaming half of POST /api/chat/conversations/:id/messages (extracted from
- * `chat.ts`, no behaviour change): SSE sink (write + byte cap + abort/timeout),
- * the recipe/remix and coach loops, and the coach-disconnect settle. Never
- * import `./chat` from here (circular-import rule, docs/rules/architecture.md).
+ * Chat turn engine for POST /api/chat/conversations/:id/messages: the
+ * recipe/remix and coach loops, the per-type dispatch table and the
+ * coach-disconnect settle. SSE framing lives in `../lib/sse` (one owner).
+ * Never import `routes/chat` from here (circular-import rule,
+ * docs/rules/architecture.md).
  */
 import { randomUUID } from "node:crypto";
 import type { Response } from "express";
 import { storage } from "../storage";
 import type { AuthenticatedRequest } from "../middleware/auth";
-import { checkPremiumFeature, parseTimezone } from "./_helpers";
+import { parseTimezone } from "../lib/civil-date";
+import { SseSink, openSse } from "../lib/sse";
+import type { PremiumFeatures } from "@shared/types/premium";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import {
   generateRecipeChatResponse,
   buildRecipeContext,
   buildRemixSystemPrompt,
   type RecipeChatRecipe,
-} from "../services/recipe-chat";
+} from "./recipe-chat";
 import { remixConversationMetadataSchema } from "@shared/schemas/recipe-chat";
 import { logger, toError } from "../lib/logger";
-import {
-  handleCoachChat,
-  STANDARD_SAFETY_MESSAGE,
-} from "../services/coach-pro-chat";
+import { handleCoachChat, STANDARD_SAFETY_MESSAGE } from "./coach-pro-chat";
 import {
   sanitizeContextField,
   containsUnsafeCoachAdvice,
 } from "../lib/ai-safety";
-import { parseBlocksFromContent } from "../services/coach-blocks";
+import { parseBlocksFromContent } from "./coach-blocks";
 import type { ChatConversation, ChatMessage } from "@shared/schema";
 import type { finderActionSchema } from "@shared/schemas/recipe-finder";
 import type { z } from "zod";
@@ -37,18 +36,10 @@ import {
   finderStatusLabel,
   type FinderInput,
   type GenerationMessages,
-} from "../services/recipe-finder";
-
-const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
-// SSE comment keep-alive cadence. The client treats 20 s of silence after an
-// app resume as a dead socket (client/lib/sse-xhr.ts), so this must stay well
-// under that.
-export const SSE_PING_INTERVAL_MS = 15_000;
+} from "./recipe-finder";
 
 export type ConversationType = "coach" | "recipe" | "remix";
-export type TurnFeatures = NonNullable<
-  Awaited<ReturnType<typeof checkPremiumFeature>>
->;
+export type TurnFeatures = PremiumFeatures;
 type TurnUser = NonNullable<Awaited<ReturnType<typeof storage.getUser>>>;
 
 /** Everything the route resolved before the stream opens. */
@@ -124,91 +115,6 @@ export const CONVERSATION_CONFIG: Record<
     stream: streamRecipeTurn,
   },
 };
-
-/** Owns SSE writes, the response byte cap, and the abort/timeout wiring. */
-export class SseSink {
-  private readonly timeout: ReturnType<typeof setTimeout>;
-  private readonly pingTimer: ReturnType<typeof setInterval>;
-
-  constructor(
-    private readonly res: Response,
-    private readonly conversationId: number,
-    private readonly state: TurnState,
-    private readonly abortController: AbortController,
-  ) {
-    // Keep-alive comment: lets the client tell a quiet-but-live reply from a
-    // dead socket. Cleared in dispose() (done/error), on the SSE timeout and
-    // on client disconnect.
-    this.pingTimer = setInterval(() => {
-      if (!res.writableEnded) res.write(": ping\n\n");
-    }, SSE_PING_INTERVAL_MS);
-    res.once("close", () => clearInterval(this.pingTimer));
-    // SSE timeout — prevent hung connections
-    this.timeout = setTimeout(() => {
-      clearInterval(this.pingTimer);
-      state.aborted = true;
-      abortController.abort();
-      // The coach generators' "streaming error" log is downgraded to debug
-      // on any abort (disconnect and timeout share the signal — see
-      // nutrition-coach.ts), so a genuine hang would vanish above debug.
-      // Log it here, where the SSE-timeout cause is unambiguous.
-      logger.warn({ conversationId }, "chat SSE stream timed out");
-      if (!res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ error: "Response timeout" })}\n\n`);
-        res.end();
-      }
-    }, SSE_TIMEOUT_MS);
-  }
-
-  /** Write one SSE event from an already-serialised JSON payload. */
-  sendRaw(json: string): void {
-    this.res.write(`data: ${json}\n\n`);
-  }
-
-  send(payload: unknown): void {
-    this.sendRaw(JSON.stringify(payload));
-  }
-
-  /** Write only while the response is still open. */
-  sendIfOpen(payload: unknown): void {
-    if (!this.res.writableEnded) this.send(payload);
-  }
-
-  /**
-   * Count an event against the response size cap. Returns true when the cap
-   * tripped (the caller must stop streaming) — the abort, log and error event
-   * are already done.
-   */
-  exceedsCap(eventJson: string): boolean {
-    this.state.responseBytes += eventJson.length;
-    if (this.state.responseBytes <= SSE_MAX_RESPONSE_BYTES) return false;
-    this.state.aborted = true;
-    this.abortController.abort();
-    // Closes the generator via return(), not a catch: log it here.
-    logger.warn(
-      {
-        conversationId: this.conversationId,
-        responseBytes: this.state.responseBytes,
-      },
-      "chat SSE response exceeded the size limit",
-    );
-    this.sendIfOpen({ error: "Response too large" });
-    return true;
-  }
-
-  dispose(): void {
-    clearTimeout(this.timeout);
-    clearInterval(this.pingTimer);
-  }
-}
-
-/** Write the SSE response headers and flush them so the stream opens now. */
-export function openSse(res: Response): void {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
-}
 
 /**
  * Open the SSE stream and run the turn: stream via the type's loop, report

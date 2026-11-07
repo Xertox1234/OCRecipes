@@ -3,15 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import type { Response } from "express";
-import { SseSink, SSE_PING_INTERVAL_MS } from "../chat-stream";
-
-vi.mock("../../storage", () => ({ storage: {} }));
-vi.mock("../../lib/openai", () => ({
-  isAiConfigured: true,
-  openai: {},
-  OPENAI_TIMEOUT_MS: 30000,
-  OPENAI_VISION_TIMEOUT_MS: 60000,
-}));
+import { SseSink, SSE_PING_INTERVAL_MS, sseFrame, endSseQuietly } from "../sse";
 
 function makeRes() {
   const res = new EventEmitter() as EventEmitter & {
@@ -88,5 +80,30 @@ describe("SseSink keep-alive ping", () => {
     const before = pings(res);
     vi.advanceTimersByTime(60_000);
     expect(pings(res)).toBe(before);
+  });
+});
+
+describe("SSE framing", () => {
+  it("sseFrame is the one wire format", () => {
+    expect(sseFrame('{"done":true}')).toBe('data: {"done":true}\n\n');
+  });
+
+  it("SseSink.send writes a framed JSON event", () => {
+    const res = makeRes();
+    const sink = makeSink(res);
+    sink.send({ content: "hi" });
+    expect(res.write).toHaveBeenCalledWith('data: {"content":"hi"}\n\n');
+    sink.dispose();
+  });
+
+  it("endSseQuietly opens the stream, writes done and ends", () => {
+    const res = Object.assign(makeRes(), {
+      setHeader: vi.fn(),
+      flushHeaders: vi.fn(),
+    });
+    endSseQuietly(res as unknown as Response);
+    expect(res.flushHeaders).toHaveBeenCalled();
+    expect(res.write).toHaveBeenCalledWith('data: {"done":true}\n\n');
+    expect(res.end).toHaveBeenCalled();
   });
 });

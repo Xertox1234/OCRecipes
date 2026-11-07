@@ -1,6 +1,6 @@
 ---
 title: "Move the chat turn engine (runTurn/SseSink) from routes/chat-stream.ts to a service; one SSE framing owner"
-status: backlog
+status: done
 priority: low
 created: 2026-11-06
 updated: 2026-11-06
@@ -21,9 +21,9 @@ The 2026-10-26 chat decomposition todo allowed the helpers to go in either `rout
 
 ## Acceptance Criteria
 
-- [ ] Turn orchestration (`runTurn` + storage persistence) lives in `server/services/` with unit tests that don't need Express
-- [ ] `chat-admit.ts` writes its `done` frame through `SseSink` (or a shared frame helper); `res.write(` with SSE framing appears in one module only
-- [ ] `chat.ts`, `chat-admit.ts` and their tests pass unchanged in behaviour
+- [x] Turn orchestration (`runTurn` + storage persistence) lives in `server/services/` with unit tests that don't need Express
+- [x] `chat-admit.ts` writes its `done` frame through `SseSink` (or a shared frame helper); `res.write(` with SSE framing appears in one module only
+- [x] `chat.ts`, `chat-admit.ts` and their tests pass unchanged in behaviour
 
 ## Implementation Notes
 

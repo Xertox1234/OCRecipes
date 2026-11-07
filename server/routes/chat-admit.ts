@@ -25,15 +25,8 @@ import {
   type ConversationType,
   type TurnFeatures,
   type TurnInput,
-  openSse,
-} from "./chat-stream";
-
-/** A no-op turn (stale or repeated finder action): open and close the SSE. */
-function endQuietly(res: Response): void {
-  openSse(res);
-  res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-  res.end();
-}
+} from "../services/chat-turn";
+import { endSseQuietly } from "../lib/sse";
 
 export interface AdmitTurnArgs {
   req: AuthenticatedRequest;
@@ -97,7 +90,7 @@ export async function admitTurn({
     if (finderAction) {
       // Stale (an older list's button) → quiet no-op, before any row.
       if (!isActionCurrent(getLatestFinderBlock(finderHistory), finderAction)) {
-        endQuietly(res);
+        endSseQuietly(res);
         return null;
       }
       const created = await storage.createFinderUserMessage(
@@ -118,7 +111,7 @@ export async function admitTurn({
       );
       // Double tap: the same flowId already has a row → quiet no-op.
       if (created.status === "duplicate") {
-        endQuietly(res);
+        endSseQuietly(res);
         return null;
       }
       if (created.status === "limit_reached") {
@@ -154,7 +147,7 @@ export async function admitTurn({
           sanitizedContent,
         );
         if (created.status !== "created") {
-          endQuietly(res);
+          endSseQuietly(res);
           return null;
         }
         message = created.message;

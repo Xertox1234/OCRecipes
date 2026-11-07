@@ -23,7 +23,7 @@ import {
   CONVERSATION_CONFIG,
   runTurn,
   type ConversationType,
-} from "./chat-stream";
+} from "../services/chat-turn";
 
 export function register(app: Express): void {
   // GET /api/chat/conversations - List conversations
