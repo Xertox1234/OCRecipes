@@ -45,6 +45,8 @@ import {
   heightToCm,
   weightUnitLabel,
   heightUnitLabel,
+  weightUnitSpoken,
+  heightUnitSpoken,
 } from "@shared/lib/units";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -190,6 +192,7 @@ function NumberInput({
   onBlur,
   error,
   unit,
+  spokenUnit,
   placeholder,
 }: {
   inputRef: React.RefObject<TextInputInstance | null>;
@@ -199,13 +202,24 @@ function NumberInput({
   onBlur: () => void;
   error: string | null;
   unit: string;
+  /** Unit as a screen reader should say it; defaults to `unit`. */
+  spokenUnit?: string;
   placeholder: string;
 }) {
   const { theme } = useTheme();
 
   return (
     <View style={styles.numberInputContainer}>
-      <ThemedText type="body" style={styles.inputLabel}>
+      {/* The input's own name carries the label and unit, so the visible
+          title and unit text are hidden — otherwise a screen reader stops on
+          the title, then the field, then the unit (Android device check
+          2026-11-07). Same convention as the receipt quantity box. */}
+      <ThemedText
+        type="body"
+        style={styles.inputLabel}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         {label}
       </ThemedText>
       <View style={styles.inputRow}>
@@ -221,9 +235,14 @@ function NumberInput({
           keyboardType="numeric"
           placeholder={placeholder}
           placeholderTextColor={withOpacity(theme.textSecondary, 0.6)}
-          accessibilityLabel={label}
+          accessibilityLabel={`${label}, ${spokenUnit ?? unit}`}
         />
-        <ThemedText type="body" style={{ color: theme.textSecondary }}>
+        <ThemedText
+          type="body"
+          style={{ color: theme.textSecondary }}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
           {unit}
         </ThemedText>
       </View>
@@ -536,6 +555,7 @@ export default function GoalSetupScreen() {
                 onBlur={blurField("weight")}
                 error={weightField.error}
                 unit={weightUnitLabel(unit)}
+                spokenUnit={weightUnitSpoken(unit)}
                 placeholder={unit === "imperial" ? "e.g. 154" : "e.g. 70"}
               />
               <NumberInput
@@ -546,6 +566,7 @@ export default function GoalSetupScreen() {
                 onBlur={blurField("height")}
                 error={heightField.error}
                 unit={heightUnitLabel(unit)}
+                spokenUnit={heightUnitSpoken(unit)}
                 placeholder={unit === "imperial" ? "e.g. 67" : "e.g. 170"}
               />
             </View>
