@@ -28,13 +28,7 @@ process.env.STRYKER_VITEST_INCLUDE = JSON.stringify([test]);
 export default {
   packageManager: "npm",
   testRunner: "vitest",
-  vitest: {
-    configFile: "vitest.mutation.config.mts",
-    // STRYKER_VITEST_INCLUDE above already narrows discovery to the one test file,
-    // so Stryker's "related files" lookup adds nothing — and when it comes back
-    // empty the run dies with "No tests were executed" (PR #1783, run 42296601188).
-    related: false,
-  },
+  vitest: { configFile: "vitest.mutation.config.mts" },
   coverageAnalysis: "perTest",
   // `.claude` + `docs` excluded so Stryker's sandbox copy skips the post-checkout
   // `docs/solutions` directory symlink (ENOTSUP) — see stryker.conf.mjs for the full note.
