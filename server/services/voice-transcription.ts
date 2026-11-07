@@ -1,5 +1,5 @@
 import { toFile } from "openai";
-import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
+import { getOpenAI, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 
 /**
  * Transcribes an audio buffer using OpenAI Whisper API.
@@ -14,7 +14,7 @@ export async function transcribeAudio(
 
   let text: string;
   try {
-    const transcription = await openai.audio.transcriptions.create(
+    const transcription = await getOpenAI().audio.transcriptions.create(
       {
         file,
         model: "whisper-1",

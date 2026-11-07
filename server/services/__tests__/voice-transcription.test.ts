@@ -1,25 +1,28 @@
 import { transcribeAudio } from "../voice-transcription";
 
-import { openai } from "../../lib/openai";
+import { getOpenAI } from "../../lib/openai";
 
 // Mock the openai module
-vi.mock("../../lib/openai", () => ({
-  openai: {
+vi.mock("../../lib/openai", () => {
+  const client = {
     audio: {
       transcriptions: {
         create: vi.fn(),
       },
     },
-  },
-  OPENAI_TIMEOUT_HEAVY_MS: 60_000,
-}));
+  };
+  return {
+    getOpenAI: () => client,
+    OPENAI_TIMEOUT_HEAVY_MS: 60_000,
+  };
+});
 
 // Mock the openai 'toFile' helper
 vi.mock("openai", () => ({
   toFile: vi.fn().mockResolvedValue({ name: "audio.m4a" }),
 }));
 
-const mockTranscribe = vi.mocked(openai.audio.transcriptions.create);
+const mockTranscribe = vi.mocked(getOpenAI().audio.transcriptions.create);
 
 describe("Voice Transcription", () => {
   beforeEach(() => {

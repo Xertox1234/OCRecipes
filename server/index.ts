@@ -39,7 +39,7 @@ import {
   assertExecutionAllowed as assertRetentionAllowed,
 } from "./scripts/cleanup-retention";
 import { rateLimit } from "express-rate-limit";
-import { ipKeyGenerator } from "./routes/_rate-limiters";
+import { ipKeyGenerator } from "./lib/ip-key";
 import crypto from "node:crypto";
 
 process.on("uncaughtException", (error) => {
