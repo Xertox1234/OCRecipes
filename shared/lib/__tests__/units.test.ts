@@ -10,6 +10,8 @@ import {
   heightToCm,
   weightUnitLabel,
   heightUnitLabel,
+  weightUnitSpoken,
+  heightUnitSpoken,
   measurementUnitSchema,
   DEFAULT_MEASUREMENT_UNIT,
 } from "../units";
@@ -67,5 +69,14 @@ describe("units conversion", () => {
     expect(measurementUnitSchema.parse("metric")).toBe("metric");
     expect(measurementUnitSchema.parse("imperial")).toBe("imperial");
     expect(measurementUnitSchema.safeParse("stones").success).toBe(false);
+  });
+});
+
+describe("spoken unit names (screen-reader labels)", () => {
+  it("spells out each unit so 'in' is not read as the word 'in'", () => {
+    expect(weightUnitSpoken("metric")).toBe("kilograms");
+    expect(weightUnitSpoken("imperial")).toBe("pounds");
+    expect(heightUnitSpoken("metric")).toBe("centimetres");
+    expect(heightUnitSpoken("imperial")).toBe("inches");
   });
 });
