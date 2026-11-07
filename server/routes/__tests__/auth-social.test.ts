@@ -54,8 +54,8 @@ vi.mock("../../storage", () => ({
 }));
 vi.mock("express-rate-limit");
 // Every two-step challenge emails a code; stub only the send.
-vi.mock("../../lib/mfa/email-code", async (orig) => ({
-  ...(await orig<typeof import("../../lib/mfa/email-code")>()),
+vi.mock("../../services/mfa/email-code", async (orig) => ({
+  ...(await orig<typeof import("../../services/mfa/email-code")>()),
   sendMfaEmailCode: vi.fn().mockResolvedValue("issued"),
 }));
 vi.mock("../../lib/email-config", () => ({

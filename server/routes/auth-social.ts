@@ -55,8 +55,8 @@ import {
 } from "../lib/social-identity/token-crypto";
 import { reportError } from "../lib/error-reporter";
 import { signInGate, secondFactor } from "../lib/social-identity/sign-in-gates";
-import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
-import { startMfaChallenge } from "../lib/mfa/challenge";
+import { secondFactorForPasswordProof } from "../services/mfa/password-proof-gate";
+import { startMfaChallenge } from "../services/mfa/challenge";
 import { suggestUsername } from "../lib/social-identity/suggest-username";
 import type {
   ProviderClaims,
