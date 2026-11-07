@@ -1,6 +1,6 @@
 ---
 title: "Mutation-on-diff runs no tests for server/services/label-override.ts"
-status: backlog
+status: done
 priority: low
 created: 2026-11-06
 updated: 2026-11-06
@@ -26,9 +26,9 @@ Not yet investigated. Likely suspects:
 
 ## Acceptance Criteria
 
-- [ ] Find why Stryker's dry run executes no tests for `server/services/label-override.ts` (reproduce with `npm run mutation:explore -- server/services/label-override.ts <test-glob>`).
-- [ ] Check whether every `server/` module is affected, or only this one.
-- [ ] Fix the selection or config so a changed server module with co-located tests gets a mutation score, or record why server modules are out of scope and make the check skip them cleanly instead of failing.
+- [x] Find why Stryker's dry run executes no tests for `server/services/label-override.ts` (reproduce with `npm run mutation:explore -- server/services/label-override.ts <test-glob>`).
+- [x] Check whether every `server/` module is affected, or only this one.
+- [x] Fix the selection or config so a changed server module with co-located tests gets a mutation score, or record why server modules are out of scope and make the check skip them cleanly instead of failing.
 
 ## Implementation Notes
 
@@ -46,3 +46,11 @@ Not yet investigated. Likely suspects:
 ### 2026-11-06
 
 - Filed at the owner's request from the PR #1783 CI run.
+
+### 2026-11-06 — resolved
+
+- Cause: Stryker's vitest runner filters tests through Vitest's "related files" lookup. On CI that lookup returned nothing for this module (`WARN VitestTestRunner Vitest failed to find test files related to mutated files`), so the dry run had no tests. A rerun of run 42296601188 (attempt 2) failed the same way, so on CI it is not a flake.
+- Not reproducible locally: `npm run mutation:explore -- server/services/label-override.ts server/services/__tests__/label-override.test.ts` scored 78.33% (203 mutants, 16.26 tests per mutant), and replaying the CI script on #1783's three files scored all three.
+- Not every `server/` module: 1 failure in the last 60 runs of the workflow, and server modules scored normally in neighbouring runs (ai-models, photo-analysis, receipt-analysis, store-notifications, coach-blocks, recipe-finder/entry, voice-transcription, in-flight).
+- Fix: `related: false` in `stryker.explore.conf.mjs`. `STRYKER_VITEST_INCLUDE` already narrows Vitest to the one co-located test, so the lookup was redundant. A local run with the flag gave identical numbers (78.33%, 16.26 tests per mutant). A unit test in `scripts/__tests__/mutation-on-diff.test.ts` pins the flag.
+- Left alone: `stryker.conf.mjs` (the registered-target `test:mutation` run) has the same `vitest` block without `related`. It has not failed this way and feeds required gates, so it is unchanged.

@@ -6,7 +6,7 @@
  * definition — each proven on synthetic input using the REAL registry
  * predicates so a regex drift in stryker.targets.mjs shows up here.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   isApprovedExclusion,
   isHardExclusion,
@@ -487,5 +487,28 @@ describe("rowFromRun", () => {
       result: null,
       error: "unreadable report",
     });
+  });
+});
+
+describe("stryker.explore.conf.mjs", () => {
+  // Lane F already narrows Vitest's include to the one co-located test, so
+  // Stryker's `related` lookup is redundant — and on PR #1783 (run 42296601188)
+  // it came back empty on CI, failing the run with "No tests were executed".
+  it("turns off Stryker's related-file lookup", async () => {
+    vi.stubEnv("STRYKER_EXPLORE_MUTATE", "server/services/label-override.ts");
+    vi.stubEnv(
+      "STRYKER_EXPLORE_TEST",
+      "server/services/__tests__/label-override.test.ts",
+    );
+    // The config writes this one itself; stub it so unstubAllEnvs restores it.
+    vi.stubEnv("STRYKER_VITEST_INCLUDE", "");
+    try {
+      const { default: config } = await import(
+        "../../stryker.explore.conf.mjs"
+      );
+      expect(config.vitest?.related).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
