@@ -190,7 +190,8 @@ describe("CoachOverlayContent — stream end announcements", () => {
     announceSpy.mockClear();
   };
 
-  const announced = () => announceSpy.mock.calls.map((c) => c[0]);
+  const announced = (): unknown[] =>
+    announceSpy.mock.calls.map((c: unknown[]) => c[0]);
 
   it("a failed reply announces the error and not 'response received' (iOS)", async () => {
     RN.Platform.OS = "ios";
