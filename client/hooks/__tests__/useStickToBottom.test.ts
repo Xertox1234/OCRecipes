@@ -46,6 +46,8 @@ describe("useStickToBottom", () => {
       r.current.onScrollBeginDrag(scrollEvent(fromBottom));
       r.current.onScroll(scrollEvent(fromBottom));
       r.current.onScrollEndDrag(scrollEvent(fromBottom));
+      r.current.onMomentumScrollBegin();
+      r.current.onScroll(scrollEvent(fromBottom));
       r.current.onMomentumScrollEnd(scrollEvent(fromBottom));
     });
   }
@@ -112,6 +114,45 @@ describe("useStickToBottom", () => {
     userScrollsTo(result, 500);
     act(() => result.current.jumpToLatest());
     expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+  });
+
+  it("a slow drag (no momentum after it) still ends the user's scroll", () => {
+    // Lifting a finger with no velocity fires onScrollEndDrag but never
+    // onMomentumScrollEnd. Later programmatic or layout scroll events
+    // (keyboard opening, an animated jump) must not count as the user's.
+    const { result } = setup();
+    act(() => {
+      result.current.onScrollBeginDrag(scrollEvent(0));
+      result.current.onScrollEndDrag(scrollEvent(0));
+    });
+    act(() => result.current.onScroll(scrollEvent(500)));
+    act(() => result.current.onContentSizeChange(400, CONTENT_H + 50));
+    expect(scrollToEnd).toHaveBeenCalled();
+    expect(result.current.showJumpToLatest).toBe(false);
+  });
+
+  it("frames of the animated jump do not turn following back off", () => {
+    const { result } = setup();
+    userScrollsTo(result, 500);
+    act(() => result.current.jumpToLatest());
+    // Mid-animation, the list is still far from the end.
+    act(() => result.current.onScroll(scrollEvent(400)));
+    expect(result.current.showJumpToLatest).toBe(false);
+    scrollToEnd.mockClear();
+    act(() => result.current.onContentSizeChange(400, CONTENT_H + 50));
+    expect(scrollToEnd).toHaveBeenCalled();
+  });
+
+  it("momentum that does not follow a drag is not the user's", () => {
+    // Android can emit momentum events for a programmatic smooth scroll.
+    const { result } = setup();
+    act(() => {
+      result.current.onMomentumScrollBegin();
+      result.current.onScroll(scrollEvent(500));
+      result.current.onMomentumScrollEnd(scrollEvent(500));
+    });
+    act(() => result.current.onContentSizeChange(400, CONTENT_H + 50));
+    expect(scrollToEnd).toHaveBeenCalled();
   });
 
   it("followLatest (a message just sent) resumes following", () => {

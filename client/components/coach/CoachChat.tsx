@@ -1227,7 +1227,9 @@ export default function CoachChat({
         onScroll={stickToBottom.onScroll}
         onScrollBeginDrag={stickToBottom.onScrollBeginDrag}
         onScrollEndDrag={stickToBottom.onScrollEndDrag}
+        onMomentumScrollBegin={stickToBottom.onMomentumScrollBegin}
         onMomentumScrollEnd={stickToBottom.onMomentumScrollEnd}
+        onLayout={stickToBottom.onLayout}
         scrollEventThrottle={32}
       />
       <JumpToLatestButton
