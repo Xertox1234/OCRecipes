@@ -12,8 +12,8 @@ import {
   sendPasswordChangeCode,
   sendPasswordChangedNotice,
 } from "../../services/email";
-import { reauthenticate, issueSession } from "../auth-social";
-import { serializeUser } from "../_serialize-user";
+import { reauthenticate, issueSession } from "../../services/auth-session";
+import { serializeUser } from "../../lib/serialize-user";
 import { createMockUser } from "../../__tests__/factories";
 import { hashChangeCode } from "../../lib/password-reset-code";
 import { isBreached } from "../../lib/pwned-password";
@@ -59,10 +59,10 @@ vi.mock("../../services/email", () => ({
   sendPasswordChangeCode: vi.fn(),
   sendPasswordChangedNotice: vi.fn(),
 }));
-// reauthenticate and issueSession have their own tests in auth-social; here
+// reauthenticate and issueSession have their own tests; here
 // they are seams so each proof branch and the mint can be asserted.
-vi.mock("../auth-social", async (orig) => ({
-  ...(await orig<typeof import("../auth-social")>()),
+vi.mock("../../services/auth-session", async (orig) => ({
+  ...(await orig<typeof import("../../services/auth-session")>()),
   reauthenticate: vi.fn(),
   issueSession: vi.fn(),
 }));
@@ -441,7 +441,7 @@ describe("POST /api/auth/change-password", () => {
   });
 
   it("the mint is refused (version moved again after commit) → 401 TOKEN_REVOKED", async () => {
-    const { HttpFailure } = await import("../auth-social");
+    const { HttpFailure } = await import("../../services/auth-session");
     vi.mocked(issueSession).mockRejectedValue(
       new HttpFailure(401, "MFA_CHALLENGE_EXPIRED", "x"),
     );

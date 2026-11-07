@@ -33,7 +33,7 @@ import {
 } from "../lib/mfa/mfa-secrets";
 import { verifySecondFactor } from "../services/mfa/verify-second-factor";
 import { INVALID_SECOND_FACTOR_MESSAGE } from "../services/mfa/password-proof-gate";
-import { HttpFailure, issueSession } from "./auth-social";
+import { HttpFailure, issueSession } from "../services/auth-session";
 import { emailVerificationEnabled } from "../lib/email-config";
 import { maskEmail, sendMfaEmailCode } from "../services/mfa/email-code";
 import { signInCodeMatches } from "../lib/password-reset-code";

@@ -74,8 +74,11 @@ import { secondFactorForPasswordProof } from "../services/mfa/password-proof-gat
 import { startMfaChallenge } from "../services/mfa/challenge";
 import { hashTrustKey } from "../lib/mfa/mfa-secrets";
 import { secondFactor } from "../lib/social-identity/sign-in-gates";
-import { serializeUser } from "./_serialize-user";
-import { reauthenticate, revokeAppleIdentities } from "./auth-social";
+import { serializeUser } from "../lib/serialize-user";
+import {
+  reauthenticate,
+  revokeAppleIdentities,
+} from "../services/auth-session";
 
 export { serializeUser };
 
