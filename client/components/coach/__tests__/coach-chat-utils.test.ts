@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  getStreamFinishAnnouncement,
   parsePlanDays,
   planBannerA11yLabel,
   stripCoachBlocksFence,
@@ -318,5 +319,44 @@ describe("formatPlanSaveSuccess", () => {
     expect(formatPlanSaveSuccess("2026-09-02", "lunch")).toBe(
       "Added to 2026-09-02 Lunch",
     );
+  });
+});
+
+describe("getStreamFinishAnnouncement", () => {
+  it("on iOS speaks the final sentence the per-sentence announcer never reached", () => {
+    // The announcer only fires on "[.?!] " — the last sentence has no trailing space.
+    const text = "Eat more beans. Then drink water.";
+    expect(getStreamFinishAnnouncement(text, 15, "ios")).toBe(
+      "Then drink water.",
+    );
+  });
+
+  it("on iOS falls back to 'Coach responded' when every sentence was spoken", () => {
+    const text = "Eat more beans. ";
+    expect(getStreamFinishAnnouncement(text, 15, "ios")).toBe(
+      "Coach responded",
+    );
+  });
+
+  it("on iOS treats a whitespace-only remainder as nothing left", () => {
+    expect(getStreamFinishAnnouncement("Done.  \n ", 5, "ios")).toBe(
+      "Coach responded",
+    );
+  });
+
+  it("on iOS speaks a one-sentence reply that never reached a boundary", () => {
+    expect(getStreamFinishAnnouncement("Sounds good!", 0, "ios")).toBe(
+      "Sounds good!",
+    );
+  });
+
+  it("on Android always says 'Coach responded' (sentences are never announced there)", () => {
+    expect(
+      getStreamFinishAnnouncement(
+        "Eat more beans. Then drink water.",
+        15,
+        "android",
+      ),
+    ).toBe("Coach responded");
   });
 });

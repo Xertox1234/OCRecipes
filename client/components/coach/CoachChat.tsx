@@ -70,6 +70,7 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import {
   parsePlanDays,
   filterValidBlocks,
+  getStreamFinishAnnouncement,
 } from "@/components/coach/coach-chat-utils";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
@@ -218,6 +219,9 @@ export default function CoachChat({
   // user stop also ends the stream, without a reply: no "Coach responded".
   const replyArrivedRef = useRef(false);
   const lastAnnouncedIndexRef = useRef(0);
+  // The finished reply's display text, so the finish announcement can speak
+  // the last sentence (the per-sentence announcer never reaches it).
+  const finishedTextRef = useRef("");
   const activeConvIdRef = useRef<number | null>(null);
   const usedQuickRepliesRef = useRef<Set<string>>(new Set());
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
@@ -267,6 +271,7 @@ export default function CoachChat({
       // A dead-socket abort also lands here, with whatever partial text came.
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
+      finishedTextRef.current = fullText;
       // Finder blocks render from the refetched message (with the right
       // active state); keeping them in the footer too would show two lists.
       const liveBlocks = (blocks ?? []).filter(
@@ -330,12 +335,19 @@ export default function CoachChat({
       // Streaming just started
       lastAnnouncedIndexRef.current = 0;
       replyArrivedRef.current = false;
+      finishedTextRef.current = "";
       AccessibilityInfo.announceForAccessibility("Coach is thinking...");
     } else if (!isStreaming && wasStreaming && replyArrivedRef.current) {
       // Streaming just finished with a reply. onDone runs in the same tick
       // that clears isStreaming, so the ref is already set when this runs.
       replyArrivedRef.current = false;
-      AccessibilityInfo.announceForAccessibility("Coach responded");
+      AccessibilityInfo.announceForAccessibility(
+        getStreamFinishAnnouncement(
+          finishedTextRef.current,
+          lastAnnouncedIndexRef.current,
+          Platform.OS,
+        ),
+      );
     }
   }, [isStreaming]);
 

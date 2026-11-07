@@ -178,3 +178,24 @@ export function formatPlanAddSuccess(
     ? formatPlanSaveSuccess(weekday, mealType as MealType)
     : `Added to ${weekday}`;
 }
+
+/**
+ * What to announce when a streamed coach reply finishes.
+ *
+ * On iOS, CoachChat speaks each sentence as soon as it is followed by
+ * whitespace. The reply's last sentence never is, so without this it was
+ * never spoken. VoiceOver doesn't queue announcements, so it gets the
+ * remainder in place of "Coach responded" rather than both. Android never
+ * announces sentences, so it keeps the generic cue.
+ */
+export function getStreamFinishAnnouncement(
+  fullText: string,
+  lastAnnouncedIndex: number,
+  platform: "ios" | "android" | string,
+): string {
+  if (platform === "ios") {
+    const remainder = fullText.slice(lastAnnouncedIndex).trim();
+    if (remainder.length > 0) return remainder;
+  }
+  return "Coach responded";
+}

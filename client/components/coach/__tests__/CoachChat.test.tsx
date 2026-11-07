@@ -808,9 +808,23 @@ describe("CoachChat — 'Coach responded' announcement", () => {
     });
   }
 
-  it("announces when the reply arrives", () => {
+  // iOS speaks the reply's last sentence in place of the generic cue: the
+  // per-sentence announcer needs whitespace after the full stop, so it never
+  // reached the final sentence (getStreamFinishAnnouncement).
+  it("announces when the reply arrives (iOS speaks the last sentence)", () => {
     streamThenEnd(() => coachStreamRef.onDone?.("Here you go"));
-    expect(announceSpy).toHaveBeenCalledWith("Coach responded");
+    expect(announceSpy).toHaveBeenCalledWith("Here you go");
+  });
+
+  it("announces 'Coach responded' when the reply arrives on Android", () => {
+    const originalOS = RN.Platform.OS;
+    RN.Platform.OS = "android";
+    try {
+      streamThenEnd(() => coachStreamRef.onDone?.("Here you go"));
+      expect(announceSpy).toHaveBeenCalledWith("Coach responded");
+    } finally {
+      RN.Platform.OS = originalOS;
+    }
   });
 
   it("announces a reply made only of blocks", () => {
@@ -840,6 +854,6 @@ describe("CoachChat — 'Coach responded' announcement", () => {
 
   it("announces a dead-socket abort that kept partial text", () => {
     streamThenEnd(() => coachStreamRef.onDone?.("Here is half"));
-    expect(announceSpy).toHaveBeenCalledWith("Coach responded");
+    expect(announceSpy).toHaveBeenCalledWith("Here is half");
   });
 });

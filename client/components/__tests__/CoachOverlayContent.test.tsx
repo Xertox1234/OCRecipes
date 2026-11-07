@@ -17,25 +17,46 @@ import {
   beforeEach,
   afterEach,
 } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
+import * as RN from "react-native";
 import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../test/utils/render-component";
 import { reactProps } from "../../../test/utils/react-props";
 import { CoachOverlayContent } from "../CoachOverlayContent";
 
+type StreamOpts = {
+  onDone?: (fullText: string, blocks: unknown[]) => void;
+  onError?: (msg: string) => void;
+};
+
 const { stream } = vi.hoisted(() => ({
-  stream: { startStream: vi.fn(), abortStream: vi.fn() },
+  stream: {
+    startStream: vi.fn(),
+    abortStream: vi.fn(),
+    opts: {} as StreamOpts,
+    setStreaming: (_v: boolean) => {},
+  },
 }));
 
-vi.mock("@/hooks/useCoachStream", () => ({
-  useCoachStream: () => ({
-    startStream: stream.startStream,
-    abortStream: stream.abortStream,
-    streamingContent: "",
-    statusText: "Thinking…",
-    isStreaming: true,
-  }),
-}));
+// isStreaming lives in real React state so a test can end the stream the way
+// useCoachStream does: setIsStreaming(false) in the same tick as the callback.
+vi.mock("@/hooks/useCoachStream", async () => {
+  const R = await import("react");
+  return {
+    useCoachStream: (opts: StreamOpts) => {
+      const [isStreaming, setIsStreaming] = R.useState(true);
+      stream.opts = opts;
+      stream.setStreaming = setIsStreaming;
+      return {
+        startStream: stream.startStream,
+        abortStream: stream.abortStream,
+        streamingContent: "",
+        statusText: "Thinking…",
+        isStreaming,
+      };
+    },
+  };
+});
 
 vi.mock("@/hooks/useChat", () => ({
   useCreateConversation: () => ({
@@ -131,5 +152,93 @@ describe("CoachOverlayContent — Return sends", () => {
     const props = reactProps(input);
     expect(props.returnKeyType).toBe("send");
     expect(props.blurOnSubmit).toBe(true);
+  });
+});
+
+// A11y follow-up to the 2026-11-06 audit: a failed reply must not be
+// announced as a success, and the error must not be read twice on Android
+// (the banner's live region already speaks it there).
+describe("CoachOverlayContent — stream end announcements", () => {
+  const proto = HTMLElement.prototype as unknown as {
+    scrollToEnd?: () => void;
+  };
+  const originalOS = RN.Platform.OS;
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+  beforeAll(() => {
+    proto.scrollToEnd = vi.fn();
+  });
+  afterAll(() => {
+    delete proto.scrollToEnd;
+  });
+  beforeEach(() => {
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+  afterEach(() => {
+    announceSpy.mockRestore();
+    RN.Platform.OS = originalOS;
+  });
+
+  const renderOverlay = async () => {
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "How much protein?", question: "protein_today" }}
+        screenContext="home"
+        onDismiss={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(stream.startStream).toHaveBeenCalled());
+    announceSpy.mockClear();
+  };
+
+  const announced = () => announceSpy.mock.calls.map((c) => c[0]);
+
+  it("a failed reply announces the error and not 'response received' (iOS)", async () => {
+    RN.Platform.OS = "ios";
+    await renderOverlay();
+    act(() => {
+      stream.setStreaming(false);
+      stream.opts.onError?.("boom");
+    });
+    await waitFor(() =>
+      expect(announced()).toContain("Response interrupted. Try sending again."),
+    );
+    expect(announced()).not.toContain("Coach response received");
+  });
+
+  it("on Android the error is left to the banner's live region", async () => {
+    RN.Platform.OS = "android";
+    await renderOverlay();
+    act(() => {
+      stream.setStreaming(false);
+      stream.opts.onError?.("boom");
+    });
+    await screen.findByText(/interrupted/i);
+    expect(announced()).not.toContain(
+      "Response interrupted. Try sending again.",
+    );
+    expect(announced()).not.toContain("Coach response received");
+  });
+
+  it("a successful reply still announces 'response received'", async () => {
+    RN.Platform.OS = "ios";
+    await renderOverlay();
+    act(() => {
+      stream.setStreaming(false);
+      stream.opts.onDone?.("Here you go.", []);
+    });
+    await waitFor(() =>
+      expect(announced()).toContain("Coach response received"),
+    );
+  });
+
+  it("a dead-socket abort that received nothing is not 'received'", async () => {
+    RN.Platform.OS = "ios";
+    await renderOverlay();
+    act(() => {
+      stream.setStreaming(false);
+      stream.opts.onDone?.("", []);
+    });
+    await waitFor(() => expect(stream.opts.onDone).toBeDefined());
+    expect(announced()).not.toContain("Coach response received");
   });
 });
