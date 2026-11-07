@@ -15,6 +15,7 @@ import { aiChat } from "../lib/ai-client";
 import { OPENAI_TIMEOUT_HEAVY_MS, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
+import { parseAiJson } from "../lib/ai-json";
 
 // Import shared type for use in this file, and re-export for consumers
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
@@ -310,38 +311,6 @@ export const recipePhotoResultSchema = z.object({
 export type RecipePhotoResult = z.infer<typeof recipePhotoResultSchema>;
 
 /**
- * Parse and validate a vision-model JSON response. Centralizes the
- * content-present → JSON.parse → Zod-validate → throw flow shared by every
- * vision call. Takes the raw content string (not the SDK response object) so it
- * has no OpenAI type coupling; each caller supplies its own domain messages so
- * the existing error/log strings are preserved exactly.
- */
-function parseVisionResponse<T extends z.ZodTypeAny>(
-  content: string | null | undefined,
-  schema: T,
-  msgs: { noResponse: string; invalid: string; validationFailed: string },
-): z.infer<T> {
-  if (!content) {
-    throw new Error(msgs.noResponse);
-  }
-
-  let rawJson;
-  try {
-    rawJson = JSON.parse(content);
-  } catch {
-    throw new Error(msgs.invalid);
-  }
-
-  const parsed = schema.safeParse(rawJson);
-  if (!parsed.success) {
-    log.warn({ zodErrors: parsed.error.flatten() }, msgs.validationFailed);
-    throw new Error(msgs.invalid);
-  }
-
-  return parsed.data;
-}
-
-/**
  * Analyze a recipe photo (cookbook page, recipe card, screenshot) to extract
  * structured recipe data. Uses detail: "high" for reading small text.
  */
@@ -388,7 +357,7 @@ export async function analyzeRecipePhoto(
     throw new Error("Failed to analyze recipe photo. Please try again.");
   }
 
-  const data = parseVisionResponse(
+  const data = parseAiJson(
     response.choices[0]?.message?.content,
     recipePhotoResultSchema,
     {
@@ -396,6 +365,7 @@ export async function analyzeRecipePhoto(
       invalid: "Recipe photo extraction returned invalid data",
       validationFailed: "recipe photo extraction validation failed",
     },
+    log,
   );
 
   log.debug(
@@ -493,7 +463,7 @@ export async function structureRecipeFromText(
     throw new Error("Failed to structure recipe from text. Please try again.");
   }
 
-  const data = parseVisionResponse(
+  const data = parseAiJson(
     response.choices[0]?.message?.content,
     recipePhotoResultSchema,
     {
@@ -501,6 +471,7 @@ export async function structureRecipeFromText(
       invalid: "Recipe text extraction returned invalid data",
       validationFailed: "recipe text extraction validation failed",
     },
+    log,
   );
 
   log.debug(
@@ -557,7 +528,7 @@ export async function analyzeLabelPhoto(
     throw new Error("Failed to analyze nutrition label. Please try again.");
   }
 
-  const data = parseVisionResponse(
+  const data = parseAiJson(
     response.choices[0]?.message?.content,
     labelExtractionSchema,
     {
@@ -565,6 +536,7 @@ export async function analyzeLabelPhoto(
       invalid: "Nutrition label extraction returned invalid data",
       validationFailed: "label extraction validation failed",
     },
+    log,
   );
 
   log.debug({ duration: Date.now() - startTime }, "label extraction completed");
@@ -651,7 +623,7 @@ export async function analyzePhoto(
     throw new Error("Failed to analyze photo. Please try again.");
   }
 
-  const data = parseVisionResponse(
+  const data = parseAiJson(
     response.choices[0]?.message?.content,
     analysisResultSchema,
     {
@@ -659,6 +631,7 @@ export async function analyzePhoto(
       invalid: "Photo analysis returned invalid data",
       validationFailed: "vision API response validation failed",
     },
+    log,
   );
 
   // Enrich with cultural food data
@@ -868,7 +841,7 @@ export async function classifyPhoto(
     throw new Error("Failed to analyze photo. Please try again.");
   }
 
-  const classification: ClassifiedResult = parseVisionResponse(
+  const classification: ClassifiedResult = parseAiJson(
     response.choices[0]?.message?.content,
     classifiedResultSchema,
     {
@@ -876,6 +849,7 @@ export async function classifyPhoto(
       invalid: "Photo classification returned invalid data",
       validationFailed: "classification validation failed",
     },
+    log,
   );
 
   // Validate barcode format if one was detected
