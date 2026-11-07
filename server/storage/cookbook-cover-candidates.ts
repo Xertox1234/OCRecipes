@@ -5,6 +5,7 @@ import {
 import { db } from "../db";
 import { and, count, eq, gt, gte, lte, notInArray, sql } from "drizzle-orm";
 import { deleteImage } from "../lib/image-store";
+import { fireAndForget } from "../lib/fire-and-forget";
 import { logger, toError } from "../lib/logger";
 
 // ============================================================================
@@ -19,14 +20,14 @@ const PURGE_INTERVAL_MS = 60 * 60 * 1000; // hourly
 export interface StoredCoverCandidateSet {
   candidates: { id: string; imageUrl: string }[];
   expiresAt: Date;
-  /** The user's previous set, now deleted — the caller removes the objects. */
-  replacedUrls: string[];
 }
 
 /**
  * Store a new set for `userId`, log it toward the daily cap, and delete the
  * user's previous set — one transaction under a per-user advisory lock, so two
- * concurrent sets serialise and only the later one is left live.
+ * concurrent sets serialise and only the later one is left live. Once that
+ * transaction commits, the replaced rows' stored objects are deleted in the
+ * background (fire-and-forget; a failure is logged and reported).
  *
  * The old rows are deleted by "not in this set", never by timestamp:
  * `now()` is the transaction's start, so it can't tell old from new.
@@ -36,7 +37,7 @@ export async function storeCoverCandidateSet(
   imageUrls: string[],
 ): Promise<StoredCoverCandidateSet> {
   const expiresAt = new Date(Date.now() + COVER_CANDIDATE_TTL_MS);
-  return await db.transaction(async (tx) => {
+  const { candidates, replacedUrls } = await db.transaction(async (tx) => {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${"cover-candidates:" + userId}, 0))`,
     );
@@ -62,10 +63,16 @@ export async function storeCoverCandidateSet(
       .returning({ imageUrl: cookbookCoverCandidates.imageUrl });
     return {
       candidates: inserted,
-      expiresAt,
       replacedUrls: replaced.map((r) => r.imageUrl),
     };
   });
+  for (const url of replacedUrls) {
+    fireAndForget(
+      "cookbook-cover-candidates-replace-cleanup",
+      deleteImage(url, "cookbook"),
+    );
+  }
+  return { candidates, expiresAt };
 }
 
 /**

@@ -1,6 +1,6 @@
 ---
 title: "Decide: should storage modules call R2 deleteImage, or return keys for the caller to delete?"
-status: backlog
+status: done
 priority: low
 created: 2026-11-06
 updated: 2026-11-06
@@ -29,9 +29,13 @@ This is finding L4 from the 2026-11-06 architecture audit. It's contested, so it
 
 ## Acceptance Criteria
 
-- [ ] Owner decides: keep deletes in storage, documented as an allowed exception in `docs/rules/architecture.md`, or move them to callers
-- [ ] If moving: the storage functions return the removed keys, one service owns `deleteImagesIfUnreferenced` and the fire-and-forget delete, and the cross-user filter tests still pass
+- [x] Owner decides: keep deletes in storage, documented as an allowed exception in `docs/rules/architecture.md`, or move them to callers
+- [x] ~~If moving:~~ n/a — kept in storage. the storage functions return the removed keys, one service owns `deleteImagesIfUnreferenced` and the fire-and-forget delete, and the cross-user filter tests still pass
 
 ## Implementation Notes
 
 - Files: the three storage modules above, plus their route callers (`server/routes/auth.ts` account deletion, meal-plan update and delete, cookbook cover).
+
+## Resolution (2026-11-06)
+
+Owner ruling: **keep the deletes in storage.** The function that knows when its write committed is the one that cleans up, so no caller can forget, which is the copy-drift risk M6c found. It's now an allowed exception in `docs/rules/architecture.md`, right under the service → storage rule. No code change.

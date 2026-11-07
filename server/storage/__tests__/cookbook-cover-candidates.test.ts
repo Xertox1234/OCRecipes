@@ -76,7 +76,7 @@ describe("storeCoverCandidateSet", () => {
 
     expect(result.candidates.map((c) => c.imageUrl)).toEqual(urls("a"));
     expect(new Set(result.candidates.map((c) => c.id)).size).toBe(4);
-    expect(result.replacedUrls).toEqual([]);
+    expect(deleteImageMock).not.toHaveBeenCalled();
     expect(COVER_CANDIDATE_TTL_MS).toBe(2 * 60 * 60 * 1000);
     const expiry = new Date(result.expiresAt).getTime();
     // 24h-tolerant per docs/rules/database.md would hide a wrong TTL here;
@@ -85,11 +85,16 @@ describe("storeCoverCandidateSet", () => {
     expect(expiry).toBeLessThanOrEqual(Date.now() + COVER_CANDIDATE_TTL_MS);
   });
 
-  it("replaces the user's previous set and returns its URLs", async () => {
+  it("replaces the user's previous set and deletes its objects", async () => {
     await storeCoverCandidateSet(user.id, urls("a"));
+    expect(deleteImageMock).not.toHaveBeenCalled();
     const second = await storeCoverCandidateSet(user.id, urls("b"));
 
-    expect(second.replacedUrls.sort()).toEqual(urls("a").sort());
+    expect(second).not.toHaveProperty("replacedUrls");
+    for (const url of urls("a")) {
+      expect(deleteImageMock).toHaveBeenCalledWith(url, "cookbook");
+    }
+    expect(deleteImageMock).toHaveBeenCalledTimes(urls("a").length);
     const rows = await tx
       .select()
       .from(cookbookCoverCandidates)
@@ -99,9 +104,9 @@ describe("storeCoverCandidateSet", () => {
 
   it("never touches another user's set", async () => {
     await storeCoverCandidateSet(other.id, urls("o"));
-    const mine = await storeCoverCandidateSet(user.id, urls("a"));
+    await storeCoverCandidateSet(user.id, urls("a"));
 
-    expect(mine.replacedUrls).toEqual([]);
+    expect(deleteImageMock).not.toHaveBeenCalled();
     const rows = await tx
       .select()
       .from(cookbookCoverCandidates)
@@ -152,10 +157,9 @@ describe("claimCoverCandidate", () => {
     for (const c of candidates.slice(1)) await expire(c.id);
 
     const purged = await purgeExpiredCoverCandidates();
-    const replaced = await storeCoverCandidateSet(user.id, urls("b"));
+    await storeCoverCandidateSet(user.id, urls("b"));
 
     expect(purged).not.toContain(claimed);
-    expect(replaced.replacedUrls).not.toContain(claimed);
     expect(deleteImageMock).not.toHaveBeenCalledWith(claimed, "cookbook");
   });
 });

@@ -580,13 +580,6 @@ export function register(app: Express): void {
           expiresAt: stored.expiresAt,
           promptIgnored: generated.promptIgnored,
         });
-
-        for (const url of stored.replacedUrls) {
-          fireAndForget(
-            "cookbook-cover-candidates-replace-cleanup",
-            deleteImage(url, "cookbook"),
-          );
-        }
       } catch (error) {
         handleRouteError(res, error, "generate cookbook cover candidates");
       }

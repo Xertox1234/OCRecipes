@@ -785,7 +785,6 @@ describe("Cookbook Routes", () => {
             imageUrl,
           })),
           expiresAt: new Date("2026-10-31T16:00:00Z"),
-          replacedUrls: ["https://cdn.test/cookbook-covers/old.jpg"],
         }),
       );
     });
@@ -828,16 +827,6 @@ describe("Cookbook Routes", () => {
       expect(vi.mocked(storage.storeCoverCandidateSet)).toHaveBeenCalledWith(
         "1",
         expect.any(Array),
-      );
-    });
-
-    it("deletes the replaced set's objects", async () => {
-      await post();
-      await vi.waitFor(() =>
-        expect(vi.mocked(deleteImage)).toHaveBeenCalledWith(
-          "https://cdn.test/cookbook-covers/old.jpg",
-          "cookbook",
-        ),
       );
     });
 
