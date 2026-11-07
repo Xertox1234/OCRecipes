@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  announcedOffset,
   getStreamFinishAnnouncement,
   parsePlanDays,
   planBannerA11yLabel,
@@ -322,39 +323,75 @@ describe("formatPlanSaveSuccess", () => {
   });
 });
 
+describe("announcedOffset", () => {
+  it("continues after the announced text when the reply still starts with it", () => {
+    expect(announcedOffset("Eat more beans. Then", "Eat more beans.")).toBe(15);
+  });
+
+  it("starts over when the text was replaced (a safety override)", () => {
+    expect(announcedOffset("Safe message here.", "Eat more beans.")).toBe(0);
+  });
+
+  it("starts at zero when nothing was announced", () => {
+    expect(announcedOffset("Hello.", "")).toBe(0);
+  });
+});
+
 describe("getStreamFinishAnnouncement", () => {
   it("on iOS speaks the final sentence the per-sentence announcer never reached", () => {
     // The announcer only fires on "[.?!] " — the last sentence has no trailing space.
     const text = "Eat more beans. Then drink water.";
-    expect(getStreamFinishAnnouncement(text, 15, "ios")).toBe(
+    expect(getStreamFinishAnnouncement(text, "Eat more beans.", "ios")).toBe(
       "Then drink water.",
     );
   });
 
   it("on iOS falls back to 'Coach responded' when every sentence was spoken", () => {
-    const text = "Eat more beans. ";
-    expect(getStreamFinishAnnouncement(text, 15, "ios")).toBe(
-      "Coach responded",
-    );
+    expect(
+      getStreamFinishAnnouncement("Eat more beans. ", "Eat more beans.", "ios"),
+    ).toBe("Coach responded");
   });
 
   it("on iOS treats a whitespace-only remainder as nothing left", () => {
-    expect(getStreamFinishAnnouncement("Done.  \n ", 5, "ios")).toBe(
+    expect(getStreamFinishAnnouncement("Done.  \n ", "Done.", "ios")).toBe(
       "Coach responded",
     );
   });
 
   it("on iOS speaks a one-sentence reply that never reached a boundary", () => {
-    expect(getStreamFinishAnnouncement("Sounds good!", 0, "ios")).toBe(
+    expect(getStreamFinishAnnouncement("Sounds good!", "", "ios")).toBe(
       "Sounds good!",
     );
+  });
+
+  // Review finding on #1787: a safety override replaces the reply mid-stream.
+  // Offsets into the old text must not slice the safety message mid-word, and
+  // an old offset past its end must not silence it.
+  it("on iOS speaks a whole safety override even after old sentences were announced", () => {
+    expect(
+      getStreamFinishAnnouncement(
+        "Safe message here. More.",
+        "Old text that ran.",
+        "ios",
+      ),
+    ).toBe("Safe message here. More.");
+  });
+
+  it("on iOS speaks a short safety override shorter than the announced text", () => {
+    expect(
+      getStreamFinishAnnouncement(
+        "Please talk to a doctor.",
+        "A much longer earlier reply that was already announced.",
+        "ios",
+      ),
+    ).toBe("Please talk to a doctor.");
   });
 
   it("on Android always says 'Coach responded' (sentences are never announced there)", () => {
     expect(
       getStreamFinishAnnouncement(
         "Eat more beans. Then drink water.",
-        15,
+        "Eat more beans.",
         "android",
       ),
     ).toBe("Coach responded");

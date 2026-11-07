@@ -70,6 +70,7 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import {
   parsePlanDays,
   filterValidBlocks,
+  announcedOffset,
   getStreamFinishAnnouncement,
 } from "@/components/coach/coach-chat-utils";
 import { useCoachStream } from "@/hooks/useCoachStream";
@@ -218,7 +219,9 @@ export default function CoachChat({
   // Set by onDone when the turn produced something to read. An error or a
   // user stop also ends the stream, without a reply: no "Coach responded".
   const replyArrivedRef = useRef(false);
-  const lastAnnouncedIndexRef = useRef(0);
+  // The prefix of the streaming reply already read out on iOS (see
+  // announcedOffset: a safety override replaces it and restarts at 0).
+  const announcedTextRef = useRef("");
   // The finished reply's display text, so the finish announcement can speak
   // the last sentence (the per-sentence announcer never reaches it).
   const finishedTextRef = useRef("");
@@ -333,7 +336,7 @@ export default function CoachChat({
 
     if (isStreaming && !wasStreaming) {
       // Streaming just started
-      lastAnnouncedIndexRef.current = 0;
+      announcedTextRef.current = "";
       replyArrivedRef.current = false;
       finishedTextRef.current = "";
       AccessibilityInfo.announceForAccessibility("Coach is thinking...");
@@ -344,7 +347,7 @@ export default function CoachChat({
       AccessibilityInfo.announceForAccessibility(
         getStreamFinishAnnouncement(
           finishedTextRef.current,
-          lastAnnouncedIndexRef.current,
+          announcedTextRef.current,
           Platform.OS,
         ),
       );
@@ -356,17 +359,17 @@ export default function CoachChat({
     if (!isStreaming || !streamingContent) return;
 
     const text = streamingContent;
-    const startIdx = lastAnnouncedIndexRef.current;
+    const startIdx = announcedOffset(text, announcedTextRef.current);
     const remaining = text.slice(startIdx);
 
     const boundaryMatch = remaining.match(/[.?!]\s/);
     if (!boundaryMatch || boundaryMatch.index === undefined) return;
 
     const endIdx = startIdx + boundaryMatch.index + 1;
-    const sentence = text.slice(lastAnnouncedIndexRef.current, endIdx).trim();
+    const sentence = text.slice(startIdx, endIdx).trim();
 
     if (sentence.length > 0) {
-      lastAnnouncedIndexRef.current = endIdx;
+      announcedTextRef.current = text.slice(0, endIdx);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(sentence);
       }
