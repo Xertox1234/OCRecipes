@@ -1,7 +1,7 @@
 import { storage } from "../../storage";
-import { sendTwoFactorNotice } from "../../services/email";
-import { fireAndForget } from "../fire-and-forget";
-import { signInCodeMatches } from "../password-reset-code";
+import { sendTwoFactorNotice } from "../email";
+import { fireAndForget } from "../../lib/fire-and-forget";
+import { signInCodeMatches } from "../../lib/password-reset-code";
 
 /** The emailed 6-digit code (the only second factor — owner ruling 4). */
 export type SecondFactorProof = { code: string };

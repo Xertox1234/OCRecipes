@@ -1,7 +1,10 @@
 import { storage } from "../../storage";
-import { sha256Hex } from "../social-identity/nonce";
+import { sha256Hex } from "../../lib/social-identity/nonce";
 import { maskEmail, sendMfaEmailCode } from "./email-code";
-import { hashChallengeToken, newChallengeToken } from "./mfa-secrets";
+import {
+  hashChallengeToken,
+  newChallengeToken,
+} from "../../lib/mfa/mfa-secrets";
 
 /**
  * A password check passed on an MFA account. Answered with HTTP 200, never a

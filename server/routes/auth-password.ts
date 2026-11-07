@@ -13,8 +13,12 @@ import { handleRouteError, formatZodError } from "./_helpers";
 import { changePasswordCodeLimiter, reauthLimiter } from "./_rate-limiters";
 import { changePasswordSchema } from "./_schemas";
 import { checkNewPassword } from "./_password-rules";
-import { reauthenticate, issueSession, HttpFailure } from "./auth-social";
-import { secondFactorForPasswordProof } from "../lib/mfa/password-proof-gate";
+import {
+  reauthenticate,
+  issueSession,
+  HttpFailure,
+} from "../services/auth-session";
+import { secondFactorForPasswordProof } from "../services/mfa/password-proof-gate";
 import { hashPassword } from "../lib/password-hash";
 import {
   changeCodeMatches,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { hashSignInCode } from "../../password-reset-code";
+import { hashSignInCode } from "../../../lib/password-reset-code";
 
 // Two-step is an emailed code only (owner ruling 4, 2026-10-12; authenticator
 // apps and recovery codes removed).

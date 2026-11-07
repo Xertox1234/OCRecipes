@@ -27,7 +27,7 @@ vi.mock("express-rate-limit");
 const { mockVerifySecondFactor } = vi.hoisted(() => ({
   mockVerifySecondFactor: vi.fn(),
 }));
-vi.mock("../../lib/mfa/verify-second-factor", () => ({
+vi.mock("../../services/mfa/verify-second-factor", () => ({
   verifySecondFactor: mockVerifySecondFactor,
 }));
 

@@ -1,7 +1,10 @@
 import { storage } from "../../storage";
-import { sendSignInCode } from "../../services/email";
-import { fireAndForget } from "../fire-and-forget";
-import { generateResetCode, hashSignInCode } from "../password-reset-code";
+import { sendSignInCode } from "../email";
+import { fireAndForget } from "../../lib/fire-and-forget";
+import {
+  generateResetCode,
+  hashSignInCode,
+} from "../../lib/password-reset-code";
 import type { IssueResult } from "../../storage/mfa-email";
 
 /**
