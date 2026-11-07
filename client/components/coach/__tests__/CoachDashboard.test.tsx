@@ -19,8 +19,23 @@ vi.mock("react-native", async (importOriginal) => ({
   Keyboard: { dismiss: mockKeyboardDismiss },
 }));
 
+const mockFold = vi.hoisted(() => ({
+  cached: null as boolean | null,
+  load: vi.fn<() => Promise<boolean>>(),
+  save: vi.fn<(folded: boolean) => void>(),
+}));
+
+vi.mock("@/lib/coach-dashboard-fold-storage", () => ({
+  getCachedCoachDashboardFolded: () => mockFold.cached,
+  loadCoachDashboardFolded: mockFold.load,
+  setCoachDashboardFolded: mockFold.save,
+}));
+
 beforeEach(() => {
   mockKeyboardDismiss.mockClear();
+  mockFold.cached = null;
+  mockFold.load.mockReset().mockResolvedValue(false);
+  mockFold.save.mockReset();
 });
 
 type NotebookEntry = CoachContextData["notebook"][number];
@@ -113,6 +128,83 @@ describe("CoachDashboard", () => {
     expect(
       screen.getByRole("button", { name: "Expand dashboard" }),
     ).toBeTruthy();
+  });
+
+  // The card opened on every visit, so the chat started at half the screen
+  // even for someone who always folds it (owner, 2026-11-07).
+  describe("remembering the fold", () => {
+    it("folding saves the choice, opening saves it too", () => {
+      renderDashboard();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Collapse dashboard" }),
+      );
+      expect(mockFold.save).toHaveBeenLastCalledWith(true);
+      fireEvent.click(screen.getByRole("button", { name: "Expand dashboard" }));
+      expect(mockFold.save).toHaveBeenLastCalledWith(false);
+    });
+
+    it("opens folded at once when the choice is already known", () => {
+      mockFold.cached = true;
+      renderDashboard();
+      expect(screen.queryByText("Calories")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Expand dashboard" }),
+      ).toBeTruthy();
+      expect(mockFold.load).not.toHaveBeenCalled();
+    });
+
+    it("folds once a saved fold is read from the device", async () => {
+      mockFold.load.mockResolvedValue(true);
+      renderDashboard();
+      expect(
+        await screen.findByRole("button", { name: "Expand dashboard" }),
+      ).toBeTruthy();
+      expect(screen.queryByText("Calories")).toBeNull();
+    });
+
+    it("a tap made before the read lands is not undone by it", async () => {
+      let resolveLoad: (folded: boolean) => void = () => {};
+      mockFold.load.mockReturnValue(
+        new Promise((r) => {
+          resolveLoad = r;
+        }),
+      );
+      renderDashboard();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Collapse dashboard" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Expand dashboard" }));
+      resolveLoad(true);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(screen.getByText("Calories")).toBeTruthy();
+    });
+
+    it("Expand while typing saves the card as open", () => {
+      mockFold.cached = true;
+      renderComponent(
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={vi.fn()}
+          onNotebookPress={vi.fn()}
+          forceCollapsed
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Expand dashboard" }));
+      expect(mockFold.save).toHaveBeenLastCalledWith(false);
+    });
+
+    it("the keyboard's fold is never saved as the user's choice", () => {
+      renderComponent(
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={vi.fn()}
+          onNotebookPress={vi.fn()}
+          forceCollapsed
+        />,
+      );
+      expect(mockFold.save).not.toHaveBeenCalled();
+    });
   });
 
   it("the Notebook button sits in the top row and opens the notebook", () => {

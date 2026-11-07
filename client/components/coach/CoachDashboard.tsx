@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Pressable,
@@ -15,6 +15,11 @@ import { BorderRadius, Spacing } from "@/constants/theme";
 import { toSecondPerson } from "./notebook-text-utils";
 import { withFeatureChip } from "./coach-feature-chip";
 import { hasUsedFeature } from "@/lib/feature-tips-storage";
+import {
+  getCachedCoachDashboardFolded,
+  loadCoachDashboardFolded,
+  setCoachDashboardFolded,
+} from "@/lib/coach-dashboard-fold-storage";
 import type { CoachContextData } from "@/hooks/useCoachContext";
 
 interface Props {
@@ -41,16 +46,37 @@ const CoachDashboard = React.memo(function CoachDashboard({
   forceCollapsed = false,
 }: Props) {
   const { theme } = useTheme();
-  const [userExpanded, setUserExpanded] = useState(true);
+  // The user's fold is remembered on the device; until it has been read this
+  // session the card opens, then folds if the saved choice says so.
+  const [userExpanded, setUserExpanded] = useState(
+    () => getCachedCoachDashboardFolded() !== true,
+  );
+  const tapped = useRef(false);
+  useEffect(() => {
+    if (getCachedCoachDashboardFolded() !== null) return;
+    let live = true;
+    void loadCoachDashboardFolded().then((folded) => {
+      // A tap before the read landed is the newer choice.
+      if (live && !tapped.current) setUserExpanded(!folded);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const chooseExpanded = (next: boolean) => {
+    tapped.current = true;
+    setUserExpanded(next);
+    setCoachDashboardFolded(!next);
+  };
   const expanded = userExpanded && !forceCollapsed;
   // While folded for the keyboard, Expand closes the keyboard (which lifts
   // the fold) instead of being a dead button.
   const onToggle = forceCollapsed
     ? () => {
-        setUserExpanded(true);
+        chooseExpanded(true);
         Keyboard.dismiss();
       }
-    : () => setUserExpanded((e) => !e);
+    : () => chooseExpanded(!userExpanded);
 
   const {
     todayIntake,
