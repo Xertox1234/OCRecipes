@@ -4,6 +4,7 @@ import { aiChat } from "../lib/ai-client";
 import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
+import { parseAiJson } from "../lib/ai-json";
 import {
   detectAllergens,
   parseUserAllergies,
@@ -159,26 +160,19 @@ export async function analyzeMenuPhoto(
     throw new Error("Failed to analyze menu photo. Please try again.");
   }
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error("No response from menu analysis");
-
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error("Menu analysis returned invalid data. Please try again.");
-  }
-  // safeParse, not parse: a ZodError here would be mapped to a 400 client
-  // validation error by handleRouteError, but a schema miss is a model fault.
-  const result = menuAnalysisSchema.safeParse(parsed);
-  if (!result.success) {
-    log.warn(
-      { zodErrors: result.error.flatten() },
-      "menu analysis AI output failed schema validation",
-    );
-    throw new Error("Menu analysis returned invalid data. Please try again.");
-  }
-  const validated = result.data;
+  // parseAiJson throws a plain Error, not a ZodError: a ZodError would be
+  // mapped to a 400 client validation error by handleRouteError, but a schema
+  // miss is a model fault.
+  const validated = parseAiJson(
+    response.choices[0]?.message?.content,
+    menuAnalysisSchema,
+    {
+      noResponse: "No response from menu analysis",
+      invalid: "Menu analysis returned invalid data. Please try again.",
+      validationFailed: "menu analysis AI output failed schema validation",
+    },
+    log,
+  );
 
   // Sort by recommendation: great > good > okay > avoid
   const order: Record<string, number> = {

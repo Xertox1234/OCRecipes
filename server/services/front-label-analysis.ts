@@ -4,6 +4,7 @@ import { OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import { createServiceLogger, toError } from "../lib/logger";
+import { parseAiJson } from "../lib/ai-json";
 
 const log = createServiceLogger("front-label-analysis");
 
@@ -100,37 +101,27 @@ export async function analyzeFrontLabel(
     throw new Error("Failed to analyze product front label. Please try again.");
   }
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("No response from front label analysis");
-  }
-
-  let rawJson;
-  try {
-    rawJson = JSON.parse(content);
-  } catch {
-    throw new Error("Front label extraction returned invalid data");
-  }
-  const parsed = frontLabelExtractionSchema.safeParse(rawJson);
-
-  if (!parsed.success) {
-    log.warn(
-      { zodErrors: parsed.error.flatten() },
-      "front label extraction validation failed",
-    );
-    throw new Error("Front label extraction returned invalid data");
-  }
+  const parsed = parseAiJson(
+    response.choices[0]?.message?.content,
+    frontLabelExtractionSchema,
+    {
+      noResponse: "No response from front label analysis",
+      invalid: "Front label extraction returned invalid data",
+      validationFailed: "front label extraction validation failed",
+    },
+    log,
+  );
 
   // Sanitize: truncate fields and cap claims count
   const result: FrontLabelExtractionResult = {
-    brand: sanitizeField(parsed.data.brand),
-    productName: sanitizeField(parsed.data.productName),
-    netWeight: sanitizeField(parsed.data.netWeight),
-    claims: parsed.data.claims
+    brand: sanitizeField(parsed.brand),
+    productName: sanitizeField(parsed.productName),
+    netWeight: sanitizeField(parsed.netWeight),
+    claims: parsed.claims
       .slice(0, MAX_CLAIMS)
       .map((c) => c.slice(0, MAX_FIELD_LENGTH).trim())
       .filter((c) => c.length > 0),
-    confidence: parsed.data.confidence,
+    confidence: parsed.confidence,
   };
 
   log.debug(
