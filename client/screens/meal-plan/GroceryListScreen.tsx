@@ -494,7 +494,10 @@ export default function GroceryListScreen() {
                 category={section.title.toLowerCase()}
                 size={20}
               />
-              <ThemedText style={styles.sectionTitle}>
+              <ThemedText
+                accessibilityRole="header"
+                style={styles.sectionTitle}
+              >
                 {section.title}
               </ThemedText>
             </View>

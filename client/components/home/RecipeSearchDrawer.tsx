@@ -173,6 +173,7 @@ export function RecipeSearchDrawer({
       {recent.length > 0 && (
         <View style={styles.section}>
           <ThemedText
+            accessibilityRole="header"
             style={[styles.sectionLabel, { color: theme.textSecondary }]}
           >
             RECENT
@@ -191,6 +192,7 @@ export function RecipeSearchDrawer({
 
       <View style={styles.section}>
         <ThemedText
+          accessibilityRole="header"
           style={[styles.sectionLabel, { color: theme.textSecondary }]}
         >
           TRENDING

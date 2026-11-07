@@ -204,7 +204,11 @@ export function RecipeGenerationModal({
 
           {/* Servings */}
           <View style={styles.section}>
-            <ThemedText type="body" style={styles.sectionTitle}>
+            <ThemedText
+              accessibilityRole="header"
+              type="body"
+              style={styles.sectionTitle}
+            >
               Servings
             </ThemedText>
             <View
@@ -251,7 +255,11 @@ export function RecipeGenerationModal({
 
           {/* Time Constraint */}
           <View style={styles.section}>
-            <ThemedText type="body" style={styles.sectionTitle}>
+            <ThemedText
+              accessibilityRole="header"
+              type="body"
+              style={styles.sectionTitle}
+            >
               Max Cooking Time
             </ThemedText>
             <View
@@ -305,7 +313,11 @@ export function RecipeGenerationModal({
 
           {/* Diet Preferences */}
           <View style={styles.section}>
-            <ThemedText type="body" style={styles.sectionTitle}>
+            <ThemedText
+              accessibilityRole="header"
+              type="body"
+              style={styles.sectionTitle}
+            >
               Diet Preferences
             </ThemedText>
             <View style={styles.dietGrid}>

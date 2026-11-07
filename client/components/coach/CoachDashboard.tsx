@@ -193,6 +193,7 @@ const CoachDashboard = React.memo(function CoachDashboard({
             {dueCommitments.length > 0 && (
               <View style={styles.section}>
                 <ThemedText
+                  accessibilityRole="header"
                   type="caption"
                   style={[styles.sectionTitle, { color: theme.textSecondary }]}
                 >

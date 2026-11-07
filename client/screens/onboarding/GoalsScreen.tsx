@@ -117,7 +117,11 @@ export default function GoalsScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="body" style={styles.sectionTitle}>
+          <ThemedText
+            accessibilityRole="header"
+            type="body"
+            style={styles.sectionTitle}
+          >
             Primary Goal
           </ThemedText>
           <View style={styles.goalsGrid} accessibilityRole="radiogroup">
@@ -169,7 +173,11 @@ export default function GoalsScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText type="body" style={styles.sectionTitle}>
+          <ThemedText
+            accessibilityRole="header"
+            type="body"
+            style={styles.sectionTitle}
+          >
             Activity Level
           </ThemedText>
           <View style={styles.activityList} accessibilityRole="radiogroup">

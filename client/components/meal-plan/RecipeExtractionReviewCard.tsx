@@ -47,7 +47,9 @@ export function RecipeExtractionReviewCard({
       >
         <Feather name="check" size={32} color={theme.success} />
       </View>
-      <ThemedText style={styles.heading}>Recipe Extracted</ThemedText>
+      <ThemedText accessibilityRole="header" style={styles.heading}>
+        Recipe Extracted
+      </ThemedText>
       <View
         style={[
           styles.reviewCard,

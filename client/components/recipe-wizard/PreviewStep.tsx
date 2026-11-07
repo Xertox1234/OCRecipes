@@ -64,7 +64,10 @@ function PreviewSection({
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionHeaderText, { color: labelColor }]}>
+        <Text
+          accessibilityRole="header"
+          style={[styles.sectionHeaderText, { color: labelColor }]}
+        >
           {label}
         </Text>
         <EditButton onPress={onEdit} color={editColor} label={label} />
