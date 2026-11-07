@@ -1,7 +1,22 @@
 /**
  * Multer upload configurations for image and audio uploads.
  */
-import multer from "multer";
+import multer, { MulterError } from "multer";
+import type { NextFunction, Request, Response } from "express";
+import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
+
+/**
+ * A fileFilter rejection. multer passes a fileFilter's error through as-is
+ * (only its own limits become a MulterError), so it needs its own class to be
+ * recognised by type rather than by message text.
+ */
+export class InvalidFileTypeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidFileTypeError";
+  }
+}
 
 /**
  * Multipart limits shared by every multer instance — 4 of the 5 the multer
@@ -45,7 +60,11 @@ export function createImageUpload(maxSizeBytes: number) {
       if (allowedMimes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error("Invalid file type. Only JPEG, PNG, and WebP allowed."));
+        cb(
+          new InvalidFileTypeError(
+            "Invalid file type. Only JPEG, PNG, and WebP allowed.",
+          ),
+        );
       }
     },
   });
@@ -68,10 +87,36 @@ export const audioUpload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Invalid file type. Only audio files are accepted."));
+      cb(
+        new InvalidFileTypeError(
+          "Invalid file type. Only audio files are accepted.",
+        ),
+      );
     }
   },
 });
 
 // Multer configuration for photo uploads (1MB limit for compressed images)
 export const upload = createImageUpload(1 * 1024 * 1024);
+
+/**
+ * Express error handler for upload failures: 400 instead of a 500. A multer
+ * limit keeps multer's own code (LIMIT_FILE_SIZE, ...); a fileFilter
+ * rejection is a VALIDATION_ERROR. Anything else is passed on.
+ */
+export function handleUploadError(
+  err: Error,
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (err instanceof MulterError) {
+    sendError(res, 400, err.message, err.code);
+    return;
+  }
+  if (err instanceof InvalidFileTypeError) {
+    sendError(res, 400, err.message, ErrorCode.VALIDATION_ERROR);
+    return;
+  }
+  next(err);
+}

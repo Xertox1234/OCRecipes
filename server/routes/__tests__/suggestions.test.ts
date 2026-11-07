@@ -51,6 +51,8 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+vi.mock("../../lib/error-reporter", () => ({ reportError: vi.fn() }));
+
 function createApp() {
   const app = express();
   app.use(express.json());
@@ -504,6 +506,29 @@ describe("Suggestions Routes", () => {
 
       expect(res.status).toBe(502);
       expect(res.body.error).toContain("AI returned invalid JSON");
+    });
+
+    it("reports a SuggestionParseError 502 to Sentry", async () => {
+      const { SuggestionParseError } = await import(
+        "../../services/suggestion-generation"
+      );
+      const { reportError } = await import("../../lib/error-reporter");
+      vi.mocked(reportError).mockClear();
+
+      vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getSuggestionCache).mockResolvedValue(undefined);
+      const parseError = new SuggestionParseError("AI returned invalid JSON");
+      vi.mocked(generateSuggestions).mockRejectedValue(parseError);
+
+      await request(app)
+        .post("/api/items/1/suggestions")
+        .set("Authorization", "Bearer token");
+
+      expect(reportError).toHaveBeenCalledWith(
+        parseError,
+        "generate suggestions",
+      );
     });
   });
 });

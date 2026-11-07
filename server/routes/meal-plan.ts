@@ -2,12 +2,11 @@ import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { civilDateToInstant } from "../lib/civil-date";
-import { generateRecipeImage } from "../services/recipe-generation";
+import { autoGenerateRecipeImage } from "../services/recipe-auto-image";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { isValidCalendarDate } from "../utils/date-validation";
 import {
   mealPlanRateLimit,
@@ -19,7 +18,6 @@ import {
   checkAiConfigured,
   checkPremiumFeature,
   formatZodError,
-  getPremiumFeatures,
   handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
@@ -57,45 +55,6 @@ function inferRecipeMealTypes(
   return inferMealTypes(
     normalized.title ?? title,
     normalized.ingredients?.map((i) => i.name),
-  );
-}
-
-/**
- * Auto-generate a hero image for a recipe saved without one (non-blocking).
- * Premium only: free users keep the placeholder and no image call is made.
- * Premium users are bounded by a DB-backed daily cap claimed BEFORE the paid
- * call; a refused claim just skips the image (the save already succeeded).
- */
-function fireRecipeImageGen(
-  recipe: {
-    id: number;
-    title: string;
-    cuisine: string | null;
-    mealTypes: string[] | null;
-  },
-  req: AuthenticatedRequest,
-): void {
-  const userId = req.userId;
-  fireAndForget(
-    "recipe-image-gen",
-    (async () => {
-      const features = await getPremiumFeatures(req);
-      if (!features.recipeAutoImages) return;
-      const claimed = await storage.claimDailyAiCall(
-        userId,
-        "recipeAutoImage",
-        AI_DAILY_CAPS.recipeAutoImage,
-      );
-      if (!claimed) return;
-      const imageUrl = await generateRecipeImage({
-        title: recipe.title,
-        cuisine: recipe.cuisine,
-        mealTypes: recipe.mealTypes,
-      });
-      if (imageUrl) {
-        await storage.updateMealPlanRecipe(recipe.id, userId, { imageUrl });
-      }
-    })(),
   );
 }
 
@@ -206,7 +165,12 @@ export function register(app: Express): void {
         }
 
         // Auto-generate image if none provided (async, non-blocking)
-        if (!recipe.imageUrl) fireRecipeImageGen(recipe, req);
+        if (!recipe.imageUrl) {
+          fireAndForget(
+            "recipe-image-gen",
+            autoGenerateRecipeImage(recipe, req.userId),
+          );
+        }
 
         res.status(201).json(recipe);
       } catch (error) {
@@ -396,14 +360,17 @@ export function register(app: Express): void {
             },
           ]);
           if (!recipeData.imageUrl) {
-            fireRecipeImageGen(
-              {
-                id: created.recipeId,
-                title: recipeData.title,
-                cuisine: recipeData.cuisine ?? null,
-                mealTypes,
-              },
-              req,
+            fireAndForget(
+              "recipe-image-gen",
+              autoGenerateRecipeImage(
+                {
+                  id: created.recipeId,
+                  title: recipeData.title,
+                  cuisine: recipeData.cuisine ?? null,
+                  mealTypes,
+                },
+                req.userId,
+              ),
             );
           }
           res.status(201).json({

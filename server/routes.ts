@@ -1,6 +1,6 @@
-import type { Express, Request, Response } from "express";
+import type { Express } from "express";
 import { createServer, type Server } from "node:http";
-import { MulterError } from "multer";
+import { handleUploadError } from "./routes/_upload";
 import { register as registerAuth } from "./routes/auth";
 import { register as registerAuthSocial } from "./routes/auth-social";
 import { register as registerAuthMfa } from "./routes/auth-mfa";
@@ -110,25 +110,8 @@ export function registerRoutes(app: Express): Server {
   registerTastePicks(app);
   registerExport(app);
 
-  // Multer error handler - returns 400 for file validation errors instead of 500
-  app.use(
-    (
-      err: Error,
-      req: Request,
-      res: Response,
-      next: (err?: Error) => void,
-    ): void => {
-      if (err instanceof MulterError) {
-        res.status(400).json({ error: err.message, code: err.code });
-        return;
-      }
-      if (err.message?.includes("Invalid file type")) {
-        res.status(400).json({ error: err.message });
-        return;
-      }
-      next(err);
-    },
-  );
+  // Upload errors (multer limits, rejected file types) -> 400 instead of 500
+  app.use(handleUploadError);
 
   const httpServer = createServer(app);
 

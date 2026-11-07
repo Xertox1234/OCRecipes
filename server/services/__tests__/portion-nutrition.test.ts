@@ -1,4 +1,9 @@
-import { nutrientValues, scaleToGrams } from "../portion-nutrition";
+import {
+  nutrientValues,
+  portionNutrition,
+  sumNutrients,
+  scaleToGrams,
+} from "../portion-nutrition";
 import type { NutritionData } from "../nutrition-lookup";
 
 function result(overrides: Partial<NutritionData> = {}): NutritionData {
@@ -80,6 +85,72 @@ describe("nutrientValues", () => {
       fiber: 3,
       sugar: 8,
       sodium: 4,
+    });
+  });
+});
+
+describe("portionNutrition", () => {
+  it("scales to the food's estimated weight and labels the serving", () => {
+    expect(
+      portionNutrition(result(), { quantity: "1 cup", grams: 250.4 }),
+    ).toEqual({
+      ...result(),
+      calories: 100,
+      protein: 2.5,
+      carbs: 25,
+      fat: 5,
+      fiber: 7.5,
+      sugar: 20,
+      sodium: 10,
+      servingSize: "1 cup (250 g)",
+    });
+  });
+
+  it("keeps per-100 g values under a marked serving when the weight is unknown", () => {
+    const out = portionNutrition(result(), { quantity: "1 cup" });
+    expect(out.calories).toBe(40);
+    expect(out.servingSize).toBe("100 g (portion unknown)");
+  });
+
+  it("returns a basis that can't be weighed unchanged", () => {
+    const perServing = result({ servingSize: "1 serving" });
+    expect(portionNutrition(perServing, { quantity: "2", grams: 80 })).toBe(
+      perServing,
+    );
+  });
+});
+
+describe("sumNutrients", () => {
+  it("adds parts, treats a missing value as 0, and rounds (calories whole, the rest to 0.1)", () => {
+    expect(
+      sumNutrients([
+        {
+          calories: 10.4,
+          protein: 1.04,
+          carbs: 2,
+          fat: null,
+          fiber: 0,
+          sugar: 1.26,
+          sodium: 5,
+        },
+        {
+          calories: 20.3,
+          protein: 0.03,
+          carbs: null,
+          fat: 0.5,
+          fiber: 0,
+          sugar: 0,
+          sodium: 0,
+        },
+      ]),
+    ).toEqual({
+      calories: 31,
+      protein: 1.1,
+      carbs: 2,
+      fat: 0.5,
+      fiber: 0,
+      sugar: 1.3,
+      sodium: 5,
     });
   });
 });
