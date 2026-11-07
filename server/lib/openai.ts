@@ -1,33 +1,43 @@
 import OpenAI from "openai";
 import { logger } from "./logger";
+import { OPENAI_DEFAULT_TIMEOUT_MS } from "./ai-config";
 
-const OPENAI_DEFAULT_TIMEOUT_MS = 45_000;
+// Timeout constants live in ai-config.ts (constructs nothing); re-exported so
+// existing importers and their vi.mock("…/lib/openai") factories keep applying.
+export {
+  OPENAI_TIMEOUT_FAST_MS,
+  OPENAI_TIMEOUT_STREAM_MS,
+  OPENAI_TIMEOUT_HEAVY_MS,
+  OPENAI_TIMEOUT_LONG_MS,
+  VERTEX_BACKUP_TIMEOUT_FAST_MS,
+} from "./ai-config";
 
-export const OPENAI_TIMEOUT_FAST_MS = 15_000; // food-nlp: simple text parsing
-export const OPENAI_TIMEOUT_STREAM_MS = 30_000; // nutrition-coach: streaming chat
-export const OPENAI_TIMEOUT_HEAVY_MS = 60_000; // recipe/meal generation: large token budgets
-export const OPENAI_TIMEOUT_LONG_MS = 120_000; // recipe-chat photo analysis, canonical editorial content: long outputs
-// The Vertex backup leg's timeout for every OPENAI_TIMEOUT_FAST_MS caller
-// (aiChat applies it; owner 2026-11-03 after 15 s timeouts in the PR 3 gate).
-export const VERTEX_BACKUP_TIMEOUT_FAST_MS = 30_000;
-
-const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-if (!apiKey) {
+if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
   logger.warn("AI_INTEGRATIONS_OPENAI_API_KEY not set — AI features will fail");
 }
 
 /** Whether OpenAI API is configured and AI features should work */
-export const isAiConfigured = !!apiKey;
+export const isAiConfigured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 
-// The OpenAI SDK throws at construction when apiKey is falsy (including ""),
-// which would crash server boot. AI is optional (env.ts treats the key as
-// optional), so fall back to a non-empty placeholder when it's unset: the
-// client still constructs, and any AI call fails at request time (401) instead
-// of taking the whole process down. Callers gate real usage on isAiConfigured.
-const apiKeyOrPlaceholder = apiKey || "missing-openai-key";
+let client: OpenAI | undefined;
 
-export const openai = new OpenAI({
-  apiKey: apiKeyOrPlaceholder,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  timeout: OPENAI_DEFAULT_TIMEOUT_MS,
-});
+/**
+ * The OpenAI client, built on first use (env is read then, not at import).
+ * Throws when AI is unconfigured — the SDK rejects an empty key, and a
+ * placeholder key would only defer the failure to a confusing 401.
+ */
+export function getOpenAI(): OpenAI {
+  if (client) return client;
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OpenAI is not configured (AI_INTEGRATIONS_OPENAI_API_KEY)",
+    );
+  }
+  client = new OpenAI({
+    apiKey,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    timeout: OPENAI_DEFAULT_TIMEOUT_MS,
+  });
+  return client;
+}

@@ -906,4 +906,10 @@ function defaultDeps(): AiChatDeps {
   };
 }
 
-export const aiChat: AiChat = createAiChat(defaultDeps());
+// Built on first call: importing this module constructs no client and reads no
+// env. Memoised once — the circuit breakers inside hold state.
+let instance: AiChat | undefined;
+export const aiChat = ((...args: Parameters<AiChat>) => {
+  instance ??= createAiChat(defaultDeps());
+  return (instance as (...a: Parameters<AiChat>) => unknown)(...args);
+}) as AiChat;

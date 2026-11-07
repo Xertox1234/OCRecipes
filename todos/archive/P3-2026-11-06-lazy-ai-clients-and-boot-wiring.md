@@ -1,6 +1,6 @@
 ---
 title: "Lazy AI client construction; boot entry stops importing routes/_rate-limiters"
-status: backlog
+status: done
 priority: low
 created: 2026-11-06
 updated: 2026-11-06
@@ -27,10 +27,10 @@ This covers two boot-time coupling findings from the 2026-11-06 architecture aud
 
 ## Acceptance Criteria
 
-- [ ] The OpenAI client is built lazily (getter on first use, gated on `isAiConfigured`), with no placeholder key; timeout constants move to a config module that constructs nothing
-- [ ] `aiChat` builds its dependencies on first call; importing `ai-client.ts` constructs no client
-- [ ] `ipKeyGenerator` lives in `server/lib/` and is imported from there by both `index.ts` and `_rate-limiters.ts`
-- [ ] AI-route tests and the eval runner still work; `/api/health` limiter is unchanged
+- [x] The OpenAI client is built lazily (getter on first use, gated on `isAiConfigured`), with no placeholder key; timeout constants move to a config module that constructs nothing
+- [x] `aiChat` builds its dependencies on first call; importing `ai-client.ts` constructs no client
+- [x] `ipKeyGenerator` lives in `server/lib/` and is imported from there by both `index.ts` and `_rate-limiters.ts`
+- [x] AI-route tests and the eval runner still work; `/api/health` limiter is unchanged
 
 ## Implementation Notes
 
