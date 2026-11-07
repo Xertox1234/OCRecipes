@@ -76,6 +76,8 @@ import {
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import StreamingBubble from "@/components/coach/StreamingBubble";
+import { JumpToLatestButton } from "@/components/coach/JumpToLatestButton";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { apiRequest } from "@/lib/query-client";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
@@ -215,6 +217,24 @@ export default function CoachChat({
   const turnEpochRef = useRef(0);
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
+  // The native ScrollView, not the FlatList: the FlatList works the end out
+  // from cached cell and footer sizes, and a commit that grows the last cell
+  // while dropping the footer (a reply's live blocks handing over to the
+  // saved copy) lands before they catch up, so its scrollToEnd stopped short
+  // with Regenerate hidden under the input bar.
+  const stickToBottom = useStickToBottom(
+    () => {
+      const scrollView = listRef.current?.getNativeScrollRef();
+      return isScrollView(scrollView) ? scrollView : null;
+    },
+    { reducedMotion },
+  );
+  const { followLatest } = stickToBottom;
+  // A different conversation opens at its newest message, whatever the
+  // scroll position was in the last one.
+  useEffect(() => {
+    followLatest();
+  }, [conversationId, followLatest]);
   const prevStreamingRef = useRef(false);
   // Set by onDone when the turn produced something to read. An error or a
   // user stop also ends the stream, without a reply: no "Coach responded".
@@ -536,6 +556,9 @@ export default function CoachChat({
       }
       setInputText("");
       turnEpochRef.current += 1;
+      // Sending brings the user back to the conversation's end, even if
+      // they had scrolled up to reread.
+      followLatest();
       setPendingSave(null);
       setOptimisticAfter(lastSavedIdRef.current);
       setOptimisticMessage(content);
@@ -584,6 +607,7 @@ export default function CoachChat({
       onMessageSent,
       setInputText,
       haptics,
+      followLatest,
     ],
   );
 
@@ -775,6 +799,9 @@ export default function CoachChat({
       // Same tap feedback as RecipeChef's finder handler.
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       turnEpochRef.current += 1;
+      // Sending brings the user back to the conversation's end, even if
+      // they had scrolled up to reread.
+      followLatest();
       setPendingSave(null);
       setOptimisticAfter(lastSavedIdRef.current);
       setOptimisticMessage(label);
@@ -795,6 +822,7 @@ export default function CoachChat({
       ttsStop,
       startStream,
       onMessageSent,
+      followLatest,
     ],
   );
 
@@ -1080,16 +1108,6 @@ export default function CoachChat({
     [showHistoryError, refetchMessages, theme.link],
   );
 
-  // The native ScrollView's scrollToEnd, not the FlatList's: the FlatList
-  // works the end out from cached cell and footer sizes, and a commit that
-  // grows the last cell while dropping the footer (a reply's live blocks
-  // handing over to the saved copy) lands here before they catch up, so the
-  // list stopped short with Regenerate hidden under the input bar.
-  const handleContentSizeChange = useCallback(() => {
-    const scrollView = listRef.current?.getNativeScrollRef();
-    if (isScrollView(scrollView)) scrollView.scrollToEnd({ animated: false });
-  }, []);
-
   useEffect(() => {
     return () => {
       abortStream();
@@ -1203,7 +1221,18 @@ export default function CoachChat({
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={handleContentSizeChange}
+        // Follow a streaming reply only while the user is at the bottom;
+        // scrolling up to reread stops it and offers the jump button.
+        onContentSizeChange={stickToBottom.onContentSizeChange}
+        onScroll={stickToBottom.onScroll}
+        onScrollBeginDrag={stickToBottom.onScrollBeginDrag}
+        onScrollEndDrag={stickToBottom.onScrollEndDrag}
+        onMomentumScrollEnd={stickToBottom.onMomentumScrollEnd}
+        scrollEventThrottle={32}
+      />
+      <JumpToLatestButton
+        visible={stickToBottom.showJumpToLatest}
+        onPress={stickToBottom.jumpToLatest}
       />
       <UpgradeModal
         visible={showUpgrade}
