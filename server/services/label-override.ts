@@ -894,3 +894,5 @@ export function buildLabelConflict(
     compared: !recordIsEmpty,
   };
 }
+
+// TEMP probe: makes Mutation-on-diff mutate this module under the fixed config. Removed before merge.
