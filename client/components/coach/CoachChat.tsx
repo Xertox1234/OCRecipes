@@ -70,6 +70,8 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import {
   parsePlanDays,
   filterValidBlocks,
+  announcedOffset,
+  getStreamFinishAnnouncement,
 } from "@/components/coach/coach-chat-utils";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
@@ -217,7 +219,12 @@ export default function CoachChat({
   // Set by onDone when the turn produced something to read. An error or a
   // user stop also ends the stream, without a reply: no "Coach responded".
   const replyArrivedRef = useRef(false);
-  const lastAnnouncedIndexRef = useRef(0);
+  // The prefix of the streaming reply already read out on iOS (see
+  // announcedOffset: a safety override replaces it and restarts at 0).
+  const announcedTextRef = useRef("");
+  // The finished reply's display text, so the finish announcement can speak
+  // the last sentence (the per-sentence announcer never reaches it).
+  const finishedTextRef = useRef("");
   const activeConvIdRef = useRef<number | null>(null);
   const usedQuickRepliesRef = useRef<Set<string>>(new Set());
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
@@ -267,6 +274,7 @@ export default function CoachChat({
       // A dead-socket abort also lands here, with whatever partial text came.
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
+      finishedTextRef.current = fullText;
       // Finder blocks render from the refetched message (with the right
       // active state); keeping them in the footer too would show two lists.
       const liveBlocks = (blocks ?? []).filter(
@@ -328,14 +336,21 @@ export default function CoachChat({
 
     if (isStreaming && !wasStreaming) {
       // Streaming just started
-      lastAnnouncedIndexRef.current = 0;
+      announcedTextRef.current = "";
       replyArrivedRef.current = false;
+      finishedTextRef.current = "";
       AccessibilityInfo.announceForAccessibility("Coach is thinking...");
     } else if (!isStreaming && wasStreaming && replyArrivedRef.current) {
       // Streaming just finished with a reply. onDone runs in the same tick
       // that clears isStreaming, so the ref is already set when this runs.
       replyArrivedRef.current = false;
-      AccessibilityInfo.announceForAccessibility("Coach responded");
+      AccessibilityInfo.announceForAccessibility(
+        getStreamFinishAnnouncement(
+          finishedTextRef.current,
+          announcedTextRef.current,
+          Platform.OS,
+        ),
+      );
     }
   }, [isStreaming]);
 
@@ -344,17 +359,17 @@ export default function CoachChat({
     if (!isStreaming || !streamingContent) return;
 
     const text = streamingContent;
-    const startIdx = lastAnnouncedIndexRef.current;
+    const startIdx = announcedOffset(text, announcedTextRef.current);
     const remaining = text.slice(startIdx);
 
     const boundaryMatch = remaining.match(/[.?!]\s/);
     if (!boundaryMatch || boundaryMatch.index === undefined) return;
 
     const endIdx = startIdx + boundaryMatch.index + 1;
-    const sentence = text.slice(lastAnnouncedIndexRef.current, endIdx).trim();
+    const sentence = text.slice(startIdx, endIdx).trim();
 
     if (sentence.length > 0) {
-      lastAnnouncedIndexRef.current = endIdx;
+      announcedTextRef.current = text.slice(0, endIdx);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(sentence);
       }

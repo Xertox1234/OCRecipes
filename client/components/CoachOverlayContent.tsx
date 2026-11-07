@@ -119,6 +119,9 @@ export function CoachOverlayContent({
   // Reminders clear when the user actually sends a follow-up, not on the
   // auto-sent initial question — fire at most once per mount.
   const hasAcknowledgedRef = useRef(false);
+  // Set by onDone; read by the stream-finish announcement so a failed
+  // stream isn't announced as a received reply.
+  const replyArrivedRef = useRef(false);
 
   const {
     startStream,
@@ -127,7 +130,12 @@ export function CoachOverlayContent({
     statusText,
     isStreaming,
   } = useCoachStream({
-    onDone: (_fullText, _blocks) => {
+    onDone: (fullText, blocks) => {
+      // useCoachStream clears isStreaming in the same tick, so the finish
+      // effect below sees this before it decides what to announce. A
+      // dead-socket abort also lands here, possibly with nothing received.
+      replyArrivedRef.current =
+        fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
       if (conversationId !== null) {
         void queryClient.invalidateQueries({
           queryKey: [`/api/chat/conversations/${conversationId}/messages`],
@@ -139,10 +147,13 @@ export function CoachOverlayContent({
     },
     onError: () => {
       setStreamError(true);
-      // accessibilityLiveRegion is Android-only — announce for iOS VoiceOver
-      AccessibilityInfo.announceForAccessibility(
-        "Response interrupted. Try sending again.",
-      );
+      // The banner's assertive live region speaks this on Android; announce
+      // only for iOS VoiceOver so TalkBack doesn't read it twice.
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(
+          "Response interrupted. Try sending again.",
+        );
+      }
     },
   });
 
@@ -248,9 +259,13 @@ export function CoachOverlayContent({
   const prevStreamingRef = useRef(false);
   useEffect(() => {
     if (isStreaming && !prevStreamingRef.current) {
+      replyArrivedRef.current = false;
       AccessibilityInfo.announceForAccessibility("Coach is typing a response");
     }
-    if (!isStreaming && prevStreamingRef.current) {
+    // Only a reply that arrived is "received" — a failed stream also ends
+    // here, and on iOS this later announcement would cut off the error.
+    if (!isStreaming && prevStreamingRef.current && replyArrivedRef.current) {
+      replyArrivedRef.current = false;
       AccessibilityInfo.announceForAccessibility("Coach response received");
     }
     prevStreamingRef.current = isStreaming;

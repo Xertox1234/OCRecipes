@@ -178,3 +178,38 @@ export function formatPlanAddSuccess(
     ? formatPlanSaveSuccess(weekday, mealType as MealType)
     : `Added to ${weekday}`;
 }
+
+/**
+ * Where VoiceOver's sentence-by-sentence reading of a streaming reply should
+ * continue from. Tracking the announced TEXT rather than an index lets a
+ * safety override, which replaces the reply mid-stream, start over at 0
+ * instead of slicing the new text at an offset into the old one.
+ */
+export function announcedOffset(text: string, announced: string): number {
+  return announced.length > 0 && text.startsWith(announced)
+    ? announced.length
+    : 0;
+}
+
+/**
+ * What to announce when a streamed coach reply finishes.
+ *
+ * On iOS, CoachChat speaks each sentence as soon as it is followed by
+ * whitespace. The reply's last sentence never is, so without this it was
+ * never spoken. VoiceOver doesn't queue announcements, so it gets the
+ * remainder in place of "Coach responded" rather than both. Android never
+ * announces sentences, so it keeps the generic cue.
+ */
+export function getStreamFinishAnnouncement(
+  fullText: string,
+  announced: string,
+  platform: "ios" | "android" | string,
+): string {
+  if (platform === "ios") {
+    const remainder = fullText
+      .slice(announcedOffset(fullText, announced))
+      .trim();
+    if (remainder.length > 0) return remainder;
+  }
+  return "Coach responded";
+}
