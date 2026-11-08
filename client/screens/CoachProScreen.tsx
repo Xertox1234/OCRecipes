@@ -157,6 +157,18 @@ export default function CoachProScreen() {
   }, [hasPendingReminder]);
   const isDraft = conversationId === null;
   const { brief } = useCoachBrief(draftForm, isDraft);
+  // The conversation the draft's first send created, and the brief it showed:
+  // kept on screen until that conversation's saved copy loads (CoachChat
+  // hides it once messages arrive), so the brief never blinks out mid-send.
+  const [briefThread, setBriefThread] = useState<{
+    id: number;
+    brief: NonNullable<typeof brief>;
+  } | null>(null);
+  const shownBrief = isDraft
+    ? brief
+    : briefThread?.id === conversationId
+      ? briefThread.brief
+      : null;
   const onBriefShown = useCallback(() => {
     if (draftForm === "full") markBriefSeen(localDateString(new Date()));
   }, [draftForm]);
@@ -205,10 +217,11 @@ export default function CoachProScreen() {
 
   const handleCreateConversation = useCallback(async () => {
     const result = await createConversation({ type: "coach" });
+    setBriefThread(brief ? { id: result.id, brief } : null);
     setConversationId(result.id);
     setIsNewDraft(false);
     return result.id;
-  }, [createConversation]);
+  }, [createConversation, brief]);
 
   return (
     <View
@@ -350,8 +363,8 @@ export default function CoachProScreen() {
         }}
         onReminderHandled={handleMessageSent}
         openingBrief={
-          isDraft && brief
-            ? { brief, form: draftForm, onShown: onBriefShown }
+          shownBrief
+            ? { brief: shownBrief, form: draftForm, onShown: onBriefShown }
             : null
         }
       />

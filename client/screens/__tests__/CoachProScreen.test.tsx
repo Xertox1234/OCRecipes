@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
 import CoachProScreen from "../CoachProScreen";
@@ -415,6 +415,32 @@ describe("CoachProScreen — opening brief", () => {
     renderComponent(<CoachProScreen />);
     fireEvent.click(screen.getByText("mock-reminder-handled"));
     expect(mockAcknowledge).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the brief on screen while the first send creates the conversation", async () => {
+    briefState.hasPending = true;
+    mockCreateConversation.mockResolvedValue({ id: 55 });
+    renderComponent(<CoachProScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("mock-create"));
+    });
+    expect(screen.getByText("conversation:55")).toBeTruthy();
+    expect(screen.getByText("brief:full")).toBeTruthy();
+  });
+
+  it("shows no brief in a thread picked afterwards", async () => {
+    conversationsState.data = [thread];
+    briefState.hasPending = true;
+    mockCreateConversation.mockResolvedValue({ id: 55 });
+    renderComponent(<CoachProScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("mock-create"));
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open coach conversation Earlier" }),
+    );
+    expect(screen.getByText("conversation:4")).toBeTruthy();
+    expect(screen.getByText("brief:none")).toBeTruthy();
   });
 
   it("asks for no brief while a thread is open", () => {
