@@ -52,33 +52,25 @@ export interface CoachContextData {
  * parallel storage calls, derived logic, and response-shape construction
  * all live in the service so the route handler is a thin wrapper.
  */
-export async function buildCoachContext(
-  userId: string,
-  _features: PremiumFeatures,
-  tz: string = "UTC",
-): Promise<CoachContextData> {
-  // One `now` for the whole function: the day-summary fetch and the
-  // time-of-day chip below could otherwise straddle an hour or day boundary
-  // and describe two different moments.
-  const now = new Date();
-  const [profile, todayIntake, notebookEntries, dueCommitments, user] =
-    await Promise.all([
-      storage.getUserProfile(userId),
-      storage.getDailySummary(userId, now, tz),
-      storage.getActiveNotebookEntries(userId),
-      storage.getCommitmentsWithDueFollowUp(userId),
-      storage.getUser(userId),
-    ]);
-
-  // Generate contextual suggestion chips
+/**
+ * Contextual reply chips (at most 5), shared by the Coach Pro context and the
+ * opening brief. `totalProtein` is null when there is no day summary.
+ */
+export function buildCoachSuggestions(a: {
+  dueCommitments: readonly { content: string }[];
+  totalProtein: number | null;
+  proteinGoal: number | null;
+  now: Date;
+  tz: string;
+}): string[] {
   const suggestions: string[] = [];
-  if (dueCommitments.length > 0) {
-    suggestions.push(`How did "${dueCommitments[0].content}" go?`);
+  if (a.dueCommitments.length > 0) {
+    suggestions.push(`How did "${a.dueCommitments[0].content}" go?`);
   }
   // No fabricated default: the system prompt forbids the model from citing
   // numbers absent from USER CONTEXT, so a chip may only quote a real goal.
-  if (todayIntake && user?.dailyProteinGoal != null) {
-    const proteinLeft = user.dailyProteinGoal - (todayIntake.totalProtein ?? 0);
+  if (a.totalProtein != null && a.proteinGoal != null) {
+    const proteinLeft = a.proteinGoal - a.totalProtein;
     if (proteinLeft > 30) {
       suggestions.push(`I need ${Math.round(proteinLeft)}g more protein today`);
     }
@@ -99,7 +91,7 @@ export async function buildCoachContext(
   // The consequence if an hour of 24 ever did leak through is NOT "no chip":
   // `24 >= 17` is true, so midnight would serve the EVENING chip. The midnight
   // test pins that.
-  const hour = civilHourInTz(now, tz);
+  const hour = civilHourInTz(a.now, a.tz);
   if (hour < 11) {
     suggestions.push("Quick breakfast ideas");
   } else if (hour >= 17) {
@@ -108,6 +100,34 @@ export async function buildCoachContext(
   if (suggestions.length < 3) {
     suggestions.push("What should I eat next?");
   }
+  return suggestions.slice(0, 5);
+}
+
+export async function buildCoachContext(
+  userId: string,
+  _features: PremiumFeatures,
+  tz: string = "UTC",
+): Promise<CoachContextData> {
+  // One `now` for the whole function: the day-summary fetch and the
+  // time-of-day chip below could otherwise straddle an hour or day boundary
+  // and describe two different moments.
+  const now = new Date();
+  const [profile, todayIntake, notebookEntries, dueCommitments, user] =
+    await Promise.all([
+      storage.getUserProfile(userId),
+      storage.getDailySummary(userId, now, tz),
+      storage.getActiveNotebookEntries(userId),
+      storage.getCommitmentsWithDueFollowUp(userId),
+      storage.getUser(userId),
+    ]);
+
+  const suggestions = buildCoachSuggestions({
+    dueCommitments,
+    totalProtein: todayIntake ? (todayIntake.totalProtein ?? 0) : null,
+    proteinGoal: user?.dailyProteinGoal ?? null,
+    now,
+    tz,
+  });
 
   return {
     goals: user?.dailyCalorieGoal
@@ -137,7 +157,7 @@ export async function buildCoachContext(
       updatedAt: e.updatedAt,
     })),
     dueCommitments,
-    suggestions: suggestions.slice(0, 5),
+    suggestions,
   };
 }
 
