@@ -574,6 +574,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="NotebookEntry"
             component={NotebookEntryScreen}
+            layout={withSheetProvider}
             options={{
               headerShown: false,
               presentation: "fullScreenModal",

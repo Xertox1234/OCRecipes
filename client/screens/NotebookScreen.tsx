@@ -26,6 +26,7 @@ import { isPausedWithoutData } from "@/components/empty-state-utils";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { toSecondPerson } from "@/components/coach/notebook-text-utils";
+import { splitCoachNotes } from "@/components/coach/notebook-list-utils";
 import { notebookTypeColor } from "@/constants/notebook-colors";
 import type { NotebookScreenNavigationProp } from "@/types/navigation";
 
@@ -61,6 +62,13 @@ export default function NotebookScreen() {
     fetchStatus,
     refetch,
   } = useNotebookEntries(queryOpts);
+  // "All" lists the user's own entries; the coach's notes fold into their own
+  // section below. A type or Archived filter lists whatever it matches.
+  const { mine, coachNotes } =
+    filter === "all"
+      ? splitCoachNotes(entries)
+      : { mine: entries, coachNotes: [] as NotebookEntry[] };
+  const [coachNotesOpen, setCoachNotesOpen] = useState(false);
   const { mutate: updateEntryMutate } = useUpdateNotebookEntry();
   const { mutate: deleteEntryMutate } = useDeleteNotebookEntry();
 
@@ -273,7 +281,7 @@ export default function NotebookScreen() {
         <ActivityIndicator style={styles.loading} color={theme.link} />
       ) : (
         <FlatList
-          data={entries}
+          data={mine}
           keyExtractor={(e) => String(e.id)}
           renderItem={renderEntry}
           contentContainerStyle={[
@@ -281,8 +289,46 @@ export default function NotebookScreen() {
             { paddingBottom: insets.bottom + Spacing.md },
           ]}
           {...FLATLIST_DEFAULTS}
+          ListFooterComponent={
+            coachNotes.length > 0 ? (
+              <View style={styles.coachNotes}>
+                <Pressable
+                  onPress={() => setCoachNotesOpen((open) => !open)}
+                  style={({ pressed }) => [
+                    styles.coachNotesToggle,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: coachNotesOpen }}
+                  accessibilityLabel={`Coach's notes, ${coachNotes.length} ${
+                    coachNotes.length === 1 ? "entry" : "entries"
+                  }`}
+                >
+                  <Feather
+                    name={coachNotesOpen ? "chevron-down" : "chevron-right"}
+                    size={16}
+                    color={theme.textSecondary}
+                    accessible={false}
+                  />
+                  <ThemedText
+                    type="small"
+                    style={[
+                      styles.coachNotesLabel,
+                      { color: theme.textSecondary },
+                    ]}
+                  >
+                    {`Coach's notes (${coachNotes.length})`}
+                  </ThemedText>
+                </Pressable>
+                {coachNotesOpen &&
+                  coachNotes.map((item) => (
+                    <View key={item.id}>{renderEntry({ item })}</View>
+                  ))}
+              </View>
+            ) : undefined
+          }
           ListEmptyComponent={
-            isError ? (
+            coachNotes.length > 0 ? undefined : isError ? (
               <EmptyState
                 variant="temporary"
                 icon="alert-circle"
@@ -328,7 +374,7 @@ const styles = StyleSheet.create({
   },
   newBtnText: { fontFamily: FontFamily.semiBold },
   // A horizontal ScrollView with no flexGrow:0 stretches to fill the column
-  filterScroll: { flexGrow: 0 },
+  filterScroll: { flexGrow: 0, flexShrink: 0 },
   filterRow: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -341,6 +387,14 @@ const styles = StyleSheet.create({
   },
   filterText: { fontFamily: FontFamily.medium },
   list: { padding: Spacing.md, gap: Spacing.sm },
+  coachNotes: { gap: Spacing.sm, marginTop: Spacing.sm },
+  coachNotesToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    minHeight: 44,
+  },
+  coachNotesLabel: { fontFamily: FontFamily.medium },
   entryCard: {
     borderRadius: BorderRadius.md,
     padding: Spacing.md,

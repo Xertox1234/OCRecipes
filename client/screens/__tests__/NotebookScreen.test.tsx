@@ -101,4 +101,88 @@ describe("NotebookScreen", () => {
     expect(screen.queryByText("No entries yet")).toBeNull();
     expect(screen.getByText("You're offline")).toBeDefined();
   });
+
+  // The coach's own notes (chat summaries, how it coaches) sat among the
+  // user's goals and preferences, several near-duplicates deep (simulator,
+  // 2026-11-08). Owner ruling: keep them, folded into their own section.
+  describe("coach's notes", () => {
+    const entry = (id: number, type: string, content: string) => ({
+      id,
+      type,
+      status: "active",
+      content,
+      followUpDate: null,
+    });
+
+    function renderWith(data: ReturnType<typeof entry>[]) {
+      mockUseNotebookEntries.mockReturnValue({
+        data,
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+      });
+      renderComponent(<NotebookScreen />);
+    }
+
+    it("folds summaries and strategy notes into their own section", () => {
+      renderWith([
+        entry(1, "goal", "Build a filling breakfast"),
+        entry(2, "conversation_summary", "Talked through oat swaps"),
+        entry(3, "coaching_strategy", "Likes detailed answers"),
+      ]);
+
+      expect(screen.getByText("Build a filling breakfast")).toBeDefined();
+      expect(screen.queryByText("Talked through oat swaps")).toBeNull();
+      expect(screen.queryByText("Likes detailed answers")).toBeNull();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Coach's notes, 2 entries" }),
+      );
+      expect(screen.getByText("Talked through oat swaps")).toBeDefined();
+      expect(screen.getByText("Likes detailed answers")).toBeDefined();
+    });
+
+    it("with only coach's notes, does not claim the notebook is empty", () => {
+      renderWith([
+        entry(2, "conversation_summary", "Talked through oat swaps"),
+      ]);
+
+      expect(screen.queryByText("No entries yet")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Coach's notes, 1 entry" }),
+      ).toBeDefined();
+    });
+
+    it("the Strategy filter lists strategy notes directly", () => {
+      renderWith([entry(3, "coaching_strategy", "Likes detailed answers")]);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Filter by coaching_strategy" }),
+      );
+
+      expect(screen.getByText("Likes detailed answers")).toBeDefined();
+      expect(
+        screen.queryByRole("button", { name: /Coach's notes/ }),
+      ).toBeNull();
+    });
+  });
+
+  // A ScrollView shrinks by default (flexShrink 1). Above a list taller than
+  // the screen, the filter row was squeezed from 48 to 43 pt and clipped the
+  // chips' bottom edge — "Insight" read "Insiaht" (simulator, 2026-11-08).
+  it("the filter row keeps its height above a long list", () => {
+    mockUseNotebookEntries.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    renderComponent(<NotebookScreen />);
+
+    let row = screen.getByRole("button", { name: "Filter by all" })
+      .parentElement as HTMLElement | null;
+    while (row && row.style.flexGrow !== "0") row = row.parentElement;
+    expect(row).not.toBeNull();
+    expect(row!.style.flexShrink).toBe("0");
+  });
 });

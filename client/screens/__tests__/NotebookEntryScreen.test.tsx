@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
+import { usePreventRemove } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
 import { renderComponent } from "../../../test/utils/render-component";
@@ -34,6 +35,17 @@ const {
   mockScheduleReminder: vi.fn(),
   mockCancelReminder: vi.fn(),
 }));
+const { mockDispatch, mockConfirm, mockKeyboardDismiss } = vi.hoisted(() => ({
+  mockDispatch: vi.fn(),
+  mockConfirm: vi.fn(),
+  mockKeyboardDismiss: vi.fn(),
+}));
+
+// The shared react-native mock has no Keyboard; the discard prompt closes it.
+vi.mock("react-native", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  Keyboard: { dismiss: mockKeyboardDismiss },
+}));
 
 vi.mock("@/hooks/useNotebook", () => ({
   useNotebookEntries: () => mockUseNotebookEntries(),
@@ -53,8 +65,18 @@ vi.mock("@react-navigation/native", () => ({
     canGoBack: mockCanGoBack,
     navigate: mockNavigate,
     reset: mockReset,
+    dispatch: mockDispatch,
   }),
   useRoute: () => mockRouteParams,
+  usePreventRemove: vi.fn(),
+}));
+
+vi.mock("@/components/ConfirmationModal", () => ({
+  useConfirmationModal: () => ({
+    confirm: mockConfirm,
+    ConfirmationModal: () => null,
+    behindContentA11yProps: {},
+  }),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -318,6 +340,71 @@ describe("NotebookEntryScreen — safe back navigation", () => {
       index: 0,
       routes: [{ name: "Main", params: { screen: "CoachTab" } }],
     });
+  });
+});
+
+// Back, a swipe or the Android back button dropped a typed note without a
+// word (simulator, 2026-11-08). Leaving with unsaved text now asks first.
+describe("NotebookEntryScreen — leaving with an unsaved note", () => {
+  interface PreventRemoveEvent {
+    preventDefault: () => void;
+    data: { action: { type: string } };
+  }
+
+  /** Fire a removal the way React Navigation's usePreventRemove would. */
+  function leaveScreen() {
+    const calls = vi.mocked(usePreventRemove).mock.calls;
+    const handler = calls[calls.length - 1][1] as (
+      e: PreventRemoveEvent,
+    ) => void;
+    handler({ preventDefault: vi.fn(), data: { action: { type: "GO_BACK" } } });
+  }
+
+  it("asks before discarding a typed note, and leaves on Discard", () => {
+    setupEntries([]);
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.change(screen.getByDisplayValue(""), {
+      target: { value: "Half-written thought" },
+    });
+
+    leaveScreen();
+
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Discard changes?", destructive: true }),
+    );
+    // The keyboard stayed up and covered the sheet (simulator, 2026-11-08).
+    expect(mockKeyboardDismiss).toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
+    (mockConfirm.mock.calls[0][0] as { onConfirm: () => void }).onConfirm();
+    expect(mockDispatch).toHaveBeenCalledWith({ type: "GO_BACK" });
+  });
+
+  it("leaves at once when nothing was typed", () => {
+    setupEntries([]);
+    renderComponent(<NotebookEntryScreen />);
+
+    leaveScreen();
+
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockDispatch).toHaveBeenCalledWith({ type: "GO_BACK" });
+  });
+
+  it("does not ask on the way out after a save", async () => {
+    setupEntries([]);
+    mockCreateMutateAsync.mockResolvedValue(
+      makeEntry({ type: "insight", followUpDate: null }),
+    );
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.change(screen.getByDisplayValue(""), {
+      target: { value: "A new thought" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+    await Promise.resolve();
+
+    leaveScreen();
+
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockDispatch).toHaveBeenCalledWith({ type: "GO_BACK" });
   });
 });
 
