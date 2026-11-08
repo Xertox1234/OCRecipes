@@ -115,13 +115,22 @@ vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({ isPremium: false }),
 }));
 
-vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({
+const { mockToast, mockClearImportBrowserData } = vi.hoisted(() => ({
+  mockToast: {
     success: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
     dismiss: vi.fn(),
-  }),
+  },
+  mockClearImportBrowserData: vi.fn<() => Promise<boolean>>(),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => mockToast,
+}));
+
+vi.mock("../../../modules/webview-site-data", () => ({
+  clearImportBrowserData: () => mockClearImportBrowserData(),
 }));
 
 vi.mock("@/lib/query-client", () => ({
@@ -217,6 +226,51 @@ describe("SettingsScreen sign-out confirmation", () => {
     options?.onConfirm();
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SettingsScreen clear site data", () => {
+  it("shows the row with its subtitle", () => {
+    renderComponent(<SettingsScreen />);
+
+    expect(
+      screen.getByRole("button", { name: "Clear site data" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Sign-ins to recipe sites made in OCRecipes"),
+    ).toBeTruthy();
+  });
+
+  it("Clear site data asks for confirmation, then calls clearImportBrowserData", async () => {
+    mockClearImportBrowserData.mockResolvedValue(true);
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear site data" }));
+
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
+    expect(mockClearImportBrowserData).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalled();
+
+    const options = mockConfirm.mock.calls[0]?.[0];
+    expect(options).toEqual(
+      expect.objectContaining({ title: "Clear site data" }),
+    );
+    options?.onConfirm();
+
+    expect(mockClearImportBrowserData).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledTimes(1));
+    expect(mockToast.error).not.toHaveBeenCalled();
+  });
+
+  it("shows an error toast when clearing fails", async () => {
+    mockClearImportBrowserData.mockResolvedValue(false);
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear site data" }));
+    mockConfirm.mock.calls[0]?.[0]?.onConfirm();
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalledTimes(1));
+    expect(mockToast.success).not.toHaveBeenCalled();
   });
 });
 
