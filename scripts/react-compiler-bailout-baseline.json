@@ -48,7 +48,6 @@
   "client/screens/ReceiptReviewScreen.tsx",
   "client/screens/RecipeChatScreen.tsx",
   "client/screens/SettingsScreen.tsx",
-  "client/screens/TasteProfileScreen.tsx",
   "client/screens/VerifyEmailScreen.tsx",
   "client/screens/meal-plan/CookbookCreateScreen.tsx",
   "client/screens/meal-plan/MealPlanHomeScreen.tsx",
