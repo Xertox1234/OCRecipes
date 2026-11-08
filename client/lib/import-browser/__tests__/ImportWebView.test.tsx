@@ -19,6 +19,9 @@ describe("ImportWebView lockdown", () => {
     expect(props.thirdPartyCookiesEnabled).toBe(false);
     expect(props.sharedCookiesEnabled).toBe(false);
     expect("userAgent" in props).toBe(false);
+    // iOS: pages never get camera/mic. Android is locked by the patch
+    // (webview-patch.test.ts).
+    expect(props.mediaCapturePermissionGrantType).toBe("deny");
     const gate = props.onShouldStartLoadWithRequest as (r: unknown) => boolean;
     expect(gate({ url: "ocrecipes://x", isTopFrame: true })).toBe(false);
     expect(gate({ url: "https://a.test", isTopFrame: true })).toBe(true);

@@ -36,6 +36,11 @@ interface ImportWebViewProps {
  * narrower list lets pages open app deep links and external apps.
  * shouldAllowNavigation is the only gate.
  *
+ * No camera, microphone or downloads: iOS via mediaCapturePermissionGrantType
+ * below; Android via patches/react-native-webview+14.0.1.patch (the stock
+ * library grants capture silently when the app holds CAMERA/RECORD_AUDIO and
+ * saves downloads to public storage).
+ *
  * This cookie store must not be shared with any other WebView added later.
  */
 export function ImportWebView({
@@ -77,6 +82,7 @@ export function ImportWebView({
       allowFileAccess={false}
       thirdPartyCookiesEnabled={false}
       sharedCookiesEnabled={false}
+      mediaCapturePermissionGrantType="deny"
       injectedJavaScript={EXTRACT_LD_JSON_SCRIPT}
       onMessage={handleMessage}
       onLoadEnd={onLoadEnd}
