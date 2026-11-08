@@ -54,7 +54,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { QUERY_KEYS } from "@/lib/query-keys";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import { logger } from "@/lib/logger";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import { isScanIntent, isScanIntentLocked } from "@/screens/photo-intent-utils";
@@ -372,9 +372,7 @@ export default function ScanScreen() {
         "/api/scanned-items",
         buildScannedItemPayload(confirmCard),
       );
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
+      invalidateFoodLogQueries(queryClient);
       void refreshScanCount();
       toast.success(buildSuccessToastMessage(confirmCard));
       safeGoBack(navigation, () =>

@@ -205,6 +205,16 @@ vi.mock("@/context/ToastContext", () => ({
 vi.mock("@/lib/query-client", () => ({
   apiRequest: mockApiRequest,
 }));
+// Wraps the real helper so the key-level assertions below still see the
+// actual invalidations, while the log path's use of the shared helper is
+// observable (arch audit L1: a hand-copied key list skips future keys).
+const mockInvalidateFoodLog = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/food-log-invalidation", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/food-log-invalidation")>();
+  mockInvalidateFoodLog.mockImplementation(actual.invalidateFoodLogQueries);
+  return { invalidateFoodLogQueries: mockInvalidateFoodLog };
+});
 // Delegates to the real reducer for every action except the shortcut used by
 // the post-log-success tests below — scan-phase-reducer.test.ts already
 // covers the reducer's real transition logic directly, so this file doesn't
@@ -494,6 +504,18 @@ describe("ScanScreen — safe back navigation", () => {
       });
 
       invalidateSpy.mockRestore();
+    });
+
+    it("refreshes the food log through the shared invalidateFoodLogQueries helper", async () => {
+      mockCanGoBack.mockReturnValue(true);
+
+      renderComponent(<ScanScreen />);
+      fireEvent.click(await screen.findByLabelText("Log It"));
+
+      await waitFor(() => {
+        expect(mockGoBack).toHaveBeenCalledOnce();
+      });
+      expect(mockInvalidateFoodLog).toHaveBeenCalledOnce();
     });
   });
 });
