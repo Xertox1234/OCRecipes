@@ -14,6 +14,10 @@ import { ThemedText } from "@/components/ThemedText";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { toSecondPerson } from "./notebook-text-utils";
 import { withFeatureChip } from "./coach-feature-chip";
+import {
+  remainingCaloriesStat,
+  selectTopInsights,
+} from "./coach-dashboard-utils";
 import { hasUsedFeature } from "@/lib/feature-tips-storage";
 import {
   getCachedCoachDashboardFolded,
@@ -35,7 +39,7 @@ interface Props {
 }
 
 /**
- * The top of the Coach screen. One row — greeting, today's calories, the
+ * The top of the Coach screen. The top strip — greeting, today's calories, the
  * fold control and Notebook — always shows; everything else folds away so
  * the chat gets the room.
  */
@@ -89,12 +93,12 @@ const CoachDashboard = React.memo(function CoachDashboard({
   const suggestions = withFeatureChip(serverSuggestions, hasUsedFeature);
 
   // Memoize notebook insight filter/slice to avoid recomputation on parent re-renders
-  const topInsights = useMemo(
-    () => notebook.filter((e) => e.type === "insight").slice(0, 2),
-    [notebook],
-  );
+  const topInsights = useMemo(() => selectTopInsights(notebook), [notebook]);
+  const calorieStat = goals
+    ? remainingCaloriesStat(goals.calories, todayIntake?.totalCalories ?? 0)
+    : null;
 
-  // No "today": the greeting already says when, and the row has no room.
+  // No "today": the greeting already says when.
   const consumed = Math.round(todayIntake?.totalCalories ?? 0).toLocaleString();
   const summary = goals
     ? `${consumed} / ${Math.round(goals.calories).toLocaleString()} cal`
@@ -112,22 +116,25 @@ const CoachDashboard = React.memo(function CoachDashboard({
           }
           accessibilityRole="button"
         >
-          <ThemedText type="h4" numberOfLines={1} style={styles.greeting}>
+          <ThemedText type="h4" numberOfLines={1}>
             {getGreeting()}
           </ThemedText>
-          <ThemedText
-            type="caption"
-            numberOfLines={1}
-            style={[styles.summary, { color: theme.textSecondary }]}
-          >
-            {summary}
-          </ThemedText>
-          <Feather
-            name={expanded ? "chevron-up" : "chevron-down"}
-            size={18}
-            color={theme.link}
-            accessible={false}
-          />
+          {/* Its own line: beside the greeting it was cut to "0 / 1,949 c…". */}
+          <View style={styles.summaryRow}>
+            <ThemedText
+              type="caption"
+              numberOfLines={1}
+              style={[styles.summary, { color: theme.textSecondary }]}
+            >
+              {summary}
+            </ThemedText>
+            <Feather
+              name={expanded ? "chevron-up" : "chevron-down"}
+              size={16}
+              color={theme.link}
+              accessible={false}
+            />
+          </View>
         </Pressable>
         <Pressable
           onPress={onNotebookPress}
@@ -183,7 +190,7 @@ const CoachDashboard = React.memo(function CoachDashboard({
                 type="h4"
                 style={[styles.statValue, { color: theme.proteinAccent }]}
               >
-                {todayIntake?.totalProtein ?? 0}g
+                {Math.round(todayIntake?.totalProtein ?? 0)}g
               </ThemedText>
               <ThemedText
                 type="caption"
@@ -202,15 +209,13 @@ const CoachDashboard = React.memo(function CoachDashboard({
                 type="h4"
                 style={[styles.statValue, { color: theme.badgeWarningText }]}
               >
-                {goals
-                  ? goals.calories - (todayIntake?.totalCalories ?? 0)
-                  : "\u2014"}
+                {calorieStat ? calorieStat.value : "\u2014"}
               </ThemedText>
               <ThemedText
                 type="caption"
                 style={[styles.statLabel, { color: theme.textSecondary }]}
               >
-                Remaining
+                {calorieStat ? calorieStat.label : "Remaining"}
               </ThemedText>
             </View>
           </View>
@@ -313,12 +318,10 @@ const styles = StyleSheet.create({
   },
   toggle: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: Spacing.sm,
+    justifyContent: "center",
     minHeight: 44,
   },
-  greeting: { flexShrink: 0 },
+  summaryRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   summary: { flexShrink: 1 },
   notebookBtn: {
     flexDirection: "row",
