@@ -27,6 +27,7 @@ import { useTTS } from "@/hooks/useTTS";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
+import OpeningBrief from "@/components/coach/OpeningBrief";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -67,6 +68,7 @@ import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import type { BriefForm, RenderedBrief } from "@shared/lib/opening-brief";
 import {
   parsePlanDays,
   filterValidBlocks,
@@ -98,6 +100,16 @@ interface CoachChatProps {
   /** Called once a message send has actually committed (after startStream). */
   onMessageSent?: () => void;
   inputBarStyle?: StyleProp<ViewStyle>;
+  /**
+   * The coach's opening brief for a new chat. Shown above an empty chat; the
+   * conversation-creating send tells the server which form was shown, and
+   * the server saves its own copy (the client never sends assistant text).
+   */
+  openingBrief?: {
+    brief: RenderedBrief;
+    form: BriefForm;
+    onShown?: () => void;
+  } | null;
 }
 
 type ChatListItem =
@@ -122,6 +134,7 @@ export default function CoachChat({
   onInitialMessageSent,
   onMessageSent,
   inputBarStyle,
+  openingBrief,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
@@ -569,6 +582,8 @@ export default function CoachChat({
       ttsStop();
 
       let convId = conversationId;
+      // Only the send that creates the conversation carries the brief form.
+      const briefForm = !convId && openingBrief ? openingBrief.form : undefined;
       if (!convId) {
         try {
           convId = await onCreateConversation();
@@ -589,11 +604,15 @@ export default function CoachChat({
 
       activeConvIdRef.current = convId;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
-      startStream(convId, content, { warmUpId: currentWarmUpId });
+      startStream(convId, content, {
+        warmUpId: currentWarmUpId,
+        ...(briefForm && { openingBrief: briefForm }),
+      });
       warmUpHook.reset();
       onMessageSent?.();
     },
     [
+      openingBrief,
       // inputText intentionally excluded — handleSend reads the latest value
       // from inputTextRef instead so its identity (and every callback that
       // transitively depends on it: handleRetry, handleBlockAction,
@@ -1198,6 +1217,18 @@ export default function CoachChat({
     [isAtDailyLimit, theme.textSecondary, theme.link],
   );
 
+  // Until the server's saved copy arrives with the conversation's messages,
+  // the brief draws here; then it is an ordinary assistant message.
+  const showBrief = !!openingBrief && (messages?.length ?? 0) === 0;
+  const briefHeader = showBrief ? (
+    <OpeningBrief
+      brief={openingBrief.brief}
+      onShown={openingBrief.onShown}
+      onSend={(text) => void handleSend(text)}
+      onQuickLog={() => navigation.navigate("QuickLog")}
+    />
+  ) : null;
+
   return (
     <CoachChatBase
       inputText={inputText}
@@ -1222,6 +1253,7 @@ export default function CoachChat({
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         extraData={listExtraData}
+        ListHeaderComponent={briefHeader ?? undefined}
         ListFooterComponent={streamingFooter ?? undefined}
         ListEmptyComponent={historyErrorEmpty ?? undefined}
         style={styles.messageList}
