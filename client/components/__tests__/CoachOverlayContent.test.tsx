@@ -139,6 +139,29 @@ describe("CoachOverlayContent — dismiss mid-answer (H6)", () => {
   });
 });
 
+// The sheet moves screen-reader focus to its title 300ms after opening. The
+// shared react-native mock has no findNodeHandle, so any test still mounted
+// at 300ms threw an uncaught error after the fact (flaky under load).
+describe("CoachOverlayContent — focus on open", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("moves accessibility focus to the title after 300ms", () => {
+    vi.useFakeTimers();
+    const focus = vi.spyOn(RN.AccessibilityInfo, "setAccessibilityFocus");
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "How much protein?", question: "protein_today" }}
+        screenContext="home"
+        onDismiss={vi.fn()}
+      />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(focus).toHaveBeenCalledWith(1);
+  });
+});
+
 // The sheet never shows why the Coach tab dot is lit, so a send here must
 // not clear that reason (opening-brief spec, 2026-11-08).
 describe("CoachOverlayContent — reminders", () => {
