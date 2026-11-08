@@ -382,6 +382,14 @@ describe("CoachDashboard", () => {
       expect(screen.getByText("413")).toBeTruthy();
     });
 
+    // 2000 - 2000.4 rounds to -0, which is not < 0 and prints as "-0".
+    it("a fraction of a calorie over the goal reads 0 remaining", () => {
+      renderIntake(2000.4, 90, 2000);
+      expect(screen.getByText("0")).toBeTruthy();
+      expect(screen.queryByText("-0")).toBeNull();
+      expect(screen.getByText("Remaining")).toBeTruthy();
+    });
+
     it("past the goal it says how far over, not a negative remainder", () => {
       renderIntake(2100.2, 90);
       expect(screen.getByText("151")).toBeTruthy();

@@ -50,7 +50,9 @@ export function remainingCaloriesStat(
   goalCalories: number,
   consumedCalories: number,
 ): { value: string; label: "Remaining" | "Over" } {
-  const left = Math.round(goalCalories - consumedCalories);
+  // `+ 0` turns the -0 from rounding a hair over the goal into 0, which
+  // would otherwise take the Remaining branch and print as "-0".
+  const left = Math.round(goalCalories - consumedCalories) + 0;
   return left < 0
     ? { value: (-left).toLocaleString(), label: "Over" }
     : { value: left.toLocaleString(), label: "Remaining" };
