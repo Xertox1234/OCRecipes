@@ -1,15 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/query-client";
+import { recipeStatsKey } from "@/lib/query-keys";
 import { applyTriedOptimistic } from "@/components/recipe-community-stats-utils";
 import type {
   RecipeCommunityStats,
   RecipeVariantDto,
 } from "@shared/types/recipe-community";
-
-export function recipeStatsKey(recipeId: number) {
-  return [`/api/recipes/${recipeId}/stats`] as const;
-}
 
 /**
  * Community stats for a public community recipe. Consumers render ONLY when
