@@ -293,6 +293,103 @@ describe("CoachDashboard", () => {
     });
   });
 
+  // The notebook stores a fact again each time a later turn re-learns it, so
+  // the two newest insights were the same sentence on the demo account
+  // (rows 353932/353926, 2026-11-08) and the card showed it twice.
+  it("shows a repeated tip once and fills the second slot with the next one", () => {
+    renderComponent(
+      <CoachDashboard
+        context={{
+          ...context,
+          notebook: [
+            { id: 1, type: "insight", content: "Oats keep you full." },
+            { id: 2, type: "insight", content: "  oats keep you  FULL " },
+            { id: 3, type: "insight", content: "Pumpkin seeds add iron" },
+          ] as NotebookEntry[],
+        }}
+        onSuggestionPress={vi.fn()}
+        onNotebookPress={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText(/oats keep you full/i)).toHaveLength(1);
+    expect(screen.getByText("Pumpkin seeds add iron")).toBeTruthy();
+  });
+
+  // The next-newest row (353921) was the same sentence with a clause added.
+  it("treats a tip that only extends another as the same tip", () => {
+    renderComponent(
+      <CoachDashboard
+        context={{
+          ...context,
+          notebook: [
+            {
+              id: 1,
+              type: "insight",
+              content:
+                "A balanced breakfast should include protein, fiber-rich carbohydrates, and healthy fats.",
+            },
+            {
+              id: 2,
+              type: "insight",
+              content:
+                "A balanced breakfast should include protein, fiber-rich carbohydrates, and healthy fats to support fullness and steady energy.",
+            },
+            { id: 3, type: "insight", content: "Pumpkin seeds add iron" },
+          ] as NotebookEntry[],
+        }}
+        onSuggestionPress={vi.fn()}
+        onNotebookPress={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText(/a balanced breakfast/i)).toHaveLength(1);
+    expect(screen.getByText("Pumpkin seeds add iron")).toBeTruthy();
+  });
+
+  describe("stat tiles", () => {
+    function renderIntake(
+      totalCalories: number,
+      totalProtein: number,
+      calorieGoal = 1949,
+    ) {
+      renderComponent(
+        <CoachDashboard
+          context={{
+            ...context,
+            goals: { ...context.goals!, calories: calorieGoal },
+            todayIntake: {
+              ...context.todayIntake!,
+              totalCalories,
+              totalProtein,
+            },
+          }}
+          onSuggestionPress={vi.fn()}
+          onNotebookPress={vi.fn()}
+        />,
+      );
+    }
+
+    // The tile printed the raw subtraction ("1949", "412.6") while the top
+    // row printed "1,949".
+    it("rounds and groups the numbers like the top row", () => {
+      renderIntake(420, 12.345, 2500);
+      expect(screen.getByText("2,080")).toBeTruthy();
+      expect(screen.getByText("12g")).toBeTruthy();
+      expect(screen.getByText("Remaining")).toBeTruthy();
+    });
+
+    it("rounds a fractional remainder", () => {
+      renderIntake(1536.4, 40);
+      expect(screen.getByText("413")).toBeTruthy();
+    });
+
+    it("past the goal it says how far over, not a negative remainder", () => {
+      renderIntake(2100.2, 90);
+      expect(screen.getByText("151")).toBeTruthy();
+      expect(screen.getByText("Over")).toBeTruthy();
+      expect(screen.queryByText("Remaining")).toBeNull();
+    });
+  });
+
   it("with no goals set, the top row shows calories alone", () => {
     renderComponent(
       <CoachDashboard
