@@ -1,4 +1,4 @@
-import { QUERY_KEYS, recipeStatsKey } from "../query-keys";
+import { QUERY_KEYS, chatMessagesKey, recipeStatsKey } from "../query-keys";
 
 describe("QUERY_KEYS persistence membership", () => {
   // client/App.tsx persists exactly the first element of every QUERY_KEYS
@@ -23,5 +23,20 @@ describe("recipeStatsKey", () => {
       Object.values(QUERY_KEYS).map((k) => k[0]),
     );
     expect(persisted.has(recipeStatsKey(7)[0])).toBe(false);
+  });
+});
+
+describe("chatMessagesKey", () => {
+  it("keys a conversation's messages by id", () => {
+    expect(chatMessagesKey(12)).toEqual([
+      "/api/chat/conversations/12/messages",
+    ]);
+  });
+
+  it("is not a QUERY_KEYS entry, so chat messages are never persisted", () => {
+    const persisted = new Set<unknown>(
+      Object.values(QUERY_KEYS).map((k) => k[0]),
+    );
+    expect(persisted.has(chatMessagesKey(12)[0])).toBe(false);
   });
 });

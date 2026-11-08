@@ -11,6 +11,7 @@ import {
   type QueryErrorMeta,
   type MutationErrorMeta,
 } from "@/lib/query-client";
+import { chatMessagesKey } from "@/lib/query-keys";
 import {
   PIN_CONVERSATION_KEY,
   pinConversationFn,
@@ -275,7 +276,7 @@ export function useChatMessages(
 ) {
   const queryClient = useQueryClient();
   return useQuery<ChatMessage[]>({
-    queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+    queryKey: chatMessagesKey(conversationId),
     enabled: !!conversationId,
     meta,
     ...(opts?.pollPendingRecipeTurn &&
@@ -597,7 +598,7 @@ export function useSendMessage(
               setStreamingContent(streamingContentRef.current);
             }
             void queryClient.invalidateQueries({
-              queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+              queryKey: chatMessagesKey(effectiveId),
             });
             void queryClient.invalidateQueries({
               queryKey: ["/api/chat/conversations"],
@@ -722,7 +723,7 @@ export function useSendMessage(
           // racing the server's still-in-flight write (same pattern as
           // CoachOverlayContent / CoachChat, #1060).
           void queryClient.invalidateQueries({
-            queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+            queryKey: chatMessagesKey(effectiveId),
             refetchType: "none",
           });
           void queryClient.invalidateQueries({
@@ -732,7 +733,7 @@ export function useSendMessage(
         } else if (!receivedDone && streamingContentRef.current.length > 0) {
           setStreamError(true);
           void queryClient.invalidateQueries({
-            queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+            queryKey: chatMessagesKey(effectiveId),
           });
           void queryClient.invalidateQueries({
             queryKey: ["/api/chat/conversations"],
