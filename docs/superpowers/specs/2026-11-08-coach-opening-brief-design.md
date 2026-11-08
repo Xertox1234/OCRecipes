@@ -77,8 +77,7 @@ Today Coach Pro auto-selects the most recent thread (`CoachProScreen.tsx`, the
 - **No empty rows:** the draft creates no conversation until the first send, as `isNewDraft`
   already does for Pro.
 - **Existing threads get no brief:** a reopened thread with messages shows no brief and no
-  dashboard. The day's numbers live in the brief and on Home. The owner accepted this as part of
-  removing the dashboard.
+  dashboard. The day's numbers live in the brief and on Home. This is pending explicit owner confirmation at design approval.
 - **Deep links win:** a link or notification tap that names a conversation (for example
   `openCoachConversation`, `selectedConversationId`) always opens that conversation, never the
   draft.
@@ -157,58 +156,106 @@ recap sentence only, with no stats row and no pointer.
 
 ### Repeat chats the same day
 
-Once the user has seen the full brief today, later new chats that day get the short form: the
-greeting plus the recap sentence only, unless a reminder is pending. "Seen today" is stored on
-the device, keyed by the user's local date. Losing it only means one extra full brief.
+The device keeps a single day flag, `lastBriefSeenDate` (the user's local date). It is set when a
+full brief is shown, not when the user sends. It drives two things:
 
-### The coach knows what it said
+- **The tab-open rule:** if `lastBriefSeenDate` isn't today, this is the first Coach visit of the day.
+- **The short form:** if it is today, later new chats get the greeting plus the recap sentence
+  only, unless a reminder is pending.
+
+Losing the flag only means one extra full brief.
+
+### The coach knows what it said (required, not optional)
 
 The brief's plain text (no buttons) must be in the conversation history the model sees, saved
-as an assistant message before the user's first message. It is saved only when the user sends
-something, so abandoned new chats leave no rows. Mechanism: the builder's call. The likely route
-is an optional `openingBrief` field on the first send, which the server writes as an assistant
-message before the user's message, after length-capping it and checking that it came from the
-template set. The model should not see an AI-authored brief it never wrote.
+as an assistant message before the user's first message. This is load-bearing: a commitment
+answer like "It went well" has no referent unless the brief is in history.
+
+- **The client never writes assistant-role text.** If the client sent the brief text back, the
+  server would store user-controlled text in the coach's own voice. That would be a
+  prompt-injection channel, and it would carry user-sourced strings (commitment `content`) that
+  the context builder otherwise sanitizes and fences.
+- **On the first send the client passes only a flag:** `openingBrief: "full" | "short"`. The
+  server re-renders the brief from current data with the same shared template functions, then
+  saves it as the assistant message before the user's message.
+- **Re-rendering may differ slightly from what was on screen** if the user logged food in between.
+  The saved version is the more current one, which is acceptable.
+- **User-sourced strings are sanitized:** commitment content inside the saved brief goes through
+  the same sanitize step the context builder uses for notebook text.
+- **Abandoned new chats leave no rows,** because nothing is saved until a send.
+- **Security review:** this history-injection path goes through `security-auditor` at review time,
+  as well as the usual roster.
 
 ## Data
 
-New endpoint `GET /api/coach/brief` (requires auth, rate-limited like `/api/coach/context`, and
-available on every plan). It returns structured data, not text:
+New endpoint `GET /api/coach/brief?form=full|short` (requires auth, rate-limited like
+`/api/coach/context`, and available on every plan). It returns the rendered `text` and the
+structured data the client needs to draw the stats row, chips and reminder buttons:
 
-- `greetingName`
-- `todayIntake`: totals for the user's timezone, using `parseTimezone(x-timezone)`
-- `goals`
-- `tonightPlan`: today's dinner from the meal plan, if any
-- `expiringPantry`: items expiring within 1 day, capped at 3
-- `topTip`
-- `suggestions`
-- `pendingReminders`: unacknowledged reminder contexts, read-only. This needs a new
-  peek-style storage read that does not set `acknowledgedAt`, parsed with `coachContextItemSchema`
+- `text`: the full plain brief, as it will be saved
+- `greeting`, `recap`, `pointer`: the rendered lines, so the client lays them out without
+  re-rendering
+- `stats`: up to three tiles
+- `reminder`: the lead reminder (type, rendered lead line, button set) or null
+- `suggestions`: at most three chips
+
+The rendering is pure functions in `shared/coach/opening-brief.ts` (Vitest covers them there),
+used by both the endpoint and the first-send save. `selectTopInsights` and
+`remainingCaloriesStat` move to `shared/` alongside them. Inputs:
+
+- today's intake for the user's timezone (`parseTimezone(x-timezone)`)
+- goals and the user's first name
+- tonight's dinner from the meal plan
+- pantry items expiring within 1 day (capped at 3)
+- the notebook top tip
+- suggestions
+- pending reminders, read through a new peek-style storage read that does not set
+  `acknowledgedAt`. It filters `pendingReminders.scheduledFor` (confirmed column,
+  `shared/schema.ts`) to the user's local today and parses each row with `coachContextItemSchema`,
   the same way `acknowledgeReminders` does.
 
 What free users actually get: notebook extraction runs only for Coach Pro, and pantry needs the
 premium `pantryTracking` feature. So free users have no commitment reminders, no notebook tip and
 no pantry line. Their pointer is tonight's plan or a goal gap. The endpoint gates notebook and
-pantry fields by feature. `buildCoachContext` fetches no meal-plan or pantry data, so
-`tonightPlan` and `expiringPantry` are new queries over the existing storage helpers
-(`getMealPlanItems`, `getExpiringPantryItems`). `selectTopInsights` moves to `shared/` so the
-server can pick `topTip` with the #1802 dedupe.
+pantry inputs by feature. `buildCoachContext` fetches no meal-plan or pantry data, so those are
+new queries over the existing storage helpers (`getMealPlanItems`, `getExpiringPantryItems`).
+Reuse `buildCoachContext`'s other fetches rather than duplicating them. `/api/coach/context` stays
+Coach-Pro-gated.
 
-The client builds the sentences from this data with pure functions in
-`client/components/coach/opening-brief-utils.ts`, so Vitest covers every template case.
+**Cache freshness:** after acknowledging reminders, invalidate both `/api/reminders/pending` and
+the brief query, so a cleared reminder doesn't come back in the next draft.
 
-Reuse `buildCoachContext`'s data fetches where possible rather than duplicating queries.
-`/api/coach/context` stays Coach-Pro-gated, because it carries notebook and pattern data. For
-free users the brief either omits notebook-derived fields or sends only the single top tip
-(builder: the free brief has no notebook tip unless the free plan already reads the notebook).
+### The tab-open decision is made once, synchronously
+
+`CoachProScreen` picks `threadBarConversations[0]` during render. The draft-or-last-thread
+decision must not race it:
+
+- **Decide once at mount, from values already in memory:**
+  - the `usePendingReminders` result already in the react-query cache (it lights the dot)
+  - `lastBriefSeenDate`, read from a module-level cache that is warmed at app start, following
+    the `getCachedCoachDashboardFolded` / `loadCoachDashboardFolded` pattern
+- **Defaulting when values are missing:** if a value isn't cached yet, the decision defaults to
+  "no draft" (today's behaviour).
+- **Never switch after the fact:** once a thread or the draft is selected, the screen never moves
+  away from it because a later fetch landed.
+- **The brief query only fills the draft; it never decides whether there is one.** The pending
+  flag only says that some reminder exists. If the brief then returns no showable reminder (all
+  stale), the draft still shows the normal brief, which is fine.
+
+## Rollout
+
+The server deploys on merge, and the client half needs an OTA. None is published unless the owner
+asks. If a new client meets an old server, the brief endpoint returns 404 and the client shows no
+brief, the same as a fetch failure. If an old client meets a new server, nothing changes, because
+`openingBrief` is optional.
 
 ## Removed
 
 - `client/components/coach/CoachDashboard.tsx` and its tests, plus the fold persistence it alone
   uses (`getCachedCoachDashboardFolded`, `loadCoachDashboardFolded`, `setCoachDashboardFolded`
   and their storage key).
-- `remainingCaloriesStat` and `selectTopInsights` move to, or are imported by, the brief utils
-  rather than being deleted.
+- `remainingCaloriesStat` and `selectTopInsights` move to `shared/` for the brief rather than being
+  deleted.
 - `CoachProScreen`'s `forceCollapsed={keyboardVisible}` wiring, if nothing else uses it.
 - **Notebook entry point:** the dashboard's Notebook button moves to a notebook icon in the Coach
   header (both screens if free users have a Notebook, otherwise Coach Pro only).
@@ -238,13 +285,16 @@ Strict TDD:
 - **Endpoint:** a route test for free and Pro users and for timezone handling, and a test that
   the peek read leaves `acknowledgedAt` null.
 - **Screens:** the brief shows on an empty conversation and not on one with messages; a reminder
-  button acknowledges and calls PATCH; the first send carries `openingBrief`.
+  button sends its answer and acknowledges; the first send carries the `openingBrief` flag; the
+  tab opens the draft only under the two conditions and never switches away from a selected
+  thread.
+- **Save path:** the server saves its own re-rendered brief before the user message, sanitizes
+  commitment text, and ignores any text the client sends.
 - **Simulator check:** both screens, light and dark, with a seeded pending reminder.
 
 ## Left to the builder
 
 - **Exact copy.** Keep it inside the templates above, short and in a plain voice.
-- **Saving the brief:** how `openingBrief` is validated and stored, within the constraints above.
 - **Free-plan surfaces:** where the free view's upgrade and camera entry points go.
 - **Multiple reminders:** whether more than one pending reminder gets a "+1 more" line.
 - **The header notebook icon:** its glyph and accessibility label.
