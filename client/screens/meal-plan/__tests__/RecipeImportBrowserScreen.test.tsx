@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React, { useImperativeHandle } from "react";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
+import * as RN from "react-native";
 
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -16,6 +17,7 @@ const {
   mockParsePage,
   mockExtract,
   mockReload,
+  webViewGoBack,
   webViewProps,
 } = vi.hoisted(() => ({
   mockReplace: vi.fn(),
@@ -26,6 +28,7 @@ const {
   mockParsePage: vi.fn(),
   mockExtract: vi.fn(),
   mockReload: vi.fn(),
+  webViewGoBack: vi.fn(),
   webViewProps: { current: null as null | Record<string, any> },
 }));
 
@@ -42,6 +45,7 @@ vi.mock("@react-navigation/native", () => ({
   }),
   useRoute: () => ({ params: mockRouteParams() }),
   usePreventRemove: vi.fn(),
+  useIsFocused: () => true,
 }));
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({
@@ -54,7 +58,7 @@ vi.mock("@/lib/import-browser/ImportWebView", () => ({
     useImperativeHandle(props.ref, () => ({
       extract: mockExtract,
       reload: mockReload,
-      goBack: vi.fn(),
+      goBack: webViewGoBack,
     }));
     return <div data-testid="import-webview" />;
   },
@@ -192,7 +196,7 @@ describe("RecipeImportBrowserScreen", () => {
     expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reload page" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Import" })).toBeTruthy();
-    expect(screen.getByText("example.com")).toBeTruthy();
+    expect(screen.getByLabelText("example.com, secure")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reload page" }));
     expect(mockReload).toHaveBeenCalled();
   });
@@ -203,5 +207,76 @@ describe("RecipeImportBrowserScreen", () => {
       webViewProps.current!.onNavigationChange("https://www.other.com/login"),
     );
     expect(screen.getByText("www.other.com")).toBeTruthy();
+  });
+
+  it("navigating to a different page drops the found bar and the stale blocks", async () => {
+    renderComponent(<RecipeImportBrowserScreen />);
+    sendBlocks([RECIPE_BLOCK], "https://example.com/soup");
+    expect(screen.getByText(/Recipe found/)).toBeTruthy();
+
+    act(() =>
+      webViewProps.current!.onNavigationChange(
+        "https://example.com/other",
+        true,
+      ),
+    );
+    expect(screen.queryByText(/Recipe found/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    act(() =>
+      webViewProps.current!.onNavigationChange(
+        "https://example.com/other",
+        true,
+      ),
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(mockParsePage).not.toHaveBeenCalled();
+  });
+
+  it("on iOS announces the no-recipe message", async () => {
+    const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderComponent(<RecipeImportBrowserScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    sendBlocks([OTHER_BLOCK], "https://example.com/login");
+    await waitFor(() =>
+      expect(announce).toHaveBeenCalledWith(NO_RECIPE_MESSAGE),
+    );
+  });
+
+  describe("Android hardware back", () => {
+    function backHandler() {
+      const calls = vi.mocked(RN.BackHandler.addEventListener).mock.calls;
+      return calls.at(-1)?.[1] as (() => boolean) | undefined;
+    }
+    beforeEach(() => {
+      (RN.Platform as { OS: string }).OS = "android";
+      vi.mocked(RN.BackHandler.addEventListener).mockClear();
+    });
+    afterEach(() => {
+      (RN.Platform as { OS: string }).OS = "ios";
+    });
+
+    it("goes back inside the page while the WebView can", () => {
+      renderComponent(<RecipeImportBrowserScreen />);
+      act(() =>
+        webViewProps.current!.onNavigationChange("https://example.com/b", true),
+      );
+      expect(backHandler()!()).toBe(true);
+      expect(webViewGoBack).toHaveBeenCalled();
+    });
+
+    it("lets the default close happen when the WebView cannot go back", () => {
+      renderComponent(<RecipeImportBrowserScreen />);
+      act(() =>
+        webViewProps.current!.onNavigationChange(
+          "https://example.com/a",
+          false,
+        ),
+      );
+      expect(backHandler()!()).toBe(false);
+      expect(webViewGoBack).not.toHaveBeenCalled();
+    });
   });
 });

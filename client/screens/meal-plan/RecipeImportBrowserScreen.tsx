@@ -2,12 +2,17 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  BackHandler,
   Platform,
   Pressable,
   StyleSheet,
   View,
 } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useIsFocused,
+  useNavigation,
+  useRoute,
+} from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -75,6 +80,8 @@ export default function RecipeImportBrowserScreen() {
   const [recipeFound, setRecipeFound] = useState(false);
   const [message, setMessage] = useState("");
   const [importing, setImporting] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const isFocused = useIsFocused();
 
   // One parse-page in flight; a late result after unmount must not navigate.
   const inFlightRef = useRef(false);
@@ -94,6 +101,27 @@ export default function RecipeImportBrowserScreen() {
       AccessibilityInfo.announceForAccessibility("Recipe found. Import ready.");
     }
   }, [recipeFound]);
+
+  useEffect(() => {
+    if (Platform.OS === "ios" && message) {
+      AccessibilityInfo.announceForAccessibility(message);
+    }
+  }, [message]);
+
+  // Android back steps back inside the site (e.g. mid sign-in); only when the
+  // page has no history does the default close happen. The header X closes outright.
+  useEffect(() => {
+    if (Platform.OS !== "android" || !isFocused) return;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (!canGoBack) return false;
+        webRef.current?.goBack();
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [isFocused, canGoBack]);
 
   const runImport = useCallback(
     async (page: PageBlocks) => {
@@ -149,6 +177,17 @@ export default function RecipeImportBrowserScreen() {
     const waiter = waiterRef.current;
     waiterRef.current = null;
     waiter?.(page);
+  }, []);
+
+  const handleNavigationChange = useCallback((url: string, back: boolean) => {
+    setCurrentUrl(url);
+    setCanGoBack(back);
+    // The found bar and blocks belong to the page they came from.
+    if (url !== latestRef.current?.currentUrl) {
+      latestRef.current = null;
+      setRecipeFound(false);
+      setMessage("");
+    }
   }, []);
 
   const handleFoundImport = useCallback(() => {
@@ -210,11 +249,16 @@ export default function RecipeImportBrowserScreen() {
         >
           <Feather name="x" size={22} color={theme.text} />
         </Pressable>
-        <View style={styles.domainWrap} accessibilityLabel={`Site ${domain}`}>
+        <View
+          style={styles.domainWrap}
+          accessible
+          accessibilityLabel={`${domain}, ${secure ? "secure" : "not secure"}`}
+        >
           <Feather
             name={secure ? "lock" : "unlock"}
             size={13}
             color={theme.textSecondary}
+            importantForAccessibility="no"
             accessibilityElementsHidden
           />
           <ThemedText
@@ -253,7 +297,7 @@ export default function RecipeImportBrowserScreen() {
           ref={webRef}
           url={startUrl}
           onBlocks={handleBlocks}
-          onNavigationChange={setCurrentUrl}
+          onNavigationChange={handleNavigationChange}
         />
       </View>
 

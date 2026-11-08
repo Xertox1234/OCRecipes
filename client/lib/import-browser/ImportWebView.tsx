@@ -20,7 +20,7 @@ interface ImportWebViewProps {
   hidden?: boolean;
   onBlocks: (blocks: string[], currentUrl: string) => void;
   onLoadEnd?: () => void;
-  onNavigationChange?: (url: string) => void;
+  onNavigationChange?: (url: string, canGoBack: boolean) => void;
   ref?: Ref<ImportWebViewHandle>;
 }
 
@@ -82,7 +82,7 @@ export function ImportWebView({
       onLoadEnd={onLoadEnd}
       onNavigationStateChange={(nav) => {
         currentUrl.current = nav.url;
-        onNavigationChange?.(nav.url);
+        onNavigationChange?.(nav.url, nav.canGoBack);
       }}
     />
   );
