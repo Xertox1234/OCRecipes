@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
-import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
 import CoachProScreen from "../CoachProScreen";
@@ -136,8 +135,10 @@ vi.mock("@/components/coach/CoachChat", () => ({
     onCreateConversation,
     inputBarStyle,
     openingBrief,
+    onReminderHandled,
   }: {
     openingBrief?: { form: string; onShown?: () => void } | null;
+    onReminderHandled?: () => void;
     onMessageSent?: () => void;
     isCoachPro?: boolean;
     conversationId?: number | null;
@@ -153,6 +154,9 @@ vi.mock("@/components/coach/CoachChat", () => ({
       <div>{`brief:${openingBrief ? openingBrief.form : "none"}`}</div>
       <button onClick={() => openingBrief?.onShown?.()}>
         mock-brief-shown
+      </button>
+      <button onClick={() => onReminderHandled?.()}>
+        mock-reminder-handled
       </button>
     </>
   ),
@@ -404,6 +408,13 @@ describe("CoachProScreen — opening brief", () => {
     briefState.lastSeen = TODAY;
     fireEvent.click(screen.getByText("mock-send"));
     expect(screen.getByText("brief:full")).toBeTruthy();
+  });
+
+  it("clears reminders when the brief's reminder is handled without a send", () => {
+    briefState.hasPending = true;
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByText("mock-reminder-handled"));
+    expect(mockAcknowledge).toHaveBeenCalledTimes(1);
   });
 
   it("asks for no brief while a thread is open", () => {

@@ -1169,6 +1169,23 @@ describe("ChatScreen — opening brief", () => {
     );
   });
 
+  it("Log from a missed-meal brief opens Quick Log and clears the reminder", () => {
+    briefMock.brief = {
+      ...brief,
+      reminder: {
+        type: "meal-log",
+        lead: "Nothing logged yet today.",
+        actions: [{ label: "Log lunch", kind: "quick-log" }],
+      },
+    };
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText("Log lunch, Nothing logged yet today."),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("QuickLog");
+    expect(mockAcknowledge).toHaveBeenCalledTimes(1);
+  });
+
   it("marks today seen once the full brief shows", () => {
     renderComponent(<ChatScreen />);
     expect(briefMock.markSeen).toHaveBeenCalledTimes(1);

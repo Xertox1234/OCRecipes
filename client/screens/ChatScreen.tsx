@@ -733,6 +733,18 @@ export default function ChatScreen() {
   }, [navigation]);
   const handleShowUpgrade = useCallback(() => setShowUpgrade(true), []);
 
+  // The brief's missed-meal Log answers its reminder without a message, so
+  // clear the reminder here as a send would (the tab dot must not linger).
+  const handleBriefQuickLog = useCallback(() => {
+    if (!hasAcknowledgedRef.current) {
+      hasAcknowledgedRef.current = true;
+      acknowledge().catch(() => {
+        hasAcknowledgedRef.current = false;
+      });
+    }
+    navigation.navigate("QuickLog");
+  }, [acknowledge, navigation]);
+
   const handlePromptSelect = useCallback(
     // handleSend buzzes; a second impact here would double it.
     (prompt: string) => {
@@ -854,7 +866,7 @@ export default function ChatScreen() {
                   brief={newChatBrief}
                   onShown={onBriefShown}
                   onSend={handlePromptSelect}
-                  onQuickLog={() => navigation.navigate("QuickLog")}
+                  onQuickLog={handleBriefQuickLog}
                 />
                 <SuggestedPrompts
                   variant="actions-only"
@@ -883,7 +895,7 @@ export default function ChatScreen() {
               <OpeningBrief
                 brief={shownBrief}
                 onSend={handlePromptSelect}
-                onQuickLog={() => navigation.navigate("QuickLog")}
+                onQuickLog={handleBriefQuickLog}
               />
             ) : undefined
           }

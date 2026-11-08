@@ -110,6 +110,11 @@ interface CoachChatProps {
     form: BriefForm;
     onShown?: () => void;
   } | null;
+  /**
+   * The brief's reminder was answered without a message (its Log button
+   * opens Quick Log), so the host clears the reminder as a send would.
+   */
+  onReminderHandled?: () => void;
 }
 
 type ChatListItem =
@@ -135,6 +140,7 @@ export default function CoachChat({
   onMessageSent,
   inputBarStyle,
   openingBrief,
+  onReminderHandled,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
@@ -1225,7 +1231,10 @@ export default function CoachChat({
       brief={openingBrief.brief}
       onShown={openingBrief.onShown}
       onSend={(text) => void handleSend(text)}
-      onQuickLog={() => navigation.navigate("QuickLog")}
+      onQuickLog={() => {
+        onReminderHandled?.();
+        navigation.navigate("QuickLog");
+      }}
     />
   ) : null;
 

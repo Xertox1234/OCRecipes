@@ -348,6 +348,7 @@ export default function CoachProScreen() {
         inputBarStyle={{
           paddingBottom: keyboardVisible ? Spacing.sm : tabBarHeight,
         }}
+        onReminderHandled={handleMessageSent}
         openingBrief={
           isDraft && brief
             ? { brief, form: draftForm, onShown: onBriefShown }

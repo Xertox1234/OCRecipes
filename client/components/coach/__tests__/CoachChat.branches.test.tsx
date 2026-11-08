@@ -1489,14 +1489,17 @@ describe("CoachChat — opening brief", () => {
     );
   });
 
-  it("opens Quick Log from the brief's missed-meal button", () => {
+  it("opens Quick Log from the brief's missed-meal button and reports the reminder handled", () => {
+    const onReminderHandled = vi.fn();
     renderCoachChat({
       conversationId: null,
       openingBrief: { brief, form: "full" },
+      onReminderHandled,
     });
     fireEvent.click(
       screen.getByLabelText("Log lunch, Nothing logged yet today."),
     );
     expect(state.navigate).toHaveBeenCalledWith("QuickLog");
+    expect(onReminderHandled).toHaveBeenCalledTimes(1);
   });
 });
