@@ -166,6 +166,10 @@ export const chatSentEntrance = {
  *  reply takes over in place rather than arriving from off-screen. */
 export const chatReplyTextFadeMs = 200;
 
+/** Milliseconds for the chat's "jump to latest" button to fade in or out
+ *  as the user scrolls away from, or back to, the newest message. */
+export const jumpToLatestFadeMs = 200;
+
 /** How long a finished Coach reply's live blocks stay on screen before the
  *  saved copy takes over — long enough for the `chatBubbleEntrySpring`
  *  entrance to settle (within 1% at ~540ms at damping 18 / mass 1 /
