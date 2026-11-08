@@ -129,7 +129,10 @@ describe("RecipeImportBrowserScreen", () => {
     expect(mockParsePage).toHaveBeenCalledTimes(1);
   });
 
-  it("manual Import on a page with no recipe shows the message and does not call parse-page", async () => {
+  it("manual Import on a page with no recipe lets the server decide and shows its no-recipe message", async () => {
+    mockParsePage.mockRejectedValue(
+      new ApiError("nope", ErrorCode.NO_RECIPE_DATA, 422),
+    );
     renderComponent(<RecipeImportBrowserScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
     expect(mockExtract).toHaveBeenCalled();
@@ -138,8 +141,33 @@ describe("RecipeImportBrowserScreen", () => {
     await waitFor(() =>
       expect(screen.getByText(NO_RECIPE_MESSAGE)).toBeTruthy(),
     );
+    // The device hint is shallow; the server's finder searches deeper.
+    expect(mockParsePage).toHaveBeenCalledWith({
+      url: "https://example.com/login",
+      ldJson: [OTHER_BLOCK],
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("manual Import on a page with zero blocks never calls parse-page", async () => {
+    renderComponent(<RecipeImportBrowserScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    sendBlocks([], "https://example.com/login");
+
+    await waitFor(() =>
+      expect(screen.getByText(NO_RECIPE_MESSAGE)).toBeTruthy(),
+    );
     expect(mockParsePage).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("shows the found bar for a Recipe nested deeper than one @graph", () => {
+    renderComponent(<RecipeImportBrowserScreen />);
+    sendBlocks(
+      [JSON.stringify({ "@graph": [{ "@graph": [{ "@type": "Recipe" }] }] })],
+      "https://example.com/soup",
+    );
+    expect(screen.getByText(/Recipe found/)).toBeTruthy();
   });
 
   it("manual Import uses the blocks from its own extraction", async () => {
@@ -209,7 +237,7 @@ describe("RecipeImportBrowserScreen", () => {
     expect(screen.getByText("www.other.com")).toBeTruthy();
   });
 
-  it("navigating to a different page drops the found bar and the stale blocks", async () => {
+  it("drops the found bar when the page changes", async () => {
     renderComponent(<RecipeImportBrowserScreen />);
     sendBlocks([RECIPE_BLOCK], "https://example.com/soup");
     expect(screen.getByText(/Recipe found/)).toBeTruthy();
@@ -236,6 +264,9 @@ describe("RecipeImportBrowserScreen", () => {
   });
 
   it("on iOS announces the no-recipe message", async () => {
+    mockParsePage.mockRejectedValue(
+      new ApiError("nope", ErrorCode.NO_RECIPE_DATA, 422),
+    );
     const announce = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
     renderComponent(<RecipeImportBrowserScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Import" }));

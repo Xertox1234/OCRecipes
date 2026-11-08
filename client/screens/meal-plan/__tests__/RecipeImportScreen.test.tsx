@@ -250,7 +250,13 @@ describe("RecipeImportScreen — on-device fallback", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Open site and sign in" }),
     );
-    expect(mockNavigate).toHaveBeenCalledWith("RecipeImportBrowser", {
+    // replace, not navigate: the browser's own success replace then leaves
+    // [..., RecipeCreate], so saving never returns to this stale panel.
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "RecipeImportBrowser",
+      expect.anything(),
+    );
+    expect(mockReplace).toHaveBeenCalledWith("RecipeImportBrowser", {
       url: "https://www.allrecipes.com/soup",
       returnToMealPlan: { mealType: "dinner", plannedDate: "2026-11-09" },
       fromHome: undefined,

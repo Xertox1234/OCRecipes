@@ -66,6 +66,17 @@ describe("hasRecipeBlock", () => {
     expect(hasRecipeBlock(["{nope"])).toBe(false);
     expect(hasRecipeBlock([])).toBe(false);
   });
+  it("finds a Recipe nested as deep as the server's finder does", () => {
+    const R = { "@type": "Recipe" };
+    expect(hasRecipeBlock(r({ "@graph": [{ "@graph": [R] }] }))).toBe(true);
+    expect(hasRecipeBlock(r([[R]]))).toBe(true);
+    expect(hasRecipeBlock(r({ "@graph": [[R]] }))).toBe(true);
+  });
+  it("gives up past the depth cap", () => {
+    let deep: unknown = { "@type": "Recipe" };
+    for (let i = 0; i < 20; i++) deep = [deep];
+    expect(hasRecipeBlock(r(deep))).toBe(false);
+  });
 });
 
 describe("shouldAllowNavigation", () => {
@@ -108,6 +119,35 @@ describe("resolveImportedUrl", () => {
     );
     expect(resolveImportedUrl("ocrecipes://x", "https://a.test")).toBe(
       "https://a.test",
+    );
+  });
+  it("strips auth-looking query params and the fragment", () => {
+    expect(
+      resolveImportedUrl(
+        "https://site.test/r/1?code=abc&state=x&serving=4#top",
+        "https://a.test",
+      ),
+    ).toBe("https://site.test/r/1?serving=4");
+    expect(
+      resolveImportedUrl(
+        "https://site.test/r?Access_Token=1&ID_TOKEN=2&token=3&session=4&auth=5&sig=6&signature=7",
+        "https://a.test",
+      ),
+    ).toBe("https://site.test/r");
+    expect(
+      resolveImportedUrl("https://site.test/r?utm=a&page=2", "https://a.test"),
+    ).toBe("https://site.test/r?utm=a&page=2");
+  });
+  it("falls back to the pasted URL when the current one is too long for parse-page", () => {
+    const long = `https://site.test/r?q=${"x".repeat(1100)}`;
+    expect(resolveImportedUrl(long, "https://a.test/r")).toBe(
+      "https://a.test/r",
+    );
+  });
+  it("keeps a long URL whose length was all auth params", () => {
+    const long = `https://site.test/r?token=${"x".repeat(1100)}`;
+    expect(resolveImportedUrl(long, "https://a.test/r")).toBe(
+      "https://site.test/r",
     );
   });
 });

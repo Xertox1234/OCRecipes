@@ -200,7 +200,9 @@ export default function RecipeImportScreen() {
   );
 
   const handleOpenBrowser = useCallback(() => {
-    navigation.navigate("RecipeImportBrowser", {
+    // replace, so the browser's success replace leaves [..., RecipeCreate]
+    // and saving never returns to this "couldn't read" panel.
+    navigation.replace("RecipeImportBrowser", {
       url: attemptUrl,
       returnToMealPlan,
       fromHome,

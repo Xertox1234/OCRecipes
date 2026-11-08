@@ -23,6 +23,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 import { useParseRecipeFromPage } from "@/hooks/useMealPlanRecipes";
+import { ApiError } from "@/lib/api-error";
 import { ImportWebView } from "@/lib/import-browser/ImportWebView";
 import type { ImportWebViewHandle } from "@/lib/import-browser/ImportWebView";
 import {
@@ -126,7 +127,10 @@ export default function RecipeImportBrowserScreen() {
   const runImport = useCallback(
     async (page: PageBlocks) => {
       if (inFlightRef.current) return;
-      if (!hasRecipeBlock(page.blocks)) {
+      // Never call the server with zero blocks. Otherwise it decides: its
+      // finder searches deeper than the found-bar hint (a 422 NO_RECIPE_DATA
+      // maps to the same message below).
+      if (page.blocks.length === 0) {
         setMessage(NO_RECIPE_MESSAGE);
         return;
       }
@@ -148,7 +152,7 @@ export default function RecipeImportBrowserScreen() {
       } catch (error) {
         if (!mountedRef.current) return;
         haptics.notification(NotificationFeedbackType.Error);
-        const code = (error as { code?: string } | null)?.code;
+        const code = error instanceof ApiError ? error.code : undefined;
         setMessage(
           code === "NO_RECIPE_DATA" || code === "PARSE_ERROR"
             ? NO_RECIPE_MESSAGE

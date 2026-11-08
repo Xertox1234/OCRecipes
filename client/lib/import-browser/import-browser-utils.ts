@@ -1,4 +1,5 @@
 import {
+  importUrlSchema,
   PARSE_PAGE_MAX_BLOCKS,
   PARSE_PAGE_MAX_BYTES,
   utf8ByteLength,
@@ -52,13 +53,35 @@ export function parseExtractorMessage(raw: string): string[] | null {
   return blocks as string[];
 }
 
-function hasRecipeType(node: unknown): boolean {
+/** Nesting depth searched for a Recipe; real pages need 2-3. */
+const RECIPE_SEARCH_MAX_DEPTH = 8;
+
+/**
+ * Mirrors the server's findRecipeInLdJson (type, then @graph, then array,
+ * recursively) so the found bar agrees with what the server can import.
+ */
+function containsRecipe(node: unknown, depth: number): boolean {
+  if (depth > RECIPE_SEARCH_MAX_DEPTH) return false;
   if (typeof node !== "object" || node === null) return false;
-  const t = (node as Record<string, unknown>)["@type"];
-  return t === "Recipe" || (Array.isArray(t) && t.includes("Recipe"));
+  if (Array.isArray(node)) {
+    return node.some((item) => containsRecipe(item, depth + 1));
+  }
+  const obj = node as Record<string, unknown>;
+  const t = obj["@type"];
+  if (t === "Recipe" || (Array.isArray(t) && t.includes("Recipe"))) {
+    return true;
+  }
+  const graph = obj["@graph"];
+  return (
+    Array.isArray(graph) &&
+    graph.some((item) => containsRecipe(item, depth + 1))
+  );
 }
 
-/** Cheap device-side hint only; the server stays the authority. */
+/**
+ * Cheap device-side hint for the found bar only; the server stays the
+ * authority and decides every import.
+ */
 export function hasRecipeBlock(blocks: string[]): boolean {
   for (const block of blocks) {
     let parsed: unknown;
@@ -67,14 +90,7 @@ export function hasRecipeBlock(blocks: string[]): boolean {
     } catch {
       continue;
     }
-    const roots = Array.isArray(parsed) ? parsed : [parsed];
-    for (const root of roots) {
-      if (hasRecipeType(root)) return true;
-      if (typeof root === "object" && root !== null) {
-        const graph = (root as Record<string, unknown>)["@graph"];
-        if (Array.isArray(graph) && graph.some(hasRecipeType)) return true;
-      }
-    }
+    if (containsRecipe(parsed, 0)) return true;
   }
   return false;
 }
@@ -92,11 +108,63 @@ export function shouldAllowNavigation(
   return false;
 }
 
+/** Query keys that look like sign-in state; never saved as a recipe source. */
+const AUTH_QUERY_KEYS = new Set([
+  "code",
+  "state",
+  "token",
+  "access_token",
+  "id_token",
+  "session",
+  "auth",
+  "sig",
+  "signature",
+]);
+
+function decodeKey(raw: string): string {
+  try {
+    return decodeURIComponent(raw.replace(/\+/g, " "));
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Drops the #fragment and auth-looking query params. String-based on
+ * purpose: React Native's URL is a regex subset (no hash setter) that
+ * behaves differently from Node's, so tests would not cover the device.
+ * Other params keep their exact encoding.
+ */
+function stripAuthParams(url: string): string {
+  const hashAt = url.indexOf("#");
+  const noHash = hashAt === -1 ? url : url.slice(0, hashAt);
+  const queryAt = noHash.indexOf("?");
+  if (queryAt === -1) return noHash;
+  const kept = noHash
+    .slice(queryAt + 1)
+    .split("&")
+    .filter((pair) => {
+      if (!pair) return false;
+      const eq = pair.indexOf("=");
+      const key = decodeKey(eq === -1 ? pair : pair.slice(0, eq));
+      return !AUTH_QUERY_KEYS.has(key.toLowerCase());
+    });
+  const base = noHash.slice(0, queryAt);
+  return kept.length > 0 ? `${base}?${kept.join("&")}` : base;
+}
+
+/**
+ * The URL sent to parse-page and saved as the recipe's source: the page the
+ * recipe came from, cleaned of sign-in params; the pasted URL when the page's
+ * URL would fail parse-page's own url rule (non-http(s), or over 1024 chars).
+ */
 export function resolveImportedUrl(
   currentUrl: string | undefined,
   pastedUrl: string,
 ): string {
-  return currentUrl && /^https?:\/\//i.test(currentUrl)
-    ? currentUrl
+  if (!currentUrl) return pastedUrl;
+  const cleaned = stripAuthParams(currentUrl);
+  return importUrlSchema.shape.url.safeParse(cleaned).success
+    ? cleaned
     : pastedUrl;
 }
