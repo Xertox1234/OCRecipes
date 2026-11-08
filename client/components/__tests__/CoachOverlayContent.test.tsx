@@ -74,8 +74,11 @@ vi.mock("@/navigation/openCoachConversation", () => ({
   openCoachConversation: mockOpenCoachConversation,
 }));
 
+const { mockUseAcknowledgeReminders } = vi.hoisted(() => ({
+  mockUseAcknowledgeReminders: vi.fn(() => ({ acknowledge: vi.fn() })),
+}));
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
-  useAcknowledgeReminders: () => ({ acknowledge: vi.fn() }),
+  useAcknowledgeReminders: mockUseAcknowledgeReminders,
 }));
 
 vi.mock("@/lib/coach-disclaimer-storage", () => ({
@@ -133,6 +136,22 @@ describe("CoachOverlayContent — dismiss mid-answer (H6)", () => {
       queryKey: ["/api/chat/conversations"],
       refetchType: "none",
     });
+  });
+});
+
+// The sheet never shows why the Coach tab dot is lit, so a send here must
+// not clear that reason (opening-brief spec, 2026-11-08).
+describe("CoachOverlayContent — reminders", () => {
+  it("never wires the reminder clear", async () => {
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "How much protein?", question: "protein_today" }}
+        screenContext="home"
+        onDismiss={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Type a follow-up question");
+    expect(mockUseAcknowledgeReminders).not.toHaveBeenCalled();
   });
 });
 

@@ -29,6 +29,7 @@ import {
 } from "@/hooks/useGeneratedRecipeNotices";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
 import MainTabNavigator from "../MainTabNavigator";
+import { loadLastBriefSeenDate } from "@/lib/coach-brief-seen";
 import { getChatRouteId } from "../chatRouteId";
 
 /**
@@ -56,6 +57,10 @@ const { mockReminders, mockToast, mockNavigationRef } = vi.hoisted(() => ({
     dismiss: vi.fn(),
   },
   mockNavigationRef: { isReady: vi.fn(() => true), navigate: vi.fn() },
+}));
+
+vi.mock("@/lib/coach-brief-seen", () => ({
+  loadLastBriefSeenDate: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock("@react-navigation/bottom-tabs", () => ({
@@ -227,6 +232,16 @@ function renderWithClient() {
 // An unread Coach reply composes with it: ONE dot for either, and the tab's
 // spoken label carries the reply (the reminder dot never had a label, and its
 // behaviour is unchanged).
+// The Coach screen decides on its first render whether to open a fresh
+// chat with the opening brief, so the "seen today" date must be read before
+// the user can reach the Coach tab.
+describe("MainTabNavigator — opening brief date", () => {
+  it("reads the brief-seen date when the tabs mount", () => {
+    renderComponent(<MainTabNavigator />);
+    expect(loadLastBriefSeenDate).toHaveBeenCalled();
+  });
+});
+
 describe("MainTabNavigator — Coach tab dot", () => {
   const coachTab = () => screen.getByTestId("tab-screen-CoachTab");
   const dots = () => screen.queryAllByTestId("coach-tab-dot");
