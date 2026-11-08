@@ -1,6 +1,6 @@
 # Coach opening brief — design
 
-Date: 2026-11-08 · Status: draft for owner review · Source: Coach chat polish report, idea P1 (with P3)
+Date: 2026-11-08 · Status: approved by owner 2026-11-08 · Source: Coach chat polish report, idea P1 (with P3)
 
 ## Intent
 
@@ -77,7 +77,7 @@ Today Coach Pro auto-selects the most recent thread (`CoachProScreen.tsx`, the
 - **No empty rows:** the draft creates no conversation until the first send, as `isNewDraft`
   already does for Pro.
 - **Existing threads get no brief:** a reopened thread with messages shows no brief and no
-  dashboard. The day's numbers live in the brief and on Home. This is pending explicit owner confirmation at design approval.
+  dashboard. The day's numbers live in the brief and on Home. Owner confirmed explicitly at design approval (2026-11-08).
 - **Deep links win:** a link or notification tap that names a conversation (for example
   `openCoachConversation`, `selectedConversationId`) always opens that conversation, never the
   draft.
