@@ -16,7 +16,10 @@ import { renderComponent } from "../../../test/utils/render-component";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import NutritionDetailScreen from "../NutritionDetailScreen";
 import { frontLabelSavedKey } from "../FrontLabelConfirmScreen";
-import { deriveLogGate, type LogGate } from "../nutrition-detail-utils";
+import {
+  deriveLogGate,
+  type LogGate,
+} from "@/components/nutrition/nutrition-detail-utils";
 import { buildNutritionDetailParams } from "../scan-screen-utils";
 import { Spacing } from "@/constants/theme";
 import type { ScanPhase } from "@/camera/types/scan-phase";

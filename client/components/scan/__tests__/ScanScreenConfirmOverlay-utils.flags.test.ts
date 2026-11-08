@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildLoadedConfirmCard,
   getConfirmFlagPresentation,
-} from "@/screens/ScanScreenConfirmOverlay-utils";
+} from "../ScanScreenConfirmOverlay-utils";
 import type { ScanFlag } from "@shared/types/scan-flags";
 
 describe("buildLoadedConfirmCard — top display flag", () => {

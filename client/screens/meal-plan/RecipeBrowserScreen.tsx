@@ -74,7 +74,7 @@ import {
   DEFAULT_FILTERS,
   detailParamsForSearchResult,
   type RecipeFilters,
-} from "@/screens/meal-plan/recipe-browser-utils";
+} from "@/components/meal-plan/recipe-browser-utils";
 import type {
   SearchableRecipe,
   RecipeSearchParams,

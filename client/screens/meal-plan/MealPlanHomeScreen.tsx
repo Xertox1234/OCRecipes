@@ -62,7 +62,7 @@ import {
   computeItemMacros,
   computeMealSectionSummary,
   getAutoExpandedMealType,
-} from "./meal-plan-utils";
+} from "@/components/meal-plan/meal-plan-utils";
 import {
   useMealPlanItems,
   useRemoveMealPlanItem,

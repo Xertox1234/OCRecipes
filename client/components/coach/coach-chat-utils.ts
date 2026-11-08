@@ -7,7 +7,7 @@ import {
 import {
   MEAL_LABELS,
   type MealType,
-} from "@/screens/meal-plan/meal-plan-utils";
+} from "@/components/meal-plan/meal-plan-utils";
 
 /**
  * Validates and parses raw plan data from a block action into typed MealPlanDay[].

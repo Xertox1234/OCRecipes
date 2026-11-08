@@ -15,7 +15,7 @@ import { Spacing, FontFamily } from "@/constants/theme";
 import {
   MEAL_LABELS,
   type MealType,
-} from "@/screens/meal-plan/meal-plan-utils";
+} from "@/components/meal-plan/meal-plan-utils";
 
 export const ADD_ITEM_MENU_SNAP_POINTS = ["45%"];
 

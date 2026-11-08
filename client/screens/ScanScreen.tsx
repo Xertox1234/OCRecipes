@@ -78,7 +78,7 @@ import {
   canLog,
   getScanOverlayA11y,
   type ConfirmCardState,
-} from "@/screens/ScanScreenConfirmOverlay-utils";
+} from "@/components/scan/ScanScreenConfirmOverlay-utils";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ScanConfirmOverlay } from "@/components/scan/ScanConfirmOverlay";
 import { CameraPermissionGate } from "@/components/scan/CameraPermissionGate";

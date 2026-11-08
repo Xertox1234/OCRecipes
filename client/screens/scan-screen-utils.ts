@@ -4,6 +4,7 @@ import type { PremiumFeatureKey, PremiumFeatures } from "@shared/types/premium";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import { LOCK_THRESHOLD_FRAMES } from "@/camera/components/ScanReticle-utils";
+import { CONTENT_TYPE_LABELS } from "@/camera/utils/content-type-label";
 import { logger } from "@/lib/logger";
 import type { ProductSummary, ScanPhase } from "@/camera/types/scan-phase";
 import type { ScanFlag } from "@shared/types/scan-flags";
@@ -27,18 +28,6 @@ export type ClassificationRoute =
       screen: "NutritionDetail";
       params: RootStackParamList["NutritionDetail"];
     };
-
-/** User-friendly labels for each content type */
-const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
-  prepared_meal: "Meal",
-  nutrition_label: "Nutrition label",
-  restaurant_menu: "Restaurant menu",
-  raw_ingredients: "Ingredients",
-  grocery_receipt: "Grocery receipt",
-  restaurant_receipt: "Restaurant receipt",
-  non_food: "Not food",
-  has_barcode: "Barcode",
-};
 
 /** Premium feature gates for content types that require subscription */
 const PREMIUM_GATES: Partial<
@@ -222,11 +211,6 @@ export async function resolveSmartConfirmAction({
 export function getConfirmationMessage(contentType: ContentType): string {
   const label = CONTENT_TYPE_LABELS[contentType];
   return `This looks like a ${label.toLowerCase()}. Is that right?`;
-}
-
-/** Get the user-friendly label for a content type */
-export function getContentTypeLabel(contentType: ContentType): string {
-  return CONTENT_TYPE_LABELS[contentType];
 }
 
 /** Check if a content type requires a premium subscription */

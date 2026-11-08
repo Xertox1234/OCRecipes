@@ -5,7 +5,7 @@ import { AccessibilityInfo } from "react-native";
 
 import { renderComponent } from "../../../../test/utils/render-component";
 import { LogActionBar } from "../LogActionBar";
-import type { LogGate } from "@/screens/nutrition-detail-utils";
+import type { LogGate } from "@/components/nutrition/nutrition-detail-utils";
 
 const NEEDS_ACK: LogGate = {
   kind: "needsAcknowledgement",

@@ -44,7 +44,7 @@ import {
 import {
   MEAL_LABELS,
   type MealType,
-} from "@/screens/meal-plan/meal-plan-utils";
+} from "@/components/meal-plan/meal-plan-utils";
 import {
   resolveQuickAddAction,
   quickAddRowAccessibilityLabel,

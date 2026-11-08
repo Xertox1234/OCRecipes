@@ -24,7 +24,7 @@ import { Spacing, FontFamily } from "@/constants/theme";
 import {
   MEAL_LABELS,
   type MealType,
-} from "@/screens/meal-plan/meal-plan-utils";
+} from "@/components/meal-plan/meal-plan-utils";
 import { RECIPE_IMPORT_OPTIONS } from "./recipe-import-options";
 
 export const IMPORT_RECIPE_SNAP_POINTS = ["55%"];
