@@ -12,13 +12,20 @@ import {
 } from "../../services/recipe-finder";
 import type { TurnFeatures } from "../../services/chat-turn";
 import { admitTurn, type AdmitTurnArgs } from "../chat-admit";
+import { buildCoachBrief } from "../../services/coach-brief";
+import type { RenderedBrief } from "@shared/lib/opening-brief";
 
 vi.mock("../../storage", () => ({
   storage: {
     getChatMessages: vi.fn(),
     createFinderUserMessage: vi.fn(),
     createChatMessageWithLimitCheck: vi.fn(),
+    createChatMessage: vi.fn(),
   },
+}));
+
+vi.mock("../../services/coach-brief", () => ({
+  buildCoachBrief: vi.fn(),
 }));
 
 vi.mock("../../services/recipe-finder", () => ({
@@ -294,5 +301,88 @@ describe("admitTurn — counted path", () => {
   it("does not read finder history for a plain Coach message", async () => {
     await admitTurn(args());
     expect(storage.getChatMessages).not.toHaveBeenCalled();
+  });
+});
+
+describe("admitTurn — opening brief", () => {
+  const brief: RenderedBrief = {
+    greeting: "Good afternoon.",
+    recap: "Nothing logged yet today.",
+    stats: [],
+    pointer: null,
+    reminder: null,
+    suggestions: [],
+    text: "Good afternoon.\n\nNothing logged yet today.",
+  };
+  const order: string[] = [];
+
+  beforeEach(() => {
+    order.length = 0;
+    vi.mocked(isRecipeFinderEnabled).mockReturnValue(false);
+    vi.mocked(buildCoachBrief).mockResolvedValue(brief);
+    vi.mocked(storage.createChatMessage).mockImplementation(async () => {
+      order.push("brief");
+      return { id: 500 } as unknown as ChatMessage;
+    });
+    vi.mocked(storage.createChatMessageWithLimitCheck).mockImplementation(
+      async () => {
+        order.push("user");
+        return userMessage;
+      },
+    );
+  });
+
+  it("saves the server-rendered brief before the first user message", async () => {
+    const a = args({
+      openingBrief: "full",
+      req: {
+        userId: "u1",
+        headers: { "x-timezone": "America/Los_Angeles" },
+      } as unknown as AuthenticatedRequest,
+    });
+    await admitTurn(a);
+    expect(buildCoachBrief).toHaveBeenCalledWith(
+      "u1",
+      a.features,
+      "America/Los_Angeles",
+      "full",
+    );
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      7,
+      "u1",
+      "assistant",
+      brief.text,
+      { kind: "opening_brief" },
+    );
+    expect(order).toEqual(["brief", "user"]);
+  });
+
+  it("adds no brief once the conversation has messages", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      { id: 1 } as unknown as ChatMessage,
+    ]);
+    await admitTurn(args({ openingBrief: "full" }));
+    expect(storage.createChatMessage).not.toHaveBeenCalled();
+    expect(order).toEqual(["user"]);
+  });
+
+  it("adds no brief without the flag", async () => {
+    await admitTurn(args());
+    expect(buildCoachBrief).not.toHaveBeenCalled();
+  });
+
+  it.each(["recipe", "remix"] as const)(
+    "adds no brief to a %s conversation",
+    async (conversationType) => {
+      await admitTurn(args({ openingBrief: "full", conversationType }));
+      expect(buildCoachBrief).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still admits the message when the brief fails to build", async () => {
+    vi.mocked(buildCoachBrief).mockRejectedValue(new Error("db down"));
+    const admitted = await admitTurn(args({ openingBrief: "short" }));
+    expect(admitted?.userMessage).toBe(userMessage);
+    expect(storage.createChatMessage).not.toHaveBeenCalled();
   });
 });

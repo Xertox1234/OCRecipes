@@ -281,6 +281,10 @@ export function register(app: Express): void {
           // Recipe finder button taps (R2): structured, never parsed from
           // `content`, and never from route params (#1147/#1148).
           finderAction: finderActionSchema.optional(),
+          // First send from a new coach chat that showed the opening brief:
+          // only WHICH form was shown. The server re-renders and saves the
+          // brief itself; the client never supplies assistant text.
+          openingBrief: z.enum(["full", "short"]).optional(),
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
@@ -333,6 +337,7 @@ export function register(app: Express): void {
           features,
           sanitizedContent,
           finderAction: parsed.data.finderAction,
+          openingBrief: parsed.data.openingBrief,
         });
         if (!admitted) return;
 

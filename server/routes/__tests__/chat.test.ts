@@ -3,6 +3,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import request from "supertest";
+import { buildCoachBrief } from "../../services/coach-brief";
 
 import { storage } from "../../storage";
 import { logger } from "../../lib/logger";
@@ -29,6 +30,18 @@ import {
   createMockCommunityRecipe,
   createMockUser,
 } from "../../__tests__/factories";
+
+vi.mock("../../services/coach-brief", () => ({
+  buildCoachBrief: vi.fn(async () => ({
+    greeting: "Good afternoon.",
+    recap: "Nothing logged yet today.",
+    stats: [],
+    pointer: null,
+    reminder: null,
+    suggestions: [],
+    text: "Good afternoon.\n\nNothing logged yet today.",
+  })),
+}));
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -579,6 +592,39 @@ describe("Chat Routes", () => {
         createMockChatConversation(),
       );
     }
+
+    it("rejects an openingBrief that is not a known form (400)", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Hello", openingBrief: "<script>alert(1)</script>" });
+      expect(res.status).toBe(400);
+      expect(buildCoachBrief).not.toHaveBeenCalled();
+    });
+
+    it("builds the opening brief on a first coach send that asks for it", async () => {
+      mockStreamingSetup();
+      async function* fakeStream() {
+        yield { type: "content" as const, content: "Hi" };
+      }
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "It went well", openingBrief: "full" });
+
+      expect(res.status).toBe(200);
+      expect(buildCoachBrief).toHaveBeenCalledWith(
+        "1",
+        expect.any(Object),
+        "UTC",
+        "full",
+      );
+    });
 
     it("streams SSE response and saves assistant message", async () => {
       mockStreamingSetup();

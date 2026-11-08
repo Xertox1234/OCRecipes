@@ -27,6 +27,10 @@ import {
   type TurnInput,
 } from "../services/chat-turn";
 import { endSseQuietly } from "../lib/sse";
+import { parseTimezone } from "../lib/civil-date";
+import { logger } from "../lib/logger";
+import { buildCoachBrief } from "../services/coach-brief";
+import type { BriefForm } from "@shared/lib/opening-brief";
 
 export interface AdmitTurnArgs {
   req: AuthenticatedRequest;
@@ -36,6 +40,8 @@ export interface AdmitTurnArgs {
   features: TurnFeatures;
   sanitizedContent: string;
   finderAction: z.infer<typeof finderActionSchema> | undefined;
+  /** First send from a new coach chat that showed the opening brief. */
+  openingBrief?: BriefForm;
 }
 
 /**
@@ -51,6 +57,7 @@ export async function admitTurn({
   features,
   sanitizedContent,
   finderAction,
+  openingBrief,
 }: AdmitTurnArgs): Promise<Pick<
   TurnInput,
   | "userMessage"
@@ -155,6 +162,15 @@ export async function admitTurn({
     }
   }
 
+  if (
+    !message &&
+    openingBrief &&
+    conversationType === "coach" &&
+    !finderAction
+  ) {
+    await saveOpeningBrief(req, id, features, openingBrief);
+  }
+
   if (!message) {
     // Atomically check daily limit and create message in a single
     // transaction to prevent TOCTOU races bypassing the limit.
@@ -195,4 +211,42 @@ export async function admitTurn({
     finderHistory,
     recipeFinderInput,
   };
+}
+
+/**
+ * Save the opening brief as the conversation's first (assistant) message, so
+ * the coach sees what it "said". The text is re-rendered here from the
+ * user's own data — the client only says which form it showed and never
+ * supplies assistant text. Only into an empty conversation; a failure is
+ * logged and the user's message goes through without it.
+ */
+async function saveOpeningBrief(
+  req: AuthenticatedRequest,
+  conversationId: number,
+  features: TurnFeatures,
+  form: BriefForm,
+): Promise<void> {
+  try {
+    const existing = await storage.getChatMessages(
+      conversationId,
+      1,
+      req.userId,
+    );
+    if (existing.length > 0) return;
+    const brief = await buildCoachBrief(
+      req.userId,
+      features,
+      parseTimezone(req.headers?.["x-timezone"]),
+      form,
+    );
+    await storage.createChatMessage(
+      conversationId,
+      req.userId,
+      "assistant",
+      brief.text,
+      { kind: "opening_brief" },
+    );
+  } catch (err) {
+    logger.warn({ err, conversationId }, "opening brief not saved");
+  }
 }
