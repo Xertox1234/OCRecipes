@@ -152,8 +152,8 @@ vi.mock(
   "../modules/google-sign-in",
   () => import("./mocks/google-sign-in-module"),
 );
-// modules/webview-site-data has no native module under Node (it would resolve
-// false). Reached via the clearDurableLocalState sweep <- useAuth <- AuthContext.
+// modules/webview-site-data imports the real `expo` entry; stub it. Reached via
+// the clearDurableLocalState sweep <- useAuth <- AuthContext.
 vi.mock(
   "../modules/webview-site-data",
   () => import("./mocks/webview-site-data-module"),

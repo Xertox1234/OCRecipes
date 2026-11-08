@@ -10,7 +10,7 @@ import { clearSiteData, type NativeSiteData } from "./src/clear";
 const Native =
   requireOptionalNativeModule<NativeSiteData>("OCRWebviewSiteData");
 
-/** Never throws; false when the clear failed or the module is missing. */
+/** Never throws; false only when the native clear failed. */
 export function clearImportBrowserData(): Promise<boolean> {
   return clearSiteData(Native);
 }

@@ -1,6 +1,6 @@
-// Stub for modules/webview-site-data. Under Node the native module is absent,
-// so the real wrapper would report every sign-out wipe as failed. Registered
-// globally in test/setup.ts; per-file vi.mock of the same path overrides it.
+// Stub for modules/webview-site-data, so tests never load the real `expo`
+// entry its index imports. Registered globally in test/setup.ts; per-file
+// vi.mock of the same path overrides it (e.g. to drive the failure path).
 import { vi } from "vitest";
 
 export const clearImportBrowserData = vi.fn(() => Promise.resolve(true));

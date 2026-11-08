@@ -4,13 +4,15 @@ export interface NativeSiteData {
 }
 
 /**
- * Never throws: false when the native module is absent (Expo Go, Vitest) or
- * the native clear fails, true once the platform reports it done.
+ * Never throws: false only when the native clear fails; true once the
+ * platform reports it done. An absent module (Expo Go, Vitest, an older
+ * binary) is true: it ships together with react-native-webview's native code,
+ * so without it no import-browser site data can exist — nothing to clear.
  */
 export async function clearSiteData(
   native: NativeSiteData | null,
 ): Promise<boolean> {
-  if (!native) return false;
+  if (!native) return true;
   try {
     await native.clearAll();
     return true;

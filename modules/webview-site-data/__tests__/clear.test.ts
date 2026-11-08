@@ -13,8 +13,10 @@ describe("clearSiteData", () => {
     await expect(clearSiteData(native)).resolves.toBe(true);
   });
 
-  it("returns false when the native module is absent (Expo Go, Vitest)", async () => {
-    await expect(clearSiteData(null)).resolves.toBe(false);
+  // A binary without this module also lacks react-native-webview's native
+  // code (they ship together), so no import-browser site data can exist.
+  it("returns true when the native module is absent (nothing to clear)", async () => {
+    await expect(clearSiteData(null)).resolves.toBe(true);
   });
 
   it("returns false when the native call throws synchronously", async () => {
