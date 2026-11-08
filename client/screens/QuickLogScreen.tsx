@@ -18,7 +18,8 @@ import {
   shouldFloatLabel,
 } from "@/components/text-input-utils";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { Feather } from "@expo/vector-icons";
@@ -83,6 +84,7 @@ export default function QuickLogScreen() {
   const toast = useToast();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "QuickLog">>();
   const { isPremium, isPremiumResolved } = usePremiumContext();
   // Coach, recent actions and deep links open this screen directly, so the
   // gate lives here, not only on Home's row. It reads the server-resolved,
@@ -109,6 +111,7 @@ export default function QuickLogScreen() {
     // return below never reaches the "Previous Items" UI, so a locked
     // render has no use for the query and must not fire it.
     isOpen: !isLocked,
+    initialText: route.params?.initialText,
     onLogSuccess: () => {
       AccessibilityInfo.announceForAccessibility("Food items logged");
       setShowCheckmark(true);

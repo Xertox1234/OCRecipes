@@ -10,7 +10,7 @@ import { navigationRef } from "@/navigation/navigationRef";
  * Open the recipe editor prefilled with a held meal-plan draft, from anywhere.
  * `RecipeCreate` is NESTED (Main → MealPlanTab → RecipeCreate), so the route
  * is spelled out with `pop: true` at both levels, exactly like
- * `openCoachConversation` in MainTabNavigator. The held draft is released only once the
+ * `openCoachConversation` (openCoachConversation.ts). The held draft is released only once the
  * navigation actually went out — a tap before the container is ready keeps
  * it for the banner on the generate screen.
  */

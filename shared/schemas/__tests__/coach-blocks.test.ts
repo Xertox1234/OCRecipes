@@ -89,6 +89,22 @@ describe("Coach Block Schemas", () => {
     expect(suggestionListSchema.parse(list)).toEqual(list);
   });
 
+  // Weight tracking was retired in #384; a card pointing at it was a dead
+  // tap (no client route). The coach may no longer offer it (2026-11-08).
+  it("rejects navigation to the retired WeightTracking screen", () => {
+    const list = {
+      type: "suggestion_list",
+      items: [
+        {
+          title: "Log your weight",
+          subtitle: "Track progress",
+          action: { type: "navigate", screen: "WeightTracking" },
+        },
+      ],
+    };
+    expect(suggestionListSchema.safeParse(list).success).toBe(false);
+  });
+
   it("validates a suggestion list", () => {
     const list = {
       type: "suggestion_list",

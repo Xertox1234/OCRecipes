@@ -28,7 +28,9 @@ const NAVIGABLE_SCREENS = [
   "QuickLog",
   "DailyNutritionDetail",
   "Scan",
-  "WeightTracking",
+  // No "WeightTracking": weight tracking was retired (#384) and the client
+  // has no route for it, so such a card was a dead tap. A stored card that
+  // still names it fails validation and is dropped (filterValidBlocks).
   "GoalSetup",
   "RecipeChat",
   "RecipeBrowserModal",

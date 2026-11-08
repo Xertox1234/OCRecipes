@@ -667,7 +667,12 @@ export default function CoachChat({
   const handleBlockAction = useCallback(
     (action: Record<string, unknown>) => {
       if (action.type === "log_food") {
-        void handleSend(`Please log: ${action.description as string}`);
+        // Re-sending "Please log: …" only drew another unsaved proposal from
+        // the coach's log tool, which pointed back at Quick Log — a loop.
+        // Open Quick Log with the food filled in instead.
+        navigation.navigate("QuickLog", {
+          initialText: action.description as string,
+        });
       } else if (action.type === "navigate") {
         const screen = action.screen as string;
         const params = action.params as Record<string, unknown> | undefined;
@@ -745,7 +750,7 @@ export default function CoachChat({
         navigation.navigate("GoalSetup");
       }
     },
-    [handleSend, navigation],
+    [navigation],
   );
 
   const handleCommitmentAccept = useCallback(

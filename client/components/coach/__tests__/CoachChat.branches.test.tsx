@@ -795,7 +795,10 @@ describe("CoachChat — handleBlockAction", () => {
     renderCoachChat({ conversationId: 7 });
   }
 
-  it("log_food action triggers a send", () => {
+  // Re-sending "Please log: …" only drew another unsaved proposal from the
+  // coach's log tool, which then pointed back at Quick Log — a loop. The card
+  // now opens Quick Log with the food filled in (2026-11-08).
+  it("log_food action opens Quick Log with the food filled in", () => {
     renderWithBlock({
       type: "log_food",
       description: "an apple",
@@ -805,11 +808,10 @@ describe("CoachChat — handleBlockAction", () => {
       fat: 0,
     });
     fireEvent.click(screen.getByTestId("block-action"));
-    expect(state.startStream).toHaveBeenCalledWith(
-      7,
-      "Please log: an apple",
-      expect.anything(),
-    );
+    expect(state.navigate).toHaveBeenCalledWith("QuickLog", {
+      initialText: "an apple",
+    });
+    expect(state.startStream).not.toHaveBeenCalled();
   });
 
   // Each row: [screen, params-on-block, expected-navigate-args].
