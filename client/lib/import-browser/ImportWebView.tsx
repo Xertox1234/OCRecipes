@@ -31,6 +31,11 @@ interface ImportWebViewProps {
  * Linking (a spike found react-native-webview otherwise hands an iframe's
  * about:srcdoc to Linking.openURL).
  *
+ * originWhitelist is ["*"] on purpose: react-native-webview checks the
+ * whitelist BEFORE our handler and hands a miss to Linking.openURL, so any
+ * narrower list lets pages open app deep links and external apps.
+ * shouldAllowNavigation is the only gate.
+ *
  * This cookie store must not be shared with any other WebView added later.
  */
 export function ImportWebView({
@@ -64,7 +69,7 @@ export function ImportWebView({
       pointerEvents={hidden ? "none" : "auto"}
       importantForAccessibility={hidden ? "no-hide-descendants" : "auto"}
       accessibilityElementsHidden={hidden}
-      originWhitelist={["http://*", "https://*"]}
+      originWhitelist={["*"]}
       onShouldStartLoadWithRequest={(req) =>
         shouldAllowNavigation(req.url, req.isTopFrame ?? true)
       }

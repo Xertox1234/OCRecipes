@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { PARSE_PAGE_MAX_BYTES } from "@shared/schemas/recipe";
 import {
   EXTRACT_LD_JSON_SCRIPT,
   parseExtractorMessage,
@@ -34,6 +35,13 @@ describe("parseExtractorMessage", () => {
   it("rejects more than 20 blocks", () => {
     expect(parseExtractorMessage(msg(Array(21).fill("{}")))).toBeNull();
     expect(parseExtractorMessage(msg(Array(20).fill("{}")))).not.toBeNull();
+  });
+  it("rejects an oversized raw string without parsing it", () => {
+    const spy = vi.spyOn(JSON, "parse");
+    const raw = "x".repeat(PARSE_PAGE_MAX_BYTES * 6 + 64 * 1024 + 1);
+    expect(parseExtractorMessage(raw)).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
   it("enforces the cap in UTF-8 bytes", () => {
     expect(parseExtractorMessage(msg(["é".repeat(500_001)]))).toBeNull();

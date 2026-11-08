@@ -39,6 +39,9 @@ export function utf8ByteLength(str: string): number {
   return bytes;
 }
 
+/** Max JSON-LD blocks posted to parse-page. */
+export const PARSE_PAGE_MAX_BLOCKS = 20;
+
 /** Max total UTF-8 bytes across all JSON-LD blocks posted to parse-page. */
 export const PARSE_PAGE_MAX_BYTES = 1_000_000;
 
@@ -50,7 +53,7 @@ export const PARSE_PAGE_MAX_BYTES = 1_000_000;
 export const parsePageSchema = z
   .object({
     url: importUrlSchema.shape.url,
-    ldJson: z.array(z.string()).min(1).max(20),
+    ldJson: z.array(z.string()).min(1).max(PARSE_PAGE_MAX_BLOCKS),
   })
   .refine(
     (v) =>

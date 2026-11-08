@@ -1,10 +1,19 @@
 import { forwardRef } from "react";
 
 /**
- * Stub for react-native-webview (native view manager). Tests that mount
- * ImportWebView get an inert component.
+ * Stub for react-native-webview (native view manager). Inert: renders nothing,
+ * but records the last props so tests can pin a wrapper's configuration.
  */
-export const WebView = forwardRef(function WebViewMock() {
+let lastProps: Record<string, unknown> = {};
+
+export function getLastWebViewProps(): Record<string, unknown> {
+  return lastProps;
+}
+
+export const WebView = forwardRef(function WebViewMock(
+  props: Record<string, unknown>,
+) {
+  lastProps = props;
   return null;
 });
 

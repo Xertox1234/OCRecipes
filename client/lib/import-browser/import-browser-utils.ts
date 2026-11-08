@@ -1,8 +1,17 @@
-import { utf8ByteLength } from "@shared/schemas/recipe";
+import {
+  PARSE_PAGE_MAX_BLOCKS,
+  PARSE_PAGE_MAX_BYTES,
+  utf8ByteLength,
+} from "@shared/schemas/recipe";
 
-/** Caps match the server's parse-page schema. */
-const MAX_BLOCKS = 20;
-const MAX_TOTAL_BYTES = 1_000_000;
+/**
+ * Upper bound on the raw message length, checked before JSON.parse. A valid
+ * message holds <= PARSE_PAGE_MAX_BYTES of block text; JSON escaping can grow
+ * a character at most 6x (a control char becomes \\u00XX) and UTF-16 length
+ * never exceeds UTF-8 byte length, so 6x plus 64 KiB for the envelope can
+ * never reject a valid payload.
+ */
+const MAX_RAW_LENGTH = PARSE_PAGE_MAX_BYTES * 6 + 64 * 1024;
 
 /**
  * Injected into the page: collects every JSON-LD script's text and posts it to
@@ -23,6 +32,7 @@ true;
 `;
 
 export function parseExtractorMessage(raw: string): string[] | null {
+  if (raw.length > MAX_RAW_LENGTH) return null;
   let data: unknown;
   try {
     data = JSON.parse(raw);
@@ -32,12 +42,12 @@ export function parseExtractorMessage(raw: string): string[] | null {
   if (typeof data !== "object" || data === null) return null;
   const { type, blocks } = data as { type?: unknown; blocks?: unknown };
   if (type !== "ldjson" || !Array.isArray(blocks)) return null;
-  if (blocks.length > MAX_BLOCKS) return null;
+  if (blocks.length > PARSE_PAGE_MAX_BLOCKS) return null;
   let total = 0;
   for (const b of blocks) {
     if (typeof b !== "string") return null;
     total += utf8ByteLength(b);
-    if (total > MAX_TOTAL_BYTES) return null;
+    if (total > PARSE_PAGE_MAX_BYTES) return null;
   }
   return blocks as string[];
 }
