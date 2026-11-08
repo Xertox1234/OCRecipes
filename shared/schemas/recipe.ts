@@ -25,7 +25,7 @@ export const importUrlSchema = z.object({
 export type ImportUrlParams = z.infer<typeof importUrlSchema>;
 
 /** UTF-8 byte length without Buffer/TextEncoder (shared/ also runs on Hermes). */
-function utf8ByteLength(str: string): number {
+export function utf8ByteLength(str: string): number {
   let bytes = 0;
   for (let i = 0; i < str.length; i++) {
     const c = str.charCodeAt(i);
