@@ -57,6 +57,19 @@ export interface RenderedBrief {
   text: string;
 }
 
+/** `chat_messages.metadata` of a saved opening brief. */
+export const OPENING_BRIEF_METADATA = { kind: "opening_brief" } as const;
+
+/** True for the saved opening brief row (metadata is untyped jsonb). */
+export function isOpeningBriefMessage(message: { metadata: unknown }): boolean {
+  const meta = message.metadata;
+  return (
+    typeof meta === "object" &&
+    meta !== null &&
+    (meta as { kind?: unknown }).kind === OPENING_BRIEF_METADATA.kind
+  );
+}
+
 const MAX_CHIPS = 3;
 const MAX_TILE_CHARS = 18;
 

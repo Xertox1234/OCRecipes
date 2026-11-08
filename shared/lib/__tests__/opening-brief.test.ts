@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  OPENING_BRIEF_METADATA,
+  isOpeningBriefMessage,
   greetingFor,
   renderOpeningBrief,
   type BriefInput,
@@ -218,5 +220,16 @@ describe("full text and chips", () => {
       "b",
       "c",
     ]);
+  });
+});
+
+describe("isOpeningBriefMessage", () => {
+  it("recognises only the saved brief's metadata", () => {
+    expect(isOpeningBriefMessage({ metadata: OPENING_BRIEF_METADATA })).toBe(
+      true,
+    );
+    expect(isOpeningBriefMessage({ metadata: { kind: "other" } })).toBe(false);
+    expect(isOpeningBriefMessage({ metadata: null })).toBe(false);
+    expect(isOpeningBriefMessage({ metadata: "opening_brief" })).toBe(false);
   });
 });

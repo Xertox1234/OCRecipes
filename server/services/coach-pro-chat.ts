@@ -44,6 +44,7 @@ import {
   truncateHistoryToBudget,
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
+import { isOpeningBriefMessage } from "@shared/lib/opening-brief";
 import type { ChatMessage } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { FinderAction } from "@shared/schemas/recipe-finder";
@@ -571,9 +572,7 @@ export async function* handleCoachChat(
   // The saved opening brief (an assistant row written before the first user
   // message) doesn't make this a later turn — not for the free cache, not
   // for the auto-title below.
-  const turnCount = history.filter(
-    (m) => m.metadata?.kind !== "opening_brief",
-  ).length;
+  const turnCount = history.filter((m) => !isOpeningBriefMessage(m)).length;
   const isCacheable = !screenContext && turnCount <= 1 && !isCoachPro;
   const questionHash = isCacheable
     ? hashCoachCacheKey(

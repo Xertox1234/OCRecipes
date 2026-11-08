@@ -30,7 +30,10 @@ import { endSseQuietly } from "../lib/sse";
 import { parseTimezone } from "../lib/civil-date";
 import { logger } from "../lib/logger";
 import { buildCoachBrief } from "../services/coach-brief";
-import type { BriefForm } from "@shared/lib/opening-brief";
+import {
+  OPENING_BRIEF_METADATA,
+  type BriefForm,
+} from "@shared/lib/opening-brief";
 
 export interface AdmitTurnArgs {
   req: AuthenticatedRequest;
@@ -244,7 +247,7 @@ async function saveOpeningBrief(
       req.userId,
       "assistant",
       brief.text,
-      { kind: "opening_brief" },
+      { ...OPENING_BRIEF_METADATA },
     );
   } catch (err) {
     logger.warn({ err, conversationId }, "opening brief not saved");
