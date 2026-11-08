@@ -109,6 +109,8 @@ its own entry (restoring whatever the depth cap evicted *for* it) and throws. Dr
 first subscriber. A module-load event bus that drops emits with zero listeners loses exactly
 the startup events.
 
+**7. The allowlist is `QUERY_KEYS` itself, so adding a key persists it (2026-11-08).** `PERSISTED_QUERY_KEYS` in `client/App.tsx` is built from the first element of every `QUERY_KEYS` entry. Moving a hand-typed key "into the shared constants" is therefore not a neutral refactor: it makes that data survive a relaunch, with the CursorWindow size risk from #2. Per-id keys and large lists stay outside as builder functions in `client/lib/query-keys.ts` (`recipeStatsKey`, `chatMessagesKey`). `client/lib/__tests__/query-keys.test.ts` pins each builder as not persisted.
+
 ## Examples
 
 See `client/App.tsx` (cold-start drain, persist allowlist + buster) and
