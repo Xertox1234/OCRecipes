@@ -106,7 +106,7 @@ defect B), and where "Close speed dial" and "Close scan menu" sit in the order (
 - If it dismisses the menu or does nothing → an additional native activation failure exists.
   **Then retest T3 with Settings → Accessibility → Motion → Reduce Motion ON** (this implicates
   or clears the Reanimated entering animation, defect C).
-- Actual: ****\*\*****\*\*****\*\*****\_\_****\*\*****\*\*****\*\*****
+- Actual: \***\*\*\*\*\***\*\*\***\*\*\*\*\***\_\_\***\*\*\*\*\***\*\*\***\*\*\*\*\***
 - Actual with Reduce Motion ON (only if needed): \***\*\*\*\*\***\_\_\_\***\*\*\*\*\***
 
 ---
@@ -165,7 +165,7 @@ todo's severity section said was unreachable.
 1. Enter via "Scan Nutrition Label", frame a nutrition panel, double-tap "Take photo".
 
 - Expect: capture → LabelAnalysis.
-- Actual: ****\*\*****\*\*****\*\*****\_\_****\*\*****\*\*****\*\*****
+- Actual: \***\*\*\*\*\***\*\*\***\*\*\*\*\***\_\_\***\*\*\*\*\***\*\*\***\*\*\*\*\***
 
 ### T7 — NEW: is the armed shutter even reachable? (BARCODE_LOCKED / STEP2_CONFIRMED)
 
@@ -177,7 +177,7 @@ VoiceOver inside the chip.
 1. Scan a barcode until it **locks** (chip appears, shutter shows the yellow armed border).
 2. Swipe through **every** element. Can you reach "Take photo" at all?
 
-- Question 1 — is "Take photo" reachable? ****\*\*****\*\*****\*\*****\_\_****\*\*****\*\*****\*\*****
+- Question 1 — is "Take photo" reachable? \***\*\*\*\*\***\*\*\***\*\*\*\*\***\_\_\***\*\*\*\*\***\*\*\***\*\*\*\*\***
 - Question 2 — does the chip's own primary button carry the same action (i.e. is there a
   working screen-reader path forward without the shutter)? \***\*\*\*\*\***\_\_\***\*\*\*\*\***
 
@@ -334,7 +334,7 @@ Pre-existing on `main` and structurally out of scope for this todo: `SpeedDial` 
 from the inside, because the background is rendered by `MainTabNavigator` as a _sibling_. The
 fix would have to lift "menu is open" up to the navigator and gate
 `importantForAccessibility` there. In-codebase precedent for exactly this mirror:
-`getScanOverlayA11y` in `client/screens/ScanScreenConfirmOverlay-utils.ts`, which mirrors
+`getScanOverlayA11y` in `client/components/scan/ScanScreenConfirmOverlay-utils.ts`, which mirrors
 ScanScreen's iOS modal trap onto Android for the same reason.
 
 ## After the pass

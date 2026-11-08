@@ -34,7 +34,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useUnifiedRecipes } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
-import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
+import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import {
   Spacing,
   BorderRadius,

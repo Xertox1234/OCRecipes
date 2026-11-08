@@ -32,7 +32,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
+import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import { useParseFoodText } from "@/hooks/useFoodParse";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import {

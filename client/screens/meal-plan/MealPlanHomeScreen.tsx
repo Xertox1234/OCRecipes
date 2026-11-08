@@ -43,7 +43,7 @@ import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
+import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {

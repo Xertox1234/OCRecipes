@@ -2276,7 +2276,7 @@ const handleToggleSection = useCallback(
 **References:**
 
 - `client/screens/meal-plan/MealPlanHomeScreen.tsx` — meal section expand/collapse
-- `client/screens/meal-plan/meal-plan-utils.ts` — `getAutoExpandedMealType()`
+- `client/components/meal-plan/meal-plan-utils.ts` — `getAutoExpandedMealType()`
 
 ### Measure-Then-Animate Collapsible Height
 

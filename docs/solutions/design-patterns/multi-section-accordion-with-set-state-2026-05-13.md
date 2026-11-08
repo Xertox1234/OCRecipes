@@ -57,7 +57,7 @@ When NOT to use: single-selection accordions (FAQ, detail panels) — use `strin
 ## Related Files
 
 - `client/screens/meal-plan/MealPlanHomeScreen.tsx` — meal section expand/collapse
-- `client/screens/meal-plan/meal-plan-utils.ts` — `getAutoExpandedMealType()`
+- `client/components/meal-plan/meal-plan-utils.ts` — `getAutoExpandedMealType()`
 
 ## See Also
 

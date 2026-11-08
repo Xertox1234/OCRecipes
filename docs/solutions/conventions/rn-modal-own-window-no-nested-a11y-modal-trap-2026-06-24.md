@@ -86,7 +86,7 @@ native window.
 - `client/components/UpgradeModal.tsx` — the RN `<Modal>` (separate window)
 - `client/camera/components/ProductChip.tsx` — `accessibilityViewIsModal` + the
   spring-out that keeps the view mounted past the variant change
-- `client/screens/ScanScreenConfirmOverlay-utils.ts` — `getScanOverlayA11y`, the
+- `client/components/scan/ScanScreenConfirmOverlay-utils.ts` — `getScanOverlayA11y`, the
   **in-tree** overlay case where explicit hiding *is* required
 
 ## See Also
