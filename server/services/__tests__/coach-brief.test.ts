@@ -92,10 +92,12 @@ it("names tonight's planned dinner", async () => {
     {
       ...createMockMealPlanItem({ mealType: "lunch" }),
       recipe: createMockMealPlanRecipe({ title: "Tuna salad" }),
+      scannedItem: null,
     },
     {
       ...createMockMealPlanItem({ mealType: "dinner" }),
       recipe: createMockMealPlanRecipe({ title: "Lentil stew" }),
+      scannedItem: null,
     },
   ]);
   const brief = await buildCoachBrief("u1", FREE, "UTC", "full", NOW);

@@ -390,7 +390,7 @@ describe("Coach Context Routes", () => {
     });
 
     it("requires auth", async () => {
-      vi.mocked(requireAuth).mockImplementationOnce((_req, res) => {
+      vi.mocked(requireAuth).mockImplementationOnce(async (_req, res) => {
         sendError(res, 401, "Unauthorized");
       });
       const res = await request(app).get("/api/coach/brief");
