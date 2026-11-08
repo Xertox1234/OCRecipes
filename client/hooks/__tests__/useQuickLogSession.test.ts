@@ -76,6 +76,16 @@ beforeEach(async () => {
 });
 
 describe("useQuickLogSession", () => {
+  // A coach "Log this" card opens Quick Log with the food filled in.
+  it("starts with the text it is opened with, ready to parse", () => {
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useQuickLogSession({ initialText: "an apple" }),
+      { wrapper },
+    );
+    expect(result.current.inputText).toBe("an apple");
+  });
+
   it("parses food text and populates parsedItems on success", async () => {
     const { wrapper } = createQueryWrapper();
     mockApiRequest.mockResolvedValueOnce({

@@ -17,7 +17,7 @@ import {
   beforeEach,
   afterEach,
 } from "vitest";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import * as RN from "react-native";
 import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../test/utils/render-component";
@@ -58,11 +58,20 @@ vi.mock("@/hooks/useCoachStream", async () => {
   };
 });
 
+const { messagesHolder, mockOpenCoachConversation } = vi.hoisted(() => ({
+  messagesHolder: { messages: [] as unknown[] },
+  mockOpenCoachConversation: vi.fn(),
+}));
+
 vi.mock("@/hooks/useChat", () => ({
   useCreateConversation: () => ({
     mutateAsync: vi.fn().mockResolvedValue({ id: 9 }),
   }),
-  useChatMessages: () => ({ data: [] }),
+  useChatMessages: () => ({ data: messagesHolder.messages }),
+}));
+
+vi.mock("@/navigation/openCoachConversation", () => ({
+  openCoachConversation: mockOpenCoachConversation,
 }));
 
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
@@ -241,5 +250,77 @@ describe("CoachOverlayContent — stream end announcements", () => {
     });
     await waitFor(() => expect(stream.opts.onDone).toBeDefined());
     expect(announced()).not.toContain("Coach response received");
+  });
+});
+
+// The sheet draws a reply's text only; its cards (recipe results, charts,
+// "Log this") were dropped without a trace. A reply with cards now offers the
+// full reply in the Coach tab, where cards work (owner choice, 2026-11-08).
+describe("CoachOverlayContent — replies with cards", () => {
+  const proto = HTMLElement.prototype as unknown as {
+    scrollToEnd?: () => void;
+  };
+  beforeAll(() => {
+    proto.scrollToEnd = vi.fn();
+  });
+  afterAll(() => {
+    delete proto.scrollToEnd;
+  });
+  afterEach(() => {
+    messagesHolder.messages = [];
+    mockOpenCoachConversation.mockClear();
+  });
+
+  const reply = (id: number, metadata: unknown) => ({
+    id,
+    conversationId: 9,
+    role: "assistant",
+    content: "Here are some ideas.",
+    metadata,
+    createdAt: new Date().toISOString(),
+  });
+
+  const card = {
+    type: "action_card",
+    title: "Log an apple",
+    subtitle: "95 kcal",
+    actionLabel: "Log",
+    action: { type: "navigate", screen: "QuickLog" },
+  };
+
+  it("offers the full reply in Coach, closing the sheet first", async () => {
+    messagesHolder.messages = [reply(21, { blocks: [card] })];
+    const onDismiss = vi.fn();
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "Sides?", question: "sides" }}
+        screenContext="recipe"
+        onDismiss={onDismiss}
+      />,
+    );
+
+    const link = await screen.findByRole("button", {
+      name: "See the full reply in Coach",
+    });
+    fireEvent.click(link);
+
+    expect(onDismiss).toHaveBeenCalled();
+    expect(mockOpenCoachConversation).toHaveBeenCalledWith(9);
+  });
+
+  it("a reply without cards has no link", async () => {
+    messagesHolder.messages = [reply(22, null)];
+    renderComponent(
+      <CoachOverlayContent
+        question={{ text: "Sides?", question: "sides" }}
+        screenContext="recipe"
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    await screen.findByText("Here are some ideas.");
+    expect(
+      screen.queryByRole("button", { name: "See the full reply in Coach" }),
+    ).toBeNull();
   });
 });

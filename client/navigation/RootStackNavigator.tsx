@@ -185,7 +185,8 @@ export type RootStackParamList = {
   };
   /** Public community remixes of a recipe (from the recipe's Community section). */
   RecipeVariants: { recipeId: number; title: string };
-  QuickLog: undefined;
+  /** `initialText`: a coach "Log this" card's food, filled into the input. */
+  QuickLog: { initialText?: string } | undefined;
   DailyNutritionDetail: undefined;
   MenuScanResult: {
     imageUri: string;

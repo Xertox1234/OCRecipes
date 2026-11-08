@@ -24,6 +24,8 @@ import { useCoachStream } from "@/hooks/useCoachStream";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
+import { filterValidBlocks } from "@/components/coach/coach-chat-utils";
+import { openCoachConversation } from "@/navigation/openCoachConversation";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { logger } from "@/lib/logger";
 import { chatMessagesKey } from "@/lib/query-keys";
@@ -34,6 +36,12 @@ import {
 
 const COACH_DISCLAIMER_TEXT =
   "OCRecipes provides general nutrition information, not medical advice. Always consult a qualified healthcare professional before making changes to your diet or medication.";
+
+/** Whether a saved reply carries cards — the same check the Coach tab draws by. */
+function hasCards(metadata: unknown): boolean {
+  const raw = (metadata as { blocks?: unknown } | null | undefined)?.blocks;
+  return Array.isArray(raw) && filterValidBlocks(raw).length > 0;
+}
 
 export interface CoachQuestion {
   readonly text: string;
@@ -439,13 +447,42 @@ export function CoachOverlayContent({
             </View>
           )}
           {displayMessages.map((msg) => (
-            <ChatBubble
-              key={msg.id}
-              role={msg.role}
-              content={msg.content}
-              isStreaming={msg.id === -1}
-              animateEntry={msg.id < 0}
-            />
+            <View key={msg.id}>
+              <ChatBubble
+                role={msg.role}
+                content={msg.content}
+                isStreaming={msg.id === -1}
+                animateEntry={msg.id < 0}
+              />
+              {/* The sheet draws text only; a reply's cards work in the
+                  Coach tab, so offer the whole reply there. */}
+              {msg.role === "assistant" &&
+              conversationId !== null &&
+              hasCards(msg.metadata) ? (
+                <Pressable
+                  onPress={() => {
+                    onDismiss();
+                    openCoachConversation(conversationId);
+                  }}
+                  style={({ pressed }) => [
+                    styles.fullReplyLink,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="See the full reply in Coach"
+                >
+                  <ThemedText type="small" style={{ color: theme.link }}>
+                    See the full reply in Coach
+                  </ThemedText>
+                  <Feather
+                    name="arrow-right"
+                    size={14}
+                    color={theme.link}
+                    accessible={false}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
           ))}
           {isStreaming && !streamingContent && statusText ? (
             <CoachStatusRow statusText={statusText} />
@@ -477,6 +514,13 @@ export function CoachOverlayContent({
 }
 
 const styles = StyleSheet.create({
+  fullReplyLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    minHeight: 44,
+    alignSelf: "flex-start",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",

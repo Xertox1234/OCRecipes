@@ -37,6 +37,8 @@ export interface LogSummary {
 interface UseQuickLogSessionOptions {
   onLogSuccess?: (summary: LogSummary) => void;
   isOpen?: boolean;
+  /** Text the input starts with — a coach "Log this" card's food. */
+  initialText?: string;
 }
 
 // A free-tier 403 (PREMIUM_REQUIRED) is not a parse failure — retrying can
@@ -55,6 +57,7 @@ interface PartialLogError extends Error {
 export function useQuickLogSession({
   onLogSuccess,
   isOpen = false,
+  initialText,
 }: UseQuickLogSessionOptions = {}) {
   const queryClient = useQueryClient();
   const haptics = useHaptics();
@@ -65,7 +68,7 @@ export function useQuickLogSession({
     onLogSuccessRef.current = onLogSuccess;
   }, [onLogSuccess]);
 
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputText] = useState(initialText ?? "");
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
   // Bumped alongside every successful parse that sets `parsedItems` (both
   // the auto-voice-parse and handleTextSubmit onSuccess paths below) — a

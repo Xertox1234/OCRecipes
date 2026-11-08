@@ -104,8 +104,13 @@ vi.mock("@/hooks/useQuickLogSession", () => ({
   })),
 }));
 
+const routeHolder = vi.hoisted(() => ({
+  params: undefined as { initialText?: string } | undefined,
+}));
+
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ goBack: mockGoBack, navigate: mockNavigate }),
+  useRoute: () => routeHolder,
 }));
 
 // Deferred work is queued, not run, so a test can check what happens before
@@ -215,6 +220,21 @@ describe("QuickLogScreen — submit", () => {
     const input = foodInput()!;
     expect(input.getAttribute("submitBehavior")).toBe("blurAndSubmit");
     expect(input.getAttribute("returnKeyType")).toBe("done");
+  });
+
+  // The coach's "Log this" card opens Quick Log with the food filled in.
+  it("starts the input with the food it was opened with", () => {
+    routeHolder.params = { initialText: "an apple" };
+    try {
+      renderComponent(<QuickLogScreen />);
+      expect(
+        vi.mocked(useQuickLogSessionModule.useQuickLogSession),
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ initialText: "an apple" }),
+      );
+    } finally {
+      routeHolder.params = undefined;
+    }
   });
 
   it("tells the user when a parse found no food", () => {
