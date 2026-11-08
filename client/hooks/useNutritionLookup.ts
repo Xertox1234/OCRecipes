@@ -547,7 +547,7 @@ export function useNutritionLookup(params: {
           queryKey: QUERY_KEYS.dailySummary,
         });
         void queryClient.invalidateQueries({
-          queryKey: ["/api/daily-budget"],
+          queryKey: QUERY_KEYS.dailyBudget,
         });
       }
       // `nutrition` holds the already-scaled values (the serving stepper

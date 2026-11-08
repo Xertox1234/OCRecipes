@@ -33,6 +33,7 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePlanCheck } from "@/hooks/usePlanCheck";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { parseDecimalInput } from "@/lib/number-input";
 import { announceTogether } from "@/lib/announce-together";
 import {
@@ -429,8 +430,8 @@ export default function GoalSetupScreen() {
         dailyCalorieGoal: numberOf(manualCalories),
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailyBudget });
       // After the awaited updateUser, so a failed local update never
       // celebrates. The toast survives the goBack and fires its own haptic.
       toast.success("Goals saved");

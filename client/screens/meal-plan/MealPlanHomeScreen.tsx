@@ -77,6 +77,7 @@ import { DateStripItem } from "@/components/meal-plan/DateStrip";
 import { MealSlotSection } from "@/components/meal-plan/MealSlotSection";
 import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 import { apiRequest } from "@/lib/query-client";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
 import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
@@ -583,8 +584,8 @@ export default function MealPlanHomeScreen() {
     // audit) were previously never refreshed here at all.
     invalidateMealPlanItems(queryClient);
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] }),
-      queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] }),
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailyBudget }),
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary }),
     ]);
     haptics.impact();
   }, [queryClient, haptics]);

@@ -78,7 +78,10 @@ describe("useBatchConfirm", () => {
     );
   });
 
-  it("invalidates daily-budget and scanned-items on daily_log success", async () => {
+  // A daily_log batch writes daily_logs rows (batchCreateScannedItemsWithLogs),
+  // so it must refresh the same keys as every other log path — daily-summary
+  // included (arch audit 2026-11-08 L2: it was the one key this path missed).
+  it("invalidates daily-budget, scanned-items and daily-summary on daily_log success", async () => {
     const { wrapper, queryClient } = createQueryWrapper();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -109,6 +112,9 @@ describe("useBatchConfirm", () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["/api/scanned-items"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/daily-summary"],
     });
   });
 

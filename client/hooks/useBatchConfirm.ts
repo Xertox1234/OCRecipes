@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import { getDeviceTimezone } from "@/lib/timezone";
 import type {
   ResolvedBatchItem,
@@ -46,10 +47,7 @@ export function useBatchConfirm() {
     },
     onSuccess: (_, { destination }) => {
       if (destination === "daily_log") {
-        void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
-        void queryClient.invalidateQueries({
-          queryKey: ["/api/scanned-items"],
-        });
+        invalidateFoodLogQueries(queryClient);
       } else if (destination === "pantry") {
         void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
       } else if (destination === "grocery_list") {
