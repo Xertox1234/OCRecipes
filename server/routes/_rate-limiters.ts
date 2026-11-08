@@ -420,6 +420,12 @@ export const urlImportRateLimit = createRateLimiter({
   message: "Too many import requests. Please wait.",
 });
 
+export const pageImportRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: "Too many import requests. Please wait.",
+});
+
 // CCPA/PIPEDA data-portability export — limited to 2 per hour per user.
 // The aggregation query is expensive and the resulting payload is large.
 export const exportRateLimit = createRateLimiter({

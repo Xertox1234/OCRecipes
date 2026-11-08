@@ -6,15 +6,69 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { autoGenerateRecipeImage } from "../services/recipe-auto-image";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { inferMealTypes } from "../services/meal-type-inference";
-import { importRecipeFromUrl } from "../services/recipe-import";
+import {
+  importRecipeFromUrl,
+  parseRecipeFromLdJson,
+  type ImportResult,
+} from "../services/recipe-import";
 import { normalizeRecipeFields } from "../lib/recipe-normalization";
-import { urlImportRateLimit } from "./_rate-limiters";
+import { pageImportRateLimit, urlImportRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
   formatZodError,
   handleRouteError,
 } from "./_helpers";
-import { importUrlSchema } from "@shared/schemas/recipe";
+import { importUrlSchema, parsePageSchema } from "@shared/schemas/recipe";
+
+/**
+ * Shared success/failure tail for parse-url and parse-page: maps a failed
+ * ImportResult to a 422, rejects empty recipes, normalizes and sends the data.
+ */
+function sendParsedImport(res: Response, result: ImportResult): void {
+  if (!result.success) {
+    const messages: Record<string, string> = {
+      FETCH_FAILED: "Could not fetch the URL",
+      NO_RECIPE_DATA: "No recipe data found on this page",
+      PARSE_ERROR: "Could not parse recipe data from this page",
+      TIMEOUT: "The request timed out while fetching the URL",
+      RESPONSE_TOO_LARGE: "The page is too large to import (max 5 MB)",
+    };
+    const code =
+      result.error in ErrorCode
+        ? ErrorCode[result.error as keyof typeof ErrorCode]
+        : ErrorCode.VALIDATION_ERROR;
+    sendError(res, 422, messages[result.error] || "Import failed", code);
+    return;
+  }
+
+  const { data } = result;
+  const importHasInstructions =
+    data.instructions && data.instructions.length > 0;
+  const importHasIngredients = data.ingredients && data.ingredients.length > 0;
+  if (!importHasInstructions && !importHasIngredients) {
+    sendError(
+      res,
+      422,
+      "This recipe has no instructions or ingredients and cannot be imported",
+      ErrorCode.NO_RECIPE_DATA,
+    );
+    return;
+  }
+
+  // Normalize imported data before returning to client
+  const normalized = normalizeRecipeFields({
+    title: data.title,
+    description: data.description ?? null,
+    instructions: data.instructions,
+  });
+  data.title = normalized.title ?? data.title;
+  data.description = normalized.description ?? "";
+  if (data.instructions) {
+    data.instructions = normalized.instructions ?? data.instructions;
+  }
+
+  res.status(200).json(data);
+}
 
 export function register(app: Express): void {
   // POST /api/meal-plan/recipes/parse-url — Parse recipe from URL without saving
@@ -37,52 +91,41 @@ export function register(app: Express): void {
 
         const result = await importRecipeFromUrl(parsed.data.url);
 
-        if (!result.success) {
-          const messages: Record<string, string> = {
-            FETCH_FAILED: "Could not fetch the URL",
-            NO_RECIPE_DATA: "No recipe data found on this page",
-            PARSE_ERROR: "Could not parse recipe data from this page",
-            TIMEOUT: "The request timed out while fetching the URL",
-            RESPONSE_TOO_LARGE: "The page is too large to import (max 5 MB)",
-          };
-          const code =
-            result.error in ErrorCode
-              ? ErrorCode[result.error as keyof typeof ErrorCode]
-              : ErrorCode.VALIDATION_ERROR;
-          sendError(res, 422, messages[result.error] || "Import failed", code);
-          return;
-        }
+        sendParsedImport(res, result);
+      } catch (error) {
+        handleRouteError(res, error, "parse recipe from URL");
+      }
+    },
+  );
 
-        const { data } = result;
-        const importHasInstructions =
-          data.instructions && data.instructions.length > 0;
-        const importHasIngredients =
-          data.ingredients && data.ingredients.length > 0;
-        if (!importHasInstructions && !importHasIngredients) {
+  // POST /api/meal-plan/recipes/parse-page — Parse recipe from JSON-LD blocks
+  // extracted on the device. NEVER fetches anything server-side; the phone's
+  // data is untrusted and goes through the same lenient validation as a
+  // server-fetched page.
+  app.post(
+    "/api/meal-plan/recipes/parse-page",
+    requireAuth,
+    pageImportRateLimit,
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+      try {
+        const parsed = parsePageSchema.safeParse(req.body);
+        if (!parsed.success) {
           sendError(
             res,
-            422,
-            "This recipe has no instructions or ingredients and cannot be imported",
-            ErrorCode.NO_RECIPE_DATA,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
           );
           return;
         }
 
-        // Normalize imported data before returning to client
-        const normalized = normalizeRecipeFields({
-          title: data.title,
-          description: data.description ?? null,
-          instructions: data.instructions,
-        });
-        data.title = normalized.title ?? data.title;
-        data.description = normalized.description ?? "";
-        if (data.instructions) {
-          data.instructions = normalized.instructions ?? data.instructions;
-        }
-
-        res.status(200).json(data);
+        const result = parseRecipeFromLdJson(
+          parsed.data.ldJson,
+          parsed.data.url,
+        );
+        sendParsedImport(res, result);
       } catch (error) {
-        handleRouteError(res, error, "parse recipe from URL");
+        handleRouteError(res, error, "parse recipe from page");
       }
     },
   );
