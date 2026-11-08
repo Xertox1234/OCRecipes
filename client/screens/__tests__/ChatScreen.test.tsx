@@ -18,6 +18,7 @@ import {
   noteCoachReplyFinished,
 } from "@/hooks/useCoachUnreadReplies";
 import ChatScreen from "../ChatScreen";
+import { CHAT_LIMIT_ERROR } from "@/lib/chat-error-copy";
 
 const {
   mockSendMessage,
@@ -81,6 +82,7 @@ const {
       isStreaming: false,
       streamError: null as boolean | null,
       requestError: null as string | null,
+      requestErrorCode: null as string | null,
     },
   },
   mockToastError: vi.fn(),
@@ -122,6 +124,11 @@ vi.mock("@/hooks/useChat", () => ({
 }));
 
 const { mockImpact } = vi.hoisted(() => ({ mockImpact: vi.fn() }));
+
+const mockPremium = vi.hoisted(() => ({ isPremium: false }));
+vi.mock("@/context/PremiumContext", () => ({
+  usePremiumContext: () => mockPremium,
+}));
 
 // The shared react-native mock has no Keyboard; the keyboard-visibility hook
 // is covered by bottom-budget-utils.test.ts (pure math).
@@ -169,7 +176,9 @@ beforeEach(() => {
     isStreaming: false,
     streamError: null,
     requestError: null,
+    requestErrorCode: null,
   };
+  mockPremium.isPremium = false;
 });
 
 describe("ChatScreen — the message you just sent", () => {
@@ -601,6 +610,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: true,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
     mockStreamSnapshot.value = {
@@ -613,6 +623,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: false,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
     expect(screen.getByText("Try Greek yogurt with berries.")).toBeDefined();
@@ -626,6 +637,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: true,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     // While actively streaming the content renders via the live streaming
     // footer, not the pending bubble under test here — assert only on what
@@ -639,6 +651,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: false,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
     expect(screen.getByText("Here's a healthy snack idea.")).toBeDefined();
@@ -672,6 +685,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: true,
       streamError: null,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
 
@@ -680,6 +694,7 @@ describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
       isStreaming: false,
       streamError: true,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
 
@@ -701,6 +716,7 @@ describe("ChatScreen — stream-interrupted toast copy", () => {
       isStreaming: false,
       streamError: true,
       requestError: null,
+      requestErrorCode: null,
     };
     rerender(<ChatScreen />);
 
@@ -1017,5 +1033,44 @@ describe("ChatScreen — voice ownership", () => {
     };
     rerender(<ChatScreen />);
     expect(input.value).toBe("what about protein");
+  });
+});
+
+describe("ChatScreen — a refused send", () => {
+  // Branch on the code useSendMessage exposes, never the copy's wording.
+  it("adds the upgrade prompt to a daily-limit refusal for a free user", () => {
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: CHAT_LIMIT_ERROR,
+      requestErrorCode: "DAILY_LIMIT_REACHED",
+    };
+    renderComponent(<ChatScreen />);
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      `${CHAT_LIMIT_ERROR} Upgrade to Premium for more messages.`,
+    );
+  });
+
+  it("does not offer Premium to a user who already has it", () => {
+    mockPremium.isPremium = true;
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: CHAT_LIMIT_ERROR,
+      requestErrorCode: "DAILY_LIMIT_REACHED",
+    };
+    renderComponent(<ChatScreen />);
+
+    expect(mockToastError).toHaveBeenCalledWith(CHAT_LIMIT_ERROR);
+  });
+
+  it("shows other refusals as they are, even when the copy mentions a limit", () => {
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      requestError: "Something about a limit",
+      requestErrorCode: "SERVER_ERROR",
+    };
+    renderComponent(<ChatScreen />);
+
+    expect(mockToastError).toHaveBeenCalledWith("Something about a limit");
   });
 });

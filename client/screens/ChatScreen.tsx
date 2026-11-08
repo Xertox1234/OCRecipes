@@ -51,6 +51,7 @@ import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 import { getInputBarBottomPadding } from "@/components/bottom-budget-utils";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useToast } from "@/context/ToastContext";
+import { usePremiumContext } from "@/context/PremiumContext";
 import {
   useChatMessages,
   useSendMessage,
@@ -383,7 +384,9 @@ export default function ChatScreen() {
     isStreaming,
     streamError,
     requestError,
+    requestErrorCode,
   } = useSendMessage(validConversationId, { notifyWhenAway: true });
+  const { isPremium } = usePremiumContext();
   // A reply delivered only in onload never renders in the streaming state;
   // the bridge reads the hook's own record when the stream stops instead.
   const readFinalStreamContent = useCallback(
@@ -480,8 +483,10 @@ export default function ChatScreen() {
   useEffect(() => {
     if (requestError && !shownRequestErrorRef.current) {
       shownRequestErrorRef.current = true;
-      // Daily-limit errors include an upgrade prompt; others show the server message directly
-      if (requestError.toLowerCase().includes("limit")) {
+      // requestError is already static copy. A daily-limit refusal adds the
+      // upgrade prompt, but only for a user who doesn't already have Premium;
+      // branch on the code, never on the copy's wording.
+      if (requestErrorCode === "DAILY_LIMIT_REACHED" && !isPremium) {
         toast.error(`${requestError} Upgrade to Premium for more messages.`);
       } else {
         toast.error(requestError);
@@ -490,7 +495,7 @@ export default function ChatScreen() {
     if (!requestError) {
       shownRequestErrorRef.current = false;
     }
-  }, [requestError, toast]);
+  }, [requestError, requestErrorCode, isPremium, toast]);
 
   useEffect(() => {
     if (!isStreaming) return;
