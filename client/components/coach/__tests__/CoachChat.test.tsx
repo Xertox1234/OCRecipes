@@ -16,7 +16,8 @@ import * as RN from "react-native";
 import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
-import { streamBlockEntranceHoldMs } from "@/constants/animations";
+import { blockEntranceTotalMs } from "@/components/coach/blocks/block-entrance";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 // Mutable container for the onError callback CoachChat passes to useCoachStream,
 // so the test can trigger a 429 limit error after render. vi.hoisted is required
@@ -422,11 +423,42 @@ describe("CoachChat — a finished reply's blocks", () => {
       act(() => coachStreamRef.onDone?.("Here you go", [quickReplies]));
       deliverSavedReply(rerender);
       act(() => {
-        vi.advanceTimersByTime(streamBlockEntranceHoldMs);
+        vi.advanceTimersByTime(
+          blockEntranceTotalMs([quickReplies as CoachBlock]),
+        );
       });
 
       expect(screen.getAllByLabelText("Yes please")).toHaveLength(1);
       expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+    });
+
+    // The chips arrive one after another, so a longer row holds the saved
+    // copy back until its last chip has entered.
+    it("holds the saved copy until the last chip has entered", () => {
+      const longRow = {
+        type: "quick_replies",
+        options: ["Yes please", "Not now", "Tell me more"].map((label) => ({
+          label,
+          message: label,
+        })),
+      };
+      const { rerender } = renderCoachChat();
+      act(() => coachStreamRef.onDone?.("Here you go", [longRow]));
+      deliverSavedReply(rerender, [longRow]);
+      const total = blockEntranceTotalMs([longRow as CoachBlock]);
+
+      act(() => {
+        vi.advanceTimersByTime(
+          blockEntranceTotalMs([quickReplies as CoachBlock]),
+        );
+      });
+      expect(screen.queryByLabelText("Regenerate response")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(total);
+      });
+      expect(screen.getByLabelText("Regenerate response")).toBeTruthy();
+      expect(screen.getAllByLabelText("Tell me more")).toHaveLength(1);
     });
 
     // No entrance plays under Reduce Motion, so nothing is held.

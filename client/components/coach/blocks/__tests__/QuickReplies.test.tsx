@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { FadeInUp } from "react-native-reanimated";
+import { chatBlockEntrance } from "@/constants/animations";
 import { renderComponent } from "../../../../../test/utils/render-component";
 import QuickReplies from "../QuickReplies";
 import type { QuickReplies as QuickRepliesType } from "@shared/schemas/coach-blocks";
@@ -58,5 +60,35 @@ describe("QuickReplies", () => {
   it("renders nothing once used (used branch)", () => {
     const { container } = renderComponent(<QuickReplies block={block} used />);
     expect(container.querySelector('[aria-label="Yes please"]')).toBeNull();
+  });
+});
+
+describe("QuickReplies — entrance", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function spyDelay() {
+    return vi.spyOn(
+      FadeInUp as unknown as { delay: (ms: number) => unknown },
+      "delay",
+    );
+  }
+
+  // The chips arrive one after another, the first on the row's own beat.
+  it("staggers the chips from the row's entry delay", () => {
+    const delay = spyDelay();
+    renderComponent(
+      <QuickReplies block={block} animateEntry entryDelayMs={90} />,
+    );
+    expect(delay.mock.calls.map((c) => c[0])).toEqual([
+      90,
+      90 + chatBlockEntrance.staggerMs,
+    ]);
+  });
+
+  it("does not animate by default", () => {
+    const delay = spyDelay();
+    renderComponent(<QuickReplies block={block} />);
+    expect(delay).not.toHaveBeenCalled();
+    expect(screen.getByText("Not now")).toBeTruthy();
   });
 });
