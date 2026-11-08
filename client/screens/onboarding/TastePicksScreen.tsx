@@ -7,18 +7,15 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TastePicksGrid } from "@/components/TastePicksGrid";
 import { useTheme } from "@/hooks/useTheme";
+import { useTastePickCandidates } from "@/hooks/useTastePicks";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { getStepLabel } from "@/context/onboarding-steps";
 import { useToast } from "@/context/ToastContext";
-import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
-import type { RecipeCandidate } from "@shared/types/taste-picks";
-import { tastePickCandidatesResponseSchema } from "@shared/schemas/taste-picks";
 
 const MIN_PICKS = 5;
-const PAGE_LIMIT = 30;
 // Fired after updateUser resolves: that swaps the onboarding navigator for
 // the main app, and the root-mounted toast carries the moment across.
 const ONBOARDING_DONE_MESSAGE = "You're all set — let's get cooking!";
@@ -30,51 +27,14 @@ export default function TastePicksScreen() {
   const { data, prevStep, currentStep, completeOnboarding } = useOnboarding();
   const toast = useToast();
 
-  const [candidates, setCandidates] = useState<RecipeCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loadError, setLoadError] = useState(false);
-
-  const loadCandidates = useCallback(
-    async (pageNum: number) => {
-      setLoadError(false);
-      try {
-        const params = new URLSearchParams({
-          page: String(pageNum),
-          limit: String(PAGE_LIMIT),
-        });
-        if (data.dietType) params.set("dietType", data.dietType);
-
-        const res = await apiRequest(
-          "GET",
-          `/api/taste-picks/candidates?${params}`,
-        );
-        const json = await res.json();
-        const parsed = tastePickCandidatesResponseSchema.safeParse(json);
-        if (!parsed.success) {
-          logger.error("loadCandidates: invalid response shape", parsed.error);
-          setLoadError(true);
-          return;
-        }
-        const body = parsed.data;
-        setCandidates((prev) =>
-          pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
-        );
-        setHasMore(body.candidates.length === PAGE_LIMIT);
-      } catch (err) {
-        logger.error("loadCandidates failed:", err);
-        setLoadError(true);
-      }
-    },
-    [data.dietType],
-  );
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetches the first candidates page on mount and when the diet changes; loadCandidates also serves paging and retry, and its synchronous set only clears the previous load error
-    void loadCandidates(1);
-  }, [loadCandidates]);
+  const {
+    candidates,
+    loadMore,
+    isError: loadError,
+    refetch: refetchCandidates,
+  } = useTastePickCandidates(data.dietType);
 
   const handleToggle = useCallback((recipeId: number) => {
     setSelectedIds((prev) => {
@@ -88,18 +48,9 @@ export default function TastePicksScreen() {
     });
   }, []);
 
-  const handleEndReached = useCallback(() => {
-    if (!hasMore) return;
-    const nextPage = page + 1;
-    setPage(nextPage);
-    void loadCandidates(nextPage);
-  }, [hasMore, page, loadCandidates]);
-
   const handleRetry = useCallback(() => {
-    setPage(1);
-    setHasMore(true);
-    void loadCandidates(1);
-  }, [loadCandidates]);
+    void refetchCandidates();
+  }, [refetchCandidates]);
 
   const handleContinue = useCallback(async () => {
     setIsSubmitting(true);
@@ -226,7 +177,7 @@ export default function TastePicksScreen() {
             candidates={candidates}
             selectedIds={selectedIds}
             onToggle={handleToggle}
-            onEndReached={handleEndReached}
+            onEndReached={loadMore}
           />
         )}
       </View>

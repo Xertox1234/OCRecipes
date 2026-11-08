@@ -5,95 +5,52 @@ import { View, StyleSheet, Pressable, AccessibilityInfo } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TastePicksGrid } from "@/components/TastePicksGrid";
-import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
 import { useBottomBudget } from "@/hooks/useBottomBudget";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
+import {
+  useSaveTastePicks,
+  useSavedTastePicks,
+  useTastePickCandidates,
+} from "@/hooks/useTastePicks";
 import { useNavigation } from "@react-navigation/native";
-import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { TasteProfileScreenNavigationProp } from "@/types/navigation";
-import type { RecipeCandidate } from "@shared/types/taste-picks";
-import {
-  tastePickCandidatesResponseSchema,
-  tastePicksResponseSchema,
-} from "@shared/schemas/taste-picks";
-
-const PAGE_LIMIT = 30;
 
 export default function TasteProfileScreen() {
   const { theme } = useTheme();
   const bottomBudget = useBottomBudget();
   const headerInset = useHeaderContentInset(Spacing.lg);
   const navigation = useNavigation<TasteProfileScreenNavigationProp>();
-  const queryClient = useQueryClient();
   const toast = useToast();
 
-  const [candidates, setCandidates] = useState<RecipeCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [loadError, setLoadError] = useState(false);
 
-  const loadPicks = useCallback(async () => {
-    try {
-      const res = await apiRequest("GET", "/api/taste-picks");
-      const json = await res.json();
-      const parsed = tastePicksResponseSchema.safeParse(json);
-      if (!parsed.success) {
-        logger.error("loadPicks: invalid response shape", parsed.error);
-        setLoadError(true);
-        return;
-      }
-      setSelectedIds(new Set(parsed.data.picks.map((p) => p.recipeId)));
-    } catch (err) {
-      logger.error("loadPicks failed:", err);
-      setLoadError(true);
-    }
-  }, []);
+  const {
+    data: savedPickIds,
+    isError: picksError,
+    refetch: refetchPicks,
+  } = useSavedTastePicks();
+  const {
+    candidates,
+    loadMore,
+    isError: candidatesError,
+    refetch: refetchCandidates,
+  } = useTastePickCandidates();
+  const { mutateAsync: savePicks, isPending: isSubmitting } =
+    useSaveTastePicks();
+  const loadError = picksError || candidatesError;
 
+  // Fill the editable selection from the saved picks until the user's first
+  // toggle, so a late-arriving (or refetched) list never overwrites an edit.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch of the saved picks; its setState calls run after the request's await, which the rule cannot see through the call
-    void loadPicks();
-  }, [loadPicks]);
-
-  const loadCandidates = useCallback(async (pageNum: number) => {
-    setLoadError(false);
-    try {
-      const params = new URLSearchParams({
-        page: String(pageNum),
-        limit: String(PAGE_LIMIT),
-      });
-      const res = await apiRequest(
-        "GET",
-        `/api/taste-picks/candidates?${params}`,
-      );
-      const json = await res.json();
-      const parsed = tastePickCandidatesResponseSchema.safeParse(json);
-      if (!parsed.success) {
-        logger.error("loadCandidates: invalid response shape", parsed.error);
-        setLoadError(true);
-        return;
-      }
-      const body = parsed.data;
-      setCandidates((prev) =>
-        pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
-      );
-      setHasMore(body.candidates.length === PAGE_LIMIT);
-    } catch (err) {
-      logger.error("loadCandidates failed:", err);
-      setLoadError(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch of the first candidates page; loadCandidates also serves paging and retry, and its only synchronous set clears a load error that is already false on mount
-    void loadCandidates(1);
-  }, [loadCandidates]);
+    if (!savedPickIds || isDirty) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates the editable selection from the saved picks the query delivers, only while the user has not edited it
+    setSelectedIds(new Set(savedPickIds));
+  }, [savedPickIds, isDirty]);
 
   // Announce selection-count changes to screen readers — only for user
   // toggles. `handleToggle` arms this ref; the programmatic load of existing
@@ -129,30 +86,15 @@ export default function TasteProfileScreen() {
     });
   }, []);
 
-  const handleEndReached = useCallback(() => {
-    if (!hasMore) return;
-    const nextPage = page + 1;
-    setPage(nextPage);
-    void loadCandidates(nextPage);
-  }, [hasMore, page, loadCandidates]);
-
   const handleRetry = useCallback(() => {
-    setPage(1);
-    setHasMore(true);
-    void loadPicks();
-    void loadCandidates(1);
-  }, [loadPicks, loadCandidates]);
+    void refetchPicks();
+    void refetchCandidates();
+  }, [refetchPicks, refetchCandidates]);
 
   const handleSave = useCallback(async () => {
-    setIsSubmitting(true);
     try {
-      await apiRequest("PUT", "/api/taste-picks", {
-        recipeIds: [...selectedIds],
-      });
-      // Cuisine preferences may have changed — invalidate the carousel cache
-      // so the Home tab shows updated "Matches your cuisine preferences"
-      // labels on return without requiring a manual pull-to-refresh.
-      void queryClient.invalidateQueries({ queryKey: ["/api/carousel"] });
+      // useSaveTastePicks refreshes the carousel's cuisine-match labels.
+      await savePicks([...selectedIds]);
       setIsDirty(false);
       toast.success("Taste picks saved");
       navigation.goBack();
@@ -160,10 +102,8 @@ export default function TasteProfileScreen() {
       logger.error("handleSave failed:", err);
       // Picks stay selected (isDirty stays true) so the user can retry.
       toast.error("Couldn't save your picks. Please try again.");
-    } finally {
-      setIsSubmitting(false);
     }
-  }, [selectedIds, navigation, queryClient, toast]);
+  }, [selectedIds, savePicks, navigation, toast]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
@@ -216,7 +156,7 @@ export default function TasteProfileScreen() {
             candidates={candidates}
             selectedIds={selectedIds}
             onToggle={handleToggle}
-            onEndReached={handleEndReached}
+            onEndReached={loadMore}
           />
         )}
       </View>
