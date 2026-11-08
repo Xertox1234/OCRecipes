@@ -32,9 +32,12 @@ export function utf8ByteLength(str: string): number {
     if (c < 0x80) bytes += 1;
     else if (c < 0x800) bytes += 2;
     else if (c >= 0xd800 && c <= 0xdbff) {
-      bytes += 4; // surrogate pair
-      i++;
-    } else bytes += 3;
+      const next = str.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4; // surrogate pair
+        i++;
+      } else bytes += 3; // lone high surrogate encodes as U+FFFD
+    } else bytes += 3; // BMP, or a lone low surrogate (U+FFFD)
   }
   return bytes;
 }

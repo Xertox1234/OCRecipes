@@ -137,7 +137,8 @@ export function useParseRecipeFromPage() {
       );
       return res.json();
     },
-    // Its one call site (RecipeImportScreen) falls back to a sign-in sheet.
+    // Both call sites show their own failure UI: RecipeImportScreen falls back
+    // to a sign-in panel, RecipeImportBrowserScreen shows an inline message.
     meta: { silentError: true },
   });
 }

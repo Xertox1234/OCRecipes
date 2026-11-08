@@ -92,7 +92,7 @@ Entry point: `client/screens/meal-plan/RecipeImportScreen.tsx` (uses `useParseRe
 ## Server: new endpoint
 
 `POST /api/meal-plan/recipes/parse-page` (name is the builder's call), `requireAuth` +
-`urlImportRateLimit`.
+its own `pageImportRateLimit` (see "Saved site data" below).
 
 - Body: `{ url: string (http/https), ldJson: string[] }` — the raw text of each JSON-LD block.
   Sending raw strings keeps **one** parser (server-side `findRecipeInLdJson` +
