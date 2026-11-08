@@ -25,7 +25,7 @@ import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -72,20 +72,18 @@ import {
   useConfirmMealPlanItem,
 } from "@/hooks/useMealPlan";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
+import { useDailySummary } from "@/hooks/useDailySummary";
 import { useMealPlanSheets } from "@/hooks/useMealPlanSheets";
 import { DateStripItem } from "@/components/meal-plan/DateStrip";
 import { MealSlotSection } from "@/components/meal-plan/MealSlotSection";
 import { useSheetHostProps } from "@/hooks/useSheetHostProps";
-import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
-import { getDeviceTimezone } from "@/lib/timezone";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
 import { QUICK_ADD_SNAP_POINTS } from "@/components/meal-plan/QuickAddSheet";
 import { ADD_ITEM_MENU_SNAP_POINTS } from "@/components/meal-plan/AddItemMenuSheet";
 import { IMPORT_RECIPE_SNAP_POINTS } from "@/components/meal-plan/ImportRecipeSheet";
 import { SIMPLE_ENTRY_SNAP_POINTS } from "@/components/meal-plan/SimpleEntrySheet";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
-import type { DailySummaryResponse } from "@/types/api";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 // Device-LOCAL basis: `planned_date` must be the day the user tapped on the
@@ -230,19 +228,7 @@ export default function MealPlanHomeScreen() {
   );
 
   // Fetch daily summary for confirmed meal plan item IDs
-  const { data: dailySummaryData } = useQuery<DailySummaryResponse>({
-    queryKey: ["/api/daily-summary", selectedDateStr],
-    queryFn: async () => {
-      // apiRequest throws on non-2xx (throwIfResNotOk), so no manual !res.ok guard.
-      const res = await apiRequest(
-        "GET",
-        `/api/daily-summary?date=${selectedDateStr}`,
-        undefined,
-        { headers: { "X-Timezone": getDeviceTimezone() } },
-      );
-      return res.json();
-    },
-  });
+  const { data: dailySummaryData } = useDailySummary(selectedDateStr);
 
   const confirmedIds = useMemo(
     () => new Set(dailySummaryData?.confirmedMealPlanItemIds ?? []),
