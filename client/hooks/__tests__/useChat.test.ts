@@ -855,6 +855,24 @@ describe("useSendMessage", () => {
       );
     });
 
+    it("sends the opening brief form in the body", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("t");
+      const { result } = renderHook(() => useSendMessage(42), { wrapper });
+      await act(async () => {
+        const p = result.current.sendMessage("Hello", undefined, 99, {
+          openingBrief: "full",
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.simulateChunks(['data: {"done":true}\n']);
+        await p;
+      });
+      expect(xhrInstance.send).toHaveBeenCalledWith(
+        JSON.stringify({ content: "Hello", openingBrief: "full" }),
+      );
+    });
+
     it("exposes progress text and the finder block while streaming, then clears them", async () => {
       const { wrapper } = createQueryWrapper();
       mockTokenStorage.get.mockResolvedValue("t");

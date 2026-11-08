@@ -144,6 +144,25 @@ vi.mock("@/hooks/useHaptics", () => ({
   }),
 }));
 
+const briefMock = vi.hoisted(() => ({
+  brief: null as unknown,
+  useCoachBrief: vi.fn(),
+  markSeen: vi.fn(),
+}));
+vi.mock("@/hooks/useCoachBrief", () => ({
+  useCoachBrief: (...args: unknown[]) => {
+    briefMock.useCoachBrief(...args);
+    return { brief: briefMock.brief };
+  },
+}));
+vi.mock("@/lib/coach-brief-seen", () => ({
+  getCachedLastBriefSeenDate: () => null,
+  markBriefSeen: briefMock.markSeen,
+}));
+vi.mock("@/hooks/usePendingReminders", () => ({
+  usePendingReminders: () => ({ hasPending: false }),
+}));
+
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
   useAcknowledgeReminders: () => ({ acknowledge: mockAcknowledge }),
 }));
@@ -179,6 +198,7 @@ beforeEach(() => {
     requestErrorCode: null,
   };
   mockPremium.isPremium = false;
+  briefMock.brief = null;
 });
 
 describe("ChatScreen — the message you just sent", () => {
@@ -1072,5 +1092,102 @@ describe("ChatScreen — a refused send", () => {
     renderComponent(<ChatScreen />);
 
     expect(mockToastError).toHaveBeenCalledWith("Something about a limit");
+  });
+});
+
+describe("ChatScreen — opening brief", () => {
+  const brief = {
+    greeting: "Good afternoon.",
+    recap: "Nothing logged yet today.",
+    stats: [],
+    pointer: null,
+    reminder: null,
+    suggestions: ["What should I eat next?"],
+    text: "Good afternoon.\n\nNothing logged yet today.",
+  };
+
+  beforeEach(() => {
+    mockRouteParams.value = undefined;
+    briefMock.brief = brief;
+  });
+
+  it("opens a new chat with the brief and keeps the camera and Pro prompts", () => {
+    renderComponent(<ChatScreen />);
+    expect(screen.getByText("Good afternoon.")).toBeTruthy();
+    expect(briefMock.useCoachBrief).toHaveBeenCalledWith("full", true);
+    expect(
+      screen.queryByLabelText("Suggested prompt: What should I eat today?"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText(
+        "Suggested prompt: What's the fastest way to log a meal?",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText("Suggested prompt: How did my week go? (Pro)"),
+    ).toBeTruthy();
+  });
+
+  it("falls back to the usual prompts when there is no brief", () => {
+    briefMock.brief = null;
+    renderComponent(<ChatScreen />);
+    expect(screen.getAllByLabelText(/^Suggested prompt:/)).toHaveLength(4);
+  });
+
+  it("asks for no brief in an existing conversation", () => {
+    mockRouteParams.value = { conversationId: 42 };
+    renderComponent(<ChatScreen />);
+    expect(screen.queryByText("Good afternoon.")).toBeNull();
+    expect(briefMock.useCoachBrief).toHaveBeenLastCalledWith("full", false);
+  });
+
+  it("tells the server which brief the first send followed", async () => {
+    mockCreateMutateAsync.mockResolvedValue({ id: 99 });
+    renderComponent(<ChatScreen />);
+    fireEvent.change(screen.getByPlaceholderText("Ask NutriCoach..."), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    await waitFor(() =>
+      expect(mockSendMessage).toHaveBeenCalledWith("Hello", undefined, 99, {
+        openingBrief: "full",
+      }),
+    );
+  });
+
+  it("sends a brief chip as the first message", async () => {
+    mockCreateMutateAsync.mockResolvedValue({ id: 99 });
+    renderComponent(<ChatScreen />);
+    fireEvent.click(screen.getByLabelText("What should I eat next?"));
+    await waitFor(() =>
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        "What should I eat next?",
+        undefined,
+        99,
+        { openingBrief: "full" },
+      ),
+    );
+  });
+
+  it("Log from a missed-meal brief opens Quick Log and clears the reminder", () => {
+    briefMock.brief = {
+      ...brief,
+      reminder: {
+        type: "meal-log",
+        lead: "Nothing logged yet today.",
+        actions: [{ label: "Log lunch", kind: "quick-log" }],
+      },
+    };
+    renderComponent(<ChatScreen />);
+    fireEvent.click(
+      screen.getByLabelText("Log lunch, Nothing logged yet today."),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("QuickLog");
+    expect(mockAcknowledge).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks today seen once the full brief shows", () => {
+    renderComponent(<ChatScreen />);
+    expect(briefMock.markSeen).toHaveBeenCalledTimes(1);
   });
 });

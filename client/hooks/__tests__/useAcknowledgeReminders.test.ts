@@ -69,4 +69,24 @@ describe("useAcknowledgeReminders", () => {
     expect(result.current.error).toBeInstanceOf(Error);
     expect(result.current.isPending).toBe(false);
   });
+
+  it("refreshes the dot and the opening brief once reminders are cleared", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    mockApiRequest.mockResolvedValue({
+      json: () => Promise.resolve({ acknowledged: 1, coachContext: [] }),
+    });
+    const { result } = renderHook(() => useAcknowledgeReminders(), { wrapper });
+
+    await act(async () => {
+      await result.current.acknowledge();
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/reminders/pending"],
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/coach/brief"],
+    });
+  });
 });

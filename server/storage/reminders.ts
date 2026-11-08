@@ -3,7 +3,7 @@ import type { CoachContextItem, ReminderType } from "@shared/types/reminders";
 import { coachContextItemSchema } from "@shared/schemas/reminders";
 import { db } from "../db";
 import { logger } from "../lib/logger";
-import { and, eq, isNull, gte, lt } from "drizzle-orm";
+import { and, desc, eq, isNull, gte, lt } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 
 export async function createPendingReminder(data: {
@@ -69,9 +69,15 @@ export async function acknowledgeReminders(
     )
     .returning();
 
-  return acknowledged
+  return parseReminderRows(acknowledged);
+}
+
+/** Row context → validated item. Explicit `type` last so the row's type wins. */
+function parseReminderRows(
+  rows: { id: number; type: ReminderType; context: Record<string, unknown> }[],
+): CoachContextItem[] {
+  return rows
     .map((r) => {
-      // Explicit type last so r.type always wins over any stray "type" key in context
       const result = coachContextItemSchema.safeParse({
         ...r.context,
         type: r.type,
@@ -86,4 +92,34 @@ export async function acknowledgeReminders(
       return result.data;
     })
     .filter((item): item is CoachContextItem => item !== null);
+}
+
+/**
+ * Today's unacknowledged reminders (the user's local day), newest first —
+ * read only. The opening brief shows the reason for the Coach tab dot from
+ * this; clearing stays with `acknowledgeReminders`, when the user acts.
+ */
+export async function getTodaysPendingReminders(
+  userId: string,
+  tz: string,
+  now: Date = new Date(),
+): Promise<CoachContextItem[]> {
+  const { startOfDay, endOfDay } = getDayBounds(now, tz);
+  const rows = await db
+    .select({
+      id: pendingReminders.id,
+      type: pendingReminders.type,
+      context: pendingReminders.context,
+    })
+    .from(pendingReminders)
+    .where(
+      and(
+        eq(pendingReminders.userId, userId),
+        isNull(pendingReminders.acknowledgedAt),
+        gte(pendingReminders.scheduledFor, startOfDay),
+        lt(pendingReminders.scheduledFor, endOfDay),
+      ),
+    )
+    .orderBy(desc(pendingReminders.scheduledFor));
+  return parseReminderRows(rows);
 }

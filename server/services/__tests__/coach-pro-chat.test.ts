@@ -294,6 +294,25 @@ describe("handleCoachChat", () => {
       expect(storage.getCoachCachedResponse).not.toHaveBeenCalled();
     });
 
+    it("still checks the free cache when the only earlier message is the opening brief", async () => {
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({
+          role: "assistant",
+          content: "Good afternoon.",
+          metadata: { kind: "opening_brief" },
+        }),
+        createMockChatMessage({ role: "user", content: "First" }),
+      ]);
+
+      await collectEvents(
+        handleCoachChat(
+          makeParams({ screenContext: undefined, isCoachPro: false }),
+        ),
+      );
+
+      expect(storage.getCoachCachedResponse).toHaveBeenCalled();
+    });
+
     it("includes same-day coach context fingerprint in cache key", () => {
       const morning = new Date("2026-04-29T09:15:00Z");
       const baseHash = hashCoachCacheContext(
@@ -973,6 +992,27 @@ describe("handleCoachChat", () => {
         1,
         "user-42",
         "My first question",
+      );
+    });
+
+    it("still auto-titles when the only earlier message is the opening brief", async () => {
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({
+          role: "assistant",
+          content: "Good afternoon.",
+          metadata: { kind: "opening_brief" },
+        }),
+        createMockChatMessage({ role: "user", content: "It went well" }),
+      ]);
+
+      await collectEvents(
+        handleCoachChat(makeParams({ content: "It went well" })),
+      );
+
+      expect(storage.updateChatConversationTitle).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "It went well",
       );
     });
 

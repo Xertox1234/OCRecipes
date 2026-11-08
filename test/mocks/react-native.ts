@@ -405,9 +405,13 @@ export const KeyboardAvoidingView = mockComponent(
 
 export const AccessibilityInfo = {
   announceForAccessibility: () => {},
+  setAccessibilityFocus: () => {},
   isScreenReaderEnabled: () => Promise.resolve(false),
   addEventListener: () => ({ remove: () => {} }),
 };
+
+/** Any mounted ref has a node handle; the number itself is never inspected. */
+export const findNodeHandle = (ref: unknown): number | null => (ref ? 1 : null);
 
 export const TouchableOpacity = React.forwardRef<
   unknown,

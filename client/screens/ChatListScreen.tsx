@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -21,6 +21,13 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { usePendingReminders } from "@/hooks/usePendingReminders";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { getCachedLastBriefSeenDate } from "@/lib/coach-brief-seen";
+import {
+  localDateString,
+  shouldOpenBriefDraft,
+} from "@/components/coach/opening-brief-decision";
 import {
   REFRESH_ON_FOCUS_SETTLE_MS,
   useRefreshOnFocus,
@@ -87,6 +94,30 @@ export default function ChatListScreen() {
   const { confirm, ConfirmationModal, behindContentA11yProps } =
     useConfirmationModal();
   const navigation = useNavigation<ChatListNavigationProp>();
+
+  // The opening brief (spec 2026-11-08): on the first visit of the day, or
+  // when a reminder lit the Coach tab dot, the free Coach tab opens straight
+  // into a new chat with the coach's brief. Decided once, at mount; Back
+  // returns to this list. Coach Pro's tab roots at CoachPro, which decides
+  // for itself.
+  const { hasPending: hasPendingReminder } = usePendingReminders();
+  const isCoachPro = usePremiumFeature("coachPro");
+  const [openDraft] = useState(
+    () =>
+      !isCoachPro &&
+      shouldOpenBriefDraft({
+        hasPendingReminder,
+        lastSeen: getCachedLastBriefSeenDate(),
+        today: localDateString(new Date()),
+        hasExplicitConversation: false,
+      }),
+  );
+  const openedDraft = useRef(false);
+  useEffect(() => {
+    if (!openDraft || openedDraft.current) return;
+    openedDraft.current = true;
+    navigation.navigate("Chat");
+  }, [openDraft, navigation]);
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const isRecipeMode = activeSegment === "recipe";

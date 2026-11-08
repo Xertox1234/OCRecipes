@@ -882,6 +882,20 @@ describe("useCoachStream recipe finder actions", () => {
   });
 });
 
+describe("useCoachStream opening brief", () => {
+  it("sends the brief form in the request body", async () => {
+    const { result } = await setupHook();
+    await act(async () => {
+      result.current.startStream(7, "It went well", { openingBrief: "full" });
+      await Promise.resolve();
+    });
+    const body = JSON.parse(mockXhr.sentBody ?? "{}") as {
+      openingBrief?: unknown;
+    };
+    expect(body.openingBrief).toBe("full");
+  });
+});
+
 describe("useCoachStream session expiry (R22)", () => {
   it("routes an http-error response through the shared session-expiry check with the sent token", async () => {
     mockNotifyStream.mockClear();
