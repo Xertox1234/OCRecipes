@@ -625,6 +625,14 @@ export async function* handleCoachChat(
       tz,
       { offerRecipe: offerOn },
     )) {
+      // A later sentence failed the unsafe-advice check: replace everything
+      // shown and save only the safety message (as the free tier does).
+      if (chunk.type === "safety_override") {
+        fullResponse = STANDARD_SAFETY_MESSAGE;
+        if (!isAborted())
+          yield { type: "safety_override", message: STANDARD_SAFETY_MESSAGE };
+        break;
+      }
       if (chunk.type === "tool_calls") {
         // Yielded immediately when the tools are detected, before they run —
         // surface the status event on the wire now instead of waiting for

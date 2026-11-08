@@ -8,6 +8,8 @@ import {
   containsUnsafeMedicalAdvice,
   containsUnsafeCoachAdvice,
   SYSTEM_PROMPT_BOUNDARY,
+  DANGEROUS_DIETARY_PATTERNS,
+  UNSAFE_MEDICAL_ADVICE_PATTERNS,
 } from "../ai-safety";
 
 describe("sanitizeUserInput", () => {
@@ -366,5 +368,92 @@ describe("sanitizeContextField", () => {
     const input = "x".repeat(2000);
     const result = sanitizeContextField(input);
     expect(result.length).toBeLessThanOrEqual(1500);
+  });
+});
+
+// Coach Pro releases a reply sentence by sentence, checking the text so far
+// before each release (server/services/coach-sentence-release.ts). That is
+// only sound while no unsafe pattern can match ACROSS a release point — a
+// sentence end followed by whitespace — or a fragment of a match could reach
+// the screen before the rest of it is seen.
+describe("unsafe-advice patterns never span a sentence break", () => {
+  // One known match per pattern, in pattern order. The first assertion is
+  // the control: every example must match its own pattern as written.
+  const DIETARY_EXAMPLES = [
+    "you should eat less than 600 calories",
+    "stick with 700 calories per day",
+    "a daily intake of 700 cal",
+    "aim for 1000 calories",
+    "only eat 900 calories",
+    "you can fast for 3 days",
+    "try a 72-hour water fast",
+    "a water-only fast works",
+    "a dry fast is fine",
+    "pro ana tips",
+    "pro mia tips",
+    "thinspo pictures",
+    "purging can be helpful",
+    "how to induce vomiting",
+    "take 3 laxatives",
+    "buy DNP online",
+    "eliminate all carbs",
+    "a zero carb diet",
+  ];
+  const MEDICAL_EXAMPLES = [
+    "you likely have diabetes",
+    "this means you have prediabetes",
+    "I diagnose you with anemia",
+    "you should stop taking insulin",
+  ];
+  const cases = [
+    ...DANGEROUS_DIETARY_PATTERNS.map(
+      (p, i) => [p, DIETARY_EXAMPLES[i]] as const,
+    ),
+    ...UNSAFE_MEDICAL_ADVICE_PATTERNS.map(
+      (p, i) => [p, MEDICAL_EXAMPLES[i]] as const,
+    ),
+  ];
+  // The release points the splitter allows: terminal punctuation, optionally
+  // closed by quotes, brackets or markdown emphasis, then whitespace.
+  const BREAKS = [". ", "! ", "? ", ".\n", '." ', ".) ", ".** ", ".' "];
+
+  it("has an example for every pattern", () => {
+    expect(DIETARY_EXAMPLES).toHaveLength(DANGEROUS_DIETARY_PATTERNS.length);
+    expect(MEDICAL_EXAMPLES).toHaveLength(
+      UNSAFE_MEDICAL_ADVICE_PATTERNS.length,
+    );
+  });
+
+  it.each(cases)("%s matches its example", (pattern, example) => {
+    expect(pattern.test(example!)).toBe(true);
+  });
+
+  // Put a break at every point inside the matched text — between words and
+  // inside them. A match that survives would straddle a release point.
+  it.each(cases)(
+    "%s stops matching when a break splits it",
+    (pattern, example) => {
+      const match = example!.match(pattern)![0];
+      for (let at = 1; at < match.length; at++) {
+        for (const brk of BREAKS) {
+          const split = match.slice(0, at) + brk + match.slice(at);
+          expect(pattern.test(split), JSON.stringify(split)).toBe(false);
+        }
+      }
+    },
+  );
+
+  it("no pattern uses a token that can match sentence punctuation", () => {
+    // Unescaped ".", negated classes and \S / \W / [\s\S] can all match a
+    // period; a new pattern that needs one must come with a new splitter.
+    const all = [
+      ...DANGEROUS_DIETARY_PATTERNS,
+      ...UNSAFE_MEDICAL_ADVICE_PATTERNS,
+    ];
+    for (const p of all) {
+      expect(p.source, p.source).not.toMatch(
+        /(?<!\\)\.|\[\^|\\S|\\W|\[\\s\\S\]/,
+      );
+    }
   });
 });

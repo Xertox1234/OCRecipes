@@ -17,6 +17,7 @@ import {
   hashNotebookDedupeKey,
   buildMealPatternSummary,
   _testInternals as coachProInternals,
+  STANDARD_SAFETY_MESSAGE,
 } from "../coach-pro-chat";
 import { storage } from "../../storage";
 import {
@@ -535,6 +536,47 @@ describe("handleCoachChat", () => {
         (overrideEvents[0] as { type: "safety_override"; message: string })
           .message,
       ).toContain("careful");
+    });
+  });
+
+  // Coach Pro releases vetted sentences as they arrive; a later sentence that
+  // fails the check replaces everything shown, and only the standard safety
+  // message is saved.
+  describe("Coach Pro safety override", () => {
+    it("forwards the override and saves only the safety message", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        (async function* () {
+          yield { type: "content" as const, content: "Hydrate well." };
+          yield { type: "safety_override" as const };
+        })(),
+      );
+      vi.mocked(parseBlocksFromContent).mockImplementation((text: string) => ({
+        text,
+        blocks: [],
+      }));
+
+      const events = await collectEvents(
+        handleCoachChat(makeParams({ isCoachPro: true })),
+      );
+
+      expect(events).toEqual([
+        { type: "content", content: "Hydrate well." },
+        { type: "safety_override", message: STANDARD_SAFETY_MESSAGE },
+      ]);
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        STANDARD_SAFETY_MESSAGE,
+        null,
+      );
+      expect(storage.createChatMessage).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        "assistant",
+        expect.stringContaining("Hydrate"),
+        expect.anything(),
+      );
     });
   });
 
