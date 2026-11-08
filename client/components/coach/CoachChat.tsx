@@ -56,7 +56,7 @@ import { useMakeSuggestionFlow } from "@/hooks/useMakeSuggestionFlow";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { streamBlockEntranceHoldMs } from "@/constants/animations";
+import { blockEntranceTotalMs } from "@/components/coach/blocks/block-entrance";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 import {
   useAddFavouriteRecipe,
@@ -517,7 +517,7 @@ export default function CoachChat({
     if (!streamBlocksEntering) return;
     const timer = setTimeout(
       () => setStreamBlocksEntering(false),
-      streamBlockEntranceHoldMs,
+      blockEntranceTotalMs(streamBlocks),
     );
     return () => clearTimeout(timer);
   }, [streamBlocksEntering, streamBlocks]);

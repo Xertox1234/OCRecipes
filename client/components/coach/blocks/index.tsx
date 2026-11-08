@@ -1,5 +1,5 @@
 import React from "react";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import ActionCard from "./ActionCard";
 import SuggestionList from "./SuggestionList";
@@ -11,7 +11,7 @@ import MealPlanCard from "./MealPlanCard";
 import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMessage";
 import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { chatBubbleEntrySpring } from "@/constants/animations";
+import { chatBlockRiseEntrance } from "@/constants/animations";
 import type {
   FinderAction,
   FinderButton,
@@ -46,54 +46,61 @@ interface BlockRendererProps {
   messageContent?: string;
   /** The chat's adjust-card choices by flowId; survives a card remount. */
   adjustChoices?: AdjustChoicesStore;
-  /** Slide the block in on mount. Only the live copy of a just-finished
+  /** Fade the block in on mount. Only the live copy of a just-finished
    *  reply sets this; saved messages (history, scroll-back, the swap once
    *  the reply is saved) appear without replaying an entrance. */
   animateEntry?: boolean;
+  /** Where this block's entrance starts in the reply's stagger sequence
+   *  (`blockEntranceDelays`). */
+  entryDelayMs?: number;
 }
 
 const noop = () => {};
 
 export default function BlockRenderer({
   animateEntry = false,
+  entryDelayMs = 0,
   ...props
 }: BlockRendererProps) {
   const { reducedMotion } = useAccessibility();
-  const content = renderBlock(props);
+  const animate = animateEntry && !reducedMotion;
+  const content = renderBlock(props, animate, entryDelayMs);
 
-  if (!content || !animateEntry || reducedMotion) return content;
+  // A quick-reply row staggers its own chips; everything else enters whole.
+  if (!content || !animate || props.block.type === "quick_replies") {
+    return content;
+  }
 
   return (
-    <Animated.View
-      entering={FadeInDown.springify()
-        .damping(chatBubbleEntrySpring.damping)
-        .mass(chatBubbleEntrySpring.mass)
-        .stiffness(chatBubbleEntrySpring.stiffness)}
-    >
+    <Animated.View entering={chatBlockRiseEntrance(entryDelayMs)}>
       {content}
     </Animated.View>
   );
 }
 
-function renderBlock({
-  block,
-  onAction,
-  onQuickReply,
-  onCommitmentAccept,
-  isUsed,
-  isCommitmentAccepted,
-  blockKey,
-  isActive,
-  lockedFinderButtons,
-  onFinderAction,
-  onLockedFinderButton,
-  onOpenFinderItem,
-  onMakeFinderItem,
-  makingFinderItemId,
-  expiredFinderFlowIds,
-  messageContent,
-  adjustChoices,
-}: Omit<BlockRendererProps, "animateEntry">) {
+function renderBlock(
+  {
+    block,
+    onAction,
+    onQuickReply,
+    onCommitmentAccept,
+    isUsed,
+    isCommitmentAccepted,
+    blockKey,
+    isActive,
+    lockedFinderButtons,
+    onFinderAction,
+    onLockedFinderButton,
+    onOpenFinderItem,
+    onMakeFinderItem,
+    makingFinderItemId,
+    expiredFinderFlowIds,
+    messageContent,
+    adjustChoices,
+  }: Omit<BlockRendererProps, "animateEntry" | "entryDelayMs">,
+  animateEntry: boolean,
+  entryDelayMs: number,
+) {
   switch (block.type) {
     case "action_card":
       return <ActionCard block={block} onAction={onAction} />;
@@ -116,6 +123,8 @@ function renderBlock({
           onSelect={onQuickReply}
           blockKey={blockKey}
           used={isUsed}
+          animateEntry={animateEntry}
+          entryDelayMs={entryDelayMs}
         />
       );
     case "recipe_card":

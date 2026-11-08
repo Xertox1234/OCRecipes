@@ -4,6 +4,7 @@ import { LayoutAnimationConfig } from "react-native-reanimated";
 import { ChatBubble } from "@/components/ChatBubble";
 import BlockRenderer from "@/components/coach/blocks";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
+import { blockEntranceDelays } from "@/components/coach/blocks/block-entrance";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 interface StreamingBubbleProps {
@@ -35,6 +36,7 @@ const StreamingBubble = memo(function StreamingBubble({
   isSpeaking,
   speakingMessageId,
 }: StreamingBubbleProps) {
+  const entryDelays = blockEntranceDelays(streamBlocks);
   return (
     <View>
       {isStreaming && streamingContent ? (
@@ -58,6 +60,7 @@ const StreamingBubble = memo(function StreamingBubble({
             onQuickReply={onQuickReply}
             onCommitmentAccept={onCommitmentAccept}
             animateEntry
+            entryDelayMs={entryDelays[i]}
           />
         ))}
       </LayoutAnimationConfig>

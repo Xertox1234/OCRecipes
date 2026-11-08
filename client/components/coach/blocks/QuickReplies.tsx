@@ -6,7 +6,11 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { PressableScale } from "@/components/PressableScale";
 import { withOpacity } from "@/constants/theme";
-import { quickRepliesExitDuration } from "@/constants/animations";
+import {
+  chatBlockEntrance,
+  chatBlockRiseEntrance,
+  quickRepliesExitDuration,
+} from "@/constants/animations";
 import type { QuickReplies as QuickRepliesType } from "@shared/schemas/coach-blocks";
 
 interface Props {
@@ -16,6 +20,11 @@ interface Props {
   onSelect?: (message: string, blockKey?: string) => void;
   blockKey?: string;
   used?: boolean;
+  /** Bring the chips in one after another (the live copy of a
+   *  just-finished reply). The caller has already gated reduced motion. */
+  animateEntry?: boolean;
+  /** When the first chip starts, in the reply's stagger sequence. */
+  entryDelayMs?: number;
 }
 
 const QuickReplies = React.memo(function QuickReplies({
@@ -23,6 +32,8 @@ const QuickReplies = React.memo(function QuickReplies({
   onSelect,
   blockKey,
   used,
+  animateEntry = false,
+  entryDelayMs = 0,
 }: Props) {
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -43,28 +54,38 @@ const QuickReplies = React.memo(function QuickReplies({
         contentContainerStyle={styles.content}
       >
         {block.options.map((option, i) => (
-          <PressableScale
+          <Animated.View
             key={i}
-            scaleTo={0.95}
-            style={[
-              styles.chip,
-              {
-                backgroundColor: withOpacity(theme.link, 0.15),
-                borderColor: withOpacity(theme.link, 0.3),
-              },
-            ]}
-            onPress={() => {
-              haptics.selection();
-              onSelect?.(option.message, blockKey);
-            }}
-            hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel={option.label}
+            entering={
+              animateEntry
+                ? chatBlockRiseEntrance(
+                    entryDelayMs + i * chatBlockEntrance.staggerMs,
+                  )
+                : undefined
+            }
           >
-            <Text style={[styles.chipText, { color: theme.link }]}>
-              {option.label}
-            </Text>
-          </PressableScale>
+            <PressableScale
+              scaleTo={0.95}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: withOpacity(theme.link, 0.15),
+                  borderColor: withOpacity(theme.link, 0.3),
+                },
+              ]}
+              onPress={() => {
+                haptics.selection();
+                onSelect?.(option.message, blockKey);
+              }}
+              hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={option.label}
+            >
+              <Text style={[styles.chipText, { color: theme.link }]}>
+                {option.label}
+              </Text>
+            </PressableScale>
+          </Animated.View>
         ))}
       </ScrollView>
     </Animated.View>

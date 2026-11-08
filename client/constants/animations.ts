@@ -3,6 +3,7 @@ import {
   WithTimingConfig,
   Easing,
   FadeInDown,
+  FadeInUp,
 } from "react-native-reanimated";
 
 /**
@@ -143,15 +144,6 @@ export const reticleSettleSpringConfig: WithSpringConfig = {
   stiffness: 250,
 };
 
-/** Spring parameters for chat bubble entrances. Layout-animation builders
- *  take these through `.damping()` / `.stiffness()` / `.mass()`, not a config
- *  object. */
-export const chatBubbleEntrySpring = {
-  damping: 18,
-  mass: 1,
-  stiffness: 150,
-} as const;
-
 /** A message you just sent settling into place: a short fade with a small
  *  rise on a strong ease-out — present, not a swoop across the screen. */
 export const chatSentEntrance = {
@@ -170,11 +162,31 @@ export const chatReplyTextFadeMs = 200;
  *  as the user scrolls away from, or back to, the newest message. */
 export const jumpToLatestFadeMs = 200;
 
-/** How long a finished Coach reply's live blocks stay on screen before the
- *  saved copy takes over — long enough for the `chatBubbleEntrySpring`
- *  entrance to settle (within 1% at ~540ms at damping 18 / mass 1 /
- *  stiffness 150). */
-export const streamBlockEntranceHoldMs = 600;
+/** A finished Coach reply's cards and quick-reply chips arriving under its
+ *  text: each fades in with a small rise, one beat after the one before,
+ *  so they read as following the reply rather than landing as one slab.
+ *  Same rise and ease as `chatSentEntrance`, a little quicker. */
+export const chatBlockEntrance = {
+  duration: 200,
+  /** Starting offset below the resting position, in points. */
+  rise: 6,
+  /** Milliseconds between one item starting and the next. */
+  staggerMs: 45,
+  easing: chatSentEntrance.easing,
+} as const;
+
+/** `entering` for one Coach card or chip, `delayMs` into the sequence
+ *  (see `client/components/coach/blocks/block-entrance.ts`). Callers gate
+ *  it on reduced motion, where the item simply appears. */
+export function chatBlockRiseEntrance(delayMs: number) {
+  return FadeInUp.duration(chatBlockEntrance.duration)
+    .delay(delayMs)
+    .easing(chatBlockEntrance.easing)
+    .withInitialValues({
+      opacity: 0,
+      transform: [{ translateY: chatBlockEntrance.rise }],
+    });
+}
 
 /** How a streamed Coach reply is revealed (see
  *  `client/components/coach/stream-reveal-utils.ts`): whole words at a calm
