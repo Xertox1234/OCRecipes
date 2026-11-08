@@ -175,6 +175,19 @@ Entry point: `client/screens/meal-plan/RecipeImportScreen.tsx` (uses `useParseRe
   is blocked, the app **may** adjust the WebView's user-agent (e.g. drop the `wv` marker so it
   presents as the platform browser). Only the phone's WebView, never the server fetch; use the
   smallest change that passes.
+  **RESOLVED 2026-11-08 — go/no-go spike PASSED, no UA change needed.** Default WebView UA,
+  JSON-LD read, no block page:
+
+  | Device                                                               | Allrecipes        | Serious Eats | Simply Recipes |
+  | -------------------------------------------------------------------- | ----------------- | ------------ | -------------- |
+  | iPhone 16 Pro Max, iOS 26.6.2 (WKWebView)                            | ✅ 11 ingredients | ✅ 11        | ✅ 16          |
+  | Galaxy SM-A376B, Android 17 (WebView Chrome 156, UA includes `; wv`) | ✅ 11             | ✅ 11        | ✅ 16          |
+
+  Side finding: with no navigation handler, react-native-webview passed an ad iframe's
+  `about:srcdoc` to `Linking.openURL` — the import WebView must refuse non-http(s) top-frame
+  navigations itself and allow `about:blank`/`about:srcdoc` only in subframes, never handing
+  URLs to the OS.
+
 - The sign-in path's value may be modest: logged-out requests already get full recipe data on
   the big paywalled sites. It still covers Cloudflare interactive challenges, sites that render
   recipes only for signed-in users, and browsing from a pin/link to the recipe.
