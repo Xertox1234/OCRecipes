@@ -70,7 +70,9 @@ const NO_RECIPE_MESSAGE =
   "No recipe on this page yet — sign in or open the recipe, then try again.";
 
 function sendBlocks(blocks: string[], url: string) {
-  act(() => webViewProps.current!.onBlocks(blocks, url));
+  act(() => {
+    webViewProps.current!.onBlocks(blocks, url);
+  });
 }
 
 beforeEach(() => {
@@ -231,9 +233,9 @@ describe("RecipeImportBrowserScreen", () => {
 
   it("shows the current domain as the user navigates", () => {
     renderComponent(<RecipeImportBrowserScreen />);
-    act(() =>
-      webViewProps.current!.onNavigationChange("https://www.other.com/login"),
-    );
+    act(() => {
+      webViewProps.current!.onNavigationChange("https://www.other.com/login");
+    });
     expect(screen.getByText("www.other.com")).toBeTruthy();
   });
 
@@ -242,21 +244,21 @@ describe("RecipeImportBrowserScreen", () => {
     sendBlocks([RECIPE_BLOCK], "https://example.com/soup");
     expect(screen.getByText(/Recipe found/)).toBeTruthy();
 
-    act(() =>
+    act(() => {
       webViewProps.current!.onNavigationChange(
         "https://example.com/other",
         true,
-      ),
-    );
+      );
+    });
     expect(screen.queryByText(/Recipe found/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
-    act(() =>
+    act(() => {
       webViewProps.current!.onNavigationChange(
         "https://example.com/other",
         true,
-      ),
-    );
+      );
+    });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
@@ -291,21 +293,21 @@ describe("RecipeImportBrowserScreen", () => {
 
     it("goes back inside the page while the WebView can", () => {
       renderComponent(<RecipeImportBrowserScreen />);
-      act(() =>
-        webViewProps.current!.onNavigationChange("https://example.com/b", true),
-      );
+      act(() => {
+        webViewProps.current!.onNavigationChange("https://example.com/b", true);
+      });
       expect(backHandler()!()).toBe(true);
       expect(webViewGoBack).toHaveBeenCalled();
     });
 
     it("lets the default close happen when the WebView cannot go back", () => {
       renderComponent(<RecipeImportBrowserScreen />);
-      act(() =>
+      act(() => {
         webViewProps.current!.onNavigationChange(
           "https://example.com/a",
           false,
-        ),
-      );
+        );
+      });
       expect(backHandler()!()).toBe(false);
       expect(webViewGoBack).not.toHaveBeenCalled();
     });

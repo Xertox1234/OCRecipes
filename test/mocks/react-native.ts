@@ -407,7 +407,12 @@ export const AccessibilityInfo = {
   announceForAccessibility: () => {},
   isScreenReaderEnabled: () => Promise.resolve(false),
   addEventListener: () => ({ remove: () => {} }),
+  setAccessibilityFocus: () => {},
 };
+
+// No native view tags under the DOM mock. Without this, a focus-on-mount
+// timer (CoachOverlayContent's 300 ms) that outlives a slow test throws.
+export const findNodeHandle = (): number | null => null;
 
 export const TouchableOpacity = React.forwardRef<
   unknown,

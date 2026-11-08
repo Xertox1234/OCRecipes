@@ -51,7 +51,10 @@ export function ImportWebView({
   onNavigationChange,
   ref,
 }: ImportWebViewProps) {
-  const webRef = useRef<WebView>(null);
+  // react-native-webview 14 declares `WebView<P = undefined>` with props
+  // `WebViewProps & P`; the default collapses the props to `never` under TS 6,
+  // so name P explicitly (no extra props).
+  const webRef = useRef<WebView<object>>(null);
   const currentUrl = useRef(url);
 
   useImperativeHandle(ref, () => ({
@@ -67,7 +70,7 @@ export function ImportWebView({
   };
 
   return (
-    <WebView
+    <WebView<object>
       ref={webRef}
       source={{ uri: url }}
       style={hidden ? styles.hidden : styles.visible}

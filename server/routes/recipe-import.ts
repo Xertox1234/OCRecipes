@@ -106,7 +106,7 @@ export function register(app: Express): void {
     "/api/meal-plan/recipes/parse-page",
     requireAuth,
     pageImportRateLimit,
-    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    (req: AuthenticatedRequest, res: Response): void => {
       try {
         const parsed = parsePageSchema.safeParse(req.body);
         if (!parsed.success) {

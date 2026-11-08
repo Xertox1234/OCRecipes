@@ -137,31 +137,37 @@ export default function RecipeImportBrowserScreen() {
       inFlightRef.current = true;
       setImporting(true);
       setMessage("");
-      try {
-        const importedData = await parsePageMutation.mutateAsync({
+      // Settled with .then(ok, fail), not try/finally: a `finally` opts the
+      // whole component out of React Compiler.
+      const outcome = await parsePageMutation
+        .mutateAsync({
           url: resolveImportedUrl(page.currentUrl, startUrl),
           ldJson: page.blocks,
-        });
-        if (!mountedRef.current) return;
+        })
+        .then(
+          (data) => ({ ok: true as const, data }),
+          (error: unknown) => ({ ok: false as const, error }),
+        );
+      inFlightRef.current = false;
+      if (!mountedRef.current) return;
+      setImporting(false);
+      if (outcome.ok) {
         haptics.notification(NotificationFeedbackType.Success);
         navigation.replace("RecipeCreate", {
-          prefill: importedData,
+          prefill: outcome.data,
           returnToMealPlan,
           fromHome,
         });
-      } catch (error) {
-        if (!mountedRef.current) return;
-        haptics.notification(NotificationFeedbackType.Error);
-        const code = error instanceof ApiError ? error.code : undefined;
-        setMessage(
-          code === "NO_RECIPE_DATA" || code === "PARSE_ERROR"
-            ? NO_RECIPE_MESSAGE
-            : FAILED_MESSAGE,
-        );
-      } finally {
-        inFlightRef.current = false;
-        if (mountedRef.current) setImporting(false);
+        return;
       }
+      haptics.notification(NotificationFeedbackType.Error);
+      const code =
+        outcome.error instanceof ApiError ? outcome.error.code : undefined;
+      setMessage(
+        code === "NO_RECIPE_DATA" || code === "PARSE_ERROR"
+          ? NO_RECIPE_MESSAGE
+          : FAILED_MESSAGE,
+      );
     },
     [
       parsePageMutation,
