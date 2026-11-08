@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -63,5 +65,60 @@ describe("react-native-webview Android patch", () => {
   it("touches only the two locked-down files", () => {
     const headers = readPatch().match(/^diff --git .*$/gm) ?? [];
     expect(headers).toHaveLength(2);
+  });
+});
+
+/**
+ * patch-package exits 0 on a failed apply outside CI=true, so the patch file
+ * alone proves nothing: read the INSTALLED sources it must have changed.
+ * Resolved through Node, not Vite (vitest aliases react-native-webview to a
+ * render mock).
+ */
+const webviewRoot = path.dirname(
+  createRequire(import.meta.url).resolve("react-native-webview/package.json"),
+);
+const javaDir = path.join(
+  webviewRoot,
+  "android/src/main/java/com/reactnativecommunity/webview",
+);
+
+/** The body of a Java method, from its signature to the matching brace. */
+function javaMethodBody(source: string, signature: string): string {
+  const start = source.indexOf(signature);
+  if (start === -1) return "";
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}" && --depth === 0) {
+      return source.slice(open, i + 1);
+    }
+  }
+  return "";
+}
+
+describe("react-native-webview Android patch is applied to node_modules", () => {
+  it("onPermissionRequest denies capture", () => {
+    const source = readFileSync(
+      path.join(javaDir, "RNCWebChromeClient.java"),
+      "utf8",
+    );
+    const body = javaMethodBody(
+      source,
+      "public void onPermissionRequest(final PermissionRequest request)",
+    );
+    expect(body).not.toBe("");
+    expect(body).toContain("OCRecipes: the recipe-import WebView");
+    expect(body).toContain("request.deny()");
+  });
+
+  it("the download listener is a no-op", () => {
+    const source = readFileSync(
+      path.join(javaDir, "RNCWebViewManagerImpl.kt"),
+      "utf8",
+    );
+    expect(source).toContain("OCRecipes: downloads off");
+    expect(source).toContain("DownloadListener { _, _, _, _, _ -> }");
+    expect(source).not.toContain("setDestinationInExternalPublicDir");
   });
 });
