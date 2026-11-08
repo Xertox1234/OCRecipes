@@ -4,9 +4,11 @@ import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import {
   checkPremiumFeature,
+  getPremiumFeatures,
   handleRouteError,
   parseTimezone,
 } from "./_helpers";
+import { buildCoachBrief } from "../services/coach-brief";
 import { crudRateLimit, chatRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -48,6 +50,40 @@ export function register(app: Express): void {
         res.json(data);
       } catch (error) {
         handleRouteError(res, error, "get coach context");
+      }
+    },
+  );
+
+  // GET /api/coach/brief — the opening brief for a new chat, every plan.
+  // Fixed-wording templates over the user's own data; no model call.
+  const briefQuerySchema = z.object({
+    form: z.enum(["full", "short"]).default("full"),
+  });
+  app.get(
+    "/api/coach/brief",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      const parsed = briefQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return sendError(
+          res,
+          400,
+          "Invalid brief form",
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+      try {
+        const features = await getPremiumFeatures(req);
+        const brief = await buildCoachBrief(
+          req.userId,
+          features,
+          parseTimezone(req.headers["x-timezone"]),
+          parsed.data.form,
+        );
+        res.json(brief);
+      } catch (error) {
+        handleRouteError(res, error, "get coach brief");
       }
     },
   );
