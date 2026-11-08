@@ -8,6 +8,7 @@ import {
   cleanup,
 } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
+import { AccessibilityInfo } from "react-native";
 
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -268,6 +269,8 @@ describe("RecipeImportScreen — on-device fallback", () => {
       mockParse.mockRejectedValue(failWith(ErrorCode.TIMEOUT));
       await startImport();
       await screen.findByTestId("import-webview");
+      // Flush the effect that arms the 15 s timer before advancing the clock.
+      await act(async () => {});
       act(() => {
         vi.advanceTimersByTime(15_000);
       });
@@ -302,5 +305,38 @@ describe("RecipeImportScreen — on-device fallback", () => {
       resolvePage({ title: "Soup" });
     });
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("two non-empty messages in one tick parse and navigate once", async () => {
+    mockParse.mockRejectedValue(failWith(ErrorCode.FETCH_FAILED));
+    mockParsePage.mockResolvedValue({ title: "Soup" });
+    await startImport();
+    await screen.findByTestId("import-webview");
+    act(() => {
+      const onBlocks = webViewProps.current!.onBlocks as (
+        b: string[],
+        u: string,
+      ) => void;
+      onBlocks(["{}"], "http://a.com/x");
+      onBlocks(["{}"], "https://a.com/x");
+    });
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockParsePage).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces the sign-in panel once, and the extracting phase once", async () => {
+    const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+    mockParse.mockRejectedValue(failWith(ErrorCode.FETCH_FAILED));
+    mockParsePage.mockRejectedValue(failWith(ErrorCode.NO_RECIPE_DATA));
+    await startImport();
+    await screen.findByTestId("import-webview");
+    triggerBlocks(["{}"], "https://www.allrecipes.com/soup");
+    await screen.findByText("We couldn't read this recipe");
+    const calls = announce.mock.calls.map((c) => c[0]);
+    expect(calls.filter((m) => m === "Extracting recipe data")).toHaveLength(1);
+    expect(calls).toContain(
+      "We couldn't read this recipe. The site may need you to sign in.",
+    );
   });
 });

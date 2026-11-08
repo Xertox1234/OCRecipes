@@ -84,6 +84,9 @@ export default function RecipeImportScreen() {
   // Bumped on every new attempt and on unmount, so a late parse result from an
   // abandoned attempt can neither navigate nor set state.
   const attemptRef = useRef(0);
+  // The attempt whose page data has been taken; the extractor can post twice in
+  // one tick (redirect hop + final page) before the WebView unmounts.
+  const claimedAttemptRef = useRef(0);
   useEffect(() => {
     return () => {
       attemptRef.current += 1;
@@ -100,16 +103,22 @@ export default function RecipeImportScreen() {
     return () => clearTimeout(timer);
   }, [state]);
 
+  // loading and device are one phase to the user: announce it once.
+  const phase = state === "device" ? "loading" : state;
   useEffect(() => {
     if (Platform.OS !== "ios") return;
-    if (state === "loading" || state === "device") {
+    if (phase === "loading") {
       AccessibilityInfo.announceForAccessibility("Extracting recipe data");
-    } else if (state === "error") {
+    } else if (phase === "needs-browser") {
+      AccessibilityInfo.announceForAccessibility(
+        "We couldn't read this recipe. The site may need you to sign in.",
+      );
+    } else if (phase === "error") {
       AccessibilityInfo.announceForAccessibility(
         `Import failed: ${errorMessage}`,
       );
     }
-  }, [state, errorMessage]);
+  }, [phase, errorMessage]);
 
   const handleImport = useCallback(async () => {
     const trimmed = url.trim();
@@ -159,6 +168,8 @@ export default function RecipeImportScreen() {
       // on each load.
       if (blocks.length === 0) return;
       const attempt = attemptRef.current;
+      if (claimedAttemptRef.current === attempt) return;
+      claimedAttemptRef.current = attempt;
       // Leaving "device" unmounts the WebView, so later messages can't arrive.
       setState("loading");
       try {
