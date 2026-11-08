@@ -24,3 +24,21 @@ export function urlImportErrorCopy(error: unknown): string {
   }
   return "Something went wrong. Please try again.";
 }
+
+const DEVICE_FALLBACK_CODES: ReadonlySet<string> = new Set([
+  ErrorCode.FETCH_FAILED,
+  ErrorCode.NO_RECIPE_DATA,
+  ErrorCode.TIMEOUT,
+  ErrorCode.PARSE_ERROR,
+]);
+
+/**
+ * True when the server could not read the page and the phone's own WebView
+ * may succeed. Never for rate limits, oversized pages, validation or
+ * network/auth errors.
+ */
+export function shouldTryDeviceFallback(error: unknown): boolean {
+  return (
+    error instanceof ApiError && DEVICE_FALLBACK_CODES.has(error.code ?? "")
+  );
+}

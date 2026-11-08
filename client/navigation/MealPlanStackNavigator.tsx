@@ -56,6 +56,11 @@ export type MealPlanStackParamList = {
         fromHome?: boolean;
       }
     | undefined;
+  RecipeImportBrowser: {
+    url: string;
+    returnToMealPlan?: { mealType: string; plannedDate: string };
+    fromHome?: boolean;
+  };
   RecipePhotoImport: {
     photoUri: string;
     returnToMealPlan?: { mealType: string; plannedDate: string };
