@@ -1,4 +1,5 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -9,7 +10,7 @@ import {
   parseTimezone,
 } from "./_helpers";
 import { buildCoachBrief } from "../services/coach-brief";
-import { crudRateLimit, chatRateLimit } from "./_rate-limiters";
+import { crudRateLimit, chatRateLimit, ipKeyGenerator } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -62,7 +63,21 @@ export function register(app: Express): void {
   app.get(
     "/api/coach/brief",
     requireAuth,
-    crudRateLimit,
+    // Inline (not the crudRateLimit const) so CodeQL's js/missing-rate-limiting
+    // query can trace it — the factory-const indirection is invisible to its
+    // dataflow (see server/routes/photos.ts). Same as crudRateLimit: 30/min,
+    // user-keyed with the IP fallback.
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: 30,
+      message: {
+        error: "Too many requests. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       const parsed = briefQuerySchema.safeParse(req.query);
       if (!parsed.success) {
