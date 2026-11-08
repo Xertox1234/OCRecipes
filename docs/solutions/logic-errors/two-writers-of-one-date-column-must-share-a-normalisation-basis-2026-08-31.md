@@ -182,7 +182,7 @@ local accessors (`toLocalDateString(new Date(stored))` from `shared/lib/date.ts`
   defines the column's de-facto contract; `:576` and `:617-618` are the reads and writes
 - `shared/lib/date.ts` — `toDateString` (UTC) and `toLocalDateString` (device-local), one
   identifier apart; the doc comments state which is for which side
-- `client/components/coach/coach-chat-utils.ts` — `formatPlanSaveSuccess`, kept free of date logic
+- `client/components/meal-plan/plan-add-copy.ts` — `formatPlanSaveSuccess`, kept free of date logic
 - `todos/archive/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md` —
   the product decision, now made: a true device-local basis
 - `todos/P2-2026-08-31-plan-slot-timezone-guards-never-run-in-ci.md` — the guard-durability gap

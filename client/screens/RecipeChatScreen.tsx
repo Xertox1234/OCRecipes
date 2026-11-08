@@ -85,7 +85,7 @@ import type {
 import { finderBlockFromMetadata } from "@shared/schemas/recipe-finder";
 import { generateRemixChips, type RemixChip } from "@/lib/remix-chips";
 import { apiRequest } from "@/lib/query-client";
-import { QUERY_KEYS } from "@/lib/query-keys";
+import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
 
 type RecipeChatRouteProp = RouteProp<RootStackParamList, "RecipeChat">;
 
@@ -261,15 +261,8 @@ export default function RecipeChatScreen() {
   const createConversation = useCreateConversation();
 
   // Fetch user dietary profile for remix chip generation
-  const { data: userProfile } = useQuery<{
-    allergies?: { name: string; severity: "mild" | "moderate" | "severe" }[];
-    dietType?: string | null;
-  }>({
-    queryKey: QUERY_KEYS.dietaryProfile,
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/user/dietary-profile");
-      return res.json();
-    },
+  const { data: userProfile } = useQuery({
+    ...dietaryProfileQueryOptions,
     enabled: isRemixMode,
   });
 

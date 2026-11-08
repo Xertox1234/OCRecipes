@@ -18,7 +18,7 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import { parseDecimalInput } from "@/lib/number-input";
 import { Spacing } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
-import { OPTION_MATCH_TOLERANCE } from "@/screens/nutrition-detail-utils";
+import { OPTION_MATCH_TOLERANCE } from "@/components/nutrition/nutrition-detail-utils";
 
 interface ServingOption {
   label: string;

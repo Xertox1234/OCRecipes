@@ -7,24 +7,28 @@ import TastePicksScreen from "../onboarding/TastePicksScreen";
 
 const {
   mockApiRequest,
-  mockUpdateUser,
+  mockCompleteOnboarding,
   mockToastSuccess,
   mockToastError,
   mockAlert,
 } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
-  mockUpdateUser: vi.fn(),
+  mockCompleteOnboarding: vi.fn(),
   mockToastSuccess: vi.fn(),
   mockToastError: vi.fn(),
   mockAlert: vi.fn(),
 }));
 
 vi.mock("@/lib/query-client", () => ({ apiRequest: mockApiRequest }));
-vi.mock("@/context/AuthContext", () => ({
-  useAuthContext: () => ({ updateUser: mockUpdateUser }),
-}));
+// The profile -> picks -> onboarded sequence itself (order, partial-success
+// resync) is OnboardingContext's, covered in OnboardingContext.test.ts; this
+// screen only hands it the picks and reports the outcome.
 vi.mock("@/context/OnboardingContext", () => ({
-  useOnboarding: () => ({ data: { dietType: null }, prevStep: vi.fn() }),
+  useOnboarding: () => ({
+    data: { dietType: null },
+    prevStep: vi.fn(),
+    completeOnboarding: mockCompleteOnboarding,
+  }),
 }));
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
@@ -69,7 +73,7 @@ beforeEach(() => {
     json: async () =>
       method === "GET" ? { candidates, total: 5, page: 1 } : {},
   }));
-  mockUpdateUser.mockResolvedValue({ onboardingCompleted: true });
+  mockCompleteOnboarding.mockResolvedValue(undefined);
 });
 
 async function pickFive() {
@@ -87,10 +91,7 @@ describe("TastePicksScreen — finishing onboarding", () => {
       expect(mockToastSuccess).toHaveBeenCalledWith(CELEBRATION),
     );
     expect(mockToastSuccess).toHaveBeenCalledTimes(1);
-    expect(mockApiRequest).toHaveBeenCalledWith("PUT", "/api/taste-picks", {
-      recipeIds: [1, 2, 3, 4, 5],
-    });
-    expect(mockUpdateUser).toHaveBeenCalledWith({ onboardingCompleted: true });
+    expect(mockCompleteOnboarding).toHaveBeenCalledWith([1, 2, 3, 4, 5]);
   });
 
   it("celebrates once when the user skips the picks", async () => {
@@ -103,7 +104,7 @@ describe("TastePicksScreen — finishing onboarding", () => {
       expect(mockToastSuccess).toHaveBeenCalledWith(CELEBRATION),
     );
     expect(mockToastSuccess).toHaveBeenCalledTimes(1);
-    expect(mockUpdateUser).toHaveBeenCalledWith({ onboardingCompleted: true });
+    expect(mockCompleteOnboarding).toHaveBeenCalledWith();
   });
 
   it.each([
@@ -112,7 +113,9 @@ describe("TastePicksScreen — finishing onboarding", () => {
   ])(
     "does not celebrate when %s fails, and says so with an error toast",
     async (label, needsPicks) => {
-      mockUpdateUser.mockRejectedValue(new Error("PUT /api/auth/profile 500"));
+      mockCompleteOnboarding.mockRejectedValue(
+        new Error("PUT /api/auth/profile 500"),
+      );
       renderComponent(<TastePicksScreen />);
       if (needsPicks) await pickFive();
       else await screen.findByRole("button", { name: "Pick all 5" });

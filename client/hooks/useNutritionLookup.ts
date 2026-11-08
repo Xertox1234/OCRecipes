@@ -32,7 +32,7 @@ import {
 import { enqueue } from "@/lib/offline-queue";
 import { formatLogSuccess } from "@/lib/log-success";
 import type { ScannedItemResponse } from "@/types/api";
-import { deriveLogGate } from "@/screens/nutrition-detail-utils";
+import { deriveLogGate } from "@/components/nutrition/nutrition-detail-utils";
 import {
   lookupBarcode,
   lookupStateFromOutcome,
@@ -547,7 +547,7 @@ export function useNutritionLookup(params: {
           queryKey: QUERY_KEYS.dailySummary,
         });
         void queryClient.invalidateQueries({
-          queryKey: ["/api/daily-budget"],
+          queryKey: QUERY_KEYS.dailyBudget,
         });
       }
       // `nutrition` holds the already-scaled values (the serving stepper

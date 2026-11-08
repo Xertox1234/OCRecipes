@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { useHaptics } from "@/hooks/useHaptics";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
 import {
   isPrimaryGoal,
   isActivityLevel,
@@ -18,18 +19,6 @@ import {
 interface Allergy {
   name: string;
   severity: "mild" | "moderate" | "severe";
-}
-
-interface DietaryProfile {
-  allergies?: Allergy[];
-  healthConditions?: string[];
-  dietType?: string | null;
-  foodDislikes?: string[];
-  primaryGoal?: string | null;
-  activityLevel?: string | null;
-  cuisinePreferences?: string[];
-  cookingSkillLevel?: string | null;
-  cookingTimeAvailable?: string | null;
 }
 
 export function useDietaryProfileForm() {
@@ -65,9 +54,7 @@ export function useDietaryProfileForm() {
     isError,
     error,
     refetch,
-  } = useQuery<DietaryProfile>({
-    queryKey: QUERY_KEYS.dietaryProfile,
-  });
+  } = useQuery(dietaryProfileQueryOptions);
 
   // Initialize form state from fetched profile
   useEffect(() => {

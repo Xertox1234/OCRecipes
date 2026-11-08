@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
 import {
-  parseErrorCode,
   HOLD_GATE_MS,
   DRAIN_INTERVAL_MS,
   STREAM_INACTIVITY_MS,
@@ -25,27 +24,6 @@ const TAIL_SHOWN_MS =
 // ── Pure helper tests (no timers, no XHR) ────────────────────────
 // The reveal pacing itself is unit-tested in
 // client/components/coach/__tests__/stream-reveal-utils.test.ts.
-
-describe("parseErrorCode", () => {
-  it("extracts the code from a standard error body", () => {
-    expect(
-      parseErrorCode('{"error":"Daily limit","code":"DAILY_LIMIT_REACHED"}'),
-    ).toBe("DAILY_LIMIT_REACHED");
-  });
-
-  it("returns undefined when the body has no code field", () => {
-    expect(parseErrorCode('{"error":"oops"}')).toBeUndefined();
-  });
-
-  it("returns undefined for a non-JSON body", () => {
-    expect(parseErrorCode("Internal Server Error")).toBeUndefined();
-    expect(parseErrorCode("")).toBeUndefined();
-  });
-
-  it("returns undefined when code is not a string", () => {
-    expect(parseErrorCode('{"code":123}')).toBeUndefined();
-  });
-});
 
 // ── Hook behaviour tests (fake timers + XHR mock) ─────────────────
 

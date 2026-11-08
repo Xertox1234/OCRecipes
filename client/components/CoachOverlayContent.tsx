@@ -26,6 +26,7 @@ import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { logger } from "@/lib/logger";
+import { chatMessagesKey } from "@/lib/query-keys";
 import {
   isCoachDisclaimerDismissed,
   setCoachDisclaimerDismissed,
@@ -138,7 +139,7 @@ export function CoachOverlayContent({
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
       if (conversationId !== null) {
         void queryClient.invalidateQueries({
-          queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+          queryKey: chatMessagesKey(conversationId),
         });
         void queryClient.invalidateQueries({
           queryKey: ["/api/chat/conversations"],
@@ -196,7 +197,7 @@ export function CoachOverlayContent({
       // staleTime. `refetchType: "none"` defers the refetch to the next
       // mount instead of racing the server's post-disconnect write.
       void queryClient.invalidateQueries({
-        queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+        queryKey: chatMessagesKey(conversationId),
         refetchType: "none",
       });
       void queryClient.invalidateQueries({

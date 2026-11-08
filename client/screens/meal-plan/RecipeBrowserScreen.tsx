@@ -74,7 +74,7 @@ import {
   DEFAULT_FILTERS,
   detailParamsForSearchResult,
   type RecipeFilters,
-} from "@/screens/meal-plan/recipe-browser-utils";
+} from "@/components/meal-plan/recipe-browser-utils";
 import type {
   SearchableRecipe,
   RecipeSearchParams,
@@ -85,10 +85,8 @@ import {
 } from "@shared/schemas/inspired-recipes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
-import {
-  formatPlanAddSuccess,
-  planBannerA11yLabel,
-} from "@/components/coach/coach-chat-utils";
+import { planBannerA11yLabel } from "@/components/coach/coach-chat-utils";
+import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 // One 44pt filter row plus the header area's bottom padding.

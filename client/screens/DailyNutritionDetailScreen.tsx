@@ -26,9 +26,8 @@ import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
-import { apiRequest } from "@/lib/query-client";
-import { getDeviceTimezone } from "@/lib/timezone";
-import type { DailySummaryResponse, GoalsResponse } from "@/types/api";
+import { useDailySummary } from "@/hooks/useDailySummary";
+import type { GoalsResponse } from "@/types/api";
 import {
   Colors,
   Spacing,
@@ -137,21 +136,10 @@ export default function DailyNutritionDetailScreen() {
     isLoading: summaryLoading,
     isError: summaryError,
     refetch: refetchSummary,
-  } = useQuery<DailySummaryResponse>({
-    queryKey: ["/api/daily-summary"],
-    // Custom queryFn (not the global getQueryFn) so the device timezone is sent
-    // as X-Timezone — without it, non-UTC users get UTC-bucketed day summaries.
-    // Key stays the bare ["/api/daily-summary"] (no { tz } segment) to keep the
-    // cache entry shared with useHistoryData, which sends the same header.
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/daily-summary", undefined, {
-        headers: { "X-Timezone": getDeviceTimezone() },
-      });
-      return res.json() as Promise<DailySummaryResponse>;
-    },
-    // No silentError here: this key is shared with useHistoryData (History
-    // dashboard, no own error UI), so opting out could suppress its global-toast
-    // backstop. This screen's error gate (summaryError, below) still catches it.
+  } = useDailySummary(undefined, {
+    // This screen renders its own error + retry (summaryError, below), so it
+    // opts out of the global toast, like its daily-budget read above.
+    meta: { silentError: true },
   });
   const {
     data: goals,

@@ -127,7 +127,7 @@ const getMealPlanSchema = z.object({
 // One source for the meal types. The NOTE above asserts the Zod schema and the
 // JSON tool definition stay aligned; stating the list once is what enforces it,
 // rather than two literals ~270 lines apart. (Further copies live in
-// server/routes/meal-plan.ts and client/screens/meal-plan/meal-plan-utils.ts —
+// server/routes/meal-plan.ts and client/components/meal-plan/meal-plan-utils.ts —
 // out of scope here, and the reason a shared const beats a drift test.)
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 

@@ -25,6 +25,7 @@ import {
 import { coachRevealPacing } from "@/constants/animations";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import { parseErrorCode } from "@/lib/chat-error-copy";
 import type { FinderAction } from "@shared/schemas/recipe-finder";
 
 // Exported so tests can import and verify against them. How much text each
@@ -49,28 +50,6 @@ export const STREAM_INACTIVITY_MS = SSE_TIMEOUT_MS + 5_000;
 // A backstop in case the JS timer is starved. On Android, xhr.timeout is an
 // OkHttp total-call cap, not an idle one.
 export const XHR_TIMEOUT_MS = STREAM_INACTIVITY_MS + 25_000;
-
-/**
- * Extract the machine-readable `code` from a non-200 stream response body.
- * The server's `sendError` returns `{ error, code }`; a pre-stream 429
- * (daily limit) is delivered this way before the SSE stream starts. Returns
- * undefined when the body is non-JSON or carries no string `code`.
- */
-export function parseErrorCode(responseText: string): string | undefined {
-  try {
-    const parsed: unknown = JSON.parse(responseText);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof (parsed as { code?: unknown }).code === "string"
-    ) {
-      return (parsed as { code: string }).code;
-    }
-  } catch {
-    // Non-JSON body — no machine-readable code to extract.
-  }
-  return undefined;
-}
 
 interface UseCoachStreamOptions {
   onDone?: (fullText: string, blocks?: CoachBlock[]) => void;

@@ -3,7 +3,7 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 
 import { runAfterTransition } from "@/lib/run-after-transition";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
-import type { MealType } from "@/screens/meal-plan/meal-plan-utils";
+import type { MealType } from "@/components/meal-plan/meal-plan-utils";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
 import { AddItemMenuSheetContent } from "@/components/meal-plan/AddItemMenuSheet";
 import { ImportRecipeSheetContent } from "@/components/meal-plan/ImportRecipeSheet";

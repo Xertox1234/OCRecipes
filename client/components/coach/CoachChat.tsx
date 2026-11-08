@@ -79,6 +79,7 @@ import StreamingBubble from "@/components/coach/StreamingBubble";
 import { JumpToLatestButton } from "@/components/coach/JumpToLatestButton";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { apiRequest } from "@/lib/query-client";
+import { chatMessagesKey } from "@/lib/query-keys";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
@@ -313,7 +314,7 @@ export default function CoachChat({
       const after = lastAssistantIdRef.current;
       const epoch = turnEpochRef.current;
       setPendingSave({ after });
-      const queryKey = [`/api/chat/conversations/${convId}/messages`];
+      const queryKey = chatMessagesKey(convId);
       void queryClient.invalidateQueries({ queryKey }).finally(() => {
         if (turnEpochRef.current !== epoch) return;
         // A saved reply is handed over by `turnSaved` in the render that
@@ -343,7 +344,7 @@ export default function CoachChat({
       const convId = activeConvIdRef.current;
       if (convId !== null) {
         void queryClient.invalidateQueries({
-          queryKey: [`/api/chat/conversations/${convId}/messages`],
+          queryKey: chatMessagesKey(convId),
         });
       }
     },
@@ -625,7 +626,7 @@ export default function CoachChat({
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUserMsg) return;
 
-    const msgQueryKey = [`/api/chat/conversations/${conversationId}/messages`];
+    const msgQueryKey = chatMessagesKey(conversationId);
     const snapshot = queryClient.getQueryData<ChatMessage[]>(msgQueryKey);
     // Both rows go: the question is resent as a new turn, and a cached copy
     // left here would show it twice while the reply regenerates.
@@ -1118,7 +1119,7 @@ export default function CoachChat({
       const convId = activeConvIdRef.current;
       if (convId !== null) {
         void queryClient.invalidateQueries({
-          queryKey: [`/api/chat/conversations/${convId}/messages`],
+          queryKey: chatMessagesKey(convId),
           refetchType: "none",
         });
         void queryClient.invalidateQueries({

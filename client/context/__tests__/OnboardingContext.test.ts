@@ -215,3 +215,71 @@ describe("OnboardingProvider step navigation", () => {
     expect(result.current.currentStep).toBe(0);
   });
 });
+
+describe("OnboardingProvider completeOnboarding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApiRequest.mockResolvedValue({ json: async () => ({}) });
+    mockUpdateUser.mockResolvedValue({ onboardingCompleted: true });
+  });
+
+  it("saves the profile, then the taste picks, then marks the user onboarded", async () => {
+    const { result } = renderOnboarding();
+
+    await act(async () => {
+      await result.current.completeOnboarding([3, 7]);
+    });
+
+    expect(mockApiRequest.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+      ["POST", "/api/user/dietary-profile"],
+      ["PUT", "/api/taste-picks"],
+    ]);
+    expect(mockApiRequest).toHaveBeenLastCalledWith("PUT", "/api/taste-picks", {
+      recipeIds: [3, 7],
+    });
+    expect(mockUpdateUser).toHaveBeenCalledWith({ onboardingCompleted: true });
+  });
+
+  it("skips the taste-picks write when there are no picks", async () => {
+    const { result } = renderOnboarding();
+
+    await act(async () => {
+      await result.current.completeOnboarding();
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/user/dietary-profile",
+      expect.any(Object),
+    );
+  });
+
+  it("rethrows a failed picks save without resyncing, so the user stays and can retry", async () => {
+    mockApiRequest.mockImplementation(async (method: string) => {
+      if (method === "PUT") throw new Error("500");
+      return { json: async () => ({}) };
+    });
+    const { result } = renderOnboarding();
+
+    await act(async () => {
+      await expect(result.current.completeOnboarding([3])).rejects.toThrow();
+    });
+
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+    expect(mockCheckAuth).not.toHaveBeenCalled();
+  });
+
+  it("resyncs via checkAuth when the server saved but the local user update failed", async () => {
+    mockUpdateUser.mockRejectedValue(new Error("local sync failed"));
+    const { result } = renderOnboarding();
+
+    await act(async () => {
+      await expect(result.current.completeOnboarding([3])).rejects.toThrow(
+        "local sync failed",
+      );
+    });
+
+    expect(mockCheckAuth).toHaveBeenCalledOnce();
+  });
+});

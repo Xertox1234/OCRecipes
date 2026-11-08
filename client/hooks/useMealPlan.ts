@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { getDeviceTimezone } from "@/lib/timezone";
 import type { MealPlanItem } from "@shared/schema";
 import type { CreateMealPlanRecipeInput } from "@/hooks/useMealPlanRecipes";
@@ -118,8 +119,8 @@ export function useConfirmMealPlanItem() {
     },
     onSuccess: () => {
       invalidateMealPlanItems(queryClient);
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailyBudget });
     },
     // Its one call site (MealPlanHomeScreen) already toasts on failure.
     meta: { silentError: true },

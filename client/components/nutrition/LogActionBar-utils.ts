@@ -3,7 +3,7 @@
  */
 
 /**
- * The subset of `LogGate` (`@/screens/nutrition-detail-utils`) this function
+ * The subset of `LogGate` (`@/components/nutrition/nutrition-detail-utils`) this function
  * needs. Not the exact same type: the real `"open"` variant carries no
  * `buttonLabel` at all, but the real `LogGate` is still assignable here
  * (its `"open"` member satisfies `buttonLabel`'s optionality, its
@@ -31,7 +31,7 @@ export interface LogBarState {
  * not-yet-reviewed database fallback, or the ordinary log action once the
  * gate is open (or already acknowledged this render).
  *
- * `deriveLogGate` (`@/screens/nutrition-detail-utils`) owns the gate itself
+ * `deriveLogGate` (`@/components/nutrition/nutrition-detail-utils`) owns the gate itself
  * — this only reacts to it. The acknowledge branch echoes back whatever
  * `buttonLabel` the gate produced rather than hardcoding the string, so a
  * future change to that copy doesn't require touching this file too.

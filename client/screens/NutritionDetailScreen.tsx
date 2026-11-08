@@ -31,7 +31,7 @@ import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
   getServingContextLabel,
   isUnknownProduct,
-} from "@/screens/nutrition-detail-utils";
+} from "@/components/nutrition/nutrition-detail-utils";
 import { partitionScanFlags } from "@/screens/nutrition-detail-flags-utils";
 import { frontLabelSavedKey } from "./FrontLabelConfirmScreen";
 import { ProductHero } from "@/components/nutrition/ProductHero";

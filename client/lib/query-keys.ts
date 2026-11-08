@@ -9,3 +9,22 @@ export const QUERY_KEYS = {
   // a 429/network error on this read still restores the previous tier.
   subscriptionStatus: ["/api/subscription/status"] as const,
 } as const;
+
+/**
+ * A community recipe's stats (tried count, triedByMe). A per-recipe key, so
+ * deliberately NOT a QUERY_KEYS entry — App.tsx persists every QUERY_KEYS key.
+ */
+export function recipeStatsKey(recipeId: number) {
+  return [`/api/recipes/${recipeId}/stats`] as const;
+}
+
+/**
+ * A chat conversation's messages. One builder for every reader and writer of
+ * this key (useChat's query, invalidations and cache reads, CoachChat), so a
+ * hand-typed copy can't drift. Not a QUERY_KEYS entry: never persisted.
+ * Accepts `null` for a disabled query with no conversation yet — the key is
+ * then the same string the hand-typed template produced.
+ */
+export function chatMessagesKey(conversationId: number | null) {
+  return [`/api/chat/conversations/${conversationId}/messages`] as const;
+}

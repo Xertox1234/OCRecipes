@@ -20,7 +20,7 @@ import {
   computeItemMacros,
   formatMacroLine,
   type MealType,
-} from "@/screens/meal-plan/meal-plan-utils";
+} from "@/components/meal-plan/meal-plan-utils";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
 const MEAL_ICONS: Record<MealType, string> = {

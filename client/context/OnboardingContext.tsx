@@ -44,7 +44,11 @@ interface OnboardingContextType {
   nextStep: () => void;
   prevStep: () => void;
   skipOnboarding: () => Promise<void>;
-  completeOnboarding: () => Promise<void>;
+  /**
+   * Saves the onboarding profile, then the optional taste picks, then marks
+   * the user onboarded. Throws on failure so the caller can surface it.
+   */
+  completeOnboarding: (tastePickIds?: number[]) => Promise<void>;
   isSubmitting: boolean;
 }
 
@@ -123,28 +127,40 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     }
   }, [updateUser, resyncAfterPartialSuccess]);
 
-  const completeOnboarding = useCallback(async () => {
-    setIsSubmitting(true);
-    let profileSaved = false;
-    try {
-      await apiRequest("POST", "/api/user/dietary-profile", data);
-      profileSaved = true;
-      await updateUser({ onboardingCompleted: true });
-    } catch (err) {
-      logger.error(
-        profileSaved
-          ? "completeOnboarding: server saved but client sync failed (resyncing):"
-          : "completeOnboarding: profile save failed:",
-        err,
-      );
-      if (profileSaved) {
-        await resyncAfterPartialSuccess();
+  const completeOnboarding = useCallback(
+    async (tastePickIds: number[] = []) => {
+      setIsSubmitting(true);
+      let profileSaved = false;
+      try {
+        await apiRequest("POST", "/api/user/dietary-profile", data);
+        // Picks go after the profile row exists: saving them writes through to
+        // its cuisinePreferences. A failure here rethrows WITHOUT the resync
+        // below, so the user stays on the picks step and can retry (the POST is
+        // an idempotent upsert).
+        if (tastePickIds.length > 0) {
+          await apiRequest("PUT", "/api/taste-picks", {
+            recipeIds: tastePickIds,
+          });
+        }
+        profileSaved = true;
+        await updateUser({ onboardingCompleted: true });
+      } catch (err) {
+        logger.error(
+          profileSaved
+            ? "completeOnboarding: server saved but client sync failed (resyncing):"
+            : "completeOnboarding: profile or taste-picks save failed:",
+          err,
+        );
+        if (profileSaved) {
+          await resyncAfterPartialSuccess();
+        }
+        throw err;
+      } finally {
+        setIsSubmitting(false);
       }
-      throw err;
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [data, updateUser, resyncAfterPartialSuccess]);
+    },
+    [data, updateUser, resyncAfterPartialSuccess],
+  );
 
   const value = useMemo<OnboardingContextType>(
     () => ({

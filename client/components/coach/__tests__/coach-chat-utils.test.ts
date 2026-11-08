@@ -8,7 +8,6 @@ import {
   stripCoachBlocksFenceIncremental,
   createFenceScanState,
   filterValidBlocks,
-  formatPlanSaveSuccess,
 } from "../coach-chat-utils";
 
 const validDays = [
@@ -289,36 +288,6 @@ describe("filterValidBlocks", () => {
   it("returns empty array when nothing passes validation", () => {
     expect(filterValidBlocks([null, undefined, {}, { type: "bad" }])).toEqual(
       [],
-    );
-  });
-});
-
-describe("formatPlanSaveSuccess", () => {
-  it("names the chosen day and meal, not a generic message", () => {
-    expect(formatPlanSaveSuccess("Wednesday", "dinner")).toBe(
-      "Added to Wednesday Dinner",
-    );
-  });
-
-  it("uses MEAL_LABELS' display name for each meal type", () => {
-    expect(formatPlanSaveSuccess("Wednesday", "breakfast")).toBe(
-      "Added to Wednesday Breakfast",
-    );
-    expect(formatPlanSaveSuccess("Wednesday", "snack")).toBe(
-      "Added to Wednesday Snack",
-    );
-  });
-
-  // Deliberately takes a plain `dayLabel` string, NOT the `plannedDate` ISO
-  // string — re-parsing a bare ISO date with `new Date()` reads UTC midnight,
-  // so re-parsing it back into a weekday would disagree with the chip the
-  // user actually tapped for any UTC-positive offset. This function must
-  // stay a pure string join with no date parsing of its own — pin that here
-  // so a future "helpful" refactor back to `(plannedDate, mealType)` fails
-  // this test rather than silently reintroducing that bug.
-  it("does no date parsing of its own — passes an arbitrary label through verbatim", () => {
-    expect(formatPlanSaveSuccess("2026-09-02", "lunch")).toBe(
-      "Added to 2026-09-02 Lunch",
     );
   });
 });

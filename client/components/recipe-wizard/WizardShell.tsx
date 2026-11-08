@@ -33,7 +33,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useImportTeachingToast } from "@/hooks/useImportTeachingToast";
-import { formatPlanAddSuccess } from "@/components/coach/coach-chat-utils";
+import { formatPlanAddSuccess } from "@/components/meal-plan/plan-add-copy";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   Spacing,
