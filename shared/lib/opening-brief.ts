@@ -6,6 +6,7 @@
  * never sends assistant text (spec: 2026-11-08-coach-opening-brief-design).
  */
 import { remainingCaloriesStat } from "./coach-stats";
+import { toSecondPerson } from "./notebook-text";
 
 export type BriefForm = "full" | "short";
 
@@ -131,6 +132,19 @@ function pointerFor(input: BriefInput): string | null {
   return null;
 }
 
+/**
+ * Notebook commitments are stored in the third person ("The user agreed to
+ * add…"); speak them back as "You agreed to add…". A plain action ("Drink
+ * more water") reads as something the user said they'd do.
+ */
+function commitmentLead(content: string): string {
+  const text = content.trim().replace(/[.!]+$/, "");
+  const spoken = toSecondPerson(text);
+  if (spoken !== text) return `${spoken}. How did it go?`;
+  const action = text.charAt(0).toLowerCase() + text.slice(1);
+  return `Earlier you said you'd ${action}. How did it go?`;
+}
+
 function mealFor(localHour: number): string {
   if (localHour < 11) return "breakfast";
   if (localHour < 16) return "lunch";
@@ -146,7 +160,7 @@ function reminderFor(
     case "commitment":
       return {
         type: "commitment",
-        lead: `Earlier you said you'd ${reminder.content}. How did it go?`,
+        lead: commitmentLead(reminder.content),
         actions: [
           { label: "Went well", kind: "send", message: "It went well" },
           { label: "Partly", kind: "send", message: "It went partly" },

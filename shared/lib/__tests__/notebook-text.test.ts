@@ -1,4 +1,4 @@
-import { toSecondPerson } from "../notebook-text-utils";
+import { toSecondPerson } from "../notebook-text";
 
 describe("toSecondPerson", () => {
   it("rewrites a leading possessive", () => {

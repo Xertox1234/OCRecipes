@@ -177,6 +177,24 @@ describe("reminder form", () => {
     expect(b.pointer).toBeNull();
   });
 
+  it("speaks a third-person notebook commitment back in the second person", () => {
+    const lead = (content: string) =>
+      full({
+        reminder: { type: "commitment", notebookEntryId: 7, content },
+      }).reminder?.lead;
+    expect(
+      lead("The user agreed to add pumpkin seeds to their salad for lunch"),
+    ).toBe(
+      "You agreed to add pumpkin seeds to your salad for lunch. How did it go?",
+    );
+    expect(lead("User plans to try edamame with a squeeze of lemon.")).toBe(
+      "You plan to try edamame with a squeeze of lemon. How did it go?",
+    );
+    expect(lead("Drink 8 glasses of water daily")).toBe(
+      "Earlier you said you'd drink 8 glasses of water daily. How did it go?",
+    );
+  });
+
   it("offers the meal for the time of day on a missed log", () => {
     const at = (localHour: number) =>
       full({ localHour, reminder: { type: "meal-log" } }).reminder;
