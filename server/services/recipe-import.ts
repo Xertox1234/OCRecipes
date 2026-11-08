@@ -427,6 +427,82 @@ async function safeFetch(
   throw new Error("TOO_MANY_REDIRECTS");
 }
 
+/**
+ * Turn raw `application/ld+json` script contents into an imported recipe.
+ * Shared by the server-side URL fetch and the on-device import endpoint.
+ * The first block containing a Recipe wins; invalid JSON blocks are skipped.
+ */
+export function parseRecipeFromLdJson(
+  blocks: string[],
+  sourceUrl: string,
+): ImportResult {
+  let recipeData: unknown = null;
+  for (const block of blocks) {
+    try {
+      const json = JSON.parse(block);
+      const found = findRecipeInLdJson(json);
+      if (found) {
+        recipeData = found;
+        break;
+      }
+    } catch {
+      // Invalid JSON, skip
+    }
+  }
+
+  if (!recipeData) {
+    return { success: false, error: "NO_RECIPE_DATA" };
+  }
+
+  const parsed = schemaOrgRecipeSchema.safeParse(recipeData);
+  if (!parsed.success) {
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "recipe LD+JSON parse error",
+    );
+    return { success: false, error: "PARSE_ERROR" };
+  }
+
+  const recipe = parsed.data;
+
+  const imageUrl = Array.isArray(recipe.image)
+    ? recipe.image[0] || null
+    : recipe.image || null;
+
+  const keywords = recipe.keywords
+    ? typeof recipe.keywords === "string"
+      ? recipe.keywords.split(",").map((k) => k.trim())
+      : recipe.keywords
+    : [];
+
+  const prepTimeMinutes = parseIsoDuration(recipe.prepTime);
+  let cookTimeMinutes = parseIsoDuration(recipe.cookTime);
+  // Many sites publish only totalTime — surface it rather than no time at all.
+  if (prepTimeMinutes === null && cookTimeMinutes === null) {
+    cookTimeMinutes = parseIsoDuration(recipe.totalTime);
+  }
+
+  const data: ImportedRecipeData = {
+    title: recipe.name,
+    description: recipe.description || null,
+    servings: parseServings(recipe.recipeYield),
+    prepTimeMinutes,
+    cookTimeMinutes,
+    cuisine: extractFirstString(recipe.recipeCuisine),
+    dietTags: keywords,
+    ingredients: (recipe.recipeIngredient || []).map(parseIngredientString),
+    instructions: normalizeInstructions(recipe.recipeInstructions),
+    imageUrl,
+    caloriesPerServing: parseNutritionValue(recipe.nutrition?.calories),
+    proteinPerServing: parseNutritionValue(recipe.nutrition?.proteinContent),
+    carbsPerServing: parseNutritionValue(recipe.nutrition?.carbohydrateContent),
+    fatPerServing: parseNutritionValue(recipe.nutrition?.fatContent),
+    sourceUrl,
+  };
+
+  return { success: true, data };
+}
+
 export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
   if (isBlockedUrl(url)) {
     return { success: false, error: "FETCH_FAILED" };
@@ -477,68 +553,10 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
 
   const $ = cheerio.load(html);
 
-  // Find all LD+JSON scripts
-  let recipeData: unknown = null;
-  $('script[type="application/ld+json"]').each((_, el) => {
-    if (recipeData) return; // already found
-    try {
-      const json = JSON.parse($(el).text());
-      const found = findRecipeInLdJson(json);
-      if (found) recipeData = found;
-    } catch {
-      // Invalid JSON, skip
-    }
-  });
+  // Collect all LD+JSON script contents
+  const blocks = $('script[type="application/ld+json"]')
+    .map((_, el) => $(el).text())
+    .get();
 
-  if (!recipeData) {
-    return { success: false, error: "NO_RECIPE_DATA" };
-  }
-
-  const parsed = schemaOrgRecipeSchema.safeParse(recipeData);
-  if (!parsed.success) {
-    log.warn(
-      { zodErrors: parsed.error.flatten() },
-      "recipe LD+JSON parse error",
-    );
-    return { success: false, error: "PARSE_ERROR" };
-  }
-
-  const recipe = parsed.data;
-
-  const imageUrl = Array.isArray(recipe.image)
-    ? recipe.image[0] || null
-    : recipe.image || null;
-
-  const keywords = recipe.keywords
-    ? typeof recipe.keywords === "string"
-      ? recipe.keywords.split(",").map((k) => k.trim())
-      : recipe.keywords
-    : [];
-
-  const prepTimeMinutes = parseIsoDuration(recipe.prepTime);
-  let cookTimeMinutes = parseIsoDuration(recipe.cookTime);
-  // Many sites publish only totalTime — surface it rather than no time at all.
-  if (prepTimeMinutes === null && cookTimeMinutes === null) {
-    cookTimeMinutes = parseIsoDuration(recipe.totalTime);
-  }
-
-  const data: ImportedRecipeData = {
-    title: recipe.name,
-    description: recipe.description || null,
-    servings: parseServings(recipe.recipeYield),
-    prepTimeMinutes,
-    cookTimeMinutes,
-    cuisine: extractFirstString(recipe.recipeCuisine),
-    dietTags: keywords,
-    ingredients: (recipe.recipeIngredient || []).map(parseIngredientString),
-    instructions: normalizeInstructions(recipe.recipeInstructions),
-    imageUrl,
-    caloriesPerServing: parseNutritionValue(recipe.nutrition?.calories),
-    proteinPerServing: parseNutritionValue(recipe.nutrition?.proteinContent),
-    carbsPerServing: parseNutritionValue(recipe.nutrition?.carbohydrateContent),
-    fatPerServing: parseNutritionValue(recipe.nutrition?.fatContent),
-    sourceUrl: url,
-  };
-
-  return { success: true, data };
+  return parseRecipeFromLdJson(blocks, url);
 }
