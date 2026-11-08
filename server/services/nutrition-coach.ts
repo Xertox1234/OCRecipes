@@ -20,6 +20,7 @@ import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
 import { OFFER_RECIPE_TOOL } from "./recipe-finder/offer";
 import { getBlocksSystemPrompt } from "./coach-blocks";
+import { releasableLength } from "./coach-sentence-release";
 import type { UserProfile } from "@shared/schema";
 import { weightFromKg, weightUnitLabel } from "@shared/lib/units";
 import type { MeasurementUnit } from "@shared/lib/units";
@@ -51,6 +52,10 @@ export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
  */
 export type CoachProChunk =
   | { type: "content"; content: string }
+  // The reply failed the unsafe-advice check after some of it was shown (or
+  // before any was): the caller replaces everything with the safety message.
+  // Ends the generator.
+  | { type: "safety_override" }
   | { type: "tool_calls"; toolNames: string[] }
   // offer_recipe is terminal: the round's other calls are dropped and the
   // generator returns. `args` is the raw accumulated arguments string.
@@ -733,6 +738,11 @@ export async function* generateCoachProResponse(
       { id: string; name: string; arguments: string }
     > = new Map();
     let contentInThisRound = "";
+    // How much of this round has been checked and yielded. Text is released
+    // a finished sentence at a time, each release checked together with
+    // everything before it (coach-sentence-release.ts).
+    let releasedInRound = 0;
+    const textBeforeRound = fullResponse;
 
     try {
       for await (const chunk of stream) {
@@ -743,11 +753,26 @@ export async function* generateCoachProResponse(
           finishReason = choice.finish_reason;
         }
 
-        // Stream text content to caller
+        // Stream text to the caller a vetted sentence at a time
         const textDelta = choice.delta?.content;
         if (textDelta) {
           contentInThisRound += textDelta;
           fullResponse += textDelta;
+          const pending = contentInThisRound.slice(releasedInRound);
+          const len = releasableLength(pending);
+          if (len > 0) {
+            const upTo = releasedInRound + len;
+            if (
+              containsUnsafeCoachAdvice(
+                textBeforeRound + contentInThisRound.slice(0, upTo),
+              )
+            ) {
+              yield { type: "safety_override" };
+              return;
+            }
+            yield { type: "content", content: pending.slice(0, len) };
+            releasedInRound = upTo;
+          }
         }
 
         // Accumulate tool call deltas
@@ -788,17 +813,15 @@ export async function* generateCoachProResponse(
       return;
     }
 
-    if (containsUnsafeCoachAdvice(fullResponse)) {
-      yield {
-        type: "content",
-        content:
-          "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider.",
-      };
-      return;
-    }
-
-    if (contentInThisRound) {
-      yield { type: "content", content: contentInThisRound };
+    // The rest of the round (an unfinished last sentence, the coach_blocks
+    // fence) is vetted with the whole reply before it goes out.
+    const rest = contentInThisRound.slice(releasedInRound);
+    if (rest) {
+      if (containsUnsafeCoachAdvice(fullResponse)) {
+        yield { type: "safety_override" };
+        return;
+      }
+      yield { type: "content", content: rest };
     }
 
     if (finishReason === "length") {

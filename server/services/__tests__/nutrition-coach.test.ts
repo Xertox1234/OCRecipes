@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   generateCoachProResponse,
   generateCoachResponse,
@@ -152,6 +152,162 @@ describe("generateCoachProResponse", () => {
 
     expect(result).toBe("Hello there!");
     expect(executeToolCall).not.toHaveBeenCalled();
+  });
+
+  describe("sentence-by-sentence release", () => {
+    afterEach(() => {
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+    });
+    async function collectChunks(gen: AsyncGenerator<CoachProChunk>) {
+      const out: CoachProChunk[] = [];
+      for await (const c of gen) out.push(c);
+      return out;
+    }
+    const contents = (chunks: CoachProChunk[]) =>
+      chunks.flatMap((c) => (c.type === "content" ? [c.content] : []));
+
+    // Positive control: a safe reply reaches the caller a sentence at a
+    // time, not as one block once the model has finished.
+    it("yields each finished sentence as it arrives", async () => {
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "Oats are " },
+          { content: "great. They have " },
+          { content: "fiber. Enjoy" },
+          { content: " them!" },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Oats?" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual([
+        "Oats are great.",
+        " They have fiber.",
+        " Enjoy them!",
+      ]);
+    });
+
+    // Each release is checked with everything before it; a sentence that
+    // fails is never yielded, and the caller is told to replace what it has.
+    it("never yields an unsafe sentence, and overrides what was shown", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockImplementation((t: string) =>
+        /fast for 3 days/.test(t),
+      );
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "Hydrate well. " },
+          { content: "You could fast for 3 days. " },
+          { content: "Good luck." },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Fasting?" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual(["Hydrate well."]);
+      expect(chunks.at(-1)).toEqual({ type: "safety_override" });
+      expect(contents(chunks).join("")).not.toMatch(/fast/);
+    });
+
+    it("overrides a reply that is unsafe from its first sentence", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "You likely have diabetes." },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Sugar?" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual([]);
+      expect(chunks).toEqual([{ type: "safety_override" }]);
+    });
+
+    // The coach_blocks fence is held and vetted whole at the end of the
+    // round — unsafe JSON inside it never reaches the caller.
+    it("holds the blocks fence and vets it whole", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockImplementation((t: string) =>
+        /UNSAFE/.test(t),
+      );
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "Sure thing. \n\n```coach_blocks\n" },
+          { content: '[{"type":"x","label":"UNSAFE. Really."}]\n```' },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Hi" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual(["Sure thing."]);
+      expect(chunks.at(-1)).toEqual({ type: "safety_override" });
+    });
+
+    it("releases a safe fence in one piece once the round ends", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+      const fence = '```coach_blocks\n[{"type":"x","label":"A. B."}]\n```';
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "Sure thing. \n\n" },
+          { content: fence },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      const chunks = await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Hi" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      expect(contents(chunks)).toEqual(["Sure thing.", " \n\n" + fence]);
+    });
+
+    // Every release is checked against the WHOLE reply so far, including
+    // earlier sentences — not the new sentence alone.
+    it("checks each release with all the text before it", async () => {
+      vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+      vi.mocked(aiChat).mockResolvedValue(
+        createMockStream([
+          { content: "One. Two. " },
+          { content: "Three. Four" },
+          { finish_reason: "stop" },
+        ]) as any,
+      );
+      await collectChunks(
+        generateCoachProResponse(
+          [{ role: "user", content: "Count" }],
+          DEFAULT_CONTEXT,
+          "user-1",
+        ),
+      );
+      const checked = vi
+        .mocked(containsUnsafeCoachAdvice)
+        .mock.calls.map((c) => c[0]);
+      expect(checked).toEqual([
+        "One. Two.",
+        "One. Two. Three.",
+        "One. Two. Three. Four",
+      ]);
+    });
   });
 
   it("sanitizes all message roles before sending history to OpenAI", async () => {

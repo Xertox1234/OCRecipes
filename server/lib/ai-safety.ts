@@ -88,7 +88,7 @@ export function validateAiResponse<T>(
 
 // --- Dangerous dietary advice patterns ---
 
-const DANGEROUS_DIETARY_PATTERNS: RegExp[] = [
+export const DANGEROUS_DIETARY_PATTERNS: RegExp[] = [
   // Extreme calorie restriction
   /eat\s+(less\s+than|under|only)\s+[1-7]\d{2}\s*cal/i, // under 800 cal
   /\b(?:1[01]\d{2}|[1-7]\d{2})\s*calories?\s*(per\s+)?day\b/i, // 100-799 or 1000-1199 cal per day
@@ -126,7 +126,7 @@ export function containsDangerousDietaryAdvice(text: string): boolean {
   return DANGEROUS_DIETARY_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-const UNSAFE_MEDICAL_ADVICE_PATTERNS: RegExp[] = [
+export const UNSAFE_MEDICAL_ADVICE_PATTERNS: RegExp[] = [
   /\byou\s+(?:likely|probably|definitely)\s+have\s+(?:diabetes|prediabetes|an\s+eating\s+disorder|anorexia|bulimia|cancer|thyroid\s+disease)\b/i,
   /\bthis\s+(?:means|indicates|proves|confirms)\s+you\s+have\s+(?:diabetes|prediabetes|an\s+eating\s+disorder|anorexia|bulimia|cancer|thyroid\s+disease)\b/i,
   /\bi\s+(?:diagnose|diagnosed)\s+you\s+with\b/i,
