@@ -5,6 +5,7 @@ import {
   ScrollView,
   Alert,
   StyleSheet,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -19,7 +20,12 @@ import { useFieldValidation } from "@/hooks/useFieldValidation";
 import { focusFirstInvalid } from "@/lib/field-validation";
 import { toLocalDateString } from "@shared/lib/date";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useNavigation,
+  usePreventRemove,
+  useRoute,
+} from "@react-navigation/native";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import type { RouteProp } from "@react-navigation/native";
 import { SelectableTile } from "@/components/SelectableTile";
 import { useTheme } from "@/hooks/useTheme";
@@ -190,6 +196,34 @@ export default function NotebookEntryScreen() {
   // note is a press that says what's missing.
   const canSave = !isSaving && (isDirty || content.trim().length === 0);
 
+  // Back, a swipe or Android's back button used to drop a typed note without
+  // a word. Leaving with unsaved changes now asks first; leaving after a save
+  // or a status change (`leave`) goes straight out.
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
+  const leavingRef = useRef(false);
+  const leave = useCallback(() => {
+    leavingRef.current = true;
+    goBack();
+  }, [goBack]);
+  usePreventRemove(isDirty, (e) => {
+    const proceed = () => navigation.dispatch(e.data.action);
+    if (leavingRef.current || !isDirty) {
+      proceed();
+      return;
+    }
+    // The sheet rises from the bottom; an open keyboard would cover it.
+    Keyboard.dismiss();
+    confirm({
+      title: "Discard changes?",
+      message: "Your note hasn't been saved.",
+      confirmLabel: "Discard",
+      cancelLabel: "Keep editing",
+      destructive: true,
+      onConfirm: proceed,
+    });
+  });
+
   const handleSave = useCallback(async () => {
     releaseVoice();
     if (!focusFirstInvalid([contentField])) {
@@ -235,7 +269,7 @@ export default function NotebookEntryScreen() {
         toast.error(REMINDER_NOT_UPDATED);
       }
     }
-    goBack();
+    leave();
   }, [
     contentField,
     haptics,
@@ -248,7 +282,7 @@ export default function NotebookEntryScreen() {
     updateEntry,
     scheduleCommitmentReminder,
     cancelCommitmentReminder,
-    goBack,
+    leave,
     toast,
     releaseVoice,
   ]);
@@ -275,12 +309,12 @@ export default function NotebookEntryScreen() {
             } catch {
               toast.error(REMINDER_NOT_UPDATED);
             }
-            goBack();
+            leave();
           })();
         },
       },
     ]);
-  }, [entryId, updateEntry, cancelCommitmentReminder, goBack, toast]);
+  }, [entryId, updateEntry, cancelCommitmentReminder, leave, toast]);
 
   const handleArchive = useCallback(() => {
     if (!entryId) return;
@@ -304,12 +338,12 @@ export default function NotebookEntryScreen() {
             } catch {
               toast.error(REMINDER_NOT_UPDATED);
             }
-            goBack();
+            leave();
           })();
         },
       },
     ]);
-  }, [entryId, updateEntry, cancelCommitmentReminder, goBack, toast]);
+  }, [entryId, updateEntry, cancelCommitmentReminder, leave, toast]);
 
   const sourceLabel = isCreate
     ? "Added by you"
@@ -378,6 +412,7 @@ export default function NotebookEntryScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
+        {...behindContentA11yProps}
         style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
         contentContainerStyle={{
           paddingTop: insets.top + Spacing.md,
@@ -647,6 +682,7 @@ export default function NotebookEntryScreen() {
           </View>
         )}
       </ScrollView>
+      <ConfirmationModal />
     </KeyboardAvoidingView>
   );
 }
