@@ -24,6 +24,7 @@ import {
 } from "@/constants/theme";
 import type { ReminderMutes } from "@shared/types/reminders";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import { dietaryProfileQueryOptions } from "@/hooks/useDietaryProfile";
 
 interface ReminderToggleConfig {
   key: keyof ReminderMutes;
@@ -54,13 +55,9 @@ const REMINDER_TYPES: ReminderToggleConfig[] = [
 
 function useReminderMutes() {
   return useQuery({
-    queryKey: QUERY_KEYS.dietaryProfile,
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/user/dietary-profile");
-      return res.json();
-    },
+    ...dietaryProfileQueryOptions,
     // The server answers `null` for a user with no profile row yet.
-    select: (profile: { reminderMutes?: ReminderMutes } | null) => ({
+    select: (profile) => ({
       reminderMutes: (profile?.reminderMutes ?? {}) as ReminderMutes,
     }),
     // Intentionally NO meta.silentError here: this query shares
