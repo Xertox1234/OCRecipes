@@ -21,6 +21,7 @@ vi.mock("../../storage", () => ({
     createFinderUserMessage: vi.fn(),
     createChatMessageWithLimitCheck: vi.fn(),
     createChatMessage: vi.fn(),
+    acknowledgeReminders: vi.fn(),
   },
 }));
 
@@ -330,6 +331,12 @@ describe("admitTurn — opening brief", () => {
         return userMessage;
       },
     );
+    // The brief is rendered and saved BEFORE reminders clear: clearing first
+    // would drop the reminder the user just answered from the saved brief.
+    vi.mocked(storage.acknowledgeReminders).mockImplementation(async () => {
+      order.push("ack");
+      return [];
+    });
   });
 
   it("saves the server-rendered brief before the first user message", async () => {
@@ -354,7 +361,7 @@ describe("admitTurn — opening brief", () => {
       brief.text,
       { kind: "opening_brief" },
     );
-    expect(order).toEqual(["brief", "user"]);
+    expect(order).toEqual(["brief", "ack", "user"]);
   });
 
   it("adds no brief once the conversation has messages", async () => {

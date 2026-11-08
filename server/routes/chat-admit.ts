@@ -249,6 +249,10 @@ async function saveOpeningBrief(
       brief.text,
       { ...OPENING_BRIEF_METADATA },
     );
+    // Only now clear the reminders: the client leaves this to the server on
+    // a brief send, because clearing first would drop the reminder the user
+    // is answering from the brief saved above.
+    await storage.acknowledgeReminders(req.userId);
   } catch (err) {
     logger.warn({ err, conversationId }, "opening brief not saved");
   }

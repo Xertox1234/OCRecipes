@@ -1469,6 +1469,33 @@ describe("CoachChat — opening brief", () => {
     );
   });
 
+  it("leaves clearing reminders to the server on a brief send, then refreshes the dot", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const onMessageSent = vi.fn();
+    renderCoachChat({
+      conversationId: null,
+      onCreateConversation: vi.fn().mockResolvedValue(99),
+      openingBrief: { brief, form: "full" },
+      onMessageSent,
+    });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "It went well" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    await waitFor(() => expect(state.startStream).toHaveBeenCalled());
+    expect(onMessageSent).not.toHaveBeenCalled();
+
+    act(() => state.onDone?.("Great!"));
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/reminders/pending"],
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/coach/brief"],
+    });
+    invalidate.mockRestore();
+  });
+
   it("sends no flag into a conversation that already exists", async () => {
     state.messages = [makeMessage({ id: 5 })];
     renderCoachChat({

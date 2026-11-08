@@ -28,6 +28,8 @@ import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import OpeningBrief from "@/components/coach/OpeningBrief";
+import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
+import { COACH_BRIEF_KEY } from "@/hooks/useCoachBrief";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -303,6 +305,16 @@ export default function CoachChat({
     stop: ttsStop,
   } = useTTS();
 
+  // A brief send's reminders are cleared by the server; once its turn ends,
+  // refresh the tab dot and the brief so neither shows a cleared reminder.
+  const briefSendRef = useRef(false);
+  const refreshAfterBriefSend = () => {
+    if (!briefSendRef.current) return;
+    briefSendRef.current = false;
+    void queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
+    void queryClient.invalidateQueries({ queryKey: COACH_BRIEF_KEY });
+  };
+
   const {
     startStream,
     abortStream,
@@ -311,6 +323,7 @@ export default function CoachChat({
     isStreaming,
   } = useCoachStream({
     onDone: (fullText, blocks) => {
+      refreshAfterBriefSend();
       // A dead-socket abort also lands here, with whatever partial text came.
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
@@ -347,6 +360,7 @@ export default function CoachChat({
       });
     },
     onError: (_message, code) => {
+      refreshAfterBriefSend();
       // Branch on the machine-readable code, not a `message.startsWith("429")`
       // prefix (the raw "<status>: <body>" wire format). Never render the raw
       // message — it leaks the server response body into the UI / VoiceOver.
@@ -615,7 +629,13 @@ export default function CoachChat({
         ...(briefForm && { openingBrief: briefForm }),
       });
       warmUpHook.reset();
-      onMessageSent?.();
+      if (briefForm) {
+        // The server clears reminders after saving the brief; clearing them
+        // from here too would race it and drop the reminder from that copy.
+        briefSendRef.current = true;
+      } else {
+        onMessageSent?.();
+      }
     },
     [
       openingBrief,
