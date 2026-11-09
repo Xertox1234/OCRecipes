@@ -1,6 +1,6 @@
 # Coach visible memory — design
 
-Date: 2026-11-08 · Status: draft for owner review (builder check done) · Source: Coach chat polish report, R1–R4 (+ the recall-phrasing research run 2026-11-08)
+Date: 2026-11-08 · Status: approved by owner 2026-11-08 · Source: Coach chat polish report, R1–R4 (+ the recall-phrasing research run 2026-11-08)
 
 ## Intent
 
