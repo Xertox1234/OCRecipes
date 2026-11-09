@@ -22,7 +22,8 @@ Any PR whose change is mostly `package.json` / `package-lock.json`: an `npm upda
 3. **Full suite, not `vitest related`.** `related` follows imports from the changed files; a library upgrade changes behaviour in files you never touched. #1817 (zod 4): `related` ran 3,047 tests green while the full suite had 27 failures in 6 unselected files.
 4. **Full lint under a 4 GB heap (CI runs on Node's default, about 4 GB)** when the lint stack moves — see the OOM doc below.
 5. **Native code → runtime version.** Diff old vs new lockfile entries and check each changed package for a `.podspec`, `android/build.gradle` or `expo-module.config.json`; any hit needs a `runtimeVersion` bump and new builds (`client/lib/__tests__/native-config.test.ts` pins it). Grep alone undercounts: a version change edits a line, it adds no new key — compare the parsed `packages` maps.
-6. **Measure the control.** Each check above needs a case that must fail (the old tree, a known-native package) before its clean result counts.
+6. **A lockfile rebuilt from main keeps main's versions wherever the range allows.** Resolving a lockfile conflict with `git show origin/main:package-lock.json > package-lock.json && npm install` is safe only for packages whose `package.json` floor was raised. `npm update --save` does not raise a `~` range the update stayed inside. #1816: every `expo-*` module (`~58.0.19` and similar) quietly went back to main's older patch, which undid half the PR with no error. After any rebuild, compare the new lockfile's versions with the reviewed head's (`git show <reviewed-sha>:package-lock.json`): only the expected entries may differ. For Expo, `npx expo install --check` catches it, and `npx expo install --fix` writes the expected `~` ranges into `package.json` so the next rebuild can't drop them.
+7. **Measure the control.** Each check above needs a case that must fail (the old tree, a known-native package) before its clean result counts.
 
 ## Why
 
