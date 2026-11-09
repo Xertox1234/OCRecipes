@@ -1138,6 +1138,7 @@ describe("handleCoachChat", () => {
         {
           type: "commitment",
           content: "Check in about meal prepping",
+          label: null,
           followUpDate: "2026-09-05",
         },
       ]);
@@ -1216,6 +1217,7 @@ describe("handleCoachChat", () => {
         {
           type: "commitment",
           content: "Check in about meal prepping",
+          label: null,
           followUpDate: "2026-09-05",
         },
       ]);
@@ -1261,6 +1263,7 @@ describe("handleCoachChat", () => {
         {
           type: "commitment",
           content: "Check in next week",
+          label: null,
           followUpDate: dateStr,
         },
       ]);
@@ -1312,7 +1315,12 @@ describe("handleCoachChat", () => {
         blocks: [],
       });
       vi.mocked(extractNotebookEntries).mockResolvedValue([
-        { type: "commitment", content: "Check in", followUpDate: dateStr },
+        {
+          type: "commitment",
+          content: "Check in",
+          label: null,
+          followUpDate: dateStr,
+        },
       ]);
       await collectEvents(
         handleCoachChat(makeParams({ isCoachPro: true, tz })),
