@@ -155,6 +155,21 @@ describe("coach-write-cards storage", () => {
     expect(perform).toHaveBeenCalledTimes(1);
   });
 
+  it("saveWriteCard stores the edits it saved with, and keeps them when none are given", async () => {
+    const a = await create();
+    await setWriteCardEdits(a.card.id, user.id, { counts: [3] });
+    await saveWriteCard(a.card.id, user.id, async () => ({}), { counts: [4] });
+    expect((await getWriteCard(a.card.id, user.id))?.edits).toEqual({
+      counts: [4],
+    });
+    const b = await create();
+    await setWriteCardEdits(b.card.id, user.id, { counts: [5] });
+    await saveWriteCard(b.card.id, user.id, async () => ({}));
+    expect((await getWriteCard(b.card.id, user.id))?.edits).toEqual({
+      counts: [5],
+    });
+  });
+
   it("saveWriteCard refuses a replaced card", async () => {
     const { card } = await create();
     await create();

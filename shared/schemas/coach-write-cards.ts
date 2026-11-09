@@ -173,6 +173,8 @@ export const writeCardBlockObjectSchema = z.object({
   status: z.enum(WRITE_CARD_STATUSES),
   replacesCardId: z.string().uuid().optional(),
   receipt: z.string().max(200).optional(),
+  /** The stored edits, added when messages are read back (reopened chat). */
+  edits: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const writeCardBlockSchema = writeCardBlockObjectSchema.superRefine(

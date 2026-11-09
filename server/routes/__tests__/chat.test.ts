@@ -27,6 +27,7 @@ import type {
 import {
   createMockChatConversation,
   createMockChatMessage,
+  createMockCoachWriteCard,
   createMockCommunityRecipe,
   createMockUser,
 } from "../../__tests__/factories";
@@ -75,6 +76,11 @@ vi.mock("../../storage", () => ({
     claimRecipeGeneration: vi.fn(),
     claimSpoonacularSearch: vi.fn(),
     countInspiredSuggestionsSince: vi.fn().mockResolvedValue(0),
+    getWriteCard: vi.fn().mockResolvedValue(undefined),
+    getLiveWriteCard: vi.fn().mockResolvedValue(undefined),
+    setWriteCardEdits: vi.fn().mockResolvedValue(false),
+    createWriteCard: vi.fn(),
+    getWriteCardsByIds: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -363,6 +369,84 @@ describe("Chat Routes", () => {
       expect(res.body).toEqual(messages);
     });
 
+    it("GET messages reports the saved status and receipt", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      const cardId = "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+      const payload = {
+        items: [
+          {
+            name: "Large eggs",
+            unitLabel: "egg",
+            perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+            count: 2,
+            source: "lookup",
+          },
+        ],
+        mealType: "breakfast",
+        day: "today",
+      };
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({ role: "user", content: "two eggs" }),
+        createMockChatMessage({
+          id: 2,
+          role: "assistant",
+          content: "Here's what I've got.",
+          metadata: {
+            blocks: [
+              {
+                type: "write_card",
+                cardId,
+                kind: "food",
+                payload,
+                status: "live",
+              },
+            ],
+          },
+        }),
+      ]);
+      vi.mocked(storage.getWriteCardsByIds).mockResolvedValue([
+        createMockCoachWriteCard({
+          id: cardId,
+          kind: "food",
+          payload,
+          edits: { counts: [3] },
+          status: "saved",
+          savedRefs: { scannedItemIds: [1] },
+        }),
+      ]);
+
+      const res = await request(app)
+        .get("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(storage.getWriteCardsByIds).toHaveBeenCalledWith("1", [cardId]);
+      expect(res.body[1].metadata.blocks[0]).toEqual({
+        type: "write_card",
+        cardId,
+        kind: "food",
+        payload,
+        edits: { counts: [3] },
+        status: "saved",
+        receipt: "✓ Logged to Breakfast · 216 cal",
+      });
+    });
+
+    it("GET messages without write cards does not read card rows", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      vi.mocked(storage.getChatMessages).mockResolvedValue([
+        createMockChatMessage({ role: "user", content: "Hello" }),
+      ]);
+      await request(app)
+        .get("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token");
+      expect(storage.getWriteCardsByIds).not.toHaveBeenCalled();
+    });
+
     it("returns 404 for unknown conversation", async () => {
       vi.mocked(storage.getChatConversation).mockResolvedValue(undefined);
 
@@ -603,6 +687,43 @@ describe("Chat Routes", () => {
         .send({ content: "Hello", openingBrief: "<script>alert(1)</script>" });
       expect(res.status).toBe(400);
       expect(buildCoachBrief).not.toHaveBeenCalled();
+    });
+
+    it("forwards writeCards and liveCard to the coach turn", async () => {
+      mockStreamingSetup();
+      async function* fakeStream() {
+        yield { type: "content" as const, content: "Updated." };
+      }
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+      const cardId = "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({
+          content: "make it three eggs",
+          writeCards: true,
+          liveCard: { cardId, edits: { counts: [3] } },
+        });
+      expect(res.status).toBe(200);
+      expect(storage.getWriteCard).toHaveBeenCalledWith(cardId, "1");
+      expect(
+        vi.mocked(generateCoachProResponse).mock.calls[0][7],
+      ).toMatchObject({ writeCards: true });
+    });
+
+    it("rejects a liveCard whose id is not a uuid (400)", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({
+          content: "Hello",
+          writeCards: true,
+          liveCard: { cardId: "42", edits: {} },
+        });
+      expect(res.status).toBe(400);
     });
 
     it("builds the opening brief on a first coach send that asks for it", async () => {

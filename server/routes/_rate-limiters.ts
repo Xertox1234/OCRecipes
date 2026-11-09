@@ -466,6 +466,16 @@ export const chatReadRateLimit = createRateLimiter({
   message: "Too many chat requests. Please wait.",
 });
 
+/**
+ * Coach write-card Save and Undo (spec 2026-11-09): one shared budget — a
+ * human taps these a few times a minute at most.
+ */
+export const coachCardRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many card requests. Please wait.",
+});
+
 export const micronutrientRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 20,

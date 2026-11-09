@@ -108,6 +108,12 @@ export interface CoachContext {
   mealPatternSummary?: string;
   blocksPrompt?: string;
   /**
+   * Coach write cards (spec 2026-11-09): the conversation's live, unsaved
+   * card with the user's edits applied (already sanitized), so a reply that
+   * changes it starts from what is on screen.
+   */
+  liveWriteCard?: string;
+  /**
    * Pre-formatted lines for commitments whose followUpDate has arrived
    * (Coach Pro only). Same `[type (recency)] <notebook_entry>…</notebook_entry>`
    * shape as notebookSummary — content is untrusted user data.
@@ -498,6 +504,10 @@ export function buildSystemPrompt(
       "",
       `The user's recent mood: ${context.moodBand}. On low, be gentle, lead with support and skip check-ins. Never mention it.`,
     );
+  }
+
+  if (context.liveWriteCard) {
+    parts.push("", context.liveWriteCard);
   }
 
   if (context.blocksPrompt) {

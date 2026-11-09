@@ -135,6 +135,8 @@ export async function saveWriteCard(
     tx: WriteCardTx,
     card: CoachWriteCard,
   ) => Promise<CoachWriteCardSavedRefs>,
+  /** The edits this save used; stored for the receipt. Omit to keep the card's. */
+  edits?: Record<string, unknown>,
 ): Promise<SaveWriteCardResult> {
   return db.transaction(async (tx) => {
     const [card] = await tx
@@ -153,7 +155,12 @@ export async function saveWriteCard(
     // window would then measure from.
     const [saved] = await tx
       .update(coachWriteCards)
-      .set({ status: "saved", savedRefs, savedAt: new Date() })
+      .set({
+        status: "saved",
+        savedRefs,
+        savedAt: new Date(),
+        ...(edits !== undefined && { edits }),
+      })
       .where(eq(coachWriteCards.id, id))
       .returning();
     return { status: "saved", card: saved };
