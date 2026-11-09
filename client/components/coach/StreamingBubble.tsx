@@ -6,6 +6,7 @@ import BlockRenderer from "@/components/coach/blocks";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { blockEntranceDelays } from "@/components/coach/blocks/block-entrance";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import type { WriteCardEdits } from "@shared/schemas/coach-write-cards";
 
 interface StreamingBubbleProps {
   streamingContent: string;
@@ -22,6 +23,9 @@ interface StreamingBubbleProps {
   ttsSpeak: (messageId: number, text: string) => void;
   isSpeaking: boolean;
   speakingMessageId: number | null;
+  /** Coach write cards: edits per card, and the setter (owned by the chat). */
+  writeCardEdits?: Record<string, WriteCardEdits>;
+  onWriteCardEdit?: (cardId: string, edits: WriteCardEdits) => void;
 }
 
 const StreamingBubble = memo(function StreamingBubble({
@@ -35,6 +39,8 @@ const StreamingBubble = memo(function StreamingBubble({
   ttsSpeak,
   isSpeaking,
   speakingMessageId,
+  writeCardEdits,
+  onWriteCardEdit,
 }: StreamingBubbleProps) {
   const entryDelays = blockEntranceDelays(streamBlocks);
   return (
@@ -59,6 +65,12 @@ const StreamingBubble = memo(function StreamingBubble({
             onAction={onBlockAction}
             onQuickReply={onQuickReply}
             onCommitmentAccept={onCommitmentAccept}
+            writeCardEdits={
+              block.type === "write_card"
+                ? writeCardEdits?.[block.cardId]
+                : undefined
+            }
+            onWriteCardEdit={onWriteCardEdit}
             animateEntry
             entryDelayMs={entryDelays[i]}
           />

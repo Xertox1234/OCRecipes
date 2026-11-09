@@ -13,8 +13,15 @@ export function useWriteCard(cardId: string) {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
 
+  // The chat's messages query is keyed `/api/chat/conversations/<id>/messages`
+  // (one string), so a prefix key would miss it.
   const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+    queryClient.invalidateQueries({
+      predicate: (q) =>
+        typeof q.queryKey[0] === "string" &&
+        q.queryKey[0].startsWith("/api/chat/conversations/") &&
+        q.queryKey[0].endsWith("/messages"),
+    });
 
   async function save(
     edits: Record<string, unknown>,

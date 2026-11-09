@@ -8,7 +8,10 @@ import {
   stripCoachBlocksFenceIncremental,
   createFenceScanState,
   filterValidBlocks,
+  latestLiveWriteCard,
+  lockOlderWriteCards,
 } from "../coach-chat-utils";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 const validDays = [
   {
@@ -364,5 +367,78 @@ describe("getStreamFinishAnnouncement", () => {
         "android",
       ),
     ).toBe("Coach responded");
+  });
+});
+
+describe("write cards in the chat (spec 2026-11-09)", () => {
+  const food = (
+    cardId: string,
+    status: "live" | "saved" | "replaced" = "live",
+    replacesCardId?: string,
+  ): CoachBlock => ({
+    type: "write_card",
+    cardId,
+    kind: "food",
+    status,
+    ...(replacesCardId && { replacesCardId }),
+    payload: {
+      items: [
+        {
+          name: "egg",
+          unitLabel: "egg",
+          perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+          count: 2,
+          source: "lookup",
+        },
+      ],
+      mealType: "breakfast",
+      day: "today",
+    },
+  });
+  const A = "11111111-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+  const B = "22222222-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+  const C = "33333333-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+  const reply: CoachBlock = {
+    type: "quick_replies",
+    options: [{ label: "x", message: "x" }],
+  };
+
+  it("latestLiveWriteCard ignores saved and replaced cards", () => {
+    expect(latestLiveWriteCard([[food(A)], [reply]])).toEqual({
+      cardId: A,
+      kind: "food",
+    });
+    expect(latestLiveWriteCard([[food(A)], [food(B, "saved")]])).toBeNull();
+    expect(latestLiveWriteCard([[food(A, "replaced")]])).toBeNull();
+    expect(latestLiveWriteCard([])).toBeNull();
+  });
+
+  it("applyReplacements marks the named card replaced and others expired", () => {
+    const out = lockOlderWriteCards([
+      [food(A)],
+      [food(B)],
+      [reply, food(C, "live", B)],
+    ]);
+    const status = (blocks: CoachBlock[]) =>
+      blocks
+        .filter((b) => b.type === "write_card")
+        .map((b) => (b as { status: string }).status);
+    expect(status(out[0])).toEqual(["expired"]);
+    expect(status(out[1])).toEqual(["replaced"]);
+    expect(status(out[2])).toEqual(["live"]);
+    expect(out[2][0]).toBe(reply);
+  });
+
+  it("the same card shown twice (footer + saved message) stays live", () => {
+    const out = lockOlderWriteCards([[food(A)], [food(A)]]);
+    expect(out[0][0]).toMatchObject({ status: "live" });
+    expect(out[1][0]).toMatchObject({ status: "live" });
+  });
+
+  it("leaves saved cards and lists without a newer card alone", () => {
+    const lists = [[food(A, "saved")], [food(B)]];
+    const out = lockOlderWriteCards(lists);
+    expect(out[0][0]).toMatchObject({ status: "saved" });
+    expect(out[1][0]).toMatchObject({ status: "live" });
   });
 });
