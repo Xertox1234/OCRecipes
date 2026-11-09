@@ -32,7 +32,9 @@ So the collision is macOS-only: CI (Ubuntu) cannot hit it, and a listener bound 
 
 ## Solution
 
-`test/setup.ts` patches supertest so `request(app)` binds `127.0.0.1` instead of the wildcard. The bind is asynchronous with a host, so it happens in `Test.end()` (which `await`, `.then` and `.end(cb)` all go through) rather than in the synchronous `serverAddress()`. Already-listening servers and https/http2 servers pass through untouched. `test/supertest-loopback.test.ts` is the canary: it asserts `req.socket.localAddress === "127.0.0.1"` (a wildcard listener reports `::ffff:127.0.0.1`), so a supertest upgrade that changes those internals fails loudly instead of silently reopening the flake.
+**supertest ≥ 7.3 fixes this upstream:** its `holdServer` calls `server.listen(0, '127.0.0.1')`. Nothing to patch. `test/supertest-loopback.test.ts` is the canary: it asserts `req.socket.localAddress === "127.0.0.1"` (a wildcard listener reports `::ffff:127.0.0.1`), so a supertest that drops the bind fails loudly instead of silently reopening the flake.
+
+History, and why an internals patch is a trap: from 2026-10-20 to 2026-11-09 `test/setup.ts` monkey-patched `Test.prototype.serverAddress`/`end` (written against 7.2.2) to bind `127.0.0.1` in `end()`. The 7.3 upgrade (#1815) moved server start into `_whenServerReady`, which builds the URL from `this._serverPath` — a field the patch bypassed — so every request URL became `http://127.0.0.1:<port>undefined` and superagent threw `TypeError: Invalid URL` (the canary's 4 tests and 32 of 36 in `auth-route-wiring.test.ts` failed). The canary worked; what let the break through was that the bump was a `package.json`/lockfile-only change, which the push gate's changed-file test selection does not map to any test. When a dependency that `test/setup.ts` patches is bumped, run the canary for that patch by hand before pushing. The patch was deleted.
 
 Count-dependent tests (rate limits, quotas) still need one more thing: a module-level limiter store keeps its counts across vitest retries, so if such a test ever flakes for another reason the retry fails the other way (429 where 200 was expected). Build a fresh module graph per attempt:
 
@@ -45,6 +47,6 @@ and assert every request in the loop was served by the app (status plus an app-o
 
 ## Related Files
 
-- `test/setup.ts` (the supertest patch)
+- `test/setup.ts` (the supertest patch, removed 2026-11-09 — supertest 7.3 binds 127.0.0.1 itself)
 - `test/supertest-loopback.test.ts` (canary)
 - `server/routes/__tests__/profile-hub-rate-limit.test.ts`
