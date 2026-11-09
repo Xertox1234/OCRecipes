@@ -43,7 +43,7 @@ const NAVIGABLE_SCREENS = [
 const navigateActionSchema = z.object({
   type: z.literal("navigate"),
   screen: z.enum(NAVIGABLE_SCREENS),
-  params: z.record(z.unknown()).optional(),
+  params: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Per-screen param schemas for navigate actions requiring specific params. */

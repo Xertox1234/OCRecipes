@@ -9,8 +9,13 @@ const log = createServiceLogger("receipt-analysis");
 
 // Gemini (the Vertex backup) writes null for a field it has no value for,
 // where GPT leaves the key out; both mean "not given".
+// The trailing .optional() keeps the key optional in the inferred type (zod 4
+// types a transformed field as a required key).
 const absentAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
-  schema.nullish().transform((v) => v ?? undefined);
+  schema
+    .nullish()
+    .transform((v) => v ?? undefined)
+    .optional();
 
 const receiptItemSchema = z.object({
   name: z.string(),

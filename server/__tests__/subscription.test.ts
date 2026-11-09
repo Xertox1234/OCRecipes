@@ -45,7 +45,7 @@ describe("UpgradeRequestSchema", () => {
     const result = UpgradeRequestSchema.safeParse(data);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.errors[0].message).toBe("Receipt is required");
+      expect(result.error.issues[0].message).toBe("Receipt is required");
     }
   });
 
@@ -80,7 +80,7 @@ describe("UpgradeRequestSchema", () => {
     const result = UpgradeRequestSchema.safeParse(data);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.errors[0].message).toBe("Transaction ID is required");
+      expect(result.error.issues[0].message).toBe("Transaction ID is required");
     }
   });
 
@@ -94,7 +94,7 @@ describe("UpgradeRequestSchema", () => {
     const result = UpgradeRequestSchema.safeParse(data);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.errors[0].message).toBe("Product ID is required");
+      expect(result.error.issues[0].message).toBe("Product ID is required");
     }
   });
 

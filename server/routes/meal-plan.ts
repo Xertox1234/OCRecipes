@@ -192,8 +192,13 @@ export function register(app: Express): void {
           return;
         }
 
+        // zod 4 applies .default() even inside .partial(): unwrap the
+        // create-time sourceType default, or every edit resets it.
         const updateSchema = createMealPlanRecipeSchema
           .omit({ ingredients: true })
+          .extend({
+            sourceType: createMealPlanRecipeSchema.shape.sourceType.unwrap(),
+          })
           .partial();
         const parsed = updateSchema.safeParse(req.body);
         if (!parsed.success) {
