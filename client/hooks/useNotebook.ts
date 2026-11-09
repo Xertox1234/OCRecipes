@@ -11,6 +11,11 @@ export interface NotebookEntry {
   followUpDate: string | null;
   sourceConversationId: number | null;
   dedupeKey: string | null;
+  /** Visible memory: set once the user saw it saved or confirmed it. */
+  confirmedAt: string | null;
+  /** Short second-person label for a commitment. */
+  label: string | null;
+  shownAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -105,6 +110,49 @@ export function useDeleteNotebookEntry() {
       void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
     // Its one call site (NotebookScreen) already toasts on failure.
+    meta: { silentError: true },
+  });
+}
+
+/** "Yes" on an unconfirmed memory (visible memory R3). */
+export function useConfirmNotebookEntries() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: number[]) => {
+      await apiRequest("POST", "/api/coach/notebook/confirm", { ids });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+    },
+    // The page toasts its own failure copy.
+    meta: { silentError: true },
+  });
+}
+
+/** "Remove": kept as rejected so the coach never re-saves it. */
+export function useRejectNotebookEntries() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: number[]) => {
+      await apiRequest("POST", "/api/coach/notebook/reject", { ids });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+    },
+    meta: { silentError: true },
+  });
+}
+
+/** "Clear everything Coach knows": every entry and the mood score. */
+export function useClearNotebook() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", "/api/coach/notebook");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+    },
     meta: { silentError: true },
   });
 }

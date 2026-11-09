@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
@@ -21,6 +21,10 @@ interface OpeningBriefProps {
   onQuickLog: () => void;
   /** Fires once when the brief first shows. */
   onShown?: () => void;
+  /** "Not today": clear just this reminder type; the brief sends nothing. */
+  onDismiss?: (reminderType: "meal-log") => void;
+  /** "Drop it": archive the commitment, then send `message`. */
+  onDrop?: (notebookEntryId: number, message: string) => void;
 }
 
 /** Server chips, with room kept for one feature the person hasn't used. */
@@ -46,6 +50,8 @@ export default function OpeningBrief({
   onSend,
   onQuickLog,
   onShown,
+  onDismiss,
+  onDrop,
 }: OpeningBriefProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -56,18 +62,34 @@ export default function OpeningBrief({
     onShown?.();
   }, [onShown]);
 
+  const [dismissed, setDismissed] = useState(false);
   const runAction = (action: BriefAction) => {
-    if (action.kind === "quick-log") onQuickLog();
-    else if (action.message) onSend(action.message);
+    switch (action.kind) {
+      case "quick-log":
+        onQuickLog();
+        return;
+      case "send":
+        onSend(action.message);
+        return;
+      case "dismiss":
+        setDismissed(true);
+        onDismiss?.(action.reminderType);
+        return;
+      case "drop":
+        onDrop?.(action.notebookEntryId, action.message);
+        return;
+    }
   };
 
   const chips = chipsFor(brief.suggestions);
-  const { reminder } = brief;
+  const reminder = dismissed ? null : brief.reminder;
   // One flowing sentence run for screen readers (the saved text uses blank
   // lines between parts).
   const spoken = reminder
     ? `${brief.greeting} ${reminder.lead}`
-    : brief.text.replace(/\n+/g, " ");
+    : dismissed
+      ? `${brief.greeting} ${brief.recap}`
+      : brief.text.replace(/\n+/g, " ");
 
   return (
     <Animated.View

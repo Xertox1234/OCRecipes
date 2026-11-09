@@ -101,6 +101,12 @@ vi.mock("@/hooks/useCoachStream", () => ({
   },
 }));
 
+vi.mock("@/components/coach/MemoryRefsTag", () => ({
+  default: ({ ids }: { ids: number[] }) => (
+    <div data-testid="memory-refs">{ids.join(",")}</div>
+  ),
+}));
+
 vi.mock("@/hooks/useChat", () => ({
   useChatMessages: () => ({
     data: state.messages,
@@ -1440,7 +1446,6 @@ describe("CoachChat — opening brief", () => {
       proteinGoal: null,
       tonightPlan: null,
       expiringPantry: [],
-      topTip: null,
       suggestions: [],
       reminder: { type: "meal-log" },
     },
@@ -1523,10 +1528,108 @@ describe("CoachChat — opening brief", () => {
       openingBrief: { brief, form: "full" },
       onReminderHandled,
     });
-    fireEvent.click(
-      screen.getByLabelText("Log lunch, Nothing logged yet today."),
-    );
+    fireEvent.click(screen.getByLabelText("Log lunch, Want to log lunch?"));
     expect(state.navigate).toHaveBeenCalledWith("QuickLog");
     expect(onReminderHandled).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CoachChat — reply finished", () => {
+  beforeEach(resetState);
+
+  it("tells the host when a reply finishes, so it can look for new saves", () => {
+    const onReplyDone = vi.fn();
+    renderCoachChat({ onReplyDone });
+    act(() => state.onDone?.("All set."));
+    expect(onReplyDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CoachChat — From your notebook", () => {
+  beforeEach(resetState);
+
+  it("tags only the reply that used memories", () => {
+    state.messages = [
+      makeMessage({ id: 1, role: "user", content: "breakfast?" }),
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "Tofu scramble.",
+        metadata: { blocks: [{ type: "memory_refs", ids: [5, 6] }] },
+      }),
+      makeMessage({ id: 3, role: "assistant", content: "Anything else?" }),
+    ];
+    renderCoachChat();
+    const tags = screen.getAllByTestId("memory-refs");
+    expect(tags).toHaveLength(1);
+    expect(tags[0].textContent).toBe("5,6");
+  });
+});
+
+describe("CoachChat — brief Not today / Drop it", () => {
+  beforeEach(resetState);
+
+  it("Not today hands the reminder type to the host and sends nothing", () => {
+    const onDismissReminder = vi.fn();
+    const brief = renderOpeningBrief(
+      {
+        localHour: 13,
+        name: null,
+        consumedCalories: 0,
+        calorieGoal: null,
+        consumedProtein: 0,
+        proteinGoal: null,
+        tonightPlan: null,
+        expiringPantry: [],
+        suggestions: [],
+        reminder: { type: "meal-log" },
+      },
+      "full",
+    );
+    renderCoachChat({
+      conversationId: null,
+      openingBrief: { brief, form: "full" },
+      onDismissReminder,
+    });
+    fireEvent.click(screen.getByLabelText("Not today, Want to log lunch?"));
+    expect(onDismissReminder).toHaveBeenCalledWith("meal-log");
+    expect(state.startStream).not.toHaveBeenCalled();
+  });
+
+  it("Drop it archives the commitment and sends the message", async () => {
+    const brief = renderOpeningBrief(
+      {
+        localHour: 13,
+        name: null,
+        consumedCalories: 0,
+        calorieGoal: null,
+        consumedProtein: 0,
+        proteinGoal: null,
+        tonightPlan: null,
+        expiringPantry: [],
+        suggestions: [],
+        reminder: { type: "commitment", notebookEntryId: 3, label: "oats" },
+      },
+      "full",
+    );
+    renderCoachChat({
+      conversationId: 1,
+      openingBrief: { brief, form: "full" },
+    });
+    fireEvent.click(
+      screen.getByLabelText(
+        "Drop it, You were going to try oats. How's that going?",
+      ),
+    );
+    expect(state.apiRequest).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/coach/notebook/3",
+      { status: "archived" },
+    );
+    await waitFor(() =>
+      expect(state.startStream).toHaveBeenCalledWith(1, "I want to drop it", {
+        warmUpId: null,
+      }),
+    );
   });
 });

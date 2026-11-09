@@ -9,7 +9,6 @@ import { storage } from "../storage";
 import { civilDateString, civilHourInTz } from "../lib/civil-date";
 import { sanitizeContextField } from "../lib/ai-safety";
 import { buildCoachSuggestions } from "./coach-context-builder";
-import { selectTopInsights } from "@shared/lib/coach-stats";
 import {
   renderOpeningBrief,
   type BriefForm,
@@ -21,7 +20,7 @@ import type { CoachContextItem } from "@shared/types/reminders";
 
 const EXPIRING_WITHIN_DAYS = 1;
 const MAX_EXPIRING = 3;
-const MAX_COMMITMENT_CHARS = 200;
+const MAX_LABEL_CHARS = 80;
 
 const LEAD_ORDER: ShowableReminder["type"][] = [
   "commitment",
@@ -31,23 +30,32 @@ const LEAD_ORDER: ShowableReminder["type"][] = [
 
 /**
  * The one reminder the brief leads with, or null. Stale or impossible ones
- * are dropped: a missed-meal reminder once something is logged, and a
- * commitment for a free user (their notebook is never written).
+ * are dropped: a missed-meal reminder once something is logged, and any
+ * commitment that may not be spoken — not Coach Pro, or not a confirmed,
+ * labelled, active notebook entry (the certainty rule, spec 2026-11-08).
  */
-function pickReminder(
+async function pickReminder(
+  userId: string,
   items: CoachContextItem[],
   consumedCalories: number,
   coachPro: boolean,
-): ShowableReminder | null {
+): Promise<ShowableReminder | null> {
   const showable: ShowableReminder[] = [];
   for (const item of items) {
     if (item.type === "commitment" && coachPro) {
+      const entry = await storage.getNotebookEntryById(
+        item.notebookEntryId,
+        userId,
+      );
+      if (entry?.status !== "active" || !entry.confirmedAt || !entry.label) {
+        continue;
+      }
       showable.push({
         type: "commitment",
-        notebookEntryId: item.notebookEntryId,
-        // Saved later in the coach's own voice, so strip tag-like markup on
-        // top of the standard injection filter.
-        content: sanitizeContextField(item.content, MAX_COMMITMENT_CHARS)
+        notebookEntryId: entry.id,
+        // Rendered in the coach's voice and saved to history: strip
+        // tag-like markup on top of the standard injection filter.
+        label: sanitizeContextField(entry.label, MAX_LABEL_CHARS)
           .replace(/[<>]/g, "")
           .trim(),
       });
@@ -72,34 +80,23 @@ export async function buildCoachBrief(
   now: Date = new Date(),
 ): Promise<RenderedBrief> {
   const localToday = civilDateString(now, tz);
-  const [
-    user,
-    intake,
-    planItems,
-    expiring,
-    notebook,
-    dueCommitments,
-    reminders,
-  ] = await Promise.all([
-    storage.getUser(userId),
-    storage.getDailySummary(userId, now, tz),
-    storage.getMealPlanItems(userId, localToday, localToday),
-    features.pantryTracking
-      ? storage.getExpiringPantryItems(userId, EXPIRING_WITHIN_DAYS)
-      : Promise.resolve([]),
-    features.coachPro
-      ? storage.getActiveNotebookEntries(userId)
-      : Promise.resolve([]),
-    features.coachPro
-      ? storage.getCommitmentsWithDueFollowUp(userId)
-      : Promise.resolve([]),
-    storage.getTodaysPendingReminders(userId, tz, now),
-  ]);
+  const [user, intake, planItems, expiring, dueCommitments, reminders] =
+    await Promise.all([
+      storage.getUser(userId),
+      storage.getDailySummary(userId, now, tz),
+      storage.getMealPlanItems(userId, localToday, localToday),
+      features.pantryTracking
+        ? storage.getExpiringPantryItems(userId, EXPIRING_WITHIN_DAYS)
+        : Promise.resolve([]),
+      features.coachPro
+        ? storage.getCommitmentsWithDueFollowUp(userId)
+        : Promise.resolve([]),
+      storage.getTodaysPendingReminders(userId, tz, now),
+    ]);
 
   const consumedCalories = intake?.totalCalories ?? 0;
   const consumedProtein = intake?.totalProtein ?? 0;
   const dinner = planItems.find((i) => i.mealType === "dinner");
-  const [tip] = selectTopInsights(notebook, 1);
   const firstName = user?.displayName?.trim().split(/\s+/)[0] || null;
 
   return renderOpeningBrief(
@@ -112,7 +109,6 @@ export async function buildCoachBrief(
       proteinGoal: user?.dailyProteinGoal ?? null,
       tonightPlan: dinner?.recipe?.title ?? null,
       expiringPantry: expiring.slice(0, MAX_EXPIRING).map((p) => p.name),
-      topTip: tip ? tip.content : null,
       suggestions: buildCoachSuggestions({
         dueCommitments,
         totalProtein: intake ? consumedProtein : null,
@@ -120,7 +116,12 @@ export async function buildCoachBrief(
         now,
         tz,
       }),
-      reminder: pickReminder(reminders, consumedCalories, features.coachPro),
+      reminder: await pickReminder(
+        userId,
+        reminders,
+        consumedCalories,
+        features.coachPro,
+      ),
     },
     form,
   );

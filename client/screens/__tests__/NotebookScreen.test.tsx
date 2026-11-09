@@ -1,188 +1,149 @@
 // @vitest-environment jsdom
 import { screen, fireEvent } from "@testing-library/react";
+import { Alert } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import NotebookScreen from "../NotebookScreen";
 
-const { mockUseNotebookEntries, mockRefetch, mockToast } = vi.hoisted(() => ({
-  mockUseNotebookEntries: vi.fn(),
-  mockRefetch: vi.fn(),
-  mockToast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+const { mockUseNotebookEntries, mockRefetch, mockToast, m, mockNavigate } =
+  vi.hoisted(() => ({
+    mockUseNotebookEntries: vi.fn(),
+    mockRefetch: vi.fn(),
+    mockToast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+    m: { confirm: vi.fn(), reject: vi.fn(), clear: vi.fn() },
+    mockNavigate: vi.fn(),
+  }));
 
 vi.mock("@/hooks/useNotebook", () => ({
   useNotebookEntries: () => mockUseNotebookEntries(),
-  useUpdateNotebookEntry: () => ({ mutate: vi.fn() }),
-  useDeleteNotebookEntry: () => ({ mutate: vi.fn() }),
+  useConfirmNotebookEntries: () => ({ mutate: m.confirm }),
+  useRejectNotebookEntries: () => ({ mutate: m.reject }),
+  useClearNotebook: () => ({ mutate: m.clear }),
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn(), goBack: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate, goBack: vi.fn() }),
 }));
 
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => mockToast,
 }));
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
+const entry = (
+  id: number,
+  type: string,
+  content: string,
+  confirmedAt: string | null = "2026-11-01",
+) => ({ id, type, status: "active", content, confirmedAt, label: null });
 
-describe("NotebookScreen", () => {
-  it("says there are no entries when the notebook is genuinely empty", () => {
-    mockUseNotebookEntries.mockReturnValue({
-      data: [],
-      isLoading: false,
-      isError: false,
-      refetch: mockRefetch,
-    });
-
-    renderComponent(<NotebookScreen />);
-
-    expect(screen.getByText("No entries yet")).toBeDefined();
+function renderWith(data: unknown[] | undefined, extra: object = {}) {
+  mockUseNotebookEntries.mockReturnValue({
+    data,
+    isLoading: false,
+    isError: false,
+    refetch: mockRefetch,
+    ...extra,
   });
+  renderComponent(<NotebookScreen />);
+}
 
-  // The row shows the note in second person; its screen-reader label must say
-  // the same thing, not the model's raw "The user has…" text (2026-11-02).
-  it("labels an entry with the text it shows", () => {
-    mockUseNotebookEntries.mockReturnValue({
-      data: [
-        {
-          id: 1,
-          type: "insight",
-          status: "active",
-          content: "The user has logged 0.7g of protein today",
-          followUpDate: null,
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: mockRefetch,
-    });
+beforeEach(() => vi.clearAllMocks());
 
-    renderComponent(<NotebookScreen />);
-
+describe("What Coach knows", () => {
+  it("explains itself and groups memories by meaning", () => {
+    renderWith([
+      entry(1, "goal", "The user aims for 120 g protein a day"),
+      entry(2, "preference", "User avoids dairy"),
+      entry(3, "commitment", "User plans to try pumpkin seeds"),
+      entry(4, "insight", "Snacks late"),
+      entry(5, "coaching_strategy", "Be blunt"),
+    ]);
+    expect(screen.getByText("What Coach knows")).toBeTruthy();
     expect(
-      screen.getByRole("button", {
-        name: "insight: You have logged 0.7g of protein today",
-      }),
-    ).toBeDefined();
+      screen.getByText(
+        "Coach uses these to tailor advice. Remove anything that's wrong.",
+      ),
+    ).toBeTruthy();
+    for (const h of [
+      "Goals",
+      "Preferences",
+      "Trying",
+      "How Coach talks to you",
+    ]) {
+      expect(screen.getByText(h)).toBeTruthy();
+    }
+    expect(screen.getByText("You avoid dairy")).toBeTruthy();
+    expect(screen.queryByText("Snacks late")).toBeNull();
+    expect(screen.queryByText("Be blunt")).toBeNull();
+    expect(
+      screen.getByText("Keeps suggestions short and practical."),
+    ).toBeTruthy();
   });
 
-  // A failed load used to render "No entries yet" with no retry
-  // (audit 2026-10-29 M-crel-2).
+  it("asks about an unconfirmed memory: Yes confirms, Remove rejects", () => {
+    renderWith([entry(7, "preference", "User likes quick breakfasts", null)]);
+    expect(screen.getByText("Is this right?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Yes, that's right" }));
+    expect(m.confirm).toHaveBeenCalledWith([7], expect.anything());
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(m.reject).toHaveBeenCalledWith([7], expect.anything());
+  });
+
+  it("Edit opens the entry", () => {
+    renderWith([entry(7, "preference", "User likes quick breakfasts", null)]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(mockNavigate).toHaveBeenCalledWith("NotebookEntry", { entryId: 7 });
+  });
+
+  it("a confirmed memory opens its entry on tap", () => {
+    renderWith([entry(2, "preference", "User avoids dairy")]);
+    expect(screen.queryByText("Is this right?")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "You avoid dairy" }));
+    expect(mockNavigate).toHaveBeenCalledWith("NotebookEntry", { entryId: 2 });
+  });
+
+  it("Clear everything asks first, then clears", () => {
+    const alert = vi.spyOn(Alert, "alert");
+    renderWith([entry(2, "preference", "User avoids dairy")]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear everything Coach knows" }),
+    );
+    expect(m.clear).not.toHaveBeenCalled();
+    const buttons = alert.mock.calls[0][2] as {
+      text: string;
+      onPress?: () => void;
+    }[];
+    buttons.find((b) => b.text === "Clear everything")?.onPress?.();
+    expect(m.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("Add stays", () => {
+    renderWith([]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add something for Coach to know" }),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("NotebookEntry", {});
+  });
+
+  it("has a plain empty state", () => {
+    renderWith([]);
+    expect(
+      screen.getByText(
+        "Coach hasn't saved anything yet. Things you tell it about your goals and preferences show up here.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Clear everything Coach knows" }),
+    ).toBeNull();
+  });
+
   it("shows an error with a retry when the entries fail to load", () => {
-    mockUseNotebookEntries.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      refetch: mockRefetch,
-    });
-
-    renderComponent(<NotebookScreen />);
-
-    expect(screen.queryByText("No entries yet")).toBeNull();
+    renderWith(undefined, { isError: true });
     fireEvent.click(screen.getByText("Try Again"));
     expect(mockRefetch).toHaveBeenCalled();
   });
 
-  // Offline cold start: the query is paused (not loading, not errored, no data)
-  // and used to read as "No entries yet" (audit 2026-10-29 M-crel-5).
   it("shows an offline state when the entries query is paused", () => {
-    mockUseNotebookEntries.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: false,
-      fetchStatus: "paused",
-      refetch: mockRefetch,
-    });
-
-    renderComponent(<NotebookScreen />);
-
-    expect(screen.queryByText("No entries yet")).toBeNull();
+    renderWith(undefined, { fetchStatus: "paused" });
     expect(screen.getByText("You're offline")).toBeDefined();
-  });
-
-  // The coach's own notes (chat summaries, how it coaches) sat among the
-  // user's goals and preferences, several near-duplicates deep (simulator,
-  // 2026-11-08). Owner ruling: keep them, folded into their own section.
-  describe("coach's notes", () => {
-    const entry = (id: number, type: string, content: string) => ({
-      id,
-      type,
-      status: "active",
-      content,
-      followUpDate: null,
-    });
-
-    function renderWith(data: ReturnType<typeof entry>[]) {
-      mockUseNotebookEntries.mockReturnValue({
-        data,
-        isLoading: false,
-        isError: false,
-        refetch: mockRefetch,
-      });
-      renderComponent(<NotebookScreen />);
-    }
-
-    it("folds summaries and strategy notes into their own section", () => {
-      renderWith([
-        entry(1, "goal", "Build a filling breakfast"),
-        entry(2, "conversation_summary", "Talked through oat swaps"),
-        entry(3, "coaching_strategy", "Likes detailed answers"),
-      ]);
-
-      expect(screen.getByText("Build a filling breakfast")).toBeDefined();
-      expect(screen.queryByText("Talked through oat swaps")).toBeNull();
-      expect(screen.queryByText("Likes detailed answers")).toBeNull();
-
-      fireEvent.click(
-        screen.getByRole("button", { name: "Coach's notes, 2 entries" }),
-      );
-      expect(screen.getByText("Talked through oat swaps")).toBeDefined();
-      expect(screen.getByText("Likes detailed answers")).toBeDefined();
-    });
-
-    it("with only coach's notes, does not claim the notebook is empty", () => {
-      renderWith([
-        entry(2, "conversation_summary", "Talked through oat swaps"),
-      ]);
-
-      expect(screen.queryByText("No entries yet")).toBeNull();
-      expect(
-        screen.getByRole("button", { name: "Coach's notes, 1 entry" }),
-      ).toBeDefined();
-    });
-
-    it("the Strategy filter lists strategy notes directly", () => {
-      renderWith([entry(3, "coaching_strategy", "Likes detailed answers")]);
-      fireEvent.click(
-        screen.getByRole("button", { name: "Filter by coaching_strategy" }),
-      );
-
-      expect(screen.getByText("Likes detailed answers")).toBeDefined();
-      expect(
-        screen.queryByRole("button", { name: /Coach's notes/ }),
-      ).toBeNull();
-    });
-  });
-
-  // A ScrollView shrinks by default (flexShrink 1). Above a list taller than
-  // the screen, the filter row was squeezed from 48 to 43 pt and clipped the
-  // chips' bottom edge — "Insight" read "Insiaht" (simulator, 2026-11-08).
-  it("the filter row keeps its height above a long list", () => {
-    mockUseNotebookEntries.mockReturnValue({
-      data: [],
-      isLoading: false,
-      isError: false,
-      refetch: mockRefetch,
-    });
-
-    renderComponent(<NotebookScreen />);
-
-    let row = screen.getByRole("button", { name: "Filter by all" })
-      .parentElement as HTMLElement | null;
-    while (row && row.style.flexGrow !== "0") row = row.parentElement;
-    expect(row).not.toBeNull();
-    expect(row!.style.flexShrink).toBe("0");
   });
 });

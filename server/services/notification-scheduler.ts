@@ -132,7 +132,12 @@ async function sendCommitmentReminderPage(
 
       const { pushDelivered } = await notify(entry.userId, "commitment", {
         title: "Coach reminder",
-        body: entry.content.slice(0, 100),
+        // Certainty rule (visible memory, 2026-11-08): name the commitment
+        // only when the user confirmed it and it has a label in their words.
+        body:
+          entry.confirmedAt && entry.label
+            ? `How's ${entry.label.slice(0, 80)} going?`
+            : "Coach has a quick check-in for you.",
         // `url` is what client/navigation/linking.ts's getInitialURL/subscribe
         // resolve a notification tap through. `entryId` stays alongside it —
         // the same shape client/hooks/useNotebookNotifications.ts already

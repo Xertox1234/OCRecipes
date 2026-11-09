@@ -1,7 +1,6 @@
-import React, { useState, useCallback } from "react";
+import React, { useCallback } from "react";
 import {
   View,
-  FlatList,
   Pressable,
   Alert,
   StyleSheet,
@@ -16,180 +15,245 @@ import { PressableScale } from "@/components/PressableScale";
 import { useToast } from "@/context/ToastContext";
 import {
   useNotebookEntries,
-  useUpdateNotebookEntry,
-  useDeleteNotebookEntry,
-  type NotebookEntry,
+  useConfirmNotebookEntries,
+  useRejectNotebookEntries,
+  useClearNotebook,
 } from "@/hooks/useNotebook";
 import { ThemedText } from "@/components/ThemedText";
 import { EmptyState, OfflineEmptyState } from "@/components/EmptyState";
 import { isPausedWithoutData } from "@/components/empty-state-utils";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
-import { FLATLIST_DEFAULTS } from "@/constants/performance";
-import { toSecondPerson } from "@/components/coach/notebook-text-utils";
-import { splitCoachNotes } from "@/components/coach/notebook-list-utils";
-import { notebookTypeColor } from "@/constants/notebook-colors";
+import {
+  groupForPage,
+  type PageItem,
+} from "@/components/coach/what-coach-knows-utils";
 import type { NotebookScreenNavigationProp } from "@/types/navigation";
 
-const FILTERS = [
-  "all",
-  "commitment",
-  "insight",
-  "goal",
-  "preference",
-  "coaching_strategy",
-  "archived",
-] as const;
-type Filter = (typeof FILTERS)[number];
-
+/**
+ * "What Coach knows" (visible memory R3, approved mockup A): what the coach
+ * remembers, as plain sentences grouped by meaning. A memory the coach saved
+ * quietly asks "Is this right?" — confirming it is what lets the coach bring
+ * it up. Interpretations, summaries and feelings are never shown.
+ */
 export default function NotebookScreen() {
   const { theme } = useTheme();
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NotebookScreenNavigationProp>();
-  const [filter, setFilter] = useState<Filter>("all");
-
-  const queryOpts =
-    filter === "all"
-      ? undefined
-      : filter === "archived"
-        ? { status: "archived" }
-        : { type: filter };
 
   const {
-    data: entries = [],
+    data: entries,
     isLoading,
     isError,
     fetchStatus,
     refetch,
-  } = useNotebookEntries(queryOpts);
-  // "All" lists the user's own entries; the coach's notes fold into their own
-  // section below. A type or Archived filter lists whatever it matches.
-  const { mine, coachNotes } =
-    filter === "all"
-      ? splitCoachNotes(entries)
-      : { mine: entries, coachNotes: [] as NotebookEntry[] };
-  const [coachNotesOpen, setCoachNotesOpen] = useState(false);
-  const { mutate: updateEntryMutate } = useUpdateNotebookEntry();
-  const { mutate: deleteEntryMutate } = useDeleteNotebookEntry();
+  } = useNotebookEntries({ status: "active" });
+  const page = groupForPage(entries ?? []);
+  const isEmpty =
+    page.goals.length + page.preferences.length + page.trying.length === 0 &&
+    page.howCoachTalks === null;
 
-  const handleArchive = useCallback(
-    (entry: NotebookEntry) => {
-      Alert.alert("Archive entry", "Move this entry to archive?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Archive",
-          onPress: () =>
-            updateEntryMutate(
-              { id: entry.id, status: "archived" },
-              {
-                onError: () =>
-                  toast.error("Couldn't archive the entry. Please try again."),
-              },
-            ),
-        },
-      ]);
-    },
-    [updateEntryMutate, toast],
+  const { mutate: confirm } = useConfirmNotebookEntries();
+  const { mutate: reject } = useRejectNotebookEntries();
+  const { mutate: clear } = useClearNotebook();
+
+  const openEntry = useCallback(
+    (id: number) => navigation.navigate("NotebookEntry", { entryId: id }),
+    [navigation],
   );
-
-  const handleDelete = useCallback(
-    (entry: NotebookEntry) => {
-      Alert.alert("Delete entry", "Permanently delete this entry?", [
+  const handleConfirm = (id: number) =>
+    confirm([id], {
+      onError: () => toast.error("Couldn't save that. Please try again."),
+    });
+  const handleRemove = (id: number) =>
+    reject([id], {
+      onError: () => toast.error("Couldn't remove that. Please try again."),
+    });
+  const handleClear = () =>
+    Alert.alert(
+      "Clear everything Coach knows?",
+      "Coach will forget all your goals, preferences and the things you're trying. This can't be undone.",
+      [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete",
+          text: "Clear everything",
           style: "destructive",
           onPress: () =>
-            deleteEntryMutate(entry.id, {
+            clear(undefined, {
               onError: () =>
-                toast.error("Couldn't delete the entry. Please try again."),
+                toast.error("Couldn't clear your notebook. Please try again."),
             }),
         },
-      ]);
-    },
-    [deleteEntryMutate, toast],
-  );
+      ],
+    );
 
-  const renderEntry = useCallback(
-    ({ item }: { item: NotebookEntry }) => {
-      const color = notebookTypeColor(theme, item.type);
-      const isCompleted = item.status === "completed";
-      return (
-        <Pressable
-          style={({ pressed }) => [
-            styles.entryCard,
-            { backgroundColor: theme.backgroundSecondary },
-            pressed && { opacity: 0.7 },
-          ]}
-          onPress={() =>
-            navigation.navigate("NotebookEntry", { entryId: item.id })
-          }
-          accessibilityRole="button"
-          accessibilityLabel={`${item.type}: ${toSecondPerson(item.content).slice(0, 60)}`}
+  const renderItem = (item: PageItem) =>
+    item.confirmed ? (
+      <Pressable
+        key={item.id}
+        onPress={() => openEntry(item.id)}
+        style={({ pressed }) => [
+          styles.item,
+          { backgroundColor: theme.backgroundSecondary },
+          pressed && { opacity: 0.7 },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={item.text}
+        accessibilityHint="Opens it to edit or remove"
+      >
+        <ThemedText type="body" style={styles.itemText}>
+          {item.text}
+        </ThemedText>
+        <Feather
+          name="chevron-right"
+          size={16}
+          color={theme.textSecondary}
+          accessible={false}
+        />
+      </Pressable>
+    ) : (
+      <View
+        key={item.id}
+        style={[
+          styles.item,
+          styles.itemAsk,
+          { backgroundColor: theme.backgroundSecondary },
+        ]}
+      >
+        <ThemedText type="body" style={styles.itemText}>
+          {item.text}
+        </ThemedText>
+        <View style={styles.askRow}>
+          <ThemedText type="small" style={{ color: theme.link }}>
+            Is this right?
+          </ThemedText>
+          <Pressable
+            onPress={() => handleConfirm(item.id)}
+            style={[styles.pill, { backgroundColor: theme.accentSolid }]}
+            accessibilityRole="button"
+            accessibilityLabel="Yes, that's right"
+          >
+            <ThemedText
+              type="small"
+              style={[styles.pillText, { color: theme.buttonText }]}
+            >
+              Yes
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => openEntry(item.id)}
+            style={[styles.pill, { borderColor: theme.link, borderWidth: 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Edit"
+          >
+            <ThemedText
+              type="small"
+              style={[styles.pillText, { color: theme.link }]}
+            >
+              Edit
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => handleRemove(item.id)}
+            style={[styles.pill, { borderColor: theme.link, borderWidth: 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Remove"
+          >
+            <ThemedText
+              type="small"
+              style={[styles.pillText, { color: theme.link }]}
+            >
+              Remove
+            </ThemedText>
+          </Pressable>
+        </View>
+      </View>
+    );
+
+  const group = (title: string, items: PageItem[]) =>
+    items.length === 0 ? null : (
+      <View style={styles.group} key={title}>
+        <ThemedText
+          type="caption"
+          style={[styles.groupTitle, { color: theme.textSecondary }]}
+          accessibilityRole="header"
         >
-          <View style={styles.entryRow}>
-            <View style={[styles.typeDot, { backgroundColor: color }]} />
-            <View style={styles.entryBody}>
-              <ThemedText type="caption" style={[styles.typeLabel, { color }]}>
-                {item.type.replace(/_/g, " ").toUpperCase()}
-                {isCompleted ? " · DONE" : ""}
-              </ThemedText>
-              <ThemedText
-                type="small"
-                numberOfLines={2}
-                style={[
-                  isCompleted && { color: theme.textSecondary },
-                  isCompleted && styles.strikethrough,
-                ]}
-              >
-                {toSecondPerson(item.content)}
-              </ThemedText>
-              {item.followUpDate && !isCompleted && (
-                <ThemedText type="caption" style={[styles.dueDate, { color }]}>
-                  {new Date(item.followUpDate).toLocaleDateString()}
-                </ThemedText>
-              )}
-            </View>
-            <View style={styles.entryActions}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.entryAction,
-                  pressed && { opacity: 0.7 },
-                ]}
-                onPress={() => handleArchive(item)}
-                accessibilityRole="button"
-                accessibilityLabel="Archive entry"
-              >
-                <Feather
-                  name="archive"
-                  size={16}
-                  color={theme.textSecondary}
-                  accessible={false}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => handleDelete(item)}
-                style={({ pressed }) => [
-                  styles.entryAction,
-                  pressed && { opacity: 0.7 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Delete entry"
-              >
-                <Feather
-                  name="trash-2"
-                  size={16}
-                  color={theme.textSecondary}
-                  accessible={false}
-                />
-              </Pressable>
-            </View>
+          {title}
+        </ThemedText>
+        {items.map(renderItem)}
+      </View>
+    );
+
+  let body: React.ReactNode;
+  if (isLoading) {
+    body = <ActivityIndicator style={styles.loading} color={theme.link} />;
+  } else if (isError) {
+    body = (
+      <EmptyState
+        variant="temporary"
+        icon="alert-circle"
+        title="Couldn't load your notebook"
+        description="Something went wrong. Tap below to try again."
+        actionLabel="Try Again"
+        onAction={() => {
+          void refetch();
+        }}
+      />
+    );
+  } else if (isPausedWithoutData(fetchStatus, (entries?.length ?? 0) > 0)) {
+    body = <OfflineEmptyState what="notebook" />;
+  } else if (isEmpty) {
+    body = (
+      <ThemedText
+        type="small"
+        style={[styles.empty, { color: theme.textSecondary }]}
+      >
+        Coach hasn&apos;t saved anything yet. Things you tell it about your
+        goals and preferences show up here.
+      </ThemedText>
+    );
+  } else {
+    body = (
+      <>
+        {group("Goals", page.goals)}
+        {group("Preferences", page.preferences)}
+        {group("Trying", page.trying)}
+        {page.howCoachTalks && (
+          <View style={styles.group}>
+            <ThemedText
+              type="caption"
+              style={[styles.groupTitle, { color: theme.textSecondary }]}
+              accessibilityRole="header"
+            >
+              How Coach talks to you
+            </ThemedText>
+            <ThemedText
+              type="small"
+              style={[
+                styles.soft,
+                {
+                  backgroundColor: theme.backgroundSecondary,
+                  color: theme.textSecondary,
+                },
+              ]}
+            >
+              {page.howCoachTalks}
+            </ThemedText>
           </View>
+        )}
+        <Pressable
+          onPress={handleClear}
+          style={styles.clear}
+          accessibilityRole="button"
+          accessibilityLabel="Clear everything Coach knows"
+        >
+          <ThemedText type="small" style={{ color: theme.link }}>
+            Clear everything Coach knows
+          </ThemedText>
         </Pressable>
-      );
-    },
-    [handleArchive, handleDelete, navigation, theme],
-  );
+      </>
+    );
+  }
 
   return (
     <View
@@ -200,20 +264,20 @@ export default function NotebookScreen() {
       ]}
     >
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <ThemedText type="h4">My Notebook</ThemedText>
+        <ThemedText type="h4">What Coach knows</ThemedText>
         <View style={styles.headerActions}>
           <PressableScale
             onPress={() => navigation.navigate("NotebookEntry", {})}
             style={[styles.newBtn, { backgroundColor: theme.accentSolid }]}
             hitSlop={{ top: 7, bottom: 7 }}
             accessibilityRole="button"
-            accessibilityLabel="Create new notebook entry"
+            accessibilityLabel="Add something for Coach to know"
           >
             <ThemedText
               type="small"
               style={[styles.newBtnText, { color: theme.buttonText }]}
             >
-              + New
+              + Add
             </ThemedText>
           </PressableScale>
           <Pressable
@@ -230,128 +294,23 @@ export default function NotebookScreen() {
           </Pressable>
         </View>
       </View>
-
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterScroll}
-        contentContainerStyle={styles.filterRow}
+        contentContainerStyle={[
+          styles.list,
+          { paddingBottom: insets.bottom + Spacing.lg },
+        ]}
       >
-        {FILTERS.map((f) => (
-          <PressableScale
-            scaleTo={0.95}
-            key={f}
-            onPress={() => setFilter(f)}
-            style={[
-              styles.filterChip,
-              {
-                backgroundColor:
-                  filter === f ? theme.accentSolid : theme.backgroundSecondary,
-              },
-            ]}
-            hitSlop={{ top: 7, bottom: 7 }}
-            accessibilityRole="button"
-            accessibilityState={{ selected: filter === f }}
-            accessibilityLabel={`Filter by ${f === "all" ? "all" : f}`}
+        {!isLoading && !isError && (
+          <ThemedText
+            type="small"
+            style={[styles.lede, { color: theme.textSecondary }]}
           >
-            <ThemedText
-              type="small"
-              style={[
-                styles.filterText,
-                {
-                  color: filter === f ? theme.buttonText : theme.textSecondary,
-                },
-              ]}
-            >
-              {f === "all"
-                ? "All"
-                : f === "archived"
-                  ? "Archived"
-                  : f === "coaching_strategy"
-                    ? "Strategy"
-                    : f === "preference"
-                      ? "Preference"
-                      : f.charAt(0).toUpperCase() + f.slice(1)}
-            </ThemedText>
-          </PressableScale>
-        ))}
+            Coach uses these to tailor advice. Remove anything that&apos;s
+            wrong.
+          </ThemedText>
+        )}
+        {body}
       </ScrollView>
-
-      {isLoading ? (
-        <ActivityIndicator style={styles.loading} color={theme.link} />
-      ) : (
-        <FlatList
-          data={mine}
-          keyExtractor={(e) => String(e.id)}
-          renderItem={renderEntry}
-          contentContainerStyle={[
-            styles.list,
-            { paddingBottom: insets.bottom + Spacing.md },
-          ]}
-          {...FLATLIST_DEFAULTS}
-          ListFooterComponent={
-            coachNotes.length > 0 ? (
-              <View style={styles.coachNotes}>
-                <Pressable
-                  onPress={() => setCoachNotesOpen((open) => !open)}
-                  style={({ pressed }) => [
-                    styles.coachNotesToggle,
-                    pressed && { opacity: 0.7 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: coachNotesOpen }}
-                  accessibilityLabel={`Coach's notes, ${coachNotes.length} ${
-                    coachNotes.length === 1 ? "entry" : "entries"
-                  }`}
-                >
-                  <Feather
-                    name={coachNotesOpen ? "chevron-down" : "chevron-right"}
-                    size={16}
-                    color={theme.textSecondary}
-                    accessible={false}
-                  />
-                  <ThemedText
-                    type="small"
-                    style={[
-                      styles.coachNotesLabel,
-                      { color: theme.textSecondary },
-                    ]}
-                  >
-                    {`Coach's notes (${coachNotes.length})`}
-                  </ThemedText>
-                </Pressable>
-                {coachNotesOpen &&
-                  coachNotes.map((item) => (
-                    <View key={item.id}>{renderEntry({ item })}</View>
-                  ))}
-              </View>
-            ) : undefined
-          }
-          ListEmptyComponent={
-            coachNotes.length > 0 ? undefined : isError ? (
-              <EmptyState
-                variant="temporary"
-                icon="alert-circle"
-                title="Couldn't load your notebook"
-                description="Something went wrong. Tap below to try again."
-                actionLabel="Try Again"
-                onAction={() => {
-                  void refetch();
-                }}
-              />
-            ) : isPausedWithoutData(fetchStatus, entries.length > 0) ? (
-              <OfflineEmptyState what="notebook" />
-            ) : (
-              <ThemedText
-                type="small"
-                style={[styles.empty, { color: theme.textSecondary }]}
-              >
-                No entries yet
-              </ThemedText>
-            )
-          }
-        />
-      )}
     </View>
   );
 }
@@ -373,55 +332,45 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   newBtnText: { fontFamily: FontFamily.semiBold },
-  // A horizontal ScrollView with no flexGrow:0 stretches to fill the column
-  filterScroll: { flexGrow: 0, flexShrink: 0 },
-  filterRow: {
+  list: { padding: Spacing.md, gap: Spacing.md },
+  lede: { lineHeight: 20 },
+  group: { gap: Spacing.sm },
+  groupTitle: {
+    fontFamily: FontFamily.semiBold,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  item: {
+    borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
-  },
-  filterChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-  },
-  filterText: { fontFamily: FontFamily.medium },
-  list: { padding: Spacing.md, gap: Spacing.sm },
-  coachNotes: { gap: Spacing.sm, marginTop: Spacing.sm },
-  coachNotesToggle: {
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
-    minHeight: 44,
+    gap: Spacing.sm,
   },
-  coachNotesLabel: { fontFamily: FontFamily.medium },
-  entryCard: {
+  itemAsk: { flexDirection: "column", alignItems: "stretch" },
+  itemText: { flex: 1 },
+  askRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  pill: {
+    minHeight: 44,
+    justifyContent: "center",
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md,
+  },
+  pillText: { fontFamily: FontFamily.medium },
+  soft: {
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
+    overflow: "hidden",
   },
-  entryRow: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.sm },
-  typeDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 5,
-    flexShrink: 0,
-  },
-  entryBody: { flex: 1 },
-  typeLabel: {
-    fontFamily: FontFamily.semiBold,
-    letterSpacing: 0.5,
-    marginBottom: 3,
-  },
-  strikethrough: { textDecorationLine: "line-through" },
-  dueDate: { marginTop: 4 },
-  entryActions: { alignItems: "center" },
-  entryAction: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  clear: { minHeight: 44, justifyContent: "center", marginTop: Spacing.sm },
   loading: { marginTop: Spacing.xl },
-  empty: { textAlign: "center", marginTop: Spacing.xl },
+  empty: { textAlign: "center", marginTop: Spacing.xl, lineHeight: 20 },
 });

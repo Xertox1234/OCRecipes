@@ -7,6 +7,7 @@ import {
   integer,
   timestamp,
   decimal,
+  real,
   boolean,
   jsonb,
   index,
@@ -394,6 +395,9 @@ export const userProfiles = pgTable("user_profiles", {
     .notNull()
     .unique(),
   allergies: jsonb("allergies").$type<Allergy[]>().default([]).notNull(),
+  /** Coach mood score −2…+2, decayed on read (shared/lib/mood.ts). Never shown. */
+  moodScore: real("mood_score").default(0).notNull(),
+  moodUpdatedAt: timestamp("mood_updated_at", { withTimezone: true }),
   healthConditions: jsonb("health_conditions")
     .$type<string[]>()
     .default([])
@@ -1884,6 +1888,16 @@ export const coachNotebook = pgTable(
      * Mapped to the pre-existing `turn_fingerprint` column in Postgres.
      */
     dedupeKey: text("turn_fingerprint"),
+    /**
+     * Visible memory (spec 2026-11-08): set when the user saw the save and
+     * didn't undo it, or confirmed/edited it on the "What Coach knows" page.
+     * Only confirmed entries may be spoken by the coach.
+     */
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    /** Short second-person label for a commitment ("pumpkin seeds on your salad"). */
+    label: text("label"),
+    /** When the save popup showed this entry; null = not shown yet. */
+    shownAt: timestamp("shown_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -1919,7 +1933,7 @@ export const coachNotebook = pgTable(
     ),
     check(
       "coach_notebook_status_check",
-      sql`${table.status} IN ('active', 'completed', 'expired', 'archived')`,
+      sql`${table.status} IN ('active', 'completed', 'expired', 'archived', 'rejected')`,
     ),
   ],
 );

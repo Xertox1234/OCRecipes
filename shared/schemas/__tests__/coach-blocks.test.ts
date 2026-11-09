@@ -606,3 +606,17 @@ describe("RecipeBrowserModal navigate params", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("memory_refs block", () => {
+  it("accepts 1–5 positive ids", () => {
+    expect(
+      coachBlockSchema.safeParse({ type: "memory_refs", ids: [3] }).success,
+    ).toBe(true);
+  });
+
+  it.each([[[]], [[0]], [[1, 2, 3, 4, 5, 6]], [["3"]]])("rejects %j", (ids) => {
+    expect(
+      coachBlockSchema.safeParse({ type: "memory_refs", ids }).success,
+    ).toBe(false);
+  });
+});

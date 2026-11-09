@@ -4,7 +4,7 @@
  */
 
 /** Case, spacing and a closing full stop don't make a different tip. */
-function insightKey(content: string): string {
+export function insightKey(content: string): string {
   return content
     .trim()
     .toLowerCase()
@@ -15,7 +15,7 @@ function insightKey(content: string): string {
 /** Shorter than this, one tip containing another is coincidence, not a copy. */
 const MIN_CONTAINED_LENGTH = 20;
 
-function sameTip(a: string, b: string): boolean {
+export function sameTip(a: string, b: string): boolean {
   if (a === b) return true;
   const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
   return shorter.length >= MIN_CONTAINED_LENGTH && longer.includes(shorter);

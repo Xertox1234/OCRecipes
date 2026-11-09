@@ -14,6 +14,7 @@
  * Extracted from server/routes/chat.ts to keep route handlers thin.
  */
 
+import { filterMemoryRefs } from "./memory-refs";
 import { randomUUID } from "crypto";
 import { civilDateToInstant } from "../lib/civil-date";
 import { storage } from "../storage";
@@ -362,6 +363,7 @@ async function extractAndStoreNotebook(a: {
         userId,
         type: e.type,
         content: e.content,
+        label: e.label,
         status: "active",
         // `civilDateToInstant`, not `new Date(dateStr)`: a bare parse
         // anchors at UTC midnight, which is BEFORE local midnight for
@@ -686,7 +688,20 @@ export async function* handleCoachChat(
   if (isCoachPro && fullResponse) {
     const parsedBlocks = parseBlocksFromContent(fullResponse);
     textContent = parsedBlocks.text;
-    blocks = parsedBlocks.blocks;
+    // R1: a reply may cite only confirmed entries the prompt was given.
+    const confirmedIds = new Set(
+      notebookEntries
+        .filter(
+          (e) =>
+            e.status === "active" &&
+            e.confirmedAt != null &&
+            (e.type === "goal" ||
+              e.type === "preference" ||
+              e.type === "commitment"),
+        )
+        .map((e) => e.id),
+    );
+    blocks = filterMemoryRefs(parsedBlocks.blocks, confirmedIds);
   }
 
   const maybeAutoTitle = () => {

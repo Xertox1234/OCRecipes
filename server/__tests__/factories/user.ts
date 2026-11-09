@@ -43,6 +43,8 @@ const userProfileDefaults: UserProfile = {
   id: 1,
   userId: "1",
   allergies: [],
+  moodScore: 0,
+  moodUpdatedAt: null,
   healthConditions: [],
   dietType: null,
   foodDislikes: [],

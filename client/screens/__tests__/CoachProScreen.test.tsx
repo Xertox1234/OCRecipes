@@ -7,6 +7,7 @@ import CoachProScreen from "../CoachProScreen";
 
 const {
   mockAcknowledge,
+  mockAcknowledgeType,
   mockUsePremiumFeature,
   mockRefetchConversations,
   focusEffectCb,
@@ -17,8 +18,10 @@ const {
   keyboardState,
   mockNavigate,
   briefState,
+  savesState,
 } = vi.hoisted(() => ({
   mockAcknowledge: vi.fn(),
+  mockAcknowledgeType: vi.fn(),
   mockUsePremiumFeature: vi.fn(),
   // Hoisted so it stays referentially stable across renders, matching the
   // real useChatConversations().refetch (see the referential-equality-test-
@@ -37,6 +40,12 @@ const {
   routeState: { params: {} as { selectedConversationId?: number } },
   keyboardState: { visible: false },
   mockNavigate: vi.fn(),
+  savesState: {
+    saves: [] as { id: number; type: string; content: string; label: null }[],
+    checkForSaves: vi.fn(),
+    confirm: vi.fn(),
+    undo: vi.fn(),
+  },
   briefState: {
     hasPending: false,
     lastSeen: "2026-11-08" as string | null | undefined,
@@ -61,6 +70,10 @@ vi.mock("@/hooks/usePendingReminders", () => ({
 vi.mock("@/lib/coach-brief-seen", () => ({
   getCachedLastBriefSeenDate: () => briefState.lastSeen,
   markBriefSeen: briefState.markSeen,
+}));
+
+vi.mock("@/hooks/useNotebookSaves", () => ({
+  useNotebookSaves: () => savesState,
 }));
 
 vi.mock("@/hooks/useCoachBrief", () => ({
@@ -121,7 +134,10 @@ vi.mock("@/hooks/useCoachWarmUp", () => ({
 }));
 
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
-  useAcknowledgeReminders: () => ({ acknowledge: mockAcknowledge }),
+  useAcknowledgeReminders: () => ({
+    acknowledge: mockAcknowledge,
+    acknowledgeType: mockAcknowledgeType,
+  }),
 }));
 
 // Thin CoachChat double — isolates CoachProScreen's onMessageSent wiring from
@@ -136,7 +152,11 @@ vi.mock("@/components/coach/CoachChat", () => ({
     inputBarStyle,
     openingBrief,
     onReminderHandled,
+    onReplyDone,
+    onDismissReminder,
   }: {
+    onReplyDone?: () => void;
+    onDismissReminder?: (t: string) => void;
     openingBrief?: { form: string; onShown?: () => void } | null;
     onReminderHandled?: () => void;
     onMessageSent?: () => void;
@@ -155,6 +175,10 @@ vi.mock("@/components/coach/CoachChat", () => ({
       <button onClick={() => openingBrief?.onShown?.()}>
         mock-brief-shown
       </button>
+      <button onClick={() => onReplyDone?.()}>mock-reply-done</button>
+      <button onClick={() => onDismissReminder?.("meal-log")}>
+        mock-dismiss
+      </button>
       <button onClick={() => onReminderHandled?.()}>
         mock-reminder-handled
       </button>
@@ -166,12 +190,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   focusEffectCb.current = null;
   mockAcknowledge.mockResolvedValue(undefined);
+  mockAcknowledgeType.mockResolvedValue(undefined);
   // Defaults preserve the original harness: Coach Pro user, premium resolved.
   premiumContextState.isPremiumResolved = true;
   conversationsState.data = [];
   routeState.params = {};
   keyboardState.visible = false;
   mockUsePremiumFeature.mockReturnValue(true);
+  savesState.saves = [];
   briefState.hasPending = false;
   briefState.lastSeen = TODAY;
   briefState.useCoachBrief.mockReturnValue({
@@ -447,5 +473,42 @@ describe("CoachProScreen — opening brief", () => {
     conversationsState.data = [thread];
     renderComponent(<CoachProScreen />);
     expect(briefState.useCoachBrief).toHaveBeenLastCalledWith("short", false);
+  });
+});
+
+describe("CoachProScreen — saved to your notebook", () => {
+  it("looks for new saves on open, when a reply finishes, and on a later refocus", () => {
+    renderComponent(<CoachProScreen />);
+    expect(savesState.checkForSaves).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText("mock-reply-done"));
+    expect(savesState.checkForSaves).toHaveBeenCalledTimes(2);
+    // useRefreshOnFocus skips the initial focus; the next one refreshes.
+    act(() => {
+      focusEffectCb.current?.();
+    });
+    act(() => {
+      focusEffectCb.current?.();
+    });
+    expect(savesState.checkForSaves).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows the popup under the Notebook icon while saves are waiting", () => {
+    savesState.saves = [
+      { id: 4, type: "preference", content: "You avoid dairy", label: null },
+    ];
+    renderComponent(<CoachProScreen />);
+    expect(screen.getByText("Saved to your notebook")).toBeTruthy();
+    expect(screen.getByText("You avoid dairy")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(savesState.undo).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CoachProScreen — brief Not today", () => {
+  it("clears just that reminder type", () => {
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByText("mock-dismiss"));
+    expect(mockAcknowledgeType).toHaveBeenCalledWith("meal-log");
+    expect(mockAcknowledge).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,15 @@ import {
   AppState,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { useNotebookSaves } from "@/hooks/useNotebookSaves";
+import SavedToNotebookPopup from "@/components/coach/SavedToNotebookPopup";
 import {
   useNavigation,
   useRoute,
@@ -65,6 +74,9 @@ export default function CoachProScreen() {
     silentError: true,
   });
   const [conversationId, setConversationId] = useState<number | null>(null);
+  // Bottom edge of the thread bar, measured: the save popup hangs just under
+  // it (absolute children ignore the container's safe-area padding).
+  const [threadBarBottom, setThreadBarBottom] = useState<number | null>(null);
   const {
     data: coachConversations = [],
     isError: conversationsError,
@@ -79,9 +91,18 @@ export default function CoachProScreen() {
   // refetches on an observer mount. Pick it up on refocus instead; the hook's
   // settle-margin follow-up covers the refocus landing in the same transition
   // as that dismissal, before the server's post-disconnect write.
+  // Visible memory R2: new notebook saves pop up under the Notebook icon.
+  // Checked on open, when a reply finishes, and on a later refocus (saves
+  // made from the Ask Coach sheet show here).
+  const notebookSaves = useNotebookSaves();
+  const { checkForSaves } = notebookSaves;
+  useEffect(() => {
+    checkForSaves();
+  }, [checkForSaves]);
   const refetchConversationsOnFocus = useCallback(() => {
     void refetchConversations();
-  }, [refetchConversations]);
+    checkForSaves();
+  }, [refetchConversations, checkForSaves]);
   // settleMs: the refocus usually lands in the same transition as the abort
   // that invalidated this list with `refetchType: "none"` — re-read once the
   // server's post-disconnect write has settled (see the constant's comment).
@@ -91,7 +112,7 @@ export default function CoachProScreen() {
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
   const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
-  const { acknowledge } = useAcknowledgeReminders();
+  const { acknowledge, acknowledgeType } = useAcknowledgeReminders();
   // Reminders clear when the user actually sends a message, not on mere
   // screen focus — fire at most once per mount.
   const hasAcknowledgedRef = useRef(false);
@@ -223,6 +244,24 @@ export default function CoachProScreen() {
     return result.id;
   }, [createConversation, brief]);
 
+  // One pulse of the Notebook icon per new batch of saves (reduced motion:
+  // a colour change on the button instead).
+  const { reducedMotion } = useAccessibility();
+  const hasSaves = notebookSaves.saves.length > 0;
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    if (!hasSaves || reducedMotion) return;
+    pulse.set(
+      withSequence(
+        withTiming(1.15, { duration: 150 }),
+        withTiming(1, { duration: 150 }),
+      ),
+    );
+  }, [hasSaves, reducedMotion, pulse]);
+  const notebookPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.get() }],
+  }));
+
   return (
     <View
       style={[
@@ -230,7 +269,13 @@ export default function CoachProScreen() {
         { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
       ]}
     >
-      <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
+      <View
+        style={[styles.threadBar, { borderBottomColor: theme.border }]}
+        onLayout={(e) => {
+          const { y, height } = e.nativeEvent.layout;
+          setThreadBarBottom(y + height);
+        }}
+      >
         <Pressable
           onPress={startDraft}
           style={({ pressed }) => [
@@ -340,18 +385,28 @@ export default function CoachProScreen() {
             </ThemedText>
           </Pressable>
         </ScrollView>
-        <Pressable
-          onPress={() => navigation.navigate("NotebookScreen")}
-          style={({ pressed }) => [
-            styles.notebookButton,
-            pressed && { backgroundColor: theme.backgroundSecondary },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Notebook"
-        >
-          <Feather name="book-open" size={18} color={theme.link} />
-        </Pressable>
+        <Animated.View style={notebookPulseStyle}>
+          <Pressable
+            onPress={() => navigation.navigate("NotebookScreen")}
+            style={({ pressed }) => [
+              styles.notebookButton,
+              (pressed || (hasSaves && reducedMotion)) && {
+                backgroundColor: theme.backgroundSecondary,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Notebook"
+          >
+            <Feather name="book-open" size={18} color={theme.link} />
+          </Pressable>
+        </Animated.View>
       </View>
+      <SavedToNotebookPopup
+        saves={notebookSaves.saves}
+        onConfirm={notebookSaves.confirm}
+        onUndo={notebookSaves.undo}
+        top={(threadBarBottom ?? insets.top + THREAD_BAR_FALLBACK_HEIGHT) + 4}
+      />
       <CoachChat
         conversationId={conversationId}
         onCreateConversation={handleCreateConversation}
@@ -362,6 +417,12 @@ export default function CoachProScreen() {
           paddingBottom: keyboardVisible ? Spacing.sm : tabBarHeight,
         }}
         onReminderHandled={handleMessageSent}
+        onReplyDone={checkForSaves}
+        onDismissReminder={(type) => {
+          acknowledgeType(type).catch((err) =>
+            logger.warn("[CoachProScreen] acknowledgeType failed", err),
+          );
+        }}
         openingBrief={
           shownBrief
             ? { brief: shownBrief, form: draftForm, onShown: onBriefShown }
@@ -371,6 +432,9 @@ export default function CoachProScreen() {
     </View>
   );
 }
+
+/** 44pt buttons plus vertical padding — used until the bar is measured. */
+const THREAD_BAR_FALLBACK_HEIGHT = 44 + Spacing.sm * 2;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

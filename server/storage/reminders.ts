@@ -123,3 +123,25 @@ export async function getTodaysPendingReminders(
     .orderBy(desc(pendingReminders.scheduledFor));
   return parseReminderRows(rows);
 }
+
+/**
+ * Clear only one reminder type for the user (the brief's "Not today" on a
+ * missed meal must not also clear a commitment reminder). Returns the count.
+ */
+export async function acknowledgeReminderType(
+  userId: string,
+  type: ReminderType,
+): Promise<number> {
+  const rows = await db
+    .update(pendingReminders)
+    .set({ acknowledgedAt: new Date() })
+    .where(
+      and(
+        eq(pendingReminders.userId, userId),
+        eq(pendingReminders.type, type),
+        isNull(pendingReminders.acknowledgedAt),
+      ),
+    )
+    .returning({ id: pendingReminders.id });
+  return rows.length;
+}

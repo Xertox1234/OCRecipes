@@ -28,6 +28,7 @@ import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import OpeningBrief from "@/components/coach/OpeningBrief";
+import MemoryRefsTag from "@/components/coach/MemoryRefsTag";
 import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
 import { COACH_BRIEF_KEY } from "@/hooks/useCoachBrief";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -117,6 +118,10 @@ interface CoachChatProps {
    * opens Quick Log), so the host clears the reminder as a send would.
    */
   onReminderHandled?: () => void;
+  /** A reply finished streaming (the host looks for new notebook saves). */
+  onReplyDone?: () => void;
+  /** The brief's "Not today": the host clears just that reminder type. */
+  onDismissReminder?: (type: "meal-log") => void;
 }
 
 type ChatListItem =
@@ -143,6 +148,8 @@ export default function CoachChat({
   inputBarStyle,
   openingBrief,
   onReminderHandled,
+  onReplyDone,
+  onDismissReminder,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
@@ -324,6 +331,7 @@ export default function CoachChat({
   } = useCoachStream({
     onDone: (fullText, blocks) => {
       refreshAfterBriefSend();
+      onReplyDone?.();
       // A dead-socket abort also lands here, with whatever partial text came.
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
@@ -978,6 +986,12 @@ export default function CoachChat({
           !hasFinderBlock &&
           !isHeld &&
           msg.id === lastAssistantMessageId;
+        // Visible memory R1: the server already kept only confirmed ids.
+        const memoryRefBlock = savedBlocks?.find(
+          (b) => b.type === "memory_refs",
+        );
+        const memoryRefIds =
+          memoryRefBlock?.type === "memory_refs" ? memoryRefBlock.ids : null;
         const generated = generatedRecipes.get(msg.id);
         const savedRecipeId =
           savedRecipeIdsRef.current.get(msg.id) ??
@@ -1028,6 +1042,7 @@ export default function CoachChat({
                 />
               );
             })}
+            {memoryRefIds ? <MemoryRefsTag ids={memoryRefIds} /> : null}
             {generated ? (
               <GeneratedRecipeCard
                 recipe={generated.recipe}
@@ -1254,6 +1269,17 @@ export default function CoachChat({
       onQuickLog={() => {
         onReminderHandled?.();
         navigation.navigate("QuickLog");
+      }}
+      onDismiss={onDismissReminder}
+      onDrop={(id, message) => {
+        // "Drop it": archive the commitment so it stops coming up, then tell
+        // the coach. A failed archive still sends — the coach can follow up.
+        void Promise.resolve(
+          apiRequest("PATCH", `/api/coach/notebook/${id}`, {
+            status: "archived",
+          }),
+        ).catch(() => undefined);
+        void handleSend(message);
       }}
     />
   ) : null;

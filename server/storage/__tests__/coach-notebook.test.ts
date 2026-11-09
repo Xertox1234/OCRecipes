@@ -16,6 +16,7 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
+import { coachNotebook } from "@shared/schema";
 
 // Mock the db import so the storage functions use our test transaction
 vi.mock("../../db", () => ({
@@ -759,6 +760,28 @@ describe("Coach Notebook Storage", () => {
     it("returns 0 when no entries of the type exist", async () => {
       const count = await getNotebookEntryCount(testUser.id, "insight");
       expect(count).toBe(0);
+    });
+  });
+
+  describe("visible memory columns", () => {
+    it("stores a rejected row with confirmedAt, label and shownAt", async () => {
+      const now = new Date("2026-11-08T12:00:00Z");
+      const [row] = await tx
+        .insert(coachNotebook)
+        .values({
+          userId: testUser.id,
+          type: "commitment",
+          content: "The user agreed to add pumpkin seeds",
+          status: "rejected",
+          label: "pumpkin seeds on your salad",
+          confirmedAt: now,
+          shownAt: now,
+        })
+        .returning();
+      expect(row.status).toBe("rejected");
+      expect(row.label).toBe("pumpkin seeds on your salad");
+      expect(row.confirmedAt).toEqual(now);
+      expect(row.shownAt).toEqual(now);
     });
   });
 });

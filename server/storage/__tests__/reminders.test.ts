@@ -31,6 +31,7 @@ const {
   hasPendingReminders,
   acknowledgeReminders,
   getTodaysPendingReminders,
+  acknowledgeReminderType,
 } = await import("../reminders");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -302,6 +303,34 @@ describe("reminders storage", () => {
       expect(await getTodaysPendingReminders(testUser.id, "UTC", now)).toEqual(
         [],
       );
+    });
+  });
+
+  describe("acknowledgeReminderType", () => {
+    it("clears only that type, leaving other reminders pending", async () => {
+      await tx.insert(pendingReminders).values([
+        {
+          userId: testUser.id,
+          type: "meal-log",
+          context: { lastLoggedAt: null },
+          scheduledFor: new Date(),
+        },
+        {
+          userId: testUser.id,
+          type: "commitment",
+          context: { notebookEntryId: 1, content: "x" },
+          scheduledFor: new Date(),
+        },
+      ]);
+      expect(await acknowledgeReminderType(testUser.id, "meal-log")).toBe(1);
+      const rows = await tx
+        .select()
+        .from(pendingReminders)
+        .where(eq(pendingReminders.userId, testUser.id));
+      const byType = Object.fromEntries(
+        rows.map((r) => [r.type, r.acknowledgedAt !== null]),
+      );
+      expect(byType).toEqual({ "meal-log": true, commitment: false });
     });
   });
 });

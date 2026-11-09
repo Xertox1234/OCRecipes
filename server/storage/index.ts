@@ -37,6 +37,7 @@ import * as sessions from "./sessions";
 import * as carousel from "./carousel";
 import * as profileHub from "./profile-hub";
 import * as coachNotebook from "./coach-notebook";
+import * as coachNotebookMemory from "./coach-notebook-memory";
 import * as recipeFromChat from "./recipe-from-chat";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
@@ -384,6 +385,13 @@ export const storage = {
   getActiveNotebookEntries: coachNotebook.getActiveNotebookEntries,
   createNotebookEntry: coachNotebook.createNotebookEntry,
   createNotebookEntries: coachNotebook.createNotebookEntries,
+  confirmNotebookEntries: coachNotebookMemory.confirmNotebookEntries,
+  rejectNotebookEntries: coachNotebookMemory.rejectNotebookEntries,
+  markNotebookEntriesShown: coachNotebookMemory.markNotebookEntriesShown,
+  getUnseenNotebookSaves: coachNotebookMemory.getUnseenNotebookSaves,
+  getConfirmedNotebookEntries: coachNotebookMemory.getConfirmedNotebookEntries,
+  clearNotebook: coachNotebookMemory.clearNotebook,
+  updateMoodScore: coachNotebookMemory.updateMoodScore,
   getNotebookEntryById: coachNotebook.getNotebookEntryById,
   updateNotebookEntryStatus: coachNotebook.updateNotebookEntryStatus,
   getCommitmentsWithDueFollowUp: coachNotebook.getCommitmentsWithDueFollowUp,
@@ -412,6 +420,7 @@ export const storage = {
   hasPendingReminderToday: remindersStorage.hasPendingReminderToday,
   hasPendingReminders: remindersStorage.hasPendingReminders,
   acknowledgeReminders: remindersStorage.acknowledgeReminders,
+  acknowledgeReminderType: remindersStorage.acknowledgeReminderType,
   getTodaysPendingReminders: remindersStorage.getTodaysPendingReminders,
 
   // Canonical recipes
