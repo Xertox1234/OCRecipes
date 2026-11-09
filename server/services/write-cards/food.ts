@@ -10,6 +10,7 @@ import {
 import { foodCounts } from "@shared/lib/coach-write-card-math";
 import { lookupNutrition as defaultLookupNutrition } from "../nutrition-lookup";
 import { inferMealTimeHint } from "../../lib/meal-time-hint";
+import { civilHourInTz } from "../../lib/civil-date";
 import {
   createScannedItemWithLog,
   softDeleteScannedItem,
@@ -56,15 +57,6 @@ export type LogFoodCardArgs = z.infer<typeof logFoodCardArgsSchema>;
  */
 const PLAUSIBLE_FACTOR = 3;
 
-function localHour(now: Date, tz: string): number {
-  const hour = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour: "numeric",
-    hourCycle: "h23",
-  }).format(now);
-  return Number(hour) % 24;
-}
-
 export async function buildFoodPayload(
   args: LogFoodCardArgs,
   ctx: { tz: string; now: Date },
@@ -108,7 +100,8 @@ export async function buildFoodPayload(
   }
   return {
     items,
-    mealType: args.mealType ?? inferMealTimeHint(localHour(ctx.now, ctx.tz)),
+    mealType:
+      args.mealType ?? inferMealTimeHint(civilHourInTz(ctx.now, ctx.tz)),
     day: args.day ?? "today",
   };
 }
