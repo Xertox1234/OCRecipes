@@ -13,6 +13,7 @@ import {
   rollbackTestTransaction,
   closeTestPool,
   createTestUser,
+  createTestUserProfile,
   getTestTx,
 } from "../../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -206,6 +207,45 @@ describe("plan write card", () => {
     ]);
   });
 
+  it("a community recipe unsafe for the user's allergies is dropped", async () => {
+    await createTestUserProfile(tx, user.id, {
+      allergies: [{ name: "peanuts", severity: "severe" }],
+    });
+    const unsafe = await community("Peanut noodles");
+    await tx
+      .update(schema.communityRecipes)
+      .set({ allergens: [{ id: "peanuts", viaDerived: false }] })
+      .where(eq(schema.communityRecipes.id, unsafe.id));
+    const underived = await community("Never analysed");
+    await tx
+      .update(schema.communityRecipes)
+      .set({ allergens: null })
+      .where(eq(schema.communityRecipes.id, underived.id));
+    const safe = await community("Chicken shawarma bowl");
+    await tx
+      .update(schema.communityRecipes)
+      .set({ allergens: [] })
+      .where(eq(schema.communityRecipes.id, safe.id));
+    const p = await buildPlanPayload(
+      addMealPlanCardArgsSchema.parse({
+        rows: [
+          {
+            plannedDate: "2026-11-09",
+            mealType: "dinner",
+            recipe: { source: "community", id: unsafe.id },
+            alternatives: [
+              { source: "community", id: underived.id },
+              { source: "community", id: safe.id },
+            ],
+          },
+        ],
+      }),
+      user.id,
+    );
+    expect(p.rows[0].recipe.title).toBe("Chicken shawarma bowl");
+    expect(p.rows[0].alternatives).toEqual([]);
+  });
+
   it("tool args allow at most 3 alternatives and 7 rows", () => {
     const ref = { source: "community", id: 1 };
     const row = {
@@ -315,6 +355,17 @@ describe("plan write card", () => {
     await revertPlanSave(tx, card(p, refs));
     expect(await planItems()).toHaveLength(0);
     expect((await liveRecipes()).map((r) => r.title)).toEqual(["Lentil stew"]);
+  });
+
+  it("a recipe that became unsafe after the card was built is refused at save", async () => {
+    const p = await twoRowPlan(); // shawarma: community, allergens null
+    await createTestUserProfile(tx, user.id, {
+      allergies: [{ name: "peanuts", severity: "severe" }],
+    });
+    await expect(
+      performPlanSave(tx, card(p), {}, { userId: user.id }),
+    ).rejects.toBeInstanceOf(WriteCardEditError);
+    expect(await planItems()).toHaveLength(0);
   });
 
   it("chosen index outside alternatives is rejected", async () => {

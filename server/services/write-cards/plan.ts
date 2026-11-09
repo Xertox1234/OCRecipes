@@ -13,6 +13,8 @@ import {
   type PlanRecipeRef,
 } from "@shared/schemas/coach-write-cards";
 import { planKept } from "@shared/lib/coach-write-card-math";
+import { isRecipeSafeForAllergies } from "@shared/constants/allergens";
+import { getUserProfile } from "../../storage/user-profiles";
 import { getVisibleCommunityRecipesByIds } from "../../storage/community-recipes";
 import {
   createMealPlanFromSuggestions,
@@ -91,6 +93,23 @@ function toRef(
   };
 }
 
+/**
+ * The same "safe for me" rule recipe search applies (recipe-search.ts): a
+ * community recipe with no ingredient data, or one unsafe for the user's
+ * allergies (an underived cache fails closed), never reaches the card — even
+ * if the model names its id from earlier in the chat. The user's own recipes
+ * are theirs to plan, as on the Plan tab.
+ */
+function isSafeCommunityRecipe(
+  r: CommunityRecipe,
+  allergies: Parameters<typeof isRecipeSafeForAllergies>[1],
+): boolean {
+  if (allergies.length === 0) return true;
+  return (
+    r.ingredients.length > 0 && isRecipeSafeForAllergies(r.allergens, allergies)
+  );
+}
+
 export async function buildPlanPayload(
   args: AddMealPlanCardArgs,
   userId: string,
@@ -103,18 +122,24 @@ export async function buildPlanPayload(
     all.filter((r) => r.source === source).map((r) => r.id);
   const dates = args.rows.map((r) => r.plannedDate).sort();
 
-  const [communityRows, mineRows, existing, lists] = await Promise.all([
-    getVisibleCommunityRecipesByIds(ids("community"), userId),
-    getMealPlanRecipesByIds(ids("mine"), userId),
-    getMealPlanItems(userId, dates[0], dates[dates.length - 1]),
-    getGroceryLists(userId, 1),
-  ]);
+  const [communityRows, mineRows, existing, lists, profile] = await Promise.all(
+    [
+      getVisibleCommunityRecipesByIds(ids("community"), userId),
+      getMealPlanRecipesByIds(ids("mine"), userId),
+      getMealPlanItems(userId, dates[0], dates[dates.length - 1]),
+      getGroceryLists(userId, 1),
+      getUserProfile(userId),
+    ],
+  );
   const resolved = new Map<string, PlanRecipeRef>();
-  for (const r of communityRows)
+  for (const r of communityRows.filter((c) =>
+    isSafeCommunityRecipe(c, profile?.allergies ?? []),
+  )) {
     resolved.set(
       refKey({ source: "community", id: r.id }),
       toRef("community", r),
     );
+  }
   for (const r of mineRows)
     resolved.set(refKey({ source: "mine", id: r.id }), toRef("mine", r));
 
@@ -194,11 +219,17 @@ export async function performPlanSave(
   const mineIds = kept
     .filter((r) => r.recipe.source === "mine")
     .map((r) => r.recipe.id);
-  const [communityRows, mineRows] = await Promise.all([
+  const [communityRows, mineRows, profile] = await Promise.all([
     getVisibleCommunityRecipesByIds(communityIds, ctx.userId),
     getMealPlanRecipesByIds(mineIds, ctx.userId),
+    getUserProfile(ctx.userId),
   ]);
-  const community = new Map(communityRows.map((r) => [r.id, r]));
+  // Re-checked at save: allergies can change between showing and saving.
+  const community = new Map(
+    communityRows
+      .filter((r) => isSafeCommunityRecipe(r, profile?.allergies ?? []))
+      .map((r) => [r.id, r]),
+  );
   const mine = new Map(mineRows.map((r) => [r.id, r]));
 
   const mealPlanItemIds: number[] = [];
