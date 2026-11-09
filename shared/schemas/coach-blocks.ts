@@ -1,6 +1,7 @@
 // shared/schemas/coach-blocks.ts
 import { z } from "zod";
 import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
+import { allergenIdSchema } from "../constants/allergens";
 import {
   recipeResultsBlockSchema,
   recipeQuestionsBlockSchema,
@@ -157,6 +158,16 @@ const addGroceryListActionSchema = z.object({
   ),
 });
 
+/**
+ * Offer to add an allergy the user named in chat to their dietary profile.
+ * Only the nine allergens the profile editor can hold; the editor asks for
+ * the severity — the coach never guesses it.
+ */
+const addAllergyActionSchema = z.object({
+  type: z.literal("add_allergy"),
+  allergen: allergenIdSchema,
+});
+
 const blockActionSchema = z
   .discriminatedUnion("type", [
     logFoodActionSchema,
@@ -164,6 +175,7 @@ const blockActionSchema = z
     setGoalActionSchema,
     addMealPlanActionSchema,
     addGroceryListActionSchema,
+    addAllergyActionSchema,
   ])
   .superRefine((val, ctx) => {
     if (val.type === "navigate") {

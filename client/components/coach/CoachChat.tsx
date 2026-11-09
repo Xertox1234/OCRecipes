@@ -18,6 +18,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import type { AllergenId } from "@shared/constants/allergens";
 
 import * as Haptics from "expo-haptics";
 
@@ -801,6 +802,12 @@ export default function CoachChat({
         navigation.navigate("GroceryLists");
       } else if (action.type === "set_goal") {
         navigation.navigate("GoalSetup");
+      } else if (action.type === "add_allergy") {
+        // The editor asks for the severity; nothing is saved until the user
+        // picks one. The allergen id is schema-checked upstream.
+        navigation.navigate("EditDietaryProfile", {
+          addAllergen: action.allergen as AllergenId,
+        });
       }
     },
     [navigation],

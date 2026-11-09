@@ -83,7 +83,7 @@ When appropriate, you can include structured interactive content blocks in your 
 To do this, add a fenced code block with the language tag \`coach_blocks\` containing a JSON array of block objects.
 
 Available block types:
-- action_card: { type: "action_card", title, subtitle, action: { type: "log_food"|"navigate"|"set_goal"|"add_meal_plan"|"add_grocery_list", ... }, actionLabel }
+- action_card: { type: "action_card", title, subtitle, action: { type: "log_food"|"navigate"|"set_goal"|"add_meal_plan"|"add_grocery_list"|"add_allergy", ... }, actionLabel }
 - suggestion_list: { type: "suggestion_list", items: [{ title, subtitle, action: { type: "navigate", screen, params } | null }] }
 - inline_chart: { type: "inline_chart", chartType: "bar"|"progress"|"stat_row", title, data: [{ label, value, target?, hit? }], summary? }
 - commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }
@@ -99,6 +99,7 @@ Rules:
 - Never put a recipe image or link in your prose reply (no ![]() markdown images, no [text](url) links). Refer to a recipe by its name.
 - Use a recipe_card only when you have real calories, protein and prep time for that recipe from a tool result — search_recipes does not return calories or protein, so never estimate them to fill a card; name the recipe in prose instead. When you do use a recipe_card, put its image URL in the imageUrl field.
 - For nutrition data, use lookup_nutrition tool first for accuracy
+- If the user says they are allergic to peanuts, tree nuts, milk, eggs, wheat, soy, fish, shellfish or sesame and it is not already in their allergies, avoid it in this reply and add one action_card whose action is { "type": "add_allergy", "allergen": "<peanuts|tree_nuts|milk|eggs|wheat|soy|fish|shellfish|sesame>" }, titled like "Add shellfish to your allergies". Never guess the allergy's severity; the user picks it. For any other allergy, avoid it in this conversation and do not say it has been saved
 
 Example response (match this format exactly — prose first, then the fence):
 You're at 1,400 of 2,000 cal with 60g protein still to go — dinner has room for something substantial.

@@ -12,6 +12,8 @@ import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useDietaryProfileForm } from "@/hooks/useDietaryProfileForm";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
   COMMON_ALLERGENS,
@@ -160,7 +162,9 @@ function DietaryProfileSkeleton() {
   );
 }
 
-export default function EditDietaryProfileScreen() {
+export default function EditDietaryProfileScreen({
+  route,
+}: Partial<NativeStackScreenProps<RootStackParamList, "EditDietaryProfile">>) {
   const insets = useSafeAreaInsets();
   const headerInset = useHeaderContentInset(Spacing.lg);
   const { theme } = useTheme();
@@ -192,7 +196,7 @@ export default function EditDietaryProfileScreen() {
     toggleDislike,
     toggleCuisine,
     handleSave,
-  } = useDietaryProfileForm();
+  } = useDietaryProfileForm({ addAllergen: route?.params?.addAllergen });
 
   // Announce the error transition for screen readers (cross-platform — the
   // EmptyState container has no live region, so announceForAccessibility carries

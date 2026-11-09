@@ -75,6 +75,18 @@ describe("Coach Block Schemas", () => {
     );
   });
 
+  it("accepts an add_allergy card for one of the nine common allergens only", () => {
+    const card = (allergen: string) => ({
+      type: "action_card",
+      title: "Add shellfish to your allergies",
+      subtitle: "So Coach and your scans always flag it",
+      action: { type: "add_allergy", allergen },
+      actionLabel: "Add allergy",
+    });
+    expect(actionCardSchema.safeParse(card("shellfish")).success).toBe(true);
+    expect(actionCardSchema.safeParse(card("kiwi")).success).toBe(false);
+  });
+
   it("validates set_goal navigation to GoalSetup", () => {
     const list = {
       type: "suggestion_list",
