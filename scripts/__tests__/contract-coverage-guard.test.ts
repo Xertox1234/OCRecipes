@@ -37,6 +37,9 @@ const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set<string>([]);
 const NON_RESPONSE_SCHEMAS: ReadonlySet<string> = new Set<string>([
   // Client reads .shape.mealType to validate a local UI value; not a response.
   "createListingBodySchema",
+  // Request-body rule: the import browser checks its page URL against
+  // .shape.url before sending it to parse-page; not a response.
+  "importUrlSchema",
 ]);
 
 const EXCLUDED_DIRS = new Set([

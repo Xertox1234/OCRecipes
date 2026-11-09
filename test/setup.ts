@@ -7,6 +7,7 @@ import {
   selectionAsync,
 } from "./mocks/expo-haptics";
 import { signIn as googleSignIn } from "./mocks/google-sign-in-module";
+import { clearImportBrowserData } from "./mocks/webview-site-data-module";
 import { useReducedMotion } from "./mocks/react-native-reanimated";
 
 // node:module must NOT be a static import here: under a shell-exported
@@ -142,6 +143,7 @@ beforeEach(() => {
   selectionAsync.mockReset();
   useReducedMotion.mockReset();
   googleSignIn.mockReset();
+  clearImportBrowserData.mockReset();
 });
 
 // modules/google-sign-in calls requireNativeModule at import (throws under
@@ -149,4 +151,10 @@ beforeEach(() => {
 vi.mock(
   "../modules/google-sign-in",
   () => import("./mocks/google-sign-in-module"),
+);
+// modules/webview-site-data imports the real `expo` entry; stub it. Reached via
+// the clearDurableLocalState sweep <- useAuth <- AuthContext.
+vi.mock(
+  "../modules/webview-site-data",
+  () => import("./mocks/webview-site-data-module"),
 );

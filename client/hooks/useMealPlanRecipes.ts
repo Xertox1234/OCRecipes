@@ -5,6 +5,7 @@ import type {
   RecipeIngredient,
   CommunityRecipe,
 } from "@shared/schema";
+import type { ParsePageParams } from "@shared/schemas/recipe";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
 
 type RecipeWithIngredients = MealPlanRecipe & {
@@ -120,6 +121,25 @@ export function useImportRecipeFromUrl() {
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
+  });
+}
+
+export function useParseRecipeFromPage() {
+  return useMutation({
+    mutationFn: async ({
+      url,
+      ldJson,
+    }: ParsePageParams): Promise<ImportedRecipeData> => {
+      const res = await apiRequest(
+        "POST",
+        "/api/meal-plan/recipes/parse-page",
+        { url, ldJson },
+      );
+      return res.json();
+    },
+    // Both call sites show their own failure UI: RecipeImportScreen falls back
+    // to a sign-in panel, RecipeImportBrowserScreen shows an inline message.
+    meta: { silentError: true },
   });
 }
 

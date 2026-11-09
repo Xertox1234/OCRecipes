@@ -5,6 +5,7 @@ import MealPlanHomeScreen from "@/screens/meal-plan/MealPlanHomeScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
 import RecipeCreateScreen from "@/screens/meal-plan/RecipeCreateScreen";
 import RecipeImportScreen from "@/screens/meal-plan/RecipeImportScreen";
+import RecipeImportBrowserScreen from "@/screens/meal-plan/RecipeImportBrowserScreen";
 import RecipePhotoImportScreen from "@/screens/meal-plan/RecipePhotoImportScreen";
 import RecipeTextImportScreen from "@/screens/meal-plan/RecipeTextImportScreen";
 import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
@@ -56,6 +57,11 @@ export type MealPlanStackParamList = {
         fromHome?: boolean;
       }
     | undefined;
+  RecipeImportBrowser: {
+    url: string;
+    returnToMealPlan?: { mealType: string; plannedDate: string };
+    fromHome?: boolean;
+  };
   RecipePhotoImport: {
     photoUri: string;
     returnToMealPlan?: { mealType: string; plannedDate: string };
@@ -135,6 +141,11 @@ export default function MealPlanStackNavigator() {
             <HeaderTitle title="Import Recipe" showIcon={false} />
           ),
         }}
+      />
+      <Stack.Screen
+        name="RecipeImportBrowser"
+        component={RecipeImportBrowserScreen}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="RecipePhotoImport"
