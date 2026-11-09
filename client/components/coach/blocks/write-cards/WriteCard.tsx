@@ -47,9 +47,17 @@ function canSave(block: WriteCardBlock, edits: WriteCardEdits): boolean {
         edits as FoodCardEdits,
       ).some((c) => c > 0);
     case "grocery":
-      return groceryKept(block.payload as GroceryCardPayload, edits).length > 0;
+      return (
+        groceryKept(
+          block.payload as GroceryCardPayload,
+          edits as GroceryCardEdits,
+        ).length > 0
+      );
     case "plan":
-      return planKept(block.payload as PlanCardPayload, edits).length > 0;
+      return (
+        planKept(block.payload as PlanCardPayload, edits as PlanCardEdits)
+          .length > 0
+      );
   }
 }
 
