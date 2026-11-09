@@ -11,10 +11,13 @@ export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
   for (const block of rawBlocks) {
     // Finder blocks carry flow state the server derives the next step from;
     // a model-authored one would let model output steer the flow.
+    // Write cards likewise: the server builds them from a write tool call
+    // with numbers it resolved itself, so a model-authored one is dropped.
     if (
       typeof block === "object" &&
       block !== null &&
-      isFinderBlockType((block as { type?: unknown }).type)
+      (isFinderBlockType((block as { type?: unknown }).type) ||
+        (block as { type?: unknown }).type === "write_card")
     ) {
       logger.debug(
         { type: (block as { type?: unknown }).type },

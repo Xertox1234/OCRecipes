@@ -274,3 +274,28 @@ describe("BLOCKS_SYSTEM_PROMPT allergy rule", () => {
     expect(BLOCKS_SYSTEM_PROMPT).toMatch(/never guess.*severity/i);
   });
 });
+
+describe("server-only write cards", () => {
+  it("drops a write_card block the model wrote — only the server builds write cards", () => {
+    const modelWritten = {
+      type: "write_card",
+      cardId: "6f1c2b9e-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+      kind: "food",
+      status: "live",
+      payload: {
+        items: [
+          {
+            name: "Large eggs",
+            unitLabel: "egg",
+            perUnit: { calories: 72, protein: 6, carbs: 0, fat: 5 },
+            count: 2,
+            source: "lookup",
+          },
+        ],
+        mealType: "breakfast",
+        day: "today",
+      },
+    };
+    expect(validateBlocks([modelWritten])).toEqual([]);
+  });
+});
