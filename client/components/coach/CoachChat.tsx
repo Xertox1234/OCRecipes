@@ -120,6 +120,8 @@ interface CoachChatProps {
   onReminderHandled?: () => void;
   /** A reply finished streaming (the host looks for new notebook saves). */
   onReplyDone?: () => void;
+  /** The brief's "Not today": the host clears just that reminder type. */
+  onDismissReminder?: (type: "meal-log") => void;
 }
 
 type ChatListItem =
@@ -147,6 +149,7 @@ export default function CoachChat({
   openingBrief,
   onReminderHandled,
   onReplyDone,
+  onDismissReminder,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
@@ -1266,6 +1269,17 @@ export default function CoachChat({
       onQuickLog={() => {
         onReminderHandled?.();
         navigation.navigate("QuickLog");
+      }}
+      onDismiss={onDismissReminder}
+      onDrop={(id, message) => {
+        // "Drop it": archive the commitment so it stops coming up, then tell
+        // the coach. A failed archive still sends — the coach can follow up.
+        void Promise.resolve(
+          apiRequest("PATCH", `/api/coach/notebook/${id}`, {
+            status: "archived",
+          }),
+        ).catch(() => undefined);
+        void handleSend(message);
       }}
     />
   ) : null;

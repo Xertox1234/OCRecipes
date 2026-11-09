@@ -28,6 +28,8 @@ function setup(over: Partial<BriefInput> = {}) {
     onSend: vi.fn(),
     onQuickLog: vi.fn(),
     onShown: vi.fn(),
+    onDismiss: vi.fn(),
+    onDrop: vi.fn(),
   };
   const utils = renderComponent(<OpeningBrief {...props} />);
   return { ...utils, props };
@@ -106,4 +108,32 @@ it("reports that it was shown, once", () => {
   const { props, rerender } = setup();
   rerender(<OpeningBrief {...props} />);
   expect(props.onShown).toHaveBeenCalledTimes(1);
+});
+
+it("Not today clears just that reminder, sends nothing and hides it", () => {
+  const { props } = setup({
+    consumedCalories: 0,
+    consumedProtein: 0,
+    reminder: { type: "meal-log" },
+  });
+  fireEvent.click(screen.getByLabelText("Not today, Want to log lunch?"));
+  expect(props.onDismiss).toHaveBeenCalledWith("meal-log");
+  expect(props.onSend).not.toHaveBeenCalled();
+  expect(screen.queryByText("Want to log lunch?")).toBeNull();
+});
+
+it("Drop it hands over the commitment and its message", () => {
+  const { props } = setup({
+    reminder: {
+      type: "commitment",
+      notebookEntryId: 3,
+      label: "overnight oats",
+    },
+  });
+  fireEvent.click(
+    screen.getByLabelText(
+      "Drop it, You were going to try overnight oats. How's that going?",
+    ),
+  );
+  expect(props.onDrop).toHaveBeenCalledWith(3, "I want to drop it");
 });

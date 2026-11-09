@@ -458,7 +458,7 @@ export default function ChatScreen() {
   // handleSend's own catch below already toasts on a creation failure —
   // opt out so the global net doesn't double it.
   const createConversation = useCreateConversation({ silentError: true });
-  const { acknowledge } = useAcknowledgeReminders();
+  const { acknowledge, acknowledgeType } = useAcknowledgeReminders();
   // Reminders clear when the user actually sends a message, not on mere
   // screen focus — fire at most once per mount.
   const hasAcknowledgedRef = useRef(false);
@@ -867,6 +867,9 @@ export default function ChatScreen() {
                   onShown={onBriefShown}
                   onSend={handlePromptSelect}
                   onQuickLog={handleBriefQuickLog}
+                  onDismiss={(type) => {
+                    acknowledgeType(type).catch(() => undefined);
+                  }}
                 />
                 <SuggestedPrompts
                   variant="actions-only"
@@ -896,6 +899,9 @@ export default function ChatScreen() {
                 brief={shownBrief}
                 onSend={handlePromptSelect}
                 onQuickLog={handleBriefQuickLog}
+                onDismiss={(type) => {
+                  acknowledgeType(type).catch(() => undefined);
+                }}
               />
             ) : undefined
           }

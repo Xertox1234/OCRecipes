@@ -109,7 +109,7 @@ export default function CoachProScreen() {
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
   const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
-  const { acknowledge } = useAcknowledgeReminders();
+  const { acknowledge, acknowledgeType } = useAcknowledgeReminders();
   // Reminders clear when the user actually sends a message, not on mere
   // screen focus — fire at most once per mount.
   const hasAcknowledgedRef = useRef(false);
@@ -408,6 +408,11 @@ export default function CoachProScreen() {
         }}
         onReminderHandled={handleMessageSent}
         onReplyDone={checkForSaves}
+        onDismissReminder={(type) => {
+          acknowledgeType(type).catch((err) =>
+            logger.warn("[CoachProScreen] acknowledgeType failed", err),
+          );
+        }}
         openingBrief={
           shownBrief
             ? { brief: shownBrief, form: draftForm, onShown: onBriefShown }

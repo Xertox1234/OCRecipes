@@ -89,4 +89,25 @@ describe("useAcknowledgeReminders", () => {
       queryKey: ["/api/coach/brief"],
     });
   });
+
+  it("acknowledgeType clears one reminder type and refreshes the dot and brief", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    mockApiRequest.mockResolvedValue({
+      json: () => Promise.resolve({ acknowledged: 1 }),
+    });
+    const { result } = renderHook(() => useAcknowledgeReminders(), { wrapper });
+    await act(async () => {
+      await result.current.acknowledgeType("meal-log");
+    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/reminders/acknowledge-type",
+      { type: "meal-log" },
+    );
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/reminders/pending"],
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["/api/coach/brief"] });
+  });
 });

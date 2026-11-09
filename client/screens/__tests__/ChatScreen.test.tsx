@@ -164,7 +164,10 @@ vi.mock("@/hooks/usePendingReminders", () => ({
 }));
 
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
-  useAcknowledgeReminders: () => ({ acknowledge: mockAcknowledge }),
+  useAcknowledgeReminders: () => ({
+    acknowledge: mockAcknowledge,
+    acknowledgeType: mockAcknowledge,
+  }),
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
@@ -1189,5 +1192,31 @@ describe("ChatScreen — opening brief", () => {
   it("marks today seen once the full brief shows", () => {
     renderComponent(<ChatScreen />);
     expect(briefMock.markSeen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ChatScreen — brief Not today", () => {
+  it("clears just the missed-meal reminder", () => {
+    mockRouteParams.value = undefined;
+    briefMock.brief = {
+      greeting: "Good afternoon.",
+      recap: "Nothing logged yet today.",
+      stats: [],
+      pointer: null,
+      reminder: {
+        type: "meal-log",
+        lead: "Want to log lunch?",
+        actions: [
+          { label: "Log lunch", kind: "quick-log" },
+          { label: "Not today", kind: "dismiss", reminderType: "meal-log" },
+        ],
+      },
+      suggestions: [],
+      text: "Good afternoon.",
+    };
+    renderComponent(<ChatScreen />);
+    fireEvent.click(screen.getByLabelText("Not today, Want to log lunch?"));
+    expect(mockAcknowledge).toHaveBeenCalledWith("meal-log");
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });

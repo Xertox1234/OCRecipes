@@ -7,6 +7,7 @@ import CoachProScreen from "../CoachProScreen";
 
 const {
   mockAcknowledge,
+  mockAcknowledgeType,
   mockUsePremiumFeature,
   mockRefetchConversations,
   focusEffectCb,
@@ -20,6 +21,7 @@ const {
   savesState,
 } = vi.hoisted(() => ({
   mockAcknowledge: vi.fn(),
+  mockAcknowledgeType: vi.fn(),
   mockUsePremiumFeature: vi.fn(),
   // Hoisted so it stays referentially stable across renders, matching the
   // real useChatConversations().refetch (see the referential-equality-test-
@@ -132,7 +134,10 @@ vi.mock("@/hooks/useCoachWarmUp", () => ({
 }));
 
 vi.mock("@/hooks/useAcknowledgeReminders", () => ({
-  useAcknowledgeReminders: () => ({ acknowledge: mockAcknowledge }),
+  useAcknowledgeReminders: () => ({
+    acknowledge: mockAcknowledge,
+    acknowledgeType: mockAcknowledgeType,
+  }),
 }));
 
 // Thin CoachChat double — isolates CoachProScreen's onMessageSent wiring from
@@ -148,8 +153,10 @@ vi.mock("@/components/coach/CoachChat", () => ({
     openingBrief,
     onReminderHandled,
     onReplyDone,
+    onDismissReminder,
   }: {
     onReplyDone?: () => void;
+    onDismissReminder?: (t: string) => void;
     openingBrief?: { form: string; onShown?: () => void } | null;
     onReminderHandled?: () => void;
     onMessageSent?: () => void;
@@ -169,6 +176,9 @@ vi.mock("@/components/coach/CoachChat", () => ({
         mock-brief-shown
       </button>
       <button onClick={() => onReplyDone?.()}>mock-reply-done</button>
+      <button onClick={() => onDismissReminder?.("meal-log")}>
+        mock-dismiss
+      </button>
       <button onClick={() => onReminderHandled?.()}>
         mock-reminder-handled
       </button>
@@ -180,6 +190,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   focusEffectCb.current = null;
   mockAcknowledge.mockResolvedValue(undefined);
+  mockAcknowledgeType.mockResolvedValue(undefined);
   // Defaults preserve the original harness: Coach Pro user, premium resolved.
   premiumContextState.isPremiumResolved = true;
   conversationsState.data = [];
@@ -490,5 +501,14 @@ describe("CoachProScreen — saved to your notebook", () => {
     expect(screen.getByText("You avoid dairy")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(savesState.undo).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CoachProScreen — brief Not today", () => {
+  it("clears just that reminder type", () => {
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByText("mock-dismiss"));
+    expect(mockAcknowledgeType).toHaveBeenCalledWith("meal-log");
+    expect(mockAcknowledge).not.toHaveBeenCalled();
   });
 });
