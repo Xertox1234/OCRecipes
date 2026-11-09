@@ -325,6 +325,41 @@ describe("Notebook Extraction", () => {
     ]);
   });
 
+  describe("acknowledgement-only turns (perf audit M4)", () => {
+    const runWith = (userText: string) =>
+      extractNotebookEntries(
+        [
+          { role: "assistant" as const, content: "Want to avoid dairy?" },
+          { role: "user" as const, content: userText },
+          { role: "assistant" as const, content: "Got it." },
+        ],
+        "user-1",
+        1,
+        { now: new Date("2026-01-01T00:00:00Z"), tz: "UTC" },
+      );
+
+    it.each(["thanks!", "Thank you 🙏", "ok", "Okay, cool.", "got it 👍"])(
+      "skips the model call for %j",
+      async (text) => {
+        const entries = await runWith(text);
+        expect(entries).toEqual([]);
+        expect(mockCreate).not.toHaveBeenCalled();
+        expect(storage.getNotebookEntryCount).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(["yes", "no", "I'm vegan", "thanks, I'll try the oats tomorrow"])(
+      "still extracts for %j",
+      async (text) => {
+        mockCreate.mockResolvedValue(
+          mockCompletion(JSON.stringify({ entries: [] })),
+        );
+        await runWith(text);
+        expect(mockCreate).toHaveBeenCalledTimes(1);
+      },
+    );
+  });
+
   describe("visible memory", () => {
     const run = (payload: unknown) => {
       mockCreate.mockResolvedValue(mockCompletion(JSON.stringify(payload)));

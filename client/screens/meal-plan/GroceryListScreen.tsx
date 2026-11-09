@@ -48,6 +48,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import {
   useGroceryListDetail,
   useToggleGroceryItem,
@@ -455,7 +456,12 @@ export default function GroceryListScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+      {/* Batching/window defaults, but no clipping: rows slide with
+          transforms and clipped rows are unreachable by screen readers
+          (perf audit L1). */}
       <SectionList
+        {...FLATLIST_DEFAULTS}
+        removeClippedSubviews={false}
         sections={sections}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (

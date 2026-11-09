@@ -2801,6 +2801,23 @@ describe("handleCoachChat — recipe offer (Coach Pro, RECIPE_OFFER_ENABLED on)"
     expect(runCoachFinderTurn).not.toHaveBeenCalled();
   });
 
+  it("a turn that falls through to the tool loop reads the history once (perf audit M5)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      userRow("Find me a chicken recipe"),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          finder,
+          turnKey: TURN,
+        }),
+      ),
+    );
+    expect(generateCoachProResponse).toHaveBeenCalled();
+    expect(storage.getChatMessages).toHaveBeenCalledTimes(1);
+  });
+
   describe("a recipe card is the latest message", () => {
     const cardHistory = () => [
       createMockChatMessage({
