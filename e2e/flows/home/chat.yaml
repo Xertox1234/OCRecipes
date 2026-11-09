@@ -28,25 +28,53 @@ env:
     visible: "NutriCoach"
     timeout: 15000
 
-# The chat list's new-chat affordance is always present (a11y label
-# "Start new chat" on the + button) — unlike the empty-state "New Chat"
-# button, which disappears once the account has any chat history, so it is
-# the only deterministic way into a ChatScreen.
+# The opening brief (#1807): on the first Coach visit of the day, or while a
+# reminder is pending, the free Coach tab skips the list and opens a new chat
+# with the coach's brief. Which screen appears depends on device state the
+# flow does not control (a pending check-in reminder, an earlier flow having
+# shown the brief), so accept either. Nightly run 42585848072 landed on the
+# brief chat twice in a row with a reminder pending.
+#
+# The brief chat and the list both show the teaching chip; the list alone has
+# the + button (a11y label "Start new chat").
+- extendedWaitUntil:
+    visible: "Start new chat|Suggested prompt: What.s the fastest way to log a meal.*"
+    timeout: 15000
+
+# Landed in the brief chat: re-tap the focused Coach tab, which pops its stack
+# back to the list (React Navigation's default; MainTabNavigator does not
+# override tabPress). The list stays mounted, so it does not open the brief
+# chat again. Re-tap at most twice: iOS runners sometimes drop a tab tap (see
+# tap-tab.yaml).
+- repeat:
+    times: 2
+    while:
+      notVisible: "Start new chat"
+    commands:
+      - tapOn:
+          id: "tab-coach"
+      - extendedWaitUntil:
+          visible: "Start new chat"
+          timeout: 5000
+          optional: true
+
+# The list's + button is always present, unlike the empty-state "New Chat"
+# button, which disappears once the account has chat history.
 - assertVisible: "Start new chat"
 - tapOn: "Start new chat"
 
-# Verify suggested prompts in the fresh (empty) chat. The chips' a11y
-# labels are "Suggested prompt: <text>" (ChatScreen.tsx), and the literal
-# "?" is a regex metacharacter under Maestro's full-string matching — the
-# ".*" tail covers it (a bare "…today?" selector can never match anything).
+# A new chat shows suggested prompts (a11y label "Suggested prompt: <text>",
+# ChatScreen.tsx). With a brief on screen it keeps only the teaching and Pro
+# chips ("actions-only"), so assert the teaching chip, which both variants
+# show. "?" and the apostrophe are matched loosely: Maestro matches the whole
+# label as a regex.
 - extendedWaitUntil:
-    visible: "Suggested prompt: What should I eat today.*"
+    visible: "Suggested prompt: What.s the fastest way to log a meal.*"
     timeout: 10000
-- assertVisible:
-    text: "Suggested prompt: How can I hit my protein goal.*"
 
-# Tap a suggested prompt (AI responses are not asserted — CI stubs the
-# OpenAI key)
-- tapOn:
-    text: "Suggested prompt: What should I eat today.*"
-    optional: true
+# The teaching chip is answered in the app (no AI call, no daily message
+# spent), so its answer and "Open camera" action are deterministic in CI.
+- tapOn: "Suggested prompt: What.s the fastest way to log a meal.*"
+- extendedWaitUntil:
+    visible: "Open camera"
+    timeout: 10000
