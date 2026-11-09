@@ -76,7 +76,9 @@ export default function SavedToNotebookPopup({
       >
         <ThemedText
           type="small"
-          style={[styles.undoText, { color: theme.link }]}
+          // High-contrast on the inverted popup in both themes; weight and
+          // underline set it apart from the saved text.
+          style={[styles.undoText, { color: theme.backgroundDefault }]}
         >
           Undo
         </ThemedText>
@@ -105,5 +107,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "flex-end",
   },
-  undoText: { fontFamily: FontFamily.semiBold },
+  undoText: {
+    fontFamily: FontFamily.semiBold,
+    textDecorationLine: "underline",
+  },
 });
