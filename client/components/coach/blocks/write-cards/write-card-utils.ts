@@ -74,3 +74,12 @@ export function saveErrorMessage(err: unknown): string {
   }
   return "Couldn't save. Check your connection and try again.";
 }
+
+/** "Mon, Nov 9" for a plan row's yyyy-mm-dd (noon avoids a tz day-shift). */
+export function planDayLabel(plannedDate: string): string {
+  return new Date(`${plannedDate}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}

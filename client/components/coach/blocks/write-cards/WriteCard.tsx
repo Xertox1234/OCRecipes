@@ -12,7 +12,9 @@ import {
 import type {
   FoodCardEdits,
   FoodCardPayload,
+  GroceryCardEdits,
   GroceryCardPayload,
+  PlanCardEdits,
   PlanCardPayload,
   WriteCardBlock,
   WriteCardEdits,
@@ -20,6 +22,8 @@ import type {
 } from "@shared/schemas/coach-write-cards";
 import { WriteCardShell } from "./WriteCardShell";
 import { FoodWriteCard } from "./FoodWriteCard";
+import { GroceryWriteCard } from "./GroceryWriteCard";
+import { PlanWriteCard } from "./PlanWriteCard";
 import {
   UNDO_VISIBLE_MS,
   cardUiState,
@@ -157,7 +161,19 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
           edits={edits as FoodCardEdits}
           onEdit={onEdit}
         />
-      ) : null}
+      ) : block.kind === "grocery" ? (
+        <GroceryWriteCard
+          payload={block.payload as GroceryCardPayload}
+          edits={edits as GroceryCardEdits}
+          onEdit={onEdit}
+        />
+      ) : (
+        <PlanWriteCard
+          payload={block.payload as PlanCardPayload}
+          edits={edits as PlanCardEdits}
+          onEdit={onEdit}
+        />
+      )}
     </WriteCardShell>
   );
 }
