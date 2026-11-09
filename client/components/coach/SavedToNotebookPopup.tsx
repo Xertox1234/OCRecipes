@@ -27,7 +27,6 @@ export default function SavedToNotebookPopup({
 }: Props) {
   const { theme } = useTheme();
   const done = useRef(false);
-  const key = saves.map((s) => s.id).join(",");
 
   useEffect(() => {
     if (saves.length === 0) return;
@@ -41,9 +40,9 @@ export default function SavedToNotebookPopup({
       onConfirm();
     }, AUTO_CONFIRM_MS);
     return () => clearTimeout(timer);
-    // Re-arm only when a different batch arrives.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+    // `saves` is a new array only when a new batch arrives, and `onConfirm`
+    // changes with it — so this re-arms per batch, not per render.
+  }, [saves, onConfirm]);
 
   if (saves.length === 0) return null;
 

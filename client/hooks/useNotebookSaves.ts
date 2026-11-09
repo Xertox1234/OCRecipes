@@ -39,23 +39,26 @@ export function useNotebookSaves(): {
   };
   useEffect(() => clearTimers, []);
 
-  const fetchOnce = useCallback(async (): Promise<boolean> => {
-    try {
-      const res = await apiRequest("GET", "/api/coach/notebook/unseen");
-      const { entries } = (await res.json()) as { entries: UnseenSave[] };
-      if (!entries?.length) return false;
-      await apiRequest("POST", "/api/coach/notebook/shown", {
-        ids: entries.map((e) => e.id),
-      });
-      setSaves((prev) => {
-        const seen = new Set(prev.map((s) => s.id));
-        return [...prev, ...entries.filter((e) => !seen.has(e.id))];
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
+  // Promise chains rather than try/catch: React Compiler bails on try/catch.
+  const fetchOnce = useCallback(
+    (): Promise<boolean> =>
+      apiRequest("GET", "/api/coach/notebook/unseen")
+        .then((res) => res.json() as Promise<{ entries: UnseenSave[] }>)
+        .then(({ entries }) => {
+          if (!entries?.length) return false;
+          return apiRequest("POST", "/api/coach/notebook/shown", {
+            ids: entries.map((e) => e.id),
+          }).then(() => {
+            setSaves((prev) => {
+              const seen = new Set(prev.map((s) => s.id));
+              return [...prev, ...entries.filter((e) => !seen.has(e.id))];
+            });
+            return true;
+          });
+        })
+        .catch(() => false),
+    [],
+  );
 
   const checkForSaves = useCallback(() => {
     clearTimers();
@@ -74,16 +77,17 @@ export function useNotebookSaves(): {
   }, [fetchOnce]);
 
   const settle = useCallback(
-    async (path: "confirm" | "reject") => {
+    (path: "confirm" | "reject") => {
       const ids = saves.map((s) => s.id);
       setSaves([]);
       if (ids.length === 0) return;
-      try {
-        await apiRequest("POST", `/api/coach/notebook/${path}`, { ids });
-        void queryClient.invalidateQueries({ queryKey: NOTEBOOK_KEY });
-      } catch {
-        if (path === "reject") toast.error("Couldn't undo. Try again.");
-      }
+      apiRequest("POST", `/api/coach/notebook/${path}`, { ids })
+        .then(() => {
+          void queryClient.invalidateQueries({ queryKey: NOTEBOOK_KEY });
+        })
+        .catch(() => {
+          if (path === "reject") toast.error("Couldn't undo. Try again.");
+        });
     },
     [saves, queryClient, toast],
   );
