@@ -13,7 +13,6 @@ export function useDailyBudget(
   date?: string,
   options?: { meta?: QueryErrorMeta },
 ) {
-  const params = date ? `?date=${date}` : "";
   const tz = getDeviceTimezone();
   return useQuery<DailyBudget>({
     // Date is its own key element (not baked into the URL string in element
@@ -25,6 +24,7 @@ export function useDailyBudget(
     // different tzs on the same device get distinct cache slots).
     queryKey: ["/api/daily-budget", date ?? null, { tz }],
     queryFn: async () => {
+      const params = date ? `?date=${date}` : "";
       const res = await apiRequest(
         "GET",
         `/api/daily-budget${params}`,
