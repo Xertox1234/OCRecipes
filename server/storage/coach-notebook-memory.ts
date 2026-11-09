@@ -117,11 +117,13 @@ export async function getConfirmedNotebookEntries(
 
 /** "Clear everything Coach knows": every row, hidden types too, and mood. */
 export async function clearNotebook(userId: string): Promise<void> {
-  await db.delete(coachNotebook).where(eq(coachNotebook.userId, userId));
-  await db
-    .update(userProfiles)
-    .set({ moodScore: 0, moodUpdatedAt: null })
-    .where(eq(userProfiles.userId, userId));
+  await db.transaction(async (tx) => {
+    await tx.delete(coachNotebook).where(eq(coachNotebook.userId, userId));
+    await tx
+      .update(userProfiles)
+      .set({ moodScore: 0, moodUpdatedAt: null })
+      .where(eq(userProfiles.userId, userId));
+  });
 }
 
 /**

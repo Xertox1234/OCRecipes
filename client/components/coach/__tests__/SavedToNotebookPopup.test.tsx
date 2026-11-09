@@ -4,6 +4,20 @@ import * as RN from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
 import SavedToNotebookPopup from "../SavedToNotebookPopup";
 
+// The RN mock drops `style`, so record View props at the mock boundary.
+const viewProps = vi.hoisted(() => new Map<string, Record<string, unknown>>());
+vi.mock("react-native", async (importOriginal) => {
+  const rn = await importOriginal<typeof import("react-native")>();
+  const React = await import("react");
+  return {
+    ...rn,
+    View: (props: Record<string, unknown>) => {
+      if (typeof props.testID === "string") viewProps.set(props.testID, props);
+      return React.createElement(rn.View as React.ElementType, props);
+    },
+  };
+});
+
 const saves = [
   { id: 4, type: "preference", content: "You avoid dairy", label: null },
   { id: 5, type: "goal", content: "You aim for 120 g protein", label: null },
@@ -13,7 +27,7 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 function setup() {
-  const props = { saves, onConfirm: vi.fn(), onUndo: vi.fn() };
+  const props = { saves, onConfirm: vi.fn(), onUndo: vi.fn(), top: 60 };
   const utils = renderComponent(<SavedToNotebookPopup {...props} />);
   return { ...utils, props };
 }
@@ -58,7 +72,28 @@ it("announces the save politely to screen readers", () => {
 
 it("renders nothing without saves", () => {
   const { container } = renderComponent(
-    <SavedToNotebookPopup saves={[]} onConfirm={vi.fn()} onUndo={vi.fn()} />,
+    <SavedToNotebookPopup
+      saves={[]}
+      onConfirm={vi.fn()}
+      onUndo={vi.fn()}
+      top={60}
+    />,
   );
   expect(container.textContent).toBe("");
+});
+
+it("sits at the top offset it is given, under the thread bar", () => {
+  renderComponent(
+    <SavedToNotebookPopup
+      saves={saves}
+      onConfirm={vi.fn()}
+      onUndo={vi.fn()}
+      top={120}
+    />,
+  );
+  const style = Object.assign(
+    {},
+    ...(viewProps.get("saved-to-notebook-popup")?.style as object[]),
+  );
+  expect(style.top).toBe(120);
 });

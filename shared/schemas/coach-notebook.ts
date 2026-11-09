@@ -39,18 +39,20 @@ export const notebookEntrySchema = z.object({
     .optional(),
 });
 
+const MOOD_DELTAS = [-1, -0.5, 0, 0.5, 1] as const;
+type MoodDelta = (typeof MOOD_DELTAS)[number];
+
 export const extractionResultSchema = z.object({
   entries: z.array(notebookEntrySchema).max(10),
   /** Nudge to the user's mood score from this turn's tone (spec 2026-11-08). */
+  // Lenient on purpose: a stray value (null, 0.25, "0") becomes 0 rather
+  // than failing the parse and discarding this turn's entries with it.
   moodDelta: z
-    .union([
-      z.literal(-1),
-      z.literal(-0.5),
-      z.literal(0),
-      z.literal(0.5),
-      z.literal(1),
-    ])
-    .default(0),
+    .unknown()
+    .transform(
+      (v): MoodDelta =>
+        MOOD_DELTAS.includes(v as MoodDelta) ? (v as MoodDelta) : 0,
+    ),
 });
 
 export type ExtractionResult = z.infer<typeof extractionResultSchema>;

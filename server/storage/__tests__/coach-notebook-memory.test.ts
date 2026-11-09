@@ -28,8 +28,12 @@ vi.mock("../../lib/logger", () => ({
   logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-const { createNotebookEntries, archiveOldEntries, updateNotebookEntry } =
-  await import("../coach-notebook");
+const {
+  createNotebookEntries,
+  archiveOldEntries,
+  updateNotebookEntry,
+  getNotebookEntries,
+} = await import("../coach-notebook");
 const {
   confirmNotebookEntries,
   rejectNotebookEntries,
@@ -256,6 +260,17 @@ describe("visible memory storage", () => {
       expect(
         (await getConfirmedNotebookEntries(user.id)).map((r) => r.id),
       ).toEqual([ok.id]);
+    });
+  });
+
+  describe("getNotebookEntries default listing", () => {
+    it("leaves out removed (rejected) and archived entries", async () => {
+      const ok = await insert({ type: "goal", content: "kept" });
+      await insert({ type: "goal", content: "undone", status: "rejected" });
+      await insert({ type: "goal", content: "old", status: "archived" });
+      expect((await getNotebookEntries(user.id)).map((r) => r.id)).toEqual([
+        ok.id,
+      ]);
     });
   });
 

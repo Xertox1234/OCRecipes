@@ -20,6 +20,7 @@ import {
   inArray,
   isNull,
   ne,
+  notInArray,
   or,
 } from "drizzle-orm";
 import { createHash } from "crypto";
@@ -265,8 +266,8 @@ export async function getNotebookEntries(
   if (opts?.status) {
     conditions.push(eq(coachNotebook.status, opts.status));
   } else {
-    // Default: exclude archived
-    conditions.push(ne(coachNotebook.status, "archived"));
+    // Default: exclude archived, and entries the user removed (rejected)
+    conditions.push(notInArray(coachNotebook.status, ["archived", "rejected"]));
   }
   return db
     .select()

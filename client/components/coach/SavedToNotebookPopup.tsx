@@ -13,6 +13,8 @@ interface Props {
   /** Closed on its own: the user saw it and kept it. */
   onConfirm: () => void;
   onUndo: () => void;
+  /** Distance from the screen top to just under the thread bar. */
+  top: number;
 }
 
 /**
@@ -24,6 +26,7 @@ export default function SavedToNotebookPopup({
   saves,
   onConfirm,
   onUndo,
+  top,
 }: Props) {
   const { theme } = useTheme();
   const done = useRef(false);
@@ -48,7 +51,8 @@ export default function SavedToNotebookPopup({
 
   return (
     <View
-      style={[styles.popup, { backgroundColor: theme.text }]}
+      testID="saved-to-notebook-popup"
+      style={[styles.popup, { top, backgroundColor: theme.text }]}
       pointerEvents="box-none"
     >
       <ThemedText type="caption" style={{ color: theme.backgroundSecondary }}>
@@ -89,7 +93,6 @@ export default function SavedToNotebookPopup({
 const styles = StyleSheet.create({
   popup: {
     position: "absolute",
-    top: 52,
     right: Spacing.md,
     maxWidth: 260,
     borderRadius: BorderRadius.sm,

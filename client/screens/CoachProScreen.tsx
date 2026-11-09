@@ -74,6 +74,9 @@ export default function CoachProScreen() {
     silentError: true,
   });
   const [conversationId, setConversationId] = useState<number | null>(null);
+  // Bottom edge of the thread bar, measured: the save popup hangs just under
+  // it (absolute children ignore the container's safe-area padding).
+  const [threadBarBottom, setThreadBarBottom] = useState<number | null>(null);
   const {
     data: coachConversations = [],
     isError: conversationsError,
@@ -266,7 +269,13 @@ export default function CoachProScreen() {
         { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
       ]}
     >
-      <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
+      <View
+        style={[styles.threadBar, { borderBottomColor: theme.border }]}
+        onLayout={(e) => {
+          const { y, height } = e.nativeEvent.layout;
+          setThreadBarBottom(y + height);
+        }}
+      >
         <Pressable
           onPress={startDraft}
           style={({ pressed }) => [
@@ -396,6 +405,7 @@ export default function CoachProScreen() {
         saves={notebookSaves.saves}
         onConfirm={notebookSaves.confirm}
         onUndo={notebookSaves.undo}
+        top={(threadBarBottom ?? insets.top + THREAD_BAR_FALLBACK_HEIGHT) + 4}
       />
       <CoachChat
         conversationId={conversationId}
@@ -422,6 +432,9 @@ export default function CoachProScreen() {
     </View>
   );
 }
+
+/** 44pt buttons plus vertical padding — used until the bar is measured. */
+const THREAD_BAR_FALLBACK_HEIGHT = 44 + Spacing.sm * 2;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
