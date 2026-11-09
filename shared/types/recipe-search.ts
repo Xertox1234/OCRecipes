@@ -118,9 +118,9 @@ const searchableRecipeSchema = z.object({
   // non-array, or an unknown id all read as "not checked" / dropped — the
   // icon only hides, the response never fails. Without this key Zod would
   // strip the field and no diet icon could ever show in the browser.
-  dietConflicts: z.unknown().transform(parseDietConflicts),
+  dietConflicts: z.unknown().optional().transform(parseDietConflicts),
   // Same leniency: missing/unknown reads as null (no icon).
-  spiceLevel: z.unknown().transform(parseSpiceLevel),
+  spiceLevel: z.unknown().optional().transform(parseSpiceLevel),
 });
 
 export const recipeSearchResponseSchema = z.object({
