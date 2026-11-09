@@ -114,10 +114,11 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
     } catch (err) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setError(saveErrorMessage(err));
-    } finally {
-      busyRef.current = false;
-      setSaving(false);
     }
+    // No `finally`: React Compiler cannot lower try/finally and would skip
+    // this whole component (check-react-compiler-bailouts.js).
+    busyRef.current = false;
+    setSaving(false);
   };
 
   const handleUndo = async () => {
@@ -139,9 +140,8 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
       if (!(err instanceof ApiError && err.code === "UNDO_EXPIRED")) {
         setUndoVisible(true);
       }
-    } finally {
-      busyRef.current = false;
     }
+    busyRef.current = false;
   };
 
   const status: WriteCardStatus =
