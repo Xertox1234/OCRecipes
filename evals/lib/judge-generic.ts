@@ -82,10 +82,9 @@ function buildJudgeSchema(validDimensions: string[]) {
   const dimensionSchema = z
     .string()
     .transform((s) => s.toLowerCase())
-    .refine(
-      (s) => validDimensions.includes(s),
-      (s) => ({ message: `Unknown dimension "${s}"` }),
-    );
+    .refine((s) => validDimensions.includes(s), {
+      error: (iss) => `Unknown dimension "${String(iss.input)}"`,
+    });
   return z.object({
     scores: z.array(
       z.object({
@@ -185,7 +184,7 @@ Respond with ONLY valid JSON, no markdown fences:
   const validated = schema.safeParse(parsed);
   if (!validated.success) {
     console.warn(
-      `    ⚠ Judge returned unexpected shape (${validated.error.errors[0]?.message ?? "invalid schema"}), using default scores`,
+      `    ⚠ Judge returned unexpected shape (${validated.error.issues[0]?.message ?? "invalid schema"}), using default scores`,
     );
     return {
       scores: params.dimensions.map((d) => ({

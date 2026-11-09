@@ -89,9 +89,7 @@ export const registerSchema = z.object({
   // COPPA 13+ age attestation — legal attestation at registration time,
   // not persisted to the DB. z.literal(true) rejects false/undefined/missing.
   ageConfirmed: z.literal(true, {
-    errorMap: () => ({
-      message: "You must confirm you are 13 years of age or older",
-    }),
+    error: "You must confirm you are 13 years of age or older",
   }),
   // The "Use two-step verification" switch (password policy spec P4): sets
   // the minimum only (8 on, 15 off) and is never stored.

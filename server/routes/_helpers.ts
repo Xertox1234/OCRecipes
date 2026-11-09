@@ -222,7 +222,7 @@ export function parseStringParam(
 
 /** Format Zod validation errors as a simple string */
 export function formatZodError(error: ZodError): string {
-  return error.errors
+  return error.issues
     .map((e) =>
       e.path.length ? `${e.path.join(".")}: ${e.message}` : e.message,
     )

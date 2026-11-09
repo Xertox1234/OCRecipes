@@ -358,6 +358,24 @@ describe("Meal Plan Routes", () => {
       expect(res.status).toBe(200);
     });
 
+    // zod 4 applies a field's .default() even inside .partial(), so a
+    // title-only edit silently reset sourceType to "user_created".
+    it("passes only the sent fields to storage (no defaulted sourceType)", async () => {
+      vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({ title: "Updated" }),
+      );
+
+      const res = await request(app)
+        .put("/api/meal-plan/recipes/1")
+        .set("Authorization", "Bearer token")
+        .send({ title: "Updated" });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateMealPlanRecipe).mock.calls[0][2]).toEqual({
+        title: "Updated",
+      });
+    });
+
     it("returns 404 for not found", async () => {
       vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(undefined);
 

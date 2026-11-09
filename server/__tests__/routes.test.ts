@@ -41,7 +41,7 @@ describe("Route Validation Schemas", () => {
       const result = registerSchema.safeParse(data);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toBe(
+        expect(result.error.issues[0].message).toBe(
           "Username must be at least 3 characters",
         );
       }
@@ -55,7 +55,7 @@ describe("Route Validation Schemas", () => {
       const result = registerSchema.safeParse(data);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toBe(
+        expect(result.error.issues[0].message).toBe(
           "Username must be at most 30 characters",
         );
       }
@@ -66,7 +66,7 @@ describe("Route Validation Schemas", () => {
       const result = registerSchema.safeParse(data);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toBe(
+        expect(result.error.issues[0].message).toBe(
           "Username can only contain letters, numbers, and underscores",
         );
       }
@@ -83,7 +83,7 @@ describe("Route Validation Schemas", () => {
       const result = registerSchema.safeParse(data);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toBe(
+        expect(result.error.issues[0].message).toBe(
           "Password must be at least 8 characters",
         );
       }
@@ -184,7 +184,7 @@ describe("Route Validation Schemas", () => {
 describe("formatZodError", () => {
   // Recreate the function from routes for testing
   function formatZodError(error: z.ZodError): string {
-    return error.errors
+    return error.issues
       .map((e) =>
         e.path.length ? `${e.path.join(".")}: ${e.message}` : e.message,
       )
