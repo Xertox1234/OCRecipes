@@ -405,14 +405,13 @@ export const KeyboardAvoidingView = mockComponent(
 
 export const AccessibilityInfo = {
   announceForAccessibility: () => {},
+  setAccessibilityFocus: () => {},
   isScreenReaderEnabled: () => Promise.resolve(false),
   addEventListener: () => ({ remove: () => {} }),
-  setAccessibilityFocus: () => {},
 };
 
-// No native view tags under the DOM mock. Without this, a focus-on-mount
-// timer (CoachOverlayContent's 300 ms) that outlives a slow test throws.
-export const findNodeHandle = (): number | null => null;
+/** Any mounted ref has a node handle; the number itself is never inspected. */
+export const findNodeHandle = (ref: unknown): number | null => (ref ? 1 : null);
 
 export const TouchableOpacity = React.forwardRef<
   unknown,

@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
-import * as RN from "react-native";
+import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
 import CoachProScreen from "../CoachProScreen";
@@ -9,7 +8,6 @@ import CoachProScreen from "../CoachProScreen";
 const {
   mockAcknowledge,
   mockUsePremiumFeature,
-  mockUseCoachContext,
   mockRefetchConversations,
   focusEffectCb,
   premiumContextState,
@@ -17,10 +15,11 @@ const {
   mockCreateConversation,
   routeState,
   keyboardState,
+  mockNavigate,
+  briefState,
 } = vi.hoisted(() => ({
   mockAcknowledge: vi.fn(),
   mockUsePremiumFeature: vi.fn(),
-  mockUseCoachContext: vi.fn(),
   // Hoisted so it stays referentially stable across renders, matching the
   // real useChatConversations().refetch (see the referential-equality-test-
   // mocks-must-match-hook-stability-profile solution doc).
@@ -37,6 +36,35 @@ const {
   mockCreateConversation: vi.fn(),
   routeState: { params: {} as { selectedConversationId?: number } },
   keyboardState: { visible: false },
+  mockNavigate: vi.fn(),
+  briefState: {
+    hasPending: false,
+    lastSeen: "2026-11-08" as string | null | undefined,
+    markSeen: vi.fn(),
+    useCoachBrief: vi.fn(),
+  },
+}));
+
+const TODAY = "2026-11-08";
+vi.mock(
+  "@/components/coach/opening-brief-decision",
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    localDateString: () => TODAY,
+  }),
+);
+
+vi.mock("@/hooks/usePendingReminders", () => ({
+  usePendingReminders: () => ({ hasPending: briefState.hasPending }),
+}));
+
+vi.mock("@/lib/coach-brief-seen", () => ({
+  getCachedLastBriefSeenDate: () => briefState.lastSeen,
+  markBriefSeen: briefState.markSeen,
+}));
+
+vi.mock("@/hooks/useCoachBrief", () => ({
+  useCoachBrief: briefState.useCoachBrief,
 }));
 
 vi.mock("@/hooks/useKeyboardVisible", () => ({
@@ -44,7 +72,7 @@ vi.mock("@/hooks/useKeyboardVisible", () => ({
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn(), setParams: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate, setParams: vi.fn() }),
   useRoute: () => ({ params: routeState.params }),
   useFocusEffect: (cb: () => void) => {
     focusEffectCb.current = cb;
@@ -62,10 +90,6 @@ vi.mock("@/context/PremiumContext", () => ({
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: mockUsePremiumFeature,
-}));
-
-vi.mock("@/hooks/useCoachContext", () => ({
-  useCoachContext: mockUseCoachContext,
 }));
 
 vi.mock("@/hooks/useChat", () => ({
@@ -110,7 +134,11 @@ vi.mock("@/components/coach/CoachChat", () => ({
     conversationId,
     onCreateConversation,
     inputBarStyle,
+    openingBrief,
+    onReminderHandled,
   }: {
+    openingBrief?: { form: string; onShown?: () => void } | null;
+    onReminderHandled?: () => void;
     onMessageSent?: () => void;
     isCoachPro?: boolean;
     conversationId?: number | null;
@@ -123,6 +151,13 @@ vi.mock("@/components/coach/CoachChat", () => ({
       <div>{`coach-pro:${String(isCoachPro)}`}</div>
       <div>{`conversation:${String(conversationId)}`}</div>
       <div>{`input-pad:${String(inputBarStyle?.paddingBottom)}`}</div>
+      <div>{`brief:${openingBrief ? openingBrief.form : "none"}`}</div>
+      <button onClick={() => openingBrief?.onShown?.()}>
+        mock-brief-shown
+      </button>
+      <button onClick={() => onReminderHandled?.()}>
+        mock-reminder-handled
+      </button>
     </>
   ),
 }));
@@ -137,11 +172,18 @@ beforeEach(() => {
   routeState.params = {};
   keyboardState.visible = false;
   mockUsePremiumFeature.mockReturnValue(true);
-  mockUseCoachContext.mockReturnValue({
-    data: undefined,
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
+  briefState.hasPending = false;
+  briefState.lastSeen = TODAY;
+  briefState.useCoachBrief.mockReturnValue({
+    brief: {
+      greeting: "Good afternoon.",
+      recap: "Nothing logged yet today.",
+      stats: [],
+      pointer: null,
+      reminder: null,
+      suggestions: [],
+      text: "Good afternoon.\n\nNothing logged yet today.",
+    },
   });
 });
 
@@ -245,35 +287,17 @@ describe("CoachProScreen — New thread", () => {
 
 describe("CoachProScreen — premium gate (coachPro)", () => {
   // The screen has no redirect/paywall (the navigator is the access gate);
-  // its own gate behavior is (a) disabling the premium /api/coach/context
-  // fetch for confirmed-free users and (b) downgrading CoachChat.
-  it("free tier with premium resolved: disables the coach-context fetch and downgrades CoachChat", () => {
+  // its own gate behavior is downgrading CoachChat.
+  it("free tier with premium resolved: downgrades CoachChat", () => {
     mockUsePremiumFeature.mockReturnValue(false);
-
     renderComponent(<CoachProScreen />);
-
     expect(mockUsePremiumFeature).toHaveBeenCalledWith("coachPro");
-    expect(mockUseCoachContext).toHaveBeenCalledWith(false);
     expect(screen.getByText("coach-pro:false")).toBeTruthy();
   });
 
-  it("Coach Pro user: enables the coach-context fetch and passes isCoachPro (non-vacuity control)", () => {
+  it("Coach Pro user: passes isCoachPro (non-vacuity control)", () => {
     renderComponent(<CoachProScreen />);
-
-    expect(mockUseCoachContext).toHaveBeenCalledWith(true);
     expect(screen.getByText("coach-pro:true")).toBeTruthy();
-  });
-
-  it("keeps the context fetch enabled while the plan is unknown (loading or a failed check)", () => {
-    // contextEnabled = isCoachPro || !isPremiumResolved — the screen is only
-    // mounted for Pro users, so it assumes access until premium resolves. A
-    // failed check is not "loading", so it is keyed on isPremiumResolved.
-    mockUsePremiumFeature.mockReturnValue(false);
-    premiumContextState.isPremiumResolved = false;
-
-    renderComponent(<CoachProScreen />);
-
-    expect(mockUseCoachContext).toHaveBeenCalledWith(true);
   });
 });
 
@@ -311,142 +335,117 @@ describe("CoachProScreen — thread bar refetch on refocus", () => {
   });
 });
 
-// P2-2026-09-23 (M15): the loading skeleton must be one hidden region (both
-// platforms) with a delayed announce, not a container whose own
-// accessibilityLabel is hidden along with the decorative boxes. Fake timers
-// scoped to this describe only, mirroring NutritionDetailScreen.test.tsx's
-// loading-branch characterisation.
-describe("CoachProScreen — loading skeleton screen-reader signal", () => {
-  beforeEach(() => {
-    mockUseCoachContext.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      isError: false,
-      refetch: vi.fn(),
-    });
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
-
-  it("hides the skeleton region from screen readers as one unit", () => {
-    renderComponent(<CoachProScreen />);
-    const region = screen.getByTestId("coach-pro-loading-skeleton");
-    expect(region.getAttribute("aria-hidden")).toBe("true");
-  });
-
-  // Fails on main: today the region itself carries `accessibilityLabel=
-  // "Loading..."` alongside `accessibilityElementsHidden`, which hides the
-  // label along with the decorative boxes on iOS.
-  it("does not carry its own hidden Loading label", () => {
-    renderComponent(<CoachProScreen />);
-    expect(screen.queryByLabelText("Loading...")).toBeNull();
-  });
-
-  it("does not announce Loading synchronously, then announces it once after the delay", () => {
-    const announceSpy = vi.spyOn(
-      RN.AccessibilityInfo,
-      "announceForAccessibility",
-    );
-    try {
-      renderComponent(<CoachProScreen />);
-
-      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
-
-      vi.advanceTimersByTime(500);
-
-      expect(announceSpy).toHaveBeenCalledExactlyOnceWith("Loading");
-    } finally {
-      announceSpy.mockRestore();
-    }
-  });
-
-  it("does not announce a stale Loading when loading ends before the delay elapses", () => {
-    const announceSpy = vi.spyOn(
-      RN.AccessibilityInfo,
-      "announceForAccessibility",
-    );
-    try {
-      const { rerender } = renderComponent(<CoachProScreen />);
-      vi.advanceTimersByTime(200);
-      mockUseCoachContext.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-        isError: false,
-        refetch: vi.fn(),
-      });
-      rerender(<CoachProScreen />);
-      vi.advanceTimersByTime(500);
-
-      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
-    } finally {
-      announceSpy.mockRestore();
-    }
-  });
-
-  it("cancels the pending Loading announce if the screen unmounts before the delay elapses", () => {
-    const announceSpy = vi.spyOn(
-      RN.AccessibilityInfo,
-      "announceForAccessibility",
-    );
-    try {
-      const { unmount } = renderComponent(<CoachProScreen />);
-      unmount();
-      vi.advanceTimersByTime(500);
-
-      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
-    } finally {
-      announceSpy.mockRestore();
-    }
-  });
-});
-
-// On a Galaxy A37 the open dashboard (453 dp) plus the keyboard (~358 dp) left
-// the chat input under the keyboard (measured 2026-11-02). While typing the
-// dashboard folds, and the input drops the padding that clears the tab bar —
-// the keyboard covers the tab bar then.
 describe("CoachProScreen — typing makes room for the input", () => {
-  const coachContext = {
-    goals: { calories: 1949, protein: 146, carbs: 200, fat: 60 },
-    todayIntake: {
-      totalCalories: 0,
-      totalProtein: 0,
-      totalCarbs: 0,
-      totalFat: 0,
-    },
-    dietaryProfile: null,
-    notebook: [],
-    dueCommitments: [],
-    suggestions: [],
-  };
-
-  beforeEach(() => {
-    mockUseCoachContext.mockReturnValue({
-      data: coachContext,
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn(),
-    });
-  });
-
-  it("keyboard down: the dashboard is open and the input clears the tab bar", () => {
+  it("keyboard down: the input clears the tab bar", () => {
     renderComponent(<CoachProScreen />);
-    expect(
-      screen.getByRole("button", { name: "Collapse dashboard" }),
-    ).toBeTruthy();
     expect(screen.getByText("input-pad:83")).toBeTruthy();
   });
 
-  it("keyboard up: the dashboard folds and the input drops the tab-bar padding", () => {
+  it("keyboard up: the input drops the tab-bar padding", () => {
     keyboardState.visible = true;
     renderComponent(<CoachProScreen />);
-    expect(
-      screen.getByRole("button", { name: "Expand dashboard" }),
-    ).toBeTruthy();
     expect(screen.queryByText("input-pad:83")).toBeNull();
     expect(screen.getByText("input-pad:8")).toBeTruthy();
+  });
+});
+
+describe("CoachProScreen — opening brief", () => {
+  const thread = { id: 4, title: "Earlier", isPinned: false };
+
+  it("has no dashboard; the Notebook sits in the thread bar", () => {
+    renderComponent(<CoachProScreen />);
+    expect(screen.queryByRole("button", { name: /dashboard/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Notebook" }));
+    expect(mockNavigate).toHaveBeenCalledWith("NotebookScreen");
+  });
+
+  it("opens the last thread as before once today's brief was seen", () => {
+    conversationsState.data = [thread];
+    renderComponent(<CoachProScreen />);
+    expect(screen.getByText("conversation:4")).toBeTruthy();
+    expect(screen.getByText("brief:none")).toBeTruthy();
+  });
+
+  it("opens a fresh chat with the full brief on the first visit of the day", () => {
+    conversationsState.data = [thread];
+    briefState.lastSeen = "2026-11-07";
+    renderComponent(<CoachProScreen />);
+    expect(screen.getByText("conversation:null")).toBeTruthy();
+    expect(screen.getByText("brief:full")).toBeTruthy();
+    expect(briefState.useCoachBrief).toHaveBeenCalledWith("full", true);
+  });
+
+  it("opens a fresh chat with the full brief when a reminder is pending", () => {
+    conversationsState.data = [thread];
+    briefState.hasPending = true;
+    renderComponent(<CoachProScreen />);
+    expect(screen.getByText("conversation:null")).toBeTruthy();
+    expect(screen.getByText("brief:full")).toBeTruthy();
+  });
+
+  it("a named conversation wins over the draft rule", () => {
+    conversationsState.data = [thread];
+    briefState.hasPending = true;
+    routeState.params = { selectedConversationId: 4 };
+    renderComponent(<CoachProScreen />);
+    expect(screen.getByText("conversation:4")).toBeTruthy();
+  });
+
+  it("New after today's brief gives the short form", () => {
+    conversationsState.data = [thread];
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Start a new coach conversation" }),
+    );
+    expect(screen.getByText("brief:short")).toBeTruthy();
+  });
+
+  it("marks today seen when the full brief shows, and keeps that draft's form", () => {
+    briefState.lastSeen = null;
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByText("mock-brief-shown"));
+    expect(briefState.markSeen).toHaveBeenCalledWith(TODAY);
+    briefState.lastSeen = TODAY;
+    fireEvent.click(screen.getByText("mock-send"));
+    expect(screen.getByText("brief:full")).toBeTruthy();
+  });
+
+  it("clears reminders when the brief's reminder is handled without a send", () => {
+    briefState.hasPending = true;
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByText("mock-reminder-handled"));
+    expect(mockAcknowledge).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the brief on screen while the first send creates the conversation", async () => {
+    briefState.hasPending = true;
+    mockCreateConversation.mockResolvedValue({ id: 55 });
+    renderComponent(<CoachProScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("mock-create"));
+    });
+    expect(screen.getByText("conversation:55")).toBeTruthy();
+    expect(screen.getByText("brief:full")).toBeTruthy();
+  });
+
+  it("shows no brief in a thread picked afterwards", async () => {
+    conversationsState.data = [thread];
+    briefState.hasPending = true;
+    mockCreateConversation.mockResolvedValue({ id: 55 });
+    renderComponent(<CoachProScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByText("mock-create"));
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open coach conversation Earlier" }),
+    );
+    expect(screen.getByText("conversation:4")).toBeTruthy();
+    expect(screen.getByText("brief:none")).toBeTruthy();
+  });
+
+  it("asks for no brief while a thread is open", () => {
+    conversationsState.data = [thread];
+    renderComponent(<CoachProScreen />);
+    expect(briefState.useCoachBrief).toHaveBeenLastCalledWith("short", false);
   });
 });

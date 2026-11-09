@@ -24,6 +24,7 @@ import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { usePendingReminders } from "@/hooks/usePendingReminders";
+import { loadLastBriefSeenDate } from "@/lib/coach-brief-seen";
 import {
   subscribeToCoachReplyReady,
   useHasUnreadCoachReply,
@@ -202,6 +203,11 @@ export default function MainTabNavigator() {
   const { hasPending } = usePendingReminders();
   const hasUnreadCoachReply = useHasUnreadCoachReply();
   const hasUnreadGeneratedRecipe = useHasUnreadGeneratedRecipe();
+  // Warm the Coach opening brief's "seen today" date now, so the Coach
+  // screen can decide on its first render (no later switch).
+  useEffect(() => {
+    void loadLastBriefSeenDate();
+  }, []);
   const [menuOpen, setMenuOpen] = useState(false);
   const openMenu = useCallback(() => setMenuOpen(true), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);

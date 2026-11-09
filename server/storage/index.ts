@@ -412,6 +412,7 @@ export const storage = {
   hasPendingReminderToday: remindersStorage.hasPendingReminderToday,
   hasPendingReminders: remindersStorage.hasPendingReminders,
   acknowledgeReminders: remindersStorage.acknowledgeReminders,
+  getTodaysPendingReminders: remindersStorage.getTodaysPendingReminders,
 
   // Canonical recipes
   incrementRecipePopularity: canonicalRecipesStorage.incrementRecipePopularity,

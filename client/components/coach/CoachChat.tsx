@@ -27,6 +27,9 @@ import { useTTS } from "@/hooks/useTTS";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
+import OpeningBrief from "@/components/coach/OpeningBrief";
+import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
+import { COACH_BRIEF_KEY } from "@/hooks/useCoachBrief";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -67,6 +70,7 @@ import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import type { BriefForm, RenderedBrief } from "@shared/lib/opening-brief";
 import {
   parsePlanDays,
   filterValidBlocks,
@@ -98,6 +102,21 @@ interface CoachChatProps {
   /** Called once a message send has actually committed (after startStream). */
   onMessageSent?: () => void;
   inputBarStyle?: StyleProp<ViewStyle>;
+  /**
+   * The coach's opening brief for a new chat. Shown above an empty chat; the
+   * conversation-creating send tells the server which form was shown, and
+   * the server saves its own copy (the client never sends assistant text).
+   */
+  openingBrief?: {
+    brief: RenderedBrief;
+    form: BriefForm;
+    onShown?: () => void;
+  } | null;
+  /**
+   * The brief's reminder was answered without a message (its Log button
+   * opens Quick Log), so the host clears the reminder as a send would.
+   */
+  onReminderHandled?: () => void;
 }
 
 type ChatListItem =
@@ -122,6 +141,8 @@ export default function CoachChat({
   onInitialMessageSent,
   onMessageSent,
   inputBarStyle,
+  openingBrief,
+  onReminderHandled,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
@@ -284,6 +305,16 @@ export default function CoachChat({
     stop: ttsStop,
   } = useTTS();
 
+  // A brief send's reminders are cleared by the server; once its turn ends,
+  // refresh the tab dot and the brief so neither shows a cleared reminder.
+  const briefSendRef = useRef(false);
+  const refreshAfterBriefSend = () => {
+    if (!briefSendRef.current) return;
+    briefSendRef.current = false;
+    void queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
+    void queryClient.invalidateQueries({ queryKey: COACH_BRIEF_KEY });
+  };
+
   const {
     startStream,
     abortStream,
@@ -292,6 +323,7 @@ export default function CoachChat({
     isStreaming,
   } = useCoachStream({
     onDone: (fullText, blocks) => {
+      refreshAfterBriefSend();
       // A dead-socket abort also lands here, with whatever partial text came.
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
@@ -328,6 +360,7 @@ export default function CoachChat({
       });
     },
     onError: (_message, code) => {
+      refreshAfterBriefSend();
       // Branch on the machine-readable code, not a `message.startsWith("429")`
       // prefix (the raw "<status>: <body>" wire format). Never render the raw
       // message — it leaks the server response body into the UI / VoiceOver.
@@ -569,6 +602,8 @@ export default function CoachChat({
       ttsStop();
 
       let convId = conversationId;
+      // Only the send that creates the conversation carries the brief form.
+      const briefForm = !convId && openingBrief ? openingBrief.form : undefined;
       if (!convId) {
         try {
           convId = await onCreateConversation();
@@ -589,11 +624,21 @@ export default function CoachChat({
 
       activeConvIdRef.current = convId;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
-      startStream(convId, content, { warmUpId: currentWarmUpId });
+      startStream(convId, content, {
+        warmUpId: currentWarmUpId,
+        ...(briefForm && { openingBrief: briefForm }),
+      });
       warmUpHook.reset();
-      onMessageSent?.();
+      if (briefForm) {
+        // The server clears reminders after saving the brief; clearing them
+        // from here too would race it and drop the reminder from that copy.
+        briefSendRef.current = true;
+      } else {
+        onMessageSent?.();
+      }
     },
     [
+      openingBrief,
       // inputText intentionally excluded — handleSend reads the latest value
       // from inputTextRef instead so its identity (and every callback that
       // transitively depends on it: handleRetry, handleBlockAction,
@@ -1198,6 +1243,21 @@ export default function CoachChat({
     [isAtDailyLimit, theme.textSecondary, theme.link],
   );
 
+  // Until the server's saved copy arrives with the conversation's messages,
+  // the brief draws here; then it is an ordinary assistant message.
+  const showBrief = !!openingBrief && (messages?.length ?? 0) === 0;
+  const briefHeader = showBrief ? (
+    <OpeningBrief
+      brief={openingBrief.brief}
+      onShown={openingBrief.onShown}
+      onSend={(text) => void handleSend(text)}
+      onQuickLog={() => {
+        onReminderHandled?.();
+        navigation.navigate("QuickLog");
+      }}
+    />
+  ) : null;
+
   return (
     <CoachChatBase
       inputText={inputText}
@@ -1222,6 +1282,7 @@ export default function CoachChat({
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         extraData={listExtraData}
+        ListHeaderComponent={briefHeader ?? undefined}
         ListFooterComponent={streamingFooter ?? undefined}
         ListEmptyComponent={historyErrorEmpty ?? undefined}
         style={styles.messageList}

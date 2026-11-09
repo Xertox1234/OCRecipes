@@ -44,6 +44,7 @@ import {
   truncateHistoryToBudget,
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
+import { isOpeningBriefMessage } from "@shared/lib/opening-brief";
 import type { ChatMessage } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { FinderAction } from "@shared/schemas/recipe-finder";
@@ -568,7 +569,11 @@ export async function* handleCoachChat(
   // reference tool-call results — caching them would serve stale context to
   // the same user (and the cache key is too coarse to distinguish Pro vs
   // non-Pro prompts across users). See H4 — 2026-04-18.
-  const isCacheable = !screenContext && history.length <= 1 && !isCoachPro;
+  // The saved opening brief (an assistant row written before the first user
+  // message) doesn't make this a later turn — not for the free cache, not
+  // for the auto-title below.
+  const turnCount = history.filter((m) => !isOpeningBriefMessage(m)).length;
+  const isCacheable = !screenContext && turnCount <= 1 && !isCoachPro;
   const questionHash = isCacheable
     ? hashCoachCacheKey(
         userId,
@@ -685,7 +690,7 @@ export async function* handleCoachChat(
   }
 
   const maybeAutoTitle = () => {
-    if (!isAborted() && history.length <= 1) {
+    if (!isAborted() && turnCount <= 1) {
       const shortTitle =
         content.slice(0, 50) + (content.length > 50 ? "..." : "");
       fireAndForget(

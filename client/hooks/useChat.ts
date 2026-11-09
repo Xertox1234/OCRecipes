@@ -4,6 +4,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
+import type { BriefForm } from "@shared/lib/opening-brief";
 import {
   apiRequest,
   getApiUrl,
@@ -460,7 +461,7 @@ export function useSendMessage(
       content: string,
       screenContext?: string,
       conversationIdOverride?: number,
-      options?: { finderAction?: FinderAction },
+      options?: { finderAction?: FinderAction; openingBrief?: BriefForm },
     ) => {
       const effectiveId = conversationIdOverride ?? conversationId;
       if (!effectiveId) return;
@@ -521,6 +522,8 @@ export function useSendMessage(
           content,
           ...(screenContext && { screenContext }),
           ...(options?.finderAction && { finderAction: options.finderAction }),
+          // First send from a new chat that showed the opening brief.
+          ...(options?.openingBrief && { openingBrief: options.openingBrief }),
         });
 
         let pendingFlush = false;

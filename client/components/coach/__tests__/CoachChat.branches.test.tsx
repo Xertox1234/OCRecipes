@@ -19,6 +19,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
+import { renderOpeningBrief } from "@shared/lib/opening-brief";
 import type { ChatMessage } from "@/hooks/useChat";
 import { ApiError } from "@/lib/api-error";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
@@ -1423,5 +1424,109 @@ describe("CoachChat — recipe finder", () => {
       });
       expect(state.navigate).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("CoachChat — opening brief", () => {
+  beforeEach(resetState);
+
+  const brief = renderOpeningBrief(
+    {
+      localHour: 14,
+      name: null,
+      consumedCalories: 0,
+      calorieGoal: 1949,
+      consumedProtein: 0,
+      proteinGoal: null,
+      tonightPlan: null,
+      expiringPantry: [],
+      topTip: null,
+      suggestions: [],
+      reminder: { type: "meal-log" },
+    },
+    "full",
+  );
+
+  it("shows the brief in a new chat and flags the first send", async () => {
+    const onCreateConversation = vi.fn().mockResolvedValue(99);
+    renderCoachChat({
+      conversationId: null,
+      onCreateConversation,
+      openingBrief: { brief, form: "full" },
+    });
+    expect(screen.getByText("Good afternoon.")).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "hello" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+
+    await waitFor(() =>
+      expect(state.startStream).toHaveBeenCalledWith(99, "hello", {
+        warmUpId: null,
+        openingBrief: "full",
+      }),
+    );
+  });
+
+  it("leaves clearing reminders to the server on a brief send, then refreshes the dot", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const onMessageSent = vi.fn();
+    renderCoachChat({
+      conversationId: null,
+      onCreateConversation: vi.fn().mockResolvedValue(99),
+      openingBrief: { brief, form: "full" },
+      onMessageSent,
+    });
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "It went well" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+    await waitFor(() => expect(state.startStream).toHaveBeenCalled());
+    expect(onMessageSent).not.toHaveBeenCalled();
+
+    act(() => state.onDone?.("Great!"));
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/reminders/pending"],
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["/api/coach/brief"],
+    });
+    invalidate.mockRestore();
+  });
+
+  it("sends no flag into a conversation that already exists", async () => {
+    state.messages = [makeMessage({ id: 5 })];
+    renderCoachChat({
+      conversationId: 1,
+      openingBrief: { brief, form: "full" },
+    });
+    expect(screen.queryByText("Good afternoon.")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("text-input"), {
+      target: { value: "again" },
+    });
+    fireEvent.click(screen.getByTestId("send"));
+
+    await waitFor(() =>
+      expect(state.startStream).toHaveBeenCalledWith(1, "again", {
+        warmUpId: null,
+      }),
+    );
+  });
+
+  it("opens Quick Log from the brief's missed-meal button and reports the reminder handled", () => {
+    const onReminderHandled = vi.fn();
+    renderCoachChat({
+      conversationId: null,
+      openingBrief: { brief, form: "full" },
+      onReminderHandled,
+    });
+    fireEvent.click(
+      screen.getByLabelText("Log lunch, Nothing logged yet today."),
+    );
+    expect(state.navigate).toHaveBeenCalledWith("QuickLog");
+    expect(onReminderHandled).toHaveBeenCalledTimes(1);
   });
 });

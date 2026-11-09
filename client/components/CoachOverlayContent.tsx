@@ -21,13 +21,11 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useCreateConversation, useChatMessages } from "@/hooks/useChat";
 import { useCoachStream } from "@/hooks/useCoachStream";
-import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { filterValidBlocks } from "@/components/coach/coach-chat-utils";
 import { openCoachConversation } from "@/navigation/openCoachConversation";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
-import { logger } from "@/lib/logger";
 import { chatMessagesKey } from "@/lib/query-keys";
 import {
   isCoachDisclaimerDismissed,
@@ -124,10 +122,6 @@ export function CoachOverlayContent({
   // double it.
   const createConversation = useCreateConversation({ silentError: true });
   const { data: messages } = useChatMessages(conversationId);
-  const { acknowledge } = useAcknowledgeReminders();
-  // Reminders clear when the user actually sends a follow-up, not on the
-  // auto-sent initial question — fire at most once per mount.
-  const hasAcknowledgedRef = useRef(false);
   // Set by onDone; read by the stream-finish announcement so a failed
   // stream isn't announced as a received reply.
   const replyArrivedRef = useRef(false);
@@ -285,15 +279,10 @@ export function CoachOverlayContent({
     const text = inputText.trim();
     setInputText("");
     setStreamError(false);
+    // No reminder clear here: this sheet never shows why the Coach tab dot is
+    // lit, so a send must not erase that reason (opening-brief spec).
     startStream(conversationId, text);
-    if (!hasAcknowledgedRef.current) {
-      hasAcknowledgedRef.current = true;
-      acknowledge().catch((err) => {
-        hasAcknowledgedRef.current = false;
-        logger.warn("[CoachOverlayContent] acknowledge failed", err);
-      });
-    }
-  }, [inputText, isStreaming, conversationId, startStream, acknowledge]);
+  }, [inputText, isStreaming, conversationId, startStream]);
 
   const handleRetry = useCallback(() => {
     setCreateError(false);

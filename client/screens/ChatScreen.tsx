@@ -77,6 +77,18 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import OpeningBrief from "@/components/coach/OpeningBrief";
+import { useCoachBrief } from "@/hooks/useCoachBrief";
+import { usePendingReminders } from "@/hooks/usePendingReminders";
+import {
+  getCachedLastBriefSeenDate,
+  markBriefSeen,
+} from "@/lib/coach-brief-seen";
+import {
+  briefFormFor,
+  localDateString,
+} from "@/components/coach/opening-brief-decision";
+import type { BriefForm, RenderedBrief } from "@shared/lib/opening-brief";
 import {
   SUGGESTED_PROMPTS,
   type SuggestedPrompt,
@@ -133,10 +145,16 @@ const SuggestedPrompts = React.memo(function SuggestedPrompts({
   onSelect,
   onOpenCamera,
   onUpgrade,
+  variant = "full",
 }: {
   onSelect: (prompt: string) => void;
   onOpenCamera: () => void;
   onUpgrade: () => void;
+  /**
+   * "actions-only": under the opening brief, which already greets and offers
+   * questions — keep just the camera (teach) and Pro prompts reachable.
+   */
+  variant?: "full" | "actions-only";
 }) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -157,35 +175,42 @@ const SuggestedPrompts = React.memo(function SuggestedPrompts({
     }
   };
 
+  const prompts =
+    variant === "actions-only"
+      ? SUGGESTED_PROMPTS.filter((p) => p.kind !== "ask")
+      : SUGGESTED_PROMPTS;
+
   return (
     <View style={styles.suggestionsContainer}>
-      <View style={styles.suggestionsHeader}>
-        <View
-          style={[
-            styles.coachAvatar,
-            { backgroundColor: withOpacity(theme.link, 0.12) },
-          ]}
-        >
-          <Feather
-            name="heart"
-            size={24}
-            color={theme.link}
-            accessible={false}
-          />
+      {variant === "full" && (
+        <View style={styles.suggestionsHeader}>
+          <View
+            style={[
+              styles.coachAvatar,
+              { backgroundColor: withOpacity(theme.link, 0.12) },
+            ]}
+          >
+            <Feather
+              name="heart"
+              size={24}
+              color={theme.link}
+              accessible={false}
+            />
+          </View>
+          <ThemedText type="h4" style={styles.suggestionsTitle}>
+            NutriCoach
+          </ThemedText>
+          <ThemedText
+            type="small"
+            style={[styles.suggestionsSubtitle, { color: theme.textSecondary }]}
+          >
+            I can help with nutrition advice, meal planning, and reaching your
+            health goals. Try asking:
+          </ThemedText>
         </View>
-        <ThemedText type="h4" style={styles.suggestionsTitle}>
-          NutriCoach
-        </ThemedText>
-        <ThemedText
-          type="small"
-          style={[styles.suggestionsSubtitle, { color: theme.textSecondary }]}
-        >
-          I can help with nutrition advice, meal planning, and reaching your
-          health goals. Try asking:
-        </ThemedText>
-      </View>
+      )}
       <View style={styles.promptsGrid}>
-        {SUGGESTED_PROMPTS.map((prompt, index) => (
+        {prompts.map((prompt, index) => (
           <Animated.View
             key={prompt.text}
             entering={
@@ -368,6 +393,28 @@ export default function ChatScreen() {
   // chat with it. Precedent: NotebookEntryScreen.tsx (docs/rules/react-native.md).
   const isMalformedId = conversationId !== null && !(conversationId > 0);
   const validConversationId = isMalformedId ? null : conversationId;
+
+  // The opening brief (spec 2026-11-08): a new chat opens with the coach's
+  // brief. Its form is fixed for this screen, so marking today seen doesn't
+  // swap it while it is on screen.
+  const isNewChat = conversationId === null && !initialMessage;
+  const { hasPending: hasPendingReminder } = usePendingReminders();
+  const [briefForm] = useState<BriefForm>(() =>
+    briefFormFor(
+      getCachedLastBriefSeenDate(),
+      localDateString(new Date()),
+      hasPendingReminder,
+    ),
+  );
+  const { brief: fetchedBrief } = useCoachBrief(briefForm, isNewChat);
+  const newChatBrief = isNewChat ? fetchedBrief : null;
+  // Kept after the first send so the brief stays put until the server's
+  // saved copy arrives with the conversation's messages.
+  const [shownBrief, setShownBrief] = useState<RenderedBrief | null>(null);
+  if (newChatBrief && shownBrief !== newChatBrief) setShownBrief(newChatBrief);
+  const onBriefShown = useCallback(() => {
+    if (briefForm === "full") markBriefSeen(localDateString(new Date()));
+  }, [briefForm]);
 
   const queryClient = useQueryClient();
   const {
@@ -614,7 +661,13 @@ export default function ChatScreen() {
           // sendMessage (closed over the pre-update conversationId) would
           // silently drop this message — pass the fresh id explicitly via the
           // override param instead of relying on the closure.
-          await sendMessage(content, undefined, conversation.id);
+          if (shownBrief) {
+            await sendMessage(content, undefined, conversation.id, {
+              openingBrief: briefForm,
+            });
+          } else {
+            await sendMessage(content, undefined, conversation.id);
+          }
         } else {
           await sendMessage(content);
         }
@@ -659,6 +712,8 @@ export default function ChatScreen() {
       sendMessage,
       acknowledge,
       toast,
+      shownBrief,
+      briefForm,
     ],
   );
 
@@ -677,6 +732,18 @@ export default function ChatScreen() {
     navigation.navigate("Scan");
   }, [navigation]);
   const handleShowUpgrade = useCallback(() => setShowUpgrade(true), []);
+
+  // The brief's missed-meal Log answers its reminder without a message, so
+  // clear the reminder here as a send would (the tab dot must not linger).
+  const handleBriefQuickLog = useCallback(() => {
+    if (!hasAcknowledgedRef.current) {
+      hasAcknowledgedRef.current = true;
+      acknowledge().catch(() => {
+        hasAcknowledgedRef.current = false;
+      });
+    }
+    navigation.navigate("QuickLog");
+  }, [acknowledge, navigation]);
 
   const handlePromptSelect = useCallback(
     // handleSend buzzes; a second impact here would double it.
@@ -793,11 +860,28 @@ export default function ChatScreen() {
             { paddingTop: headerInset },
           ]}
           ListEmptyComponent={
-            <SuggestedPrompts
-              onSelect={handlePromptSelect}
-              onOpenCamera={handleOpenCamera}
-              onUpgrade={handleShowUpgrade}
-            />
+            newChatBrief ? (
+              <>
+                <OpeningBrief
+                  brief={newChatBrief}
+                  onShown={onBriefShown}
+                  onSend={handlePromptSelect}
+                  onQuickLog={handleBriefQuickLog}
+                />
+                <SuggestedPrompts
+                  variant="actions-only"
+                  onSelect={handlePromptSelect}
+                  onOpenCamera={handleOpenCamera}
+                  onUpgrade={handleShowUpgrade}
+                />
+              </>
+            ) : (
+              <SuggestedPrompts
+                onSelect={handlePromptSelect}
+                onOpenCamera={handleOpenCamera}
+                onUpgrade={handleShowUpgrade}
+              />
+            )
           }
         />
       ) : (
@@ -806,6 +890,15 @@ export default function ChatScreen() {
           data={displayMessages}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
+          ListHeaderComponent={
+            shownBrief && !messages?.length ? (
+              <OpeningBrief
+                brief={shownBrief}
+                onSend={handlePromptSelect}
+                onQuickLog={handleBriefQuickLog}
+              />
+            ) : undefined
+          }
           ListFooterComponent={streamingFooter ?? undefined}
           contentContainerStyle={[
             styles.messagesContent,

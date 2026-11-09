@@ -1,5 +1,6 @@
 /**
- * Pure helpers for the Coach dashboard card (`CoachDashboard.tsx`).
+ * Pure helpers for Coach day stats and notebook tips, shared by the server
+ * (opening brief) and the client.
  */
 
 /** Case, spacing and a closing full stop don't make a different tip. */
