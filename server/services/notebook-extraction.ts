@@ -20,6 +20,45 @@ interface ConversationMessage {
   content: string;
 }
 
+// Words that, on their own, acknowledge a reply without telling the coach
+// anything. "yes"/"no"/"sure" are deliberately absent: they can answer a
+// coach question ("Want to avoid dairy?") and so carry a fact.
+const ACKNOWLEDGEMENT_WORDS = new Set([
+  "thanks",
+  "thank",
+  "you",
+  "thx",
+  "ty",
+  "ok",
+  "okay",
+  "k",
+  "cool",
+  "great",
+  "nice",
+  "awesome",
+  "perfect",
+  "got",
+  "it",
+]);
+const ACKNOWLEDGEMENT_MAX_WORDS = 4;
+
+/**
+ * True when the user's message is only an acknowledgement ("thanks!", "ok
+ * cool", "got it 👍"). Such a turn has nothing for the notebook, so the
+ * extraction model call is skipped (perf audit 2026-11-08 M4).
+ */
+function isAcknowledgementOnly(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/[^\p{L}\s']/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  return (
+    words.length <= ACKNOWLEDGEMENT_MAX_WORDS &&
+    words.every((w) => ACKNOWLEDGEMENT_WORDS.has(w))
+  );
+}
+
 // Built per-call (like `buildSystemPrompt` in nutrition-coach.ts) rather than
 // a static const, because it must state the CURRENT civil date. Without it,
 // the model has nothing to resolve a relative check-in phrase ("next week")
@@ -83,6 +122,9 @@ export async function extractNotebookEntries(
     followUpDate: string | null;
   }[]
 > {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  if (lastUser && isAcknowledgementOnly(lastUser.content)) return [];
+
   try {
     const strategyCount = await storage.getNotebookEntryCount(
       userId,

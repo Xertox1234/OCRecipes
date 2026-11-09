@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import type {
   MealPlanRecipe,
@@ -39,6 +44,9 @@ export function useUnifiedRecipes(params?: {
       const res = await apiRequest("GET", url);
       return res.json();
     },
+    // Each search term is its own key; show the last results while the next
+    // term loads instead of dropping to the skeleton (perf audit L3).
+    placeholderData: keepPreviousData,
   });
 }
 

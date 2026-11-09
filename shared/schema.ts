@@ -1804,6 +1804,11 @@ export const mealSuggestionCache = pgTable(
   (table) => [
     index("meal_suggestion_cache_key_idx").on(table.cacheKey),
     index("meal_suggestion_cache_expires_idx").on(table.expiresAt),
+    // getDailyMealSuggestionCount (per-user, createdAt range) + user FK cascade
+    index("meal_suggestion_cache_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
   ],
 );
 
