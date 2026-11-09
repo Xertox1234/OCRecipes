@@ -11,6 +11,7 @@ import {
 } from "@shared/schema";
 import { and, asc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db";
+import { applyMoodDelta } from "@shared/lib/mood";
 
 /** The only notebook types the coach may say out loud, or show in the popup. */
 export const SPEAKABLE_NOTEBOOK_TYPES = [
@@ -121,4 +122,39 @@ export async function clearNotebook(userId: string): Promise<void> {
     .update(userProfiles)
     .set({ moodScore: 0, moodUpdatedAt: null })
     .where(eq(userProfiles.userId, userId));
+}
+
+/**
+ * Nudge the user's mood score: decay the stored value, add the delta, clamp.
+ * Row-locked so two quick turns can't overwrite each other. A user without a
+ * profile row has no score to move.
+ */
+export async function updateMoodScore(
+  userId: string,
+  delta: number,
+  now: Date,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [profile] = await tx
+      .select({
+        moodScore: userProfiles.moodScore,
+        moodUpdatedAt: userProfiles.moodUpdatedAt,
+      })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .for("update");
+    if (!profile) return;
+    await tx
+      .update(userProfiles)
+      .set({
+        moodScore: applyMoodDelta(
+          profile.moodScore,
+          profile.moodUpdatedAt,
+          delta,
+          now,
+        ),
+        moodUpdatedAt: now,
+      })
+      .where(eq(userProfiles.userId, userId));
+  });
 }

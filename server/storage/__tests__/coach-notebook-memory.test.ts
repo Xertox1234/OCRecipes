@@ -37,6 +37,7 @@ const {
   getUnseenNotebookSaves,
   getConfirmedNotebookEntries,
   clearNotebook,
+  updateMoodScore,
 } = await import("../coach-notebook-memory");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -283,6 +284,29 @@ describe("visible memory storage", () => {
         .where(eq(userProfiles.userId, user.id));
       expect(profile.moodScore).toBe(0);
       expect(profile.moodUpdatedAt).toBeNull();
+    });
+  });
+
+  describe("updateMoodScore", () => {
+    it("decays the stored score, adds the nudge and stamps the time", async () => {
+      const t0 = new Date("2026-11-05T12:00:00Z");
+      const now = new Date("2026-11-08T12:00:00Z");
+      await tx
+        .insert(userProfiles)
+        .values({ userId: user.id, moodScore: 2, moodUpdatedAt: t0 });
+      await updateMoodScore(user.id, -0.5, now);
+      const [p] = await tx
+        .select()
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, user.id));
+      expect(p.moodScore).toBeCloseTo(0.5);
+      expect(p.moodUpdatedAt).toEqual(now);
+    });
+
+    it("does nothing for a user without a profile", async () => {
+      await expect(
+        updateMoodScore(user.id, 1, new Date()),
+      ).resolves.toBeUndefined();
     });
   });
 });

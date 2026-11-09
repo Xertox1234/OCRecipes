@@ -37,9 +37,12 @@ function buildExtractionPrompt(now: Date, tz: string): string {
 Current date for this user: ${civilDateString(now, tz)}. Resolve relative phrases ("next week", "in three days", "this weekend") against this date — never guess a date you were not given. The resolved date must be on or after the current date above; if the phrase would resolve to an earlier date, return null instead.
 
 Return a JSON object with an "entries" array. Each entry has:
-- type: one of "insight", "commitment", "preference", "goal", "motivation", "emotional_context", "conversation_summary", "coaching_strategy"
+- type: one of "insight", "commitment", "preference", "goal", "motivation", "conversation_summary", "coaching_strategy"
 - content: a concise description (max 500 chars)
+- label: for a commitment only, a short second-person phrase naming what the user is trying, 2-8 words, no verb of agreement (e.g. "pumpkin seeds on your salad", "Sunday meal prep") — otherwise null
 - followUpDate: ISO date string (YYYY-MM-DD) if this is a commitment with a check-in date, resolved against the current date above — otherwise null
+
+Also return "moodDelta": how the user's latest messages shift their mood, one of -1, -0.5, 0, 0.5, 1 (0 when there is no clear signal).
 
 Rules:
 - Only extract genuinely new information — skip greetings and small talk
@@ -47,7 +50,7 @@ Rules:
 - Preferences are stated likes/dislikes about food, cooking, or lifestyle
 - Goals are explicit targets the user wants to achieve
 - Motivations are the deeper "why" behind their goals
-- Emotional context captures stress, frustration, or excitement related to nutrition
+- Never record feelings as entries — express them only through moodDelta
 - Conversation summary should be 1-2 sentences covering what was discussed and decided
 - coaching_strategy describes how the user responds best (only include if clear signal)
 - Maximum 10 entries per extraction
@@ -76,6 +79,7 @@ export async function extractNotebookEntries(
   {
     type: NotebookEntryType;
     content: string;
+    label: string | null;
     followUpDate: string | null;
   }[]
 > {
@@ -162,7 +166,13 @@ export async function extractNotebookEntries(
     // property for every user, in every zone.
     const todayStr = civilDateString(now, tz);
 
+    // Mood is a running score, never stored as moments (spec 2026-11-08).
+    if (result.data.moodDelta !== 0) {
+      await storage.updateMoodScore(userId, result.data.moodDelta, now);
+    }
+
     return result.data.entries
+      .filter((e) => e.type !== "emotional_context")
       .map((e) => {
         if (e.followUpDate && e.followUpDate < todayStr) {
           // Signal prompt drift the same way schema-validation failure
@@ -177,6 +187,11 @@ export async function extractNotebookEntries(
         return {
           type: e.type,
           content: sanitizeContextField(e.content, 500),
+          label:
+            e.type === "commitment" && e.label
+              ? sanitizeContextField(e.label, 60).replace(/[<>]/g, "").trim() ||
+                null
+              : null,
           followUpDate:
             e.followUpDate && e.followUpDate >= todayStr
               ? e.followUpDate

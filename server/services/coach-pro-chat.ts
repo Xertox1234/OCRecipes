@@ -362,6 +362,7 @@ async function extractAndStoreNotebook(a: {
         userId,
         type: e.type,
         content: e.content,
+        label: e.label,
         status: "active",
         // `civilDateToInstant`, not `new Date(dateStr)`: a bare parse
         // anchors at UTC midnight, which is BEFORE local midnight for

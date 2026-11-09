@@ -6,6 +6,7 @@ import {
   shouldUpdateStrategy,
 } from "../notebook-extraction";
 import { aiChat } from "../../lib/ai-client";
+import { storage } from "../../storage";
 import { SYSTEM_PROMPT_BOUNDARY } from "../../lib/ai-safety";
 import { civilDateString } from "../../lib/civil-date";
 
@@ -31,6 +32,7 @@ vi.mock("../../lib/ai-client", () => ({ aiChat: vi.fn() }));
 vi.mock("../../storage", () => ({
   storage: {
     getNotebookEntryCount: vi.fn().mockResolvedValue(3),
+    updateMoodScore: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -317,9 +319,66 @@ describe("Notebook Extraction", () => {
       {
         type: "preference",
         content: "Prefers quick lunches with vegetables",
+        label: null,
         followUpDate: null,
       },
     ]);
+  });
+
+  describe("visible memory", () => {
+    const run = (payload: unknown) => {
+      mockCreate.mockResolvedValue(mockCompletion(JSON.stringify(payload)));
+      return extractNotebookEntries(
+        [{ role: "user" as const, content: "hi" }],
+        "user-1",
+        1,
+        { now: new Date("2026-01-01T00:00:00Z"), tz: "UTC" },
+      );
+    };
+
+    it("keeps a commitment's short second-person label", async () => {
+      const entries = await run({
+        entries: [
+          {
+            type: "commitment",
+            content: "The user agreed to add pumpkin seeds to their salad",
+            label: "pumpkin seeds on your salad",
+            followUpDate: null,
+          },
+        ],
+      });
+      expect(entries[0].label).toBe("pumpkin seeds on your salad");
+    });
+
+    it("never stores an emotional moment as an entry", async () => {
+      const entries = await run({
+        entries: [
+          { type: "emotional_context", content: "User felt stressed" },
+          { type: "goal", content: "User aims for 120 g protein" },
+        ],
+      });
+      expect(entries.map((e) => e.type)).toEqual(["goal"]);
+    });
+
+    it("nudges the mood score instead, and skips a zero nudge", async () => {
+      await run({ entries: [], moodDelta: -0.5 });
+      expect(storage.updateMoodScore).toHaveBeenCalledWith(
+        "user-1",
+        -0.5,
+        new Date("2026-01-01T00:00:00Z"),
+      );
+      vi.mocked(storage.updateMoodScore).mockClear();
+      await run({ entries: [], moodDelta: 0 });
+      expect(storage.updateMoodScore).not.toHaveBeenCalled();
+    });
+
+    it("asks the model for labels and a mood nudge, and not for feelings", async () => {
+      await run({ entries: [] });
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toContain("label");
+      expect(system).toContain("moodDelta");
+      expect(system).not.toContain('"emotional_context"');
+    });
   });
 
   it("returns empty array on parse failure", async () => {

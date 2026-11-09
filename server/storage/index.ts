@@ -391,6 +391,7 @@ export const storage = {
   getUnseenNotebookSaves: coachNotebookMemory.getUnseenNotebookSaves,
   getConfirmedNotebookEntries: coachNotebookMemory.getConfirmedNotebookEntries,
   clearNotebook: coachNotebookMemory.clearNotebook,
+  updateMoodScore: coachNotebookMemory.updateMoodScore,
   getNotebookEntryById: coachNotebook.getNotebookEntryById,
   updateNotebookEntryStatus: coachNotebook.updateNotebookEntryStatus,
   getCommitmentsWithDueFollowUp: coachNotebook.getCommitmentsWithDueFollowUp,
