@@ -158,6 +158,25 @@ describe("Pantry Routes", () => {
       expect(res.body.name).toBe("Brown Rice");
     });
 
+    // zod 4 applies a field's .default() even inside .partial(), so a
+    // name-only edit silently reset the stored category to "other".
+    it("passes only the sent fields to storage (no defaulted category)", async () => {
+      mockPremium();
+      vi.mocked(storage.updatePantryItem).mockResolvedValue(
+        createMockPantryItem({ name: "Brown Rice", category: "grains" }),
+      );
+
+      const res = await request(app)
+        .put("/api/pantry/1")
+        .set("Authorization", "Bearer token")
+        .send({ name: "Brown Rice" });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updatePantryItem).mock.calls[0][2]).toEqual({
+        name: "Brown Rice",
+      });
+    });
+
     it("returns 404 when item not found", async () => {
       mockPremium();
       vi.mocked(storage.updatePantryItem).mockResolvedValue(undefined);

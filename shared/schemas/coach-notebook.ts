@@ -49,6 +49,7 @@ export const extractionResultSchema = z.object({
   // than failing the parse and discarding this turn's entries with it.
   moodDelta: z
     .unknown()
+    .optional() // zod 4: a bare z.unknown() key is required — keep absent → 0
     .transform(
       (v): MoodDelta =>
         MOOD_DELTAS.includes(v as MoodDelta) ? (v as MoodDelta) : 0,

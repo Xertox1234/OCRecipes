@@ -74,7 +74,7 @@ const recipeContentSchema = z.object({
   dietTags: z.array(z.string()).default([]),
   // AI-set heat level. A missing or invalid value becomes null (no icon) and
   // never rejects an otherwise valid recipe — we do not guess a level.
-  spiceLevel: z.unknown().transform(parseSpiceLevel),
+  spiceLevel: z.unknown().optional().transform(parseSpiceLevel),
 });
 
 // RecipeContent type is defined in @shared/types/cook-session and re-exported here

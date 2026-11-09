@@ -2782,7 +2782,6 @@ describe("_helpers utility functions", () => {
           message: "Required",
           code: "invalid_type",
           expected: "string",
-          received: "undefined",
         },
       ]);
       expect(formatZodError(error)).toBe("username: Required");
@@ -2802,7 +2801,6 @@ describe("_helpers utility functions", () => {
           message: "Required",
           code: "invalid_type",
           expected: "string",
-          received: "undefined",
         },
         {
           path: ["password"],
@@ -2810,7 +2808,7 @@ describe("_helpers utility functions", () => {
           code: "too_small",
           minimum: 8,
           inclusive: true,
-          type: "string",
+          origin: "string",
         },
       ]);
       expect(formatZodError(error)).toBe(

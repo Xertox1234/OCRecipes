@@ -17,13 +17,15 @@ function parseIntOrZero(value: string): number {
   return Number.isNaN(num) ? 0 : num;
 }
 
-// decode-uri-component 0.5.0 (PR #1054, GHSA-vcc3-ghjq-m6fr) closed the
-// repeated-malformed-run shape but is still O(entries * length) on distinct
-// malformed percent runs: query-string.parse (used internally by
-// getStateFromPath to parse the query string) built a `replaceMap` entry per
-// distinct run and re-scanned the whole input once per entry. A ~200 KB link
-// with many distinct runs can stall the JS thread for over a second even on
-// V8; Hermes is slower. Reject before the real parser ever sees the input.
+// Why the cap exists: decode-uri-component 0.5.0 (PR #1054, GHSA-vcc3-ghjq-m6fr)
+// closed the repeated-malformed-run shape but stayed O(entries * length) on
+// distinct malformed percent runs: query-string.parse (which getStateFromPath
+// used to parse the query string, up to @react-navigation/core 7.13) built a
+// `replaceMap` entry per distinct run and re-scanned the whole input once per
+// entry. A ~200 KB link with many distinct runs could stall the JS thread for
+// over a second even on V8; Hermes is slower. @react-navigation/core 7.24 no
+// longer depends on query-string; the cap stays as a parser-independent bound
+// on deep-link input. Reject before the real parser ever sees the input.
 //
 // The real verify-email link (this app's longest legitimate deep link) is
 // ~427 chars: a JWT from server/lib/verification-token.ts's

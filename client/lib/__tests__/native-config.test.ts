@@ -15,8 +15,11 @@ describe("native sign-in config", () => {
   // the runtime version — `expo prebuild` writes Expo.plist / strings.xml.
   // 5.1.0: react-native-webview + modules/webview-site-data are new native
   // code, so 5.0.0 builds must not receive OTAs that render the import WebView.
-  it("bumps the runtime version to 5.1.0 (import WebView native code)", () => {
-    expect(appJson.expo.runtimeVersion).toBe("5.1.0");
+  // 5.2.0: native patch bumps (expo 58.0.23 + expo-* modules, vision-camera
+  // 5.2.4, nitro-modules 0.37.2), so 5.1.0 builds must not receive OTAs built
+  // against the newer native code.
+  it("bumps the runtime version to 5.2.0 (native module patch bumps)", () => {
+    expect(appJson.expo.runtimeVersion).toBe("5.2.0");
   });
 
   // The plugin writes the com.apple.developer.applesignin entitlement.

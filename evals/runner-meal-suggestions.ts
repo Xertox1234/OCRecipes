@@ -78,7 +78,7 @@ try {
 const validation = mealSuggestionCasesSchema.safeParse(parsedJson);
 if (!validation.success) {
   console.error("Error: meal-suggestion-cases.json failed schema validation:");
-  for (const issue of validation.error.errors) {
+  for (const issue of validation.error.issues) {
     console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
   }
   process.exit(1);
