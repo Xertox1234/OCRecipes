@@ -1,3 +1,4 @@
+import type { AllergenId } from "@shared/constants/allergens";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { CoachChatEvent, CoachChatParams } from "../coach-pro-chat";
 import type { CoachNotebookEntry, UserProfile } from "@shared/schema";
@@ -774,6 +775,35 @@ describe("handleCoachChat", () => {
         "assistant",
         "Try soy yogurt.",
         { blocks: [{ type: "memory_refs", ids: [5] }] },
+      );
+    });
+  });
+
+  describe("add_allergy cards", () => {
+    it("drops a card for an allergy the profile already lists", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        makeProfile({ allergies: [{ name: "shellfish", severity: "severe" }] }),
+      );
+      const add = (allergen: AllergenId): CoachBlock => ({
+        type: "action_card" as const,
+        title: "Add it",
+        subtitle: "So Coach always flags it",
+        action: { type: "add_allergy" as const, allergen },
+        actionLabel: "Add allergy",
+      });
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Noted.",
+        blocks: [add("shellfish"), add("sesame")],
+      });
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        "Noted.",
+        { blocks: [add("sesame")] },
       );
     });
   });

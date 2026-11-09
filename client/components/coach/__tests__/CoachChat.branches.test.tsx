@@ -869,6 +869,14 @@ describe("CoachChat — handleBlockAction", () => {
     expect(state.navigate).toHaveBeenCalledWith("GroceryLists");
   });
 
+  it("add_allergy opens the dietary profile with that allergen picked", () => {
+    renderWithBlock({ type: "add_allergy", allergen: "shellfish" });
+    fireEvent.click(screen.getByTestId("block-action"));
+    expect(state.navigate).toHaveBeenCalledWith("EditDietaryProfile", {
+      addAllergen: "shellfish",
+    });
+  });
+
   it("set_goal navigates to GoalSetup", () => {
     renderWithBlock({ type: "set_goal", goalType: "calories" });
     fireEvent.click(screen.getByTestId("block-action"));

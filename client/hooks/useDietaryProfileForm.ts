@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
@@ -21,7 +21,13 @@ interface Allergy {
   severity: "mild" | "moderate" | "severe";
 }
 
-export function useDietaryProfileForm() {
+export function useDietaryProfileForm(
+  options: {
+    /** An allergen the Coach offered to add: open its severity choice once. */
+    addAllergen?: string;
+  } = {},
+) {
+  const { addAllergen } = options;
   const navigation = useNavigation();
   const haptics = useHaptics();
   const toast = useToast();
@@ -29,6 +35,9 @@ export function useDietaryProfileForm() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [selectedAllergen, setSelectedAllergen] = useState<string | null>(null);
+  // The Coach hand-off opens the severity choice only on the first hydration,
+  // never again after a refetch.
+  const handedInApplied = useRef(false);
 
   // Form state
   const [allergies, setAllergies] = useState<Allergy[]>([]);
@@ -79,8 +88,16 @@ export function useDietaryProfileForm() {
       setCuisinePreferences(profile.cuisinePreferences || []);
       setCookingSkillLevel(profile.cookingSkillLevel || null);
       setCookingTimeAvailable(profile.cookingTimeAvailable || null);
+      if (
+        addAllergen &&
+        !handedInApplied.current &&
+        !(profile.allergies || []).some((a) => a.name === addAllergen)
+      ) {
+        setSelectedAllergen(addAllergen);
+      }
+      handedInApplied.current = true;
     }
-  }, [profile]);
+  }, [profile, addAllergen]);
 
   const toggleAllergen = (allergenId: string) => {
     const existing = allergies.find((a) => a.name === allergenId);

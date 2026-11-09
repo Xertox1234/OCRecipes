@@ -266,3 +266,11 @@ describe("getBlocksSystemPrompt", () => {
     expect(getBlocksSystemPrompt(true)).toMatchSnapshot();
   });
 });
+
+describe("BLOCKS_SYSTEM_PROMPT allergy rule", () => {
+  it("offers add_allergy for an allergen missing from the profile, never guessing severity", () => {
+    expect(BLOCKS_SYSTEM_PROMPT).toContain('"add_allergy"');
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/not already in their allergies/i);
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/never guess.*severity/i);
+  });
+});
