@@ -89,6 +89,7 @@ Rules:
 - Preferences are stated likes/dislikes about food, cooking, or lifestyle
 - Goals are explicit targets the user wants to achieve
 - Motivations are the deeper "why" behind their goals
+- Never record allergies — they belong in the user's dietary profile, not here
 - Never record feelings as entries — express them only through moodDelta
 - Conversation summary should be 1-2 sentences covering what was discussed and decided
 - coaching_strategy describes how the user responds best (only include if clear signal)
@@ -97,6 +98,9 @@ Rules:
 
 ${SYSTEM_PROMPT_BOUNDARY}`;
 }
+
+/** Allergies live in the dietary profile, where they are enforced; never here. */
+const ALLERGY_RE = /\ballerg/i;
 
 export async function extractNotebookEntries(
   messages: ConversationMessage[],
@@ -214,7 +218,9 @@ export async function extractNotebookEntries(
     }
 
     return result.data.entries
-      .filter((e) => e.type !== "emotional_context")
+      .filter(
+        (e) => e.type !== "emotional_context" && !ALLERGY_RE.test(e.content),
+      )
       .map((e) => {
         if (e.followUpDate && e.followUpDate < todayStr) {
           // Signal prompt drift the same way schema-validation failure

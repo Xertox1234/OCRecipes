@@ -4,6 +4,7 @@ import type { NavigatorScreenParams } from "@react-navigation/native";
 import { ActivityIndicator, Pressable, View, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import type { AllergenId } from "@shared/constants/allergens";
 
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import type { MainTabParamList } from "@/navigation/MainTabNavigator";
@@ -172,7 +173,8 @@ export type RootStackParamList = {
     intent: PhotoIntent;
   };
   GoalSetup: undefined;
-  EditDietaryProfile: undefined;
+  // addAllergen: an allergen the Coach offered to add — opens its severity choice.
+  EditDietaryProfile: { addAllergen?: AllergenId } | undefined;
   FeaturedRecipeDetail: {
     recipeId: number;
     /**

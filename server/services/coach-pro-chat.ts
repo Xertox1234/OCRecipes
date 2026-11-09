@@ -15,6 +15,7 @@
  */
 
 import { filterMemoryRefs } from "./memory-refs";
+import { filterAllergyCards } from "./allergy-cards";
 import { randomUUID } from "crypto";
 import { civilDateToInstant } from "../lib/civil-date";
 import { storage } from "../storage";
@@ -708,7 +709,10 @@ export async function* handleCoachChat(
         )
         .map((e) => e.id),
     );
-    blocks = filterMemoryRefs(parsedBlocks.blocks, confirmedIds);
+    blocks = filterAllergyCards(
+      filterMemoryRefs(parsedBlocks.blocks, confirmedIds),
+      context.dietaryProfile.allergies.map((a) => a.name),
+    );
   }
 
   const maybeAutoTitle = () => {

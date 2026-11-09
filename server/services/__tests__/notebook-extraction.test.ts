@@ -395,6 +395,23 @@ describe("Notebook Extraction", () => {
       expect(entries.map((e) => e.type)).toEqual(["goal"]);
     });
 
+    it("never stores an allergy: allergies belong in the dietary profile", async () => {
+      const entries = await run({
+        entries: [
+          { type: "insight", content: "User is allergic to shellfish" },
+          { type: "preference", content: "User has a peanut allergy" },
+          { type: "goal", content: "User aims for 120 g protein" },
+        ],
+      });
+      expect(entries.map((e) => e.type)).toEqual(["goal"]);
+    });
+
+    it("tells the model allergies are not notebook entries", async () => {
+      await run({ entries: [] });
+      const system = mockCreate.mock.calls[0][1].messages[0].content as string;
+      expect(system).toMatch(/never record allergies/i);
+    });
+
     it("nudges the mood score instead, and skips a zero nudge", async () => {
       await run({ entries: [], moodDelta: -0.5 });
       expect(storage.updateMoodScore).toHaveBeenCalledWith(
