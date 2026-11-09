@@ -118,29 +118,53 @@ export async function getMealPlanIngredientsForDateRange(
   startDate: string,
   endDate: string,
 ): Promise<RecipeIngredient[]> {
-  // Get all recipe IDs from meal plan items in the date range
+  // Planned items in range, with each recipe's yield
   const items = await db
-    .select({ recipeId: mealPlanItems.recipeId })
+    .select({
+      recipeId: mealPlanItems.recipeId,
+      servings: mealPlanItems.servings,
+      recipeYield: mealPlanRecipes.servings,
+    })
     .from(mealPlanItems)
+    .innerJoin(mealPlanRecipes, eq(mealPlanItems.recipeId, mealPlanRecipes.id))
     .where(
       and(
         eq(mealPlanItems.userId, userId),
         gte(mealPlanItems.plannedDate, startDate),
         lte(mealPlanItems.plannedDate, endDate),
-        sql`${mealPlanItems.recipeId} IS NOT NULL`,
       ),
     );
 
-  const recipeIds = [
-    ...new Set(items.filter((i) => i.recipeId).map((i) => i.recipeId!)),
-  ];
+  // Whole batches by servings (owner rule, 2026-11-08):
+  // ceil(total planned servings / recipe yield), at least one batch.
+  const plannedServings = new Map<number, { total: number; yield: number }>();
+  for (const item of items) {
+    if (item.recipeId == null) continue;
+    const entry = plannedServings.get(item.recipeId) ?? {
+      total: 0,
+      yield: item.recipeYield && item.recipeYield > 0 ? item.recipeYield : 1,
+    };
+    const servings = Number(item.servings ?? 1);
+    entry.total += Number.isFinite(servings) && servings > 0 ? servings : 1;
+    plannedServings.set(item.recipeId, entry);
+  }
 
-  if (recipeIds.length === 0) return [];
+  if (plannedServings.size === 0) return [];
 
-  return db
+  const ingredients = await db
     .select()
     .from(recipeIngredients)
-    .where(inArray(recipeIngredients.recipeId, recipeIds));
+    .where(inArray(recipeIngredients.recipeId, [...plannedServings.keys()]));
+
+  // One copy of a recipe's ingredient rows per batch; generateGroceryItems
+  // sums the copies with the same quantity parser it uses across recipes.
+  return ingredients.flatMap((ing) => {
+    const entry = plannedServings.get(ing.recipeId);
+    const batches = entry
+      ? Math.max(1, Math.ceil(entry.total / entry.yield))
+      : 1;
+    return Array.from({ length: batches }, () => ing);
+  });
 }
 
 // ============================================================================

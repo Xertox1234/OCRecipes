@@ -41,6 +41,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import {
   MEAL_LABELS,
   type MealType,
@@ -146,7 +147,9 @@ function QuickAddSheetContentInner(
   }, [debouncedQuery, mealType]);
   const { data, isLoading, isError } = useUnifiedRecipes(queryParams);
 
-  const addItemMutation = useAddMealPlanItem();
+  // Destructure: the useMutation result is a new object every render; only
+  // mutateAsync is stable (perf audit M2 — this file is a compiler bailout).
+  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
   const isAdding = useRef(false);
 
   const frequent = data?.frequent;
@@ -207,7 +210,7 @@ function QuickAddSheetContentInner(
       isAdding.current = true;
       haptics.impact(ImpactFeedbackStyle.Light);
       try {
-        await addItemMutation.mutateAsync({
+        await addMealPlanItem({
           recipeId: action.recipeId,
           plannedDate,
           mealType,
@@ -226,7 +229,7 @@ function QuickAddSheetContentInner(
       plannedDate,
       haptics,
       toast,
-      addItemMutation,
+      addMealPlanItem,
       onDismiss,
       onOpenCommunityRecipe,
     ],
@@ -476,7 +479,12 @@ function QuickAddSheetContentInner(
       </View>
 
       {/* Results */}
+      {/* Batching/window defaults, but no clipping: the sheet moves with
+          transforms and clipped rows are unreachable by screen readers
+          (perf audit L2). */}
       <BottomSheetFlatList
+        {...FLATLIST_DEFAULTS}
+        removeClippedSubviews={false}
         data={recipes}
         keyExtractor={(item: RecipeRow) => `${item.source}-${item.id}`}
         renderItem={renderItem}

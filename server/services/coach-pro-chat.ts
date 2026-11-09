@@ -526,9 +526,16 @@ export async function* handleCoachChat(
   // the offer tool's repeat = yes delegation needs this turn's user row.
   const offerOn = !!params.finder && isRecipeOfferEnabled();
 
+  // History read by the finder decision, reused below when the turn falls
+  // through to the tool loop (one read per turn — perf audit M5).
+  let finderHistory:
+    | Awaited<ReturnType<typeof storage.getChatMessages>>
+    | undefined;
+
   // ── Recipe finder (Coach Pro, flag on) — early return (R2) ──
   if (params.finder && isCoachPro) {
     const recent = await storage.getChatMessages(conversationId, 20, userId);
+    finderHistory = recent;
     const entry = decideCoachFinderEntry(
       recent,
       content,
@@ -587,7 +594,7 @@ export async function* handleCoachChat(
   ] = await Promise.all([
     storage.getUserProfile(userId),
     storage.getDailySummary(userId, today, tz),
-    storage.getChatMessages(conversationId, 20, userId),
+    finderHistory ?? storage.getChatMessages(conversationId, 20, userId),
     isCoachPro
       ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
       : Promise.resolve(

@@ -112,6 +112,9 @@ const ItemSeparator = React.memo(function ItemSeparator() {
 
 // ── Main Screen ──────────────────────────────────────────────────────
 
+/** Section shape both result-list section renderers read. */
+type ResultSectionInfo = { section: { key?: string; title?: string } };
+
 // Reanimated 4.3 tightened createAnimatedComponent's return type so it no longer
 // directly overlaps with `typeof SectionList`; cast through `unknown` so the
 // collapsing header's scroll-linked animation (onScroll={scrollHandler}) keeps
@@ -566,6 +569,72 @@ export default function RecipeBrowserScreen() {
     ],
   );
 
+  // SectionList is a PureComponent and this file is a React Compiler
+  // bailout: every prop below must keep its identity across a search
+  // keystroke, or the list re-renders per character (perf audit M1).
+  const sections = useMemo(
+    () => [
+      ...(localResults.length > 0
+        ? [{ key: "local", title: "From OCRecipes", data: localResults }]
+        : []),
+      ...(ideas.length > 0
+        ? [{ key: "ideas", title: "Ideas for you", data: ideas }]
+        : []),
+    ],
+    [localResults, ideas],
+  );
+  const renderSectionHeader = useCallback(
+    ({ section }: ResultSectionInfo) => (
+      <ThemedText
+        accessibilityRole="header"
+        type="caption"
+        style={[styles.sectionHeader, { color: theme.textSecondary }]}
+      >
+        {section.title}
+      </ThemedText>
+    ),
+    [theme.textSecondary],
+  );
+  const renderSectionFooter = useCallback(
+    ({ section }: ResultSectionInfo) =>
+      section.key === "local" && showIdeasCta ? (
+        <OnlineSearchCta
+          state={ideasCtaState}
+          onPress={onPressIdeasCta}
+          errorText={ideasErrorText}
+          retryable={!ideasLimitReached}
+        />
+      ) : null,
+    [
+      showIdeasCta,
+      ideasCtaState,
+      onPressIdeasCta,
+      ideasErrorText,
+      ideasLimitReached,
+    ],
+  );
+  const handleEndReached = useMemo(
+    () => (loadMore ? () => loadMore() : undefined),
+    [loadMore],
+  );
+  const listFooter = useMemo(
+    () =>
+      isFetchingNextPage ? (
+        <ActivityIndicator
+          style={{ paddingVertical: Spacing.lg }}
+          color={theme.link}
+        />
+      ) : undefined,
+    [isFetchingNextPage, theme.link],
+  );
+  const listContentStyle = useMemo(
+    () => ({
+      paddingHorizontal: Spacing.lg,
+      paddingBottom: bottomBudget + Spacing.xl,
+    }),
+    [bottomBudget],
+  );
+
   return (
     <View
       testID="recipe-browser-root"
@@ -785,14 +854,7 @@ export default function RecipeBrowserScreen() {
       ) : (
         <AnimatedSectionList
           {...FLATLIST_DEFAULTS}
-          sections={[
-            ...(localResults.length > 0
-              ? [{ key: "local", title: "From OCRecipes", data: localResults }]
-              : []),
-            ...(ideas.length > 0
-              ? [{ key: "ideas", title: "Ideas for you", data: ideas }]
-              : []),
-          ]}
+          sections={sections}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
           keyExtractor={(item) => {
@@ -800,40 +862,13 @@ export default function RecipeBrowserScreen() {
             return "source" in row ? row.id : `idea:${row.id}`;
           }}
           renderItem={renderItem}
-          renderSectionHeader={({ section }) => (
-            <ThemedText
-              accessibilityRole="header"
-              type="caption"
-              style={[styles.sectionHeader, { color: theme.textSecondary }]}
-            >
-              {(section as { title: string }).title}
-            </ThemedText>
-          )}
-          renderSectionFooter={({ section }) =>
-            (section as { key: string }).key === "local" && showIdeasCta ? (
-              <OnlineSearchCta
-                state={ideasCtaState}
-                onPress={onPressIdeasCta}
-                errorText={ideasErrorText}
-                retryable={!ideasLimitReached}
-              />
-            ) : null
-          }
+          renderSectionHeader={renderSectionHeader}
+          renderSectionFooter={renderSectionFooter}
           ItemSeparatorComponent={ItemSeparator}
-          onEndReached={loadMore ? () => loadMore() : undefined}
+          onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
-          ListFooterComponent={
-            isFetchingNextPage ? (
-              <ActivityIndicator
-                style={{ paddingVertical: Spacing.lg }}
-                color={theme.link}
-              />
-            ) : undefined
-          }
-          contentContainerStyle={{
-            paddingHorizontal: Spacing.lg,
-            paddingBottom: bottomBudget + Spacing.xl,
-          }}
+          ListFooterComponent={listFooter}
+          contentContainerStyle={listContentStyle}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         />

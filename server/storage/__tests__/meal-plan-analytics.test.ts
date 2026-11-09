@@ -231,6 +231,60 @@ describe("meal-plan-analytics storage", () => {
       const names = ings.map((i) => i.name).sort();
       expect(names).toEqual(["flour", "sugar"]);
     });
+
+    // Grocery rule (owner, 2026-11-08): whole batches by servings —
+    // ceil(total planned servings / recipe yield). Each batch repeats the
+    // recipe's ingredient rows so generateGroceryItems sums them.
+    async function planRecipe(
+      servingsPerItem: string[],
+      recipeServings: number,
+    ) {
+      const recipe = await createRecipe(testUser.id, {
+        servings: recipeServings,
+      });
+      await tx
+        .insert(recipeIngredients)
+        .values({ recipeId: recipe.id, name: "rice", displayOrder: 0 });
+      await tx.insert(mealPlanItems).values(
+        servingsPerItem.map((servings, i) => ({
+          userId: testUser.id,
+          recipeId: recipe.id,
+          plannedDate: `2026-05-1${6 + i}`,
+          mealType: "dinner",
+          servings,
+        })),
+      );
+    }
+
+    it("counts one batch when planned servings fit in the recipe's yield (leftovers)", async () => {
+      await planRecipe(["1", "1"], 2);
+      const ings = await getMealPlanIngredientsForDateRange(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-22",
+      );
+      expect(ings.map((i) => i.name)).toEqual(["rice"]);
+    });
+
+    it("counts one batch per yield's worth of planned servings", async () => {
+      await planRecipe(["2", "2"], 2);
+      const ings = await getMealPlanIngredientsForDateRange(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-22",
+      );
+      expect(ings.map((i) => i.name)).toEqual(["rice", "rice"]);
+    });
+
+    it("rounds partial batches up", async () => {
+      await planRecipe(["3"], 2);
+      const ings = await getMealPlanIngredientsForDateRange(
+        testUser.id,
+        "2026-05-15",
+        "2026-05-22",
+      );
+      expect(ings).toHaveLength(2);
+    });
   });
 
   describe("getFrequentRecipesForMealType", () => {
