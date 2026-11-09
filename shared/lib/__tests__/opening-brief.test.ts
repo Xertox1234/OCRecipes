@@ -16,7 +16,6 @@ const base: BriefInput = {
   proteinGoal: 120,
   tonightPlan: null,
   expiringPantry: [],
-  topTip: null,
   suggestions: [],
   reminder: null,
 };
@@ -117,12 +116,6 @@ describe("pointer", () => {
     );
   });
 
-  it("then the notebook tip, verbatim", () => {
-    expect(full({ topTip: "Protein at breakfast helps you." }).pointer).toBe(
-      "Protein at breakfast helps you.",
-    );
-  });
-
   it("then the protein gap", () => {
     expect(full().pointer).toBe("78 g protein left today.");
   });
@@ -155,55 +148,46 @@ describe("short form", () => {
 });
 
 describe("reminder form", () => {
-  it("leads a commitment with three answers", () => {
+  it("asks about a commitment with curiosity, not accountability", () => {
     const b = full({
       reminder: {
         type: "commitment",
         notebookEntryId: 7,
-        content: "prep overnight oats",
+        label: "pumpkin seeds on your salad",
       },
       tonightPlan: "Lentil stew",
     });
     expect(b.reminder).toEqual({
       type: "commitment",
-      lead: "Earlier you said you'd prep overnight oats. How did it go?",
+      lead: "You were going to try pumpkin seeds on your salad. How's that going?",
       actions: [
-        { label: "Went well", kind: "send", message: "It went well" },
-        { label: "Partly", kind: "send", message: "It went partly" },
-        { label: "Didn't happen", kind: "send", message: "It didn't happen" },
+        { label: "Going well", kind: "send", message: "It's going well" },
+        { label: "Sort of", kind: "send", message: "Sort of" },
+        { label: "Not yet", kind: "send", message: "Not yet" },
+        {
+          label: "Drop it",
+          kind: "drop",
+          notebookEntryId: 7,
+          message: "I want to drop it",
+        },
       ],
     });
     expect(b.stats).toEqual([]);
     expect(b.pointer).toBeNull();
   });
 
-  it("speaks a third-person notebook commitment back in the second person", () => {
-    const lead = (content: string) =>
-      full({
-        reminder: { type: "commitment", notebookEntryId: 7, content },
-      }).reminder?.lead;
-    expect(
-      lead("The user agreed to add pumpkin seeds to their salad for lunch"),
-    ).toBe(
-      "You agreed to add pumpkin seeds to your salad for lunch. How did it go?",
-    );
-    expect(lead("User plans to try edamame with a squeeze of lemon.")).toBe(
-      "You plan to try edamame with a squeeze of lemon. How did it go?",
-    );
-    expect(lead("Drink 8 glasses of water daily")).toBe(
-      "Earlier you said you'd drink 8 glasses of water daily. How did it go?",
-    );
-  });
-
-  it("offers the meal for the time of day on a missed log", () => {
+  it("offers to log a missed meal for the time of day, with a way out", () => {
     const at = (localHour: number) =>
       full({ localHour, reminder: { type: "meal-log" } }).reminder;
     expect(at(13)).toEqual({
       type: "meal-log",
-      lead: "Nothing logged yet today.",
-      actions: [{ label: "Log lunch", kind: "quick-log" }],
+      lead: "Want to log lunch?",
+      actions: [
+        { label: "Log lunch", kind: "quick-log" },
+        { label: "Not today", kind: "dismiss", reminderType: "meal-log" },
+      ],
     });
-    expect(at(8)?.actions[0].label).toBe("Log breakfast");
+    expect(at(8)?.lead).toBe("Want to log breakfast?");
     expect(at(18)?.actions[0].label).toBe("Log dinner");
     expect(at(22)?.actions[0].label).toBe("Log snack");
   });

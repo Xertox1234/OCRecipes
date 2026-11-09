@@ -58,7 +58,7 @@ export default function OpeningBrief({
 
   const runAction = (action: BriefAction) => {
     if (action.kind === "quick-log") onQuickLog();
-    else if (action.message) onSend(action.message);
+    else if (action.kind === "send") onSend(action.message);
   };
 
   const chips = chipsFor(brief.suggestions);

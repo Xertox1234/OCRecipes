@@ -6,12 +6,12 @@
  * never sends assistant text (spec: 2026-11-08-coach-opening-brief-design).
  */
 import { remainingCaloriesStat } from "./coach-stats";
-import { toSecondPerson } from "./notebook-text";
 
 export type BriefForm = "full" | "short";
 
 export type ShowableReminder =
-  | { type: "commitment"; notebookEntryId: number; content: string }
+  /** Only a confirmed commitment with a label reaches the brief (spec 2026-11-08). */
+  | { type: "commitment"; notebookEntryId: number; label: string }
   | { type: "meal-log" }
   | { type: "daily-checkin" };
 
@@ -25,7 +25,6 @@ export interface BriefInput {
   proteinGoal: number | null;
   tonightPlan: string | null;
   expiringPantry: string[];
-  topTip: string | null;
   suggestions: string[];
   reminder: ShowableReminder | null;
 }
@@ -35,11 +34,13 @@ export interface BriefStat {
   label: string;
 }
 
-export interface BriefAction {
-  label: string;
-  kind: "send" | "quick-log";
-  message?: string;
-}
+export type BriefAction =
+  | { label: string; kind: "send"; message: string }
+  | { label: string; kind: "quick-log" }
+  /** Acknowledges just this reminder type; sends nothing. */
+  | { label: string; kind: "dismiss"; reminderType: "meal-log" }
+  /** Archives the commitment, then sends `message`. */
+  | { label: string; kind: "drop"; notebookEntryId: number; message: string };
 
 export interface BriefReminder {
   type: ShowableReminder["type"];
@@ -126,23 +127,9 @@ function pointerFor(input: BriefInput): string | null {
       : `Your ${expiring} expires soon.`;
   }
   if (input.tonightPlan) return `Tonight's plan is ${input.tonightPlan}.`;
-  if (input.topTip) return input.topTip;
   const left = proteinLeft(input);
   if (left > 0) return `${left} g protein left today.`;
   return null;
-}
-
-/**
- * Notebook commitments are stored in the third person ("The user agreed to
- * add…"); speak them back as "You agreed to add…". A plain action ("Drink
- * more water") reads as something the user said they'd do.
- */
-function commitmentLead(content: string): string {
-  const text = content.trim().replace(/[.!]+$/, "");
-  const spoken = toSecondPerson(text);
-  if (spoken !== text) return `${spoken}. How did it go?`;
-  const action = text.charAt(0).toLowerCase() + text.slice(1);
-  return `Earlier you said you'd ${action}. How did it go?`;
 }
 
 function mealFor(localHour: number): string {
@@ -160,18 +147,28 @@ function reminderFor(
     case "commitment":
       return {
         type: "commitment",
-        lead: commitmentLead(reminder.content),
+        // Curiosity, not accountability (recall-phrasing research 2026-11-08).
+        lead: `You were going to try ${reminder.label}. How's that going?`,
         actions: [
-          { label: "Went well", kind: "send", message: "It went well" },
-          { label: "Partly", kind: "send", message: "It went partly" },
-          { label: "Didn't happen", kind: "send", message: "It didn't happen" },
+          { label: "Going well", kind: "send", message: "It's going well" },
+          { label: "Sort of", kind: "send", message: "Sort of" },
+          { label: "Not yet", kind: "send", message: "Not yet" },
+          {
+            label: "Drop it",
+            kind: "drop",
+            notebookEntryId: reminder.notebookEntryId,
+            message: "I want to drop it",
+          },
         ],
       };
     case "meal-log":
       return {
         type: "meal-log",
-        lead: "Nothing logged yet today.",
-        actions: [{ label: `Log ${mealFor(localHour)}`, kind: "quick-log" }],
+        lead: `Want to log ${mealFor(localHour)}?`,
+        actions: [
+          { label: `Log ${mealFor(localHour)}`, kind: "quick-log" },
+          { label: "Not today", kind: "dismiss", reminderType: "meal-log" },
+        ],
       };
     case "daily-checkin":
       return {

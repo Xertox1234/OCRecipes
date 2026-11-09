@@ -18,7 +18,6 @@ const input: BriefInput = {
   proteinGoal: 120,
   tonightPlan: "Lentil stew",
   expiringPantry: [],
-  topTip: null,
   suggestions: ["High-protein snack?", "Log lunch", "Swap dinner", "Extra"],
   reminder: null,
 };
@@ -83,13 +82,13 @@ it("leads with the reminder and answers it with a send", () => {
     reminder: {
       type: "commitment",
       notebookEntryId: 3,
-      content: "prep overnight oats",
+      label: "overnight oats",
     },
   });
-  const lead = "Earlier you said you'd prep overnight oats. How did it go?";
+  const lead = "You were going to try overnight oats. How's that going?";
   expect(screen.getByText(lead)).toBeTruthy();
-  fireEvent.click(screen.getByLabelText(`Went well, ${lead}`));
-  expect(props.onSend).toHaveBeenCalledWith("It went well");
+  fireEvent.click(screen.getByLabelText(`Going well, ${lead}`));
+  expect(props.onSend).toHaveBeenCalledWith("It's going well");
 });
 
 it("opens Quick Log from a missed-meal reminder", () => {
@@ -98,9 +97,7 @@ it("opens Quick Log from a missed-meal reminder", () => {
     consumedProtein: 0,
     reminder: { type: "meal-log" },
   });
-  fireEvent.click(
-    screen.getByLabelText("Log lunch, Nothing logged yet today."),
-  );
+  fireEvent.click(screen.getByLabelText("Log lunch, Want to log lunch?"));
   expect(props.onQuickLog).toHaveBeenCalledTimes(1);
   expect(props.onSend).not.toHaveBeenCalled();
 });

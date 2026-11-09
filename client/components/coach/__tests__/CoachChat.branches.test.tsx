@@ -1440,7 +1440,6 @@ describe("CoachChat — opening brief", () => {
       proteinGoal: null,
       tonightPlan: null,
       expiringPantry: [],
-      topTip: null,
       suggestions: [],
       reminder: { type: "meal-log" },
     },
@@ -1523,9 +1522,7 @@ describe("CoachChat — opening brief", () => {
       openingBrief: { brief, form: "full" },
       onReminderHandled,
     });
-    fireEvent.click(
-      screen.getByLabelText("Log lunch, Nothing logged yet today."),
-    );
+    fireEvent.click(screen.getByLabelText("Log lunch, Want to log lunch?"));
     expect(state.navigate).toHaveBeenCalledWith("QuickLog");
     expect(onReminderHandled).toHaveBeenCalledTimes(1);
   });
