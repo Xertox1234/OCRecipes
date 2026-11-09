@@ -44,7 +44,7 @@
     "test:mutation": "stryker run",
     "mutation:explore": "node scripts/mutation-explore.mjs",
     "prepare": "bash scripts/install-git-hooks.sh",
-    "postinstall": "patch-package",
+    "postinstall": "patch-package && bash scripts/relink-android-build-dirs.sh",
     "preandroid": "tsx scripts/check-api-domain.ts",
     "android": "expo run:android",
     "preios": "tsx scripts/check-api-domain.ts",
