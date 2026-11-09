@@ -11,10 +11,14 @@ import type { WriteCardKind } from "@shared/schemas/coach-write-cards";
  * Coach write cards (spec 2026-11-09). Every function filters by `userId`, so
  * a card id from another user reads as absent (IDOR-safe).
  *
- * The transaction client type is taken from `db.transaction` so the write-card
- * services can run their storage writes on the same client as the status flip.
+ * `WriteCardTx` is the query surface a save/undo callback gets: the
+ * transaction client, so the write-card services run their storage writes on
+ * the same client as the status flip.
  */
-export type WriteCardTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type WriteCardTx = Pick<
+  typeof db,
+  "transaction" | "select" | "insert" | "update" | "delete"
+>;
 
 /** Server undo window — the UI shows Undo for 6 s; this absorbs latency. */
 export const WRITE_CARD_UNDO_WINDOW_MS = 60_000;
