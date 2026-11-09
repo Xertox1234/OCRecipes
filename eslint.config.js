@@ -3,6 +3,7 @@ const { defineConfig } = require("eslint/config");
 const expoConfig = require("eslint-config-expo/flat");
 const eslintPluginPrettierRecommended = require("eslint-plugin-prettier/recommended");
 const ocrecipesPlugin = require("./eslint-plugin-ocrecipes");
+const tanstackQueryPlugin = require("@tanstack/eslint-plugin-query");
 const tseslint = require("typescript-eslint");
 const path = require("path");
 
@@ -294,6 +295,27 @@ module.exports = defineConfig([
       "ocrecipes/no-error-message-in-ui": "error",
       "ocrecipes/no-dead-apiRequest-guard": "error",
       "ocrecipes/no-shadowed-route-paramlist": "error",
+    },
+  },
+  {
+    // TanStack Query rules, adopted by name like the react-hooks set above, so
+    // a plugin upgrade cannot switch a new rule on unreviewed. These are the
+    // plugin's flat/recommended rules (no-rest-destructuring raised from warn
+    // to error); every site they flagged was fixed when they were adopted
+    // (2026-11-09). no-unstable-deps is the one docs/rules/hooks.md states:
+    // a useQuery/useMutation result in a hook deps array is a new object every
+    // render. prefer-query-options is not adopted: 136 hits in 49 files, a
+    // style migration (queryOptions() factories), not a defect.
+    files: ["client/**/*.{ts,tsx}"],
+    plugins: { "@tanstack/query": tanstackQueryPlugin },
+    rules: {
+      "@tanstack/query/exhaustive-deps": "error",
+      "@tanstack/query/no-rest-destructuring": "error",
+      "@tanstack/query/stable-query-client": "error",
+      "@tanstack/query/no-unstable-deps": "error",
+      "@tanstack/query/infinite-query-property-order": "error",
+      "@tanstack/query/no-void-query-fn": "error",
+      "@tanstack/query/mutation-property-order": "error",
     },
   },
   {
