@@ -1,5 +1,5 @@
 ---
-title: "Type-aware lint already peaks near CI's 4 GB heap — a typescript-eslint minor bump (8.59 → 8.72) tipped it into an OOM"
+title: "Type-aware lint already peaks near CI's ~4 GB default heap — a typescript-eslint minor bump (8.59 → 8.72) tipped it into an OOM"
 track: bug
 category: performance-issues
 module: shared
@@ -10,7 +10,7 @@ applies_to: [eslint.config.js, package.json]
 created: 2026-11-09
 ---
 
-# Type-aware lint already peaks near CI's 4 GB heap — a typescript-eslint minor bump (8.59 → 8.72) tipped it into an OOM
+# Type-aware lint already peaks near CI's ~4 GB default heap — a typescript-eslint minor bump (8.59 → 8.72) tipped it into an OOM
 
 ## Problem
 
@@ -18,7 +18,7 @@ A routine in-range dependency refresh (#1815) bumped `typescript-eslint` 8.59.4 
 
 ## Root Cause
 
-Not a leak — headroom. Measured locally under the same `--max-old-space-size=4096`, same tree, only typescript-eslint varied:
+Not a leak — headroom. CI sets no heap flag: the lint job runs with Node's default old-space limit, which on the GitHub runner is about 4 GB (the CI OOM log shows the heap at `4064.6 (4090.7) MB`). Measured locally with `--max-old-space-size=4096` standing in for that default, same tree, only typescript-eslint varied:
 
 | typescript-eslint | exit | peak RSS |
 | ----------------- | ---- | -------- |
@@ -33,13 +33,13 @@ Held `typescript-eslint` at `^8.59.4` and rebuilt the lockfile from main's (`git
 
 ## Prevention
 
-- Before pushing a bump of anything in the lint stack (typescript-eslint, eslint, eslint plugins, `typescript`), run the full lint under the CI cap: `NODE_OPTIONS=--max-old-space-size=4096 npx eslint . --quiet` with `/usr/bin/time -l` and read `maximum resident set size`.
-- The cap is a standing risk (≈3 GB of 4 GB): raising CI's heap or splitting the lint is a separate decision for the owner — don't do it inside a dependency PR.
+- Before pushing a bump of anything in the lint stack (typescript-eslint, eslint, eslint plugins, `typescript`), run the full lint under a 4 GB heap (the local stand-in for CI's default limit): `NODE_OPTIONS=--max-old-space-size=4096 npx eslint . --quiet` with `/usr/bin/time -l` and read `maximum resident set size`.
+- The headroom is a standing risk (≈3 GB of ~4 GB): giving the lint job more heap (an explicit `NODE_OPTIONS=--max-old-space-size=…` in `ci.yml`, which it does not have today) or splitting the lint is a separate decision for the owner — don't do it inside a dependency PR.
 
 ## Related Files
 
 - `package.json` (`typescript-eslint` range), `eslint.config.js`
-- `.github/workflows/ci.yml` (the lint job)
+- `.github/workflows/ci.yml` (the lint job — runs with Node's default heap; no `NODE_OPTIONS`)
 
 ## See Also
 
