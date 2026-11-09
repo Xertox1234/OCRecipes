@@ -24,6 +24,49 @@ export const importUrlSchema = z.object({
 
 export type ImportUrlParams = z.infer<typeof importUrlSchema>;
 
+/** UTF-8 byte length without Buffer/TextEncoder (shared/ also runs on Hermes). */
+export function utf8ByteLength(str: string): number {
+  let bytes = 0;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c < 0x80) bytes += 1;
+    else if (c < 0x800) bytes += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) {
+      const next = str.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4; // surrogate pair
+        i++;
+      } else bytes += 3; // lone high surrogate encodes as U+FFFD
+    } else bytes += 3; // BMP, or a lone low surrogate (U+FFFD)
+  }
+  return bytes;
+}
+
+/** Max JSON-LD blocks posted to parse-page. */
+export const PARSE_PAGE_MAX_BLOCKS = 20;
+
+/** Max total UTF-8 bytes across all JSON-LD blocks posted to parse-page. */
+export const PARSE_PAGE_MAX_BYTES = 1_000_000;
+
+/**
+ * Schema for the parse-page endpoint: raw JSON-LD script texts extracted on
+ * the device. Untrusted input — block count and total byte size are capped
+ * (bytes, not chars: multibyte text must not slip past the limit).
+ */
+export const parsePageSchema = z
+  .object({
+    url: importUrlSchema.shape.url,
+    ldJson: z.array(z.string()).min(1).max(PARSE_PAGE_MAX_BLOCKS),
+  })
+  .refine(
+    (v) =>
+      v.ldJson.reduce((n, b) => n + utf8ByteLength(b), 0) <=
+      PARSE_PAGE_MAX_BYTES,
+    { message: "ldJson is too large", path: ["ldJson"] },
+  );
+
+export type ParsePageParams = z.infer<typeof parsePageSchema>;
+
 /**
  * Canonical allowlist of diet preference options. Kept in shared/ so both the
  * client UI (RecipeGenerationModal) and the server Zod schema reference the

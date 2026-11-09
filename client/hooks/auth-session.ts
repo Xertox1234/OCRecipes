@@ -25,6 +25,7 @@ import { clearFeatureTipsState } from "@/lib/feature-tips-storage";
 import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
 import { clearScheduledCoachReminders } from "@/hooks/useNotebookNotifications";
 import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
+import { clearImportBrowserData } from "../../modules/webview-site-data";
 
 export interface AuthState {
   user: User | null;
@@ -186,6 +187,10 @@ export async function clearDurableLocalState(): Promise<boolean> {
     // OS-scheduled coach reminders carry this user's journal text and outlive
     // the session in the OS; cancel them and drop their global id map.
     if (!(await clearScheduledCoachReminders())) ok = false;
+    // The import browser's saved site data (cookies, storage — recipe-site
+    // sign-ins made in the app) lives in the platform WebView store, outside our
+    // keys; wipe it too. Non-throwing; false when the native clear failed.
+    if (!(await clearImportBrowserData())) ok = false;
     // Gate on the persisted-cache restore: a teardown that races a cold-start
     // restore could otherwise clear() the cache before the restore rehydrates the
     // prior user's data into memory, re-exposing it under the next user. Resolves

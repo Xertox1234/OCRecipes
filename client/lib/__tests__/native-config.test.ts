@@ -13,8 +13,10 @@ import {
 describe("native sign-in config", () => {
   // The native projects are generated (CNG), so app.json is the only copy of
   // the runtime version — `expo prebuild` writes Expo.plist / strings.xml.
-  it("bumps the runtime version to 5.0.0 (SDK 58)", () => {
-    expect(appJson.expo.runtimeVersion).toBe("5.0.0");
+  // 5.1.0: react-native-webview + modules/webview-site-data are new native
+  // code, so 5.0.0 builds must not receive OTAs that render the import WebView.
+  it("bumps the runtime version to 5.1.0 (import WebView native code)", () => {
+    expect(appJson.expo.runtimeVersion).toBe("5.1.0");
   });
 
   // The plugin writes the com.apple.developer.applesignin entitlement.

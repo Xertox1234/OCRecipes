@@ -27,6 +27,7 @@ const {
   mockClearHomeActionsState,
   mockClearFeatureTipsState,
   mockClearScheduledCoachReminders,
+  mockClearImportBrowserData,
   mockWhenQueryCacheRestored,
 } = vi.hoisted(() => {
   const mockAsyncStorage: Record<string, string> = {};
@@ -54,6 +55,7 @@ const {
     mockClearHomeActionsState: vi.fn().mockResolvedValue(true),
     mockClearFeatureTipsState: vi.fn().mockResolvedValue(true),
     mockClearScheduledCoachReminders: vi.fn().mockResolvedValue(true),
+    mockClearImportBrowserData: vi.fn().mockResolvedValue(true),
     // Default: the persisted-cache restore gate is already settled, so the sweep
     // proceeds immediately. Individual tests override with a deferred promise to
     // assert the sweep waits for restoration before clearing.
@@ -130,6 +132,10 @@ vi.mock("@/lib/home-actions-storage", () => ({
 
 vi.mock("@/hooks/useNotebookNotifications", () => ({
   clearScheduledCoachReminders: () => mockClearScheduledCoachReminders(),
+}));
+
+vi.mock("../../../modules/webview-site-data", () => ({
+  clearImportBrowserData: () => mockClearImportBrowserData(),
 }));
 
 const { mockLoggerError } = vi.hoisted(() => ({ mockLoggerError: vi.fn() }));
@@ -1179,6 +1185,55 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(true);
     });
 
+    it("clearDurableLocalState calls clearImportBrowserData", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      mockClearImportBrowserData.mockClear();
+
+      await act(async () => {
+        await result.current.login("testuser", "password123");
+      });
+
+      expect(mockClearImportBrowserData).toHaveBeenCalledTimes(1);
+      expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBe(
+        String(fakeUser.id),
+      );
+    });
+
+    it("returns false when clearImportBrowserData returns false (marker not advanced, other steps still run)", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+      });
+      mockClearImportBrowserData.mockResolvedValue(false);
+      try {
+        const { result } = renderHook(() => useAuth());
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+        mockQueryClient.clear.mockClear();
+
+        await act(async () => {
+          await result.current.login("testuser", "password123");
+        });
+
+        // An unconfirmed site-data wipe → false → the marker stays unset (the
+        // next auth resolution retries); the later steps still ran and login
+        // still succeeds.
+        expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBeUndefined();
+        expect(mockQueryClient.clear).toHaveBeenCalled();
+        expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+          "@ocrecipes_query_cache",
+        );
+        expect(result.current.isAuthenticated).toBe(true);
+      } finally {
+        mockClearImportBrowserData.mockResolvedValue(true);
+      }
+    });
+
     it("reconciles on the cached-user OFFLINE resume path — wipes + advances when the marker mismatches", async () => {
       // Network error → /me unavailable → fall back to the cached user. A stale
       // marker (prior failed wipe) means the restored query cache isn't this
@@ -1347,6 +1402,9 @@ describe("useAuth", () => {
       // ...and the OS-scheduled coach reminders (journal text) plus their global
       // id map (auth audit M2) — same chokepoint, so one path proves all five.
       expect(mockClearScheduledCoachReminders).toHaveBeenCalled();
+      // ...and the import browser's saved site data (recipe-site sign-ins) —
+      // same chokepoint.
+      expect(mockClearImportBrowserData).toHaveBeenCalled();
       // ...and the persisted query cache (regression guard: this exact call was
       // previously unasserted, the gap that let the checkAuth 4th-path leak ship).
       expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(

@@ -5,6 +5,7 @@ import {
   parseIngredientString,
   findRecipeInLdJson,
   importRecipeFromUrl,
+  parseRecipeFromLdJson,
   isBlockedIPv4,
   isBlockedIPv6,
   isBlockedIP,
@@ -826,6 +827,56 @@ describe("Recipe Import", () => {
         expect(result.data.instructions).toContain("Mix dry ingredients");
         expect(result.data.sourceUrl).toBe("https://example.com/full-recipe");
       }
+    });
+  });
+
+  describe("parseRecipeFromLdJson", () => {
+    const pieBlock =
+      '{"@graph":[{"@type":"Recipe","name":"Pie","recipeIngredient":["1 egg"]}]}';
+
+    it("returns the recipe from the first block containing one", () => {
+      const result = parseRecipeFromLdJson(
+        ['{"@type":"BreadcrumbList"}', pieBlock],
+        "https://x.test/pie",
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.title).toBe("Pie");
+        expect(result.data.ingredients.length).toBe(1);
+        expect(result.data.sourceUrl).toBe("https://x.test/pie");
+      }
+    });
+
+    it("skips invalid JSON blocks", () => {
+      const result = parseRecipeFromLdJson(
+        ["{not json", pieBlock],
+        "https://x.test/pie",
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it("returns NO_RECIPE_DATA when no block has a Recipe", () => {
+      expect(
+        parseRecipeFromLdJson(['{"@type":"Article"}'], "https://x.test/a"),
+      ).toEqual({ success: false, error: "NO_RECIPE_DATA" });
+    });
+
+    it("returns NO_RECIPE_DATA for an empty array", () => {
+      expect(parseRecipeFromLdJson([], "https://x.test/a")).toEqual({
+        success: false,
+        error: "NO_RECIPE_DATA",
+      });
+    });
+
+    it("returns PARSE_ERROR when the Recipe fails the schema", () => {
+      const invalid = JSON.stringify({
+        "@type": "Recipe",
+        description: "A recipe without a name",
+      });
+      expect(parseRecipeFromLdJson([invalid], "https://x.test/a")).toEqual({
+        success: false,
+        error: "PARSE_ERROR",
+      });
     });
   });
 });
