@@ -420,6 +420,7 @@ export const storage = {
   hasPendingReminderToday: remindersStorage.hasPendingReminderToday,
   hasPendingReminders: remindersStorage.hasPendingReminders,
   acknowledgeReminders: remindersStorage.acknowledgeReminders,
+  acknowledgeReminderType: remindersStorage.acknowledgeReminderType,
   getTodaysPendingReminders: remindersStorage.getTodaysPendingReminders,
 
   // Canonical recipes

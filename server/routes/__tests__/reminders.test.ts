@@ -10,6 +10,7 @@ vi.mock("../../storage", () => ({
   storage: {
     hasPendingReminders: vi.fn(),
     acknowledgeReminders: vi.fn(),
+    acknowledgeReminderType: vi.fn(),
     saveReminderMutes: vi.fn(),
   },
 }));
@@ -52,6 +53,29 @@ describe("Reminders Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ hasPending: false });
+    });
+  });
+
+  describe("POST /api/reminders/acknowledge-type", () => {
+    it("clears only the named reminder type for the caller", async () => {
+      vi.mocked(storage.acknowledgeReminderType).mockResolvedValue(1);
+      const res = await request(app)
+        .post("/api/reminders/acknowledge-type")
+        .send({ type: "meal-log" });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ acknowledged: 1 });
+      expect(storage.acknowledgeReminderType).toHaveBeenCalledWith(
+        expect.any(String),
+        "meal-log",
+      );
+    });
+
+    it("rejects an unknown type", async () => {
+      const res = await request(app)
+        .post("/api/reminders/acknowledge-type")
+        .send({ type: "everything" });
+      expect(res.status).toBe(400);
+      expect(storage.acknowledgeReminderType).not.toHaveBeenCalled();
     });
   });
 

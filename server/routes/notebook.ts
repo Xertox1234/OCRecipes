@@ -17,6 +17,12 @@ import {
   notebookEntryTypes,
   notebookEntryStatusValues,
 } from "@shared/schemas/coach-notebook";
+import { toSecondPerson } from "@shared/lib/notebook-text";
+
+/** Ids the save popup / "What Coach knows" page acts on (visible memory). */
+const idsSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(20),
+});
 
 const createEntrySchema = z.object({
   type: z.enum(notebookEntryTypes),
@@ -40,6 +46,120 @@ const updateEntrySchema = z.object({
 });
 
 export function register(app: Express): void {
+  // ── Visible memory (spec 2026-11-08) — registered before the /:id routes ──
+
+  // GET /api/coach/notebook/unseen — new saves the popup hasn't shown yet.
+  app.get(
+    "/api/coach/notebook/unseen",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const rows = await storage.getUnseenNotebookSaves(req.userId);
+        res.json({
+          entries: rows.map((e) => ({
+            id: e.id,
+            type: e.type,
+            content: toSecondPerson(e.content),
+            label: e.label,
+          })),
+        });
+      } catch (error) {
+        handleRouteError(res, error, "list unseen notebook saves");
+      }
+    },
+  );
+
+  // POST /api/coach/notebook/shown — the popup displayed these.
+  app.post(
+    "/api/coach/notebook/shown",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = idsSchema.safeParse(req.body);
+        if (!parsed.success)
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        await storage.markNotebookEntriesShown(req.userId, parsed.data.ids);
+        res.status(204).end();
+      } catch (error) {
+        handleRouteError(res, error, "mark notebook saves shown");
+      }
+    },
+  );
+
+  // POST /api/coach/notebook/confirm — popup closed without Undo, or "Yes".
+  app.post(
+    "/api/coach/notebook/confirm",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = idsSchema.safeParse(req.body);
+        if (!parsed.success)
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const confirmed = await storage.confirmNotebookEntries(
+          req.userId,
+          parsed.data.ids,
+        );
+        res.json({ confirmed });
+      } catch (error) {
+        handleRouteError(res, error, "confirm notebook entries");
+      }
+    },
+  );
+
+  // POST /api/coach/notebook/reject — Undo / Remove (never re-saved).
+  app.post(
+    "/api/coach/notebook/reject",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = idsSchema.safeParse(req.body);
+        if (!parsed.success)
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const rejected = await storage.rejectNotebookEntries(
+          req.userId,
+          parsed.data.ids,
+        );
+        res.json({ rejected });
+      } catch (error) {
+        handleRouteError(res, error, "reject notebook entries");
+      }
+    },
+  );
+
+  // DELETE /api/coach/notebook — "Clear everything Coach knows".
+  app.delete(
+    "/api/coach/notebook",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        await storage.clearNotebook(req.userId);
+        res.status(204).end();
+      } catch (error) {
+        handleRouteError(res, error, "clear notebook");
+      }
+    },
+  );
+
   // GET /api/coach/notebook
   app.get(
     "/api/coach/notebook",
@@ -108,6 +228,11 @@ export function register(app: Express): void {
           type,
           content,
           status: "active",
+          // Added by the user themselves: confirmed and already "shown";
+          // a commitment's label is their own words (visible memory).
+          confirmedAt: new Date(),
+          shownAt: new Date(),
+          label: type === "commitment" ? content.slice(0, 120) : null,
           // Local midnight in the user's zone, not `new Date(followUpDate)`
           // (UTC midnight): the reminder reads `lte(followUpDate, now)`, and
           // the chat-extraction writer (coach-pro-chat.ts) anchors the same

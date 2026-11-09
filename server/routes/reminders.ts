@@ -35,6 +35,36 @@ export function register(app: Express): void {
     },
   );
 
+  // POST /api/reminders/acknowledge-type — clear one reminder type only.
+  const acknowledgeTypeSchema = z.object({
+    type: z.enum(["meal-log", "commitment", "daily-checkin", "user-set"]),
+  });
+  app.post(
+    "/api/reminders/acknowledge-type",
+    requireAuth,
+    remindersAcknowledgeRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = acknowledgeTypeSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return sendError(
+            res,
+            400,
+            "Unknown reminder type",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        const acknowledged = await storage.acknowledgeReminderType(
+          req.userId,
+          parsed.data.type,
+        );
+        res.json({ acknowledged });
+      } catch (error) {
+        handleRouteError(res, error, "acknowledge reminder type");
+      }
+    },
+  );
+
   // POST /api/reminders/acknowledge
   app.post(
     "/api/reminders/acknowledge",
