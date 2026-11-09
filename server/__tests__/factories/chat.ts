@@ -47,6 +47,9 @@ const coachNotebookEntryDefaults: CoachNotebookEntry = {
   followUpDate: null,
   sourceConversationId: null,
   dedupeKey: null,
+  confirmedAt: null,
+  label: null,
+  shownAt: null,
   createdAt: new Date("2024-01-01"),
   updatedAt: new Date("2024-01-01"),
 };
