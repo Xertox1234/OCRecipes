@@ -18,6 +18,8 @@ export const notebookEntryStatusValues = [
   "completed",
   "expired",
   "archived",
+  // Undone or removed by the user; kept so extraction never re-saves it.
+  "rejected",
 ] as const;
 
 export type NotebookEntryStatus = (typeof notebookEntryStatusValues)[number];
