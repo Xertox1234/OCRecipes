@@ -25,14 +25,14 @@ export function useNotebookEntries(opts?: {
   status?: string;
   page?: number;
 }) {
-  const params = new URLSearchParams();
-  if (opts?.type) params.set("type", opts.type);
-  if (opts?.status) params.set("status", opts.status);
-  if (opts?.page) params.set("page", String(opts.page));
-  const query = params.toString();
   return useQuery<NotebookEntry[]>({
     queryKey: ["/api/coach/notebook", opts],
     queryFn: async () => {
+      const params = new URLSearchParams();
+      if (opts?.type) params.set("type", opts.type);
+      if (opts?.status) params.set("status", opts.status);
+      if (opts?.page) params.set("page", String(opts.page));
+      const query = params.toString();
       const res = await apiRequest(
         "GET",
         `/api/coach/notebook${query ? `?${query}` : ""}`,
