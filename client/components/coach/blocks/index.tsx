@@ -8,6 +8,8 @@ import CommitmentCard from "./CommitmentCard";
 import QuickReplies from "./QuickReplies";
 import RecipeCard from "./RecipeCard";
 import MealPlanCard from "./MealPlanCard";
+import WriteCard from "./write-cards/WriteCard";
+import type { WriteCardEdits } from "@shared/schemas/coach-write-cards";
 import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMessage";
 import type { AdjustChoicesStore } from "@/components/recipe-finder/recipe-offer-utils";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -53,6 +55,9 @@ interface BlockRendererProps {
   /** Where this block's entrance starts in the reply's stagger sequence
    *  (`blockEntranceDelays`). */
   entryDelayMs?: number;
+  /** Coach write card: the user's edits (owned by the chat) and the setter. */
+  writeCardEdits?: WriteCardEdits;
+  onWriteCardEdit?: (cardId: string, edits: WriteCardEdits) => void;
 }
 
 const noop = () => {};
@@ -97,6 +102,8 @@ function renderBlock(
     expiredFinderFlowIds,
     messageContent,
     adjustChoices,
+    writeCardEdits,
+    onWriteCardEdit,
   }: Omit<BlockRendererProps, "animateEntry" | "entryDelayMs">,
   animateEntry: boolean,
   entryDelayMs: number,
@@ -131,6 +138,14 @@ function renderBlock(
       return <RecipeCard block={block} onAction={onAction} />;
     case "meal_plan_card":
       return <MealPlanCard block={block} onAction={onAction} />;
+    case "write_card":
+      return (
+        <WriteCard
+          block={block}
+          edits={writeCardEdits ?? block.edits ?? {}}
+          onEdit={(e) => onWriteCardEdit?.(block.cardId, e)}
+        />
+      );
     case "recipe_results":
     case "recipe_questions":
     case "recipe_offer":
