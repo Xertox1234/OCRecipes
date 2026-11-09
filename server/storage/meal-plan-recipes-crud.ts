@@ -218,9 +218,20 @@ export interface MealPlanSuggestionInput {
  */
 type TxExecutor = Pick<typeof db, "transaction">;
 
+/**
+ * With an outer `executor`, this function's own transaction is only a
+ * savepoint — the outer one can still roll back. A caller that passes one
+ * also passes `afterCommit`, which queues the search-index update to run once
+ * the OUTER transaction commits (database rules: external side effects after
+ * the outermost commit). Without it the update runs now, as before.
+ */
+export type AfterCommit = (fn: () => void) => void;
+const runNow: AfterCommit = (fn) => fn();
+
 export async function createMealPlanFromSuggestions(
   meals: MealPlanSuggestionInput[],
   executor: TxExecutor = db,
+  afterCommit: AfterCommit = runNow,
 ): Promise<{ recipeId: number; mealPlanItemId: number }[]> {
   if (meals.length === 0) return [];
 
@@ -293,12 +304,14 @@ export async function createMealPlanFromSuggestions(
   });
 
   // Update search index after transaction commits
-  for (const recipe of result.recipes) {
-    const ingNames = result.allIngredients
-      .filter((i) => i.recipeId === recipe.id)
-      .map((i) => i.name);
-    addToIndex(mealPlanToSearchable(recipe, ingNames));
-  }
+  afterCommit(() => {
+    for (const recipe of result.recipes) {
+      const ingNames = result.allIngredients
+        .filter((i) => i.recipeId === recipe.id)
+        .map((i) => i.name);
+      addToIndex(mealPlanToSearchable(recipe, ingNames));
+    }
+  });
 
   return result.recipes.map((recipe, i) => ({
     recipeId: recipe.id,
@@ -411,6 +424,7 @@ export async function deleteMealPlanRecipe(
   id: number,
   userId: string,
   executor: TxExecutor = db,
+  afterCommit: AfterCommit = runNow,
 ): Promise<boolean> {
   const deletedRow = await executor.transaction(async (tx) => {
     const result = await tx
@@ -463,6 +477,6 @@ export async function deleteMealPlanRecipe(
   // references it (so deleteImagesIfUnreferenced would find it referenced
   // anyway), and it goes when the row is finally purged — by account
   // deletion today.
-  if (deletedRow) removeFromIndex(`personal:${id}`);
+  if (deletedRow) afterCommit(() => removeFromIndex(`personal:${id}`));
   return deletedRow !== null;
 }

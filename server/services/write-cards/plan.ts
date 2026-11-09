@@ -15,6 +15,7 @@ import { isRecipeSafeForAllergies } from "@shared/constants/allergens";
 import { getUserProfile } from "../../storage/user-profiles";
 import { getVisibleCommunityRecipesByIds } from "../../storage/community-recipes";
 import {
+  type AfterCommit,
   createMealPlanFromSuggestions,
   deleteMealPlanRecipe,
   getMealPlanRecipe,
@@ -187,7 +188,7 @@ export async function performPlanSave(
   tx: WriteCardTx,
   card: CoachWriteCard,
   rawEdits: unknown,
-  ctx: { userId: string },
+  ctx: { userId: string; afterCommit?: AfterCommit },
 ): Promise<CoachWriteCardSavedRefs> {
   const payload = card.payload as PlanCardPayload;
   const edits = parsePlanEdits(payload, rawEdits);
@@ -278,6 +279,7 @@ export async function performPlanSave(
         },
       ],
       tx,
+      ctx.afterCommit,
     );
     copiedRecipeIds.push(created.recipeId);
     mealPlanItemIds.push(created.mealPlanItemId);
@@ -314,6 +316,7 @@ export async function performPlanSave(
 export async function revertPlanSave(
   tx: WriteCardTx,
   card: CoachWriteCard,
+  afterCommit?: AfterCommit,
 ): Promise<void> {
   const refs = card.savedRefs;
   if (!refs) return;
@@ -321,7 +324,7 @@ export async function revertPlanSave(
     await removeMealPlanItem(id, card.userId, tx);
   }
   for (const id of refs.copiedRecipeIds ?? []) {
-    await deleteMealPlanRecipe(id, card.userId, tx);
+    await deleteMealPlanRecipe(id, card.userId, tx, afterCommit);
   }
   if (refs.listId) {
     for (const id of refs.groceryItemIds ?? []) {

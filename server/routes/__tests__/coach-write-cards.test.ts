@@ -121,6 +121,41 @@ describe("coach write-card routes", () => {
       expect(performWriteCardSave).toHaveBeenCalledTimes(1);
     });
 
+    it("runs deferred index work only after the save resolves, and not when it throws", async () => {
+      const order: string[] = [];
+      vi.mocked(performWriteCardSave).mockImplementationOnce(
+        async (_tx, _card, _edits, ctx) => {
+          ctx.afterCommit?.(() => order.push("index"));
+          return {};
+        },
+      );
+      vi.mocked(storage.saveWriteCard).mockImplementationOnce(
+        async (_id, _u, perform) => {
+          await perform(tx, { ...foodCard, status: "live" });
+          order.push("commit");
+          return { status: "saved", card: foodCard };
+        },
+      );
+      await request(app).post(`/api/coach/cards/${CARD_ID}/save`).send({});
+      expect(order).toEqual(["commit", "index"]);
+
+      const lost = vi.fn();
+      vi.mocked(performWriteCardSave).mockImplementationOnce(
+        async (_tx, _card, _edits, ctx) => {
+          ctx.afterCommit?.(lost);
+          throw new WriteCardEditError("Nothing to plan.");
+        },
+      );
+      vi.mocked(storage.saveWriteCard).mockImplementationOnce(
+        async (_id, _u, perform) => {
+          await perform(tx, { ...foodCard, status: "live" });
+          return { status: "saved", card: foodCard };
+        },
+      );
+      await request(app).post(`/api/coach/cards/${CARD_ID}/save`).send({});
+      expect(lost).not.toHaveBeenCalled();
+    });
+
     it("save without edits uses the card's stored edits", async () => {
       vi.mocked(storage.saveWriteCard).mockImplementationOnce(
         async (_id, _u, perform) => {
@@ -209,7 +244,29 @@ describe("coach write-card routes", () => {
       const res = await request(app).post(`/api/coach/cards/${CARD_ID}/undo`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ status: "live" });
-      expect(revertWriteCardSave).toHaveBeenCalledWith(tx, foodCard);
+      expect(revertWriteCardSave).toHaveBeenCalledWith(
+        tx,
+        foodCard,
+        expect.any(Function),
+      );
+    });
+
+    it("undo runs deferred index work after the undo resolves", async () => {
+      const order: string[] = [];
+      vi.mocked(revertWriteCardSave).mockImplementationOnce(
+        async (_tx, _card, afterCommit) => {
+          afterCommit?.(() => order.push("index"));
+        },
+      );
+      vi.mocked(storage.undoWriteCard).mockImplementationOnce(
+        async (_id, _u, revert) => {
+          await revert(tx, foodCard);
+          order.push("commit");
+          return { status: "undone", card: { ...foodCard, status: "live" } };
+        },
+      );
+      await request(app).post(`/api/coach/cards/${CARD_ID}/undo`);
+      expect(order).toEqual(["commit", "index"]);
     });
 
     it("undo route returns 409 UNDO_EXPIRED after 60s", async () => {

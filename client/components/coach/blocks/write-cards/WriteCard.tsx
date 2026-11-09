@@ -3,6 +3,7 @@ import { AccessibilityInfo, Platform } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useWriteCard } from "@/hooks/useWriteCard";
+import { ApiError } from "@/lib/api-error";
 import {
   foodCounts,
   groceryKept,
@@ -80,6 +81,7 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
   const [localReceipt, setReceipt] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [undoError, setUndoError] = useState<string | null>(null);
   const [undoVisible, setUndoVisible] = useState(false);
   const busyRef = useRef(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,6 +125,7 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
     busyRef.current = true;
     if (undoTimer.current) clearTimeout(undoTimer.current);
     setUndoVisible(false);
+    setUndoError(null);
     try {
       const result = await undo();
       setStatus(result.status);
@@ -131,7 +134,11 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
       }
     } catch (err) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      setError(saveErrorMessage(err));
+      setUndoError(saveErrorMessage(err));
+      // Too late is final; anything else (a dropped connection) can retry.
+      if (!(err instanceof ApiError && err.code === "UNDO_EXPIRED")) {
+        setUndoVisible(true);
+      }
     } finally {
       busyRef.current = false;
     }
@@ -151,6 +158,7 @@ export default function WriteCard({ block, edits, onEdit }: Props) {
       buttonLabel={writeCardButtonLabel(block.kind, block.payload, edits)}
       canSave={canSave(block, edits)}
       error={status === "saved" ? null : error}
+      undoError={status === "saved" ? undoError : null}
       onSave={handleSave}
       onUndo={handleUndo}
       lockedSummary={lockedSummary(block)}

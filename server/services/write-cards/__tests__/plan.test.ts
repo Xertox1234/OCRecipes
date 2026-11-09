@@ -27,6 +27,15 @@ vi.mock("../../../db", () => ({
   },
 }));
 const autoGenerateRecipeImage = vi.fn(async () => undefined);
+const { addToIndex, removeFromIndex } = vi.hoisted(() => ({
+  addToIndex: vi.fn(),
+  removeFromIndex: vi.fn(),
+}));
+vi.mock("../../../lib/search-index", async (orig) => ({
+  ...(await orig<typeof import("../../../lib/search-index")>()),
+  addToIndex,
+  removeFromIndex,
+}));
 vi.mock("../../recipe-auto-image", () => ({ autoGenerateRecipeImage }));
 
 const {
@@ -112,6 +121,8 @@ describe("plan write card", () => {
     tx = await setupTestTransaction();
     user = await createTestUser(tx);
     autoGenerateRecipeImage.mockClear();
+    addToIndex.mockClear();
+    removeFromIndex.mockClear();
   });
   afterEach(async () => {
     await rollbackTestTransaction();
@@ -366,6 +377,28 @@ describe("plan write card", () => {
       performPlanSave(tx, card(p), {}, { userId: user.id }),
     ).rejects.toBeInstanceOf(WriteCardEditError);
     expect(await planItems()).toHaveLength(0);
+  });
+
+  it("search-index updates wait until the save and the undo commit", async () => {
+    const p = await twoRowPlan();
+    const later: (() => void)[] = [];
+    const afterCommit = (fn: () => void) => later.push(fn);
+    const refs = await performPlanSave(
+      tx,
+      card(p),
+      {},
+      { userId: user.id, afterCommit },
+    );
+    expect(addToIndex).not.toHaveBeenCalled();
+    later.splice(0).forEach((fn) => fn());
+    expect(addToIndex).toHaveBeenCalledTimes(1);
+
+    await revertPlanSave(tx, card(p, refs), afterCommit);
+    expect(removeFromIndex).not.toHaveBeenCalled();
+    later.splice(0).forEach((fn) => fn());
+    expect(removeFromIndex).toHaveBeenCalledWith(
+      `personal:${refs.copiedRecipeIds![0]}`,
+    );
   });
 
   it("chosen index outside alternatives is rejected", async () => {

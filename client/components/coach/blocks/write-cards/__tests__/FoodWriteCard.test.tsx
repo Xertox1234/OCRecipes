@@ -206,3 +206,51 @@ describe("FoodWriteCard after a newer card", () => {
     expect(screen.getByText("Replaced")).toBeDefined();
   });
 });
+
+describe("FoodWriteCard undo failures and announcements", () => {
+  beforeEach(() => mockApiRequest.mockReset());
+  const saved = () =>
+    mockApiRequest.mockResolvedValueOnce(
+      ok({ status: "saved", receipt: "✓ Logged to Breakfast · 226 cal" }),
+    );
+
+  it("a too-late undo says so and drops Undo", async () => {
+    const { ApiError } = await import("@/lib/api-error");
+    saved();
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("409: late", "UNDO_EXPIRED", 409),
+    );
+    renderComponent(<Harness initial={block()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log 226 cal" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    expect(
+      await screen.findByText("It's too late to undo this."),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    expect(screen.getByText("✓ Logged to Breakfast · 226 cal")).toBeDefined();
+  });
+
+  it("an undo that fails on the network says so and keeps Undo to retry", async () => {
+    saved();
+    mockApiRequest.mockRejectedValueOnce(
+      new TypeError("Network request failed"),
+    );
+    renderComponent(<Harness initial={block()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log 226 cal" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    expect(
+      await screen.findByText(
+        "Couldn't save. Check your connection and try again.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDefined();
+  });
+
+  it("only the receipt text is a live region, not the row holding Undo", async () => {
+    saved();
+    renderComponent(<Harness initial={block()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log 226 cal" }));
+    const receipt = await screen.findByText("✓ Logged to Breakfast · 226 cal");
+    expect(receipt.closest("[aria-live]")).toBe(receipt);
+  });
+});

@@ -19,6 +19,8 @@ interface Props {
   /** False when the edits leave nothing to save (every count 0). */
   canSave: boolean;
   error: string | null;
+  /** A failed Undo, shown under the receipt. */
+  undoError?: string | null;
   onSave: () => void;
   onUndo: () => void;
   /** The card's controls; locked while saving. */
@@ -71,23 +73,30 @@ export function WriteCardShell(props: Props) {
     return (
       <Animated.View
         entering={reducedMotion ? undefined : FadeIn}
-        style={[frame, styles.savedRow]}
-        accessibilityLiveRegion="polite"
+        style={frame}
       >
-        <ThemedText
-          type="small"
-          style={[styles.receipt, { color: theme.success }]}
-        >
-          {props.receipt ?? "✓ Saved"}
-        </ThemedText>
-        {props.undoVisible ? (
-          <Button
-            variant="ghost"
-            onPress={props.onUndo}
-            accessibilityLabel="Undo"
+        <View style={styles.savedRow}>
+          {/* The live region is the receipt alone: on the row it would make
+              TalkBack re-read the receipt when Undo leaves. */}
+          <ThemedText
+            type="small"
+            style={[styles.receipt, { color: theme.success }]}
+            accessibilityLiveRegion="polite"
           >
-            Undo
-          </Button>
+            {props.receipt ?? "✓ Saved"}
+          </ThemedText>
+          {props.undoVisible ? (
+            <Button
+              variant="ghost"
+              onPress={props.onUndo}
+              accessibilityLabel="Undo"
+            >
+              Undo
+            </Button>
+          ) : null}
+        </View>
+        {props.undoError ? (
+          <InlineError message={props.undoError} style={styles.error} />
         ) : null}
       </Animated.View>
     );

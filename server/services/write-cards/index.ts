@@ -19,6 +19,7 @@ import {
   writeCardReceipt,
 } from "@shared/lib/coach-write-card-math";
 import type { WriteCardTx } from "../../storage/coach-write-cards";
+import type { AfterCommit } from "../../storage/meal-plan-recipes-crud";
 import { buildFoodPayload, performFoodSave, revertFoodSave } from "./food";
 import {
   buildGroceryPayload,
@@ -67,7 +68,7 @@ export async function performWriteCardSave(
   tx: WriteCardTx,
   card: CoachWriteCard,
   rawEdits: unknown,
-  ctx: { userId: string; tz: string; now: Date },
+  ctx: { userId: string; tz: string; now: Date; afterCommit?: AfterCommit },
 ): Promise<CoachWriteCardSavedRefs> {
   const parsed = WRITE_CARD_EDITS_SCHEMAS[card.kind].safeParse(rawEdits ?? {});
   if (!parsed.success) {
@@ -82,13 +83,17 @@ export async function performWriteCardSave(
     case "grocery":
       return performGrocerySave(tx, card, parsed.data, ctx);
     case "plan":
-      return performPlanSave(tx, card, parsed.data, { userId: ctx.userId });
+      return performPlanSave(tx, card, parsed.data, {
+        userId: ctx.userId,
+        afterCommit: ctx.afterCommit,
+      });
   }
 }
 
 export async function revertWriteCardSave(
   tx: WriteCardTx,
   card: CoachWriteCard,
+  afterCommit?: AfterCommit,
 ): Promise<void> {
   switch (card.kind) {
     case "food":
@@ -96,7 +101,7 @@ export async function revertWriteCardSave(
     case "grocery":
       return revertGrocerySave(tx, card);
     case "plan":
-      return revertPlanSave(tx, card);
+      return revertPlanSave(tx, card, afterCommit);
   }
 }
 

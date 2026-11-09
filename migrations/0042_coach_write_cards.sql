@@ -4,7 +4,7 @@
 --
 -- ORDERING — APPLY TO PROD BEFORE THE PR THAT SHIPS THIS FILE MERGES. Purely
 -- additive and idempotent; the old server never reads the table.
--- (0041 is taken by the open perf-audit PR #1811.)
+-- (Follows 0041, the meal-suggestion cache index from #1811.)
 --
 -- Apply with:  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0042_coach_write_cards.sql
 --

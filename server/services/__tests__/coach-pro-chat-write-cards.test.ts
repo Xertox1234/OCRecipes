@@ -130,16 +130,19 @@ async function collect(gen: AsyncGenerator<CoachChatEvent>) {
 }
 
 /** A generator stub that fires these proposals, then streams one line. */
-function proposing(...proposals: WriteCardProposal[]) {
+function proposing(
+  ...proposals: WriteCardProposal[]
+): typeof generateCoachProResponse {
   return async function* (
     ...args: Parameters<typeof generateCoachProResponse>
-  ) {
+  ): AsyncGenerator<CoachProChunk> {
     for (const p of proposals) args[7]?.onWriteCardProposal?.(p);
-    yield {
+    const chunk: CoachProChunk = {
       type: "content",
       content: "Here's what I've got.",
-    } as CoachProChunk;
-  } as unknown as typeof generateCoachProResponse;
+    };
+    yield chunk;
+  };
 }
 
 beforeEach(() => {
@@ -386,11 +389,12 @@ describe("handleCoachChat with write cards", () => {
     let aborted = false;
     vi.mocked(generateCoachProResponse).mockImplementation(async function* (
       ...args: Parameters<typeof generateCoachProResponse>
-    ) {
+    ): AsyncGenerator<CoachProChunk> {
       args[7]?.onWriteCardProposal?.({ kind: "food", args: foodArgs });
-      yield { type: "content", content: "Here." } as CoachProChunk;
+      const chunk: CoachProChunk = { type: "content", content: "Here." };
+      yield chunk;
       aborted = true;
-    } as unknown as typeof generateCoachProResponse);
+    });
     await collect(
       handleCoachChat(
         makeParams({ writeCards: true, isAborted: () => aborted }),

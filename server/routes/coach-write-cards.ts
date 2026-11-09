@@ -56,6 +56,9 @@ export function register(app: Express): void {
         const userId = req.userId;
         const tz = parseTimezone(req.headers["x-timezone"]);
         const now = new Date();
+        // Side effects outside the database (the recipe search index) run
+        // only once the save has committed; a rolled-back save drops them.
+        const afterCommit: (() => void)[] = [];
         const result = await storage.saveWriteCard(
           id.data,
           userId,
@@ -64,9 +67,11 @@ export function register(app: Express): void {
               userId,
               tz,
               now,
+              afterCommit: (fn) => afterCommit.push(fn),
             }),
           body.data.edits,
         );
+        for (const fn of afterCommit) fn();
         switch (result.status) {
           case "not_found":
             return sendError(res, 404, "Card not found", ErrorCode.NOT_FOUND);
@@ -116,11 +121,14 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+        const afterCommit: (() => void)[] = [];
         const result = await storage.undoWriteCard(
           id.data,
           req.userId,
-          revertWriteCardSave,
+          (tx, card) =>
+            revertWriteCardSave(tx, card, (fn) => afterCommit.push(fn)),
         );
+        for (const fn of afterCommit) fn();
         switch (result.status) {
           case "not_found":
             return sendError(res, 404, "Card not found", ErrorCode.NOT_FOUND);
