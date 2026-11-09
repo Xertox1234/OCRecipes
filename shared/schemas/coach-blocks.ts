@@ -290,6 +290,17 @@ export const mealPlanCardSchema = z.object({
   days: z.array(mealPlanDaySchema),
 });
 
+/**
+ * Which notebook entries a Coach Pro reply drew on (visible memory R1). Not a
+ * card: the client renders a quiet "From your notebook" line from it. The
+ * server keeps only ids from the user's confirmed set (server/services/memory-refs.ts).
+ */
+export const memoryRefsSchema = z.object({
+  type: z.literal("memory_refs"),
+  ids: z.array(z.number().int().positive()).min(1).max(5),
+});
+export type MemoryRefs = z.infer<typeof memoryRefsSchema>;
+
 // ── Discriminated union of all blocks ───────────────────────────────
 
 // recipe_results / recipe_questions are SERVER-BUILT (recipe finder, R6):
@@ -307,6 +318,7 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   recipeQuestionsBlockSchema,
   recipeOfferBlockSchema,
   recipeAdjustBlockSchema,
+  memoryRefsSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;

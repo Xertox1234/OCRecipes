@@ -748,6 +748,36 @@ describe("handleCoachChat", () => {
     });
   });
 
+  // ── Visible memory R1: memory_refs are filtered before saving ──────
+
+  describe("memory_refs", () => {
+    it("saves only refs to the user's confirmed entries", async () => {
+      vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([
+        makeNotebookEntry({
+          id: 5,
+          type: "preference",
+          content: "Avoids dairy",
+          confirmedAt: new Date("2026-07-01T00:00:00Z"),
+        }),
+        makeNotebookEntry({ id: 6, type: "goal", content: "Unconfirmed" }),
+      ]);
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Try soy yogurt.",
+        blocks: [{ type: "memory_refs", ids: [5, 6, 99, 5] }],
+      });
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      expect(storage.createChatMessage).toHaveBeenCalledWith(
+        1,
+        "user-42",
+        "assistant",
+        "Try soy yogurt.",
+        { blocks: [{ type: "memory_refs", ids: [5] }] },
+      );
+    });
+  });
+
   // ── Due-commitments injection into context ─────────────────
 
   describe("due-commitments injection", () => {
