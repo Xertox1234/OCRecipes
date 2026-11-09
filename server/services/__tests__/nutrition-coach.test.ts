@@ -1376,7 +1376,9 @@ describe("Pro tier prompt differentiation", () => {
 
     const prompt = capturedSystemPrompt();
     expect(prompt).toContain("advice builds week over week");
-    expect(prompt).toContain("Last week you mentioned");
+    // Visible memory: recall only confirmed entries, no time claims.
+    expect(prompt).toContain("WHAT YOU CAN MENTION");
+    expect(prompt).not.toContain("Last week you mentioned");
     expect(prompt).toContain("inline_chart");
   });
 
@@ -1386,7 +1388,7 @@ describe("Pro tier prompt differentiation", () => {
 
     const prompt = capturedSystemPrompt();
     expect(prompt).not.toContain("advice builds week over week");
-    expect(prompt).not.toContain("Last week you mentioned");
+    expect(prompt).not.toContain("WHAT YOU CAN MENTION");
     expect(prompt).not.toContain("inline_chart");
   });
 
@@ -1463,13 +1465,14 @@ describe("due-commitments follow-up rendering", () => {
     expect(prompt).toContain("COMMITMENTS DUE FOR FOLLOW-UP:");
     expect(prompt).toContain("Try meal prepping on Sunday");
     // Behavioral rules: one natural check-in, skipped for loaded messages.
-    expect(prompt).toContain("ONE of these");
+    expect(prompt).toContain("ONE brief check-in");
     expect(prompt).toMatch(/urgent|emotionally loaded|safety/);
     expect(prompt).toContain("twice in a row");
+    expect(prompt).toContain("Answer the user's message first");
     // Untrusted-data directive mirrors the notebook's (M12) and the section
     // must render before the notebook section.
     const sectionStart = prompt.indexOf("COMMITMENTS DUE FOR FOLLOW-UP:");
-    const notebookStart = prompt.indexOf("WHAT YOU KNOW ABOUT THIS USER");
+    const notebookStart = prompt.indexOf("WHAT YOU CAN MENTION (confirmed");
     expect(sectionStart).toBeGreaterThan(-1);
     expect(notebookStart).toBeGreaterThan(sectionStart);
     expect(

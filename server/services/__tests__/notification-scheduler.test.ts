@@ -144,6 +144,35 @@ describe("sendDueCommitmentReminders", () => {
     );
   });
 
+  it("names a commitment in the push only when it is confirmed and labelled", async () => {
+    const raw = createMockCoachNotebookEntry({
+      id: 3,
+      userId: "42",
+      type: "commitment",
+      content: "The user agreed to add pumpkin seeds",
+    });
+    vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([
+      raw,
+      {
+        ...raw,
+        id: 4,
+        label: "pumpkin seeds on your salad",
+        confirmedAt: new Date("2026-11-01T00:00:00Z"),
+      },
+    ]);
+    vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
+
+    await sendDueCommitmentReminders();
+
+    const bodies = vi
+      .mocked(notify)
+      .mock.calls.map((c) => (c[2] as { body?: string }).body);
+    expect(bodies).toEqual([
+      "Coach has a quick check-in for you.",
+      "How's pumpkin seeds on your salad going?",
+    ]);
+  });
+
   it("does NOT mark entry completed when push delivery fails", async () => {
     const entry = createMockCoachNotebookEntry({ id: 2, userId: "7" });
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
@@ -154,12 +183,12 @@ describe("sendDueCommitmentReminders", () => {
     expect(storage.updateNotebookEntryStatus).not.toHaveBeenCalled();
   });
 
-  it("truncates long content to 100 chars in the push body", async () => {
-    const longContent = "A".repeat(150);
+  it("caps a long label in the push body", async () => {
     const entry = createMockCoachNotebookEntry({
       id: 3,
       userId: "5",
-      content: longContent,
+      label: "A".repeat(150),
+      confirmedAt: new Date("2026-11-01T00:00:00Z"),
     });
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
     vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
@@ -167,7 +196,7 @@ describe("sendDueCommitmentReminders", () => {
     await sendDueCommitmentReminders();
 
     const body = vi.mocked(notify).mock.calls[0][2]?.body;
-    expect(body?.length).toBe(100);
+    expect(body).toBe(`How's ${"A".repeat(80)} going?`);
   });
 
   it("processes multiple entries independently — failure on one does not block others", async () => {

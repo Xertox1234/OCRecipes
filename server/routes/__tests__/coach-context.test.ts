@@ -208,7 +208,9 @@ describe("Coach Context Routes", () => {
       vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([
         createMockCoachNotebookEntry({
           type: "commitment",
-          content: "Eat more greens",
+          content: "The user agreed to eat more greens",
+          label: "more greens",
+          confirmedAt: new Date(),
           followUpDate: new Date(),
           sourceConversationId: 1,
         }),
@@ -219,10 +221,8 @@ describe("Coach Context Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      // Should include a commitment follow-up suggestion
-      expect(
-        res.body.suggestions.some((s: string) => s.includes("Eat more greens")),
-      ).toBe(true);
+      // A confirmed, labelled commitment gets a curiosity chip
+      expect(res.body.suggestions).toContain("How's more greens going?");
       // Should include protein deficit suggestion (150 - 10 = 140 > 30)
       expect(
         res.body.suggestions.some((s: string) => s.includes("protein")),

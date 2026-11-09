@@ -755,7 +755,9 @@ describe("handleCoachChat", () => {
       vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([
         makeNotebookEntry({
           type: "commitment",
-          content: "Try meal prepping on Sunday",
+          content: "The user agreed to try meal prepping on Sunday",
+          label: "Sunday meal prep",
+          confirmedAt: new Date("2026-07-01T00:00:00Z"),
           followUpDate: new Date("2026-07-10"),
         }),
       ]);
@@ -763,19 +765,26 @@ describe("handleCoachChat", () => {
       await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
 
       const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
+      // Confirmed + labelled → named by its label, never the raw note.
       expect(context.dueCommitmentsSummary).toContain(
-        "<notebook_entry>Try meal prepping on Sunday</notebook_entry>",
+        "<notebook_entry>Sunday meal prep</notebook_entry>",
       );
+      expect(context.dueCommitmentsSummary).not.toContain("The user agreed");
       expect(sanitizeContextField).toHaveBeenCalledWith(
-        "Try meal prepping on Sunday",
-        500,
+        "Sunday meal prep",
+        200,
       );
     });
 
     it("caps the injected commitments at three", async () => {
       vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue(
         ["one", "two", "three", "four"].map((content) =>
-          makeNotebookEntry({ type: "commitment", content }),
+          makeNotebookEntry({
+            type: "commitment",
+            content,
+            label: content,
+            confirmedAt: new Date("2026-07-01T00:00:00Z"),
+          }),
         ),
       );
 
@@ -801,18 +810,18 @@ describe("handleCoachChat", () => {
   // ── Notebook injection into context ───────────────────────
 
   describe("notebook injection", () => {
-    it("orders durable preference entries before recent insights in the summary", async () => {
-      // Storage returns updatedAt-desc (insight first); the budget layer must
-      // re-order so durable personalization renders first.
+    it("puts confirmed preferences in the mentionable summary and insights in background", async () => {
       vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([
         makeNotebookEntry({
           type: "insight",
           content: "ate late twice this week",
+          confirmedAt: new Date("2026-07-01T00:00:00Z"),
           updatedAt: new Date("2026-07-10"),
         }),
         makeNotebookEntry({
           type: "preference",
           content: "vegetarian",
+          confirmedAt: new Date("2026-07-01T00:00:00Z"),
           updatedAt: new Date("2026-05-01"),
         }),
       ]);
@@ -820,9 +829,9 @@ describe("handleCoachChat", () => {
       await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
 
       const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
-      const lines = (context.notebookSummary ?? "").split("\n");
-      expect(lines[0]).toContain("vegetarian");
-      expect(lines[1]).toContain("ate late twice");
+      expect(context.notebookSummary).toContain("vegetarian");
+      expect(context.notebookSummary).not.toContain("ate late twice");
+      expect(context.notebookBackground).toContain("ate late twice");
     });
 
     it("injects notebook entries into context when entries exist (CoachPro)", async () => {
@@ -830,10 +839,12 @@ describe("handleCoachChat", () => {
         makeNotebookEntry({
           type: "preference",
           content: "User likes salads",
+          confirmedAt: new Date("2026-07-01T00:00:00Z"),
         }),
         makeNotebookEntry({
           type: "goal",
           content: "Lose 5kg by summer",
+          confirmedAt: new Date("2026-07-01T00:00:00Z"),
         }),
       ]);
 

@@ -93,6 +93,8 @@ function makeNotebookEntry(
     status: string;
     followUpDate: Date | null;
     updatedAt: Date | null;
+    label: string | null;
+    confirmedAt: Date | null;
   }> = {},
 ) {
   return {
@@ -104,6 +106,9 @@ function makeNotebookEntry(
     followUpDate: overrides.followUpDate ?? null,
     sourceConversationId: null,
     dedupeKey: null,
+    label: overrides.label ?? null,
+    confirmedAt: overrides.confirmedAt ?? null,
+    shownAt: null,
     createdAt: new Date("2026-05-01"),
     updatedAt: overrides.updatedAt ?? new Date("2026-05-10"),
   } as any;
@@ -323,6 +328,8 @@ describe("buildCoachContext", () => {
         id: 7,
         type: "commitment",
         content: "Try a high-protein breakfast",
+        label: "a high-protein breakfast",
+        confirmedAt: new Date("2026-05-01T00:00:00Z"),
       }),
     ]);
     mockStorage.getUser.mockResolvedValue(makeUser());
@@ -330,9 +337,7 @@ describe("buildCoachContext", () => {
     const result = await buildCoachContext("user-1", TIER_FEATURES.premium);
 
     expect(result.dueCommitments).toHaveLength(1);
-    expect(result.suggestions[0]).toBe(
-      'How did "Try a high-protein breakfast" go?',
-    );
+    expect(result.suggestions[0]).toBe("How's a high-protein breakfast going?");
   });
 
   it("adds a protein-deficit suggestion when remaining protein > 30g", async () => {
@@ -420,14 +425,20 @@ describe("buildCoachContext", () => {
     );
     mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
     mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([
-      makeNotebookEntry({ id: 1, type: "commitment", content: "drink water" }),
+      makeNotebookEntry({
+        id: 1,
+        type: "commitment",
+        content: "drink water",
+        label: "drinking more water",
+        confirmedAt: new Date("2026-05-01T00:00:00Z"),
+      }),
     ]);
     mockStorage.getUser.mockResolvedValue(makeUser({ dailyProteinGoal: 150 }));
 
     const result = await buildCoachContext("user-1", TIER_FEATURES.free, "UTC");
 
     expect(result.suggestions).toEqual([
-      'How did "drink water" go?',
+      "How's drinking more water going?",
       "I need 100g more protein today",
       "Quick breakfast ideas",
     ]);

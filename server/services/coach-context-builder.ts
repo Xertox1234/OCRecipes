@@ -13,6 +13,22 @@ import type { CoachContext } from "./nutrition-coach";
 import type { PremiumFeatures } from "@shared/types/premium";
 import type { MeasurementUnit } from "@shared/lib/units";
 import type { CoachNotebookEntry, DailyLog, UserProfile } from "@shared/schema";
+import { decayedMood, moodBand } from "@shared/lib/mood";
+
+/** The only notebook types the coach may mention (visible memory, 2026-11-08). */
+const SPEAKABLE_TYPES = new Set(["goal", "preference", "commitment"]);
+
+function isSpeakable(e: {
+  type: string;
+  status: string;
+  confirmedAt: Date | null;
+}): boolean {
+  return (
+    e.status === "active" &&
+    e.confirmedAt != null &&
+    SPEAKABLE_TYPES.has(e.type)
+  );
+}
 
 export interface CoachContextData {
   goals: {
@@ -57,15 +73,18 @@ export interface CoachContextData {
  * opening brief. `totalProtein` is null when there is no day summary.
  */
 export function buildCoachSuggestions(a: {
-  dueCommitments: readonly { content: string }[];
+  dueCommitments: readonly { label: string | null; confirmedAt: Date | null }[];
   totalProtein: number | null;
   proteinGoal: number | null;
   now: Date;
   tz: string;
 }): string[] {
   const suggestions: string[] = [];
-  if (a.dueCommitments.length > 0) {
-    suggestions.push(`How did "${a.dueCommitments[0].content}" go?`);
+  // Only a confirmed, labelled commitment is named — never the raw
+  // third-person note (visible memory, 2026-11-08).
+  const nameable = a.dueCommitments.find((c) => c.confirmedAt && c.label);
+  if (nameable?.label) {
+    suggestions.push(`How's ${nameable.label} going?`);
   }
   // No fabricated default: the system prompt forbids the model from citing
   // numbers absent from USER CONTEXT, so a chip may only quote a real goal.
@@ -357,6 +376,8 @@ export function assembleCoachContext(a: {
     ReturnType<typeof storage.getCommitmentsWithDueFollowUp>
   >;
   frequentFoods: Awaited<ReturnType<typeof storage.getMostEatenFoods>>;
+  /** For mood decay; defaults to now. */
+  now?: Date;
 }): CoachContext {
   const {
     isCoachPro,
@@ -369,6 +390,7 @@ export function assembleCoachContext(a: {
     notebookEntries,
     dueCommitments,
     frequentFoods,
+    now = new Date(),
   } = a;
   const context: CoachContext = {
     goals: user.dailyCalorieGoal
@@ -432,17 +454,25 @@ export function assembleCoachContext(a: {
   }
 
   // ── Coach Pro: due-commitment follow-ups ────────────
-  if (isCoachPro && dueCommitments.length > 0) {
+  // Only confirmed, labelled commitments, in the user's words (the label).
+  const nameableDue = dueCommitments.filter((e) => e.confirmedAt && e.label);
+  if (isCoachPro && nameableDue.length > 0) {
     // At most 3 — the prompt asks the model to check in on ONE; more rows
     // only cost tokens. Same sanitize + fence treatment as notebook entries.
-    const dueLines = dueCommitments.slice(0, 3).map((e) =>
+    const dueLines = nameableDue.slice(0, 3).map((e) =>
       formatNotebookLine({
         type: e.type,
-        content: sanitizeContextField(e.content, 500),
-        updatedAt: e.updatedAt,
+        content: sanitizeContextField(e.label ?? "", 200),
       }),
     );
     context.dueCommitmentsSummary = dueLines.join("\n");
+  }
+
+  // Mood shapes the approach; the prompt gets a band, never the number.
+  if (isCoachPro && profile) {
+    context.moodBand = moodBand(
+      decayedMood(profile.moodScore, profile.moodUpdatedAt, now),
+    );
   }
 
   // ── Coach Pro: inject notebook context ──────────────
@@ -452,24 +482,39 @@ export function assembleCoachContext(a: {
 
     // notebookEntries fetched in parallel above (audit 2026-05-10, H4)
     if (notebookEntries.length > 0) {
-      // Include updatedAt so the budget formatter can attach recency labels
-      // (recent/this week/this month/older), helping the model weight newer
-      // entries more prominently in its reasoning.
-      const sanitized = notebookEntries.map((e) => ({
+      // Certainty rule: only confirmed goals/preferences/commitments may be
+      // mentioned (and carry #ids so a reply can cite them); everything else
+      // is background that shapes advice silently. updatedAt only orders.
+      const sanitize = (e: CoachNotebookEntry, withId: boolean) => ({
+        ...(withId ? { id: e.id } : {}),
         type: e.type,
         content: sanitizeContextField(e.content, 500),
         updatedAt: e.updatedAt,
-      }));
+      });
+      const mentionable = notebookEntries.filter(isSpeakable);
+      const background = notebookEntries.filter(
+        (e) =>
+          !isSpeakable(e) &&
+          e.status === "active" &&
+          e.type !== "emotional_context",
+      );
       // Durable personalization first so the truncation budget can't evict a
       // months-old preference in favor of a burst of recent insights.
       const joined = truncateNotebookToBudget(
-        sortNotebookEntriesByPriority(sanitized),
+        sortNotebookEntriesByPriority(
+          mentionable.map((e) => sanitize(e, true)),
+        ),
         DEFAULT_NOTEBOOK_MAX_CHARS,
       );
-      if (joined.length > 0) {
-        context.notebookSummary = joined;
-      }
-      // If truncation produces empty string, omit notebook section entirely
+      if (joined.length > 0) context.notebookSummary = joined;
+      const joinedBackground = truncateNotebookToBudget(
+        sortNotebookEntriesByPriority(
+          background.map((e) => sanitize(e, false)),
+        ),
+        DEFAULT_NOTEBOOK_MAX_CHARS / 2,
+      );
+      if (joinedBackground.length > 0)
+        context.notebookBackground = joinedBackground;
     }
     // When no entries exist, notebookSummary stays unset — no confusing preamble
   }

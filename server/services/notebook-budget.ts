@@ -20,11 +20,13 @@ export const DEFAULT_NOTEBOOK_MAX_CHARS = 3200;
  * A minimal shape required from a notebook entry for budget truncation.
  * The full DB row carries more columns but we only need these here.
  *
- * `updatedAt` is optional — when provided, a human-readable recency label
- * is injected into the formatted line so the model can surface newer entries
- * more prominently in its reasoning.
+ * `updatedAt` only orders entries (sortNotebookEntriesByPriority); it never
+ * reaches the prompt as a time claim — repeats refresh it, so it is not when
+ * the user said it (visible memory, 2026-11-08). `id` lets a reply cite the
+ * entry (memory_refs).
  */
 export interface NotebookBudgetEntry {
+  id?: number;
   type: string;
   content: string;
   updatedAt?: Date;
@@ -67,14 +69,11 @@ export function escapeNotebookDelimiters(content: string): string {
  * Format a single notebook entry into the line that appears inside the
  * system prompt. The content must already be sanitized by the caller.
  *
- * When `updatedAt` is present, a recency label is appended in parentheses
- * so the model can weight newer entries more heavily in its reasoning.
+ * No time words: see NotebookBudgetEntry.
  */
 export function formatNotebookLine(entry: NotebookBudgetEntry): string {
-  const recency = entry.updatedAt
-    ? ` (${getRecencyLabel(entry.updatedAt)})`
-    : "";
-  return `[${entry.type}${recency}] ${NOTEBOOK_ENTRY_OPEN}${escapeNotebookDelimiters(entry.content)}${NOTEBOOK_ENTRY_CLOSE}`;
+  const tag = entry.id != null ? `#${entry.id} ${entry.type}` : entry.type;
+  return `[${tag}] ${NOTEBOOK_ENTRY_OPEN}${escapeNotebookDelimiters(entry.content)}${NOTEBOOK_ENTRY_CLOSE}`;
 }
 
 /**
