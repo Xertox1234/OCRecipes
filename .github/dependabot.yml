@@ -29,13 +29,7 @@ updates:
         patterns:
           - "*"
     ignore:
-      # zod is held on 3.x. zod 4 forces drizzle-zod 0.8 (coupled upgrade,
-      # deferred). Allow 3.x security patches; block the jump to 4.
-      - dependency-name: "zod"
-        versions: [">=4.0.0"]
-      # drizzle-zod held at 0.7.x because 0.8 requires zod 4 (see above).
-      - dependency-name: "drizzle-zod"
-        versions: [">=0.8.0"]
+      # (zod 3 -> 4 + drizzle-zod 0.8 landed 2026-11-09; their holds are gone.)
       # Pinned to Expo SDK 58. A transitive CVE must NOT drag expo to a new SDK
       # major (a multi-day native migration); fix such CVEs via `overrides`
       # instead. Allow 58.x patches; block the SDK 59 jump. See PR #312.

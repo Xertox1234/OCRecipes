@@ -82,7 +82,10 @@ const offNumericField = z
   .transform((v) => {
     const n = parseFloat(String(v));
     return Number.isFinite(n) ? n : undefined;
-  });
+  })
+  // zod 4 infers a transformed field as a required key; OFF omits most of
+  // these, and the `.catch(() => ({}))` fallback below has none of them.
+  .optional();
 
 export const offNutrimentsSchema = z
   .object({

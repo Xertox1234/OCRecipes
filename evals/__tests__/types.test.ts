@@ -228,7 +228,7 @@ describe("evalTestCasesSchema (real dataset)", () => {
     const result = evalTestCasesSchema.safeParse(parsed);
     if (!result.success) {
       // Surface the first issue so a dataset error is easy to debug.
-      const issue = result.error.errors[0];
+      const issue = result.error.issues[0];
       throw new Error(
         `coach-cases.json failed validation at ${issue.path.join(".")}: ${issue.message}`,
       );

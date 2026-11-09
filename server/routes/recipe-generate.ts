@@ -57,7 +57,7 @@ export function register(app: Express): void {
           sendError(
             res,
             400,
-            parsed.error.errors[0]?.message ?? "Invalid request",
+            parsed.error.issues[0]?.message ?? "Invalid request",
             ErrorCode.VALIDATION_ERROR,
           );
           return;
