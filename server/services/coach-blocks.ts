@@ -123,17 +123,34 @@ const FINDER_RECIPE_CARD_RULE =
   "- Never emit a recipe_card: you have no tool that returns real recipe data";
 
 /**
+ * Write-card mode (spec 2026-11-09): the three write tools show their own
+ * card, so the model must not ALSO emit the old navigate-style action cards.
+ */
+const WRITE_CARDS_RULES = [
+  "- Never emit log_food, add_meal_plan or add_grocery_list action cards; the write tools (log_food_item, add_to_grocery_list, add_to_meal_plan) show their own card for the user to check and save. Nothing is saved until the user taps it, so never say something was logged or added.",
+  "- To plan meals, find recipes with find_plan_recipes or get_my_recipes first and pass their ids; offer up to 3 alternatives per row.",
+  "- Food can be logged for today or yesterday only; for an earlier day, tell the user to use Quick Log on the Home screen.",
+].join("\n");
+
+/**
  * BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. `offer`
  * swaps the finder rule for the offer_recipe tool rule.
  */
 export function getBlocksSystemPrompt(
   finderEnabled: boolean,
-  opts: { offer?: boolean } = {},
+  opts: { offer?: boolean; writeCards?: boolean } = {},
 ): string {
-  if (!finderEnabled) return BLOCKS_SYSTEM_PROMPT;
-  // The offer rule REPLACES the finder rule (never appended).
-  return BLOCKS_SYSTEM_PROMPT.replace(
-    SEARCH_RECIPES_RULE,
-    opts.offer ? OFFER_RECIPE_RULE : FINDER_RECIPE_RULE,
-  ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
+  const base = !finderEnabled
+    ? BLOCKS_SYSTEM_PROMPT
+    : // The offer rule REPLACES the finder rule (never appended).
+      BLOCKS_SYSTEM_PROMPT.replace(
+        SEARCH_RECIPES_RULE,
+        opts.offer ? OFFER_RECIPE_RULE : FINDER_RECIPE_RULE,
+      ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
+  if (!opts.writeCards) return base;
+  // Appended to the Rules list (before the example), never replacing a rule.
+  return base.replace(
+    "\n\nExample response",
+    `\n${WRITE_CARDS_RULES}\n\nExample response`,
+  );
 }

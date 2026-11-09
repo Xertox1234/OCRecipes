@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { CoachWriteCard, CoachWriteCardSavedRefs } from "@shared/schema";
 import {
   groceryEditsSchema,
@@ -23,6 +22,9 @@ import {
 } from "../grocery-generation";
 import { civilDateString } from "../../lib/civil-date";
 import { WriteCardEditError } from "./errors";
+import type { AddGroceryCardArgs } from "./tool-args";
+
+export { addGroceryCardArgsSchema, type AddGroceryCardArgs } from "./tool-args";
 
 /**
  * Grocery write card (spec 2026-11-09): a checklist Coach builds for a dish or
@@ -30,22 +32,6 @@ import { WriteCardEditError } from "./errors";
  * the user has start unticked. Saving adds the ticked items to one of the
  * user's lists, or to a new one.
  */
-
-export const addGroceryCardArgsSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        name: z.string().trim().min(1).max(200),
-        quantity: z.string().trim().max(40).optional(),
-        unit: z.string().trim().max(40).optional(),
-        maybeHave: z.boolean().optional(),
-      }),
-    )
-    .min(1)
-    .max(40),
-  listName: z.string().trim().min(1).max(100).optional(),
-});
-export type AddGroceryCardArgs = z.infer<typeof addGroceryCardArgsSchema>;
 
 const LISTS_OFFERED = 4;
 const DEFAULT_NEW_LIST_NAME = "Coach list";

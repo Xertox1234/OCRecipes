@@ -15,6 +15,7 @@ import {
   executeToolCall,
   MAX_TOOL_CALLS_PER_RESPONSE,
   serviceUnavailable,
+  type ExecuteToolOptions,
 } from "./coach-tools";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
@@ -34,6 +35,10 @@ const log = createServiceLogger("nutrition-coach");
  * pushing extra tools) since this reference is now shared across requests.
  */
 export const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
+/** Write-card mode's list (spec 2026-11-09) — same hoisting, built once. */
+export const WRITE_CARD_TOOL_DEFINITIONS = Object.freeze(
+  getToolDefinitions({ writeCards: true }),
+);
 
 /**
  * Sentinel yielded by generateCoachResponse when the safety check fires after
@@ -666,7 +671,12 @@ export async function* generateCoachProResponse(
   intent?: CoachIntent,
   /** IANA timezone of the requesting user — threads through to day-bucketed tool calls and the prompt's "Current time" line. */
   tz: string = "UTC",
-  options?: { offerRecipe?: boolean },
+  options?: {
+    offerRecipe?: boolean;
+    /** The app can show write cards (spec 2026-11-09). */
+    writeCards?: boolean;
+    onWriteCardProposal?: ExecuteToolOptions["onWriteCardProposal"];
+  },
 ): AsyncGenerator<CoachProChunk> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
@@ -684,6 +694,7 @@ export async function* generateCoachProResponse(
         ...context,
         blocksPrompt: getBlocksSystemPrompt(isRecipeFinderEnabled(), {
           offer: true,
+          writeCards: !!options?.writeCards,
         }),
       }
     : context;
@@ -699,11 +710,14 @@ export async function* generateCoachProResponse(
   // could still call it on any message the classifier does not route to
   // recipe_request and give the prose "couldn't find" answer the finder
   // replaces (spec §3.3). Flag off → today's tools.
+  const toolList = options?.writeCards
+    ? WRITE_CARD_TOOL_DEFINITIONS
+    : TOOL_DEFINITIONS;
   const baseTools = isRecipeFinderEnabled()
-    ? TOOL_DEFINITIONS.filter(
+    ? toolList.filter(
         (t) => !("function" in t && t.function.name === "search_recipes"),
       )
-    : [...TOOL_DEFINITIONS];
+    : [...toolList];
   const tools = offerTool ? [...baseTools, OFFER_RECIPE_TOOL] : baseTools;
 
   const sanitizedMessages = prepareCoachMessages(messages);
@@ -960,6 +974,15 @@ export async function* generateCoachProResponse(
             userId,
             preloadedProfile,
             tz,
+            // Only in write-card mode, so the call is unchanged without it.
+            ...(options?.writeCards
+              ? [
+                  {
+                    writeCards: true,
+                    onWriteCardProposal: options.onWriteCardProposal,
+                  },
+                ]
+              : []),
           );
           return { tc, result };
         } catch (error) {

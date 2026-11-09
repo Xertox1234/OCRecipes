@@ -1,9 +1,6 @@
-import { z } from "zod";
 import type { CoachWriteCard, CoachWriteCardSavedRefs } from "@shared/schema";
 import {
   foodEditsSchema,
-  writeCardDaySchema,
-  writeCardMealTypeSchema,
   type FoodCardEdits,
   type FoodCardPayload,
 } from "@shared/schemas/coach-write-cards";
@@ -18,6 +15,9 @@ import {
 import type { WriteCardTx } from "../../storage/coach-write-cards";
 import { logger, toError } from "../../lib/logger";
 import { WriteCardEditError } from "./errors";
+import type { LogFoodCardArgs } from "./tool-args";
+
+export { logFoodCardArgsSchema, type LogFoodCardArgs } from "./tool-args";
 
 /**
  * Food write card (spec 2026-11-09). The model proposes items, counts and an
@@ -25,30 +25,6 @@ import { WriteCardEditError } from "./errors";
  * answers on a plausible basis. Saving writes one log entry per kept item with
  * `servings` = the count — the same shape Quick Log uses for a servings stepper.
  */
-
-const estimateSchema = z.object({
-  calories: z.number().finite().min(0).max(5000),
-  protein: z.number().finite().min(0).max(500),
-  carbs: z.number().finite().min(0).max(1000),
-  fat: z.number().finite().min(0).max(500),
-});
-
-export const logFoodCardArgsSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        name: z.string().trim().min(1).max(200),
-        count: z.number().int().min(1).max(20),
-        unitLabel: z.string().trim().min(1).max(60),
-        estimate: estimateSchema,
-      }),
-    )
-    .min(1)
-    .max(8),
-  mealType: writeCardMealTypeSchema.optional(),
-  day: writeCardDaySchema.optional(),
-});
-export type LogFoodCardArgs = z.infer<typeof logFoodCardArgsSchema>;
 
 /**
  * A lookup further than this factor from the model's per-unit estimate is

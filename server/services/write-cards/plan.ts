@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type {
   CoachWriteCard,
   CoachWriteCardSavedRefs,
@@ -7,7 +6,6 @@ import type {
 } from "@shared/schema";
 import {
   planEditsSchema,
-  writeCardMealTypeSchema,
   type PlanCardEdits,
   type PlanCardPayload,
   type PlanRecipeRef,
@@ -44,6 +42,12 @@ import { deductPantryFromGrocery } from "../pantry-deduction";
 import { autoGenerateRecipeImage } from "../recipe-auto-image";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { WriteCardEditError } from "./errors";
+import type { AddMealPlanCardArgs, RecipeRefArg } from "./tool-args";
+
+export {
+  addMealPlanCardArgsSchema,
+  type AddMealPlanCardArgs,
+} from "./tool-args";
 
 /**
  * Meal plan write card (spec 2026-11-09). Coach names recipes by id (from
@@ -54,27 +58,6 @@ import { WriteCardEditError } from "./errors";
  * shopping it added.
  */
 
-const recipeRefArgSchema = z.object({
-  source: z.enum(["community", "mine"]),
-  id: z.number().int().positive(),
-});
-
-export const addMealPlanCardArgsSchema = z.object({
-  rows: z
-    .array(
-      z.object({
-        plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        mealType: writeCardMealTypeSchema,
-        recipe: recipeRefArgSchema,
-        alternatives: z.array(recipeRefArgSchema).max(3).default([]),
-      }),
-    )
-    .min(1)
-    .max(7),
-});
-export type AddMealPlanCardArgs = z.infer<typeof addMealPlanCardArgsSchema>;
-
-type RecipeRefArg = z.infer<typeof recipeRefArgSchema>;
 const refKey = (r: { source: string; id: number }) => `${r.source}:${r.id}`;
 
 function toRef(

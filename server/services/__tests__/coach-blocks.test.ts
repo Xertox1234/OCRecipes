@@ -299,3 +299,24 @@ describe("server-only write cards", () => {
     expect(validateBlocks([modelWritten])).toEqual([]);
   });
 });
+
+describe("write-card prompt rules", () => {
+  it("writeCards prompt carries the earlier-day Quick Log rule", () => {
+    const on = getBlocksSystemPrompt(false, { writeCards: true });
+    expect(on).toContain("today or yesterday only");
+    expect(on).toContain("Quick Log");
+    expect(on).toMatch(
+      /Never emit log_food, add_meal_plan or add_grocery_list action cards/,
+    );
+    expect(
+      getBlocksSystemPrompt(true, { offer: true, writeCards: true }),
+    ).toContain("find_plan_recipes");
+  });
+
+  it("is today's prompt without writeCards", () => {
+    expect(getBlocksSystemPrompt(false)).toBe(BLOCKS_SYSTEM_PROMPT);
+    expect(getBlocksSystemPrompt(false, { writeCards: false })).toBe(
+      BLOCKS_SYSTEM_PROMPT,
+    );
+  });
+});
