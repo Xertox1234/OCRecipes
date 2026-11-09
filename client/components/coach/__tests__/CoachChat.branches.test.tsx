@@ -1527,3 +1527,14 @@ describe("CoachChat — opening brief", () => {
     expect(onReminderHandled).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("CoachChat — reply finished", () => {
+  beforeEach(resetState);
+
+  it("tells the host when a reply finishes, so it can look for new saves", () => {
+    const onReplyDone = vi.fn();
+    renderCoachChat({ onReplyDone });
+    act(() => state.onDone?.("All set."));
+    expect(onReplyDone).toHaveBeenCalledTimes(1);
+  });
+});

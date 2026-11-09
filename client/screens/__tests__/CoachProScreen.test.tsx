@@ -17,6 +17,7 @@ const {
   keyboardState,
   mockNavigate,
   briefState,
+  savesState,
 } = vi.hoisted(() => ({
   mockAcknowledge: vi.fn(),
   mockUsePremiumFeature: vi.fn(),
@@ -37,6 +38,12 @@ const {
   routeState: { params: {} as { selectedConversationId?: number } },
   keyboardState: { visible: false },
   mockNavigate: vi.fn(),
+  savesState: {
+    saves: [] as { id: number; type: string; content: string; label: null }[],
+    checkForSaves: vi.fn(),
+    confirm: vi.fn(),
+    undo: vi.fn(),
+  },
   briefState: {
     hasPending: false,
     lastSeen: "2026-11-08" as string | null | undefined,
@@ -61,6 +68,10 @@ vi.mock("@/hooks/usePendingReminders", () => ({
 vi.mock("@/lib/coach-brief-seen", () => ({
   getCachedLastBriefSeenDate: () => briefState.lastSeen,
   markBriefSeen: briefState.markSeen,
+}));
+
+vi.mock("@/hooks/useNotebookSaves", () => ({
+  useNotebookSaves: () => savesState,
 }));
 
 vi.mock("@/hooks/useCoachBrief", () => ({
@@ -136,7 +147,9 @@ vi.mock("@/components/coach/CoachChat", () => ({
     inputBarStyle,
     openingBrief,
     onReminderHandled,
+    onReplyDone,
   }: {
+    onReplyDone?: () => void;
     openingBrief?: { form: string; onShown?: () => void } | null;
     onReminderHandled?: () => void;
     onMessageSent?: () => void;
@@ -155,6 +168,7 @@ vi.mock("@/components/coach/CoachChat", () => ({
       <button onClick={() => openingBrief?.onShown?.()}>
         mock-brief-shown
       </button>
+      <button onClick={() => onReplyDone?.()}>mock-reply-done</button>
       <button onClick={() => onReminderHandled?.()}>
         mock-reminder-handled
       </button>
@@ -172,6 +186,7 @@ beforeEach(() => {
   routeState.params = {};
   keyboardState.visible = false;
   mockUsePremiumFeature.mockReturnValue(true);
+  savesState.saves = [];
   briefState.hasPending = false;
   briefState.lastSeen = TODAY;
   briefState.useCoachBrief.mockReturnValue({
@@ -447,5 +462,33 @@ describe("CoachProScreen — opening brief", () => {
     conversationsState.data = [thread];
     renderComponent(<CoachProScreen />);
     expect(briefState.useCoachBrief).toHaveBeenLastCalledWith("short", false);
+  });
+});
+
+describe("CoachProScreen — saved to your notebook", () => {
+  it("looks for new saves on open, when a reply finishes, and on a later refocus", () => {
+    renderComponent(<CoachProScreen />);
+    expect(savesState.checkForSaves).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText("mock-reply-done"));
+    expect(savesState.checkForSaves).toHaveBeenCalledTimes(2);
+    // useRefreshOnFocus skips the initial focus; the next one refreshes.
+    act(() => {
+      focusEffectCb.current?.();
+    });
+    act(() => {
+      focusEffectCb.current?.();
+    });
+    expect(savesState.checkForSaves).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows the popup under the Notebook icon while saves are waiting", () => {
+    savesState.saves = [
+      { id: 4, type: "preference", content: "You avoid dairy", label: null },
+    ];
+    renderComponent(<CoachProScreen />);
+    expect(screen.getByText("Saved to your notebook")).toBeTruthy();
+    expect(screen.getByText("You avoid dairy")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(savesState.undo).toHaveBeenCalledTimes(1);
   });
 });

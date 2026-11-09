@@ -117,6 +117,8 @@ interface CoachChatProps {
    * opens Quick Log), so the host clears the reminder as a send would.
    */
   onReminderHandled?: () => void;
+  /** A reply finished streaming (the host looks for new notebook saves). */
+  onReplyDone?: () => void;
 }
 
 type ChatListItem =
@@ -143,6 +145,7 @@ export default function CoachChat({
   inputBarStyle,
   openingBrief,
   onReminderHandled,
+  onReplyDone,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
@@ -324,6 +327,7 @@ export default function CoachChat({
   } = useCoachStream({
     onDone: (fullText, blocks) => {
       refreshAfterBriefSend();
+      onReplyDone?.();
       // A dead-socket abort also lands here, with whatever partial text came.
       replyArrivedRef.current =
         fullText.trim().length > 0 || (blocks?.length ?? 0) > 0;
