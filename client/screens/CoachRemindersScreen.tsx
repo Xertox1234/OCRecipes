@@ -102,12 +102,13 @@ export default function CoachRemindersScreen() {
   const bottomBudget = useBottomBudget();
   const headerInset = useHeaderContentInset(Spacing.lg);
   const { data, isLoading, isError, refetch } = useReminderMutes();
-  const updateMute = useUpdateReminderMute();
+  const { mutate: updateMute, isPending: isUpdatingMute } =
+    useUpdateReminderMute();
 
   const handleToggle = useCallback(
     (key: keyof ReminderMutes, currentlyMuted: boolean) => {
       haptics.selection();
-      updateMute.mutate({ [key]: !currentlyMuted });
+      updateMute({ [key]: !currentlyMuted });
     },
     [haptics, updateMute],
   );
@@ -192,7 +193,7 @@ export default function CoachRemindersScreen() {
                     thumbColor={
                       Platform.OS === "android" ? "#FFFFFF" : undefined // hardcoded
                     }
-                    disabled={isLoading || updateMute.isPending}
+                    disabled={isLoading || isUpdatingMute}
                   />
                 </View>
                 {!isLast && (

@@ -29,17 +29,16 @@ export function useUnifiedRecipes(params?: {
   diet?: string;
   mealType?: string;
 }) {
-  const qs = params
-    ? new URLSearchParams(
-        Object.entries(params)
-          .filter(([, v]) => v !== undefined && v !== "")
-          .map(([k, v]) => [k, String(v)]),
-      ).toString()
-    : "";
-
   return useQuery<UnifiedRecipesResponse>({
     queryKey: ["/api/recipes/browse", params ?? {}],
     queryFn: async () => {
+      const qs = params
+        ? new URLSearchParams(
+            Object.entries(params)
+              .filter(([, v]) => v !== undefined && v !== "")
+              .map(([k, v]) => [k, String(v)]),
+          ).toString()
+        : "";
       const url = qs ? `/api/recipes/browse?${qs}` : "/api/recipes/browse";
       const res = await apiRequest("GET", url);
       return res.json();
