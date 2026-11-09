@@ -306,7 +306,10 @@ export function parseQuantityForSum(
  * Pure function, no DB access.
  */
 export function generateGroceryItems(
-  ingredients: RecipeIngredient[],
+  ingredients: Pick<
+    RecipeIngredient,
+    "name" | "quantity" | "unit" | "category"
+  >[],
 ): AggregatedGroceryItem[] {
   const grouped = new Map<
     string,

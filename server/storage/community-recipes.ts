@@ -9,7 +9,7 @@ import {
   recipeDismissals,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lt, sql, or, ilike } from "drizzle-orm";
+import { eq, desc, and, gte, lt, sql, or, ilike, inArray } from "drizzle-orm";
 import { escapeLike } from "./helpers";
 import { quotaDayBounds } from "./quota-day";
 import {
@@ -247,6 +247,30 @@ export async function getCommunityRecipe(
       ),
     );
   return recipe || undefined;
+}
+
+/**
+ * Batch form of `getCommunityRecipe` for the Coach plan card: the recipes with
+ * these ids that this user may see (public, or their own).
+ */
+export async function getVisibleCommunityRecipesByIds(
+  ids: number[],
+  userId: string,
+): Promise<CommunityRecipe[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  return db
+    .select()
+    .from(communityRecipes)
+    .where(
+      and(
+        inArray(communityRecipes.id, unique),
+        or(
+          eq(communityRecipes.isPublic, true),
+          eq(communityRecipes.authorId, userId),
+        ),
+      ),
+    );
 }
 
 /**

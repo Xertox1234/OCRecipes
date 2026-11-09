@@ -12,7 +12,7 @@ import {
   savedItems,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, sql, isNull } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
 import {
   addToIndex,
   removeFromIndex,
@@ -64,6 +64,25 @@ export async function getMealPlanRecipeWithIngredients(
   if (!recipe) return undefined;
 
   return { ...recipe, ingredients };
+}
+
+/** Batch read of the user's own (non-deleted) recipes, for the Coach plan card. */
+export async function getMealPlanRecipesByIds(
+  ids: number[],
+  userId: string,
+): Promise<MealPlanRecipe[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  return db
+    .select()
+    .from(mealPlanRecipes)
+    .where(
+      and(
+        inArray(mealPlanRecipes.id, unique),
+        eq(mealPlanRecipes.userId, userId),
+        isNull(mealPlanRecipes.deletedAt),
+      ),
+    );
 }
 
 export async function getUserMealPlanRecipes(
@@ -193,8 +212,15 @@ export interface MealPlanSuggestionInput {
  * Atomically creates multiple meal plan recipes with their ingredients
  * and plan items. Uses batch inserts to minimize DB round trips.
  */
+/**
+ * A caller inside a transaction (a Coach write-card save or undo) passes its
+ * `tx`; the inner `.transaction()` then runs as a savepoint on it.
+ */
+type TxExecutor = Pick<typeof db, "transaction">;
+
 export async function createMealPlanFromSuggestions(
   meals: MealPlanSuggestionInput[],
+  executor: TxExecutor = db,
 ): Promise<{ recipeId: number; mealPlanItemId: number }[]> {
   if (meals.length === 0) return [];
 
@@ -222,7 +248,7 @@ export async function createMealPlanFromSuggestions(
     }),
   }));
 
-  const result = await db.transaction(async (tx) => {
+  const result = await executor.transaction(async (tx) => {
     // Batch-insert all recipes at once, deriving each recipe's allergen and
     // diet-conflict caches from its ingredient names (pure shared functions —
     // no service deps).
@@ -384,8 +410,9 @@ export async function updateMealPlanRecipe(
 export async function deleteMealPlanRecipe(
   id: number,
   userId: string,
+  executor: TxExecutor = db,
 ): Promise<boolean> {
-  const deletedRow = await db.transaction(async (tx) => {
+  const deletedRow = await executor.transaction(async (tx) => {
     const result = await tx
       .update(mealPlanRecipes)
       .set({ deletedAt: new Date() })

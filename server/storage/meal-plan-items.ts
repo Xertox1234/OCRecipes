@@ -136,18 +136,26 @@ export async function getMealPlanItemById(
   return { ...item, recipe, scannedItem };
 }
 
+/** A caller inside a transaction (a Coach write-card save/undo) passes its `tx`. */
+type Executor = Pick<typeof db, "insert" | "delete">;
+
 export async function addMealPlanItem(
   item: InsertMealPlanItem,
+  executor: Executor = db,
 ): Promise<MealPlanItem> {
-  const [created] = await db.insert(mealPlanItems).values(item).returning();
+  const [created] = await executor
+    .insert(mealPlanItems)
+    .values(item)
+    .returning();
   return created;
 }
 
 export async function removeMealPlanItem(
   id: number,
   userId: string,
+  executor: Executor = db,
 ): Promise<boolean> {
-  const result = await db
+  const result = await executor
     .delete(mealPlanItems)
     .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
     .returning({ id: mealPlanItems.id });
