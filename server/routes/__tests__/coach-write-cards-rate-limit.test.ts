@@ -19,16 +19,17 @@ describe("coach write-card routes are rate limited", () => {
     const app = express();
     app.use(express.json());
     register(app);
-    const statuses: number[] = [];
-    for (let i = 0; i < 31; i++) {
-      const path = i % 2 === 0 ? "save" : "undo";
-      const res = await request(app)
-        .post(`/api/coach/cards/${CARD_ID}/${path}`)
-        .send({});
-      statuses.push(res.status);
+    for (const path of ["save", "undo"]) {
+      const statuses: number[] = [];
+      for (let i = 0; i < 31; i++) {
+        const res = await request(app)
+          .post(`/api/coach/cards/${CARD_ID}/${path}`)
+          .send({});
+        statuses.push(res.status);
+      }
+      // 30 per minute per route, then 429.
+      expect(statuses.slice(0, 30).every((s) => s === 404)).toBe(true);
+      expect(statuses[30]).toBe(429);
     }
-    // 30 per minute across both routes (one shared budget), then 429.
-    expect(statuses.slice(0, 30).every((s) => s === 404)).toBe(true);
-    expect(statuses[30]).toBe(429);
   });
 });

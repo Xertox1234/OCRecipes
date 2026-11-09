@@ -1,4 +1,5 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -13,7 +14,7 @@ import {
   writeCardReceiptFor,
   WriteCardEditError,
 } from "../services/write-cards";
-import { coachCardRateLimit } from "./_rate-limiters";
+import { ipKeyGenerator, resolveRateLimitMax } from "./_rate-limiters";
 import { formatZodError, handleRouteError } from "./_helpers";
 
 /**
@@ -22,6 +23,22 @@ import { formatZodError, handleRouteError } from "./_helpers";
  * the card kind's strict schema checks. Every lookup is by (card id, userId),
  * so another user's card reads as 404.
  */
+
+/**
+ * Limiters are built with rateLimit() inline in each route, not the
+ * _rate-limiters factory, so CodeQL's js/missing-rate-limiting can trace them
+ * — the factory indirection is invisible to its dataflow (same as
+ * recipe-search.ts's trending route). Same behaviour as a factory limiter:
+ * user-keyed with the IP fallback (after requireAuth, so req.userId is set)
+ * and the E2E-relaxed max. 30 a minute each: a person taps these a few times
+ * a minute at most.
+ */
+const CARD_LIMIT_WINDOW_MS = 60_000;
+const CARD_LIMIT_MAX = 30;
+const cardLimitMessage = {
+  error: "Too many card requests. Please wait.",
+  code: ErrorCode.RATE_LIMITED,
+};
 
 const cardIdSchema = z.string().uuid();
 const saveBodySchema = z
@@ -32,7 +49,14 @@ export function register(app: Express): void {
   app.post(
     "/api/coach/cards/:id/save",
     requireAuth,
-    coachCardRateLimit,
+    rateLimit({
+      windowMs: CARD_LIMIT_WINDOW_MS,
+      max: resolveRateLimitMax(CARD_LIMIT_MAX, process.env),
+      message: cardLimitMessage,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = cardIdSchema.safeParse(req.params.id);
@@ -109,7 +133,14 @@ export function register(app: Express): void {
   app.post(
     "/api/coach/cards/:id/undo",
     requireAuth,
-    coachCardRateLimit,
+    rateLimit({
+      windowMs: CARD_LIMIT_WINDOW_MS,
+      max: resolveRateLimitMax(CARD_LIMIT_MAX, process.env),
+      message: cardLimitMessage,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = cardIdSchema.safeParse(req.params.id);
