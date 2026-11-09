@@ -101,6 +101,12 @@ vi.mock("@/hooks/useCoachStream", () => ({
   },
 }));
 
+vi.mock("@/components/coach/MemoryRefsTag", () => ({
+  default: ({ ids }: { ids: number[] }) => (
+    <div data-testid="memory-refs">{ids.join(",")}</div>
+  ),
+}));
+
 vi.mock("@/hooks/useChat", () => ({
   useChatMessages: () => ({
     data: state.messages,
@@ -1536,5 +1542,26 @@ describe("CoachChat — reply finished", () => {
     renderCoachChat({ onReplyDone });
     act(() => state.onDone?.("All set."));
     expect(onReplyDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CoachChat — From your notebook", () => {
+  beforeEach(resetState);
+
+  it("tags only the reply that used memories", () => {
+    state.messages = [
+      makeMessage({ id: 1, role: "user", content: "breakfast?" }),
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "Tofu scramble.",
+        metadata: { blocks: [{ type: "memory_refs", ids: [5, 6] }] },
+      }),
+      makeMessage({ id: 3, role: "assistant", content: "Anything else?" }),
+    ];
+    renderCoachChat();
+    const tags = screen.getAllByTestId("memory-refs");
+    expect(tags).toHaveLength(1);
+    expect(tags[0].textContent).toBe("5,6");
   });
 });

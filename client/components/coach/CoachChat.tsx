@@ -28,6 +28,7 @@ import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import OpeningBrief from "@/components/coach/OpeningBrief";
+import MemoryRefsTag from "@/components/coach/MemoryRefsTag";
 import { QUERY_KEY as PENDING_REMINDERS_KEY } from "@/hooks/usePendingReminders";
 import { COACH_BRIEF_KEY } from "@/hooks/useCoachBrief";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -982,6 +983,12 @@ export default function CoachChat({
           !hasFinderBlock &&
           !isHeld &&
           msg.id === lastAssistantMessageId;
+        // Visible memory R1: the server already kept only confirmed ids.
+        const memoryRefBlock = savedBlocks?.find(
+          (b) => b.type === "memory_refs",
+        );
+        const memoryRefIds =
+          memoryRefBlock?.type === "memory_refs" ? memoryRefBlock.ids : null;
         const generated = generatedRecipes.get(msg.id);
         const savedRecipeId =
           savedRecipeIdsRef.current.get(msg.id) ??
@@ -1032,6 +1039,7 @@ export default function CoachChat({
                 />
               );
             })}
+            {memoryRefIds ? <MemoryRefsTag ids={memoryRefIds} /> : null}
             {generated ? (
               <GeneratedRecipeCard
                 recipe={generated.recipe}

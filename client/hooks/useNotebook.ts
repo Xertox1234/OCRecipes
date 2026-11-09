@@ -11,6 +11,11 @@ export interface NotebookEntry {
   followUpDate: string | null;
   sourceConversationId: number | null;
   dedupeKey: string | null;
+  /** Visible memory: set once the user saw it saved or confirmed it. */
+  confirmedAt: string | null;
+  /** Short second-person label for a commitment. */
+  label: string | null;
+  shownAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
