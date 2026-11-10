@@ -35,8 +35,8 @@ env:
 # shown the brief), so accept either. Nightly run 42585848072 landed on the
 # brief chat twice in a row with a reminder pending.
 #
-# The brief chat and the list both show the teaching chip; the list alone has
-# the + button (a11y label "Start new chat").
+# Wait for either screen: the list by its + button (a11y label "Start new
+# chat"), the brief chat by its teaching chip.
 - extendedWaitUntil:
     visible: "Start new chat|Suggested prompt: What.s the fastest way to log a meal.*"
     timeout: 15000
