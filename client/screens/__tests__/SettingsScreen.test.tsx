@@ -568,7 +568,7 @@ describe("SettingsScreen — AI features", () => {
 
 describe("SettingsScreen legal links", () => {
   it("opens the Consumer Health Data Privacy Policy", async () => {
-    const openSpy = vi.spyOn(Linking, "openURL").mockResolvedValue(true);
+    const openSpy = vi.spyOn(Linking, "openURL").mockResolvedValue();
     renderComponent(<SettingsScreen />);
 
     fireEvent.click(
