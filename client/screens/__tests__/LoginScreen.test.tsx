@@ -169,7 +169,7 @@ describe("LoginScreen — client-side validation pre-flight", () => {
     fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
 
     fireEvent.change(screen.getByLabelText("Username"), {
-      target: { value: "william.tower@gmail.com" },
+      target: { value: "jane.doe@example.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: "recipe-passphrase-1" },

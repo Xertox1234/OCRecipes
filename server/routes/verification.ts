@@ -373,7 +373,6 @@ export function register(app: Express): void {
           productName: session.data.productName,
           netWeight: session.data.netWeight,
           claims: session.data.claims,
-          scannedByUserId: req.userId,
           scannedAt: new Date().toISOString(),
         };
 

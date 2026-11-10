@@ -13,10 +13,10 @@
       "appleTeamId": "3442937R38",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "OCRecipes needs camera access to scan barcodes and nutrition labels.",
-        "NSMicrophoneUsageDescription": "OCRecipes uses the microphone for voice food logging.",
+        "NSCameraUsageDescription": "OCRecipes uses the camera to scan barcodes and nutrition labels and to take photos of food, menus, receipts and recipes.",
+        "NSMicrophoneUsageDescription": "OCRecipes uses the microphone when you dictate food, recipe steps or a message to the coach instead of typing.",
         "NSPhotoLibraryUsageDescription": "OCRecipes uses photos you choose to find ingredients, read receipts, import recipes, and set your profile picture and cookbook covers.",
-        "NSSpeechRecognitionUsageDescription": "OCRecipes uses speech recognition for voice food logging."
+        "NSSpeechRecognitionUsageDescription": "OCRecipes uses speech recognition to turn what you dictate into text for food logging, recipes and coach messages."
       },
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": [
@@ -182,8 +182,8 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "OCRecipes uses the microphone for voice food logging.",
-          "speechRecognitionPermission": "OCRecipes uses speech recognition for voice food logging."
+          "microphonePermission": "OCRecipes uses the microphone when you dictate food, recipe steps or a message to the coach instead of typing.",
+          "speechRecognitionPermission": "OCRecipes uses speech recognition to turn what you dictate into text for food logging, recipes and coach messages."
         }
       ],
       "./plugins/ios-podfile-fixes",

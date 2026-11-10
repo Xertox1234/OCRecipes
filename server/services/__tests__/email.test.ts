@@ -16,10 +16,11 @@ vi.mock("resend", () => ({
 // Spy on the service logger so we can assert the failure path logs the real
 // Resend error fields (the `mock`-prefix exempts it from vi.mock's hoist guard).
 const mockLoggerError = vi.fn();
+const mockLoggerWarn = vi.fn();
 vi.mock("../../lib/logger", () => ({
   createServiceLogger: () => ({
     error: mockLoggerError,
-    warn: vi.fn(),
+    warn: mockLoggerWarn,
     info: vi.fn(),
     debug: vi.fn(),
   }),
@@ -32,6 +33,7 @@ describe("email service", () => {
     mockSend.mockReset();
     mockSend.mockResolvedValue({ data: { id: "mock" }, error: null });
     mockLoggerError.mockClear();
+    mockLoggerWarn.mockClear();
     vi.resetModules();
   });
   afterEach(() => {
@@ -86,6 +88,37 @@ describe("email service", () => {
     for (let i = 0; i < 7; i++)
       await sendVerificationEmail("c@d.com", "t", "alice");
     expect(mockSend).toHaveBeenCalledTimes(5);
+  });
+
+  // Privacy audit 2026-11-10 M12: the throttle line used to carry the address.
+  it("never logs the recipient's address when a send is throttled", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    const email = await import("../email");
+    const to = "throttled.person@inbox.test";
+    // Enough of each to pass every bucket's cap (general 5, the rest 10).
+    for (let i = 0; i < 12; i++) {
+      await email.sendVerificationEmail(to, "t", "alice");
+      await email.sendFinishSignupNotice(to);
+      await email.sendSignupAttemptNotice(to, "alice");
+      await email.sendPasswordResetCode(to, "123456");
+      await email.sendPasswordChangeCode(to, "123456");
+      await email.sendSignInCode(to, "123456");
+      await email.sendPasswordChangedNotice(to, "alice", []);
+      await email.sendTwoFactorNotice(to, "alice", "enabled");
+      await email.sendEmailChangeNotice(
+        to,
+        "alice",
+        "new@other.test",
+        "changed",
+      );
+    }
+    // All nine throttle lines were reached.
+    expect(
+      new Set(mockLoggerWarn.mock.calls.map((args) => args.at(-1))).size,
+    ).toBe(9);
+    const logged = JSON.stringify(mockLoggerWarn.mock.calls);
+    expect(logged).not.toContain("throttled.person");
+    expect(logged).not.toContain("inbox.test");
   });
 
   it("evicts fully-expired keys so the recipient map stays bounded", async () => {

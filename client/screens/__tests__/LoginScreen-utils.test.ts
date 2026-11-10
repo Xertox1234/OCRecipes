@@ -97,7 +97,7 @@ describe("validateAuthForm", () => {
   it("rejects an email address as the username with an actionable message", () => {
     const msg = validateAuthForm({
       ...validRegister,
-      username: "william.tower@gmail.com",
+      username: "jane.doe@example.com",
     });
     expect(msg).toMatch(/letters, numbers, and underscores/i);
     // Should hint that an email is not allowed, since that's the common trap.

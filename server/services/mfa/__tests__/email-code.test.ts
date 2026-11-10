@@ -43,7 +43,7 @@ describe("sendMfaEmailCode", () => {
 
 describe("maskEmail", () => {
   it.each([
-    ["william.tower@gmail.com", "w•••@gmail.com"],
+    ["jane.doe@example.com", "j•••@example.com"],
     ["a@b.co", "a•••@b.co"],
     ["no-at-sign", "your email"],
   ])("%s → %s", (input, out) => {

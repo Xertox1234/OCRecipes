@@ -6,7 +6,9 @@ export const frontLabelDataSchema = z.object({
   productName: z.string().nullable(),
   netWeight: z.string().nullable(),
   claims: z.array(z.string()).max(20),
-  scannedByUserId: z.string(),
+  /** No longer written (privacy audit 2026-11-10, L1); rows stored before
+   *  that may still carry it until the scanner's account is deleted. */
+  scannedByUserId: z.string().optional(),
   scannedAt: z.string(),
 });
 export type FrontLabelData = z.infer<typeof frontLabelDataSchema>;
