@@ -87,7 +87,7 @@ describe("OnboardingProvider default data", () => {
   it("starts at step 0 with the provider's totalSteps", () => {
     const { result } = renderOnboarding();
     expect(result.current.currentStep).toBe(0);
-    expect(result.current.totalSteps).toBe(8);
+    expect(result.current.totalSteps).toBe(9);
   });
 });
 
@@ -294,12 +294,13 @@ describe("OnboardingProvider completeOnboarding", () => {
       const { result } = renderHook(() => useOnboarding(), {
         wrapper: createWrapper(),
       });
-      act(() => result.current.nextStep()); // Welcome → consent
+      act(() => result.current.nextStep()); // Welcome → AI question
+      act(() => result.current.nextStep()); // AI question → consent
 
       act(() => result.current.answerConsent(true));
 
       expect(result.current.data.healthDataConsent).toBe(true);
-      expect(result.current.currentStep).toBe(2); // Allergies
+      expect(result.current.currentStep).toBe(3); // Allergies
     });
 
     it("declining skips the health questions, in both directions", () => {
@@ -307,17 +308,18 @@ describe("OnboardingProvider completeOnboarding", () => {
         wrapper: createWrapper(),
       });
       act(() => result.current.nextStep());
+      act(() => result.current.nextStep());
 
       act(() => result.current.answerConsent(false));
       expect(result.current.data.healthDataConsent).toBe(false);
-      expect(result.current.currentStep).toBe(4); // DietType
+      expect(result.current.currentStep).toBe(5); // DietType
 
       act(() => result.current.nextStep());
-      expect(result.current.currentStep).toBe(6); // Preferences, not Goals
+      expect(result.current.currentStep).toBe(7); // Preferences, not Goals
 
       act(() => result.current.prevStep());
       act(() => result.current.prevStep());
-      expect(result.current.currentStep).toBe(1); // back on the consent screen
+      expect(result.current.currentStep).toBe(2); // back on the consent screen
     });
 
     it("declining after answering drops the health answers already given", () => {

@@ -49,19 +49,6 @@ appId: com.ocrecipes.app
 #   so a mid-flow call from one of those would trigger a destructive
 #   escape + logout.
 ---
-# A flow that died right after registering leaves its account on the
-# AI-sharing question (privacy audit H3), which comes before the wizard and
-# has neither marker below. Answer it (off: this account is about to be
-# signed out) so the wizard/Home checks that follow can see where we are.
-- runFlow:
-    when:
-      visible: "Keep AI off"
-    commands:
-      - tapOn: "Keep AI off"
-      - extendedWaitUntil:
-          visible: "(Get Started|Hello.*)"
-          timeout: 15000
-          optional: true
 - runFlow:
     when:
       visible: "(Get Started|Go back)"

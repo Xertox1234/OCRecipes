@@ -1,6 +1,7 @@
 import {
   onAiSharingRequired,
   raiseIfAiSharingRequired,
+  raiseIfAiSharingRefusal,
 } from "../ai-sharing-events";
 import { CHAT_AI_OFF_ERROR, chatRequestErrorCopy } from "../chat-error-copy";
 import { HEALTH_CONSENT_PROMPT } from "../health-consent";
@@ -28,6 +29,26 @@ describe("AI-sharing refusal signal", () => {
     raiseIfAiSharingRequired(undefined);
 
     expect(listener).not.toHaveBeenCalled();
+    off();
+  });
+
+  // Requests that do not go through apiRequest (multipart fetch, chat
+  // streams) hand over the raw error body.
+  it("reads the code out of a raw error body", () => {
+    const listener = vi.fn();
+    const off = onAiSharingRequired(listener);
+
+    raiseIfAiSharingRefusal(
+      JSON.stringify({ error: "AI is off", code: "AI_SHARING_REQUIRED" }),
+    );
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    raiseIfAiSharingRefusal(
+      JSON.stringify({ error: "x", code: "RATE_LIMITED" }),
+    );
+    raiseIfAiSharingRefusal("<html>502</html>");
+    raiseIfAiSharingRefusal("");
+    expect(listener).toHaveBeenCalledTimes(1);
     off();
   });
 

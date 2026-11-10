@@ -19,10 +19,17 @@ const PRIVACY_POLICY_URL =
 /**
  * The AI-sharing question (privacy audit H3): names the companies the AI
  * features send data to and what is sent, and asks before the first request.
- * Shown once after sign-in, and again when someone who said "off" opens an AI
- * feature. The server refuses AI requests until the answer is yes.
+ * A new account sees it as an onboarding step (`onAnswered` moves on); any
+ * other account sees it on top of the app the first time an AI request is
+ * refused, and from Settings. The server refuses AI requests until the answer
+ * is yes.
  */
-export default function AiSharingScreen() {
+export default function AiSharingScreen({
+  onAnswered,
+}: {
+  /** Onboarding step: called once the user has answered, saved or not. */
+  onAnswered?: () => void;
+}) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -37,13 +44,23 @@ export default function AiSharingScreen() {
     answer(allowed).then(
       () => {
         setSaving(false);
-        // The re-ask copy sits on top of the app and closes itself; the first
-        // ask is the only screen, and the navigator moves on by itself.
-        if (navigation.canGoBack()) navigation.goBack();
+        if (onAnswered) onAnswered();
+        // On top of the app, it closes itself.
+        else if (navigation.canGoBack()) navigation.goBack();
       },
       (err: unknown) => {
         setSaving(false);
         logger.error("Saving the AI-sharing answer failed", err);
+        if (onAnswered) {
+          // A failed save must not strand a new account in onboarding. AI
+          // stays off on the server until a yes is saved, and the question
+          // opens again on the first AI request.
+          toast.info(
+            "Couldn't save your answer. AI features stay off for now; you can turn them on in Settings.",
+          );
+          onAnswered();
+          return;
+        }
         toast.error("Couldn't save your answer. Please try again.");
       },
     );
@@ -54,7 +71,11 @@ export default function AiSharingScreen() {
       accessibilityViewIsModal
       style={[
         styles.container,
-        { backgroundColor: theme.backgroundRoot, paddingTop: insets.top },
+        {
+          backgroundColor: theme.backgroundRoot,
+          // The onboarding navigator already keeps clear of the status bar.
+          paddingTop: onAnswered ? 0 : insets.top,
+        },
       ]}
     >
       <ScrollView

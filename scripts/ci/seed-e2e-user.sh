@@ -59,15 +59,16 @@ fi
 # No expiry = active (shared/types/premium.ts resolveEffectiveTier). Straight to the run's own
 # throwaway Postgres: there is no API that grants premium without a store receipt. The row is
 # read back so a silent no-op fails here.
-# Allow AI features (privacy audit H3). A real account is asked on first
-# sign-in and the server refuses AI calls until it says yes; a seeded account
-# that never answered would land on that question instead of the Home screen.
+# Allow AI features (privacy audit H3). A real account is asked during
+# onboarding and the server refuses AI calls until it says yes; a seeded
+# account that never answered would have its first AI request refused and the
+# AI-sharing question opened on top of the flow.
 AI_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$BACKEND_URL/api/user/ai-sharing" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"allowed":true}')
 if [ "$AI_CODE" != "200" ]; then
-  echo "::error::Seed AI-sharing answer returned HTTP $AI_CODE — $USERNAME would land on the AI-sharing question"
+  echo "::error::Seed AI-sharing answer returned HTTP $AI_CODE — $USERNAME would have its AI requests refused"
   exit 1
 fi
 

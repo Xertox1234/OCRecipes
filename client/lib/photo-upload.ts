@@ -224,6 +224,7 @@ export async function submitFollowUp(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    raiseIfAiSharingRequired(errorData.code);
     throw new ApiError(
       errorData.error || `Follow-up failed: ${response.status}`,
       errorData.code,
@@ -434,6 +435,7 @@ export async function uploadRecipeTextForAnalysis(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    raiseIfAiSharingRequired(errorData.code);
     throw new ApiError(
       errorData.error || `Structure failed: ${response.status}`,
       errorData.code,

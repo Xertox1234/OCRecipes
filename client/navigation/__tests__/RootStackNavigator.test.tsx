@@ -67,14 +67,11 @@ const auth = vi.hoisted(() => ({
 vi.mock("@/context/AuthContext", () => ({ useAuthContext: () => auth }));
 vi.mock("@/hooks/useScreenOptions", () => ({ useScreenOptions: () => ({}) }));
 
-const aiSharing = vi.hoisted(() => ({
-  status: { allowed: true, answered: true } as
-    | { allowed: boolean; answered: boolean }
-    | undefined,
-  loading: false,
-}));
-vi.mock("@/hooks/useAiSharing", () => ({
-  useAiSharing: () => ({ ...aiSharing, answer: vi.fn() }),
+const reask = vi.hoisted(() => ({ enabled: undefined as boolean | undefined }));
+vi.mock("@/navigation/useAiSharingReask", () => ({
+  useAiSharingReask: (enabled: boolean) => {
+    reask.enabled = enabled;
+  },
 }));
 
 function signIn() {
@@ -126,57 +123,30 @@ describe("RootStackNavigator — VerifyEmail in both auth states", () => {
   });
 });
 
-// Privacy audit H3: the AI-sharing question comes before anything else.
+// Privacy audit H3 (owner ruling 2026-11-10): a new account is asked inside
+// onboarding; any other account is asked when an AI request is refused.
 describe("RootStackNavigator — AI-sharing question", () => {
   beforeEach(() => {
     signIn();
-    aiSharing.status = { allowed: true, answered: true };
-    aiSharing.loading = false;
+    reask.enabled = undefined;
   });
 
-  it("shows only the question to a signed-in account that never answered", () => {
-    aiSharing.status = { allowed: false, answered: false };
+  it("opens the app without a question in the way, with the question reachable", () => {
     renderComponent(<RootStackNavigator />);
 
+    expect(screen.getByTestId("screen-Main")).toBeTruthy();
     expect(screen.getByTestId("screen-AiSharing")).toBeTruthy();
-    expect(screen.queryByTestId("screen-Main")).toBeNull();
-    expect(screen.queryByTestId("screen-Onboarding")).toBeNull();
+    expect(reask.enabled).toBe(true);
   });
 
-  it("asks before onboarding too", () => {
+  it("leaves a new account to the onboarding step", () => {
     auth.user = { onboardingCompleted: false };
-    aiSharing.status = { allowed: false, answered: false };
     renderComponent(<RootStackNavigator />);
 
-    expect(screen.getByTestId("screen-AiSharing")).toBeTruthy();
-    expect(screen.queryByTestId("screen-Onboarding")).toBeNull();
-  });
-
-  it("opens the app for someone who said no, with the question reachable", () => {
-    aiSharing.status = { allowed: false, answered: true };
-    renderComponent(<RootStackNavigator />);
-
-    expect(screen.getByTestId("screen-Main")).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("screen-AiSharing")
-        .getAttribute("data-navigation-key"),
-    ).toBe("re-ask");
-  });
-
-  it("opens the app when the status cannot be read (offline)", () => {
-    aiSharing.status = undefined;
-    renderComponent(<RootStackNavigator />);
-
-    expect(screen.getByTestId("screen-Main")).toBeTruthy();
-  });
-
-  it("holds the app back while the status is first read", () => {
-    aiSharing.status = undefined;
-    aiSharing.loading = true;
-    renderComponent(<RootStackNavigator />);
-
-    expect(screen.queryByTestId("screen-Main")).toBeNull();
+    expect(screen.getByTestId("screen-Onboarding")).toBeTruthy();
     expect(screen.queryByTestId("screen-AiSharing")).toBeNull();
+    // The question screen is not registered here, so nothing may navigate
+    // to it.
+    expect(reask.enabled).toBe(false);
   });
 });

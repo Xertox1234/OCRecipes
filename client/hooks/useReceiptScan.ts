@@ -5,6 +5,7 @@ import { tokenStorage } from "@/lib/token-storage";
 import { createUploadFilePart } from "@/lib/upload-file-part";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { ApiError } from "@/lib/api-error";
+import { raiseIfAiSharingRequired } from "@/lib/ai-sharing-events";
 import { logger } from "@/lib/logger";
 import {
   receiptAnalysisResultSchema,
@@ -95,7 +96,9 @@ export function useReceiptScan() {
         if (!response.ok) {
           const errorData = (await response.json().catch(() => ({}))) as {
             error?: string;
+            code?: string;
           };
+          raiseIfAiSharingRequired(errorData.code);
           throw new Error(
             errorData.error || `Receipt scan failed: ${response.status}`,
           );

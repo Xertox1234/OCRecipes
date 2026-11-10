@@ -13,6 +13,7 @@ import {
 import { OnboardingProgressBar } from "@/components/OnboardingProgressBar";
 import { useTheme } from "@/hooks/useTheme";
 import WelcomeScreen from "@/screens/onboarding/WelcomeScreen";
+import AiSharingStepScreen from "@/screens/onboarding/AiSharingStepScreen";
 import HealthDataConsentScreen from "@/screens/onboarding/HealthDataConsentScreen";
 import AllergiesScreen from "@/screens/onboarding/AllergiesScreen";
 import HealthConditionsScreen from "@/screens/onboarding/HealthConditionsScreen";
@@ -30,6 +31,7 @@ const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 // ONBOARDING_SCREENS, which the step counts derive from.
 const SCREEN_COMPONENTS: Record<OnboardingScreenName, ComponentType> = {
   Welcome: WelcomeScreen,
+  AiSharing: AiSharingStepScreen,
   HealthDataConsent: HealthDataConsentScreen,
   Allergies: AllergiesScreen,
   HealthConditions: HealthConditionsScreen,

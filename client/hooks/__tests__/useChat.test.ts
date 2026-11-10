@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { renderHook, act } from "@testing-library/react";
+import { onAiSharingRequired } from "@/lib/ai-sharing-events";
 import { CHAT_GENERIC_ERROR, CHAT_LIMIT_ERROR } from "@/lib/chat-error-copy";
 
 import {
@@ -253,6 +254,33 @@ describe("useSendMessage", () => {
 
     expect(result.current.requestError).toBe(CHAT_LIMIT_ERROR);
     expect(result.current.requestErrorCode).toBe("DAILY_LIMIT_REACHED");
+  });
+
+  // Privacy audit H3: an account that was never asked about AI sharing is
+  // asked when its first message is refused. The stream bypasses apiRequest,
+  // so it has to raise the signal itself.
+  it("opens the AI-sharing question when a message is refused for AI being off", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+    const asked = vi.fn();
+    const off = onAiSharingRequired(asked);
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateErrorResponse(403, {
+        error: "AI features are off",
+        code: "AI_SHARING_REQUIRED",
+      });
+      await p;
+    });
+    off();
+
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(result.current.requestErrorCode).toBe("AI_SHARING_REQUIRED");
   });
 
   it("shows static copy for a server error event mid-stream", async () => {

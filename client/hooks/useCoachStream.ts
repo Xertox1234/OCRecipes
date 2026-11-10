@@ -36,6 +36,7 @@ import { coachRevealPacing, coachStepPacing } from "@/constants/animations";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import { parseErrorCode } from "@/lib/chat-error-copy";
+import { raiseIfAiSharingRequired } from "@/lib/ai-sharing-events";
 
 // Exported so tests can import and verify against them. How much text each
 // tick reveals is decided by `nextReveal` (stream-reveal-utils.ts), tuned by
@@ -423,10 +424,13 @@ export function useCoachStream({
                     outcome.responseText,
                     token,
                   );
-                  fail(
-                    `${outcome.status}: ${outcome.responseText}`,
-                    parseErrorCode(outcome.responseText),
-                  );
+                  {
+                    const code = parseErrorCode(outcome.responseText);
+                    // A refusal for AI being off opens the question
+                    // (privacy audit H3).
+                    raiseIfAiSharingRequired(code);
+                    fail(`${outcome.status}: ${outcome.responseText}`, code);
+                  }
                   break;
                 case "network":
                   fail("Network error");

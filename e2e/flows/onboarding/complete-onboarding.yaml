@@ -101,13 +101,13 @@ tags:
 # keyboard-covered-field mode above) degrades to a skipped round instead of
 # hard-failing the recovery loop on an unfocused field.
 - extendedWaitUntil:
-    visible: "(Allow AI features|Get Started|Not Now)"
+    visible: "(Get Started|Not Now)"
     timeout: 20000
     optional: true
 - repeat:
     times: 3
     while:
-      notVisible: "(Allow AI features|Get Started|Not Now)"
+      notVisible: "(Get Started|Not Now)"
     commands:
       # Same password + confirm-password sequence as the main block above,
       # but the RETRY variant: every step optional and erase-before-type, so
@@ -126,22 +126,12 @@ tags:
           text: "Create Account"
           optional: true
       - extendedWaitUntil:
-          visible: "(Allow AI features|Get Started|Not Now)"
+          visible: "(Get Started|Not Now)"
           timeout: 15000
           optional: true
 - extendedWaitUntil:
-    visible: "(Allow AI features|Get Started|Not Now)"
+    visible: "(Get Started|Not Now)"
     timeout: 15000
-# The AI-sharing question comes first for every new account (privacy audit
-# H3). Allow it: this flow goes on to use the app.
-- runFlow:
-    when:
-      visible: "Allow AI features"
-    commands:
-      - tapOn: "Allow AI features"
-      - extendedWaitUntil:
-          visible: "(Get Started|Not Now)"
-          timeout: 15000
 - runFlow:
     when:
       visible: "Not Now"
@@ -149,7 +139,7 @@ tags:
       - tapOn: "Not Now"
 
 # Onboarding wizard — real screen order from OnboardingNavigator.tsx:
-# Welcome → HealthDataConsent → Allergies → HealthConditions → DietType →
+# Welcome → AiSharing → HealthDataConsent → Allergies → HealthConditions → DietType →
 # Goals → Preferences → TastePicks. This flow declines the health-data
 # consent, so the three health screens (Allergies, HealthConditions, Goals)
 # are skipped: no consent, no health data (onboarding-steps.ts →
@@ -160,6 +150,13 @@ tags:
     visible: "Get Started"
     timeout: 15000
 - tapOn: "Get Started"
+
+# 1b. AI-sharing question (privacy audit H3): who the AI features send data
+#     to. Allow it, as a new user who goes on to use the app would.
+- extendedWaitUntil:
+    visible: "Allow AI features"
+    timeout: 15000
+- tapOn: "Allow AI features"
 
 # 2. Health data consent — decline sharing ("Not now, skip health data
 #    sharing" a11y label)
