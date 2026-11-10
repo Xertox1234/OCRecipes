@@ -200,6 +200,13 @@ export const coachRevealPacing = {
   tailFlushMs: 120,
 } as const;
 
+/** How long each of Coach's steps ("Looking up beef burger…") stays on its
+ *  line (`client/components/coach/step-pacing-utils.ts`). Owner rule: never
+ *  skip a step, never let one flash past unread. */
+export const coachStepPacing = {
+  minStepMs: 1000,
+} as const;
+
 /** Spring parameters for the chat send button popping in as typing starts
  *  (builder API). */
 export const sendButtonEntrySpring = {
