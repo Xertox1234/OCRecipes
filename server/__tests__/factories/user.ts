@@ -58,6 +58,9 @@ const userProfileDefaults: UserProfile = {
   glp1Medication: null,
   glp1StartDate: null,
   healthDataConsentAt: null,
+  healthDataConsentVersion: null,
+  healthDataConsentWithdrawnAt: null,
+  healthDataConsentHistory: [],
   reminderMutes: {},
   notificationPrefs: {
     categories: {},

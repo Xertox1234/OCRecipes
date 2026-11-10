@@ -395,6 +395,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="GoalSetup"
             component={GoalSetupScreen}
+            layout={withSheetProvider}
             options={{
               headerTitle: "Set Goals",
               presentation: "modal",
@@ -403,6 +404,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="EditDietaryProfile"
             component={EditDietaryProfileScreen}
+            layout={withSheetProvider}
             options={{
               headerTitle: "Edit Preferences",
               presentation: "modal",

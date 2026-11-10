@@ -348,6 +348,7 @@ export {
   updateUserProfile,
   saveReminderMutes,
   upsertProfileWithOnboarding,
+  withdrawHealthConsent,
 } from "./user-profiles";
 export {
   getSubscriptionStatus,

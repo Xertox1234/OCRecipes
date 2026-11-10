@@ -149,6 +149,15 @@ They must be append-only at the storage layer — use SQL `COALESCE(existing, in
 partial updates and existence guards in transactional upserts so a re-stamp can never
 overwrite the original record.
 
+**Withdrawal is the one path that clears a live consent** (privacy audit 2026-11-10, H2).
+`withdrawHealthConsent` nulls `healthDataConsentAt` so the "is consent on record" check stays a
+single null test, and a later consent is stamped afresh. The append-only record moves to
+`healthDataConsentHistory`: a jsonb log that every grant and withdrawal only appends to
+(`history || entry`), with the grant's version and the history entry written only when the
+timestamp itself is (`CASE WHEN consent_at IS NULL …`), so a repeat grant adds nothing and an
+older consent is never re-labelled with today's policy version. Any new consent column needs
+the same pair: a live value the gate reads, and a history entry nothing overwrites.
+
 ## CI / supply chain
 
 `pull_request_target` workflows with repository secrets must execute only trusted base-branch

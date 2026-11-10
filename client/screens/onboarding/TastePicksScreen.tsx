@@ -119,7 +119,7 @@ export default function TastePicksScreen() {
             type="small"
             style={{ color: theme.success, fontWeight: "600" }}
           >
-            {getStepLabel(currentStep)}
+            {getStepLabel(currentStep, data.healthDataConsent)}
           </ThemedText>
         </View>
         <ThemedText type="h3" style={styles.title}>

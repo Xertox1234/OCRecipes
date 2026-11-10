@@ -31,6 +31,7 @@ import type {
   NotificationPrefs,
 } from "./types/reminders";
 import type { MeasurementUnit } from "./lib/units";
+import type { HealthConsentEvent } from "./lib/health-consent";
 import type {
   ConsensusNutritionData,
   VerificationNutrition,
@@ -427,6 +428,17 @@ export const userProfiles = pgTable("user_profiles", {
   healthDataConsentAt: timestamp("health_data_consent_at", {
     withTimezone: true,
   }),
+  /** Privacy-policy version the current consent was given against. */
+  healthDataConsentVersion: text("health_data_consent_version"),
+  /** When the user last withdrew the health-data consent (health fields are cleared then). */
+  healthDataConsentWithdrawnAt: timestamp("health_data_consent_withdrawn_at", {
+    withTimezone: true,
+  }),
+  /** Append-only log of every consent and withdrawal; written only by storage. */
+  healthDataConsentHistory: jsonb("health_data_consent_history")
+    .$type<HealthConsentEvent[]>()
+    .default(sql`'[]'::jsonb`)
+    .notNull(),
   reminderMutes: jsonb("reminder_mutes")
     .$type<ReminderMutes>()
     .default(sql`'{}'::jsonb`)

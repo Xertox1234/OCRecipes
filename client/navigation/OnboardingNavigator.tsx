@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
 import {
   ONBOARDING_SCREENS,
-  QUESTION_STEP_COUNT,
+  getQuestionStepCount,
   getQuestionStep,
   type OnboardingScreenName,
 } from "@/context/onboarding-steps";
@@ -45,7 +45,8 @@ const SCREENS = ONBOARDING_SCREENS.map((name) => ({
 }));
 
 function OnboardingStack() {
-  const { currentStep } = useOnboarding();
+  const { currentStep, data } = useOnboarding();
+  const consented = data.healthDataConsent;
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const currentScreen = SCREENS[currentStep];
@@ -61,8 +62,8 @@ function OnboardingStack() {
       ]}
     >
       <OnboardingProgressBar
-        currentStep={getQuestionStep(currentStep) - 1}
-        totalSteps={QUESTION_STEP_COUNT}
+        currentStep={getQuestionStep(currentStep, consented) - 1}
+        totalSteps={getQuestionStepCount(consented)}
       />
       <View style={styles.content}>
         <Stack.Navigator

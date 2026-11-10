@@ -129,7 +129,7 @@ export async function clearNotebook(userId: string): Promise<void> {
 /**
  * Nudge the user's mood score: decay the stored value, add the delta, clamp.
  * Row-locked so two quick turns can't overwrite each other. A user without a
- * profile row has no score to move.
+ * profile row, or without the health-data consent, has no score to move.
  */
 export async function updateMoodScore(
   userId: string,
@@ -141,11 +141,13 @@ export async function updateMoodScore(
       .select({
         moodScore: userProfiles.moodScore,
         moodUpdatedAt: userProfiles.moodUpdatedAt,
+        healthDataConsentAt: userProfiles.healthDataConsentAt,
       })
       .from(userProfiles)
       .where(eq(userProfiles.userId, userId))
       .for("update");
-    if (!profile) return;
+    // No consent, no health data: the mood signal is health-derived.
+    if (!profile || profile.healthDataConsentAt == null) return;
     await tx
       .update(userProfiles)
       .set({
