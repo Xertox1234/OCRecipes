@@ -2412,6 +2412,44 @@ describe("users storage", () => {
       }
     }
 
+    // Privacy audit 2026-11-10 L1: rows written before the route stopped
+    // recording the scanner still carry the id, on a table with no FK to it.
+    it("removes the deleted user's id from front-label data it scanned, and leaves others'", async () => {
+      const [leaving, staying] = [
+        await createTestUser(tx),
+        await createTestUser(tx),
+      ];
+      const label = (userId: string) => ({
+        brand: "Brand",
+        productName: "Product",
+        netWeight: "100g",
+        claims: ["organic"],
+        scannedByUserId: userId,
+        scannedAt: "2026-01-01T00:00:00.000Z",
+      });
+      const [mine, theirs] = [newBarcode(), newBarcode()];
+      await tx.insert(barcodeVerifications).values([
+        { barcode: mine, frontLabelData: label(leaving.id) },
+        { barcode: theirs, frontLabelData: label(staying.id) },
+      ]);
+
+      expect(await deleteUser(leaving.id)).toBe(true);
+
+      const rows = await tx
+        .select()
+        .from(barcodeVerifications)
+        .where(inArray(barcodeVerifications.barcode, [mine, theirs]));
+      const byBarcode = new Map(rows.map((r) => [r.barcode, r.frontLabelData]));
+      expect(byBarcode.get(mine)).toEqual({
+        brand: "Brand",
+        productName: "Product",
+        netWeight: "100g",
+        claims: ["organic"],
+        scannedAt: "2026-01-01T00:00:00.000Z",
+      });
+      expect(byBarcode.get(theirs)).toEqual(label(staying.id));
+    });
+
     it("drops the deleted voter from the count and demotes the level when consensus is lost", async () => {
       const [a, b, c] = [
         await createTestUser(tx),

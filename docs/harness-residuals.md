@@ -414,3 +414,14 @@ First check if reopened (pick one):
    no executor stop.
 3. An auto-mode allow rule for `Agent` calls to the roster reviewers (read-only agents). This needs the
    owner's settings change, not a repo edit.
+
+### Constructed 2026-11-10 — the pg-lab distill gate's email allowlist names the developer's address (privacy audit 2026-11-10, L9)
+
+`scripts/pg-lab/distill-gate.py` (`EMAIL_ALLOWLIST`) and its test `.claude/hooks/test-pg-lab-distill.sh`
+carry the developer's personal address in a tracked file of a public repo. It is a working allowlist
+entry, not a fixture: the gate lets that address through in distilled transcripts, and the test asserts
+it. The three test fixtures that used the address now use `example.com`; these two were left alone
+because changing the entry changes gate verdicts.
+
+If reopened: read the address from git config (`user.email`) at run time instead of pinning it, and have
+the test set it. The address also stays in git history either way.

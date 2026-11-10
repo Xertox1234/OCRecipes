@@ -25,6 +25,7 @@ import {
   stopNotificationScheduler,
 } from "./services/notification-scheduler";
 import { logger, rootLogger, toError } from "./lib/logger";
+import { urlPathOnly } from "./lib/log-url";
 import {
   attachExpressErrorReporter,
   flushErrorReporter,
@@ -201,7 +202,8 @@ function setupRequestLogging(app: express.Application) {
         req(req) {
           return {
             method: req.method,
-            url: req.url,
+            // Path only: query strings carry what the user typed (privacy audit M12).
+            url: urlPathOnly(req.url),
             headers: {
               "content-type": req.headers["content-type"],
               "user-agent": req.headers["user-agent"],
@@ -213,8 +215,8 @@ function setupRequestLogging(app: express.Application) {
           return { statusCode: res.statusCode };
         },
       },
-      customSuccessMessage: (req) => `${req.method} ${req.url}`,
-      customErrorMessage: (req) => `${req.method} ${req.url}`,
+      customSuccessMessage: (req) => `${req.method} ${urlPathOnly(req.url)}`,
+      customErrorMessage: (req) => `${req.method} ${urlPathOnly(req.url)}`,
     }),
   );
 }
