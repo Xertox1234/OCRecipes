@@ -1,10 +1,15 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { crudRateLimit } from "./_rate-limiters";
+import {
+  crudRateLimit,
+  ipKeyGenerator,
+  resolveRateLimitMax,
+} from "./_rate-limiters";
 import { userProfileInputSchema } from "./_schemas";
 import { handleRouteError } from "./_helpers";
 import { hasHealthConsent, sendHealthConsentRequired } from "./_health-consent";
@@ -147,7 +152,20 @@ export function register(app: Express): void {
   app.post(
     "/api/user/health-consent/withdraw",
     requireAuth,
-    crudRateLimit,
+    // Inlined (not the crudRateLimit const) so CodeQL's js/missing-rate-limiting
+    // query can trace it — see server/routes/photos.ts /api/photos/structure-recipe.
+    // Same behavior as crudRateLimit: 30/min, user-keyed, Railway-aware IP fallback.
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: resolveRateLimitMax(30, process.env),
+      message: {
+        error: "Too many requests. Please wait.",
+        code: ErrorCode.RATE_LIMITED,
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const profile = await storage.withdrawHealthConsent(req.userId);
