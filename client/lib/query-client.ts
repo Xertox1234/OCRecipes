@@ -15,6 +15,7 @@ import { ApiError } from "./api-error";
 import { fetchWithTimeout } from "./fetch-timeout";
 import { reportError } from "./reporter";
 import { logger } from "./logger";
+import { apiReachabilityConfig } from "./network-reachability";
 
 /**
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
@@ -463,6 +464,9 @@ export const queryClient = new QueryClient({
  *    Durable resume across app restarts requires the async-storage persister
  *    (@tanstack/query-async-storage-persister) — deferred as a follow-up.
  */
+// "Online" = our API answers, not Google's generate_204 (network-reachability.ts).
+// Before any subscription: NetInfo applies its configuration to later ones.
+NetInfo.configure(apiReachabilityConfig(getApiUrl()));
 onlineManager.setEventListener((setOnline) =>
   NetInfo.addEventListener((state) => {
     // Mirror useNetworkStatus: only explicit false is "offline"; null is
