@@ -11,21 +11,25 @@
 <main>
 <p class="crumb"><a href="/">OCRecipes</a></p>
 <h1>Privacy Policy</h1>
-<p class="meta">Effective November 3, 2026</p>
+<p class="meta">Effective November 10, 2026</p>
 
-<p>This policy explains what information the OCRecipes app collects, why, who it goes to, how long we keep it, and the choices you have. OCRecipes is operated by Family Meal Planning Services (“we”, “us”), based in Alberta, Canada. Questions or requests: <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>.</p>
+<p>This policy explains what information the OCRecipes app collects, why, who it goes to, how long we keep it, and the choices you have. OCRecipes is operated by Family Meal Planning Services (“we”, “us”), based in Alberta, Canada. Our Privacy Officer is responsible for how we handle your information and answers questions and requests: <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>.</p>
+<p>If you live in the United States, our <a href="/health-privacy">Consumer Health Data Privacy Policy</a> describes the health information we handle and your rights over it.</p>
 
 <h2>The short version</h2>
 <ul>
   <li>We collect what the app needs to track your nutrition, analyze food, and coach you.</li>
   <li>We never sell your information and never share it with advertisers. The app has no ads and no tracking.</li>
-  <li>Some features send your information to service providers, such as OpenRouter and the AI companies it connects us to (OpenAI, Google) for food photo analysis, the AI coach and recipes, and Google directly as a backup when OpenRouter is unavailable. They are listed below with what each receives.</li>
+  <li>Some features send your information to service providers, such as OpenRouter and the companies it connects us to (Microsoft Azure, which runs OpenAI’s models, and Google) for food photo analysis, the AI coach and recipes, and Google directly as a backup when OpenRouter is unavailable. They are listed below with what each receives.</li>
   <li>You can export your data and delete your account from the app at any time.</li>
 </ul>
 
 <h2>What we collect</h2>
 <h3>Account information</h3>
 <p>Your username, email address, password (stored only as a one-way hash), display name, and profile picture if you add one. At sign-up you confirm that you are at least 13. We also record when you last used the app, so we know not to delete your history while you are still using it.</p>
+<p>If you sign in with Google or Apple, we receive and keep the account identifier that company gives us and the email address it shares (with Apple this can be a private relay address). For Apple we also keep an encrypted sign-in token, which we use only to tell Apple to end the connection when you delete your account.</p>
+<p>If you turn on two-step sign-in, we email you a code and keep a one-way hash of it until it expires, a count of attempts, and, if you choose “trust this phone”, a one-way hash of a key stored on that phone.</p>
+<p>When you choose a password we check whether it has appeared in a known data breach. To do that we send the first five characters of a one-way hash of the password to the Have I Been Pwned service. Your password, your email address and anything that identifies you are not sent.</p>
 
 <h3>Health and nutrition information</h3>
 <p>If you choose to provide them: allergies and how severe they are, health conditions and medications (including GLP-1 medications), age, height, weight, goal weight, gender, activity level, dietary goals and preferences, foods you dislike, and household and cooking preferences. You also create records as you use the app: foods you log, scanned items, daily totals, meal plans, grocery lists, pantry items, saved recipes and cookbooks, and the community recipes you mark as “I tried it”.</p>
@@ -34,15 +38,18 @@
 <ul>
   <li><strong>Food, label, menu and receipt photos</strong> are sent for analysis and are not stored by us afterwards. Food and label results are kept in memory for up to 30 minutes so you can review them, then saved only if you log or save them. Menu results are saved to your account until you delete your account. For each receipt scan we keep a short record: how many photos and items it had, and whether it worked.</li>
   <li><strong>Profile pictures and cookbook covers</strong> you upload are stored so we can show them.</li>
-  <li><strong>Voice input</strong> is turned into text either by your phone’s speech recognition (provided by Apple or Google) or by OpenAI.</li>
-  <li><strong>Conversations with the AI coach and recipe chat</strong> are stored so you can return to them. The coach may save short notes about your goals and preferences to personalize later answers. These notes can include things you tell it about how you feel.</li>
+  <li><strong>Voice input</strong> is turned into text by your phone’s speech recognition, provided by Apple or Google. We receive the text, not the recording.</li>
+  <li><strong>Conversations with the AI coach and recipe chat</strong> are stored so you can return to them.</li>
+  <li><strong>What Coach remembers.</strong> The coach saves short notes to personalize later answers: your goals, preferences, things you said you would do, a short summary of a conversation, and notes on what kind of coaching works for you. It is set up not to save notes about how you feel. Instead, if you have agreed to our use of your health information, it keeps one running mood score, worked out from your messages, which fades back to neutral within days. The AI coach receives it only as “low”, “neutral” or “good”, so it can adjust its tone. You can see and edit the notes, or clear the notes and the score, under Coach → What Coach knows.</li>
 </ul>
 
 <h3>Purchases</h3>
 <p>If you subscribe to Premium, the App Store or Google Play processes the payment. We never see your card. We receive and keep the store’s purchase record (receipt) to confirm and maintain your subscription.</p>
 
 <h3>Device and technical information</h3>
-<p>Your device’s time zone, a push-notification token if you allow notifications, your IP address (used to prevent abuse and enforce rate limits), request logs (which page or feature was requested, the app version, and an error ID), and crash or error reports. Error reports are configured to exclude request contents, cookies and IP addresses.</p>
+<p>Your device’s time zone, a push-notification token if you allow notifications, your IP address (used to prevent abuse and enforce rate limits), and crash or error reports. Error reports are configured to exclude request contents, cookies and IP addresses.</p>
+<p>Our server keeps a request log: which feature was requested (without the words you typed or searched for), your account ID, the app and device description your phone sends with each request (its “user agent”), a request ID, and whether the request worked.</p>
+<p>We also keep a few working records linked to your account: recent AI answers (for example a coach answer or a set of meal suggestions), kept for a short time so the same question does not have to be sent again; counts of the AI requests you make, used to apply daily limits; and a record of which reminders we sent you and when, so we do not repeat them.</p>
 
 <p>We do not collect your location, contacts, or advertising identifiers.</p>
 
@@ -60,26 +67,27 @@
 
 <h2>Your health information</h2>
 <p>Before any AI feature is used, the app shows you the companies that run our AI (OpenRouter, Microsoft Azure, which runs OpenAI’s models, Google and Runware) and what they receive, and asks for your permission. If you choose “Keep AI off”, we send nothing to them: photo scanning, typed and spoken food logging, the AI coach, recipe ideas, AI meal plans and AI pictures stay off, and barcode scanning and your saved recipes keep working. You can change your answer any time in Profile → Settings → AI features. We keep a record of when you allowed it and when you turned it off.</p>
-<p>During setup we ask for your consent to use health information to personalize recommendations and AI coaching. Health details are optional: you can choose “Not now” and keep using the app. If you do, we do not ask for or store your health details; we ask for your consent again if you later add them in Profile. Your health information is <strong>never sold and never shared with advertisers</strong>. Some of it is sent to the service providers below, only to produce the answer you asked for. For example, the coach receives your goals, allergies, diet type, weight and activity level so its suggestions fit you. To withdraw your consent and have your health details removed, use Profile → Settings → Withdraw health-data consent, or email <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>. Withdrawing removes your allergies, health conditions and medications, body measurements, activity level and goal, and we keep only a record of when you agreed and when you withdrew. Your food logs, recipes, chats and the notes Coach has saved stay; you can clear those notes under Coach → What Coach knows.</p>
+<p>During setup we ask for your consent to use health information to personalize recommendations and AI coaching. Health details are optional: you can choose “Not now” and keep using the app. If you do, we do not ask for or store your health details; we ask for your consent again if you later add them in Profile. Your health information is <strong>never sold and never shared with advertisers</strong>. Some of it is sent to the service providers below, only to produce the answer you asked for. For example, the coach receives your goals, allergies, diet type, weight and activity level so its suggestions fit you. To withdraw your consent and have your health details removed, use Profile → Settings → Withdraw health-data consent, or email <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>. Withdrawing removes your allergies, health conditions and medications, body measurements, activity level and goal, and resets the coach’s mood score; we keep only a record of when you agreed and when you withdrew. Your food logs, recipes, chats and the notes Coach has saved stay; you can clear those notes under Coach → What Coach knows.</p>
 <p>OCRecipes provides general nutrition information, not medical advice. See our <a href="/terms">Terms of Service</a>.</p>
 
-<h2>Who we share it with</h2>
+<h2 id="who-we-share-it-with">Who we share it with</h2>
 <p>We share information only with the service providers that run parts of OCRecipes for us, and only what each one needs:</p>
 <div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Provider</th><th scope="col">What it does</th><th scope="col">What it receives</th></tr></thead>
   <tbody>
-    <tr><td>OpenRouter</td><td>Routes our AI requests to the companies that run the AI models, without keeping a copy (zero data retention)</td><td>Your photos when you use those features, your messages, and the profile details a feature needs (for example goals, allergies, diet type, weight, activity level, today’s intake)</td></tr>
-    <tr><td>OpenAI</td><td>Photo analysis, food text logging, AI coach, meal plans (these models run on Microsoft Azure, reached through OpenRouter); also used directly for voice transcription and pictures</td><td>Your photos and voice recordings when you use those features, your messages, and the profile details a feature needs (for example goals, allergies, diet type, weight, activity level, today’s intake)</td></tr>
-    <tr><td>Google (Vertex AI)</td><td>Recipe chat and recipe generation, some photo scanning (identifying foods in a photo), and a backup for the AI coach, meal plans, food text logging, photo, label, receipt and menu scanning, recipe ideas and our other text and photo features when our main AI route is down — reached through OpenRouter, or directly when OpenRouter is unavailable</td><td>Your photos when you use those features, your messages, and the profile details a feature needs (for example goals, allergies, diet type, weight, activity level, today’s intake). When we reach Google directly it does not keep a copy, except that a request its automated safety systems flag may be kept for a limited period for review</td></tr>
-    <tr><td>Runware</td><td>Recipe pictures</td><td>Recipe titles, cuisines and ingredients</td></tr>
+    <tr><td>OpenRouter</td><td>Routes our AI requests to the companies that run the AI models, without keeping a copy (zero data retention)</td><td>Your photos when you use those features, your messages, and the profile details a feature needs (for example your first name, goals, allergies, diet type, weight, activity level and today’s intake). The AI coach also receives the notes it has saved about you, the mood band described above, and when in your day you usually log meals</td></tr>
+    <tr><td>Microsoft Azure</td><td>Runs the OpenAI models we use for the AI coach, meal plans, food text logging and some photo features. Reached through OpenRouter</td><td>The same information as the OpenRouter row, for those features</td></tr>
+    <tr><td>Google (Vertex AI)</td><td>Recipe chat and recipe generation, photo, label and receipt scanning, and a backup for the AI coach, meal plans, food text logging, menu scanning, recipe ideas and our other text and photo features when our main AI route is down — reached through OpenRouter, or directly when OpenRouter is unavailable</td><td>The same information as the OpenRouter row, for those features. When we reach Google directly, Google may hold a request in memory for up to 24 hours, and may log requests for a limited time to detect abuse. Google does not publish how many days that is</td></tr>
+    <tr><td>Runware</td><td>Recipe and cookbook pictures</td><td>Recipe titles, cuisines and ingredients, and a short description of the food to show on a cookbook cover</td></tr>
     <tr><td>Spoonacular</td><td>Recipe search</td><td>Search words, diet type, and intolerances based on your allergies</td></tr>
-    <tr><td>USDA, Health Canada’s Canadian Nutrient File, API Ninjas, Open Food Facts</td><td>Nutrition facts</td><td>Food names or barcodes only</td></tr>
+    <tr><td>USDA, Health Canada’s Canadian Nutrient File, API Ninjas, Open Food Facts</td><td>Nutrition facts</td><td>Food names or barcodes only, sent from our server and not from your phone</td></tr>
+    <tr><td>Have I Been Pwned</td><td>Checks a new password against known data breaches</td><td>The first five characters of a one-way hash of the password, and nothing that identifies you</td></tr>
     <tr><td>Resend</td><td>Email delivery</td><td>Your email address, username, and the message (for example a reset code)</td></tr>
     <tr><td>Sentry</td><td>Error reporting</td><td>Technical error details, with request contents, cookies and IP addresses removed</td></tr>
-    <tr><td>Expo</td><td>Push notifications and app updates</td><td>Your push token and the notification text</td></tr>
-    <tr><td>Apple, Google</td><td>Payments, speech recognition</td><td>Purchase records, and your voice when you use your phone’s speech recognition</td></tr>
-    <tr><td>Railway</td><td>Server hosting and database</td><td>The information stored in your account</td></tr>
+    <tr><td>Expo</td><td>Push notifications and app updates</td><td>Your push token and the notification text. When the app checks for an update, Expo receives the request, including your IP address and app version</td></tr>
+    <tr><td>Apple, Google</td><td>Payments, sign-in, delivering notifications to your phone, speech recognition</td><td>Purchase records; the sign-in request when you use Sign in with Apple or Google; notification text on its way to your phone; and your voice when you use your phone’s speech recognition</td></tr>
+    <tr><td>Railway</td><td>Server hosting and database</td><td>The information stored in your account, and the request log</td></tr>
     <tr><td>Cloudflare</td><td>Image storage and delivery, website, email routing</td><td>Stored images and messages sent to our support address</td></tr>
   </tbody>
 </table>
@@ -88,36 +96,42 @@
 
 <h2>Public and shared content</h2>
 <ul>
-  <li><strong>Community recipes</strong> you publish are public by default. Other users can see them, and popular public recipes may be included in the recipe data we offer to businesses through the OCRecipes API. You can delete your recipes at any time. Deleting your account deletes them too.</li>
+  <li><strong>Recipes</strong> you create are private unless you choose to share them. A recipe you share is public: other users can see it, and popular public recipes may be included in the recipe data we offer to businesses through the OCRecipes API. You can make a recipe private again or delete it at any time. Deleting your account deletes your recipes too.</li>
   <li><strong>“I tried it” marks</strong> on community recipes are added to a count that other users can see, along with how many people have favourited the recipe. Nobody else can see which recipes you marked, or who marked a recipe. You can undo a mark on the recipe’s page while the recipe is public. If its author makes it private, the count is hidden from everyone. Deleting your account removes all of your marks.</li>
-  <li><strong>Nutrition label scans</strong> help verify product nutrition data. That product data is shared with other users and offered through the OCRecipes API, <strong>without your name or account attached</strong>. Because it is not linked to you, it stays in the shared product data after you delete your account.</li>
+  <li><strong>Nutrition label scans</strong> help verify product nutrition data. That product data is shared with other users and offered through the OCRecipes API, <strong>without your name or account attached</strong>. We keep our own record of which account made each scan; it is deleted when you delete your account. The product data itself stays in the shared data.</li>
 </ul>
 
 <h2>Where your information is processed</h2>
-<p>Our providers may process and store information outside Canada, including in the United States. There it is subject to the laws of that country, which may allow its authorities to access it.</p>
+<p>Our providers process and store information outside Canada. Most of them are companies based in the United States. They handle it for the purposes listed in the table above. Google, Microsoft and Cloudflare run data centres in many countries and may handle a request in any of them. Open Food Facts is run from France. In each country your information is subject to that country’s laws, which may allow its authorities to access it. You can ask our Privacy Officer how we choose and oversee providers outside Canada.</p>
 
 <h2>How long we keep it</h2>
 <ul>
   <li><strong>Your account and profile:</strong> until you delete your account.</li>
   <li><strong>Scanned items:</strong> deleted after 1 year.</li>
-  <li><strong>Coach and recipe chats:</strong> deleted 6 months after the last message.</li>
+  <li><strong>Coach and recipe chats:</strong> deleted 6 months after the last message. A recipe picture made for you in a chat can stay in our image storage after the chat is deleted.</li>
+  <li><strong>What Coach remembers:</strong> the notes, including conversation summaries, are kept until you clear them or delete your account. They are not deleted with the chat they came from.</li>
   <li><strong>Daily nutrition logs:</strong> deleted after 2 years. An entry you logged from a scan is deleted along with that scan, after 1 year.</li>
   <li><strong>Menu scan results:</strong> until you delete your account.</li>
   <li><strong>Receipt scan records:</strong> until you delete your account.</li>
   <li>These automatic deletions are skipped while you have an active subscription or have used the app in the last 30 days, so your history stays available while you use it.</li>
   <li><strong>Food photos:</strong> not stored after analysis.</li>
+  <li><strong>Things you remove:</strong> a scan you discard or a recipe you remove from your meal plan is hidden straight away. The hidden record can stay in our database until the deletions above reach it or you delete your account.</li>
+  <li><strong>Purchase records:</strong> kept while you have an account. If you delete your account we erase the receipt and the link to you. We keep the store’s transaction number, which store and product it was for, whether it was refunded, and when, so the same purchase cannot be used again on another account.</li>
   <li><strong>Request logs and error reports:</strong> kept for a limited time for security and troubleshooting.</li>
 </ul>
 
 <h2>Your choices and rights</h2>
 <ul>
-  <li><strong>See and download your data:</strong> Profile → Settings → <em>Export My Data</em> gives you a copy as a file.</li>
+  <li><strong>See and download your data:</strong> Profile → Settings → <em>Export My Data</em> gives you a copy of your main records as a file. A few working records are not in the file yet, such as sign-in connections, saved AI answers and reminder history. Email us and we will send them.</li>
   <li><strong>Correct it:</strong> edit your profile and health details in the app.</li>
-  <li><strong>Delete your account:</strong> Profile → Settings → <em>Delete Account</em>. This permanently deletes your account, your data, your published recipes, and the images you uploaded.</li>
+  <li><strong>Delete your account:</strong> Profile → Settings → <em>Delete Account</em>. This permanently deletes your account, your data, your recipes, and the images you uploaded. Some things stay. With nothing that links them to you: the store’s transaction number for a purchase, with its product and refund state, and product nutrition data that your label scans helped verify. For a limited time: request logs, which carry your account ID, and error reports. A recipe picture made for you in a chat that has already been deleted can also remain in our image storage.</li>
   <li><strong>Notifications:</strong> turn them off in your phone’s settings, or mute reminders under Profile → Settings → <em>Coach Reminders</em>.</li>
   <li><strong>Withdraw consent</strong> or make any other request by emailing <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>. We reply within 30 days.</li>
 </ul>
 <p>If you’re not satisfied with our response, you can contact the Office of the Information and Privacy Commissioner of Alberta (<a href="https://oipc.ab.ca">oipc.ab.ca</a>), the Office of the Privacy Commissioner of Canada (<a href="https://www.priv.gc.ca">priv.gc.ca</a>), or the privacy regulator where you live.</p>
+
+<h3>If you live in the United States</h3>
+<p>Whichever state you live in, you can ask us to confirm what information we hold about you, give you a copy, correct it, or delete it, and you can withdraw a consent you gave. We do not sell personal information, do not share it for advertising, and will not treat you differently for making a request. Use the controls above or email <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a>. If we refuse a request, you can appeal by replying to our answer, and we will tell you the outcome in writing. If you are still not satisfied, you can contact your state’s Attorney General. Our <a href="/health-privacy">Consumer Health Data Privacy Policy</a> covers health information in more detail.</p>
 
 <h2>Security</h2>
 <p>Passwords are stored with bcrypt hashing, connections are encrypted, sign-ins are rate-limited, and resetting your password signs you out on every other device. No system is perfectly secure, so please use a strong, unique password.</p>
@@ -129,7 +143,7 @@
 <p>If we change this policy we will update the date at the top. If a change is significant, we will tell you in the app or by email before it takes effect.</p>
 
 <h2>Contact</h2>
-<p>Family Meal Planning Services<br><a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a></p>
+<p>Privacy Officer, Family Meal Planning Services<br><a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a></p>
 </main>
 </body>
 </html>

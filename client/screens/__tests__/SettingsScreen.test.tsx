@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import SettingsScreen from "../SettingsScreen";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
+import { HEALTH_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { ConfirmOptions } from "@/components/ConfirmationModal";
 
@@ -562,5 +563,23 @@ describe("SettingsScreen — AI features", () => {
     expect(mockOpenAiSharing).toHaveBeenCalledTimes(1);
     expect(mockConfirm).not.toHaveBeenCalled();
     expect(mockAnswerAiSharing).not.toHaveBeenCalled();
+  });
+});
+
+describe("SettingsScreen legal links", () => {
+  it("opens the Consumer Health Data Privacy Policy", async () => {
+    const openSpy = vi.spyOn(Linking, "openURL").mockResolvedValue();
+    renderComponent(<SettingsScreen />);
+
+    fireEvent.click(
+      screen.getByRole("link", { name: "Consumer Health Data Privacy Policy" }),
+    );
+
+    await waitFor(() =>
+      expect(openSpy).toHaveBeenCalledWith(HEALTH_PRIVACY_POLICY_URL),
+    );
+    expect(HEALTH_PRIVACY_POLICY_URL).toBe(
+      "https://ocrecipes.com/health-privacy",
+    );
   });
 });

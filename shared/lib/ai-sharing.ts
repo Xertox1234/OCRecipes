@@ -53,7 +53,7 @@ export const AI_RECIPIENT_NAMES =
 export const AI_SHARED_DATA = [
   "Photos you scan (meals, labels, menus, receipts)",
   "Messages you send to Coach and the recipe chat, and foods you type or dictate",
-  "The profile details a feature needs, such as your first name, goals, allergies, diet, weight, activity level and what you ate today",
+  "The profile details a feature needs, such as your first name, goals, allergies, diet, weight, activity level, what you ate today and the notes Coach has saved about you",
   "Recipe titles and ingredients, to create recipe pictures",
 ] as const;
 
