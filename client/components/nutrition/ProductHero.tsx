@@ -7,6 +7,7 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { NutritionData } from "@/hooks/useNutritionLookup";
+import { resolveImageUrl } from "@/lib/query-client";
 
 interface ProductHeroProps {
   nutrition: NutritionData | null | undefined;
@@ -38,7 +39,7 @@ export function ProductHero({
         ]}
       >
         <FallbackImage
-          source={{ uri: nutrition?.imageUrl ?? undefined }}
+          source={{ uri: resolveImageUrl(nutrition?.imageUrl) ?? undefined }}
           style={styles.productImage}
           fallbackIcon="image"
           fallbackIconSize={30}

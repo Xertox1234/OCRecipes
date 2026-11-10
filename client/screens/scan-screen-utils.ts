@@ -6,6 +6,7 @@ import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import { LOCK_THRESHOLD_FRAMES } from "@/camera/components/ScanReticle-utils";
 import { CONTENT_TYPE_LABELS } from "@/camera/utils/content-type-label";
 import { logger } from "@/lib/logger";
+import { resolveImageUrl } from "@/lib/query-client";
 import type { ProductSummary, ScanPhase } from "@/camera/types/scan-phase";
 import type { ScanFlag } from "@shared/types/scan-flags";
 import {
@@ -282,7 +283,8 @@ export function buildProductSummary(
   return {
     name: data.productName ?? "Unknown product",
     brand: data.brandName ?? undefined,
-    imageUri: data.imageUrl ?? undefined,
+    // Our photo proxy path is relative (privacy audit M1).
+    imageUri: resolveImageUrl(data.imageUrl) ?? undefined,
     safetyFlag: pickTopSafetyFlag(flags),
     topFlag: pickTopDisplayFlag(flags),
     verificationLevel: data.verificationLevel,

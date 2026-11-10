@@ -8,6 +8,7 @@ import { register as registerAuthPassword } from "./routes/auth-password";
 import { register as registerProfile } from "./routes/profile";
 import { register as registerAiSharing } from "./routes/ai-sharing";
 import { register as registerNutrition } from "./routes/nutrition";
+import { register as registerProductImages } from "./routes/product-images";
 import { register as registerPhotos } from "./routes/photos";
 import { register as registerSuggestions } from "./routes/suggestions";
 import { register as registerSavedItems } from "./routes/saved-items";
@@ -71,6 +72,7 @@ export function registerRoutes(app: Express): Server {
   registerProfile(app);
   registerAiSharing(app);
   registerNutrition(app);
+  registerProductImages(app);
   registerPhotos(app);
   registerSuggestions(app);
   registerSavedItems(app);

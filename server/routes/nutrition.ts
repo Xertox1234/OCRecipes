@@ -30,6 +30,10 @@ import { isBeverageCategory } from "@shared/constants/nutrition-bands";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { numericStringField } from "./_schemas";
 import {
+  sanitizeStoredProductImageUrl,
+  toProductImageProxyPath,
+} from "../lib/product-image-proxy";
+import {
   handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
@@ -78,6 +82,12 @@ const scannedItemInputSchema = insertScannedItemSchema.extend({
     .default("Unknown Product"),
   brandName: nullishString,
   servingSize: nullishString,
+  // Privacy audit M1: a saved item may only point at our own photo proxy.
+  imageUrl: z
+    .string()
+    .max(2000)
+    .nullish()
+    .transform((url) => sanitizeStoredProductImageUrl(url)),
   calories: numericStringField,
   protein: numericStringField,
   carbs: numericStringField,
@@ -203,6 +213,8 @@ function buildBarcodeResponseBody(
 
   return {
     ...clientResult,
+    // Privacy audit M1: the phone loads the product photo through our server.
+    imageUrl: toProductImageProxyPath(clientResult.imageUrl) ?? undefined,
     flags: orderedFlags,
     isBeverage,
     verificationLevel: verification?.verificationLevel ?? "unverified",
