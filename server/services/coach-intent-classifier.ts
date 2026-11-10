@@ -259,6 +259,16 @@ function wordCount(message: string): number {
 }
 
 /**
+ * The classifier's own disordered-eating / self-harm pattern, for callers
+ * that need the signal without routing a message (the weekly report reads it
+ * over the week's coach messages). One regex, no copy.
+ */
+export function matchesDisorderedEating(text: string): boolean {
+  const entry = SAFETY_PATTERNS.find((p) => p.name === "disordered_eating");
+  return entry ? entry.pattern.test(text) : false;
+}
+
+/**
  * Deterministic regex/keyword intent classifier. Pure function — no I/O,
  * no LLM call. Rule precedence: safety > recipe_request > vague >
  * general_fact > personalized. Safety wins all ties. `recipeRequests: false`
