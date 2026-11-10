@@ -498,6 +498,20 @@ describe("scan-screen-utils", () => {
       });
     });
 
+    // Privacy audit M1: the barcode response sends the photo as our own
+    // relative proxy path; the chip needs it absolute to load it from us.
+    it("resolves our relative photo path against the API base", () => {
+      const result = buildProductSummary(
+        {
+          imageUrl: "/api/product-image?path=%2Fimages%2Fproducts%2F1%2Fa.jpg",
+        },
+        flags,
+      );
+      expect(result.imageUri).toMatch(
+        /^https?:\/\/[^/]+\/api\/product-image\?path=%2Fimages%2Fproducts%2F1%2Fa\.jpg$/,
+      );
+    });
+
     // A response with no verificationLevel must NOT be treated as verified.
     // Leaving it undefined lets the chip default to the label-required branch.
     it("leaves verificationLevel undefined when the response omits it", () => {
