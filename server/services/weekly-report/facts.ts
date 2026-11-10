@@ -1,10 +1,10 @@
 import { civilDateString, civilHourInTz } from "../../lib/civil-date";
 import { addCivilDays } from "./week-window";
 import type {
-  FeatureTipId,
   WeeklyDay,
   WeeklyFacts,
-  WeeklyRecipe,
+  WeeklyInputs,
+  WeeklyLog,
 } from "@shared/schemas/coach-weekly-report";
 
 /**
@@ -13,27 +13,7 @@ import type {
  * Spec: docs/superpowers/specs/2026-11-10-coach-weekly-report-design.md.
  */
 
-export interface WeeklyLog {
-  loggedAt: Date;
-  mealType: string | null;
-  calories: number | null;
-  protein: number | null;
-  carbs: number | null;
-}
-
-export interface WeeklyInputs {
-  goals: {
-    calories: number | null;
-    protein: number | null;
-    carbs: number | null;
-  };
-  logs: WeeklyLog[];
-  recipes: WeeklyRecipe[];
-  /** Earlier reports' facts, newest first, at most 6. */
-  previous: WeeklyFacts[];
-  coachMessages: string[];
-  tipIds: FeatureTipId[];
-}
+export type { WeeklyInputs, WeeklyLog };
 
 /** A day counts toward "met" (or "low") only with this many meals logged. */
 const FULL_DAY_MEALS = 2;

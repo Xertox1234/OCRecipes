@@ -43,6 +43,7 @@ import * as recipeFromChat from "./recipe-from-chat";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
 import * as notificationSendsStorage from "./notification-sends";
+import * as weeklyReportsStorage from "./weekly-reports";
 import * as schedulerRunsStorage from "./scheduler-runs";
 import * as canonicalRecipesStorage from "./canonical-recipes";
 import * as tastePicksStorage from "./taste-picks";
@@ -421,6 +422,22 @@ export const storage = {
   // Notification governance ledger
   recordNotificationSend: notificationSendsStorage.recordNotificationSend,
   getLastNotificationSend: notificationSendsStorage.getLastNotificationSend,
+
+  // Coach weekly report
+  getWeeklyReportInputs: weeklyReportsStorage.getWeeklyReportInputs,
+  getFeatureUsage: weeklyReportsStorage.getFeatureUsage,
+  insertWeeklyReport: weeklyReportsStorage.insertWeeklyReport,
+  listWeeklyReports: weeklyReportsStorage.listWeeklyReports,
+  getWeeklyReport: weeklyReportsStorage.getWeeklyReport,
+  getRecentWeeklyFacts: weeklyReportsStorage.getRecentWeeklyFacts,
+  markWeeklyReportSeen: weeklyReportsStorage.markWeeklyReportSeen,
+  markCelebrationShown: weeklyReportsStorage.markCelebrationShown,
+  claimWeeklyReportDelivery: weeklyReportsStorage.claimWeeklyReportDelivery,
+  releaseWeeklyReportDelivery: weeklyReportsStorage.releaseWeeklyReportDelivery,
+  getDuePushes: weeklyReportsStorage.getDuePushes,
+  getPendingPopup: weeklyReportsStorage.getPendingPopup,
+  getWeeklyReportSettings: weeklyReportsStorage.getWeeklyReportSettings,
+  setWeeklyReportSettings: weeklyReportsStorage.setWeeklyReportSettings,
 
   // Scheduler run claims (multi-instance cron dedup)
   claimSchedulerRun: schedulerRunsStorage.claimSchedulerRun,

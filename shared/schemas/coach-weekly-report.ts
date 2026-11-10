@@ -164,3 +164,26 @@ export const weeklyReportSettingsSchema = z
   })
   .strict();
 export type WeeklyReportSettings = z.infer<typeof weeklyReportSettingsSchema>;
+
+/** Server-side inputs to the facts builder (one week of stored data). */
+export interface WeeklyLog {
+  loggedAt: Date;
+  mealType: string | null;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+}
+
+export interface WeeklyInputs {
+  goals: {
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+  };
+  logs: WeeklyLog[];
+  recipes: WeeklyRecipe[];
+  /** Earlier reports' facts, newest first, at most 6. */
+  previous: WeeklyFacts[];
+  coachMessages: string[];
+  tipIds: FeatureTipId[];
+}
