@@ -144,10 +144,11 @@ Headings are short (M19): Wins · Watch · Next week.
 
 ## How it works (decided parts)
 
-- **The week:** _OPEN — owner question._ Generating at Sunday 18:00 for a Mon–Sun week would freeze
-  an unfinished Sunday (dinner not yet logged) into the permanent report. Options: (a) Sunday
-  delivery covering the last seven complete days, Sun–Sat; (b) Monday-morning delivery for Mon–Sun;
-  (c) Sunday delivery, numbers re-finalised once after midnight. In the person's own timezone.
+- **The week (owner decision 16):** the report is delivered Sunday evening and covers the **last
+  seven complete days, Sunday to Saturday**, in the person's own timezone. The Sunday it is
+  delivered on is not in it (it opens the next report's week), so no unfinished day is ever frozen
+  into a report. Date ranges on screen read accordingly (e.g. "Nov 2–8"); the mockups' Mon–Sun
+  ranges are illustrative only.
 - **When:** Sunday evening, local time, using the existing local-hour scheduling in
   `server/services/notification-scheduler.ts`. _(Builder's call: the exact hour; the mockups assume
   around 18:00.)_
