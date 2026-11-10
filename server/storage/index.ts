@@ -141,6 +141,7 @@ export const storage = {
   updateUserProfile: users.updateUserProfile,
   saveReminderMutes: users.saveReminderMutes,
   upsertProfileWithOnboarding: users.upsertProfileWithOnboarding,
+  withdrawHealthConsent: users.withdrawHealthConsent,
   updateUserGoalsAndProfile: users.updateUserGoalsAndProfile,
   getSubscriptionStatus: users.getSubscriptionStatus,
   getEffectiveTierForUser: users.getEffectiveTierForUser,

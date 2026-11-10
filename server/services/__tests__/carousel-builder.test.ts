@@ -29,6 +29,8 @@ const mockProfile: UserProfile = {
   glp1Medication: null,
   glp1StartDate: null,
   healthDataConsentAt: null,
+  healthDataConsentVersion: null,
+  healthDataConsentWithdrawnAt: null,
   reminderMutes: {},
   notificationPrefs: {
     categories: {},

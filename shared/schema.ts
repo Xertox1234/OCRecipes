@@ -427,6 +427,12 @@ export const userProfiles = pgTable("user_profiles", {
   healthDataConsentAt: timestamp("health_data_consent_at", {
     withTimezone: true,
   }),
+  /** Privacy-policy version the current consent was given against. */
+  healthDataConsentVersion: text("health_data_consent_version"),
+  /** When the user last withdrew the health-data consent (health fields are cleared then). */
+  healthDataConsentWithdrawnAt: timestamp("health_data_consent_withdrawn_at", {
+    withTimezone: true,
+  }),
   reminderMutes: jsonb("reminder_mutes")
     .$type<ReminderMutes>()
     .default(sql`'{}'::jsonb`)

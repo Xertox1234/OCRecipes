@@ -7,6 +7,7 @@ import {
 import type { ReminderMutes } from "@shared/types/reminders";
 import { db } from "../db";
 import { eq, sql } from "drizzle-orm";
+import { HEALTH_CONSENT_VERSION } from "@shared/lib/health-consent";
 
 // User profile storage, split out of users.ts (pure move). users.ts
 // re-exports these, so the storage facade and existing imports are unchanged.
@@ -79,6 +80,7 @@ export async function updateUserProfile(
   };
   if (recordConsent) {
     setClause.healthDataConsentAt = sql`COALESCE(${userProfiles.healthDataConsentAt}, ${new Date()})`;
+    setClause.healthDataConsentVersion = sql`COALESCE(${userProfiles.healthDataConsentVersion}, ${HEALTH_CONSENT_VERSION})`;
   }
   const [profile] = await db
     .update(userProfiles)
@@ -86,6 +88,58 @@ export async function updateUserProfile(
     .where(eq(userProfiles.userId, userId))
     .returning();
   return profile || undefined;
+}
+
+/**
+ * Withdraws the health-data consent: clears every health field on the profile
+ * and the body metrics on the user row, and replaces the consent record with a
+ * withdrawal time, in one transaction. Taste and cooking preferences and the
+ * calorie targets are not health data and stay. Returns the cleared profile,
+ * or undefined when the user has no profile.
+ *
+ * This is the only path that clears `healthDataConsentAt`; a later consent is
+ * stamped afresh. Field lists: `shared/lib/health-consent.ts`.
+ */
+export async function withdrawHealthConsent(
+  userId: string,
+): Promise<UserProfile | undefined> {
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const [profile] = await tx
+      .update(userProfiles)
+      .set({
+        allergies: [],
+        healthConditions: [],
+        primaryGoal: null,
+        activityLevel: null,
+        glp1Mode: false,
+        glp1Medication: null,
+        glp1StartDate: null,
+        // The inferred mood signal is derived from what the user tells Coach.
+        moodScore: 0,
+        moodUpdatedAt: null,
+        healthDataConsentAt: null,
+        healthDataConsentVersion: null,
+        healthDataConsentWithdrawnAt: now,
+        updatedAt: now,
+      })
+      .where(eq(userProfiles.userId, userId))
+      .returning();
+    if (!profile) return undefined;
+
+    await tx
+      .update(users)
+      .set({
+        weight: null,
+        height: null,
+        age: null,
+        gender: null,
+        goalWeight: null,
+      })
+      .where(eq(users.id, userId));
+
+    return profile;
+  });
 }
 
 /**
@@ -149,7 +203,11 @@ export async function upsertProfileWithOnboarding(
       // here from `new Date()` so callers cannot supply a backdated value.
       const safeData: Omit<InsertUserProfile, "userId"> =
         recordConsent && !existing.healthDataConsentAt
-          ? { ...safeProfileData, healthDataConsentAt: new Date() }
+          ? {
+              ...safeProfileData,
+              healthDataConsentAt: new Date(),
+              healthDataConsentVersion: HEALTH_CONSENT_VERSION,
+            }
           : safeProfileData;
       [result] = await tx
         .update(userProfiles)
@@ -158,7 +216,11 @@ export async function upsertProfileWithOnboarding(
         .returning();
     } else {
       const insertData: Omit<InsertUserProfile, "userId"> = recordConsent
-        ? { ...safeProfileData, healthDataConsentAt: new Date() }
+        ? {
+            ...safeProfileData,
+            healthDataConsentAt: new Date(),
+            healthDataConsentVersion: HEALTH_CONSENT_VERSION,
+          }
         : safeProfileData;
       [result] = await tx
         .insert(userProfiles)

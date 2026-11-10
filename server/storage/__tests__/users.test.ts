@@ -30,6 +30,7 @@ import {
   verificationHistory,
 } from "@shared/schema";
 import { eq, inArray } from "drizzle-orm";
+import { HEALTH_CONSENT_VERSION } from "@shared/lib/health-consent";
 import {
   isUniqueViolation,
   uniqueViolationConstraint,
@@ -56,6 +57,7 @@ const {
   createUserProfile,
   updateUserProfile,
   saveReminderMutes,
+  withdrawHealthConsent,
   getSubscriptionStatus,
   getEffectiveTierForUser,
   updateSubscription,
@@ -684,6 +686,108 @@ describe("users storage", () => {
       });
 
       expect(updated!.healthDataConsentAt).toBeNull();
+    });
+  });
+
+  describe("health-data consent version and withdrawal", () => {
+    it("records the policy version with the consent", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+
+      const updated = await updateUserProfile(testUser.id, {}, true);
+
+      expect(updated!.healthDataConsentVersion).toBe(HEALTH_CONSENT_VERSION);
+    });
+
+    it("records the policy version when onboarding stamps the consent", async () => {
+      const profile = await upsertProfileWithOnboarding(testUser.id, {}, true);
+
+      expect(profile.healthDataConsentAt).toBeInstanceOf(Date);
+      expect(profile.healthDataConsentVersion).toBe(HEALTH_CONSENT_VERSION);
+    });
+
+    it("withdrawal clears every health field, the consent and the body metrics", async () => {
+      await createTestUserProfile(tx, testUser.id, {
+        allergies: [{ name: "peanuts", severity: "severe" }],
+        healthConditions: ["type 2 diabetes"],
+        primaryGoal: "lose_weight",
+        activityLevel: "moderate",
+        glp1Mode: true,
+        glp1Medication: "semaglutide",
+        glp1StartDate: new Date("2026-01-01T00:00:00Z"),
+        moodScore: 0.6,
+        moodUpdatedAt: new Date("2026-11-01T00:00:00Z"),
+        dietType: "vegan",
+        foodDislikes: ["olives"],
+      });
+      await updateUserProfile(testUser.id, {}, true);
+      await updateUser(testUser.id, {
+        weight: "80.00",
+        height: "180.00",
+        age: 35,
+        gender: "male",
+        dailyCalorieGoal: 2100,
+      });
+
+      const profile = await withdrawHealthConsent(testUser.id);
+
+      expect(profile).toBeDefined();
+      expect(profile!.allergies).toEqual([]);
+      expect(profile!.healthConditions).toEqual([]);
+      expect(profile!.primaryGoal).toBeNull();
+      expect(profile!.activityLevel).toBeNull();
+      expect(profile!.glp1Mode).toBe(false);
+      expect(profile!.glp1Medication).toBeNull();
+      expect(profile!.glp1StartDate).toBeNull();
+      expect(profile!.moodScore).toBe(0);
+      expect(profile!.moodUpdatedAt).toBeNull();
+      expect(profile!.healthDataConsentAt).toBeNull();
+      expect(profile!.healthDataConsentVersion).toBeNull();
+      expect(profile!.healthDataConsentWithdrawnAt).toBeInstanceOf(Date);
+      // Preferences are not health data and stay.
+      expect(profile!.dietType).toBe("vegan");
+      expect(profile!.foodDislikes).toEqual(["olives"]);
+
+      const user = await getUser(testUser.id);
+      expect(user!.weight).toBeNull();
+      expect(user!.height).toBeNull();
+      expect(user!.age).toBeNull();
+      expect(user!.gender).toBeNull();
+      expect(user!.goalWeight).toBeNull();
+      // A calorie target is a number the user chose, not a body metric.
+      expect(user!.dailyCalorieGoal).toBe(2100);
+    });
+
+    it("a consent given after a withdrawal is stamped afresh", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+      await updateUserProfile(testUser.id, {}, true);
+      await withdrawHealthConsent(testUser.id);
+
+      const again = await updateUserProfile(testUser.id, {}, true);
+
+      expect(again!.healthDataConsentAt).toBeInstanceOf(Date);
+      expect(again!.healthDataConsentVersion).toBe(HEALTH_CONSENT_VERSION);
+      expect(again!.healthDataConsentWithdrawnAt).toBeInstanceOf(Date);
+    });
+
+    it("withdrawal touches only the caller's own rows", async () => {
+      const other = await createTestUser(tx);
+      await createTestUserProfile(tx, other.id, {
+        allergies: [{ name: "milk", severity: "mild" }],
+      });
+      await updateUserProfile(other.id, {}, true);
+      await createTestUserProfile(tx, testUser.id, {});
+
+      await withdrawHealthConsent(testUser.id);
+
+      const untouched = await getUserProfile(other.id);
+      expect(untouched!.allergies).toEqual([
+        { name: "milk", severity: "mild" },
+      ]);
+      expect(untouched!.healthDataConsentAt).toBeInstanceOf(Date);
+    });
+
+    it("returns undefined when the user has no profile", async () => {
+      expect(await withdrawHealthConsent(testUser.id)).toBeUndefined();
     });
   });
 

@@ -281,6 +281,12 @@ export const userProfileInputSchema = insertUserProfileSchema
     // server-side when `healthDataConsent === true`. Prevents client clock spoofing
     // and accidental erasure via profile updates.
     healthDataConsentAt: true,
+    // Server-written only: the consent version and withdrawal time come from
+    // the consent and withdrawal paths, and the mood signal from Coach.
+    healthDataConsentVersion: true,
+    healthDataConsentWithdrawnAt: true,
+    moodScore: true,
+    moodUpdatedAt: true,
   })
   .extend({
     allergies: z.array(allergySchema).max(30).optional(),
