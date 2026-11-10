@@ -19,6 +19,7 @@ import {
   handleRouteError,
 } from "./_helpers";
 import { importUrlSchema, parsePageSchema } from "@shared/schemas/recipe";
+import { rehostRecipeImage } from "../services/recipe-image-rehost";
 
 /**
  * Shared success/failure tail for parse-url and parse-page: maps a failed
@@ -219,7 +220,8 @@ export function register(app: Express): void {
             servings: data.servings || 2,
             prepTimeMinutes: data.prepTimeMinutes,
             cookTimeMinutes: data.cookTimeMinutes,
-            imageUrl: data.imageUrl,
+            // Privacy audit M1: our copy of the photo, never the source URL.
+            imageUrl: await rehostRecipeImage(data.imageUrl),
             instructions: data.instructions ?? undefined,
             dietTags: data.dietTags,
             mealTypes: inferMealTypes(

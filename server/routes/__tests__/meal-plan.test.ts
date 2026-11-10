@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AI_DAILY_CAPS } from "@shared/types/premium";
 import { generateRecipeImage } from "../../services/recipe-generation";
 import express from "express";
@@ -157,6 +157,65 @@ describe("Meal Plan Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(400);
+    });
+  });
+
+  // Privacy audit M1: a saved recipe photo may only be ours (R2 or our disk
+  // path), so the phone never loads a recipe photo from another host.
+  describe("recipe photo URL (privacy audit M1)", () => {
+    const R2 = "https://cdn.ocrecipes.test";
+    let savedBase: string | undefined;
+    beforeEach(() => {
+      savedBase = process.env.R2_PUBLIC_BASE_URL;
+      process.env.R2_PUBLIC_BASE_URL = R2;
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
+      vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(mockRecipe);
+    });
+    afterEach(() => {
+      if (savedBase === undefined) delete process.env.R2_PUBLIC_BASE_URL;
+      else process.env.R2_PUBLIC_BASE_URL = savedBase;
+    });
+
+    it("stores no photo for a URL on another host", async () => {
+      await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Soup",
+          ingredients: [{ name: "Leek", quantity: "1", unit: null }],
+          imageUrl: "https://tracker.example/p.jpg",
+        });
+
+      expect(vi.mocked(storage.createMealPlanRecipe).mock.calls[0][0]).toEqual(
+        expect.objectContaining({ imageUrl: null }),
+      );
+    });
+
+    it("keeps a photo on our storage", async () => {
+      const ours = `${R2}/recipe-images/recipe-1.jpg`;
+      await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Soup",
+          ingredients: [{ name: "Leek", quantity: "1", unit: null }],
+          imageUrl: ours,
+        });
+
+      expect(vi.mocked(storage.createMealPlanRecipe).mock.calls[0][0]).toEqual(
+        expect.objectContaining({ imageUrl: ours }),
+      );
+    });
+
+    it("drops another host's photo on update too", async () => {
+      await request(app)
+        .put("/api/meal-plan/recipes/1")
+        .set("Authorization", "Bearer token")
+        .send({ imageUrl: "https://tracker.example/p.jpg" });
+
+      expect(vi.mocked(storage.updateMealPlanRecipe).mock.calls[0][2]).toEqual({
+        imageUrl: null,
+      });
     });
   });
 
