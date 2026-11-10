@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import { scrubBreadcrumb, scrubEvent } from "../reporter";
+import { queryKeyLabel, scrubBreadcrumb, scrubEvent } from "../reporter";
 import type { Breadcrumb, ErrorEvent } from "@sentry/react-native";
 
 // reporter.ts imports @sentry/react-native (a native module that does not
@@ -139,6 +139,93 @@ describe("scrubBreadcrumb (privacy audit M9)", () => {
   it("keeps the app's own context breadcrumbs", () => {
     const crumb: Breadcrumb = { message: "lookup failed", level: "error" };
     expect(scrubBreadcrumb(crumb)).toEqual(crumb);
+  });
+});
+
+describe("scrubEvent: server error text (privacy audit M9 follow-up)", () => {
+  // apiRequest and the hand-rolled hooks throw `"<status>: <response body>"`.
+  // A validation error can echo what the user typed, so the body never leaves
+  // the device; only the status and a machine-readable code survive.
+  const eventWithError = (...values: string[]): ErrorEvent =>
+    ({
+      type: undefined,
+      exception: { values: values.map((value) => ({ type: "Error", value })) },
+    }) as ErrorEvent;
+
+  it("keeps the status and code, drops the rest of a JSON body", () => {
+    const event = eventWithError(
+      '422: {"error":"calories: 2400 for Whole Milk is invalid","code":"VALIDATION_ERROR"}',
+    );
+    expect(scrubEvent(event).exception?.values?.[0].value).toBe(
+      "422: [body removed] code=VALIDATION_ERROR",
+    );
+  });
+
+  it("drops a JSON body that has no code", () => {
+    const event = eventWithError('500: {"error":"host db-1 refused"}');
+    expect(scrubEvent(event).exception?.values?.[0].value).toBe(
+      "500: [body removed]",
+    );
+  });
+
+  it("drops a non-JSON body", () => {
+    const event = eventWithError("502: <html>Bad Gateway for user 42</html>");
+    expect(scrubEvent(event).exception?.values?.[0].value).toBe(
+      "502: [body removed]",
+    );
+  });
+
+  it("drops a code that is not a plain constant", () => {
+    const event = eventWithError('400: {"code":"whole milk"}');
+    expect(scrubEvent(event).exception?.values?.[0].value).toBe(
+      "400: [body removed]",
+    );
+  });
+
+  it("scrubs every value in a cause chain", () => {
+    const event = eventWithError("TypeError: x is undefined", "503: down");
+    const values = scrubEvent(event).exception?.values;
+    expect(values?.[0].value).toBe("TypeError: x is undefined");
+    expect(values?.[1].value).toBe("503: [body removed]");
+  });
+
+  it("leaves messages without a status prefix unchanged", () => {
+    const event = eventWithError("Network request failed");
+    expect(scrubEvent(event).exception?.values?.[0].value).toBe(
+      "Network request failed",
+    );
+  });
+
+  it("scrubs a captured message too", () => {
+    const event = {
+      type: undefined,
+      message: "404: no recipe 7",
+    } as ErrorEvent;
+    expect(scrubEvent(event).message).toBe("404: [body removed]");
+  });
+});
+
+describe("queryKeyLabel (privacy audit M9 follow-up)", () => {
+  it("keeps only the scrubbed route from the first key element", () => {
+    expect(queryKeyLabel(["/api/allergen-check", ["eggs", "whole milk"]])).toBe(
+      "/api/allergen-check",
+    );
+    expect(queryKeyLabel(["/api/cookbooks", 42])).toBe("/api/cookbooks");
+    expect(queryKeyLabel(["/api/chat/conversations/9/messages"])).toBe(
+      "/api/chat/conversations/:id/messages",
+    );
+    expect(queryKeyLabel(["/api/meal-plan", "2026-11-10", "2026-11-16"])).toBe(
+      "/api/meal-plan",
+    );
+  });
+
+  it("keeps a plain mutation key word", () => {
+    expect(queryKeyLabel(["pin-conversation"])).toBe("pin-conversation");
+  });
+
+  it("labels a key with no string head", () => {
+    expect(queryKeyLabel(undefined)).toBe("unkeyed");
+    expect(queryKeyLabel([{ id: 3 }])).toBe("unkeyed");
   });
 });
 
