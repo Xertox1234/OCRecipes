@@ -88,12 +88,15 @@ week gets an easier way back in and learns about features they are paying for bu
   "New" badge, the report's headline, a 7-bar sparkline and "Read your week". _(Builder's call made in
   the mockup: the card shows only while unread or during its week; after that the tile is the way in.)_
 - A **"Weekly Reports" tile** in the Library grid, with the report count. It opens the past-reports
-  screen. Pro only; hidden for free users.
+  screen. Shown whenever the person has at least one report (so a lapsed Pro user keeps access,
+  decision 15); hidden for someone who has never had one. Pro gates generation, never reading.
 
 ### 2. Sunday popup (mockup 2)
 
-- A bottom sheet when the person is in the app at the moment the report becomes ready, or opens the
-  app after it is ready and before the push went out.
+- A bottom sheet, shown **only when no push was delivered for that report**: the app was in the
+  foreground at send time (the banner is suppressed and the popup shows instead), or the person has
+  push permission off (the popup shows the next time they open the app). If a push was delivered,
+  the profile's "New" card is the only in-app signal, whether or not the push was tapped.
 - Content: "Your week is ready · <range>", the headline, one line, **Read my week**, and
   **Later — it's saved in your profile**.
 - Shown once per report. Opening the report from the push counts as seen: no popup afterwards.
@@ -105,7 +108,7 @@ week gets an easier way back in and learns about features they are paying for bu
    the report is opened, never again. No celebration if no goal was met.
 2. **Week in numbers** — three stats: _N of 7 days you showed up_, _meals logged_, _recipes added_.
 3. **Wins** — two short sentences.
-4. **New in your kitchen** — each recipe saved or imported that week, with how it arrived and whether
+4. **New in your kitchen** — each recipe saved or imported that week, with how it arrived and
    how often it was logged ("Saved · logged twice", "Imported from a link"). Tapping one opens the recipe.
 5. **Goal vs actual chart** (M9) — bars per day against the goal line; chips switch the nutrient
    (Protein default; Calories; Carbs). Days that met the goal are in the accent; others neutral.
@@ -141,7 +144,10 @@ Headings are short (M19): Wins · Watch · Next week.
 
 ## How it works (decided parts)
 
-- **The week:** Monday–Sunday in the person's own timezone. The report covers the week that is ending.
+- **The week:** _OPEN — owner question._ Generating at Sunday 18:00 for a Mon–Sun week would freeze
+  an unfinished Sunday (dinner not yet logged) into the permanent report. Options: (a) Sunday
+  delivery covering the last seven complete days, Sun–Sat; (b) Monday-morning delivery for Mon–Sun;
+  (c) Sunday delivery, numbers re-finalised once after midnight. In the person's own timezone.
 - **When:** Sunday evening, local time, using the existing local-hour scheduling in
   `server/services/notification-scheduler.ts`. _(Builder's call: the exact hour; the mockups assume
   around 18:00.)_
@@ -152,7 +158,15 @@ Headings are short (M19): Wins · Watch · Next week.
   how often each was logged, meal patterns (reuse `buildMealPatternSummary` in
   `server/services/coach-context-builder.ts`), features used/unused. Coach is then given those facts
   and writes only the sentences (headline, wins, watch, next idea, trend line). It never computes or
-  invents a number; every figure on screen is rendered from the assembled facts.
+  invents a number; every figure on screen is rendered from the assembled facts. The facts include
+  **last week's stats and the person's best week so far**, so comparisons ("up from four days last
+  week", "your best week yet") are backed by data; a comparison with no fact behind it fails
+  validation.
+- **Goals are frozen with the facts.** The goal values used that week are stored with the report, so
+  an old chart stays consistent with itself after the person changes their goals.
+- **Partly logged days.** A day counts toward "met the goal" only if it has at least two meals logged
+  (or meets the goal anyway). A day with one meal logged is shown as logged but is neither counted
+  as met nor described as low. _(My call.)_
 - **Saved once.** The facts and the written text are stored together as that week's report. Opening a
   report, now or months later, reads the stored copy. Editing an old meal later does not change an old
   report. Trends read the stored facts of the last six reports.
@@ -163,7 +177,11 @@ Headings are short (M19): Wins · Watch · Next week.
   photo or link, pantry + "what can I make tonight?", meal plan with grocery list, voice logging in
   Coach, cookbooks.
 - **Delivery:** a new notification category for the weekly report (push + in-app). Push and popup
-  share one "delivered" record per report so only one ever fires.
+  share one "delivered" record per report so only one ever fires. The category does not count
+  against the daily discretionary cap (it is dated and weekly, like `commitment`), but on a day the
+  person already got a Coach push, the report push waits until the next morning. _(My call.)_
+- **Repeated empty weeks:** after three weeks in a row with no logs, the push pauses; the report is
+  still written and saved, and the push resumes after the next week with a log. _(My call.)_
 - **Opt-out:** "Fewer like this" and Report settings let the person turn off the push (report still
   saved in the profile) or turn the report off entirely.
 
@@ -171,9 +189,19 @@ Headings are short (M19): Wins · Watch · Next week.
 
 - Lead with wins. Never use "missed", "failed", "only", "broken", "behind".
 - No weight, body, deficit or restriction talk; never praise eating less or a low-calorie day.
-- Patterns describe logged behaviour (timing, skipped meals, variety), never body or mood.
-- If the week's data or the person's notebook shows disordered-eating signals, skip the patterns and
-  "next" sections and use supportive copy with the existing professional-referral wording.
+- Patterns describe logged behaviour (timing, variety, which meals were logged), never body or mood.
+- **A missing log is not a skipped meal.** Say "no lunch logged", never "skipped lunch" or "didn't
+  eat". The report only knows what was logged.
+- **Two safety signals, both cheap (no extra AI call):**
+  1. _Chat:_ the existing `disordered_eating` detector
+     (`server/services/coach-intent-classifier.ts`) run over the person's Coach messages that week.
+     If it fires: drop Watch, Next week and the trend line; use supportive copy with the existing
+     professional-referral wording.
+  2. _Logs:_ if most fully logged days (decision on partly logged days above) came in far under the
+     calorie goal (below 70% of it), the report shows no calorie chart, no calorie stat and no
+     calorie-related patterns, and the text never mentions calorie amounts. _(My call; the
+     threshold is the builder's to tune with the prompt-engineer review.)_
+     Notebook entries are not scanned; that limit is deliberate for this version.
 - If the model's output fails validation (schema, banned words, a number not in the facts), fall back
   to a data-only report with plain template sentences rather than showing nothing.
 
@@ -184,14 +212,10 @@ on open, on the trends view or on old reports.
 
 ## Calls I made (from the builder check; owner may override)
 
-- **Safety signal:** run the existing `disordered_eating` detector
-  (`server/services/coach-intent-classifier.ts`) over the person's Coach messages from the week. If it
-  fires, the report drops Watch, Next week and the trend line and uses supportive copy with the
-  existing professional-referral wording. No extra AI call.
-- **Delivery timing:** generate and deliver at the same moment. The push goes out at generation. When
-  the app is in the foreground the client suppresses the banner and shows the popup instead; when the
-  app comes to the foreground with an unseen report and the push was never opened, the popup shows.
-  Seen state is one flag per report, so only one surface appears. The report does **not** use the
+- **Safety signals:** the two cheap checks in the safety section (chat detector, very-low-calorie
+  log rule). Notebook scanning is out of scope for this version.
+- **Delivery timing:** generate and deliver at the same moment. The popup appears only when no push
+  was delivered (see §2). Seen state is one flag per report. The report does **not** use the
   `pending_reminders` in-app row, which lights the Coach badge (`hasPendingReminders` ignores type);
   the profile card's "New" badge is its own unread state.
 - **Recipes "saved or imported" that week:** new favourites, new saved items, and recipes imported
