@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useState } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -30,23 +30,24 @@ export default function AiSharingScreen() {
   const { answer } = useAiSharing();
   const [saving, setSaving] = useState(false);
 
-  const handleAnswer = useCallback(
-    async (allowed: boolean) => {
-      setSaving(true);
-      try {
-        await answer(allowed);
+  // Promise handlers, not try/finally: React Compiler does not compile a
+  // component whose callback has a `finally` block.
+  const handleAnswer = (allowed: boolean) => {
+    setSaving(true);
+    answer(allowed).then(
+      () => {
+        setSaving(false);
         // The re-ask copy sits on top of the app and closes itself; the first
         // ask is the only screen, and the navigator moves on by itself.
         if (navigation.canGoBack()) navigation.goBack();
-      } catch (err) {
+      },
+      (err: unknown) => {
+        setSaving(false);
         logger.error("Saving the AI-sharing answer failed", err);
         toast.error("Couldn't save your answer. Please try again.");
-      } finally {
-        setSaving(false);
-      }
-    },
-    [answer, navigation, toast],
-  );
+      },
+    );
+  };
 
   return (
     <View
@@ -150,7 +151,7 @@ export default function AiSharingScreen() {
         style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
       >
         <Button
-          onPress={() => void handleAnswer(true)}
+          onPress={() => handleAnswer(true)}
           disabled={saving}
           accessibilityLabel="Allow AI features"
           accessibilityHint="Lets OCRecipes send your photos, messages and needed profile details to the AI companies listed"
@@ -159,7 +160,7 @@ export default function AiSharingScreen() {
         </Button>
         <Pressable
           testID="ai-sharing-decline"
-          onPress={() => void handleAnswer(false)}
+          onPress={() => handleAnswer(false)}
           disabled={saving}
           accessibilityRole="button"
           accessibilityLabel="Keep AI features off"
