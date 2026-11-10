@@ -5,6 +5,8 @@ import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { setRequestUserId } from "../lib/request-context";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { logger, toError } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 
 // Extend Express Request type.
 // userId is declared as non-optional because all routes that access it
@@ -192,7 +194,17 @@ export async function requireAuth(
       sendError(res, 401, "Token expired", "TOKEN_EXPIRED");
       return;
     }
-    sendError(res, 401, "Invalid token", "TOKEN_INVALID");
+    // Signature, issuer, audience, not-before: the token itself is bad.
+    if (err instanceof jwt.JsonWebTokenError) {
+      sendError(res, 401, "Invalid token", "TOKEN_INVALID");
+      return;
+    }
+    // Anything else (the tokenVersion read failing on a slow or down
+    // database) says nothing about the token. A 401 here signs the user out.
+    // Responds directly, so Sentry's Express handler never sees it: report.
+    logger.error({ err: toError(err) }, "requireAuth error");
+    reportError(err, "requireAuth");
+    sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
   }
 }
 
