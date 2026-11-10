@@ -190,7 +190,12 @@ export function useCoachStream({
 
       if (chunk.length === 0) {
         // Nothing to drain this tick
-        if (isDoneRef.current && bufferRef.current.length === 0) {
+        // Every step gets its full time, even one that arrived late.
+        if (
+          isDoneRef.current &&
+          bufferRef.current.length === 0 &&
+          stepsSettled(steps, now, coachStepPacing.minStepMs)
+        ) {
           // Buffer exhausted and server is done — finish
           stopDrain();
           isStreamingRef.current = false;

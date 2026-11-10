@@ -79,7 +79,10 @@ const StreamingBubble = memo(function StreamingBubble({
       {/* Under the partial reply too: a step that runs after text started
           (show-the-work spec 2026-11-09). The hook clears it otherwise. */}
       {isStreaming && statusText ? (
-        <CoachStatusRow statusText={statusText} />
+        <CoachStatusRow
+          statusText={statusText}
+          announceOnMount={!!streamingContent}
+        />
       ) : null}
     </View>
   );

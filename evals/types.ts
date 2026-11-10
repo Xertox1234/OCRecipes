@@ -233,6 +233,7 @@ export const evalTestCaseSchema = z.object({
       mustNotContain: z.array(z.string()).optional(),
       mustContain: z.array(z.string()).optional(),
       mustNotRecommendBelow: z.number().optional(),
+      maxWords: z.number().int().positive().optional(),
       macrosBudgetRespected: z.boolean().optional(),
       suggestionCount: z.number().optional(),
       mustHaveMinIngredients: z.number().optional(),

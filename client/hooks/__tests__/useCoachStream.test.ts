@@ -324,6 +324,57 @@ describe("useCoachStream paced steps (show-the-work spec 2026-11-09)", () => {
     );
   });
 
+  it("late steps each get their full second before the reply finishes", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ content: "Let me see. " });
+    });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    act(() => {
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ step: "B" });
+      mockXhr.emit({ content: "Done. " });
+      mockXhr.emit({ done: true });
+    });
+    const seen: string[] = [];
+    for (let t = 0; t < 4000 && result.current.isStreaming; t += 50) {
+      act(() => {
+        vi.advanceTimersByTime(50);
+      });
+      if (
+        result.current.statusText &&
+        !seen.includes(result.current.statusText)
+      )
+        seen.push(result.current.statusText);
+      if (result.current.statusText === "B" && t < 1900) {
+        expect(result.current.isStreaming).toBe(true);
+      }
+    }
+    expect(seen).toEqual(["A", "B"]);
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("a reply with steps and no text still plays every step before it ends", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    act(() => {
+      mockXhr.emit({ step: "A" });
+      mockXhr.emit({ done: true });
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current.isStreaming).toBe(true);
+    expect(result.current.statusText).toBe("A");
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(result.current.isStreaming).toBe(false);
+  });
+
   it("status events are ignored once a step arrived", async () => {
     const { result } = await setupHook();
     await startAndFlush(result);

@@ -1599,10 +1599,12 @@ describe("handleCoachChat", () => {
       expect(
         events.filter((e) => e.type === "status" || e.type === "step"),
       ).toEqual([
-        { type: "status", label: "Looking up nutrition…" },
+        // step first: a new client queues it, then ignores the plain status
+        // (no flicker, one announcement); old clients ignore `step`.
         { type: "step", label: "Looking up beef burger…" },
-        { type: "status", label: "Checking your pantry…" },
+        { type: "status", label: "Looking up nutrition…" },
         { type: "step", label: "Checking your pantry…" },
+        { type: "status", label: "Checking your pantry…" },
       ]);
     });
 

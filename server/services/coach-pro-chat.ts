@@ -757,8 +757,10 @@ export async function* handleCoachChat(
           if (isAborted()) break;
           const step = toolStep(call, { writeCards: !!writeCards });
           trailEntries.push(step.trail);
-          yield { type: "status", label: plainStatusLabel(call.name) };
+          // step first: a new client queues it and then ignores the plain
+          // status, so the line never flickers between the two labels.
           yield { type: "step", label: step.label };
+          yield { type: "status", label: plainStatusLabel(call.name) };
         }
         if (isAborted()) break;
         continue;

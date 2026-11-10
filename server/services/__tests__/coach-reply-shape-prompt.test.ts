@@ -75,6 +75,19 @@ describe("coach reply-shape prompt rules", () => {
     }
   });
 
+  it("no example recites two targets or two remaining figures", () => {
+    for (const intent of INTENTS) {
+      for (const line of prompt("pro", intent)
+        .split("\n")
+        .filter((l) => l.startsWith("NutriCoach: '"))) {
+        expect(line).not.toMatch(/of [\d,]+ cal and \d+ of \d+g protein/);
+        expect(line).not.toMatch(
+          /\d+g (carbs|protein|fat) and \d+g (carbs|protein|fat) (remaining|left)/,
+        );
+      }
+    }
+  });
+
   it("the unsafe-request template keeps refusal and referral in one clause", () => {
     const p = prompt("pro", "safety_refusal");
     expect(p).toMatch(/REFUSAL \+ REFERRAL/);

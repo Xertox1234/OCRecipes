@@ -76,6 +76,15 @@ export function toolStep(
   call: { name: string; arguments: string },
   opts: { writeCards: boolean },
 ): ToolStep {
+  const step = rawToolStep(call, opts);
+  // A capped value already ends in "…"; the label adds its own.
+  return { ...step, label: step.label.replace(/…+$/, "…") };
+}
+
+function rawToolStep(
+  call: { name: string; arguments: string },
+  opts: { writeCards: boolean },
+): ToolStep {
   const args = parseArgs(call.arguments);
   const card = opts.writeCards;
   switch (call.name) {

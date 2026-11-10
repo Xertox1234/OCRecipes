@@ -63,6 +63,20 @@ describe("coach step labels (show-the-work spec 2026-11-09)", () => {
     expect(label.length).toBeLessThanOrEqual("Looking up ".length + 41 + 1);
   });
 
+  it("a capped value ends in exactly one ellipsis", () => {
+    const { label, trail } = toolStep(
+      call("search_recipes", { query: "a".repeat(60) }),
+      { writeCards: true },
+    );
+    expect(label).toBe(`Searching recipes for ${"a".repeat(40)}…`);
+    expect(trail).toBe(`${"a".repeat(40)}… recipes`);
+    expect(
+      toolStep(call("lookup_nutrition", { query: "x y ".repeat(30) }), {
+        writeCards: true,
+      }).label,
+    ).not.toMatch(/……/);
+  });
+
   it("get_substitutions names the first ingredient", () => {
     expect(
       toolStep(

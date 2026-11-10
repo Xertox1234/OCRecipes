@@ -478,7 +478,10 @@ export function CoachOverlayContent({
             </View>
           ))}
           {isStreaming && statusText ? (
-            <CoachStatusRow statusText={statusText} />
+            <CoachStatusRow
+              statusText={statusText}
+              announceOnMount={!!streamingContent}
+            />
           ) : null}
           {/* Error banner is intentionally placed inside the scroll area (adjacent
               to the failed message) rather than using CoachChatBase's streamingError

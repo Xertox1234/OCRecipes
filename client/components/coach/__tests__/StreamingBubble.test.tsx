@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
+import { AccessibilityInfo } from "react-native";
 import { screen } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import StreamingBubble from "../StreamingBubble";
@@ -59,5 +60,32 @@ describe("StreamingBubble — paced steps (show-the-work spec 2026-11-09)", () =
     );
     expect(screen.getByText("Let me see what fits your day.")).toBeDefined();
     expect(screen.getByText("Checking your pantry…")).toBeDefined();
+  });
+});
+
+describe("StreamingBubble — late step announcement", () => {
+  it("a step that appears under partial text is announced once", () => {
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    const props = {
+      streamingContent: "Let me see what fits your day.",
+      isStreaming: true,
+      streamBlocks: [],
+      onBlockAction: vi.fn(),
+      onQuickReply: vi.fn(),
+      onCommitmentAccept: vi.fn(),
+      ttsSpeak: vi.fn(),
+      isSpeaking: false,
+      speakingMessageId: null,
+    };
+    const { rerender } = renderComponent(
+      <StreamingBubble {...props} statusText="" />,
+    );
+    rerender(<StreamingBubble {...props} statusText="Checking your pantry…" />);
+    expect(
+      announce.mock.calls.filter((c) => c[0] === "Checking your pantry…"),
+    ).toHaveLength(1);
+    announce.mockRestore();
   });
 });
