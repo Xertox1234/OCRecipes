@@ -72,6 +72,7 @@ export const AI_FEATURES = {
   "coach-chat": { ...LUNA, json: false, vision: false }, // nutrition-coach generateCoachResponse (stream)
   "coach-pro-chat": { ...LUNA, json: false, vision: false }, // nutrition-coach generateCoachProResponse (stream, tools)
   "coach-notebook-extract": { ...FAST, json: true, vision: false }, // notebook-extraction extractNotebookEntries
+  "coach-weekly-report": { ...FAST, json: true, vision: false }, // weekly-report writeWeeklyReport (one call per user-week)
   // Recipe chat
   // Gemini 3.8 Flash (owner-approved 2026-11-02, paired eval safety +0.96 vs
   // gpt-4o, p50 5.9 s to the card vs Argon's 11.7 s; todo
