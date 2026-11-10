@@ -76,4 +76,9 @@ export type RecipeRefArg = z.infer<typeof recipeRefArgSchema>;
 export type WriteCardProposal =
   | { kind: "food"; args: LogFoodCardArgs }
   | { kind: "grocery"; args: AddGroceryCardArgs }
-  | { kind: "plan"; args: AddMealPlanCardArgs };
+  | {
+      kind: "plan";
+      args: AddMealPlanCardArgs;
+      /** Community ids find_plan_recipes returned this turn, for Swap. */
+      pool?: number[];
+    };

@@ -50,7 +50,7 @@ export async function buildWriteCardPayload(
     case "grocery":
       return buildGroceryPayload(p.args, ctx.userId);
     case "plan":
-      return buildPlanPayload(p.args, ctx.userId);
+      return buildPlanPayload(p.args, ctx.userId, p.pool);
   }
 }
 

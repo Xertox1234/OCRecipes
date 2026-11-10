@@ -218,6 +218,100 @@ describe("plan write card", () => {
     ]);
   });
 
+  it("a row the model gave no alternatives gets Swap choices from this turn's finder results", async () => {
+    const [a, b, c, d, e] = await Promise.all(
+      ["Lentil stew", "Bean tacos", "Tofu curry", "Chicken bowl", "Salmon"].map(
+        (t) => community(t),
+      ),
+    );
+    const p = await buildPlanPayload(
+      addMealPlanCardArgsSchema.parse({
+        rows: [
+          {
+            plannedDate: "2026-11-10",
+            mealType: "dinner",
+            recipe: { source: "community", id: a.id },
+          },
+          {
+            plannedDate: "2026-11-11",
+            mealType: "dinner",
+            recipe: { source: "community", id: b.id },
+          },
+        ],
+      }),
+      user.id,
+      [a.id, b.id, c.id, d.id, e.id, 999999],
+    );
+    for (const row of p.rows) {
+      const ids = row.alternatives.map((r) => r.id);
+      expect(ids.length).toBeGreaterThanOrEqual(2);
+      expect(ids.length).toBeLessThanOrEqual(3);
+      // Never another row's main recipe, its own, or an id that doesn't resolve.
+      expect(ids).not.toContain(a.id);
+      expect(ids).not.toContain(b.id);
+      expect(ids).not.toContain(999999);
+    }
+    // The two rows don't offer the exact same choices.
+    expect(p.rows[0].alternatives.map((r) => r.id)).not.toEqual(
+      p.rows[1].alternatives.map((r) => r.id),
+    );
+  });
+
+  it("the model's own alternatives come first and the finder pool only tops them up", async () => {
+    const [main, own, x, y] = await Promise.all(
+      ["Main", "Own pick", "Pool X", "Pool Y"].map((t) => community(t)),
+    );
+    const p = await buildPlanPayload(
+      addMealPlanCardArgsSchema.parse({
+        rows: [
+          {
+            plannedDate: "2026-11-10",
+            mealType: "dinner",
+            recipe: { source: "community", id: main.id },
+            alternatives: [{ source: "community", id: own.id }],
+          },
+        ],
+      }),
+      user.id,
+      [own.id, x.id, y.id],
+    );
+    expect(p.rows[0].alternatives.map((r) => r.id)).toEqual([
+      own.id,
+      x.id,
+      y.id,
+    ]);
+  });
+
+  it("a finder-pool recipe unsafe for the user's allergies is never offered", async () => {
+    await createTestUserProfile(tx, user.id, {
+      allergies: [{ name: "peanuts", severity: "severe" }],
+    });
+    const main = await community("Main");
+    const unsafe = await community("Satay");
+    await tx
+      .update(schema.communityRecipes)
+      .set({ allergens: [] })
+      .where(eq(schema.communityRecipes.id, main.id));
+    await tx
+      .update(schema.communityRecipes)
+      .set({ allergens: [{ id: "peanuts", viaDerived: false }] })
+      .where(eq(schema.communityRecipes.id, unsafe.id));
+    const p = await buildPlanPayload(
+      addMealPlanCardArgsSchema.parse({
+        rows: [
+          {
+            plannedDate: "2026-11-10",
+            mealType: "dinner",
+            recipe: { source: "community", id: main.id },
+          },
+        ],
+      }),
+      user.id,
+      [unsafe.id],
+    );
+    expect(p.rows[0].alternatives).toEqual([]);
+  });
+
   it("a community recipe unsafe for the user's allergies is dropped", async () => {
     await createTestUserProfile(tx, user.id, {
       allergies: [{ name: "peanuts", severity: "severe" }],

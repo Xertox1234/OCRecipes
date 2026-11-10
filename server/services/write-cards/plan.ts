@@ -94,14 +94,54 @@ function isSafeCommunityRecipe(
   );
 }
 
+/** Swap shows two or three choices (owner decision 2026-11-09). */
+const MIN_SWAP_CHOICES = 2;
+const MAX_SWAP_CHOICES = 3;
+
+/**
+ * Fills each short row from the pool, never offering any row's main recipe
+ * or a choice the row already has. Each row starts at a different point in
+ * the pool, so neighbouring days lead with a different choice.
+ */
+function topUpSwapChoices(
+  rows: PlanCardPayload["rows"],
+  pool: PlanRecipeRef[],
+): void {
+  const mains = new Set(rows.map((r) => refKey(r.recipe)));
+  const candidates = pool.filter((r) => !mains.has(refKey(r)));
+  if (candidates.length === 0) return;
+  rows.forEach((row, i) => {
+    if (row.alternatives.length >= MIN_SWAP_CHOICES) return;
+    const have = new Set(row.alternatives.map(refKey));
+    for (let k = 0; k < candidates.length; k++) {
+      if (row.alternatives.length >= MAX_SWAP_CHOICES) break;
+      const c = candidates[(i + k) % candidates.length];
+      if (have.has(refKey(c))) continue;
+      have.add(refKey(c));
+      row.alternatives.push(c);
+    }
+  });
+}
+
+/**
+ * `pool` is the community ids find_plan_recipes returned this turn. A row
+ * the model gave fewer than two alternatives is topped up from it, so Swap
+ * doesn't depend on the model remembering the optional field. Pool ids go
+ * through the same resolve-and-safety check as the model's own.
+ */
 export async function buildPlanPayload(
   args: AddMealPlanCardArgs,
   userId: string,
+  pool: number[] = [],
 ): Promise<PlanCardPayload> {
-  const all: RecipeRefArg[] = args.rows.flatMap((r) => [
-    r.recipe,
-    ...r.alternatives,
-  ]);
+  const poolRefs: RecipeRefArg[] = [...new Set(pool)].map((id) => ({
+    source: "community",
+    id,
+  }));
+  const all: RecipeRefArg[] = [
+    ...args.rows.flatMap((r) => [r.recipe, ...r.alternatives]),
+    ...poolRefs,
+  ];
   const ids = (source: "community" | "mine") =>
     all.filter((r) => r.source === source).map((r) => r.id);
   const dates = args.rows.map((r) => r.plannedDate).sort();
@@ -134,6 +174,9 @@ export async function buildPlanPayload(
     if (title && !planned.has(key)) planned.set(key, title);
   }
 
+  const poolResolved = poolRefs
+    .map((r) => resolved.get(refKey(r)))
+    .filter((r): r is PlanRecipeRef => r !== undefined);
   const rows: PlanCardPayload["rows"] = [];
   for (const row of args.rows) {
     const candidates = [row.recipe, ...row.alternatives]
@@ -151,13 +194,14 @@ export async function buildPlanPayload(
       plannedDate: row.plannedDate,
       mealType: row.mealType,
       recipe,
-      alternatives: alternatives.slice(0, 3),
+      alternatives: alternatives.slice(0, MAX_SWAP_CHOICES),
       alreadyPlanned: planned.get(`${row.plannedDate}|${row.mealType}`) ?? null,
     });
   }
   if (rows.length === 0) {
     throw new WriteCardEditError("None of those recipes could be found.");
   }
+  topUpSwapChoices(rows, poolResolved);
   return { rows, shoppingListId: lists[0]?.id ?? null };
 }
 

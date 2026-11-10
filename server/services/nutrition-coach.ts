@@ -686,6 +686,7 @@ export async function* generateCoachProResponse(
     /** The app can show write cards (spec 2026-11-09). */
     writeCards?: boolean;
     onWriteCardProposal?: ExecuteToolOptions["onWriteCardProposal"];
+    planRecipePool?: ExecuteToolOptions["planRecipePool"];
   },
 ): AsyncGenerator<CoachProChunk> {
   const lastUserMessage =
@@ -990,6 +991,7 @@ export async function* generateCoachProResponse(
                   {
                     writeCards: true,
                     onWriteCardProposal: options.onWriteCardProposal,
+                    planRecipePool: options.planRecipePool,
                   },
                 ]
               : []),

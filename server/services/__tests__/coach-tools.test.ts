@@ -818,4 +818,46 @@ describe("write-card mode (spec 2026-11-09)", () => {
       recipes: [{ id: 7, title: "Chicken shawarma bowl", calories: 520 }],
     });
   });
+
+  it("the plan card proposal carries this turn's finder results for Swap", async () => {
+    vi.mocked(findCommunity).mockResolvedValueOnce(
+      [7, 8, 9].map((id) => ({
+        id,
+        source: "community" as const,
+        title: `Recipe ${id}`,
+        imageUrl: null,
+        readyInMinutes: 30,
+        calories: 500,
+      })),
+    );
+    const onWriteCardProposal = vi.fn();
+    const opts = { writeCards: true, onWriteCardProposal, planRecipePool: [] };
+    await executeToolCall(
+      "find_plan_recipes",
+      { query: "high protein dinner" },
+      "user-1",
+      null,
+      "UTC",
+      opts,
+    );
+    await executeToolCall(
+      "add_to_meal_plan",
+      {
+        rows: [
+          {
+            plannedDate: "2026-11-10",
+            mealType: "dinner",
+            recipe: { source: "community", id: 7 },
+          },
+        ],
+      },
+      "user-1",
+      null,
+      "UTC",
+      opts,
+    );
+    expect(onWriteCardProposal).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "plan", pool: [7, 8, 9] }),
+    );
+  });
 });

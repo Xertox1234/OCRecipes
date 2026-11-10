@@ -740,6 +740,11 @@ export interface ExecuteToolOptions {
   writeCards?: boolean;
   /** Receives each validated write-tool call in write-card mode. */
   onWriteCardProposal?: (p: WriteCardProposal) => void;
+  /**
+   * One array per turn: find_plan_recipes adds the ids it returns, and the
+   * plan card offers them as Swap choices when the model gives too few.
+   */
+  planRecipePool?: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -942,7 +947,11 @@ export async function executeToolCall(
         if (!card.success) {
           return invalidArgs("add_to_meal_plan", card.error.message);
         }
-        opts.onWriteCardProposal?.({ kind: "plan", args: card.data });
+        opts.onWriteCardProposal?.({
+          kind: "plan",
+          args: card.data,
+          pool: [...(opts.planRecipePool ?? [])],
+        });
         return { card_shown: true, message: CARD_SHOWN_MESSAGE };
       }
       const parsed = addToMealPlanSchema.safeParse(args);
@@ -1063,8 +1072,10 @@ export async function executeToolCall(
         userId,
         [],
       );
+      const shown = items.slice(0, 10);
+      opts.planRecipePool?.push(...shown.map((r) => r.id));
       return {
-        recipes: items.slice(0, 10).map(({ id, title, calories }) => ({
+        recipes: shown.map(({ id, title, calories }) => ({
           id,
           title: sanitizeUserInput(title),
           calories,

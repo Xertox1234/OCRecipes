@@ -742,6 +742,7 @@ export async function* handleCoachChat(
           onWriteCardProposal: (p: WriteCardProposal) => {
             writeCardProposal = p;
           },
+          planRecipePool: [],
         }),
       },
     )) {
