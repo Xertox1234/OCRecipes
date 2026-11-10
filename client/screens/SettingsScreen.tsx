@@ -41,7 +41,11 @@ import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
+import {
+  HEALTH_PRIVACY_POLICY_URL,
+  PRIVACY_POLICY_URL,
+  TERMS_URL,
+} from "@/constants/legal";
 import { formatBuildInfo, toCreatedAtIso } from "./settings-version-utils";
 import { clearImportBrowserData } from "../../modules/webview-site-data";
 import type { MeasurementUnit } from "@shared/lib/units";
@@ -577,6 +581,40 @@ export default function SettingsScreen() {
               accessible={false}
             />
             <ThemedText style={styles.settingsLabel}>Privacy Policy</ThemedText>
+          </View>
+          <Feather
+            name="external-link"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <Pressable
+          onPress={() =>
+            openLegalUrl(
+              HEALTH_PRIVACY_POLICY_URL,
+              "our Consumer Health Data Privacy Policy",
+            )
+          }
+          accessibilityLabel="Consumer Health Data Privacy Policy"
+          accessibilityRole="link"
+          accessibilityHint="Opens our Consumer Health Data Privacy Policy in your browser"
+          style={({ pressed }) => [
+            styles.settingsItem,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <View style={styles.settingsItemLeft}>
+            <Feather
+              name="heart"
+              size={20}
+              color={theme.textSecondary}
+              accessible={false}
+            />
+            <ThemedText style={styles.settingsLabel}>
+              Consumer Health Data Privacy Policy
+            </ThemedText>
           </View>
           <Feather
             name="external-link"
