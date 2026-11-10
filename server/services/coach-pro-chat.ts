@@ -27,6 +27,7 @@ import {
 } from "./nutrition-coach";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
 import { getBlocksSystemPrompt, parseBlocksFromContent } from "./coach-blocks";
+import { plainStatusLabel } from "./coach-step-labels";
 import { isRecipeFinderEnabled } from "./recipe-finder/config";
 import {
   sanitizeContextField,
@@ -96,22 +97,6 @@ export type CoachChatEvent =
 
 export const STANDARD_SAFETY_MESSAGE =
   "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
-
-const TOOL_STATUS_LABELS: Record<string, string> = {
-  lookup_nutrition: "Looking up nutrition…",
-  search_recipes: "Searching recipes…",
-  get_daily_log_details: "Checking today's log…",
-  log_food_item: "Logging food…",
-  get_pantry_items: "Checking your pantry…",
-  get_meal_plan: "Checking your meal plan…",
-  add_to_meal_plan: "Planning your meals…",
-  add_to_grocery_list: "Updating grocery list…",
-  get_substitutions: "Finding substitutes…",
-};
-
-function getToolStatusLabel(toolName: string): string {
-  return TOOL_STATUS_LABELS[toolName] ?? "Working on it…";
-}
 
 export interface CoachChatParams {
   conversationId: number;
@@ -760,7 +745,7 @@ export async function* handleCoachChat(
         // the next content chunk.
         for (const name of chunk.toolNames) {
           if (!isAborted())
-            yield { type: "status", label: getToolStatusLabel(name) };
+            yield { type: "status", label: plainStatusLabel(name) };
         }
         if (isAborted()) break;
         continue;
